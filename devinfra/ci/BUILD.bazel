@@ -87,25 +87,6 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
-py_library(
-    name = "pr_visuals",
-    srcs = ["pr_visuals.py"],
-    data = [
-        "pr_visual_test.html.j2",
-        "pr_visuals.html.j2",
-    ],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//util:visual_diff",
-        "//util:visual_review",
-        "@pypi//boto3",
-        "@pypi//jinja2",
-        "@pypi//pillow",
-        "@pypi//pydantic",
-        "@pypi//pygithub",
-    ],
-)
-
 # === Binaries ===
 
 py_binary(
@@ -144,12 +125,6 @@ py_binary(
     deps = [":emit_bb_remote_linkage"],
 )
 
-py_binary(
-    name = "pr_visuals_bin",
-    main_module = "devinfra.ci.pr_visuals",
-    deps = [":pr_visuals"],
-)
-
 py_test(
     name = "test_release_metadata",
     srcs = ["test_release_metadata.py"],
@@ -182,19 +157,6 @@ py_test(
     srcs = ["test_emit_bb_remote_linkage.py"],
     deps = [
         ":emit_bb_remote_linkage",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_pr_visuals",
-    srcs = ["test_pr_visuals.py"],
-    deps = [
-        ":pr_visuals",
-        "//util:visual_diff",
-        "//util:visual_review",
-        "@pypi//pillow",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

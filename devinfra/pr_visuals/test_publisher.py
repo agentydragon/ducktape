@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from devinfra.ci.pr_visuals import (
+from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     ClassificationCounts,
     DownloadedVisualTest,

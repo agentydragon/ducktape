@@ -4,7 +4,7 @@ Run produces a PNG per (view, viewport) case and compares against the checked-in
 baseline under `x/study_casino/frontend/__screenshots__/`.
 
 Every run also retains the rendered PNGs plus a `visual-review.json` manifest in
-undeclared outputs, so trusted CI (`devinfra/ci/pr_visuals.py` via the
+undeclared outputs, so trusted CI (`devinfra/pr_visuals/publisher.py` via the
 "Publish PR visuals" workflow) publishes the views as a browsable bundle and
 comments the link on the PR.
 
@@ -320,7 +320,7 @@ def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Pa
         )
 
     # Always retain the candidate render + visual-review manifest for the PR
-    # visual-review publisher (devinfra/ci/pr_visuals.py).
+    # visual-review publisher (devinfra/pr_visuals/publisher.py).
     out_name = f"{case.name}.png"
     retain_review_asset(
         first_path, title="Study Casino views", label=case.name.replace("_", " ").replace(".", " · "), name=out_name

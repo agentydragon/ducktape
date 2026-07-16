@@ -1,0 +1,39 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "publisher",
+    srcs = ["publisher.py"],
+    data = [
+        "pr_visual_test.html.j2",
+        "pr_visuals.html.j2",
+    ],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//util:visual_diff",
+        "//util:visual_review",
+        "@pypi//boto3",
+        "@pypi//jinja2",
+        "@pypi//pillow",
+        "@pypi//pydantic",
+        "@pypi//pygithub",
+    ],
+)
+
+py_binary(
+    name = "publisher_bin",
+    main_module = "devinfra.pr_visuals.publisher",
+    deps = [":publisher"],
+)
+
+py_test(
+    name = "test_publisher",
+    srcs = ["test_publisher.py"],
+    deps = [
+        ":publisher",
+        "//util:visual_diff",
+        "//util:visual_review",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

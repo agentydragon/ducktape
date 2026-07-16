@@ -27,7 +27,7 @@ def retain_review_asset(
 
     One call per rendered case: the manifest accumulates assets across calls
     within a test execution, so parametrized tests never need the full case
-    list upfront. The trusted publisher (devinfra/ci/pr_visuals.py) picks
+    list upfront. The trusted publisher (devinfra/pr_visuals/publisher.py) picks
     manifest + assets up from passing CI runs.
 
     `name` overrides the published asset basename (defaults to the source

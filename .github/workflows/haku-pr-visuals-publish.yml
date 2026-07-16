@@ -78,4 +78,4 @@ jobs:
           if [ -n "$PR_NUMBER" ]; then
             args+=(--pull-request "$PR_NUMBER")
           fi
-          bb run //devinfra/ci:pr_visuals_bin -- "${args[@]}"
+          bb run //devinfra/pr_visuals:publisher_bin -- "${args[@]}"

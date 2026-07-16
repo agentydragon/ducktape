@@ -567,7 +567,7 @@ def test_augur_visual_golden(
         )
 
     # Always retain the candidate render + visual-review manifest for the PR
-    # visual-review publisher (devinfra/ci/pr_visuals.py).
+    # visual-review publisher (devinfra/pr_visuals/publisher.py).
     out_name = f"{case.name}.png"
     retain_review_asset(first_path, title="Augur pages", label=case.name.replace("_", " "), name=out_name)
 
