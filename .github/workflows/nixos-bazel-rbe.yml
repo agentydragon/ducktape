@@ -76,7 +76,11 @@ jobs:
           RBE_BAZELRC: ${{ github.workspace }}/devinfra/bazel/rbe.bazelrc
           WORKSPACE: ${{ runner.temp }}/bazel-execution-contract
           EXECUTION_LOG_DIR: ${{ runner.temp }}
-        run: bash devinfra/nixos_bazel_test/smoke_test.sh
+        run: |
+          # setup-bazel wrote the BuildBuddy credential here; import it explicitly
+          # since the smoke test runs bazel with --nohome_rc.
+          export CREDENTIAL_RC="$HOME/.config/bazel/buildbuddy.bazelrc"
+          bash devinfra/nixos_bazel_test/smoke_test.sh
 
       - name: Run NixOS Bazel RBE integration test
         run: devinfra/nixos_bazel_test/run.sh test

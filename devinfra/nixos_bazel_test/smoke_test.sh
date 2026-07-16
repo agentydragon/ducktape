@@ -13,17 +13,29 @@ fi
 client_name=${CLIENT_NAME:-NixOS}
 source_workspace=${SOURCE_WORKSPACE:-/source}
 rbe_bazelrc=${RBE_BAZELRC:-/rbe.bazelrc}
+# Bazelrc contributing only the BuildBuddy credential (common:rbe --remote_header).
+credential_rc=${CREDENTIAL_RC:-}
 workspace=${WORKSPACE:-/workspace}
 execution_log_dir=${EXECUTION_LOG_DIR:-/tmp}
 run_execution_log="$execution_log_dir/rbe-run-execution.json"
 remote_test_execution_log="$execution_log_dir/rbe-remote-test-execution.json"
 local_test_execution_log="$execution_log_dir/rbe-local-test-execution.json"
 
+# Run bazel hermetically: read only the assembled workspace rc plus (on NixOS)
+# the system /etc/bazel.bazelrc for shell paths. --nohome_rc keeps the runner's
+# ~/.bazelrc out — CI's setup-bazel pollutes it with `common --config=ci` (undefined
+# in this miniature workspace) and a GHA disk_cache the contract test must not inherit.
+# The credential therefore comes in explicitly via CREDENTIAL_RC, not the home rc.
+bazelisk_startup=(--nohome_rc)
+
 mkdir -p "$workspace"
 mkdir -p "$execution_log_dir"
 cp -a "$source_workspace/." "$workspace/"
 cp "$rbe_bazelrc" "$workspace/.bazelrc"
 cat "$workspace/workspace.bazelrc" >>"$workspace/.bazelrc"
+if [[ -n "$credential_rc" ]]; then
+  printf 'try-import %s\n' "$credential_rc" >>"$workspace/.bazelrc"
+fi
 
 if [[ "${1:-}" == "--prepare-only" ]]; then
   exit 0
@@ -59,7 +71,7 @@ assert_remote_mnemonic() {
 
 echo "=== $client_name: credentialed RBE build + client-local bazel run ==="
 set +e
-output="$(bazelisk run \
+output="$(bazelisk "${bazelisk_startup[@]}" run \
   --disk_cache= \
   --noremote_accept_cached \
   --execution_log_json_file="$run_execution_log" \
@@ -80,7 +92,7 @@ if grep -Fq 'processwrapper-sandbox' <<<"$output"; then
 fi
 
 echo "=== $client_name: regular TestRunner on RBE ==="
-bazelisk test \
+bazelisk "${bazelisk_startup[@]}" test \
   --disk_cache= \
   --noremote_accept_cached \
   --execution_log_json_file="$remote_test_execution_log" \
@@ -91,7 +103,7 @@ assert_remote_mnemonic "$remote_test_execution_log" "TestRunner"
 assert_all_remote "$remote_test_execution_log"
 
 echo "=== $client_name: local-only TestRunner with remote build and aspect actions ==="
-bazelisk test \
+bazelisk "${bazelisk_startup[@]}" test \
   --disk_cache= \
   --noremote_accept_cached \
   --execution_log_json_file="$local_test_execution_log" \

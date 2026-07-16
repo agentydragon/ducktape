@@ -99,7 +99,9 @@ run_container() {
     credential_rc="$(mktemp)"
     chmod 0600 "$credential_rc"
     printf 'common:rbe --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >"$credential_rc"
-    docker_args+=(-v "$credential_rc:/root/.bazelrc:ro")
+    # Mount at a neutral path (not ~/.bazelrc): the smoke test runs bazel with
+    # --nohome_rc and imports the credential explicitly via CREDENTIAL_RC.
+    docker_args+=(-v "$credential_rc:/rbe-credential.bazelrc:ro")
     echo "Scoped BuildBuddy credential mounted."
   fi
 
@@ -121,7 +123,8 @@ run_container() {
     fi
 
     set +e
-    docker exec "$container_id" /run/current-system/sw/bin/nixos-bazel-rbe-smoke
+    docker exec -e CREDENTIAL_RC=/rbe-credential.bazelrc \
+      "$container_id" /run/current-system/sw/bin/nixos-bazel-rbe-smoke
     local exit_code=$?
     set -e
     if ((exit_code != 0)); then
