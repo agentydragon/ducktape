@@ -93,7 +93,10 @@ py_library(
     testonly = True,
     srcs = ["png_diff.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pillow"],
+    deps = [
+        "//util:visual_diff",
+        "@pypi//pillow",
+    ],
 )
 
 py_library(

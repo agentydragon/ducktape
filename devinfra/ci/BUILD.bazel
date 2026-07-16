@@ -96,9 +96,11 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//util:visual_diff",
         "//util:visual_review",
         "@pypi//boto3",
         "@pypi//jinja2",
+        "@pypi//pillow",
         "@pypi//pydantic",
         "@pypi//pygithub",
     ],
@@ -189,7 +191,9 @@ py_test(
     srcs = ["test_pr_visuals.py"],
     deps = [
         ":pr_visuals",
+        "//util:visual_diff",
         "//util:visual_review",
+        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

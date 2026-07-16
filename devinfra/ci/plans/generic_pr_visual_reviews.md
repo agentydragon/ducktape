@@ -12,10 +12,12 @@ Successful `devel` runs publish an immutable bundle per commit at
 commit's visual output is addressable by SHA. Baseline identity is
 `(repository, canonical Bazel test label, manifest asset path)`.
 
-The next milestone is useful visual comparison, not broader producer coverage:
-for each candidate asset on a pull request, resolve its baseline from the PR's
-base commit and show reviewers the baseline, candidate, and diff with clear
-provenance.
+The baseline/diff path ships exact-pixel comparison: the publisher resolves each
+candidate asset's baseline from the PR's base commit (passed by CI as
+`--base-sha`), classifies it `unchanged` / `modified` / `new` / `removed`,
+renders baseline↔candidate + diff, and reports counts with up to two diff
+previews in the PR comment. The remaining comparison work is the optional
+tolerance/noise-model path on top of that exact default.
 
 ## 1. Exercise the generic path live
 
@@ -44,41 +46,26 @@ Exit criterion: a real pull request demonstrates two independently implemented
 producers, sticky-comment maintenance across revisions, and actionable failure
 reporting.
 
-## 2. Classify and render visual changes
+## 2. Tolerance-aware comparison
 
-For each PNG asset:
+Exact comparison is the shipped default. Add an optional per-asset noise model
+so a producer whose visual test already documents sub-pixel drift (font
+rasterization, anti-aliasing) can declare it instead of flagging every run:
 
-1. decode baseline and candidate into deterministic RGBA pixels;
-2. retain original dimensions in metadata;
-3. compare them on a transparent canvas large enough for both images;
-4. generate a diff PNG that preserves enough context to locate changes;
-5. record changed-pixel count, percentage, dimensions, and classification.
+- manifest fields `intensityThreshold` (per-channel max-diff gate) and
+  `changeTolerance` (fraction of pixels that may differ) on
+  `ducktape.visual-review.v1` assets, added to both the Python and JavaScript
+  writers with shared parity fixtures;
+- the publisher honors them when classifying `unchanged` vs `modified` (today
+  it compares exact decoded RGB via `util/visual_diff.compare_pngs`);
+- AI quota (`//aiquota/gnome:test_render`) becomes the first declarer, matching
+  its existing golden comparator (`tolerance=0.02`, `intensity_threshold=16`);
+- `commentPriority` on assets so preview selection ranks by producer intent,
+  not only changed-pixel percentage.
 
-Classifications are:
-
-- `unchanged`: decoded pixels match, even if encoded bytes differ;
-- `modified`: baseline and candidate exist and exceed the declared tolerance;
-- `new`: candidate exists without a baseline asset;
-- `removed`: the baseline manifest contains an asset omitted by the candidate.
-
-Dimension changes are always reported explicitly. Exact comparison remains the
-default. A producer may declare `intensityThreshold` and `changeTolerance` only
-when its own visual test already documents and verifies that noise model; AI
-quota supplies the first thresholded case.
-
-Each asset page renders baseline and candidate side by side when available,
-the generated diff for modified assets, the appropriate single image for new
-or removed assets, and links to both source commits. Test and commit pages
-default to changed assets and collapse unchanged results.
-
-The pull-request comment reports producing-target and changed-target counts,
-plus modified, new, removed, and total asset counts. Embed at most two changed
-previews across the entire comment, selected by `commentPriority` and then
-changed-pixel percentage. Keep the comment useful within a fixed byte budget.
-
-Exit criterion: fixtures cover unchanged, modified, new, removed, dimension-
-changed, and threshold-tolerated assets, and a real pull request shows correct
-side-by-side comparisons and diffs.
+Exit criterion: a thresholded producer's no-op runs classify `unchanged` while
+real changes still surface `modified`, with writer parity and fixtures covering
+threshold-tolerated assets.
 
 ## 3. Harden publication
 

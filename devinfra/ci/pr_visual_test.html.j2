@@ -10,26 +10,78 @@
       header { padding: 16px 24px; background: Canvas; border-bottom: 1px solid #bbb; }
       h1 { margin: 0 0 4px; font-size: 18px; }
       code { overflow-wrap: anywhere; font-size: 12px; }
-      main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 20px; padding: 20px; }
+      main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 20px; padding: 20px; align-items: start; }
       figure { margin: 0; padding: 12px; border: 1px solid #bbb; border-radius: 10px; background: Canvas; }
-      img { display: block; width: 100%; height: auto; border-radius: 6px; background: white; }
+      img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: white; }
       figcaption { padding-top: 9px; font-weight: 600; }
-      @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } }
+      .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .pair > div { font-size: 12px; color: #666; }
+      .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-left: 6px; }
+      .modified { background: #ffe1e1; color: #8a1f1f; }
+      .new { background: #e1f4ff; color: #0b4a78; }
+      .removed { background: #f0e1ff; color: #5a1a8a; }
+      .metric { font-weight: 400; color: #666; }
+      .label-line { font-size: 12px; color: #666; margin-top: 8px; }
+      details { grid-column: 1 / -1; }
+      details summary { cursor: pointer; padding: 8px 0; }
+      @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } .metric, .pair > div, .label-line { color: #aaa; } }
     </style>
   </head>
   <body>
     <header>
       <a href="../../index.html">All visual tests</a>
       <h1>{{ title }}</h1>
-      <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code></div>
+      <div><code>{{ target_label }}</code> · {{ repository }} · <code>{{ commit_sha }}</code>{% if base_sha %} · base <code>{{ base_sha[:8] }}</code>{% endif %}</div>
     </header>
     <main>
-      {% for asset in assets %}
-      <figure id="{{ asset.path }}">
-        <a href="{{ asset.path }}"><img src="{{ asset.path }}" alt="{{ asset.label }}" loading="lazy"></a>
-        <figcaption>{{ asset.label }}</figcaption>
-      </figure>
-      {% endfor %}
+      {% if base_sha %}
+        {% set modified = assets | selectattr("classification", "equalto", "modified") | list %}
+        {% set new_assets = assets | selectattr("classification", "equalto", "new") | list %}
+        {% set removed = assets | selectattr("classification", "equalto", "removed") | list %}
+        {% set unchanged = assets | selectattr("classification", "equalto", "unchanged") | list %}
+        {% for asset in modified %}
+        <figure id="{{ asset.path }}">
+          <figcaption>{{ asset.label }}<span class="badge modified">modified</span>
+            {% if asset.dimensionChanged %}<span class="badge modified">dims {{ asset.candidateDimensions[0] }}×{{ asset.candidateDimensions[1] }} ← {{ asset.baselineDimensions[0] }}×{{ asset.baselineDimensions[1] }}</span>{% endif %}
+            <span class="metric">{{ "%.2f"|format(asset.changedFraction * 100) }}% · {{ asset.changedPixels }} px</span></figcaption>
+          <div class="pair">
+            <div>candidate<a href="{{ asset.path }}"><img src="{{ asset.path }}" alt="{{ asset.label }} candidate" loading="lazy"></a></div>
+            <div>baseline<a href="baseline/{{ asset.path }}"><img src="baseline/{{ asset.path }}" alt="{{ asset.label }} baseline" loading="lazy"></a></div>
+          </div>
+          <div class="label-line">diff</div>
+          <img src="diff/{{ asset.path }}" alt="{{ asset.label }} diff" loading="lazy">
+        </figure>
+        {% endfor %}
+        {% for asset in new_assets %}
+        <figure id="{{ asset.path }}">
+          <figcaption>{{ asset.label }}<span class="badge new">new</span></figcaption>
+          <a href="{{ asset.path }}"><img src="{{ asset.path }}" alt="{{ asset.label }}" loading="lazy"></a>
+        </figure>
+        {% endfor %}
+        {% for asset in removed %}
+        <figure id="{{ asset.path }}">
+          <figcaption>{{ asset.label }}<span class="badge removed">removed</span></figcaption>
+          <a href="baseline/{{ asset.path }}"><img src="baseline/{{ asset.path }}" alt="{{ asset.label }} baseline" loading="lazy"></a>
+        </figure>
+        {% endfor %}
+        {% if unchanged %}
+        <details>
+          <summary>{{ unchanged | length }} unchanged</summary>
+          <div class="pair" style="margin-top: 8px">
+            {% for asset in unchanged %}
+            <figure id="{{ asset.path }}"><figcaption>{{ asset.label }}</figcaption><a href="{{ asset.path }}"><img src="{{ asset.path }}" alt="{{ asset.label }}" loading="lazy"></a></figure>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      {% else %}
+        {% for asset in assets %}
+        <figure id="{{ asset.path }}">
+          <a href="{{ asset.path }}"><img src="{{ asset.path }}" alt="{{ asset.label }}" loading="lazy"></a>
+          <figcaption>{{ asset.label }}</figcaption>
+        </figure>
+        {% endfor %}
+      {% endif %}
     </main>
   </body>
 </html>

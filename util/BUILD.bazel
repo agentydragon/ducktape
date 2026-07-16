@@ -21,6 +21,13 @@ py_library(
 )
 
 py_library(
+    name = "visual_diff",
+    srcs = ["visual_diff.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pillow"],
+)
+
+py_library(
     name = "fs",
     srcs = ["fs.py"],
     visibility = ["//visibility:public"],

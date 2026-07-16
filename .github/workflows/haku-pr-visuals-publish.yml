@@ -59,6 +59,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           # PR run → comment on the PR. Devel push → publish the bundle, no comment.
           HEAD_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].head.sha || github.event.workflow_run.head_sha }}
+          # PR run → the base devel commit whose published bundle is the diff baseline.
+          BASE_SHA: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].base.sha || '' }}
           PR_NUMBER: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number || '' }}
         run: |
           args=(
@@ -70,6 +72,9 @@ jobs:
             --bucket pr-visuals
             --public-base-url https://s3.allegedly.works/pr-visuals
           )
+          if [ -n "$BASE_SHA" ]; then
+            args+=(--base-sha "$BASE_SHA")
+          fi
           if [ -n "$PR_NUMBER" ]; then
             args+=(--pull-request "$PR_NUMBER")
           fi

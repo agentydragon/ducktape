@@ -15,7 +15,7 @@
       section { margin-bottom: 28px; }
       .assets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 16px; }
       figure { margin: 0; padding: 10px; border: 1px solid #bbb; border-radius: 10px; background: Canvas; }
-      img { display: block; width: 100%; height: auto; border-radius: 6px; background: white; }
+      img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: white; }
       figcaption { padding-top: 8px; font-weight: 600; }
       @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } }
     </style>
@@ -29,16 +29,32 @@
       {% for test in tests %}
       <section>
         <h2><a href="tests/{{ test.slug }}/index.html">{{ test.title }}</a></h2>
-        <p><code>{{ test.target_label }}</code> · {{ test.assets | length }} assets</p>
+        <p>
+          <code>{{ test.target_label }}</code>
+          {% if test.summary %}
+            · {{ test.summary.modified }} modified, {{ test.summary.new }} new, {{ test.summary.removed }} removed, {{ test.summary.unchanged }} unchanged
+          {% else %}
+            · {{ test.assets | length }} assets
+          {% endif %}
+        </p>
         <div class="assets">
-          {% for asset in test.assets[:2] %}
+          {% if test.preview %}
           <figure>
-            <a href="tests/{{ test.slug }}/index.html#{{ asset.path }}">
-              <img src="tests/{{ test.slug }}/{{ asset.path }}" alt="{{ asset.label }}" loading="lazy">
+            <a href="tests/{{ test.slug }}/index.html#{{ test.preview.path }}">
+              <img src="tests/{{ test.slug }}/diff/{{ test.preview.path }}" alt="{{ test.preview.label }} diff" loading="lazy">
             </a>
-            <figcaption>{{ asset.label }}</figcaption>
+            <figcaption>{{ test.preview.label }} diff</figcaption>
           </figure>
-          {% endfor %}
+          {% elif not test.summary %}
+            {% for asset in test.assets[:2] %}
+            <figure>
+              <a href="tests/{{ test.slug }}/index.html#{{ asset.path }}">
+                <img src="tests/{{ test.slug }}/{{ asset.path }}" alt="{{ asset.label }}" loading="lazy">
+              </a>
+              <figcaption>{{ asset.label }}</figcaption>
+            </figure>
+            {% endfor %}
+          {% endif %}
         </div>
       </section>
       {% endfor %}

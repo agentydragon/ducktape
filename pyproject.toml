@@ -202,6 +202,9 @@ dependencies = [
     "numpy",
     "polars>=1",
 
+    # devinfra visual-review publisher — RGBA decode + pixel diff.
+    "Pillow",
+
     # augur (financial-futures simulator) — DCC-GARCH market model uses arch
     "arch>=7",
     # augur — NumPyro PPL spike (a JAX-backed probabilistic programming
