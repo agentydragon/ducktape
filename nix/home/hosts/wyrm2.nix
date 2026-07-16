@@ -103,11 +103,24 @@
       # Replace the built-in swaybar with waybar (below): it carries the volume
       # applet and a larger font for the 4K panel.
       bars = [ ];
-      startup = [ { command = "waybar"; } ];
+      startup = [
+        { command = "waybar"; }
+        # Process ~/.config/autostart (Signal/Telegram tray, etc.) — sway doesn't
+        # run XDG autostart itself. Runs per sway session, so on both seats;
+        # single-instance apps dedupe. TODO: scope to seat0 only if the game seat
+        # shouldn't autostart chat apps.
+        { command = "dex --autostart --environment sway"; }
+        # Lock (not blank) on idle after 5 min. Deliberately NO `dpms off`:
+        # blanking the DP output makes the FV43U KVM revert to USB-C on the
+        # seatphysical seat (see notes below); swaylock keeps the output live.
+        { command = "swayidle -w timeout 300 'swaylock -f'"; }
+      ];
       keybindings = lib.mkOptionDefault {
         "XF86AudioRaiseVolume" = "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+";
         "XF86AudioLowerVolume" = "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-";
         "XF86AudioMute" = "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
+        # GNOME-style manual lock.
+        "Mod4+l" = "exec swaylock -f";
       };
     };
   };

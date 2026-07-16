@@ -156,6 +156,12 @@ in
     # QXL/virtio, not NVIDIA). SDDM runs the greeter under a Wayland compositor.
     wayland.enable = true;
   };
+  # Default both seats to the sway session. seat0 moves off GNOME so its lock
+  # works: GNOME's lock hard-requires GDM (canLock() queries org.gnome.Display-
+  # Manager, absent under SDDM) — see debug/atlas/direct_display_bringup.md. sway
+  # locks via swaylock (DM-independent). GNOME stays installed and selectable from
+  # the SDDM session menu as a fallback.
+  services.displayManager.defaultSession = "sway";
 
   # GDM greeter dconf tweaks removed with the GDM→SDDM swap:
   # - idle-delay=0 kept the DP output awake so the FV43U KVM would not revert to
@@ -188,6 +194,7 @@ in
       wl-clipboard
       swayidle
       swaylock
+      dex # runs XDG ~/.config/autostart entries under sway
       grim # screenshots (wlroots)
       slurp # region select for grim
     ];
