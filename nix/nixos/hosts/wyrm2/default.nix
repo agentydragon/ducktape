@@ -403,13 +403,19 @@ in
   # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
-    # DEBUG(added 2026-07-16): verbose logind logging to capture the exact varlink
-    # CreateSession field systemd 258 rejects for the seatphysical greeter (no
-    # session → weston aborts, XDG_RUNTIME_DIR unset → greeter never renders).
-    # logind names the refused field (Seat/TTY/VTNr) in logind-varlink.c at debug
-    # level. Remove once the greeter is solved — see
+    # DEBUG(added 2026-07-16): reboot diagnostics for the seatphysical greeter's
+    # varlink CreateSession failure. logind at debug makes sd-varlink log the whole
+    # exchange (sd-varlink.c: `Received message: {…}` = the exact seat/tty/vtnr/type/
+    # class pam_systemd sent, and `Sending message: {…InvalidParameter,parameter…}` =
+    # the rejected field). That pair is decisive: a static read of both SDDM 0.21 and
+    # systemd 258 says the call *should* pass, so the bug is a runtime param value
+    # only the wire log reveals. QT_LOGGING_RULES cranks SDDM/Qt greeter logging too
+    # (spammy, intentional). Remove all of this once the greeter is solved — see
     # debug/atlas/direct_display_bringup.md.
-    { systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug"; }
+    {
+      systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug";
+      display-manager.environment.QT_LOGGING_RULES = "*.debug=true";
+    }
     # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
     #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
     #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)

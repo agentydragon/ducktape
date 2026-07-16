@@ -782,21 +782,45 @@ Two distinct defects:
 1. **D-Bus hyphen (secondary).** `DisplayManager::seatPath` (SDDM
    `src/daemon/DisplayManager.cpp:45`) builds `"/org/freedesktop/DisplayManager/Seat"
    - seatName.mid(4)`, so `seat-game`→`Seat-game`, an invalid object-path element
-(hyphen). This only breaks the `SeatAdded`**signal**, not session creation — but
-it is trivially avoidable.`seatphysical`→`Seatgame`(valid; also passes logind's`seat_name_is_valid`, pure alnum). **Fixed by the rename.**
-2. **varlink `CreateSession` `InvalidParameter` (primary blocker).** systemd 258
-   `src/login/logind-varlink.c:187-229` validates `Seat`/`TTY`/`VTNr` and returns
-   `InvalidParameter` naming the offending field. SDDM's Wayland greeter on a
-   non-seat0 seat never sets `PAM_TTY` (it only sets it for X11 or when `XDG_VTNR`
-   is present, and `XDG_VTNR` is gated to seat0 in `Greeter.cpp:214`). By static
-   reading the params _should_ pass (seat exists, no VT, vtnr 0) — so the exact
-   rejected field is not yet proven. **Added `SYSTEMD_LOG_LEVEL=debug` on
-   `systemd-logind`** so the next boot logs which field logind refuses. This is the
-   make-or-break datum: if it is a fixable PAM/tty detail or an SDDM version bug we
-   fix in place. There is **no clean fallback** — GDM is out (see the constraints +
-   DM landscape in "Next steps" below); if SDDM 0.21's non-seat0 greeter path is
-   fundamentally incompatible with systemd-258 varlink logind, the only options left
-   are LightDM or a bespoke `cage` + `gtkgreet` per-seat greeter.
+(hyphen). This only breaks the `SeatAdded`**signal**, not session creation, but
+is trivially avoidable:`seatphysical`→`Seatphysical`(valid; also passes
+logind's`seat_name_is_valid`, pure alnum). **Fixed by the rename.**
+2. **varlink `CreateSession` `InvalidParameter` (primary blocker).** A full read of
+   both sides is **inconclusive** — statically the call _should_ succeed:
+   - SDDM 0.21: the Wayland greeter on a non-seat0 seat sets neither `XDG_VTNR`
+     (gated to seat0, `Greeter.cpp:214`) nor `PAM_TTY` (`PamBackend.cpp` sets it only
+     for X11 or when `XDG_VTNR` is present). So pam_systemd should send
+     `seat=seatphysical`, no `TTY`, `vtnr=0`.
+   - systemd 258 `logind-varlink.c` `vl_method_create_session`: the seat exists (not
+     `NoSuchSeat`); with no `TTY` the tty block is skipped; the seat has no VTs and
+     `vtnr=0` → passes. `InvalidParameter` is raised for a bad `Seat`/`TTY`/`VTNr`
+     (that block) **or** by `sd_varlink_dispatch` on a STRICT field (`PID`, `Desktop`).
+
+   So the rejection is a **runtime param value that differs from the static read** —
+   not determinable without the wire log. (The `Failed to take control of /dev/tty0`
+   line is a _separate_ `UserSession`-stage symptom — unset `XDG_VTNR` → int 0 →
+   `/dev/tty0` takeover — **not** the `CreateSession` cause.)
+
+   **The reboot resolves it decisively without more instrumentation.**
+   `SYSTEMD_LOG_LEVEL=debug` on logind makes sd-varlink log the whole exchange
+   (`sd-varlink.c:992/1901`):
+
+   ```bash
+   journalctl -b -u systemd-logind | grep -iE 'Received message|Sending message|InvalidParameter'
+   ```
+
+   - `Received message: {…}` = the exact `Seat`/`TTY`/`VTNr`/`Type`/`Class` pam_systemd
+     sent (closes the static gap — no pam `debug` arg needed).
+   - `Sending message: {…"parameter":"Seat"…}` = the rejected field.
+
+   Leading hypothesis: a non-empty VC tty (`/dev/tty0`) reaches the greeter's PAM
+   session → logind rejects "VC tty on a non-seat0 seat" as `Seat`. Unproven; the
+   wire log confirms or refutes.
+
+   There is **no clean fallback** — GDM is out (see the constraints + DM landscape in
+   "Next steps"); if SDDM 0.21's non-seat0 greeter is fundamentally incompatible with
+   systemd-258 varlink logind, the options left are LightDM, a bespoke `cage` +
+   `gtkgreet` per-seat greeter, or an SDDM bump.
 
 ### Root cause 2 — seat0 GNOME lock: GNOME's lock hard-requires GDM (CONFIRMED)
 
@@ -903,13 +927,23 @@ boot-menu generation).
    ```bash
    loginctl list-seats                    # expect: seatphysical (no hyphen)
    loginctl seat-status seatphysical      # is the NVIDIA card mastered here?
-   journalctl -b -u display-manager | grep -iE 'seatphysical|CreateSession|weston|Seat'
-   journalctl -b -u systemd-logind | grep -iE 'CreateSession|InvalidParameter|Seat|VTNr|TTY'
+   # THE decisive pair — the CreateSession params pam_systemd sent + the rejection:
+   journalctl -b -u systemd-logind | grep -iE 'Received message|Sending message|InvalidParameter|CreateSession'
+   journalctl -b -u display-manager | grep -iE 'seatphysical|CreateSession|weston|Seat'  # SDDM/Qt verbose
    ```
 
-   The **rejected field** (`Seat`/`TTY`/`VTNr`) from the last command is the decision
+   `Received message: {…}` shows the exact `Seat`/`TTY`/`VTNr`/`Type`/`Class` sent;
+   `Sending message: {…"parameter":"…"}` names the **rejected field** — the decision
    point (see the fallback ladder). Also note whether the hyphen fix alone changed
    greeter behavior.
+
+   Debug levers active this boot (remove once the greeter is solved): logind
+   `SYSTEMD_LOG_LEVEL=debug` (the wire log above) and display-manager
+   `QT_LOGGING_RULES=*.debug=true` (SDDM/Qt greeter internals). If the wire log is
+   somehow insufficient, pam_systemd's own param-dump can be enabled **live** (no
+   rebuild, reversible) by appending `debug` to the `pam_systemd` line for
+   `sddm-greeter` and `systemctl restart display-manager` — but the sd-varlink log
+   should already carry everything.
 
 3. **seat0 lock — root cause found (2026-07-16), no longer a DM fix.** The tier-1
    read-only diagnosis (journal + D-Bus, zero session impact) proved Root cause 2:
