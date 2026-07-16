@@ -8,7 +8,10 @@ from PIL import Image
 
 from devinfra.ci.pr_visuals import (
     COMMENT_BUDGET,
+    ClassificationCounts,
     DownloadedVisualTest,
+    ReviewAsset,
+    ReviewTest,
     build_bundle,
     download_visual_tests,
     error_comment_body,
@@ -183,12 +186,12 @@ def test_manifest_rejects_paths_and_duplicates() -> None:
 def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
-        {
-            "target_label": "//example:visuals",
-            "slug": target_slug("//example:visuals"),
-            "title": "Example UI",
-            "assets": [{"path": "screen.png", "label": "Screen"}],
-        }
+        ReviewTest(
+            target_label="//example:visuals",
+            slug=target_slug("//example:visuals"),
+            title="Example UI",
+            assets=[ReviewAsset(path="screen.png", label="Screen")],
+        )
     ]
 
     success = success_comment_body(
@@ -323,30 +326,20 @@ def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
 def test_success_comment_body_reports_counts_and_previews() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
-        {
-            "target_label": "//ex:visuals",
-            "slug": "ex-visuals-abcdef",
-            "title": "Ex",
-            "summary": {"modified": 2, "new": 1, "removed": 0, "unchanged": 1},
-            "assets": [
-                {
-                    "path": "a.png",
-                    "label": "a",
-                    "classification": "modified",
-                    "changedFraction": 0.5,
-                    "changedPixels": 10,
-                },
-                {
-                    "path": "b.png",
-                    "label": "b",
-                    "classification": "modified",
-                    "changedFraction": 0.2,
-                    "changedPixels": 4,
-                },
-                {"path": "c.png", "label": "c", "classification": "new"},
-                {"path": "d.png", "label": "d", "classification": "unchanged"},
+        ReviewTest(
+            target_label="//ex:visuals",
+            slug="ex-visuals-abcdef",
+            title="Ex",
+            summary=ClassificationCounts(modified=2, new=1, removed=0, unchanged=1),
+            assets=[
+                ReviewAsset(
+                    path="a.png", label="a", classification="modified", changed_fraction=0.5, changed_pixels=10
+                ),
+                ReviewAsset(path="b.png", label="b", classification="modified", changed_fraction=0.2, changed_pixels=4),
+                ReviewAsset(path="c.png", label="c", classification="new"),
+                ReviewAsset(path="d.png", label="d", classification="unchanged"),
             ],
-        }
+        )
     ]
     body = success_comment_body(
         repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
@@ -360,28 +353,16 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
 def test_success_comment_body_drops_previews_over_budget() -> None:
     big = "x" * 3500
     review_tests = [
-        {
-            "target_label": "//t:a",
-            "slug": "s",
-            "title": "T",
-            "summary": {"modified": 2, "new": 0, "removed": 0, "unchanged": 0},
-            "assets": [
-                {
-                    "path": "a.png",
-                    "label": big,
-                    "classification": "modified",
-                    "changedFraction": 0.9,
-                    "changedPixels": 1,
-                },
-                {
-                    "path": "b.png",
-                    "label": big,
-                    "classification": "modified",
-                    "changedFraction": 0.1,
-                    "changedPixels": 1,
-                },
+        ReviewTest(
+            target_label="//t:a",
+            slug="s",
+            title="T",
+            summary=ClassificationCounts(modified=2),
+            assets=[
+                ReviewAsset(path="a.png", label=big, classification="modified", changed_fraction=0.9, changed_pixels=1),
+                ReviewAsset(path="b.png", label=big, classification="modified", changed_fraction=0.1, changed_pixels=1),
             ],
-        }
+        )
     ]
     body = success_comment_body(
         repository="r",

@@ -42,8 +42,8 @@
         {% for asset in modified %}
         <figure id="{{ asset.path }}">
           <figcaption>{{ asset.label }}<span class="badge modified">modified</span>
-            {% if asset.dimensionChanged %}<span class="badge modified">dims {{ asset.candidateDimensions[0] }}×{{ asset.candidateDimensions[1] }} ← {{ asset.baselineDimensions[0] }}×{{ asset.baselineDimensions[1] }}</span>{% endif %}
-            <span class="metric">{{ "%.2f"|format(asset.changedFraction * 100) }}% · {{ asset.changedPixels }} px</span></figcaption>
+            {% if asset.dimension_changed %}<span class="badge modified">dims {{ asset.candidate_dimensions[0] }}×{{ asset.candidate_dimensions[1] }} ← {{ asset.baseline_dimensions[0] }}×{{ asset.baseline_dimensions[1] }}</span>{% endif %}
+            <span class="metric">{{ "%.2f"|format(asset.changed_fraction * 100) }}% · {{ asset.changed_pixels }} px</span></figcaption>
           <div class="pair">
             <div>candidate<a href="{{ asset.path }}"><img src="{{ asset.path }}" alt="{{ asset.label }} candidate" loading="lazy"></a></div>
             <div>baseline<a href="baseline/{{ asset.path }}"><img src="baseline/{{ asset.path }}" alt="{{ asset.label }} baseline" loading="lazy"></a></div>
