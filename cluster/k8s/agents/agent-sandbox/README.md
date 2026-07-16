@@ -102,6 +102,18 @@ Or do nothing: `shutdownTime` garbage-collects it, and the `workspace-janitor`
 CleanupPolicy reaps anything older than 7 days as a backstop (same contract as
 the rest of `claude-sandbox`).
 
+### From Headlamp
+
+Everything above also works point-and-click at
+<https://headlamp.allegedly.works> (already deployed, Authentik OIDC —
+`../../headlamp/`): the sandbox CRDs and their instances show up automatically
+under Custom Resources, the Create button's YAML editor (with dry-run) takes
+the `SandboxClaim` snippet above, the pod details view has the in-browser exec
+terminal and logs, and deleting the claim disposes the workspace. No
+agent-sandbox Headlamp plugin exists yet (upstream's dashboard is
+roadmap-only, kubernetes-sigs/agent-sandbox#697); a small custom plugin adding
+a "new workspace" button is a candidate follow-up.
+
 ### Troubleshooting
 
 - **Claim stuck unclaimed**: pool exhausted or template broken —
