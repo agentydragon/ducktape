@@ -11,7 +11,10 @@
 # repo_contents_cache empty (disabled) by default, so no flag is needed to keep
 # it off — this module simply never enables it. See
 # devinfra/docs/bazel_worktree_cache_sharing.md.
-# This also sets BAZELISK_HOME and the Claude sandbox write entry for it.
+#
+# The bazelisk binary cache needs no wiring here: it already defaults to the
+# user-global ~/.cache/bazelisk, and its Claude-sandbox write grant lives with
+# the other sandbox writes in nix/home/claude_code/default.nix.
 {
   config,
   lib,
@@ -22,7 +25,6 @@ let
   bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
   bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
-  bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
 in
 {
   options.ducktape.bazelCache = {
@@ -49,12 +51,7 @@ in
     '';
 
     home.activation.bazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      mkdir -p '${bazelDiskCache}' '${bazeliskCache}'
+      mkdir -p '${bazelDiskCache}'
     '';
-
-    programs.claude-code.settings = {
-      env.BAZELISK_HOME = bazeliskCache;
-      sandbox.filesystem.allowWrite = lib.mkAfter [ bazeliskCache ];
-    };
   };
 }

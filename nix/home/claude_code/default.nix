@@ -602,6 +602,7 @@ in
         filesystem = {
           allowWrite = [
             "~/.cache/bazel"
+            "~/.cache/bazelisk"
             "~/.cache/pre-commit"
           ];
         };
