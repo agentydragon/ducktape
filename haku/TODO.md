@@ -21,6 +21,12 @@ component checklist rather than being copied here: haku-console's tool/API backl
   succeeded, the HTTP/MCP response was lost, and the caller retried." Specify and implement a
   caller-visible idempotency key scoped by canonical Operator and Agent binding if the current path
   can create two executions. Preserve the exact binding generation in the deduplication boundary.
+- **Recover tool calls stranded in `RUNNING` without guessing their external outcome.** Add fault
+  injection for a pod/process loss both after the `RUNNING` commit but before backend execution and
+  after backend success but before terminal persistence. Specify an explicit unknown-outcome state
+  plus attempt/lease ownership, surface stale calls to the Operator, and reconcile them without
+  blindly retrying non-idempotent tools. A timeout alone must not turn an unknown external outcome
+  into either success, failure, or a second execution.
 - **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and
   registration attempts with Haku-side rate limits and transaction quotas. FastMCP continues to
   own protocol validation and TTLs; Haku owns enrollment interaction and activation limits.
