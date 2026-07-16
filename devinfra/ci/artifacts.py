@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -14,6 +15,10 @@ from util.bazel.workspace import get_build_workspace_directory
 
 def sources_path() -> Path:
     return get_build_workspace_directory() / "nix" / "artifact-pins.json"
+
+
+def skills_registry_path() -> Path:
+    return get_build_workspace_directory() / "skills" / "skills_registry.json"
 
 
 class Pin(BaseModel):
@@ -52,6 +57,17 @@ class Artifact(BaseModel, frozen=True):
         return self.tag_pkg or self.pkg
 
 
+def _skill_artifacts() -> list["Artifact"]:
+    """One Artifact per deployable skill, from skills/skills_registry.json.
+
+    Each skill releases independently as `skill-<name>-<hash>` carrying a single
+    `<name>.skill` asset, and pins under the `skill-<name>` key in
+    artifact-pins.json.
+    """
+    registry = json.loads(skills_registry_path().read_text())
+    return [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"]]
+
+
 ARTIFACTS = [
     Artifact(pkg="bbr", filename="bbr-0.1.0-py3-none-any.whl"),
     Artifact(pkg="claude-hooks", filename="claude_hooks-0.1.0-py3-none-any.whl"),
@@ -62,9 +78,13 @@ ARTIFACTS = [
     Artifact(pkg="aiquota", filename="aiquota-0.1.0-py3-none-any.whl"),
     Artifact(pkg="aiquota-extension", tag_pkg="aiquota", filename="aiquota.zip"),
     Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
+    # CLEANUP(added 2026-07-16): drop the combined bundle once nix stops
+    #   reading the `skills` pin (i.e. flake.nix / nix/packages assemble from the
+    #   per-skill `skill-*` pins instead — PR 2 of the all_skills teardown).
     Artifact(pkg="skills", filename="all_skills.skill"),
     Artifact(pkg="bbapi", filename="bbapi"),
     Artifact(pkg="debundle", filename="debundle"),
+    *_skill_artifacts(),
 ]
 
 

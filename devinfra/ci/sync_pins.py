@@ -33,9 +33,12 @@ def main() -> None:
     repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
 
     # Sort newest-first — GitHub's REST API does not guarantee chronological order.
+    # Scan the full list, not a newest-N window: with ~40 per-skill families
+    # (skill-*), a rarely-changed skill's latest release can sit far down the
+    # list, and truncating would silently freeze (or never create) its pin.
     releases = sorted(
         (r for r in repo.get_releases() if not r.draft and not r.prerelease), key=lambda r: r.created_at, reverse=True
-    )[:200]
+    )
 
     sources = Sources.model_validate_json(sources_path().read_text())
 

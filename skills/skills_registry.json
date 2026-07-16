@@ -1,0 +1,270 @@
+{
+  "skills": [
+    {
+      "name": "cluster_health",
+      "pkg": "skill-cluster_health",
+      "target": "//cluster/skills/cluster_health:cluster_health_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/cluster_health/cluster_health.skill",
+      "filename": "cluster_health.skill"
+    },
+    {
+      "name": "cnpg_region_switch",
+      "pkg": "skill-cnpg_region_switch",
+      "target": "//cluster/skills/cnpg_region_switch:cnpg_region_switch_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/cnpg_region_switch/cnpg_region_switch.skill",
+      "filename": "cnpg_region_switch.skill"
+    },
+    {
+      "name": "flux_reconcile_audit",
+      "pkg": "skill-flux_reconcile_audit",
+      "target": "//cluster/skills/flux_reconcile_audit:flux_reconcile_audit_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/flux_reconcile_audit/flux_reconcile_audit.skill",
+      "filename": "flux_reconcile_audit.skill"
+    },
+    {
+      "name": "hetzner_vnc_screenshot",
+      "pkg": "skill-hetzner_vnc_screenshot",
+      "target": "//cluster/skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/hetzner_vnc_screenshot/hetzner_vnc_screenshot.skill",
+      "filename": "hetzner_vnc_screenshot.skill"
+    },
+    {
+      "name": "proxmox_vm",
+      "pkg": "skill-proxmox_vm",
+      "target": "//cluster/skills/proxmox_vm:proxmox_vm_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/proxmox_vm/proxmox_vm.skill",
+      "filename": "proxmox_vm.skill"
+    },
+    {
+      "name": "cpap",
+      "pkg": "skill-cpap",
+      "target": "//cpap/skill:cpap_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cpap/skill/cpap.skill",
+      "filename": "cpap.skill"
+    },
+    {
+      "name": "buildbuddy_api",
+      "pkg": "skill-buildbuddy_api",
+      "target": "//devinfra/buildbuddy_cli/skills/buildbuddy_api:buildbuddy_api_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/skills/buildbuddy_api/buildbuddy_api.skill",
+      "filename": "buildbuddy_api.skill"
+    },
+    {
+      "name": "cihealth",
+      "pkg": "skill-cihealth",
+      "target": "//devinfra/ci/skills/cihealth:cihealth_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ci/skills/cihealth/cihealth.skill",
+      "filename": "cihealth.skill"
+    },
+    {
+      "name": "web_selfcheck",
+      "pkg": "skill-web_selfcheck",
+      "target": "//devinfra/claude/skills/web_selfcheck:web_selfcheck_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/skills/web_selfcheck/web_selfcheck.skill",
+      "filename": "web_selfcheck.skill"
+    },
+    {
+      "name": "clean_workspaces",
+      "pkg": "skill-clean_workspaces",
+      "target": "//devinfra/gc:clean_workspaces_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/clean_workspaces.skill",
+      "filename": "clean_workspaces.skill"
+    },
+    {
+      "name": "debundle_architect",
+      "pkg": "skill-debundle_architect",
+      "target": "//devinfra/js/debundle/skills/debundle_architect:debundle_architect_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_architect/debundle_architect.skill",
+      "filename": "debundle_architect.skill"
+    },
+    {
+      "name": "debundle_intake",
+      "pkg": "skill-debundle_intake",
+      "target": "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_intake/debundle_intake.skill",
+      "filename": "debundle_intake.skill"
+    },
+    {
+      "name": "debundle_integrator",
+      "pkg": "skill-debundle_integrator",
+      "target": "//devinfra/js/debundle/skills/debundle_integrator:debundle_integrator_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_integrator/debundle_integrator.skill",
+      "filename": "debundle_integrator.skill"
+    },
+    {
+      "name": "debundle_lane_worker",
+      "pkg": "skill-debundle_lane_worker",
+      "target": "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_lane_worker/debundle_lane_worker.skill",
+      "filename": "debundle_lane_worker.skill"
+    },
+    {
+      "name": "debundle_mint_names",
+      "pkg": "skill-debundle_mint_names",
+      "target": "//devinfra/js/debundle/skills/debundle_mint_names:debundle_mint_names_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_mint_names/debundle_mint_names.skill",
+      "filename": "debundle_mint_names.skill"
+    },
+    {
+      "name": "debundle_orchestrator",
+      "pkg": "skill-debundle_orchestrator",
+      "target": "//devinfra/js/debundle/skills/debundle_orchestrator:debundle_orchestrator_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_orchestrator/debundle_orchestrator.skill",
+      "filename": "debundle_orchestrator.skill"
+    },
+    {
+      "name": "debundle_plan_work",
+      "pkg": "skill-debundle_plan_work",
+      "target": "//devinfra/js/debundle/skills/debundle_plan_work:debundle_plan_work_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_plan_work/debundle_plan_work.skill",
+      "filename": "debundle_plan_work.skill"
+    },
+    {
+      "name": "debundle_stabilize",
+      "pkg": "skill-debundle_stabilize",
+      "target": "//devinfra/js/debundle/skills/debundle_stabilize:debundle_stabilize_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_stabilize/debundle_stabilize.skill",
+      "filename": "debundle_stabilize.skill"
+    },
+    {
+      "name": "backtrace",
+      "pkg": "skill-backtrace",
+      "target": "//skills/backtrace:backtrace_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/backtrace/backtrace.skill",
+      "filename": "backtrace.skill"
+    },
+    {
+      "name": "followups",
+      "pkg": "skill-followups",
+      "target": "//skills/followups:followups_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/followups/followups.skill",
+      "filename": "followups.skill"
+    },
+    {
+      "name": "forensic_surgeon",
+      "pkg": "skill-forensic_surgeon",
+      "target": "//skills/forensic_surgeon:forensic_surgeon_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/forensic_surgeon/forensic_surgeon.skill",
+      "filename": "forensic_surgeon.skill"
+    },
+    {
+      "name": "forgejo",
+      "pkg": "skill-forgejo",
+      "target": "//skills/forgejo:forgejo_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/forgejo/forgejo.skill",
+      "filename": "forgejo.skill"
+    },
+    {
+      "name": "freecad",
+      "pkg": "skill-freecad",
+      "target": "//skills/freecad:freecad_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/freecad/freecad.skill",
+      "filename": "freecad.skill"
+    },
+    {
+      "name": "google_photos_link",
+      "pkg": "skill-google_photos_link",
+      "target": "//skills/google_photos_link:google_photos_link_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/google_photos_link/google_photos_link.skill",
+      "filename": "google_photos_link.skill"
+    },
+    {
+      "name": "ground_skill",
+      "pkg": "skill-ground_skill",
+      "target": "//skills/ground_skill:ground_skill_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/ground_skill/ground_skill.skill",
+      "filename": "ground_skill.skill"
+    },
+    {
+      "name": "ikea_3d_models",
+      "pkg": "skill-ikea_3d_models",
+      "target": "//skills/ikea_3d_models:ikea_3d_models_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/ikea_3d_models/ikea_3d_models.skill",
+      "filename": "ikea_3d_models.skill"
+    },
+    {
+      "name": "info_gathering",
+      "pkg": "skill-info_gathering",
+      "target": "//skills/info_gathering:info_gathering_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/info_gathering/info_gathering.skill",
+      "filename": "info_gathering.skill"
+    },
+    {
+      "name": "knowledge_hygiene",
+      "pkg": "skill-knowledge_hygiene",
+      "target": "//skills/knowledge_hygiene:knowledge_hygiene_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/knowledge_hygiene/knowledge_hygiene.skill",
+      "filename": "knowledge_hygiene.skill"
+    },
+    {
+      "name": "later",
+      "pkg": "skill-later",
+      "target": "//skills/later:later_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/later/later.skill",
+      "filename": "later.skill"
+    },
+    {
+      "name": "lint_audit",
+      "pkg": "skill-lint_audit",
+      "target": "//skills/lint_audit:lint_audit_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/lint_audit/lint_audit.skill",
+      "filename": "lint_audit.skill"
+    },
+    {
+      "name": "mcp_design",
+      "pkg": "skill-mcp_design",
+      "target": "//skills/mcp_design:mcp_design_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/mcp_design/mcp_design.skill",
+      "filename": "mcp_design.skill"
+    },
+    {
+      "name": "pave",
+      "pkg": "skill-pave",
+      "target": "//skills/pave:pave_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/pave/pave.skill",
+      "filename": "pave.skill"
+    },
+    {
+      "name": "readback",
+      "pkg": "skill-readback",
+      "target": "//skills/readback:readback_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/readback/readback.skill",
+      "filename": "readback.skill"
+    },
+    {
+      "name": "reverse_engineer",
+      "pkg": "skill-reverse_engineer",
+      "target": "//skills/reverse_engineer:reverse_engineer_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/reverse_engineer/reverse_engineer.skill",
+      "filename": "reverse_engineer.skill"
+    },
+    {
+      "name": "session_logs",
+      "pkg": "skill-session_logs",
+      "target": "//skills/session_logs:session_logs_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/session_logs/session_logs.skill",
+      "filename": "session_logs.skill"
+    },
+    {
+      "name": "superforecaster",
+      "pkg": "skill-superforecaster",
+      "target": "//skills/superforecaster:superforecaster_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/superforecaster/superforecaster.skill",
+      "filename": "superforecaster.skill"
+    },
+    {
+      "name": "update_deps",
+      "pkg": "skill-update_deps",
+      "target": "//skills/update_deps:update_deps_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/update_deps/update_deps.skill",
+      "filename": "update_deps.skill"
+    },
+    {
+      "name": "verify_docs",
+      "pkg": "skill-verify_docs",
+      "target": "//skills/verify_docs:verify_docs_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/verify_docs/verify_docs.skill",
+      "filename": "verify_docs.skill"
+    }
+  ]
+}

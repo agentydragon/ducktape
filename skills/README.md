@@ -20,6 +20,22 @@ which extracts the same release artifact under the Nix profile at
 profile skill directory into `~/.claude/skills/`, preserving Anthropic's
 preinstalled default skills.
 
+## Skill registry
+
+`skills_registry.json` is the hand-written source of truth for which skills are
+built, released, pinned, and deployed. Each entry names a skill and how it maps
+to Bazel/release/pin identifiers:
+
+- `name` — the skill (also the `.skill` subdir and its `~/.claude/skills/` dir)
+- `pkg` — its release/tag/pin name, always `skill-<name>`
+- `target` / `output` — the `skill_package` archive target and its `bb-out/` path
+- `filename` — the release asset, always `<name>.skill`
+
+Consumed by `.github/workflows/release.yml` (release matrix),
+`devinfra/ci/artifacts.py` (pin sync), and `flake.nix` / `nix/packages/default.nix`
+(Nix assembly). A skill that has a `skill_package` but no registry entry simply
+isn't released or deployed — a valid state, not an error.
+
 ## Adding a skill
 
 1. Create `skills/<name>/SKILL.md` with YAML frontmatter (`name`, `description`).
@@ -28,9 +44,10 @@ preinstalled default skills.
    Keep `description` at or below 1024 characters; `//skills:test_frontmatter`
    enforces the current Codex frontmatter limit.
 2. Create `skills/<name>/BUILD.bazel` using `skill_package(name, srcs)`
-3. Add `//skills/<name>:<name>_files` to the `all_skills` srcs in `skills/BUILD.bazel`
-4. After CI builds a new release, update the `skills-tar` flake input and run `home-manager switch`
+3. To ship it, add an entry to `skills_registry.json` (see the fields above).
+4. After CI publishes the `skill-<name>` release, `sync-pins` seeds the pin in
+   `nix/artifact-pins.json`; then run `home-manager switch`.
 
 Skills tied to one component may live next to it instead of under `skills/`
 (e.g. `cpap/skill/`, `cluster/skills/`, the debundle skills) — same
-`skill_package` macro and `all_skills` registration.
+`skill_package` macro; register them the same way.
