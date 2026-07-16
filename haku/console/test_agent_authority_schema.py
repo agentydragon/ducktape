@@ -564,7 +564,7 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
         engine.dispose()
 
 
-def test_database_already_stamped_0009_is_unchanged(db_url: str) -> None:
+def test_database_already_at_head_is_unchanged(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)
     operator_id = uuid4()
@@ -583,7 +583,7 @@ def test_database_already_stamped_0009_is_unchanged(db_url: str) -> None:
         apply_migrations(db_url)
 
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0009"
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0010"
             assert (
                 conn.execute(
                     text("SELECT count(*) FROM operators WHERE operator_id = :operator_id"),
