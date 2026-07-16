@@ -8,11 +8,15 @@ component checklist rather than being copied here: haku-console's tool/API backl
 
 ## Immediate correctness and security
 
-- **Make the deployed haku-console release tuple atomic.** Promote server image, static image, and
-  live config revision/schema as one CI-tested unit. The 2026-07-14 authority cutover applied new
-  config before its compatible server image and crash-looped until image automation caught up;
-  independent server/static policies can repeat that skew. A failed promotion must leave the last
-  complete tuple serving.
+- **Make independent haku-console rollouts skew-safe.** Do not bundle the server image, static
+  image, and live config into a bespoke atomic promotion unit. Define and test compatibility across
+  one rollout window instead: deploy readers before writers for config changes; make server API
+  additions available before the static frontend consumes them; remove old fields/endpoints only
+  after every consumer has moved. CI should exercise the server against the current and next config
+  shapes and the frontend against its supported server contract. Revisit the current `Recreate`
+  strategy so a failed replacement does not discard the last serving version. The 2026-07-14
+  authority cutover is the regression case: new config restarted the old incompatible server and
+  caused an outage until image automation caught up.
 - **Prove retry-safe tool-call admission.** Add fault injection for "the durable admission commit
   succeeded, the HTTP/MCP response was lost, and the caller retried." Specify and implement a
   caller-visible idempotency key scoped by canonical Operator and Agent binding if the current path
