@@ -1,0 +1,25 @@
+# Same 7-day ephemerality contract as agent-rbac-base's sandbox-janitor, for
+# the agent-sandbox CRs it can't see: a Sandbox whose owner forgot shutdownTime
+# (default shutdownPolicy is Retain) would otherwise pin quota forever — and
+# because the controller recreates a Sandbox's pod, the pod-level janitor alone
+# would just cause churn, not cleanup. Warm-pool sandboxes reaped at 7d are
+# recreated by their pool; that periodic refresh is harmless. Delete RBAC:
+# kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml.
+apiVersion: kyverno.io/v2
+kind: CleanupPolicy
+metadata:
+  name: workspace-janitor
+  namespace: claude-sandbox
+spec:
+  schedule: "40 * * * *"
+  match:
+    any:
+      - resources:
+          kinds:
+            - agents.x-k8s.io/v1beta1/Sandbox
+            - extensions.agents.x-k8s.io/v1beta1/SandboxClaim
+  conditions:
+    all:
+      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
+        operator: GreaterThan
+        value: 168h

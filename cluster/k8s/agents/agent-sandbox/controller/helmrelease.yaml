@@ -1,0 +1,43 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: agent-sandbox
+  namespace: agent-sandbox-system
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./helm
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: agent-sandbox
+      interval: 5m
+  install:
+    crds: Create
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+  values:
+    namespace:
+      # namespace.yaml owns it; the chart's copy would fight Flux SSA.
+      create: false
+    image:
+      # Must match the GitRepository tag (gitrepository.yaml).
+      tag: v0.5.1
+    controller:
+      # One controller with --extensions; the split release manifests are not
+      # Flux-safe at v0.5.1 (see ../README.md).
+      extensions: true
+    nodeSelector:
+      # Always-on OVH capacity, same as the workspaces it manages.
+      topology.kubernetes.io/region: hil
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]

@@ -1,0 +1,67 @@
+# Disposable agent workspace: the agent-box workflow (a machine you go to,
+# creds wired, Claude CLI installed) minus the persistence. Reuses the haku
+# zone worker image (Claude Code + Codex CLIs, no baked credentials) and the
+# zone Job's pod hardening; unlike the zones this runs in claude-sandbox —
+# trusted personal use, open egress, quota-capped by the namespace.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: workspace
+  namespace: claude-sandbox
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-workspace
+    spec:
+      # Always-on OVH capacity; keeps workspaces off the roaming GPU/laptop nodes.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workspace
+          image: ghcr.io/agentydragon/haku-zone-worker:devel-20260710172610-8af6f13 # {"$imagepolicy": "flux-system:haku-zone-worker"}
+          command: ["sleep", "infinity"]
+          workingDir: /workspace
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # Claude Code CLI → z.ai GLM, same wire shape as the zai zone but
+            # direct (no LiteLLM budget path in trusted personal workspaces).
+            - name: ANTHROPIC_BASE_URL
+              value: https://api.z.ai/api/anthropic
+            - name: ANTHROPIC_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: zai-api-key # mirrored by agents/claude-zai-key/
+                  key: ZAI_API_KEY
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+  # Claims may resize/replace the workspace volume (upstream's documented knob
+  # for per-claim storage overrides).
+  volumeClaimTemplatesPolicy: Overrides
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

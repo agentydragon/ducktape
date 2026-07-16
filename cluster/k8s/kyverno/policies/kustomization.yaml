@@ -8,3 +8,4 @@ resources:
   - restrict-agent-gateway-routes.yaml
   - clusterrole-cleanup-controller-jobs.yaml
   - clusterrole-cleanup-controller-workloads.yaml
+  - clusterrole-cleanup-controller-sandboxes.yaml
