@@ -76,6 +76,10 @@ spec:
     - metadata:
         name: workspace
       spec:
+        # Explicit: the cluster has NO default StorageClass (seaweedfs-ovh is
+        # "default" by repo convention only) — an unset storageClassName never
+        # binds (observed live 2026-07-16: warm pod Pending on unbound PVC).
+        storageClassName: seaweedfs-ovh
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
