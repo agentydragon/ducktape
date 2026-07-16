@@ -25,8 +25,19 @@ import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import APIRouter, Cookie, HTTPException
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
+
+
+class _SessionPayload(BaseModel):
+    """The exact payload `make_session_token` signs (see module docstring)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sub: str = Field(min_length=1)
+    exp: int
+
 
 _discovery_cache: dict[str, dict] = {}
 
@@ -60,15 +71,18 @@ def decode_session_token(token: str, secret: bytes) -> str | None:
         return None
     if not hmac_mod.compare_digest(_sign(payload, secret), sig):
         return None
-    padded = payload + "=" * (-len(payload) % 4)
+    # The signature verified, so this server produced the payload — a decode
+    # or validation failure past this point means a bug or key confusion, so
+    # log it loudly (pydantic's ValidationError and binascii.Error are both
+    # ValueError subclasses).
     try:
-        data = json.loads(base64.urlsafe_b64decode(padded))
-    except Exception:
+        data = _SessionPayload.model_validate_json(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except ValueError:
+        logger.warning("correctly-signed session token failed to decode", exc_info=True)
         return None
-    if data.get("exp", 0) < time.time():
+    if data.exp < time.time():
         return None
-    sub = data.get("sub", "")
-    return sub or None
+    return data.sub
 
 
 def create_oidc_router(

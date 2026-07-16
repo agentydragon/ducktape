@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -107,30 +108,29 @@ class AuditedRandom:
         )
         return value
 
-    def weighted_choice(
+    def weighted_choice[T](
         self,
-        items: list[dict[str, Any]],
+        items: Sequence[T],
         *,
         weights: list[int],
         purpose: str,
-        item_id_key: str,
+        item_id: Callable[[T], str],
         parameters: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> T:
         if len(items) != len(weights):
             raise ValueError("items and weights must have the same length")
-        int_weights = [int(weight) for weight in weights]
-        if any(weight <= 0 for weight in int_weights):
+        if any(weight <= 0 for weight in weights):
             raise ValueError("weights must be positive")
 
-        item_ids = [str(item[item_id_key]) for item in items]
-        total = sum(int_weights)
-        draw_parameters = {**(parameters or {}), "items": item_ids, "weights": int_weights, "total_weight": total}
+        item_ids = [item_id(item) for item in items]
+        total = sum(weights)
+        draw_parameters = {**(parameters or {}), "items": item_ids, "weights": weights, "total_weight": total}
         draw, call_parameters, rejections = self._draw_below(
             upper=total, purpose=purpose, method="weighted_choice", parameters=draw_parameters
         )
 
         remaining = draw
-        for index, weight in enumerate(int_weights):
+        for index, weight in enumerate(weights):
             remaining -= weight
             if remaining < 0:
                 self._record(

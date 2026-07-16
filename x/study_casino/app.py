@@ -41,21 +41,18 @@ catalogs and have read-only access to other users' states.
 """
 
 import asyncio
-import json
 import logging
 import os
 import sys
-import time
 import uuid
 from collections import defaultdict
 from collections.abc import MutableMapping
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from x.study_casino.actions import (
@@ -64,7 +61,6 @@ from x.study_casino.actions import (
     AddPastSessionRequest,
     BlackjackDealRequest,
     BlackjackHandRequest,
-    BlackjackHandStateResult,
     ChangelogAckRequest,
     ChangelogAckResult,
     ConvertRequest,
@@ -105,29 +101,31 @@ from x.study_casino.credit_award import (
 from x.study_casino.deployment import build_deployment_info
 from x.study_casino.events import (
     BlackjackOutcome,
+    BlackjackSettlementOutcome,
     GameEventMutation,
     GameEventRead,
     LedgerEventRead,
-    RouletteOutcome,
-    SlotsOutcome,
 )
 from x.study_casino.games import (
     RNG_VERSION,
+    GameSettlement,
     dealer_play,
     draw_cards,
+    dump_cards,
     hand_value,
     is_blackjack,
+    load_cards,
     make_shoe,
     public_blackjack_state,
     settle_blackjack,
     spin_roulette,
     spin_slots,
 )
-from x.study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
+from x.study_casino.models import BalanceRow, BlackjackHandRow, HandStatus, PrizeLogRow, PrizeRow, SessionRow
 from x.study_casino.rng import ActionRngFactory, AuditedRandom
 from x.study_casino.state import AdminUsersResponse, DeploymentInfo, HealthResponse, MeResponse, StateDump
 from x.study_casino.stats import CasinoStats
-from x.study_casino.store import ActionMutation, ActionRejectedError, SqlStore
+from x.study_casino.store import ActionMutation, ActionRejectedError, ServerActionMutator, SqlStore, locked_balance
 
 logger = logging.getLogger(__name__)
 _BLACKJACK_HAND_NAMESPACE = uuid.UUID("4d19699a-09bd-42e4-ae00-c5bc10d39683")
@@ -154,6 +152,7 @@ class _WSManager:
             try:
                 await ws.send_json(message)
             except Exception:
+                logger.warning("ws push failed for user=%s; dropping connection", username, exc_info=True)
                 dead.append(ws)
         for ws in dead:
             self._connections[username].discard(ws)
@@ -185,22 +184,18 @@ class _CasinoStaticFiles(StaticFiles):
         return super().file_response(full_path, stat_result, scope, status_code=status_code)
 
 
-def _balance(s: Session, username: str) -> BalanceRow:
-    balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == username).with_for_update())
-    if balance is None:
-        raise RuntimeError(f"balance row missing for {username=}; SqlStore did not seed user")
-    return balance
-
-
-def _require_credits(s: Session, username: str, amount: int) -> None:
-    """Require `amount` whole credits; the balance column stores millicredits."""
-    if amount <= 0:
+def _debit_wager(s: Session, username: str, wager_credits: int) -> BalanceRow:
+    """Validate and debit a whole-credit wager (balance stores millicredits);
+    returns the locked balance row for any follow-up settlement credit."""
+    if wager_credits <= 0:
         raise ActionRejectedError("invalid_wager", "wager must be positive")
-    have_millis = _balance(s, username).credits
-    if have_millis < amount * MILLIS_PER_CREDIT:
+    balance = locked_balance(s, username)
+    if balance.credits < wager_credits * MILLIS_PER_CREDIT:
         raise ActionRejectedError(
-            "insufficient_credits", f"need {amount} credits; have {have_millis / MILLIS_PER_CREDIT:g}"
+            "insufficient_credits", f"need {wager_credits} credits; have {balance.credits / MILLIS_PER_CREDIT:g}"
         )
+    balance.credits -= wager_credits * MILLIS_PER_CREDIT
+    return balance
 
 
 def _session_millis(seconds: int) -> int:
@@ -208,82 +203,59 @@ def _session_millis(seconds: int) -> int:
     return millis_from_credits(base_session_credits(seconds))
 
 
-def _get_user_session(s: Session, username: str, session_id: str) -> SessionRow | None:
-    return s.scalar(select(SessionRow).where(SessionRow.id == session_id, SessionRow.user_id == username))
-
-
-def _get_user_prize(s: Session, username: str, prize_id: str) -> PrizeRow | None:
-    return s.scalar(select(PrizeRow).where(PrizeRow.id == prize_id, PrizeRow.user_id == username))
-
-
-def _get_user_hand(s: Session, username: str, hand_id: str) -> BlackjackHandRow | None:
-    return s.scalar(
-        select(BlackjackHandRow).where(BlackjackHandRow.id == hand_id, BlackjackHandRow.user_id == username)
-    )
-
-
 def _blackjack_hand_id(username: str, client_action_id: str) -> str:
     return f"bj-{uuid.uuid5(_BLACKJACK_HAND_NAMESPACE, f'{username}:{client_action_id}')}"
 
 
-def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str) -> ActionMutation:
-    row = _get_user_hand(s, username, hand_id)
+def _mutate_blackjack_step(
+    s: Session, username: str, hand_id: str, move: Literal["hit", "stand", "double"], now_ms: int
+) -> ActionMutation:
+    row = s.get(BlackjackHandRow, (username, hand_id))
     if row is None or row.status != "playing":
         raise ActionRejectedError("blackjack_hand", "active blackjack hand not found")
-    shoe = json.loads(row.shoe_json)
-    player = json.loads(row.player_json)
-    dealer = json.loads(row.dealer_json)
+    shoe = load_cards(row.shoe_json)
+    player = load_cards(row.player_json)
+    dealer = load_cards(row.dealer_json)
     current_wager = int(row.current_wager_credits)
-    settlement = None
+    settlement: GameSettlement[BlackjackSettlementOutcome] | None = None
 
-    if move == "hit":
-        drawn, shoe = draw_cards(shoe, 1)
-        player = [*player, *drawn]
-        if hand_value(player) > 21:
-            settlement = settle_blackjack(player, dealer, current_wager)
-        elif hand_value(player) == 21:
+    match move:
+        case "hit":
+            drawn, shoe = draw_cards(shoe, 1)
+            player = [*player, *drawn]
+            if hand_value(player) > 21:
+                settlement = settle_blackjack(player, dealer, current_wager)
+            elif hand_value(player) == 21:
+                dealer, shoe = dealer_play(dealer, shoe)
+                settlement = settle_blackjack(player, dealer, current_wager)
+        case "stand":
             dealer, shoe = dealer_play(dealer, shoe)
             settlement = settle_blackjack(player, dealer, current_wager)
-    elif move == "stand":
-        dealer, shoe = dealer_play(dealer, shoe)
-        settlement = settle_blackjack(player, dealer, current_wager)
-    elif move == "double":
-        if len(player) != 2:
-            raise ActionRejectedError("blackjack_double", "double is only available on the first two cards")
-        _require_credits(s, username, current_wager)
-        balance = _balance(s, username)
-        balance.credits -= current_wager * MILLIS_PER_CREDIT
-        current_wager *= 2
-        drawn, shoe = draw_cards(shoe, 1)
-        player = [*player, *drawn]
-        if hand_value(player) <= 21:
-            dealer, shoe = dealer_play(dealer, shoe)
-        settlement = settle_blackjack(player, dealer, current_wager)
-    else:
-        raise ActionRejectedError("blackjack_move", f"unsupported blackjack move {move!r}")
+        case "double":
+            if len(player) != 2:
+                raise ActionRejectedError("blackjack_double", "double is only available on the first two cards")
+            _debit_wager(s, username, current_wager)
+            current_wager *= 2
+            drawn, shoe = draw_cards(shoe, 1)
+            player = [*player, *drawn]
+            if hand_value(player) <= 21:
+                dealer, shoe = dealer_play(dealer, shoe)
+            settlement = settle_blackjack(player, dealer, current_wager)
 
-    status = "done" if settlement is not None else "playing"
+    status: HandStatus = "done" if settlement is not None else "playing"
     if settlement is not None and settlement.payout_tokens:
-        balance = _balance(s, username)
-        balance.tokens += settlement.payout_tokens
+        locked_balance(s, username).tokens += settlement.payout_tokens
 
     row.status = status
-    row.updated_at_ms = int(time.time() * 1000)
+    row.updated_at_ms = now_ms
     row.current_wager_credits = current_wager
-    row.shoe_json = json.dumps(shoe, separators=(",", ":"))
-    row.player_json = json.dumps(player, separators=(",", ":"))
-    row.dealer_json = json.dumps(dealer, separators=(",", ":"))
-    row.result_json = json.dumps(settlement.outcome, separators=(",", ":")) if settlement else None
+    row.shoe_json = dump_cards(shoe)
+    row.player_json = dump_cards(player)
+    row.dealer_json = dump_cards(dealer)
+    row.result_json = settlement.outcome.model_dump_json() if settlement else None
 
-    result = BlackjackHandStateResult.model_validate(
-        public_blackjack_state(
-            hand_id=hand_id,
-            status=status,
-            player=player,
-            dealer=dealer,
-            current_wager=current_wager,
-            settlement=settlement,
-        )
+    result = public_blackjack_state(
+        hand_id=hand_id, status=status, player=player, dealer=dealer, current_wager=current_wager, settlement=settlement
     )
     game_event: GameEventMutation | None = None
     if settlement is not None:
@@ -292,7 +264,9 @@ def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str) -
             wager_credits=current_wager,
             payout_tokens=settlement.payout_tokens,
             outcome=BlackjackOutcome(
-                **settlement.outcome, initial_wager=row.wager_credits, doubled=current_wager > row.wager_credits
+                **settlement.outcome.model_dump(),
+                initial_wager=row.wager_credits,
+                doubled=current_wager > row.wager_credits,
             ),
         )
     return ActionMutation(result=result, details={"hand_id": hand_id, "move": move}, game_event=game_event)
@@ -377,7 +351,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         username: str,
         body: ActionRequest,
         action_type: str,
-        mutator,
+        mutator: ServerActionMutator,
         snapshot_reason: str | None = None,
         snapshot_note: str | None = None,
     ) -> ActionResponse:
@@ -423,16 +397,22 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         require_admin(username)
         return AdminUsersResponse(users=store.list_known_users())
 
-    @app.get("/admin/state")
-    def admin_user_state(
+    def admin_target_user(
         user: Annotated[str, Query(min_length=1, max_length=64)], username: Annotated[str, Depends(current_user_dep)]
-    ) -> StateDump:
-        # Don't seed a balance row + default prizes for typo'd usernames —
-        # state_dump is normally lazy-seeding but for an admin read we want
-        # a strict 404 instead.
+    ) -> str:
+        """Admin-gated `?user=` target shared by the /admin read endpoints.
+
+        Don't seed a balance row + default prizes for typo'd usernames —
+        state_dump is normally lazy-seeding but for an admin read we want
+        a strict 404 instead.
+        """
         require_admin(username)
         if not store.user_exists(user):
             raise HTTPException(status_code=404, detail=f"user {user!r} not found")
+        return user
+
+    @app.get("/admin/state")
+    def admin_user_state(user: Annotated[str, Depends(admin_target_user)]) -> StateDump:
         return store.state_dump(user)
 
     @app.get("/game-events")
@@ -446,12 +426,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         return store.casino_stats(username)
 
     @app.get("/admin/casino/stats")
-    def admin_casino_stats(
-        user: Annotated[str, Query(min_length=1, max_length=64)], username: Annotated[str, Depends(current_user_dep)]
-    ) -> CasinoStats:
-        require_admin(username)
-        if not store.user_exists(user):
-            raise HTTPException(status_code=404, detail=f"user {user!r} not found")
+    def admin_casino_stats(user: Annotated[str, Depends(admin_target_user)]) -> CasinoStats:
         return store.casino_stats(user)
 
     @app.get("/ledger-events")
@@ -466,7 +441,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     ) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             session_id = body.session_id or f"session-{uuid.uuid4()}"
-            if _get_user_session(s, username, session_id) is not None:
+            if s.get(SessionRow, (username, session_id)) is not None:
                 raise ActionRejectedError("session_id", "session id already exists")
             seconds = max(0, (body.ended_at_ms - body.start_time_ms - body.paused_duration_ms) // 1000)
             if seconds <= 0:
@@ -490,7 +465,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             s.flush()
             award = award_live_session(s, username, seconds=seconds, ended_at_ms=body.ended_at_ms)
             if award.total_millis:
-                _balance(s, username).credits += award.total_millis
+                locked_balance(s, username).credits += award.total_millis
             return ActionMutation(
                 result=SessionCompleteResult(
                     session_id=session_id,
@@ -511,7 +486,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     ) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             session_id = body.session_id or f"manual-{uuid.uuid4()}"
-            if _get_user_session(s, username, session_id) is not None:
+            if s.get(SessionRow, (username, session_id)) is not None:
                 raise ActionRejectedError("session_id", "session id already exists")
             s.add(
                 SessionRow(
@@ -529,7 +504,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 base_session_credits(body.seconds) * streak_multiplier(state.streak_days)
             )
             if earned_millis:
-                _balance(s, username).credits += earned_millis
+                locked_balance(s, username).credits += earned_millis
             return ActionMutation(
                 result=SessionAddPastResult(session_id=session_id, credits_earned_millis=earned_millis),
                 details={"subject": body.subject, "seconds": body.seconds},
@@ -542,7 +517,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         body: EditSessionRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = _get_user_session(s, username, body.session_id)
+            row = s.get(SessionRow, (username, body.session_id))
             if row is None:
                 raise ActionRejectedError("session", "completed session not found")
             old_millis = _session_millis(row.seconds)
@@ -554,7 +529,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             # awarded multipliers are not retroactively unwound.
             delta_millis = _session_millis(row.seconds) - old_millis
             if delta_millis:
-                balance = _balance(s, username)
+                balance = locked_balance(s, username)
                 balance.credits = max(0, balance.credits + delta_millis)
             return ActionMutation(
                 result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta_millis=delta_millis),
@@ -568,12 +543,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         body: DeleteSessionRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = _get_user_session(s, username, body.session_id)
+            row = s.get(SessionRow, (username, body.session_id))
             if row is None:
                 raise ActionRejectedError("session", "completed session not found")
             delta_millis = -_session_millis(row.seconds)
             s.delete(row)
-            balance = _balance(s, username)
+            balance = locked_balance(s, username)
             balance.credits = max(0, balance.credits + delta_millis)
             return ActionMutation(
                 result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta_millis=delta_millis)
@@ -584,10 +559,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     @app.post("/actions/convert")
     async def convert(body: ConvertRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            _require_credits(s, username, body.amount)
-            balance = _balance(s, username)
-            balance.credits -= body.amount * MILLIS_PER_CREDIT
-            balance.tokens += body.amount
+            _debit_wager(s, username, body.amount).tokens += body.amount
             return ActionMutation(result=ConvertResult(amount=body.amount))
 
         return await commit_action(username=username, body=body, action_type="convert", mutator=mutate)
@@ -604,7 +576,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             prize_id = body.prize_id or f"p{uuid.uuid4().hex[:12]}"
-            if _get_user_prize(s, owner, prize_id) is not None:
+            if s.get(PrizeRow, (owner, prize_id)) is not None:
                 raise ActionRejectedError("prize_id", "prize id already exists")
             s.add(PrizeRow(id=prize_id, user_id=owner, name=body.name, cost=body.cost))
             return ActionMutation(
@@ -622,7 +594,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         owner = resolve_prize_owner(username, body.target_user)
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = _get_user_prize(s, owner, body.prize_id)
+            row = s.get(PrizeRow, (owner, body.prize_id))
             if row is None:
                 raise ActionRejectedError("prize", "prize not found")
             s.delete(row)
@@ -638,13 +610,13 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         body: PrizeRedeemRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
         def mutate(s: Session, now_ms: int) -> ActionMutation:
-            prize = _get_user_prize(s, username, body.prize_id)
+            prize = s.get(PrizeRow, (username, body.prize_id))
             if prize is None:
                 raise ActionRejectedError("prize", "prize not found")
             cost = prize.cost
             if cost <= 0:
                 raise ActionRejectedError("prize", "prize cost must be positive")
-            balance = _balance(s, username)
+            balance = locked_balance(s, username)
             if balance.tokens < cost:
                 raise ActionRejectedError("insufficient_tokens", f"need {cost} tokens; have {balance.tokens}")
             balance.tokens -= cost
@@ -701,20 +673,18 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         action_type = "casino.slots.spin"
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            _require_credits(s, username, body.wager_credits)
+            balance = _debit_wager(s, username, body.wager_credits)
             rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             settlement = spin_slots(body.wager_credits, rng)
-            balance = _balance(s, username)
-            balance.credits -= body.wager_credits * MILLIS_PER_CREDIT
             balance.tokens += settlement.payout_tokens
             return ActionMutation(
-                result=SlotsActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
+                result=SlotsActionResult(**settlement.outcome.model_dump(), payout_tokens=settlement.payout_tokens),
                 details={"wager_credits": body.wager_credits},
                 game_event=GameEventMutation(
                     game="slots",
                     wager_credits=body.wager_credits,
                     payout_tokens=settlement.payout_tokens,
-                    outcome=SlotsOutcome(**settlement.outcome),
+                    outcome=settlement.outcome,
                 ),
                 rng_version=RNG_VERSION,
                 rng_audit=rng.audit(),
@@ -731,23 +701,21 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         action_type = "casino.roulette.spin"
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            _require_credits(s, username, body.wager_credits)
+            balance = _debit_wager(s, username, body.wager_credits)
             rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             try:
                 settlement = spin_roulette(body.wager_credits, body.bet_type, body.bet_number, rng)
             except ValueError as e:
                 raise ActionRejectedError("roulette_bet", str(e)) from e
-            balance = _balance(s, username)
-            balance.credits -= body.wager_credits * MILLIS_PER_CREDIT
             balance.tokens += settlement.payout_tokens
             return ActionMutation(
-                result=RouletteActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
+                result=RouletteActionResult(**settlement.outcome.model_dump(), payout_tokens=settlement.payout_tokens),
                 details={"wager_credits": body.wager_credits, "bet_type": body.bet_type, "bet_number": body.bet_number},
                 game_event=GameEventMutation(
                     game="roulette",
                     wager_credits=body.wager_credits,
                     payout_tokens=settlement.payout_tokens,
-                    outcome=RouletteOutcome(**settlement.outcome),
+                    outcome=settlement.outcome,
                 ),
                 rng_version=RNG_VERSION,
                 rng_audit=rng.audit(),
@@ -764,7 +732,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         action_type = "blackjack.deal"
 
         def mutate(s: Session, now_ms: int) -> ActionMutation:
-            _require_credits(s, username, body.wager_credits)
+            balance = _debit_wager(s, username, body.wager_credits)
             rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             shoe = make_shoe(rng)
             p1, shoe = draw_cards(shoe, 1)
@@ -773,13 +741,11 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             d2, shoe = draw_cards(shoe, 1)
             player = [*p1, *p2]
             dealer = [*d1, *d2]
-            balance = _balance(s, username)
-            balance.credits -= body.wager_credits * MILLIS_PER_CREDIT
             credits_after_wager = balance.credits
             tokens_before_settle = balance.tokens
             hand_id = _blackjack_hand_id(username, body.client_action_id)
-            status = "playing"
-            settlement = None
+            status: HandStatus = "playing"
+            settlement: GameSettlement[BlackjackSettlementOutcome] | None = None
             if is_blackjack(player) or is_blackjack(dealer):
                 settlement = settle_blackjack(player, dealer, body.wager_credits)
                 if settlement.payout_tokens:
@@ -795,28 +761,28 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 current_wager_credits=body.wager_credits,
                 credits_before=credits_after_wager + body.wager_credits * MILLIS_PER_CREDIT,
                 tokens_before=tokens_before_settle,
-                shoe_json=json.dumps(shoe, separators=(",", ":")),
-                player_json=json.dumps(player, separators=(",", ":")),
-                dealer_json=json.dumps(dealer, separators=(",", ":")),
-                result_json=json.dumps(settlement.outcome, separators=(",", ":")) if settlement else None,
+                shoe_json=dump_cards(shoe),
+                player_json=dump_cards(player),
+                dealer_json=dump_cards(dealer),
+                result_json=settlement.outcome.model_dump_json() if settlement else None,
             )
             s.add(row)
-            result = BlackjackHandStateResult.model_validate(
-                public_blackjack_state(
-                    hand_id=hand_id,
-                    status=status,
-                    player=player,
-                    dealer=dealer,
-                    current_wager=body.wager_credits,
-                    settlement=settlement,
-                )
+            result = public_blackjack_state(
+                hand_id=hand_id,
+                status=status,
+                player=player,
+                dealer=dealer,
+                current_wager=body.wager_credits,
+                settlement=settlement,
             )
             game_event = (
                 GameEventMutation(
                     game="blackjack",
                     wager_credits=body.wager_credits,
                     payout_tokens=settlement.payout_tokens,
-                    outcome=BlackjackOutcome(**settlement.outcome, initial_wager=body.wager_credits, doubled=False),
+                    outcome=BlackjackOutcome(
+                        **settlement.outcome.model_dump(), initial_wager=body.wager_credits, doubled=False
+                    ),
                 )
                 if settlement
                 else None
@@ -835,8 +801,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_hit(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "hit")
+        def mutate(s: Session, now_ms: int) -> ActionMutation:
+            return _mutate_blackjack_step(s, username, body.hand_id, "hit", now_ms)
 
         return await commit_action(username=username, body=body, action_type="blackjack.hit", mutator=mutate)
 
@@ -844,8 +810,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_stand(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "stand")
+        def mutate(s: Session, now_ms: int) -> ActionMutation:
+            return _mutate_blackjack_step(s, username, body.hand_id, "stand", now_ms)
 
         return await commit_action(username=username, body=body, action_type="blackjack.stand", mutator=mutate)
 
@@ -853,8 +819,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_double(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "double")
+        def mutate(s: Session, now_ms: int) -> ActionMutation:
+            return _mutate_blackjack_step(s, username, body.hand_id, "double", now_ms)
 
         return await commit_action(username=username, body=body, action_type="blackjack.double", mutator=mutate)
 
@@ -890,6 +856,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         try:
             await ws.send_json({"type": "state_changed"})
         except Exception:
+            logger.warning("ws bootstrap send failed for user=%s", username, exc_info=True)
             ws_manager.remove(username, ws)
             return
 
@@ -902,6 +869,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 except WebSocketDisconnect:
                     break
                 except Exception:
+                    logger.warning("ws receive failed for user=%s; closing", username, exc_info=True)
                     break
         finally:
             ws_manager.remove(username, ws)

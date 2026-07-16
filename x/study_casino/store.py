@@ -10,14 +10,13 @@ rows inside one transaction and writes a `ledger_events` row keyed by
 from __future__ import annotations
 
 import datetime as _dt
-import json
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
@@ -52,17 +51,21 @@ from x.study_casino.events import (
 from x.study_casino.games import RULES_VERSION, theoretical_bucket_rtp
 from x.study_casino.models import (
     BalanceRow,
+    BlackjackOutcomeKind,
     CreditStateRow,
+    Game,
     GameEventRow,
     LedgerEventRow,
     PrizeLogRow,
     PrizeRow,
     RngActionAuditRow,
     RngCallAuditRow,
+    RouletteBetType,
     SessionRow,
+    SlotsPayoutKind,
     StateSnapshotRow,
 )
-from x.study_casino.rng import RngActionAudit
+from x.study_casino.rng import RngActionAudit, canonical_json
 from x.study_casino.state import BalanceRead, CreditStateRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
 from x.study_casino.stats import (
     SERVER_RESOLVED_SINCE_DATE,
@@ -135,6 +138,19 @@ class ServerActionResult:
 # wrapper handles the surrounding transaction, idempotency check, snapshot,
 # and ledger insert.
 ServerActionMutator = Callable[[Session, int], ActionMutation]
+
+
+def locked_balance(s: Session, username: str) -> BalanceRow:
+    """The user's balance row, locked FOR UPDATE for the enclosing transaction.
+
+    Single source of the row-locking strategy for every money mutation (both
+    SqlStore internals and app.py mutators). The row must already exist —
+    `SqlStore._ensure_user` seeds it at the top of every entry point.
+    """
+    balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == username).with_for_update())
+    if balance is None:
+        raise RuntimeError(f"balance row missing for {username=}; _ensure_user not called?")
+    return balance
 
 
 # Default prize catalog seeded for a user on first contact. Kept in store.py
@@ -272,7 +288,7 @@ class SqlStore:
                 )
 
             now_ms = int(time.time() * 1000)
-            balance = self._balance(s, username)
+            balance = locked_balance(s, username)
             before_credits = balance.credits
             before_tokens = balance.tokens
 
@@ -288,7 +304,7 @@ class SqlStore:
             after_tokens = balance.tokens
 
             result_json = mutation.result.model_dump_json()
-            details_json = self._json(mutation.details or {})
+            details_json = canonical_json(mutation.details or {})
             event_row = LedgerEventRow(
                 user_id=username,
                 client_action_id=client_action_id,
@@ -357,7 +373,7 @@ class SqlStore:
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeRow).where(PrizeRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
-        balance = self._balance(s, username)
+        balance = locked_balance(s, username)
         # str() first — Decimal(float) would drag in binary-float artifacts.
         balance.credits = millis_from_credits(Decimal(str(data.credits)))
         balance.tokens = data.tokens
@@ -397,7 +413,7 @@ class SqlStore:
         `build_reset_casino` behaviour."""
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
-        balance = self._balance(s, username)
+        balance = locked_balance(s, username)
         balance.credits = 0
         balance.tokens = 0
         credit_state = get_or_create_credit_state(s, username)
@@ -424,14 +440,8 @@ class SqlStore:
             s.add(PrizeRow(user_id=username, id=prize_id, name=name, cost=cost))
         s.flush()
 
-    def _balance(self, s: Session, username: str) -> BalanceRow:
-        balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == username).with_for_update())
-        if balance is None:
-            raise RuntimeError(f"balance row missing for {username=}; _ensure_user not called?")
-        return balance
-
     def _state_dump(self, s: Session, username: str) -> StateDump:
-        balance = self._balance(s, username)
+        balance = locked_balance(s, username)
         credit_state = get_or_create_credit_state(s, username)
         changelog_ack = get_or_create_ack(s, username)
         today = pacific_date(int(time.time() * 1000))
@@ -544,32 +554,34 @@ class SqlStore:
                     call_index=call.call_index,
                     purpose=call.purpose,
                     method=call.method,
-                    parameters_json=self._json(call.parameters),
-                    result_json=self._json(call.result),
+                    parameters_json=canonical_json(call.parameters),
+                    result_json=canonical_json(call.result),
                 )
             )
 
-    @staticmethod
-    def _json(value: Any) -> str:
-        return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
-
-# Buckets are listed in display order, with stable keys matching the strings
-# emitted into GameEventRow.outcome_json by games.py.
-_ROULETTE_BUCKETS: list[tuple[str, str]] = [
-    ("red", "Red"),
-    ("black", "Black"),
-    ("odd", "Odd"),
-    ("even", "Even"),
-    ("low", "Low (1-18)"),
-    ("high", "High (19-36)"),
-    ("dozen1", "1st dozen"),
-    ("dozen2", "2nd dozen"),
-    ("dozen3", "3rd dozen"),
-    ("number", "Single number"),
+# Buckets are keyed by the typed outcome vocabularies (models.py) so mypy
+# proves the keys agree with what games.py emits into outcome_json.
+_ROULETTE_BUCKET_LABELS: dict[RouletteBetType, str] = {
+    "red": "Red",
+    "black": "Black",
+    "odd": "Odd",
+    "even": "Even",
+    "low": "Low (1-18)",
+    "high": "High (19-36)",
+    "dozen1": "1st dozen",
+    "dozen2": "2nd dozen",
+    "dozen3": "3rd dozen",
+    "number": "Single number",
+}
+# Key order derives from the Literal, so a new bet type without a label
+# fails at import instead of silently dropping a bucket.
+_ROULETTE_BUCKETS: list[tuple[RouletteBetType, str]] = [
+    (bet_type, _ROULETTE_BUCKET_LABELS[bet_type]) for bet_type in get_args(RouletteBetType)
 ]
-_SLOTS_BUCKETS: list[tuple[str, str]] = [("triple", "Triple"), ("pair", "Pair"), ("none", "No match")]
-_BLACKJACK_BUCKETS: list[tuple[str, str]] = [
+_SLOTS_BUCKETS: list[tuple[SlotsPayoutKind, str]] = [("triple", "Triple"), ("pair", "Pair"), ("none", "No match")]
+# Display order (best outcome first), not Literal order.
+_BLACKJACK_BUCKETS: list[tuple[BlackjackOutcomeKind, str]] = [
     ("blackjack", "Blackjack"),
     ("win", "Win"),
     ("dealerBust", "Dealer bust"),
@@ -601,8 +613,8 @@ def _blackjack_bucket_key(outcome: GameOutcome) -> str | None:
 
 def _aggregate_game(
     events: list[GameEventRead],
-    game: str,
-    bucket_defs: list[tuple[str, str]],
+    game: Game,
+    bucket_defs: Sequence[tuple[str, str]],
     bucket_key: Callable[[GameOutcome], str | None],
     theoretical: dict[tuple[str, str], tuple[float, float]],
 ) -> GameStats:
@@ -786,8 +798,8 @@ def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStat
 # strategy diagnostics (by dealer upcard, by doubled-or-not) where all
 # outcomes can occur and the percent columns carry information.
 
-_BJ_WIN_OUTCOMES = frozenset({"blackjack", "win", "dealerBust"})
-_BJ_LOSS_OUTCOMES = frozenset({"lose", "bust"})
+_BJ_WIN_OUTCOMES: frozenset[BlackjackOutcomeKind] = frozenset({"blackjack", "win", "dealerBust"})
+_BJ_LOSS_OUTCOMES: frozenset[BlackjackOutcomeKind] = frozenset({"lose", "bust"})
 
 # 2..9 keep their literal rank; J/Q/K collapse to "10" (same value to the
 # dealer); "A" is kept separate because soft-17 logic and bust risk differ

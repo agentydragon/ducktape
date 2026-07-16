@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import pytest_bazel
 
+from x.study_casino.events import Card
 from x.study_casino.games import settle_blackjack, theoretical_bucket_rtp
 
 
-def _card(rank: str, suit: str = "♠") -> dict[str, str]:
-    return {"rank": rank, "suit": suit}
+def _card(rank: str, suit: str = "♠") -> Card:
+    return Card(rank=rank, suit=suit)
 
 
-def _natural() -> list[dict[str, str]]:
+def _natural() -> list[Card]:
     return [_card("A"), _card("K")]
 
 
-def _dealer_seventeen() -> list[dict[str, str]]:
+def _dealer_seventeen() -> list[Card]:
     return [_card("10", "♥"), _card("7", "♥")]
 
 
@@ -23,7 +24,7 @@ def test_blackjack_pays_3_to_2_with_round_half_up():
     # Round half up so wager=1 pays 3 credits (formerly truncated to 2 by int(2.5)).
     s = settle_blackjack(_natural(), _dealer_seventeen(), current_wager=1)
     assert s.payout_tokens == 3
-    assert s.outcome["outcome"] == "blackjack"
+    assert s.outcome.outcome == "blackjack"
 
 
 def test_blackjack_even_wager_unchanged():

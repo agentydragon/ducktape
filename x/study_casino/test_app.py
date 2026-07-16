@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -15,11 +16,21 @@ from sqlalchemy.orm import Session
 from x.study_casino.app import create_app
 from x.study_casino.changelog import CHANGELOG
 from x.study_casino.config import Settings
-from x.study_casino.games import RNG_VERSION, draw_cards, make_shoe, spin_roulette
+from x.study_casino.games import RNG_VERSION, draw_cards, load_cards, make_shoe, spin_roulette
 from x.study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
 from x.study_casino.rng import AuditedRandom
 
 _TEST_RNG_SECRET = "test-auditable-rng-secret-with-enough-bytes"
+
+# Mid-afternoon Pacific (2023-11-14); stepping by whole days never crosses a
+# Pacific-midnight boundary within a session.
+_BASE_MS = 1_700_000_000_000
+
+
+def _settings(tmp_path: Path, db_url: str, **kwargs: object) -> Settings:
+    return Settings(
+        database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", rng_secret=_TEST_RNG_SECRET, **kwargs
+    )
 
 
 @pytest.fixture
@@ -27,22 +38,35 @@ def client(tmp_path: Path, db_url: str) -> TestClient:
     """Default unauth client. The fallback user `default` is configured as
     an admin so existing prize-create/-delete tests still pass; non-admin
     behaviour is exercised via a separate fixture below."""
-    settings = Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"default"})
-    return TestClient(create_app(settings))
+    return TestClient(create_app(_settings(tmp_path, db_url, admin_users={"default"})))
 
 
 @pytest.fixture
 def non_admin_client(tmp_path: Path, db_url: str) -> TestClient:
     """Client where `default` is not an admin — used to verify 403 paths."""
-    settings = Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist")
-    return TestClient(create_app(settings))
+    return TestClient(create_app(_settings(tmp_path, db_url)))
+
+
+@pytest.fixture
+def admin_app(tmp_path: Path, db_url: str) -> Iterator[tuple[TestClient, Callable[[str], None]]]:
+    """App where `rai` is the sole admin; yields `(client, set_user)` where
+    `set_user(username)` switches the authenticated user via a dependency
+    override."""
+    app = create_app(_settings(tmp_path, db_url, admin_users={"rai"}))
+    dep = app.state.current_user_dep
+
+    def set_user(username: str) -> None:
+        app.dependency_overrides[dep] = lambda: username
+
+    with TestClient(app) as client:
+        yield client, set_user
 
 
 def _grant_credits(client: TestClient, n: int, action_id: str = "seed-credits") -> None:
     """Earn `n` credits via /actions/session/add-past (seconds = n * 60)."""
     r = client.post(
         "/actions/session/add-past",
-        json={"client_action_id": action_id, "subject": "Seed", "seconds": n * 60, "ended_at_ms": 1_700_000_000_000},
+        json={"client_action_id": action_id, "subject": "Seed", "seconds": n * 60, "ended_at_ms": _BASE_MS},
     )
     assert r.status_code == 200, r.text
 
@@ -74,12 +98,6 @@ def _rng_audit_rows(db_url: str, client_action_id: str) -> tuple[RngActionAuditR
         )
     engine.dispose()
     return action, calls
-
-
-def _settings(tmp_path: Path, db_url: str, **kwargs: object) -> Settings:
-    return Settings(
-        database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", rng_secret=_TEST_RNG_SECRET, **kwargs
-    )
 
 
 def test_healthz(client: TestClient) -> None:
@@ -169,9 +187,9 @@ def test_session_complete_inserts_row_and_grants_credits(client: TestClient) -> 
         json={
             "client_action_id": "complete-1",
             "subject": "Biochem",
-            "start_time_ms": 1_700_000_000_000,
+            "start_time_ms": _BASE_MS,
             "paused_duration_ms": 0,
-            "ended_at_ms": 1_700_000_000_000 + 25 * 60 * 1000,
+            "ended_at_ms": _BASE_MS + 25 * 60 * 1000,
         },
     )
     assert r.status_code == 200, r.text
@@ -193,7 +211,7 @@ def test_session_complete_inserts_row_and_grants_credits(client: TestClient) -> 
 
 def test_session_complete_with_paused_duration_subtracts_pause_time(client: TestClient) -> None:
     """A 30-minute wall clock with a 5-minute pause should yield 25 minutes."""
-    start = 1_700_000_000_000
+    start = _BASE_MS
     r = client.post(
         "/actions/session/complete",
         json={
@@ -215,9 +233,9 @@ def test_session_complete_zero_seconds_writes_no_session_row(client: TestClient)
         json={
             "client_action_id": "complete-instant",
             "subject": "X",
-            "start_time_ms": 1_700_000_000_000,
+            "start_time_ms": _BASE_MS,
             "paused_duration_ms": 0,
-            "ended_at_ms": 1_700_000_000_000,
+            "ended_at_ms": _BASE_MS,
         },
     )
     assert r.status_code == 200, r.text
@@ -229,9 +247,9 @@ def test_session_complete_is_idempotent(client: TestClient) -> None:
     body = {
         "client_action_id": "complete-idem",
         "subject": "Anatomy",
-        "start_time_ms": 1_700_000_000_000,
+        "start_time_ms": _BASE_MS,
         "paused_duration_ms": 0,
-        "ended_at_ms": 1_700_000_000_000 + 10 * 60 * 1000,
+        "ended_at_ms": _BASE_MS + 10 * 60 * 1000,
     }
     first = client.post("/actions/session/complete", json=body).json()
     second = client.post("/actions/session/complete", json=body).json()
@@ -278,37 +296,32 @@ def _complete_session(client: TestClient, action_id: str, ended_at_ms: int, minu
     return result
 
 
-# Mid-afternoon Pacific (2023-11-14); stepping by whole days never crosses a
-# Pacific-midnight boundary within a session.
-_STREAK_BASE_MS = 1_700_000_000_000
-
-
 def test_streak_grows_on_consecutive_days_and_multiplies_awards(client: TestClient) -> None:
-    day1 = _complete_session(client, "streak-d1", _STREAK_BASE_MS)
+    day1 = _complete_session(client, "streak-d1", _BASE_MS)
     assert day1["streak_days"] == 1
     assert day1["credits_earned_millis"] == 40400  # (10 + 30 bonus) × 1.01
-    day2 = _complete_session(client, "streak-d2", _STREAK_BASE_MS + _DAY_MS)
+    day2 = _complete_session(client, "streak-d2", _BASE_MS + _DAY_MS)
     assert day2["streak_days"] == 2
     assert day2["credits_earned_millis"] == 40800  # (10 + 30 bonus) × 1.02
 
 
 def test_daily_bonus_fires_once_per_day(client: TestClient) -> None:
-    first = _complete_session(client, "bonus-1", _STREAK_BASE_MS)
+    first = _complete_session(client, "bonus-1", _BASE_MS)
     assert first["daily_bonus_millis"] == 30300
-    second = _complete_session(client, "bonus-2", _STREAK_BASE_MS + 3_600_000)
+    second = _complete_session(client, "bonus-2", _BASE_MS + 3_600_000)
     assert second["daily_bonus_millis"] == 0
     assert second["credits_earned_millis"] == 10100  # 10 × 1.01, no second bonus
 
 
 def test_streak_resets_after_gap_without_rest_days(client: TestClient) -> None:
-    _complete_session(client, "gap-d1", _STREAK_BASE_MS)
-    day4 = _complete_session(client, "gap-d4", _STREAK_BASE_MS + 3 * _DAY_MS)
+    _complete_session(client, "gap-d1", _BASE_MS)
+    day4 = _complete_session(client, "gap-d4", _BASE_MS + 3 * _DAY_MS)
     assert day4["streak_days"] == 1
     assert day4["streak_bonus_percent"] == 1
 
 
 def test_sub_threshold_session_earns_fractional_credits_without_streak(client: TestClient) -> None:
-    result = _complete_session(client, "tiny-1", _STREAK_BASE_MS, minutes=4)
+    result = _complete_session(client, "tiny-1", _BASE_MS, minutes=4)
     assert result["streak_days"] == 0
     assert result["daily_bonus_millis"] == 0
     assert result["credits_earned_millis"] == 4000
@@ -405,9 +418,6 @@ def test_roulette_spin_writes_replayable_rng_audit(tmp_path: Path, db_url: str) 
     _grant_credits(client, 5)
 
     request = {"client_action_id": "roulette-audit", "wager_credits": 1, "bet_type": "red", "bet_number": None}
-    wager = 1
-    bet_type = "red"
-    bet_number: int | None = None
     r = client.post("/casino/roulette/spin", json=request)
     assert r.status_code == 200, r.text
     result = r.json()["result"]
@@ -428,9 +438,9 @@ def test_roulette_spin_writes_replayable_rng_audit(tmp_path: Path, db_url: str) 
         rng_key_id=action.rng_key_id,
         seed_material_json=action.seed_material_json,
     )
-    replayed = spin_roulette(wager, bet_type, bet_number, replay)
-    assert replayed.outcome["result_index"] == result["result_index"]
-    assert replayed.outcome["result_number"] == result["result_number"]
+    replayed = spin_roulette(1, "red", None, replay)
+    assert replayed.outcome.result_index == result["result_index"]
+    assert replayed.outcome.result_number == result["result_number"]
 
 
 def test_slots_rng_audit_records_weighted_draws_and_retry_is_idempotent(tmp_path: Path, db_url: str) -> None:
@@ -487,9 +497,9 @@ def test_blackjack_deal_rng_audit_replays_stored_shoe(tmp_path: Path, db_url: st
     with Session(engine) as s:
         row = s.get(BlackjackHandRow, ("default", hand_id))
         assert row is not None
-        assert json.loads(row.shoe_json) == shoe
-        assert json.loads(row.player_json) == [*p1, *p2]
-        assert json.loads(row.dealer_json) == [*d1, *d2]
+        assert load_cards(row.shoe_json) == shoe
+        assert load_cards(row.player_json) == [*p1, *p2]
+        assert load_cards(row.dealer_json) == [*d1, *d2]
     engine.dispose()
 
 
@@ -512,7 +522,7 @@ def test_import_replaces_state_and_writes_snapshot(client: TestClient) -> None:
             "data": {
                 "credits": 0,
                 "tokens": 5,
-                "sessions": [{"id": "imp-1", "subject": "Imported", "seconds": 60, "ended_at_ms": 1700000000000}],
+                "sessions": [{"id": "imp-1", "subject": "Imported", "seconds": 60, "ended_at_ms": _BASE_MS}],
                 "prizes": [{"id": "p-imp", "name": "Imported prize", "cost": 9}],
                 "prize_log": [],
             },
@@ -536,26 +546,22 @@ def test_reset_zeroes_balance_keeps_prizes(client: TestClient) -> None:
     assert len(state["prizes"]) == 6
 
 
-def test_users_have_isolated_state(tmp_path: Path, db_url: str) -> None:
+def test_users_have_isolated_state(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
     """Two users hitting the same shared-schema store see only their own balances."""
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"alice", "bob"})
-    )
-    dep = app.state.current_user_dep
+    client, set_user = admin_app
 
-    with TestClient(app) as client:
-        app.dependency_overrides[dep] = lambda: "alice"
-        _grant_credits(client, 50, action_id="alice-seed")
-        assert client.get("/state").json()["balance"]["credits_millis"] == 50000
+    set_user("alice")
+    _grant_credits(client, 50, action_id="alice-seed")
+    assert client.get("/state").json()["balance"]["credits_millis"] == 50000
 
-        app.dependency_overrides[dep] = lambda: "bob"
-        assert client.get("/state").json()["balance"]["credits_millis"] == 0
-        _grant_credits(client, 7, action_id="bob-seed")
-        assert client.get("/state").json()["balance"]["credits_millis"] == 7000
+    set_user("bob")
+    assert client.get("/state").json()["balance"]["credits_millis"] == 0
+    _grant_credits(client, 7, action_id="bob-seed")
+    assert client.get("/state").json()["balance"]["credits_millis"] == 7000
 
-        # Alice's balance is unchanged by bob's activity.
-        app.dependency_overrides[dep] = lambda: "alice"
-        assert client.get("/state").json()["balance"]["credits_millis"] == 50000
+    # Alice's balance is unchanged by bob's activity.
+    set_user("alice")
+    assert client.get("/state").json()["balance"]["credits_millis"] == 50000
 
 
 def test_ws_emits_state_changed_on_connect(client: TestClient) -> None:
@@ -566,8 +572,7 @@ def test_ws_emits_state_changed_on_connect(client: TestClient) -> None:
 
 
 def test_ws_broadcasts_state_changed_after_action(tmp_path: Path, db_url: str) -> None:
-    settings = Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist")
-    app = create_app(settings)
+    app = create_app(_settings(tmp_path, db_url))
     with TestClient(app) as client, client.websocket_connect("/ws") as ws1, client.websocket_connect("/ws") as ws2:
         # Drain bootstrap pings.
         ws1.receive_json()
@@ -575,12 +580,7 @@ def test_ws_broadcasts_state_changed_after_action(tmp_path: Path, db_url: str) -
 
         client.post(
             "/actions/session/add-past",
-            json={
-                "client_action_id": "broadcast-1",
-                "subject": "Test",
-                "seconds": 60,
-                "ended_at_ms": 1_700_000_000_000,
-            },
+            json={"client_action_id": "broadcast-1", "subject": "Test", "seconds": 60, "ended_at_ms": _BASE_MS},
         )
 
         for ws in (ws1, ws2):
@@ -615,52 +615,39 @@ def test_non_admin_can_still_redeem_prize(non_admin_client: TestClient) -> None:
     assert r.status_code == 200, r.text
 
 
-def test_admin_can_create_prize_for_other_user(tmp_path: Path, db_url: str) -> None:
+def test_admin_can_create_prize_for_other_user(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
     """Rai (admin) creates a prize in Auragon's catalog."""
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
+    c, set_user = admin_app
+    set_user("rai")
+    r = c.post(
+        "/actions/prize/create",
+        json={"client_action_id": "rai-add-1", "name": "Custom prize for auragon", "cost": 7, "target_user": "auragon"},
     )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        app.dependency_overrides[dep] = lambda: "rai"
-        r = c.post(
-            "/actions/prize/create",
-            json={
-                "client_action_id": "rai-add-1",
-                "name": "Custom prize for auragon",
-                "cost": 7,
-                "target_user": "auragon",
-            },
-        )
-        assert r.status_code == 200, r.text
-        assert r.json()["result"]["user"] == "auragon"
+    assert r.status_code == 200, r.text
+    assert r.json()["result"]["user"] == "auragon"
 
-        # Auragon sees the new prize in her catalog.
-        app.dependency_overrides[dep] = lambda: "auragon"
-        state = c.get("/state").json()
-        assert any(p["name"] == "Custom prize for auragon" for p in state["prizes"])
+    # Auragon sees the new prize in her catalog.
+    set_user("auragon")
+    state = c.get("/state").json()
+    assert any(p["name"] == "Custom prize for auragon" for p in state["prizes"])
 
-        # And Rai's own catalog is untouched.
-        app.dependency_overrides[dep] = lambda: "rai"
-        rai_state = c.get("/state").json()
-        assert not any(p["name"] == "Custom prize for auragon" for p in rai_state["prizes"])
+    # And Rai's own catalog is untouched.
+    set_user("rai")
+    rai_state = c.get("/state").json()
+    assert not any(p["name"] == "Custom prize for auragon" for p in rai_state["prizes"])
 
 
-def test_admin_users_endpoint_lists_seeded_users(tmp_path: Path, db_url: str) -> None:
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
-    )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        # Seed two users by calling /state on each.
-        for u in ("auragon", "rai"):
-            app.dependency_overrides[dep] = lambda u=u: u
-            c.get("/state")
+def test_admin_users_endpoint_lists_seeded_users(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
+    c, set_user = admin_app
+    # Seed two users by calling /state on each.
+    for u in ("auragon", "rai"):
+        set_user(u)
+        c.get("/state")
 
-        app.dependency_overrides[dep] = lambda: "rai"
-        r = c.get("/admin/users")
-        assert r.status_code == 200, r.text
-        assert set(r.json()["users"]) >= {"auragon", "rai"}
+    set_user("rai")
+    r = c.get("/admin/users")
+    assert r.status_code == 200, r.text
+    assert set(r.json()["users"]) >= {"auragon", "rai"}
 
 
 def test_non_admin_admin_endpoints_return_403(non_admin_client: TestClient) -> None:
@@ -668,48 +655,38 @@ def test_non_admin_admin_endpoints_return_403(non_admin_client: TestClient) -> N
     assert non_admin_client.get("/admin/state?user=default").status_code == 403
 
 
-def test_admin_state_returns_target_user_state(tmp_path: Path, db_url: str) -> None:
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
-    )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        app.dependency_overrides[dep] = lambda: "auragon"
-        _grant_credits(c, 12, action_id="auragon-seed")
+def test_admin_state_returns_target_user_state(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
+    c, set_user = admin_app
+    set_user("auragon")
+    _grant_credits(c, 12, action_id="auragon-seed")
 
-        app.dependency_overrides[dep] = lambda: "rai"
-        r = c.get("/admin/state", params={"user": "auragon"})
-        assert r.status_code == 200, r.text
-        assert r.json()["balance"]["credits_millis"] == 12000
+    set_user("rai")
+    r = c.get("/admin/state", params={"user": "auragon"})
+    assert r.status_code == 200, r.text
+    assert r.json()["balance"]["credits_millis"] == 12000
 
 
-def test_admin_state_unknown_user_returns_404_without_seeding(tmp_path: Path, db_url: str) -> None:
+def test_admin_state_unknown_user_returns_404_without_seeding(
+    admin_app: tuple[TestClient, Callable[[str], None]],
+) -> None:
     """A typo in ?user= must 404, NOT lazy-seed a brand-new user."""
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
-    )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        app.dependency_overrides[dep] = lambda: "rai"
-        # 'rai' must exist for /admin/users to be non-empty later.
-        c.get("/state")
+    c, set_user = admin_app
+    set_user("rai")
+    # 'rai' must exist for /admin/users to be non-empty later.
+    c.get("/state")
 
-        assert c.get("/admin/state", params={"user": "ghost"}).status_code == 404
+    assert c.get("/admin/state", params={"user": "ghost"}).status_code == 404
 
-        # The 404 path must not have seeded 'ghost'.
-        assert "ghost" not in c.get("/admin/users").json()["users"]
+    # The 404 path must not have seeded 'ghost'.
+    assert "ghost" not in c.get("/admin/users").json()["users"]
 
 
-def test_admin_state_rejects_overlong_user_param(tmp_path: Path, db_url: str) -> None:
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
-    )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        app.dependency_overrides[dep] = lambda: "rai"
-        # 65 chars — one over the user_id String(64) column.
-        assert c.get("/admin/state", params={"user": "x" * 65}).status_code == 422
-        assert c.get("/admin/state", params={"user": ""}).status_code == 422
+def test_admin_state_rejects_overlong_user_param(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
+    c, set_user = admin_app
+    set_user("rai")
+    # 65 chars — one over the user_id String(64) column.
+    assert c.get("/admin/state", params={"user": "x" * 65}).status_code == 422
+    assert c.get("/admin/state", params={"user": ""}).status_code == 422
 
 
 # ── Casino stats endpoint ────────────────────────────────────────────────────
@@ -737,35 +714,27 @@ def test_casino_stats_counts_a_real_spin(client: TestClient) -> None:
     assert slots["timeline"][0]["count"] == 1
 
 
-def test_admin_casino_stats_returns_target_user_stats(tmp_path: Path, db_url: str) -> None:
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
-    )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        app.dependency_overrides[dep] = lambda: "auragon"
-        _grant_credits(c, 5, action_id="auragon-stats-seed")
-        r = c.post("/casino/slots/spin", json={"client_action_id": "auragon-spin", "wager_credits": 1})
-        assert r.status_code == 200, r.text
+def test_admin_casino_stats_returns_target_user_stats(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
+    c, set_user = admin_app
+    set_user("auragon")
+    _grant_credits(c, 5, action_id="auragon-stats-seed")
+    r = c.post("/casino/slots/spin", json={"client_action_id": "auragon-spin", "wager_credits": 1})
+    assert r.status_code == 200, r.text
 
-        app.dependency_overrides[dep] = lambda: "rai"
-        r = c.get("/admin/casino/stats", params={"user": "auragon"})
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["username"] == "auragon"
-        assert body["event_count"] == 1
+    set_user("rai")
+    r = c.get("/admin/casino/stats", params={"user": "auragon"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["username"] == "auragon"
+    assert body["event_count"] == 1
 
 
-def test_admin_casino_stats_404_for_unknown_user(tmp_path: Path, db_url: str) -> None:
-    app = create_app(
-        Settings(database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", admin_users={"rai"})
-    )
-    dep = app.state.current_user_dep
-    with TestClient(app) as c:
-        app.dependency_overrides[dep] = lambda: "rai"
-        c.get("/state")  # seed 'rai' so /admin/users isn't empty
-        r = c.get("/admin/casino/stats", params={"user": "ghost"})
-        assert r.status_code == 404
+def test_admin_casino_stats_404_for_unknown_user(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
+    c, set_user = admin_app
+    set_user("rai")
+    c.get("/state")  # seed 'rai' so /admin/users isn't empty
+    r = c.get("/admin/casino/stats", params={"user": "ghost"})
+    assert r.status_code == 404
 
 
 def test_admin_casino_stats_403_for_non_admin(non_admin_client: TestClient) -> None:

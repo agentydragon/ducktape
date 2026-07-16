@@ -13,7 +13,15 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from x.study_casino.events import Card, GameEventRead, LedgerEventRead, RouletteOutcome, SlotsOutcome
+from x.study_casino.events import (
+    BlackjackSettlementOutcome,
+    Card,
+    GameEventRead,
+    LedgerEventRead,
+    RouletteOutcome,
+    SlotsOutcome,
+)
+from x.study_casino.models import HandStatus, RouletteBetType
 
 _ACTION_ID_PATTERN = r"^[a-zA-Z0-9._:@-]+$"
 
@@ -119,24 +127,14 @@ class RouletteActionResult(RouletteOutcome):
     payout_tokens: int
 
 
-class BlackjackSettlement(BaseModel):
+class BlackjackSettlement(BlackjackSettlementOutcome):
     """In-flight settlement returned in the blackjack action response.
 
-    Same fields as `events.BlackjackOutcome` minus `initial_wager` / `doubled`
-    (those land in the persisted `game_events` row, not the API response),
-    plus `payout_tokens` (merged by `public_blackjack_state`).
+    The settlement fields games.py produces, plus `payout_tokens` (merged by
+    `public_blackjack_state`). The persisted `events.BlackjackOutcome` extends
+    the same base with `initial_wager` / `doubled` instead.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
-    outcome: str
-    text: str
-    player_cards: list[Card]
-    dealer_cards: list[Card]
-    player_value: int
-    dealer_value: int
-    player_blackjack: bool
-    dealer_blackjack: bool
     payout_tokens: int
 
 
@@ -151,7 +149,7 @@ class BlackjackHandStateResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hand_id: str
-    phase: Literal["playing", "done"]
+    phase: HandStatus
     current_wager: int
     player_cards: list[Card]
     dealer_cards: list[Card]
@@ -330,7 +328,7 @@ class SlotsSpinRequest(ActionRequest):
 
 class RouletteSpinRequest(ActionRequest):
     wager_credits: int = Field(gt=0)
-    bet_type: Literal["red", "black", "odd", "even", "low", "high", "dozen1", "dozen2", "dozen3", "number"]
+    bet_type: RouletteBetType
     bet_number: int | None = Field(default=None, ge=0, le=36)
 
 

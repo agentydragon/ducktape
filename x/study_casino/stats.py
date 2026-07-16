@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+from x.study_casino.models import Game
+
 # Cutover date from `client_reported` to `server_resolved`. Empirical
 # stats only cover events from this date forward.
 SERVER_RESOLVED_SINCE_DATE = "2026-05-07"
@@ -110,7 +112,7 @@ class BlackjackStats(BaseModel):
 class GameStats(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    game: str
+    game: Game
     total: WagerBucketStats
     buckets: list[WagerBucketStats]
     timeline: list[TimeBucketStats]

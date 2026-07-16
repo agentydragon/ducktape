@@ -13,8 +13,25 @@ bad import is recoverable.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Value vocabularies carried by the columns below (and re-used by the wire
+# models in events.py/actions.py, and by games.py's rules). The legacy
+# `client_reported` / `legacy_client_sync` source values are pre-2026-05-07
+# history that must keep deserializing. Every column using one of these
+# aliases keeps its explicit `String` type, so the annotations narrow mypy
+# only — the schema is unchanged.
+Game = Literal["roulette", "slots", "blackjack"]
+GameEventType = Literal["settle"]
+GameEventSource = Literal["client_reported", "server_resolved"]
+LedgerEventSource = Literal["server_action", "legacy_client_sync"]
+RouletteBetType = Literal["red", "black", "odd", "even", "low", "high", "dozen1", "dozen2", "dozen3", "number"]
+SlotsPayoutKind = Literal["triple", "pair", "none"]
+BlackjackOutcomeKind = Literal["bust", "blackjack", "push", "lose", "dealerBust", "win"]
+HandStatus = Literal["playing", "done"]
 
 
 class Base(DeclarativeBase):
@@ -141,9 +158,9 @@ class GameEventRow(Base):
     client_event_id: Mapped[str] = mapped_column(String(128), nullable=False)
     server_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     occurred_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    game: Mapped[str] = mapped_column(String(32), nullable=False)
-    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="server_resolved")
+    game: Mapped[Game] = mapped_column(String(32), nullable=False)
+    event_type: Mapped[GameEventType] = mapped_column(String(32), nullable=False)
+    source: Mapped[GameEventSource] = mapped_column(String(32), nullable=False, default="server_resolved")
     wager_credits: Mapped[int] = mapped_column(Integer, nullable=False)
     payout_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     credits_before: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -174,7 +191,7 @@ class LedgerEventRow(Base):
     client_action_id: Mapped[str] = mapped_column(String(128), nullable=False)
     server_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     action_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[LedgerEventSource] = mapped_column(String(32), nullable=False)
     rules_version: Mapped[str] = mapped_column(String(32), nullable=False)
     rng_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     credits_before: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -254,7 +271,7 @@ class BlackjackHandRow(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[HandStatus] = mapped_column(String(32), nullable=False)
     wager_credits: Mapped[int] = mapped_column(Integer, nullable=False)
     current_wager_credits: Mapped[int] = mapped_column(Integer, nullable=False)
     credits_before: Mapped[int] = mapped_column(Integer, nullable=False)

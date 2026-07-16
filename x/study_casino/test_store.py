@@ -10,9 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from x.study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
-from x.study_casino.models import BalanceRow, GameEventRow, StateSnapshotRow
+from x.study_casino.models import Game, GameEventRow, GameEventSource, StateSnapshotRow
 from x.study_casino.state import BalanceRead
-from x.study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
+from x.study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore, locked_balance
 
 
 @pytest.fixture
@@ -66,6 +66,46 @@ def _blackjack_outcome(
     }
 
 
+def _game_event(
+    client_event_id: str,
+    game: Game,
+    outcome: dict[str, object],
+    *,
+    wager: int,
+    payout: int,
+    source: GameEventSource = "server_resolved",
+    occurred_at_ms: int = 1_778_200_000_000,
+) -> GameEventRow:
+    """GameEventRow with the constant audit columns filled in; only the
+    per-event fields vary across tests."""
+    return GameEventRow(
+        user_id=_U,
+        client_event_id=client_event_id,
+        server_at_ms=occurred_at_ms,
+        occurred_at_ms=occurred_at_ms,
+        game=game,
+        event_type="settle",
+        source=source,
+        wager_credits=wager,
+        payout_tokens=payout,
+        credits_before=0,
+        credits_after=0,
+        tokens_before=0,
+        tokens_after=0,
+        server_credits=0,
+        server_tokens=0,
+        outcome_json=json.dumps(outcome),
+        rules_version="server-rules-v1",
+        rng_version="server-secrets-v1",
+    )
+
+
+def _seed_game_events(store: SqlStore, rows: list[GameEventRow]) -> None:
+    store.state_dump(_U)  # seed the user's balance row first
+    with store._Session() as s, s.begin():
+        s.add_all(rows)
+
+
 def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> None:
     state = store.state_dump(_U)
     assert state.balance == BalanceRead(credits_millis=0, tokens=0)
@@ -76,7 +116,7 @@ def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> Non
 
 def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -> None:
     def grant_credits(s, _now_ms):
-        balance = next(iter(s.execute(_balance_select(_U)).scalars()))
+        balance = locked_balance(s, _U)
         balance.credits += 7000  # 7 credits, in millis
         return ActionMutation(result=ConvertResult(amount=7), details={"reason": "test"})
 
@@ -99,7 +139,7 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
 
 def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     def grant_credits(s, _now_ms):
-        balance = next(iter(s.execute(_balance_select(_U)).scalars()))
+        balance = locked_balance(s, _U)
         balance.credits += 5000
         return ActionMutation(result=ConvertResult(amount=5))
 
@@ -117,7 +157,7 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
 
 def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
     def half_then_reject(s, _now_ms):
-        balance = next(iter(s.execute(_balance_select(_U)).scalars()))
+        balance = locked_balance(s, _U)
         balance.credits += 99
         raise ActionRejectedError("nope", "no good")
 
@@ -169,7 +209,7 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
 
 def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     def grant_then_reset(s, _now_ms):
-        balance = next(iter(s.execute(_balance_select(_U)).scalars()))
+        balance = locked_balance(s, _U)
         balance.credits = 50000
         balance.tokens = 30
         return ActionMutation(result=ConvertResult(amount=50))
@@ -203,7 +243,7 @@ def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
     """The CHECK constraint is the last line of defence if a buggy mutator misses a pre-flight check."""
 
     def goes_negative(s, _now_ms):
-        balance = next(iter(s.execute(_balance_select(_U)).scalars()))
+        balance = locked_balance(s, _U)
         balance.credits = -1
         return ActionMutation(result=ConvertResult(amount=0))
 
@@ -215,7 +255,7 @@ def test_state_persists_across_reopen(db_url: str) -> None:
     store_a = SqlStore(db_url)
 
     def grant(s, _now_ms):
-        balance = next(iter(s.execute(_balance_select(_U)).scalars()))
+        balance = locked_balance(s, _U)
         balance.credits = 13000
         return ActionMutation(result=ConvertResult(amount=13))
 
@@ -229,15 +269,11 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     """Two users on the same store have independent balances, sessions, ledgers."""
 
     def grant_alice(s, _now_ms):
-        balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == "alice").with_for_update())
-        assert balance is not None
-        balance.credits += 10000
+        locked_balance(s, "alice").credits += 10000
         return ActionMutation(result=ConvertResult(amount=10))
 
     def grant_bob(s, _now_ms):
-        balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == "bob").with_for_update())
-        assert balance is not None
-        balance.credits += 99000
+        locked_balance(s, "bob").credits += 99000
         return ActionMutation(result=ConvertResult(amount=99))
 
     # Same client_action_id used for both — must NOT collide since the
@@ -257,65 +293,61 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     by UTC day, ignoring legacy `client_reported` rows entirely."""
     # Three roulette spins on red (2 wins, 1 loss), one slots triple, one
     # blackjack win, plus one stray `client_reported` row that must NOT count.
-    fixtures = [
-        (
-            "ce-1",
-            "roulette",
-            "server_resolved",
-            10,
-            20,
-            _roulette_outcome("red", True),
-            1_778_200_000_000,
-        ),  # 2026-05-08
-        (
-            "ce-2",
-            "roulette",
-            "server_resolved",
-            10,
-            20,
-            _roulette_outcome("red", True),
-            1_778_200_001_000,
-        ),  # 2026-05-08
-        (
-            "ce-3",
-            "roulette",
-            "server_resolved",
-            10,
-            0,
-            _roulette_outcome("red", False),
-            1_778_300_000_000,
-        ),  # 2026-05-09
-        ("ce-4", "slots", "server_resolved", 5, 100, _slots_outcome("triple"), 1_778_200_002_000),  # 2026-05-08
-        ("ce-5", "blackjack", "server_resolved", 4, 8, _blackjack_outcome("win"), 1_778_200_003_000),  # 2026-05-08
-        # Legacy `client_reported` row — pre-2026-05-07. Excluded from casino_stats.
-        ("legacy", "roulette", "client_reported", 99, 0, _roulette_outcome("black", False), 1_746_000_000_000),
-    ]
-    # Need a balance row first (for FK / seed convention).
-    store.state_dump(_U)
-    with store._Session() as s, s.begin():
-        for client_event_id, game, source, wager, payout, outcome, occurred_at_ms in fixtures:
-            s.add(
-                GameEventRow(
-                    user_id=_U,
-                    client_event_id=client_event_id,
-                    server_at_ms=occurred_at_ms,
-                    occurred_at_ms=occurred_at_ms,
-                    game=game,
-                    event_type="settle",
-                    source=source,
-                    wager_credits=wager,
-                    payout_tokens=payout,
-                    credits_before=0,
-                    credits_after=0,
-                    tokens_before=0,
-                    tokens_after=0,
-                    server_credits=0,
-                    server_tokens=0,
-                    outcome_json=json.dumps(outcome),
-                    rules_version="server-rules-v1",
-                    rng_version="server-secrets-v1",
-                )
-            )
+    _seed_game_events(
+        store,
+        [
+            _game_event(
+                "ce-1",
+                "roulette",
+                _roulette_outcome("red", True),
+                wager=10,
+                payout=20,
+                occurred_at_ms=1_778_200_000_000,  # 2026-05-08
+            ),
+            _game_event(
+                "ce-2",
+                "roulette",
+                _roulette_outcome("red", True),
+                wager=10,
+                payout=20,
+                occurred_at_ms=1_778_200_001_000,  # 2026-05-08
+            ),
+            _game_event(
+                "ce-3",
+                "roulette",
+                _roulette_outcome("red", False),
+                wager=10,
+                payout=0,
+                occurred_at_ms=1_778_300_000_000,  # 2026-05-09
+            ),
+            _game_event(
+                "ce-4",
+                "slots",
+                _slots_outcome("triple"),
+                wager=5,
+                payout=100,
+                occurred_at_ms=1_778_200_002_000,  # 2026-05-08
+            ),
+            _game_event(
+                "ce-5",
+                "blackjack",
+                _blackjack_outcome("win"),
+                wager=4,
+                payout=8,
+                occurred_at_ms=1_778_200_003_000,  # 2026-05-08
+            ),
+            # Legacy `client_reported` row — pre-2026-05-07. Excluded from casino_stats.
+            _game_event(
+                "legacy",
+                "roulette",
+                _roulette_outcome("black", False),
+                wager=99,
+                payout=0,
+                source="client_reported",
+                occurred_at_ms=1_746_000_000_000,
+            ),
+        ],
+    )
 
     result = store.casino_stats(_U)
 
@@ -374,35 +406,19 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     historical wager sequence: one even-money red wager and one single-number
     wager here.
     """
-    store.state_dump(_U)
-    fixtures = [
-        ("red", 10, _roulette_outcome("red", False)),
-        ("number", 5, _roulette_outcome("number", False, bet_number=7, multiplier=36)),
-    ]
-    with store._Session() as s, s.begin():
-        for i, (_bet_type, wager, outcome) in enumerate(fixtures, start=1):
-            s.add(
-                GameEventRow(
-                    user_id=_U,
-                    client_event_id=f"roulette-mix-{i}",
-                    server_at_ms=1_778_200_000_000 + i,
-                    occurred_at_ms=1_778_200_000_000 + i,
-                    game="roulette",
-                    event_type="settle",
-                    source="server_resolved",
-                    wager_credits=wager,
-                    payout_tokens=0,
-                    credits_before=0,
-                    credits_after=0,
-                    tokens_before=0,
-                    tokens_after=0,
-                    server_credits=0,
-                    server_tokens=0,
-                    outcome_json=json.dumps(outcome),
-                    rules_version="server-rules-v1",
-                    rng_version="server-secrets-v1",
-                )
-            )
+    _seed_game_events(
+        store,
+        [
+            _game_event("roulette-mix-1", "roulette", _roulette_outcome("red", False), wager=10, payout=0),
+            _game_event(
+                "roulette-mix-2",
+                "roulette",
+                _roulette_outcome("number", False, bet_number=7, multiplier=36),
+                wager=5,
+                payout=0,
+            ),
+        ],
+    )
 
     roulette = next(g for g in store.casino_stats(_U).games if g.game == "roulette")
 
@@ -432,31 +448,13 @@ def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:
 
 
 def _seed_blackjack_events(store: SqlStore, fixtures: list[tuple[str, int, int, dict[str, object]]]) -> None:
-    store.state_dump(_U)
-    with store._Session() as s, s.begin():
-        for client_event_id, wager, payout, outcome in fixtures:
-            s.add(
-                GameEventRow(
-                    user_id=_U,
-                    client_event_id=client_event_id,
-                    server_at_ms=1_778_200_000_000,
-                    occurred_at_ms=1_778_200_000_000,
-                    game="blackjack",
-                    event_type="settle",
-                    source="server_resolved",
-                    wager_credits=wager,
-                    payout_tokens=payout,
-                    credits_before=0,
-                    credits_after=0,
-                    tokens_before=0,
-                    tokens_after=0,
-                    server_credits=0,
-                    server_tokens=0,
-                    outcome_json=json.dumps(outcome),
-                    rules_version="server-rules-v1",
-                    rng_version="server-secrets-v1",
-                )
-            )
+    _seed_game_events(
+        store,
+        [
+            _game_event(client_event_id, "blackjack", outcome, wager=wager, payout=payout)
+            for client_event_id, wager, payout, outcome in fixtures
+        ],
+    )
 
 
 def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> None:
@@ -567,11 +565,6 @@ def test_casino_stats_blackjack_field_unset_for_other_games(store: SqlStore) -> 
             assert game.blackjack is not None
         else:
             assert game.blackjack is None
-
-
-def _balance_select(username: str):
-    """Return a select() for the singleton BalanceRow of `username`, locked for update."""
-    return select(BalanceRow).where(BalanceRow.user_id == username).with_for_update()
 
 
 if __name__ == "__main__":

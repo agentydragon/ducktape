@@ -37,7 +37,7 @@ def test_replaying_seed_material_reproduces_roulette_result_and_calls():
     assert replayed == settlement
     assert replay.audit().calls == audit.calls
     assert audit.calls[0].purpose == "roulette.wheel_index"
-    assert audit.calls[0].result["value"] == settlement.outcome["result_index"]
+    assert audit.calls[0].result["value"] == settlement.outcome.result_index
 
 
 def test_slots_weighted_draws_are_logged_by_reel():
@@ -48,7 +48,7 @@ def test_slots_weighted_draws_are_logged_by_reel():
     calls = rng.audit().calls
     assert [call.purpose for call in calls] == ["slots.reel.0", "slots.reel.1", "slots.reel.2"]
     assert [call.method for call in calls] == ["weighted_choice", "weighted_choice", "weighted_choice"]
-    assert [call.result["item_id"] for call in calls] == settlement.outcome["symbols"]
+    assert [call.result["item_id"] for call in calls] == settlement.outcome.symbols
 
 
 def test_blackjack_shuffle_replays_exact_shoe_order():

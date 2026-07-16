@@ -14,7 +14,11 @@ import { ChangelogModal } from "../../ChangelogModal.jsx";
 import { COLORS } from "../../shared.jsx";
 import { casinoSync } from "../../sync.js";
 
-const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
+// visual-test-lib freezes the wall clock via an init script before this
+// bundle runs, so Date.now() *is* the frozen instant — reading it here keeps
+// every relative-time fixture below in sync with the lib's frozen date
+// without duplicating the magic timestamp.
+const FROZEN_NOW_MS = Date.now();
 
 // Block all fetches inside the harness — the test never wants the
 // component to think it has reached the server.
