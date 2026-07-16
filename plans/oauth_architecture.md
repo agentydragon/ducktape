@@ -2,7 +2,7 @@
 
 - **Status:** Haku's canonical Operator/Agent authority and enrollment cutover is complete and
   deployed. This file plans only remaining work.
-- **Updated:** 2026-07-15
+- **Updated:** 2026-07-16
 - **Completed baseline:** PR [#3197](https://github.com/agentydragon/ducktape/pull/3197), with
   follow-up PR [#3200](https://github.com/agentydragon/ducktape/pull/3200)
 - **Implemented contract:**
@@ -48,54 +48,36 @@ does not supply Haku's Agent ceremony or lifecycle.
 
 ## Remaining plan
 
-### C0: prune high-confidence accidental complexity
-
-Keep these as small independent PRs; none changes the authority model:
-
-| Order | Cleanup                                                                                                                                                                                                     |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C0c   | Return pending `ToolCallRecord` values directly and remove the subset `PendingApproval` DTO and frontend unions. Confirm no separately deployed Haku UI consumer before changing the wire shape.            |
-| C0d   | Collapse identical access/refresh grant-resolution methods, ceremonial context wrappers, and dead exception types. Keep the required FastMCP context bridge and failure-preserving `MultiAuth` source list. |
-| C0e   | Remove the impossible tool-level degraded-metadata variant; server-level degradation remains the real boundary.                                                                                             |
-
-Then check external consumers and collapse `/api/approvals/events`, its cursor table, and multiple
-per-transition broadcasts into one typed, Operator-routed `tool_calls_changed(tool_call_id)`
-invalidation. REST remains truth. Approval waits already use the same lossy PostgreSQL wakeup
-channel and authoritative actor-scoped reads; this remaining cleanup should reuse that path.
-
-Do not remove the Haku OAuth adapter, exact actor/binding provenance, decision/execution
-revalidation, two-phase `ISSUING -> ISSUED -> ACTIVE` boundary, correlation tombstone, or
-failure-preserving JWT/KV/MultiAuth behavior. Those are security or FastMCP compatibility
-boundaries, not ceremony.
-
-### R0: make the deployed release tuple atomic
+### R0: make independent console rollouts skew-safe
 
 Do this before the next change that couples server code, runtime config schema, and static frontend.
 The 2026-07-14 cutover demonstrated the gap: Flux applied the new `static_agents` config before the
 matching server image was published, so the old image crash-looped until image automation caught
-up. Independent server/static image policies can produce another invalid tuple, and `Recreate`
-turns that skew into full unavailability.
+up. `Recreate` turned that temporary skew into full unavailability.
 
-One focused release-mechanism change should make `{server image, static image, live config
-revision/schema}` a tested, promoted unit. Prefer staged/versioned non-secret config switched only
-by the image-promotion commit, or bake it into the release when simpler. Do not add permanent
-application compatibility shims.
+Keep the server image, static image, and live config independently deployable. Evolve their
+contracts over one rollout window: readers before writers for config, server API additions before
+frontend consumers, and removals only after every consumer has moved. CI should exercise the
+server against its current and next config shapes and the frontend against every supported server
+contract. Revisit `Recreate` so a failed replacement leaves the last serving version available.
 
 Acceptance:
 
-- merging code plus config cannot make Flux run config revision N on server image N-1;
-- the server and static images selected for one rollout come from one compatible source revision;
-- CI validates the complete tuple before promotion; and
-- failed promotion leaves the last complete tuple serving rather than requiring image automation
-  to repair a live outage.
+- every intermediate server/static/config combination within the supported rollout window works;
+- CI rejects a writer or frontend that requires a contract not yet served;
+- contract removal is gated on the last old consumer leaving service; and
+- a failed rollout leaves the last serving version available rather than requiring image
+  automation to repair an outage.
 
-### C1: simplify the authority schema before lifecycle UI
+### C1: simplify the authority schema after Connected Agents
 
 The deployed graph is safe but implements too much of its state machine twice: once in the
 transactional authority and again through 33 PostgreSQL functions in migration `0009`. Simplify the
-entities first, then delete triggers made unnecessary by the smaller graph. Retain ordinary
-`NOT NULL`/`CHECK`/unique/FK constraints, the one-active-binding index, same-Agent predecessor
-integrity, and genuinely cross-row security rules.
+entities after H1 establishes the Connected Agents read contract and shows which joins are genuine
+friction, but before H3 lifecycle mutations make the current graph a product dependency. Then
+delete triggers made unnecessary by the smaller graph. Retain ordinary `NOT NULL`/`CHECK`/unique/FK
+constraints, the one-active-binding index, same-Agent predecessor integrity, and genuinely
+cross-row security rules.
 
 Recommended terminal shape:
 
@@ -117,8 +99,8 @@ Recommended terminal shape:
   transitions only when disable/delete semantics are specified; do not derive away a future
   Agent-level policy control prematurely.
 
-This is not a five-second-stamp PR. Stage it after the mechanical C0 cleanups, with one schema
-migration and focused invariant tests, before H1/H3 make UI contracts depend on the current graph.
+This is not a five-second-stamp PR. Stage it after H1, with one schema migration and focused
+invariant tests, before H3 makes lifecycle contracts depend on the current graph.
 
 ### Haku product sequence
 

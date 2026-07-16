@@ -50,18 +50,6 @@ slices over the deployed schema, not another identity migration:
 
 ## Console and authority consolidation
 
-Keep these as small mechanical PRs unless a wire-contract check finds an external consumer:
-
-- Return pending `ToolCallRecord` values directly and remove the subset `PendingApproval` DTO plus
-  frontend unions.
-- Remove the impossible tool-level degraded-metadata variant; server-level degradation is the real
-  boundary.
-- Collapse identical access/refresh grant-resolution methods, ceremonial context wrappers, and
-  dead exception types. Preserve the required FastMCP context bridge, exact actor/binding
-  provenance, execution-time revalidation, and failure-preserving `MultiAuth` behavior.
-- Collapse `/api/approvals/events`, its cursor table, and multiple per-transition broadcasts into
-  one typed, Operator-routed `tool_calls_changed(tool_call_id)` invalidation. REST and actor-scoped
-  database reads remain authoritative; PostgreSQL notification delivery remains a lossy wakeup.
 - After the Connected Agents read contract provides evidence about which joins really hurt,
   simplify the authority schema: remove the deferred name-reservation ownership cycle and
   speculative client-software fields, consider the relational `operator_id`-or-`binding_id`
