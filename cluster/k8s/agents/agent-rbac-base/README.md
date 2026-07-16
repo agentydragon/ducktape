@@ -74,7 +74,7 @@ grants stay deliberately secret-free.
 The Haku agent authenticates as group `oidc-ksbx-groups:haku` (see Authentication below) and,
 beyond its full-CRUD `haku-sandbox` Role, is **co-subjected** onto the existing reader bindings
 to give it general cluster diagnostics plus safe log reading. No Haku-specific roles exist — it
-reuses the same three ClusterRoles:
+reuses the same reader ClusterRoles:
 
 - **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
   ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no

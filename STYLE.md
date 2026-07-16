@@ -198,7 +198,11 @@ py_binary(
 
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/
 Returns sections echoing types; trivial class docstrings; historical "used to" comments;
-`# === Section ===` banners; changelog comments.
+`# === Section ===` banners; changelog comments; self-referential counts of an adjacent
+list or table ("the three steps below", "we support 7 providers") — the count duplicates
+what the reader can see and forces a prose edit whenever a row is added or removed,
+drifting silently; drop the count and let the list speak, or derive it if genuinely
+load-bearing.
 
 **Keep**: TODOs/FIXMEs near their context; non-obvious behavior (edge cases, invariants,
 preconditions, contracts); why-comments; system/integration context not visible locally
