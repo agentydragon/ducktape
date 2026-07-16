@@ -896,10 +896,31 @@ boot-menu generation).
    point (see the fallback ladder). Also note whether the hyphen fix alone changed
    greeter behavior.
 
-3. **seat0 lock** (independent of the reboot — broken live already): live-attach
-   gnome-shell to prove why `ScreenShield` won't own its D-Bus name. Leading suspect:
-   `XDG_SESSION_ID` not reaching the `org.gnome.Shell@wayland.service` systemd
-   `--user` unit (it runs in the seatless `user@1001.service` scope). Fix likely
-   propagates the login session id/env into the user manager.
+3. **seat0 lock** (independent of the reboot — broken live already). Diagnose why
+   `ScreenShield` won't own its D-Bus name, tiered least- to most-intrusive so most
+   of the signal costs nothing:
+   1. **Read-only (no session impact).** gnome-shell's `loginManager.js` logs the
+      outcome of its session resolution at `ScreenShield` init — pull it from the
+      shell's journal (comm truncates to `.gnome-shell-wr`):
+      `"Will monitor session 17"` = `getCurrentSessionProxy()` succeeded (so the bug
+      is _not_ session resolution, and the `XDG_SESSION_ID` theory is wrong);
+      `"Unset XDG_SESSION_ID…"` + `"Could not get proxy"` / `"Failed to get session"`
+      = resolution failed → the fix is getting the session id/scope to the shell.
+      Plus introspection: `systemctl --user show-environment` (is `XDG_SESSION_ID`
+      set?), the shell's cgroup scope, `busctl --user` name ownership. All pure
+      reads — no restart, signal, or attach; the SPICE session is untouched.
+   2. **Brief gdb attach (sub-second pause, non-fatal), only if 1 is ambiguous.**
+      `gdb -p <shell-pid> -batch -ex 'call (void)gjs_dumpstack()'` (same non-fatal
+      technique as the 2026-07-11 greeter-freeze capture) to dump JS / inspect the
+      loginManager's `_currentSession`. Momentarily pauses the compositor; does not
+      kill it. Gate on user OK.
+   3. **Confirming the fix needs a re-login.** Wayland can't hot-reload the shell's
+      env (`XDG_SESSION_ID` is read once at startup), so _proving_ the fix restores
+      the lock requires restarting the seat0 session (or the reboot). Steps 1–2 tell
+      us the fix with high confidence first, so this confirms rather than gambles.
+
+   Leading suspect: `XDG_SESSION_ID` not reaching the `org.gnome.Shell@wayland.service`
+   systemd `--user` unit (it runs in the seatless `user@1001.service` scope). Fix
+   likely propagates the login session id/env into the user manager.
 
 Remove the `SYSTEMD_LOG_LEVEL=debug` logind drop-in once the greeter is solved.
