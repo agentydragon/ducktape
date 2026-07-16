@@ -18,7 +18,7 @@ use lowering::{
 use prepare_chunks::prepare_js_chunks;
 use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
-use spec::{MaterializeLogicalModulesConfig, TransformSpec};
+use spec::TransformSpec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
@@ -240,12 +240,7 @@ pub fn run_transform_cli_with_options(
     // both application sites.
     let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     if !materialise_chunk_ids.is_empty() {
-        let MaterializeLogicalModulesConfig {
-            file,
-            prune_other_chunks,
-            report_out_dir,
-            target_dir,
-        } = spec.materialize_logical_modules.clone();
+        let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
         // `validate --keep-going` forces reports to its own capture dir even
         // when the spec leaves `report_out_dir` unset; otherwise honor the spec.
         let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
@@ -265,9 +260,8 @@ pub fn run_transform_cli_with_options(
                 },
                 &vendor_plan,
                 MaterializeLogicalModulesOptions {
+                    config: spec.materialize_logical_modules.clone(),
                     chunk_ids: materialise_chunk_ids,
-                    file,
-                    prune_other_chunks,
                     keep_going: options.keep_going,
                     // Dry-run keeps the no-output contract on the
                     // accept path but still materializes rejection
@@ -280,7 +274,6 @@ pub fn run_transform_cli_with_options(
                         Some(dir) => ReportEmission::Full(dir),
                         None => ReportEmission::None,
                     },
-                    target_dir,
                 },
             )?;
             module_count = materialize_result.module_count;
@@ -957,7 +950,7 @@ mod tests {
             chunk_analysis_options: BTreeMap::new(),
             chunk_export_purity: BTreeMap::new(),
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
-            materialize_logical_modules: MaterializeLogicalModulesConfig::default(),
+            materialize_logical_modules: spec::MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,
             emit_browser_harness: None,
         }

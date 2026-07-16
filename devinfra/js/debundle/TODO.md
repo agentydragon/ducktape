@@ -170,6 +170,27 @@ section tracks only remaining options.
    trait or table to collapse repeated per-variant match clusters. ~150 LOC,
    medium risk (over-abstraction hazard; the per-form holing strategies differ
    for good reasons).
+2. Rename `ids.rs::LogicalModule` → `LogicalModuleIr` so it no longer clashes
+   with `spec::LogicalModule`. The two are distinct types (IR materialization
+   record vs. spec authoring input) that share a name purely historically,
+   forcing qualified-path imports wherever both are visible. Ripples widely —
+   update every reference under `lowering/`, `pipeline.rs`, and the e2e
+   fixtures; the rename is mechanical but touches many files, so it was
+   deferred out of the `MaterializeLogicalModulesOptions` embed PR.
+3. Migrate `e2e/vendor_swap_test.rs` off raw `serde_json::json!` vendor-mark
+   literals onto the typed vendor-mark builders. The raw-`json!` form bypasses
+   `FixtureOpts` and the typed `VendorResolutionPlan` constructors, so test
+   fixtures can drift from real config shapes without a compile error
+   (e.g. a renamed vendor-mark field stays green in tests while breaking real
+   specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
+   `report_out_dir` literals), builder surface in `vendor.rs`.
+4. Consolidate the three `*BindingProjection` enums
+   (`selector_constraint_backend.rs`, `selector_ir_solver.rs`,
+   `selector_constraint_model_builder.rs`) into one shared projection type.
+   They are structurally identical views of the same binding-namespace
+   partition, duplicated per solver stage; the copies drift silently when a
+   new binding kind is added. Unify behind one enum (plus any stage-specific
+   extension) and re-point the three stages at it.
 
 **Organization only (≈0 LOC removed, navigability win):** split the giant
 files by responsibility — <selector_codemod.rs> (2.8k), <peel/quotient.rs>

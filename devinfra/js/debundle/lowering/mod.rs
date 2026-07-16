@@ -236,12 +236,10 @@ impl ReportEmission {
 
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
+    pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
-    pub file: Option<String>,
-    pub prune_other_chunks: bool,
     pub keep_going: bool,
     pub report_emission: ReportEmission,
-    pub target_dir: String,
 }
 
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
@@ -270,7 +268,7 @@ pub fn materialize_logical_modules(
     if options.chunk_ids.is_empty() {
         bail!("materialize_logical_modules requires at least one chunk_id");
     }
-    let target_dir = normalize_optional_relative_dir(&options.target_dir)?;
+    let target_dir = normalize_optional_relative_dir(&options.config.target_dir)?;
     let mut selected_chunk_ids = Vec::new();
     let mut seen = BTreeSet::new();
     for chunk_id in &options.chunk_ids {
@@ -284,7 +282,7 @@ pub fn materialize_logical_modules(
         prepare_output_dir(dir)?;
     }
 
-    if options.prune_other_chunks {
+    if options.config.prune_other_chunks {
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
@@ -333,7 +331,7 @@ pub fn materialize_logical_modules(
                             artifact: artifact_ref,
                             artifact_indexes: &artifact_indexes,
                             chunk_id,
-                            file: options.file.as_deref(),
+                            file: options.config.file.as_deref(),
                             target_dir: &target_dir,
                             keep_going: options.keep_going,
                             report_emission: &options.report_emission,
