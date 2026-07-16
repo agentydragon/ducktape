@@ -119,6 +119,41 @@ GEMINI_MODELS: list[str] = [
 ]
 
 
+# Tana (Tana-UI models) fronted through the DB-less tana-litellm proxy. tana-litellm is a
+# standard LiteLLM that speaks /v1/messages and authenticates with the same litellm-master-key
+# the main proxy already holds, so we chain to it with the `anthropic/` provider — a verbatim
+# /v1/messages passthrough with no shape translation (same pattern as z.ai GLM above). Key
+# stays in-cluster only; laptop consumers use a scoped tana virtual key against this proxy.
+#
+# Tana encodes reasoning effort in the model name (`/medium`, `/high`), not a `reasoning_effort`
+# param, so there is no clean "one model + effort knob" to map onto. We expose one model per
+# family at its default effort. Each entry: (exposed model_name, tana-litellm downstream
+# model_name). The downstream name's slash stays inside the `anthropic/` arg, never exposed.
+_TANA_LITELLM_BASE = "http://tana-litellm.litellm.svc.cluster.local:4000"
+_TANA_MODELS: list[tuple[str, str]] = [
+    ("tana-claude-sonnet-4-6", "claude-sonnet-4-6/medium"),
+    ("tana-claude-opus-4-6", "claude-opus-4-6/high"),
+    ("tana-claude-haiku-4-5", "claude-haiku-4-5-20251001"),
+]
+
+
+# CLIProxyAPI (ChatGPT/Codex subscription) fronted with the `anthropic/` provider. It speaks
+# Anthropic /v1/messages and is the one path that translates Codex tool calls correctly
+# (function_call -> tool_use) — the thing LiteLLM's own Responses bridge and the `*-chatgpt`
+# entries above could not do. Client key from CLIPROXY_CLIENT_KEY (cli-proxy-api-client-key
+# mirrored into the litellm namespace). Reasoning effort is driven by Claude Code's
+# effortLevel -> reasoning_effort passthrough, so one entry per slug suffices.
+_CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
+_CLIPROXY_MODELS: list[str] = [
+    "gpt-5.4",
+    "gpt-5.5",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.3-codex-spark",
+]
+
+
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
         yield {
@@ -191,6 +226,32 @@ def _zai_anthropic_entries() -> Iterator[dict]:
         }
 
 
+def _tana_entries() -> Iterator[dict]:
+    for exposed, downstream in _TANA_MODELS:
+        yield {
+            "model_name": exposed,
+            "litellm_params": {
+                "model": f"anthropic/{downstream}",
+                "api_base": _TANA_LITELLM_BASE,
+                "api_key": "os.environ/LITELLM_MASTER_KEY",
+            },
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
+
+def _cliproxy_entries() -> Iterator[dict]:
+    for model in _CLIPROXY_MODELS:
+        yield {
+            "model_name": f"codex-{model}",
+            "litellm_params": {
+                "model": f"anthropic/{model}",
+                "api_base": _CLIPROXY_BASE,
+                "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
+            },
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
+
 def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> Iterator[dict]:
     name_base = tag.replace(":", "-")
     for api, suffix, api_base in [
@@ -219,6 +280,8 @@ def generate() -> str:
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
     model_list.extend(_zai_anthropic_entries())
+    model_list.extend(_tana_entries())
+    model_list.extend(_cliproxy_entries())
     model_list.extend(_chatgpt_proxy_entries())
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())

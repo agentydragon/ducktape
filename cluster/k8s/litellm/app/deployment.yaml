@@ -99,6 +99,13 @@ spec:
                 secretKeyRef:
                   name: litellm-gemini-key
                   key: GEMINI_API_KEY
+            # CLIProxyAPI client key for the codex-* upstream models (ESO mirror of
+            # cli-proxy-api-client-key; see secrets/cliproxy-client-key-eso.yaml).
+            - name: CLIPROXY_CLIENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-cliproxy-key
+                  key: CLIPROXY_CLIENT_KEY
             - name: LANGFUSE_OTEL_HOST
               value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
             - name: LANGFUSE_PUBLIC_KEY
