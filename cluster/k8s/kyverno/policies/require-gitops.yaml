@@ -50,6 +50,15 @@ spec:
               - kind: ServiceAccount
                 name: source-controller
                 namespace: flux-system
+          # Allow the haku-state workload pipe: Flux applies Haku's
+          # self-authored workloads by impersonating this SA (Kustomization
+          # spec.serviceAccountName), so admission attributes the request to it
+          # rather than kustomize-controller. It is a GitOps path, Role-bounded
+          # to haku-sandbox (see cluster/k8s/haku/workloads/README.md).
+          - subjects:
+              - kind: ServiceAccount
+                name: haku-state-reconciler
+                namespace: flux-system
           # Allow Kyverno itself (for admission webhooks)
           - subjects:
               - kind: ServiceAccount
