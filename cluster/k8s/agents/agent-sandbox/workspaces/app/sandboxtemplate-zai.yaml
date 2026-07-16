@@ -4,10 +4,14 @@
 # baked credentials, WebFetch/WebSearch denied for GLM-lane parity with
 # z-claude) with the haku zone Job's pod hardening; unlike the zones this is
 # trusted personal use — open egress, quota-capped by the namespace.
+# Template names are LLM lanes, mirroring the haku zones: `zai` = GLM via the
+# cluster LiteLLM. Future siblings (e.g. `codex` for OpenAI models, also via
+# LiteLLM) get their own template + warm pool; pod anatomy (container name
+# `workspace`, /workspace PVC) stays lane-agnostic.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
-  name: workspace
+  name: zai
   namespace: agent-workspaces
 spec:
   # The controller's default (Managed) stamps a NetworkPolicy that allows only

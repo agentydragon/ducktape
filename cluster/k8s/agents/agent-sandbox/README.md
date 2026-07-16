@@ -1,7 +1,7 @@
 # agent-sandbox — disposable agent workspaces
 
 [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-controller plus a `workspace` template in `agent-workspaces`: click-a-command
+controller plus per-LLM-lane templates (`zai` today) in `agent-workspaces`: click-a-command
 disposable dev workspaces for agents — the agent-box workflow (a machine you go
 to, creds already wired, Claude CLI installed) minus the persistence.
 
@@ -36,8 +36,10 @@ to, creds already wired, Claude CLI installed) minus the persistence.
   appears. Tradeoff (same as codex-pod): a Forgejo outage blocks image pulls.
 
 - `workspaces/{namespace,app}/` — the dedicated `agent-workspaces` namespace
-  (own ResourceQuota/LimitRange) and the `workspace` `SandboxTemplate` + warm
-  pool + janitor `CleanupPolicy`. Deliberately **not** `claude-sandbox` — that
+  (own ResourceQuota/LimitRange) and the LLM-lane `SandboxTemplate`s + warm
+  pools + janitor `CleanupPolicy`. Templates are named by lane like the haku
+  zones — `zai` (GLM via LiteLLM) today; future lanes (e.g. `codex` for OpenAI
+  models, also via LiteLLM) add a sibling template + pool. Deliberately **not** `claude-sandbox` — that
   namespace is Claude's own disposable in-cluster scratch space, and hosting
   workspaces there would mix tenants and quotas.
 
@@ -63,7 +65,7 @@ metadata:
   name: ws-mytask
 spec:
   warmPoolRef:
-    name: workspace
+    name: zai
   lifecycle:
     shutdownPolicy: Delete
     shutdownTime: "$(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)"
@@ -84,7 +86,7 @@ WS=$(kubectl -n agent-workspaces get sandboxclaim ws-mytask -o jsonpath='{.statu
 ```bash
 kubectl -n agent-workspaces get sandboxclaims,sandboxes,pods   # what exists
 kubectl -n agent-workspaces get sandbox "$WS" -o yaml          # conditions (Ready/Suspended/Finished), nodeName, podIPs
-kubectl -n agent-workspaces describe sandboxwarmpool workspace # pool readiness (readyReplicas)
+kubectl -n agent-workspaces describe sandboxwarmpool zai      # pool readiness (readyReplicas)
 ```
 
 ### Work in it
@@ -143,7 +145,7 @@ a "new workspace" button is a candidate follow-up.
 ### Troubleshooting
 
 - **Claim stuck unclaimed**: pool exhausted or template broken —
-  `describe sandboxwarmpool workspace`, then `kubectl -n agent-workspaces get events`.
+  `describe sandboxwarmpool zai`, then `kubectl -n agent-workspaces get events`.
 - **Pod `Pending`**: usually the namespace ResourceQuota
   (`workspaces/namespace/resourcequota.yaml`) or PVC binding —
   `describe pod ws-mytask`.

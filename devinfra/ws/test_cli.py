@@ -26,8 +26,12 @@ def test_shutdown_time_rfc3339() -> None:
 def test_claim_manifest_shape() -> None:
     m = claim_manifest("ws-test", "90m", NOW)
     assert m["metadata"] == {"name": "ws-test", "namespace": "agent-workspaces"}
-    assert m["spec"]["warmPoolRef"] == {"name": "workspace"}
+    assert m["spec"]["warmPoolRef"] == {"name": "zai"}
     assert m["spec"]["lifecycle"] == {"shutdownPolicy": "Delete", "shutdownTime": "2026-07-16T13:30:00Z"}
+
+
+def test_claim_manifest_template_override() -> None:
+    assert claim_manifest("ws-test", "8h", NOW, "codex")["spec"]["warmPoolRef"] == {"name": "codex"}
 
 
 if __name__ == "__main__":

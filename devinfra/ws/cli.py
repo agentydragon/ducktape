@@ -15,7 +15,9 @@ from typing import Annotated
 import typer
 
 NAMESPACE = "agent-workspaces"
-WARM_POOL = "workspace"
+# Templates are LLM lanes (cluster/k8s/agents/agent-sandbox/): each has a
+# same-named SandboxTemplate + SandboxWarmPool. `ws templates` lists them.
+DEFAULT_TEMPLATE = "zai"
 CONTAINER = "workspace"
 _ADOPTION_TIMEOUT_S = 120
 
@@ -39,13 +41,13 @@ def shutdown_time(ttl: str, now: datetime) -> str:
     return (now + parse_ttl(ttl)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def claim_manifest(name: str, ttl: str, now: datetime) -> dict:
+def claim_manifest(name: str, ttl: str, now: datetime, template: str = DEFAULT_TEMPLATE) -> dict:
     return {
         "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
         "kind": "SandboxClaim",
         "metadata": {"name": name, "namespace": NAMESPACE},
         "spec": {
-            "warmPoolRef": {"name": WARM_POOL},
+            "warmPoolRef": {"name": template},
             "lifecycle": {"shutdownPolicy": "Delete", "shutdownTime": shutdown_time(ttl, now)},
         },
     }
@@ -108,12 +110,15 @@ def _exec_shell(sandbox: str) -> None:
 def new(
     name: Annotated[str | None, typer.Argument(help="claim name (default: ws-<HHMMSS>)")] = None,
     ttl: Annotated[str, typer.Option(help="lifetime before auto-delete, e.g. 90m/8h/3d")] = "8h",
+    template: Annotated[
+        str, typer.Option("--template", "-t", help="LLM-lane template (see `ws templates`)")
+    ] = DEFAULT_TEMPLATE,
     shell: Annotated[bool, typer.Option(help="exec into the workspace once bound")] = True,
 ) -> None:
     """Claim a warm workspace (ready in seconds) and drop into it."""
     now = datetime.now(UTC)
     name = name or f"ws-{now:%H%M%S}"
-    manifest = json.dumps(claim_manifest(name, ttl, now))
+    manifest = json.dumps(claim_manifest(name, ttl, now, template))
     subprocess.run(["kubectl", "-n", NAMESPACE, "apply", "-f", "-"], input=manifest, text=True, check=True)
     sandbox = _bound_sandbox(name)
     typer.echo(f"{name} → {sandbox} (dies {shutdown_time(ttl, now)})")
@@ -123,20 +128,35 @@ def new(
 
 @app.command()
 def ls() -> None:
-    """List claims: name, sandbox, pod phase, deadline."""
+    """List claims: name, template, sandbox, pod phase, deadline."""
     pods = _pods_by_name()
     rows = []
     for c in _claims():
+        template = c["spec"].get("warmPoolRef", {}).get("name", "-")
         sandbox = c.get("status", {}).get("sandbox", {}).get("name", "-")
         phase = pods.get(sandbox, {}).get("status", {}).get("phase", "-")
         deadline = c["spec"].get("lifecycle", {}).get("shutdownTime", "-")
-        rows.append((c["metadata"]["name"], sandbox, phase, deadline))
+        rows.append((c["metadata"]["name"], template, sandbox, phase, deadline))
     if not rows:
         typer.echo("no claims")
         return
-    widths = [max(len(r[i]) for r in rows) for i in range(4)]
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
     for r in rows:
         typer.echo("  ".join(v.ljust(w) for v, w in zip(r, widths, strict=True)))
+
+
+@app.command()
+def templates() -> None:
+    """List available LLM-lane templates (warm pools) and their readiness."""
+    pools: list[dict] = json.loads(_kubectl("get", "sandboxwarmpools", "-o", "json"))["items"]
+    if not pools:
+        typer.echo("no templates")
+        return
+    for p in pools:
+        status = p.get("status", {})
+        ready = status.get("readyReplicas", 0)
+        want = p["spec"].get("replicas", 0)
+        typer.echo(f"{p['metadata']['name']}  warm {ready}/{want}")
 
 
 @app.command()
