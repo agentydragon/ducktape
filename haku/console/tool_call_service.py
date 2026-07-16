@@ -79,7 +79,7 @@ class ToolExecutor(Protocol):
     ) -> dict[str, Any]: ...
 
 
-class ToolCallEventPublisher(Protocol):
+class ToolCallInvalidationPublisher(Protocol):
     async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None: ...
 
     def subscribe(
@@ -128,7 +128,7 @@ class ToolCallApplicationService:
         *,
         settings: Settings,
         repository: ToolCallRepository,
-        event_publisher: ToolCallEventPublisher,
+        invalidation_publisher: ToolCallInvalidationPublisher,
         executor: ToolExecutor,
         oauth_store: OperatorOAuthTokenStore,
         in_process_servers: InProcessServers,
@@ -136,7 +136,7 @@ class ToolCallApplicationService:
     ) -> None:
         self._settings = settings
         self._repository = repository
-        self._event_publisher = event_publisher
+        self._invalidation_publisher = invalidation_publisher
         self._executor = executor
         self._oauth_store = oauth_store
         self._in_process_servers = in_process_servers
@@ -268,7 +268,7 @@ class ToolCallApplicationService:
     async def _publish(self, operator_id: UUID, tool_call_id: str) -> None:
         """Best-effort invalidation after durable changes; the repository remains authoritative."""
         try:
-            await self._event_publisher.tool_call_changed(operator_id, tool_call_id)
+            await self._invalidation_publisher.tool_call_changed(operator_id, tool_call_id)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -289,7 +289,7 @@ class ToolCallApplicationService:
             # Subscribe before re-reading the authoritative row. A transition committed between
             # the first read and subscription is then observed by the second read; a transition
             # committed after it wakes this subscription through PostgreSQL LISTEN/NOTIFY.
-            async with self._event_publisher.subscribe(actor.operator_id, tool_call_id) as changed:
+            async with self._invalidation_publisher.subscribe(actor.operator_id, tool_call_id) as changed:
                 record = self._repository.get(tool_call_id, actor=actor)
                 if record.status in TERMINAL_STATUSES:
                     return record

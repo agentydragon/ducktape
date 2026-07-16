@@ -184,7 +184,7 @@ def create_app(
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
-        event_publisher=console_event_hub,
+        invalidation_publisher=console_event_hub,
         executor=tool_call_executor,
         oauth_store=mcp_operator_oauth_store,
         in_process_servers=in_process_servers,

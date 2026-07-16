@@ -41,7 +41,7 @@ from haku.console.tool_calls import (
 )
 
 
-class _RecordingPublisher:
+class _RecordingInvalidationPublisher:
     def __init__(self) -> None:
         self.publications: list[tuple[UUID, str]] = []
         self.subscribed = asyncio.Event()
@@ -67,13 +67,13 @@ class _RecordingPublisher:
                 self._waiters.pop(key)
 
 
-class _RaisingPublisher(_RecordingPublisher):
+class _RaisingInvalidationPublisher(_RecordingInvalidationPublisher):
     async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
         await super().tool_call_changed(operator_id, tool_call_id)
-        raise RuntimeError("event transport unavailable")
+        raise RuntimeError("invalidation transport unavailable")
 
 
-class _TransitionBeforeYieldPublisher(_RecordingPublisher):
+class _TransitionBeforeYieldInvalidationPublisher(_RecordingInvalidationPublisher):
     def __init__(self) -> None:
         super().__init__()
         self.transition: Callable[[], Awaitable[None]] | None = None
@@ -228,7 +228,7 @@ def _service(
     database_url: str,
     tmp_path: Path,
     ledger: PostgresToolCallLedger,
-    publisher: _RecordingPublisher,
+    publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
 ) -> ToolCallApplicationService:
@@ -245,7 +245,7 @@ def _service(
     return ToolCallApplicationService(
         settings=console_settings(database_url, config_file=config_file),
         repository=ledger,
-        event_publisher=publisher,
+        invalidation_publisher=publisher,
         executor=executor,
         oauth_store=tokens,
         in_process_servers={},
@@ -270,7 +270,7 @@ async def _always_approve(**_: Any) -> tuple[str, str]:
 async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str, tmp_path: Path) -> None:
     """Every service read, event cursor, and transition is scoped from the authenticated actor."""
     actors = _actors(migrated_db_url)
-    publisher = _RecordingPublisher()
+    publisher = _RecordingInvalidationPublisher()
     executor = _RecordingExecutor()
     ledger = PostgresToolCallLedger(migrated_db_url)
     tokens = _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
@@ -375,7 +375,7 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(migrated_db_url
     actors = _actors(migrated_db_url)
     agent = actors["aa1"]
     operator = actors["oa"]
-    publisher = _RecordingPublisher()
+    publisher = _RecordingInvalidationPublisher()
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
@@ -406,7 +406,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(migrated_db
     actors = _actors(migrated_db_url)
     agent = actors["aa1"]
     operator = actors["oa"]
-    publisher = _TransitionBeforeYieldPublisher()
+    publisher = _TransitionBeforeYieldInvalidationPublisher()
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
@@ -442,7 +442,7 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
 
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
     ledger = _RecordingLedger(migrated_db_url)
-    publisher = _RecordingPublisher()
+    publisher = _RecordingInvalidationPublisher()
     executor = _RecordingExecutor()
     tokens = _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
     service = _service(
@@ -479,7 +479,7 @@ async def test_unknown_server_is_a_transport_independent_not_found(migrated_db_u
         database_url=migrated_db_url,
         tmp_path=tmp_path,
         ledger=PostgresToolCallLedger(migrated_db_url),
-        publisher=_RecordingPublisher(),
+        publisher=_RecordingInvalidationPublisher(),
         executor=_RecordingExecutor(),
         tokens=_OperatorTokens({actor.operator_id: "token-a"}),
     )
@@ -498,7 +498,7 @@ async def test_auto_execution_finishes_before_best_effort_event_publication(
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
     ledger = _RecordingLedger(migrated_db_url)
-    publisher = _RaisingPublisher()
+    publisher = _RaisingInvalidationPublisher()
     executor = _RecordingExecutor()
     service = _service(
         database_url=migrated_db_url,
@@ -525,7 +525,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
     ledger = _RecordingLedger(migrated_db_url)
-    publisher = _RecordingPublisher()
+    publisher = _RecordingInvalidationPublisher()
     executor = _CancellingExecutor()
     service = _service(
         database_url=migrated_db_url,
