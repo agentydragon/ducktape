@@ -7,7 +7,7 @@ pub struct ResolvedMemberBinding {
     pub kind: Option<BindingSourceKind>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct SourceMatchNearMiss {
     pub body_idx: usize,
     pub declared_bindings: Vec<String>,

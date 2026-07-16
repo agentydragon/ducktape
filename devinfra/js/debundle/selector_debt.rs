@@ -139,17 +139,6 @@ pub struct SourceAwareRepeatedExactSourceMatch {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SourceAwareNearMiss {
-    /// Top-level body index of the near-matching candidate in the current chunk.
-    pub body_idx: usize,
-    /// Binding names declared by that candidate, if any.
-    pub declared_bindings: Vec<String>,
-    /// Existing source_match mismatch-score heuristic. Higher means closer.
-    pub score: usize,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct SourceAwareStructuralSelector {
     pub module: String,
     pub site: SelectorSite,
@@ -157,7 +146,7 @@ pub struct SourceAwareStructuralSelector {
     pub export_name: Option<String>,
     /// The exact top-level body indices matched by this selector today.
     pub exact_body_indices: Vec<usize>,
-    pub near_misses: Vec<SourceAwareNearMiss>,
+    pub near_misses: Vec<source_match::SourceMatchNearMiss>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -988,16 +977,7 @@ fn collect_source_aware_debt(
         site,
         export_name,
         exact_body_indices: exact_body_indices.clone(),
-        near_misses: debt
-            .near_misses
-            .into_iter()
-            .map(|near| SourceAwareNearMiss {
-                body_idx: near.body_idx,
-                declared_bindings: near.declared_bindings,
-                score: near.score,
-                reason: near.reason,
-            })
-            .collect(),
+        near_misses: debt.near_misses,
     });
     Ok(Some(exact_body_indices))
 }
