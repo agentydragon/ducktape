@@ -30,6 +30,16 @@ RUN usermod --login workspace --home /home/workspace --move-home node \
 # through the GLM lane. Model pinning comes from the SandboxTemplate env.
 COPY --chown=workspace:workspace claude-settings.json /home/workspace/.claude/settings.json
 
+# Skip Claude Code first-run friction, same knobs as the mkClaudeGateway
+# wrappers (nix/home/claude_code/gateway.nix): IS_DEMO skips the theme/
+# onboarding flow, DISABLE_AUTOUPDATER pins the baked CLI version (updates
+# come through image rebuilds, not in-pod self-updates). The seeded
+# ~/.claude.json additionally pre-trusts /workspace so the trust dialog
+# never fires there (codex-pod does the same for codex's directory trust).
+ENV IS_DEMO=1 \
+    DISABLE_AUTOUPDATER=1
+COPY --chown=workspace:workspace claude.json /home/workspace/.claude.json
+
 USER workspace
 WORKDIR /workspace
 

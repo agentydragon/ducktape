@@ -1,0 +1,10 @@
+{
+  "hasCompletedOnboarding": true,
+  "theme": "dark",
+  "projects": {
+    "/workspace": {
+      "hasTrustDialogAccepted": true,
+      "hasCompletedProjectOnboarding": true
+    }
+  }
+}
