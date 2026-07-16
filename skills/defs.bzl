@@ -138,10 +138,8 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
         )
         packaged_targets.append(":" + pkg_name)
 
-    # Re-root the packaged files under `name/` here (pkg_zip has no
-    # package_dir attr). The combined `//skills:all_skills` archive in another
-    # package consumes this filegroup directly — pkg_zip can't merge other zips
-    # the way pkg_tar merges tars via `deps` — so it must be public.
+    # Re-root the packaged files under `name/` here (pkg_zip has no package_dir
+    # attr) so the `<name>_skill` archive holds `<name>/SKILL.md`, ….
     pkg_filegroup(
         name = name + "_files",
         srcs = packaged_targets,

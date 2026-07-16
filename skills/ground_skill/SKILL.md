@@ -158,7 +158,7 @@ skill_package(name = "myskill", srcs = ["SKILL.md"])
 ```
 
 `skill_package` emits the `:myskill_skill` (`.skill` zip) and `:myskill_files`
-targets. Add `myskill_files` to `skills/BUILD.bazel`'s `all_skills` srcs.
+targets. To ship the skill, add an entry to `skills/skills_registry.json`.
 
 ## Process: upgrading an existing skill
 

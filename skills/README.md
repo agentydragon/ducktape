@@ -4,18 +4,17 @@ Agent skills for Claude Code, Gemini CLI, OpenCode, and other AI agents.
 
 ## Deployment
 
-Skills are built by Bazel (`skill_package` macro in `defs.bzl`) — each skill is a
-`.skill` zip (`//skills/<name>:<name>_skill`) — and packaged into a combined
-`.skill` zip (`//skills:all_skills`). CI publishes this combined archive as a
-GitHub release artifact.
+Skills are built by Bazel (`skill_package` macro in `defs.bzl`) — each skill is
+its own `.skill` zip (`//skills/<name>:<name>_skill`). CI publishes each one as a
+separate `skill-<name>` GitHub release artifact (see the registry below).
 
-**Local machines**: `flake.nix` unpacks the release artifact as the `skills-tar`
-flake input. `nix/home/skills.nix` then creates Home Manager `home.file` entries
-for each configured agent home (`~/.claude/skills/`, `~/.gemini/skills/`,
-`~/.codex/skills/`, etc.).
+**Local machines**: `flake.nix` fetches every `skill-*` pin and assembles them
+into one flat directory of `<name>/` subdirs (`skills-tar`). `nix/home/skills.nix`
+then creates Home Manager `home.file` entries for each configured agent home
+(`~/.claude/skills/`, `~/.gemini/skills/`, `~/.codex/skills/`, etc.).
 
 **Claude Code Web**: the `devtools` profile includes `ducktapePkgs.skills`,
-which extracts the same release artifact under the Nix profile at
+which assembles the same per-skill artifacts under the Nix profile at
 `share/claude-hooks/skills/`. `devinfra/claude/web_setup.sh` then symlinks each
 profile skill directory into `~/.claude/skills/`, preserving Anthropic's
 preinstalled default skills.

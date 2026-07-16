@@ -32,10 +32,6 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
-    "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-257de88ceed6/all_skills.skill",
-      "sha256": "JX3ojO7W4761wzt54c/lHMfyy5oaeUGBqeIa/r307Pk="
-    },
     "claude-hook-rs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-0648c724fb04/claude_hook",
       "sha256": "BkjHJPsEFiyWLutvAsdxWDLoGcoPm/Ie0bJHAm70TpE="

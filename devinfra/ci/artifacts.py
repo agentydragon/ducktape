@@ -78,10 +78,6 @@ ARTIFACTS = [
     Artifact(pkg="aiquota", filename="aiquota-0.1.0-py3-none-any.whl"),
     Artifact(pkg="aiquota-extension", tag_pkg="aiquota", filename="aiquota.zip"),
     Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
-    # CLEANUP(added 2026-07-16): drop the combined bundle once nix stops
-    #   reading the `skills` pin (i.e. flake.nix / nix/packages assemble from the
-    #   per-skill `skill-*` pins instead — PR 2 of the all_skills teardown).
-    Artifact(pkg="skills", filename="all_skills.skill"),
     Artifact(pkg="bbapi", filename="bbapi"),
     Artifact(pkg="debundle", filename="debundle"),
     *_skill_artifacts(),

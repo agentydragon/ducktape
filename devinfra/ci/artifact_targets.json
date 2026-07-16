@@ -40,11 +40,6 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
       "release": "aiquota"
     },
-    "skills": {
-      "target": "//skills:all_skills",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/all_skills.skill",
-      "release": "skills"
-    },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
@@ -96,11 +91,6 @@
       "primaryPin": "aiquota",
       "tests": "//aiquota/...",
       "nixPackage": true
-    },
-    "skills": {
-      "primaryPin": "skills",
-      "tests": "//skills/... //cluster/skills/...",
-      "nixPackage": false
     },
     "bbapi": {
       "primaryPin": "bbapi",
