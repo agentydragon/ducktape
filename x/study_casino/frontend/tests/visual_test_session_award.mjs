@@ -4,6 +4,7 @@
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
 await main("session_award", import.meta.url, {
+  publishOnly: true,
   viewport: { width: 900, height: 360 },
   waitMs: 250,
 });

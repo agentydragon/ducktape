@@ -20,16 +20,6 @@ filegroup(
     visibility = ["//x/study_casino:__subpackages__"],
 )
 
-filegroup(
-    name = "visual_golden_snapshots",
-    testonly = True,
-    srcs = glob(
-        ["__screenshots__/*.png"],
-        allow_empty = True,
-    ),
-    visibility = ["//x/study_casino:__subpackages__"],
-)
-
 # ── Per-file source libraries ──────────────────────────────────────────────────
 
 js_library(
@@ -217,11 +207,11 @@ spa_bundle(
     deps = [":main"],
 )
 
-# ── Visual regression test ────────────────────────────────────────────────────
+# ── Visual render-health tests ───────────────────────────────────────────────
 #
-# Renders the StudyCasino component with mocked state and compares the
-# resulting screenshot against baselines/main_page-chromium-linux.png. Reuses
-# the shared Puppeteer + pixelmatch lib at //util/testing/frontend_visual.
+# Renders the StudyCasino component with mocked state and publishes the
+# screenshot for PR visual review (publishOnly — no checked-in baselines).
+# Reuses the shared Puppeteer lib at //util/testing/frontend_visual.
 # Casino fonts above are wired in instead of the lib's Inter so the test
 # captures the same typography users see in production.
 
@@ -273,8 +263,7 @@ filegroup(
 )
 
 # One js_test per harness scenario (?page=<scenario> in tests/harness/harness.jsx);
-# each has a same-named entry at tests/visual_test_<scenario>.mjs and a baseline
-# at tests/baselines/<scenario>-chromium-linux.png.
+# each has a same-named entry at tests/visual_test_<scenario>.mjs.
 [
     js_test(
         name = "visual_%s" % scenario,
@@ -286,17 +275,13 @@ filegroup(
             "//util/testing/frontend_visual:fonts_conf",
             "//util/testing/frontend_visual:visual_test_lib",
             "@playwright_browsers//:chromium-headless-shell",
-        ] + glob(
-            ["tests/baselines/*.png"],
-            allow_empty = True,
-        ),
+        ],
         entry_point = "tests/visual_test_%s.mjs" % scenario,
         env = {
             "HARNESS_PATH": "$(rootpath :visual_harness_js)",
             "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
             "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
             "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
-            "BASELINE_WORKSPACE_PATH": "x/study_casino/frontend/tests/baselines",
             "EXPECTED_FONT_FAMILY": "Outfit",
         },
         no_copy_to_bin = [

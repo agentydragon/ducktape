@@ -107,6 +107,15 @@ def _post_json(base_url: str, path: str, payload: dict[str, object]) -> dict[str
         return cast(dict[str, object], decoded)
 
 
+def _ack_changelog(base_url: str) -> None:
+    """Ack the changelog so the "what's new" modal doesn't intercept clicks."""
+    _post_json(
+        base_url,
+        "/actions/changelog/ack",
+        {"client_action_id": f"test.changelog:{time.time_ns()}", "last_id": LATEST_CHANGELOG_ID},
+    )
+
+
 def _seed_credits(base_url: str, credits: int) -> None:
     _post_json(
         base_url,
@@ -116,12 +125,7 @@ def _seed_credits(base_url: str, credits: int) -> None:
             "data": {"credits": credits, "tokens": 0, "sessions": [], "prizes": [], "prizeLog": []},
         },
     )
-    # Ack the changelog so the "what's new" modal doesn't intercept clicks.
-    _post_json(
-        base_url,
-        "/actions/changelog/ack",
-        {"client_action_id": f"test.changelog:{time.time_ns()}", "last_id": LATEST_CHANGELOG_ID},
-    )
+    _ack_changelog(base_url)
 
 
 def test_initial_state_fetch_completes(page: Page, casino_server: str) -> None:
@@ -186,6 +190,66 @@ def test_roulette_spin_sets_finite_wheel_transform(page: Page, casino_server: st
     )
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during roulette spin\n{logs}"
+
+
+def test_changelog_modal_blocks_until_acked_and_ack_persists(page: Page, casino_server: str) -> None:
+    """A fresh user sees the "what's new" modal; "Got it" dismisses it and the
+    ack survives a reload (server-side cursor, not local state)."""
+    logs = _attach_logs(page)
+
+    page.goto(casino_server)
+    page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    modal_title = page.get_by_text("What's new")
+    modal_title.wait_for(state="visible", timeout=10_000)
+
+    page.get_by_role("button", name="Got it").click()
+    modal_title.wait_for(state="hidden", timeout=10_000)
+
+    page.reload()
+    page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    assert page.get_by_text("What's new").count() == 0, "changelog modal reappeared after ack + reload"
+    assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during changelog ack\n{logs}"
+
+
+def test_stop_and_save_shows_award_toast(page: Page, casino_server: str) -> None:
+    """Completing a live session via Stop & Save surfaces the server-computed
+    award toast (credits + streak multiplier + daily bonus), and dismissing it
+    removes it."""
+    _ack_changelog(casino_server)
+    logs = _attach_logs(page)
+
+    # Backdate an in-progress 6-minute session in localStorage (where the
+    # production timer lives) so the completed session crosses the 5-minute
+    # daily-bonus threshold and earns a nonzero award.
+    page.add_init_script(
+        """
+        if (!window.localStorage.getItem("casino:active_session")) {
+          window.localStorage.setItem("casino:active_session", JSON.stringify({
+            subject: "Biochemistry",
+            startTime: Date.now() - 6 * 60 * 1000,
+            paused: false,
+            pausedDuration: 0,
+            pauseStartedAt: null,
+          }));
+        }
+        """
+    )
+    page.goto(casino_server)
+    page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+
+    page.get_by_role("button", name="Stop & Save").click()
+
+    # Server-computed award: 6 minutes → base credits + first-5-minutes daily
+    # bonus at streak day 1.
+    toast_credits = page.get_by_text(re.compile(r"^\+.*credits$"))
+    toast_credits.wait_for(state="visible", timeout=10_000)
+    page.get_by_text("daily bonus").wait_for(state="visible", timeout=5_000)
+    page.get_by_text(re.compile(r"6m studied · 1-day streak")).wait_for(state="visible", timeout=5_000)
+
+    page.get_by_role("button", name="Dismiss").click()
+    toast_credits.wait_for(state="hidden", timeout=5_000)
+
+    assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during stop-and-save\n{logs}"
 
 
 def test_slots_spin_does_not_throw_on_server_action_response(page: Page, casino_server: str) -> None:

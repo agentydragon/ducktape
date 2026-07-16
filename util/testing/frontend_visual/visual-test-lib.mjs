@@ -10,6 +10,10 @@
  *
  * To update a baseline: bazel run //path/to:visual_TestName -- --update
  * To inspect failures: check TEST_UNDECLARED_OUTPUTS_DIR for *-actual.png + *-diff.png.
+ *
+ * Scenarios that pass `publishOnly: true` keep no checked-in baseline at all:
+ * the test gates render health only, and pixel changes are reviewed via the
+ * published PR-visuals manifest.
  */
 
 // `document` is the browser page's, referenced inside page.evaluate callbacks (which run in the
@@ -121,10 +125,14 @@ function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDi
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
  * @param {string|null} callerUrl - import.meta.url of the calling test file (for baseline dir resolution).
- * @param {{ viewport?: { width: number, height: number }, baselineName?: string, colorScheme?: 'light' | 'dark', waitMs?: number }} [options] - Optional overrides.
+ * @param {{ viewport?: { width: number, height: number }, baselineName?: string, colorScheme?: 'light' | 'dark', waitMs?: number, publishOnly?: boolean }} [options] - Optional overrides.
  *   baselineName overrides the filename stem for the baseline PNG (defaults to scenarioName).
  *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
  *   waitMs overrides the settle delay after `#app > *` appears (defaults to 200).
+ *   publishOnly skips the checked-in-baseline comparison: the test is a
+ *   render-health gate (harness loads, scenario mounts, no page errors) and
+ *   pixel changes are reviewed via the published PR-visuals manifest instead
+ *   (see devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
  */
 export async function main(scenarioName, callerUrl = null, options = {}) {
   const baselineName = options.baselineName || scenarioName;
@@ -151,6 +159,10 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
   const outputDir = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "diffs");
 
   const { updateMode, writeDir } = resolveUpdateMode();
+  if (options.publishOnly && updateMode) {
+    console.error("ERROR: --update is meaningless for a publishOnly scenario — there is no checked-in baseline.");
+    process.exit(1);
+  }
 
   const indexPath = resolve(join(harnessDir, "index.html"));
   if (!existsSync(indexPath)) {
@@ -214,6 +226,10 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
 
   try {
     const page = await browser.newPage();
+    // Render health: any uncaught error in the page fails the test — with no
+    // pixel gate in publishOnly mode this is the primary crash detector.
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error));
     const viewport = { width: 1200, height: 800, deviceScaleFactor: 1, ...options.viewport };
     await page.setViewport(viewport);
     const colorScheme = options.colorScheme || "light";
@@ -266,12 +282,25 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     const screenshotData = await element.screenshot();
     const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 
-    const result = compareBaseline(baselineName, screenshot, outputDir, baselineDir, writeDir);
+    let result;
+    if (options.publishOnly) {
+      if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+      writeFileSync(join(outputDir, `${baselineName}-actual.png`), screenshot);
+      if (pageErrors.length > 0) {
+        console.error(`  ✗ ${pageErrors.length} browser page error(s):`);
+        for (const error of pageErrors) console.error(`    ${error.stack || error}`);
+        result = { passed: false, reason: "pageerror" };
+      } else {
+        result = { passed: true };
+      }
+    } else {
+      result = compareBaseline(baselineName, screenshot, outputDir, baselineDir, writeDir);
+    }
 
-    // compareBaseline retained `${baselineName}-actual.png` in outputDir;
-    // publish it for PR visual review (devinfra/ci/pr_visuals.py picks the
-    // manifest up from passing CI runs). Upsert so a runner invoking main()
-    // for several scenarios accumulates one manifest.
+    // `${baselineName}-actual.png` was retained in outputDir; publish it for
+    // PR visual review (devinfra/pr_visuals/publisher.py picks the manifest
+    // up from passing CI runs). Upsert so a runner invoking main() for
+    // several scenarios accumulates one manifest.
     upsertVisualReviewAsset(outputDir, {
       title: baselineName,
       asset: { path: `${baselineName}-actual.png`, label: baselineName },

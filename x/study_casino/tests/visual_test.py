@@ -1,27 +1,15 @@
-"""Full-page visual goldens for each casino view + each game.
+"""Render-health checks + PR-visuals publication for each casino view.
 
-Run produces a PNG per (view, viewport) case and compares against the checked-in
-baseline under `x/study_casino/frontend/__screenshots__/`.
+Every (view, viewport) case boots the real server, waits for load-bearing DOM,
+renders twice to prove determinism, and fails on any browser page error. The
+rendered PNGs plus a `visual-review.json` manifest go to undeclared outputs,
+where trusted CI (`devinfra/pr_visuals/publisher.py` via the "Publish PR
+visuals" workflow) publishes them as a browsable bundle, diffs them against the
+merge-base baseline, and comments on the PR.
 
-Every run also retains the rendered PNGs plus a `visual-review.json` manifest in
-undeclared outputs, so trusted CI (`devinfra/pr_visuals/publisher.py` via the
-"Publish PR visuals" workflow) publishes the views as a browsable bundle and
-comments the link on the PR.
-
-Update flow for intentional frontend changes:
-
-    bbr test --test_env=UPDATE_GOLDEN=1 --nocache_test_results \\
-      //x/study_casino/tests:visual_golden_test
-
-Then download the produced PNGs from the test's undeclared outputs and copy
-them into `x/study_casino/frontend/__screenshots__/`. Using the
-invocation id printed by bbr:
-
-    INV="<invocation-id>"
-    for f in $(bbapi artifact list "$INV" | awk '/\\.png$/ {print $NF}'); do
-      bbapi artifact download "$INV" "test.outputs/$f" \\
-        -o x/study_casino/frontend/__screenshots__/"$f"
-    done
+There is no checked-in pixel golden — pixel changes are reviewed on the PR's
+visual-review page, not gated in CI (see
+devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
 """
 
 from __future__ import annotations
@@ -49,7 +37,6 @@ from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.oci import load_oci_image
-from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 from x.study_casino.app import create_app
@@ -146,7 +133,7 @@ def browser(playwright_sync: Playwright) -> Iterator[Browser]:
 
 
 @pytest.fixture(scope="module")
-def casino_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+def casino_server() -> Iterator[str]:
     """uvicorn-backed casino server with a fresh Postgres testcontainer."""
     load_oci_image(RYUK)
     load_oci_image(POSTGRES_18)
@@ -157,10 +144,9 @@ def casino_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         port = int(container.get_exposed_port(5432))
         db_url = f"postgresql+psycopg://postgres:postgres@{host}:{port}/casino"
 
-        tmp_path = tmp_path_factory.mktemp("casino-visual-server")
         frontend_dist = get_required_path("_main/x/study_casino/frontend/dist/index.html").parent
 
-        # The visual goldens want a non-empty UI for prizes/stats. Seed a few
+        # The rendered views want a non-empty UI for prizes/stats. Seed a few
         # sessions and a token balance via the server's own action endpoints
         # right after startup, before the screenshots run.
         settings = Settings(database_url=db_url, frontend_dist_dir=frontend_dist, admin_users={"default"})
@@ -184,8 +170,6 @@ def casino_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         finally:
             server.should_exit = True
             thread.join(timeout=10)
-        # Drop the temp dir
-        shutil.rmtree(tmp_path, ignore_errors=True)
     finally:
         container.stop()
 
@@ -195,7 +179,7 @@ def _run_uvicorn(server: uvicorn.Server) -> None:
 
 
 def _seed_fixture_state(origin: str) -> None:
-    """Populate a small fixture state so visual goldens have content to render.
+    """Populate a small fixture state so the rendered views have content.
 
     Adds two completed past sessions (so Stats / Study panels show data) and
     converts a chunk to tokens (so the Vault shows redeemable balance + the
@@ -282,6 +266,7 @@ def _frozen_clock_init() -> str:
 
 
 def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
+    """Render one case; fails on any browser page error (render health)."""
     context = browser.new_context(
         viewport=case.viewport,
         device_scale_factor=1,
@@ -292,6 +277,8 @@ def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffi
     )
     context.add_init_script(_frozen_clock_init())
     page = context.new_page()
+    page_errors: list[str] = []
+    page.on("pageerror", lambda e: page_errors.append(f"{e}\n{getattr(e, 'stack', '')}"))
     try:
         page.goto(f"{origin}/{case.query}", wait_until="networkidle", timeout=30_000)
         page.add_style_tag(content=_deterministic_style())
@@ -300,6 +287,8 @@ def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffi
         page.evaluate("() => document.fonts.ready.then(() => true)")
         actual_path = out_dir / f"{case.name}.{suffix}.png"
         page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
+        if page_errors:
+            raise AssertionError(f"{case.name} raised browser page errors:\n" + "\n".join(page_errors))
         return actual_path
     finally:
         page.close()
@@ -307,7 +296,7 @@ def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffi
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
-def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Path, case: Case) -> None:
+def test_casino_views_render(browser: Browser, casino_server: str, tmp_path: Path, case: Case) -> None:
     undeclared_dir = undeclared_outputs_dir()
     first_path = _render_case(browser, casino_server, case, tmp_path, "first")
     second_path = _render_case(browser, casino_server, case, tmp_path, "second")
@@ -319,27 +308,13 @@ def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Pa
             f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
         )
 
-    # Always retain the candidate render + visual-review manifest for the PR
-    # visual-review publisher (devinfra/pr_visuals/publisher.py).
-    out_name = f"{case.name}.png"
+    # Retain the render + visual-review manifest for the PR visual-review
+    # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
     retain_review_asset(
-        first_path, title="Study Casino views", label=case.name.replace("_", " ").replace(".", " · "), name=out_name
-    )
-
-    if os.environ.get("UPDATE_GOLDEN") == "1":
-        return
-
-    try:
-        expected_path = get_required_path(f"_main/x/study_casino/frontend/__screenshots__/{out_name}")
-    except RuntimeError:
-        raise AssertionError(
-            f"No casino visual golden checked in for {out_name}. Re-run with UPDATE_GOLDEN=1 "
-            f"and copy the produced PNG from undeclared outputs into "
-            f"x/study_casino/frontend/__screenshots__/."
-        ) from None
-
-    assert_png_matches_golden(
-        first_path, expected_path, name=case.name, out_dir=undeclared_dir, tolerance=0.0, intensity_threshold=2
+        first_path,
+        title="Study Casino views",
+        label=case.name.replace("_", " ").replace(".", " · "),
+        name=f"{case.name}.png",
     )
 
 

@@ -4,6 +4,7 @@
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
 await main("streak_rest", import.meta.url, {
+  publishOnly: true,
   viewport: { width: 1200, height: 1400 },
   waitMs: 250,
 });

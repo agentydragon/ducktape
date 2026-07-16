@@ -31,14 +31,13 @@ py_test(
 )
 
 py_test(
-    name = "visual_golden_test",
+    name = "visual_test",
     size = "large",
-    srcs = ["visual_golden_test.py"],
+    srcs = ["visual_test.py"],
     data = [
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
         "//x/study_casino/frontend:bundle",
-        "//x/study_casino/frontend:visual_golden_snapshots",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
@@ -51,7 +50,6 @@ py_test(
         "//util:oci",
         "//util:playwright",
         "//util/bazel:runfiles",
-        "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_review",
         "//x/study_casino:app",
