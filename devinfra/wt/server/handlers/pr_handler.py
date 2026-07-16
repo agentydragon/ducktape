@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from wt.server.github_watcher import GitHubWatcher
-from wt.server.rpc import rpc
-from wt.shared.protocol import PRRefreshParams
+from devinfra.wt.server.github_watcher import GitHubWatcher
+from devinfra.wt.server.rpc import rpc
+from devinfra.wt.shared.protocol import PRRefreshParams
 
 
 @rpc.method("pr_refresh_now", params=PRRefreshParams)

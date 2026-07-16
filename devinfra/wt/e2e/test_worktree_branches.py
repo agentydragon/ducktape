@@ -4,7 +4,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from wt.testing.git_helpers import add_worktree
+from devinfra.wt.testing.git_helpers import add_worktree
 
 pytestmark = pytest.mark.timeout(10)
 

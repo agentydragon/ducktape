@@ -23,7 +23,7 @@ from typing import cast
 
 from reaktiv import Computed, Signal
 
-from wt.shared.protocol import Collector, GitstatusdConfig, GitstatusdData, GitstatusdUnavailable
+from devinfra.wt.shared.protocol import Collector, GitstatusdConfig, GitstatusdData, GitstatusdUnavailable
 
 
 class DaemonStore:

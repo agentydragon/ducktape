@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pygit2
 
-from wt.testing.data import TestData
+from devinfra.wt.testing.data import TestData
 
 
 class GitRepoFactory:

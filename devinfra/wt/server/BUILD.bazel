@@ -5,17 +5,17 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # This visibility constraint enforces the layering at build time.
 # See also: wt/client/BUILD.bazel for the client-side constraint.
 package(default_visibility = [
-    "//wt/server:__subpackages__",
-    "//wt/testing:__pkg__",
+    "//devinfra/wt/server:__subpackages__",
+    "//devinfra/wt/testing:__pkg__",
 ])
 
 py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//wt:__subpackages__"],
+    visibility = ["//devinfra/wt:__subpackages__"],
     deps = [
-        "//wt/testing:conftest",
+        "//devinfra/wt/testing:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
@@ -24,16 +24,16 @@ py_library(
 py_library(
     name = "copy_strategies",
     srcs = ["copy_strategies.py"],
-    deps = ["//wt/shared:configuration"],
+    deps = ["//devinfra/wt/shared:configuration"],
 )
 
 py_library(
     name = "git_manager",
     srcs = ["git_manager.py"],
     deps = [
-        "//wt/shared:configuration",
-        "//wt/shared:git_utils",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:git_utils",
+        "//devinfra/wt/shared:protocol",
         "@pypi//pygit2",
     ],
 )
@@ -44,8 +44,8 @@ py_library(
     deps = [
         ":git_manager",
         ":stores",
-        "//wt/shared:configuration",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//reaktiv",
         "@pypi//watchdog",
@@ -56,9 +56,9 @@ py_library(
     name = "github_client",
     srcs = ["github_client.py"],
     deps = [
-        "//wt/shared:env",
-        "//wt/shared:error_handling",
-        "//wt/shared:github_models",
+        "//devinfra/wt/shared:env",
+        "//devinfra/wt/shared:error_handling",
+        "//devinfra/wt/shared:github_models",
         "@pypi//pygithub",
     ],
 )
@@ -68,11 +68,11 @@ py_library(
     srcs = ["github_watcher.py"],
     deps = [
         ":github_client",
-        "//wt/shared:configuration",
-        "//wt/shared:env",
-        "//wt/shared:fixtures",
-        "//wt/shared:github_models",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:env",
+        "//devinfra/wt/shared:fixtures",
+        "//devinfra/wt/shared:github_models",
+        "//devinfra/wt/shared:protocol",
         "@pypi//reaktiv",
     ],
 )
@@ -87,7 +87,7 @@ py_library(
     name = "gitstatusd_listener",
     srcs = ["gitstatusd_listener.py"],
     deps = [
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:protocol",
         "@pypi//reaktiv",
     ],
 )
@@ -97,7 +97,7 @@ py_library(
     srcs = ["repo_status.py"],
     deps = [
         ":git_manager",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:protocol",
         "@pypi//pygit2",
     ],
 )
@@ -111,8 +111,8 @@ py_library(
         ":github_watcher",
         ":services",
         ":worktree_service",
-        "//wt/shared:configuration",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:protocol",
         "@pypi//punq",
         "@pypi//pydantic",
     ],
@@ -127,7 +127,7 @@ py_library(
         ":types",
         ":worktree_ids",
         ":worktree_index",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:protocol",
     ],
 )
 
@@ -135,7 +135,7 @@ py_library(
     name = "stores",
     srcs = ["stores.py"],
     deps = [
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:protocol",
         "@pypi//reaktiv",
     ],
 )
@@ -143,7 +143,7 @@ py_library(
 py_library(
     name = "types",
     srcs = ["types.py"],
-    deps = ["//wt/shared:protocol"],
+    deps = ["//devinfra/wt/shared:protocol"],
 )
 
 py_library(
@@ -159,8 +159,8 @@ py_library(
     name = "worktree_ids",
     srcs = ["worktree_ids.py"],
     deps = [
-        "//wt/shared:configuration",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:protocol",
     ],
 )
 
@@ -170,7 +170,7 @@ py_library(
     deps = [
         ":types",
         ":worktree_ids",
-        "//wt/shared:constants",
+        "//devinfra/wt/shared:constants",
     ],
 )
 
@@ -188,10 +188,10 @@ py_library(
         ":git_manager",
         ":github_client",
         ":worktree_ids",
-        "//wt/shared:configuration",
-        "//wt/shared:error_handling",
-        "//wt/shared:models",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:error_handling",
+        "//devinfra/wt/shared:models",
+        "//devinfra/wt/shared:protocol",
         "@pypi//psutil",
         "@pypi//pygit2",
         "@pypi//types_psutil",
@@ -217,12 +217,12 @@ py_binary(
         ":worktree_index",
         ":worktree_registry",
         ":worktree_service",
-        "//wt/server/handlers:path_handler",
-        "//wt/server/handlers:pr_handler",
-        "//wt/server/handlers:status_handler",
-        "//wt/server/handlers:worktree_handler",
-        "//wt/shared:configuration",
-        "//wt/shared:protocol",
+        "//devinfra/wt/server/handlers:path_handler",
+        "//devinfra/wt/server/handlers:pr_handler",
+        "//devinfra/wt/server/handlers:status_handler",
+        "//devinfra/wt/server/handlers:worktree_handler",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:protocol",
     ],
 )
 

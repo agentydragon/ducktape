@@ -9,10 +9,8 @@ import typer
 from colorama import init
 from typer.main import get_command
 
-from util.logging import LogLevel, configure_logging
-from util.typer import async_run
-from wt.client.cd_utils import emit_cd_command
-from wt.client.handlers import (
+from devinfra.wt.client.cd_utils import emit_cd_command
+from devinfra.wt.client.handlers import (
     CreateWorktreeOptions,
     handle_copy_worktree,
     handle_create_worktree,
@@ -24,10 +22,12 @@ from wt.client.handlers import (
     handle_status,
     handle_status_single,
 )
-from wt.client.view_formatter import ViewFormatter
-from wt.client.wt_client import WtClient
-from wt.shared.configuration import Configuration, load_config
-from wt.shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
+from devinfra.wt.client.view_formatter import ViewFormatter
+from devinfra.wt.client.wt_client import WtClient
+from devinfra.wt.shared.configuration import Configuration, load_config
+from devinfra.wt.shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
+from util.logging import LogLevel, configure_logging
+from util.typer import async_run
 
 COPY_MAX_ARGS = 2
 
@@ -263,7 +263,7 @@ async def _async_sh_main(dispatch_ctx: ShellDispatchContext, filtered_args):
 async def cmd_sh(ctx: typer.Context):
     """Primary dispatcher for shell function integration.
 
-    All wt commands go through the shell wrapper which calls 'python -m wt.cli sh <args>'.
+    All wt commands go through the shell wrapper which calls 'python -m devinfra.wt.cli sh <args>'.
     This enables shell operations like cd that can only be executed by the parent shell.
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))

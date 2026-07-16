@@ -15,9 +15,9 @@ from typing import Any
 
 import pytest_bazel
 
-from wt.shared.fixtures import PRFixtureEntry
-from wt.shared.github_models import PRState
-from wt.testing.utils import wait_until
+from devinfra.wt.shared.fixtures import PRFixtureEntry
+from devinfra.wt.shared.github_models import PRState
+from devinfra.wt.testing.utils import wait_until
 
 # Global conftest disables gh token via get_github_token
 

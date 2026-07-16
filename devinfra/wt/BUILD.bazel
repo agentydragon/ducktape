@@ -5,14 +5,14 @@ py_library(
     srcs = ["cli.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//devinfra/wt/client:cd_utils",
+        "//devinfra/wt/client:handlers",
+        "//devinfra/wt/client:view_formatter",
+        "//devinfra/wt/client:wt_client",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:constants",
         "//util:logging",
         "//util:typer",
-        "//wt/client:cd_utils",
-        "//wt/client:handlers",
-        "//wt/client:view_formatter",
-        "//wt/client:wt_client",
-        "//wt/shared:configuration",
-        "//wt/shared:constants",
         "@pypi//click",
         "@pypi//colorama",
         "@pypi//typer_slim",
@@ -21,7 +21,7 @@ py_library(
 
 py_binary(
     name = "wt_cli",
-    main_module = "wt.cli",
+    main_module = "devinfra.wt.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],
 )

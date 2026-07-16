@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from wt.server.worktree_service import WorktreeService
+from devinfra.wt.server.worktree_service import WorktreeService
 
 
 class TestWorktreeService:

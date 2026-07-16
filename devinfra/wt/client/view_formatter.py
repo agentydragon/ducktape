@@ -6,8 +6,8 @@ import click
 from colorama import Style
 from tabulate import tabulate
 
-from wt.shared.github_models import PRData, PRState, PRStatus
-from wt.shared.protocol import PRInfo, PRInfoError, PRInfoOk, StatusResult
+from devinfra.wt.shared.github_models import PRData, PRState, PRStatus
+from devinfra.wt.shared.protocol import PRInfo, PRInfoError, PRInfoOk, StatusResult
 
 # PR status display mapping centralized via PRStatus.display_text
 PR_STATUS_DISPLAY_MAP = {

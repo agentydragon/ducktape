@@ -11,13 +11,13 @@ from typing import Any, Protocol, get_origin, get_type_hints
 from punq import Container
 from pydantic import BaseModel, ValidationError
 
-from wt.server.git_manager import GitManager
-from wt.server.git_refs_watcher import GitRefsWatcher
-from wt.server.github_watcher import GitHubWatcher
-from wt.server.services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
-from wt.server.worktree_service import WorktreeService
-from wt.shared.configuration import Configuration
-from wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
+from devinfra.wt.server.git_manager import GitManager
+from devinfra.wt.server.git_refs_watcher import GitRefsWatcher
+from devinfra.wt.server.github_watcher import GitHubWatcher
+from devinfra.wt.server.services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
+from devinfra.wt.server.worktree_service import WorktreeService
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
 
 logger = logging.getLogger(__name__)
 

@@ -16,14 +16,14 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from wt.server import github_client
-from wt.server.git_manager import GitManager
-from wt.server.gitstatusd_listener import find_gitstatusd_in_runfiles
-from wt.server.worktree_service import WorktreeService
-from wt.shared.config_file import ConfigFile
-from wt.shared.configuration import Configuration
-from wt.shared.fixtures import write_pr_fixtures_file
-from wt.shared.protocol import (
+from devinfra.wt.server import github_client
+from devinfra.wt.server.git_manager import GitManager
+from devinfra.wt.server.gitstatusd_listener import find_gitstatusd_in_runfiles
+from devinfra.wt.server.worktree_service import WorktreeService
+from devinfra.wt.shared.config_file import ConfigFile
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.fixtures import write_pr_fixtures_file
+from devinfra.wt.shared.protocol import (
     CommitInfo,
     DaemonHealth,
     DaemonHealthStatus,
@@ -33,15 +33,15 @@ from wt.shared.protocol import (
     StatusResult,
     StatusResultOk,
 )
-from wt.testing.config_factory import ConfigFactory
-from wt.testing.mock_factory import MockFactory, ServiceBuilder
-from wt.testing.repo_factory import GitRepoFactory
-from wt.testing.utils import run_cli_command, wait_until
+from devinfra.wt.testing.config_factory import ConfigFactory
+from devinfra.wt.testing.mock_factory import MockFactory, ServiceBuilder
+from devinfra.wt.testing.repo_factory import GitRepoFactory
+from devinfra.wt.testing.utils import run_cli_command, wait_until
 
 
 def get_wt_package_dir() -> Path:
     """Return the installed wt package directory."""
-    wt_mod = importlib.import_module("wt")
+    wt_mod = importlib.import_module("devinfra.wt")
     # With --incompatible_default_to_explicit_init_py, wt may be a namespace
     # package (__file__ is None). Use __path__ which works for both regular
     # and namespace packages.
@@ -531,8 +531,8 @@ def _find_wt_cli_binary() -> str | None:
         return None
 
     # Try to find wt_cli in runfiles (it's in the same repo)
-    # The path structure is: runfiles/_main/wt/wt_cli
-    candidate = Path(runfiles_dir) / "_main" / "wt" / "wt_cli"
+    # The path structure is: runfiles/_main/devinfra/wt/wt_cli
+    candidate = Path(runfiles_dir) / "_main" / "devinfra" / "wt" / "wt_cli"
     if candidate.exists():
         return str(candidate)
 
@@ -546,10 +546,10 @@ def _generate_wt_function_for_binary(binary_path: str) -> str:
     matching how install.main() works but using the Bazel binary instead of python -m.
     """
     quoted_path = shlex.quote(binary_path)
-    with importlib.resources.files("wt.shell").joinpath("wt.sh").open("r", encoding="utf-8") as f:
+    with importlib.resources.files("devinfra.wt.shell").joinpath("wt.sh").open("r", encoding="utf-8") as f:
         tpl = f.read()
-    # The template uses __PY__ -m wt.cli sh, replace with direct binary call
-    return tpl.replace("__PY__ -m wt.cli sh", quoted_path + " sh")
+    # The template uses __PY__ -m devinfra.wt.cli sh, replace with direct binary call
+    return tpl.replace("__PY__ -m devinfra.wt.cli sh", quoted_path + " sh")
 
 
 @pytest.fixture
@@ -559,7 +559,9 @@ def shell_runner(tmp_path: Path):
     class ShellRunner:
         def run_script(self, script_content: str, *, cwd: Path, env: dict[str, str] | None = None):
             # Ensure wt is importable (package installed) before attempting shell integration
-            assert importlib.util.find_spec("wt"), "wt package not installed - required for shell integration tests"
+            assert importlib.util.find_spec("devinfra.wt"), (
+                "wt package not installed - required for shell integration tests"
+            )
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 
@@ -567,7 +569,7 @@ def shell_runner(tmp_path: Path):
             wt_cli_path = _find_wt_cli_binary()
             if not wt_cli_path:
                 raise RuntimeError(
-                    "wt_cli binary not found in runfiles. Ensure //wt:wt_cli is in the test's data dependencies."
+                    "wt_cli binary not found in runfiles. Ensure //devinfra/wt:wt_cli is in the test's data dependencies."
                 )
             wt_fn = _generate_wt_function_for_binary(wt_cli_path)
 

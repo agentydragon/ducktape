@@ -5,18 +5,18 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # This visibility constraint enforces the layering at build time.
 # See also: wt/server/BUILD.bazel for the server-side constraint.
 package(default_visibility = [
-    "//wt:__pkg__",
-    "//wt/client:__subpackages__",
-    "//wt/testing:__pkg__",
+    "//devinfra/wt:__pkg__",
+    "//devinfra/wt/client:__subpackages__",
+    "//devinfra/wt/testing:__pkg__",
 ])
 
 py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//wt:__subpackages__"],
+    visibility = ["//devinfra/wt:__subpackages__"],
     deps = [
-        "//wt/testing:conftest",
+        "//devinfra/wt/testing:conftest",
         "@pypi//pytest",
     ],
 )
@@ -25,8 +25,8 @@ py_library(
     name = "cd_utils",
     srcs = ["cd_utils.py"],
     visibility = [
-        "//wt:__pkg__",
-        "//wt/client:__subpackages__",
+        "//devinfra/wt:__pkg__",
+        "//devinfra/wt/client:__subpackages__",
     ],
     deps = [":shell_utils"],
 )
@@ -37,9 +37,9 @@ py_library(
     deps = [
         ":cd_utils",
         ":wt_client",
-        "//wt/shared:constants",
-        "//wt/shared:env",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:constants",
+        "//devinfra/wt/shared:env",
+        "//devinfra/wt/shared:protocol",
         "@pypi//click",
         "@pypi//more_itertools",
         "@pypi//psutil",
@@ -57,8 +57,8 @@ py_library(
     name = "view_formatter",
     srcs = ["view_formatter.py"],
     deps = [
-        "//wt/shared:github_models",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:github_models",
+        "//devinfra/wt/shared:protocol",
         "@pypi//click",
         "@pypi//colorama",
         "@pypi//tabulate",
@@ -69,10 +69,10 @@ py_library(
     name = "wt_client",
     srcs = ["wt_client.py"],
     deps = [
-        "//wt/shared:configuration",
-        "//wt/shared:env",
-        "//wt/shared:error_handling",
-        "//wt/shared:protocol",
+        "//devinfra/wt/shared:configuration",
+        "//devinfra/wt/shared:env",
+        "//devinfra/wt/shared:error_handling",
+        "//devinfra/wt/shared:protocol",
         "@pypi//click",
         "@pypi//more_itertools",
         "@pypi//psutil",
@@ -87,9 +87,9 @@ py_test(
     srcs = ["test_cli_click_integration.py"],
     deps = [
         ":conftest",
-        "//wt:cli",
-        "//wt/shared:protocol",
-        "//wt/testing:asserts",
+        "//devinfra/wt:cli",
+        "//devinfra/wt/shared:protocol",
+        "//devinfra/wt/testing:asserts",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//typer_slim",

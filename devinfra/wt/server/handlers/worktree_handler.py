@@ -3,15 +3,15 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from wt.server.git_manager import GitManager
-from wt.server.rpc import RpcError, ServiceDependencies, Stream, rpc
-from wt.server.services import WorktreeCoordinator, WorktreeIndexService
-from wt.server.types import DiscoveredWorktree
-from wt.server.worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
-from wt.server.worktree_service import WorktreeService
-from wt.shared.configuration import Configuration
-from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from wt.shared.protocol import (
+from devinfra.wt.server.git_manager import GitManager
+from devinfra.wt.server.rpc import RpcError, ServiceDependencies, Stream, rpc
+from devinfra.wt.server.services import WorktreeCoordinator, WorktreeIndexService
+from devinfra.wt.server.types import DiscoveredWorktree
+from devinfra.wt.server.worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from devinfra.wt.server.worktree_service import WorktreeService
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from devinfra.wt.shared.protocol import (
     ErrorCodes,
     HookOutputEvent,
     HookRunResult,

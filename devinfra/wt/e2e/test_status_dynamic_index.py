@@ -3,8 +3,8 @@ from datetime import timedelta
 import pytest
 import pytest_bazel
 
-from wt.testing.git_helpers import worktree_exists
-from wt.testing.utils import wait_until
+from devinfra.wt.testing.git_helpers import worktree_exists
+from devinfra.wt.testing.utils import wait_until
 
 pytestmark = pytest.mark.timeout(20)
 

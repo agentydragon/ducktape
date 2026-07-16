@@ -25,7 +25,7 @@ wt cp experiment-v2     # Copy current worktree (COW)
 wt path feature /src    # Get path in worktree
 ```
 
-Install shell function: `eval "$(python -m wt.shell.install)"`
+Install shell function: `eval "$(python -m devinfra.wt.shell.install)"`
 
 ## Architecture
 

@@ -7,7 +7,7 @@ wt() {
   wt_command_file=$(mktemp)
   trap 'rm -f "$wt_command_file"' EXIT
 
-  __PY__ -m wt.cli sh "$@" 3>"$wt_command_file"
+  __PY__ -m devinfra.wt.cli sh "$@" 3>"$wt_command_file"
   local wt_exit_code=$?
 
   if [ $wt_exit_code -eq 0 ] || [ $wt_exit_code -eq 2 ]; then

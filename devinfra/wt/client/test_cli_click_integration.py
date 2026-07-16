@@ -9,13 +9,13 @@ from unittest.mock import patch
 import pytest_bazel
 from typer.testing import CliRunner
 
-from wt.cli import app
-from wt.shared.protocol import WorktreeID, WorktreeInfo, WorktreeListResult
-from wt.testing.asserts import assert_output_contains
+from devinfra.wt.cli import app
+from devinfra.wt.shared.protocol import WorktreeID, WorktreeInfo, WorktreeListResult
+from devinfra.wt.testing.asserts import assert_output_contains
 
 
 class TestNewCLIIntegration:
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("devinfra.wt.client.wt_client.WtClient.get_status")
     def test_default_status_command(self, mock_get_status, wt_env, build_status_response):
         """Test that default command (no args) shows worktree status."""
         mock_get_status.return_value = build_status_response({})
@@ -25,7 +25,7 @@ class TestNewCLIIntegration:
         assert result.exit_code == 0
         assert_output_contains(result.output, "No worktrees found")
 
-    @patch("wt.client.wt_client.WtClient.list_worktrees")
+    @patch("devinfra.wt.client.wt_client.WtClient.list_worktrees")
     def test_list_worktrees_command(self, mock_list, wt_env, build_status_response):
         """Test ls command works via sh dispatcher."""
         mock_list.return_value = WorktreeListResult(worktrees=[])
@@ -34,7 +34,7 @@ class TestNewCLIIntegration:
 
         assert result.exit_code == 0
 
-    @patch("wt.client.wt_client.WtClient.list_worktrees")
+    @patch("devinfra.wt.client.wt_client.WtClient.list_worktrees")
     def test_list_worktrees_with_data(self, mock_list, wt_env, build_status_response):
         """Test ls command with actual worktree data via sh dispatcher."""
         mock_list.return_value = WorktreeListResult(
@@ -73,7 +73,7 @@ class TestNewCLIIntegration:
         # Click default help uses 'Usage:'; keep strict
         assert_output_contains(result.output, "Usage:")
 
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("devinfra.wt.client.wt_client.WtClient.get_status")
     def test_status_command_with_pr_flag(self, mock_get_status, wt_env, build_status_response, sample_status_result):
         """Test status command with --pr flag."""
         mock_get_status.return_value = build_status_response({"test-worktree": sample_status_result})

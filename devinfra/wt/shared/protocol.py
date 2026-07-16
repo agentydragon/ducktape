@@ -15,13 +15,13 @@ from typing import Annotated, Literal, NewType, cast
 
 from pydantic import BaseModel, Field, ValidationError
 
-from wt.shared.github_models import PRData
+from devinfra.wt.shared.github_models import PRData
 
 # WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
 WorktreeID = NewType("WorktreeID", str)  # Opaque to clients; server owns parsing
 
 
-# WorktreeID helpers (make/parse) are server-only (see wt.server.worktree_ids)
+# WorktreeID helpers (make/parse) are server-only (see devinfra.wt.server.worktree_ids)
 
 
 class DaemonHealthStatus(StrEnum):

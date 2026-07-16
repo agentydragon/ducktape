@@ -23,31 +23,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from wt.server.git_manager import GitManager
-from wt.server.git_refs_watcher import GitRefsWatcher
-from wt.server.github_client import GitHubInterface
-from wt.server.github_watcher import GitHubWatcher
-from wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
-from wt.server.gitstatusd_listener import GitstatusdListener
+from devinfra.wt.server.git_manager import GitManager
+from devinfra.wt.server.git_refs_watcher import GitRefsWatcher
+from devinfra.wt.server.github_client import GitHubInterface
+from devinfra.wt.server.github_watcher import GitHubWatcher
+from devinfra.wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
+from devinfra.wt.server.gitstatusd_listener import GitstatusdListener
 
 # Force import of handlers to register RPC methods
-from wt.server.handlers import (
+from devinfra.wt.server.handlers import (
     path_handler,  # noqa: F401
     pr_handler,  # noqa: F401
     status_handler,  # noqa: F401
     worktree_handler,  # noqa: F401
 )
-from wt.server.repo_status import RepoStatus
-from wt.server.rpc import ServiceDependencies, rpc
-from wt.server.services import DiscoveryService, GitstatusdService, WorktreeIndexService, scan_worktrees
-from wt.server.stores import DaemonStore
-from wt.server.types import DiscoveredWorktree
-from wt.server.watcher import start_watcher
-from wt.server.worktree_index import WorktreeIndex
-from wt.server.worktree_registry import WorktreeRegistry
-from wt.server.worktree_service import WorktreeService
-from wt.shared.configuration import Configuration, load_config
-from wt.shared.protocol import (
+from devinfra.wt.server.repo_status import RepoStatus
+from devinfra.wt.server.rpc import ServiceDependencies, rpc
+from devinfra.wt.server.services import DiscoveryService, GitstatusdService, WorktreeIndexService, scan_worktrees
+from devinfra.wt.server.stores import DaemonStore
+from devinfra.wt.server.types import DiscoveredWorktree
+from devinfra.wt.server.watcher import start_watcher
+from devinfra.wt.server.worktree_index import WorktreeIndex
+from devinfra.wt.server.worktree_registry import WorktreeRegistry
+from devinfra.wt.server.worktree_service import WorktreeService
+from devinfra.wt.shared.configuration import Configuration, load_config
+from devinfra.wt.shared.protocol import (
     ErrorCodes,
     ErrorResponse,
     GitstatusdAvailable,

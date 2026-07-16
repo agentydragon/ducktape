@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from wt.testing.conftest import kill_daemon_at_wt_dir
+from devinfra.wt.testing.conftest import kill_daemon_at_wt_dir
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from wt.testing.git_helpers import add_and_commit
+from devinfra.wt.testing.git_helpers import add_and_commit
 
 
 def test_copy_dirty_state_cli(wt_cli, real_temp_repo):

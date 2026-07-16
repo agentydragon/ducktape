@@ -14,7 +14,7 @@ from watchdog.events import (
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
-from wt.server.stores import DaemonStore
+from devinfra.wt.server.stores import DaemonStore
 
 
 def _to_path(src_path: bytes | str) -> Path:

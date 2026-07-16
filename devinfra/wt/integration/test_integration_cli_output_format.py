@@ -7,9 +7,9 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
-from wt.cli import app
-from wt.shared.protocol import CommitInfo, StatusResult
-from wt.testing.asserts import assert_output_contains
+from devinfra.wt.cli import app
+from devinfra.wt.shared.protocol import CommitInfo, StatusResult
+from devinfra.wt.testing.asserts import assert_output_contains
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def cli_runner_with_env(cli_runner, wt_env):
 
 
 class TestCLIOutputFormat:
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("devinfra.wt.client.wt_client.WtClient.get_status")
     def test_status_table_rendering(self, mock_get_status, cli_runner_with_env, build_status_response):
         """Test that the status table renders correctly with real formatting."""
         # Create status data
@@ -78,7 +78,7 @@ class TestCLIOutputFormat:
         # Verify content appears in output
         assert_output_contains(output, "main", "feature-branch")
 
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("devinfra.wt.client.wt_client.WtClient.get_status")
     def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env, build_status_response):
         """When status isn't cached yet, show 'unknown' instead of 'clean'."""
         commit_info = CommitInfo(

@@ -13,8 +13,8 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from wt.shared.fixtures import PRFixtureEntry
-from wt.shared.github_models import PRState
+from devinfra.wt.shared.fixtures import PRFixtureEntry
+from devinfra.wt.shared.github_models import PRState
 
 
 def _write_shadow_github(mock_root: Path, variant: str):

@@ -6,9 +6,9 @@ from typing import Any
 
 import yaml
 
-from wt.shared.config_file import ConfigFile
-from wt.shared.configuration import Configuration
-from wt.testing.data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
+from devinfra.wt.shared.config_file import ConfigFile
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.testing.data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 
 
 class ConfigFactory:

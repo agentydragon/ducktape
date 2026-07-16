@@ -13,16 +13,16 @@ from pathlib import Path
 import psutil
 import pygit2
 
-from wt.server.copy_strategies import get_copy_strategy
-from wt.server.git_manager import GitManager
-from wt.server.github_client import GitHubInterface
-from wt.server.worktree_ids import wtid_to_path
-from wt.shared.configuration import Configuration
-from wt.shared.error_handling import ErrorContext, validate_worktree_name
+from devinfra.wt.server.copy_strategies import get_copy_strategy
+from devinfra.wt.server.git_manager import GitManager
+from devinfra.wt.server.github_client import GitHubInterface
+from devinfra.wt.server.worktree_ids import wtid_to_path
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.error_handling import ErrorContext, validate_worktree_name
 
 # PR types are referenced by protocol layer; not needed here directly
-from wt.shared.models import ProcessInfo
-from wt.shared.protocol import WorktreeID
+from devinfra.wt.shared.models import ProcessInfo
+from devinfra.wt.shared.protocol import WorktreeID
 
 logger = logging.getLogger(__name__)
 

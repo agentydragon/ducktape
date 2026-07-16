@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from wt.testing.asserts import assert_output_contains, extract_status_rows, status_row_ok
-from wt.testing.utils import wait_until
+from devinfra.wt.testing.asserts import assert_output_contains, extract_status_rows, status_row_ok
+from devinfra.wt.testing.utils import wait_until
 
 pytestmark = pytest.mark.timeout(10)
 

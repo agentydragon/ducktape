@@ -7,8 +7,8 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from wt.shared.constants import RESERVED_NAMES
-from wt.shared.github_models import GitHubError
+from devinfra.wt.shared.constants import RESERVED_NAMES
+from devinfra.wt.shared.github_models import GitHubError
 
 logger = logging.getLogger(__name__)
 

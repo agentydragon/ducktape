@@ -3,7 +3,7 @@
 import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from wt.testing.conftest import *  # noqa: F403
+from devinfra.wt.testing.conftest import *  # noqa: F403
 
 
 def pytest_configure(config: pytest.Config) -> None:

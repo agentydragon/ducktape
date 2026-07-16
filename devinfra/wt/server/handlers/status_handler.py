@@ -6,14 +6,14 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from wt.server.git_manager import GitManager, NoSuchRefError
-from wt.server.github_watcher import GitHubWatcher
-from wt.server.rpc import ServiceDependencies, rpc
-from wt.server.services import GitstatusdService
-from wt.server.worktree_ids import make_worktree_id, parse_worktree_id
-from wt.shared.configuration import Configuration
-from wt.shared.env import is_test_mode
-from wt.shared.protocol import (
+from devinfra.wt.server.git_manager import GitManager, NoSuchRefError
+from devinfra.wt.server.github_watcher import GitHubWatcher
+from devinfra.wt.server.rpc import ServiceDependencies, rpc
+from devinfra.wt.server.services import GitstatusdService
+from devinfra.wt.server.worktree_ids import make_worktree_id, parse_worktree_id
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.env import is_test_mode
+from devinfra.wt.shared.protocol import (
     BranchAheadBehind,
     CommitInfo,
     ComponentsStatus,

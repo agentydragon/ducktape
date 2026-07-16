@@ -11,9 +11,9 @@ import subprocess
 from github import Github
 from github.Repository import Repository
 
-from wt.shared.env import is_test_mode
-from wt.shared.error_handling import GitHubUnavailableError, handle_github_errors
-from wt.shared.github_models import GitHubPRResponse, HasBasicPR, PRState, PullRequestList
+from devinfra.wt.shared.env import is_test_mode
+from devinfra.wt.shared.error_handling import GitHubUnavailableError, handle_github_errors
+from devinfra.wt.shared.github_models import GitHubPRResponse, HasBasicPR, PRState, PullRequestList
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def get_github_token(token_arg: str | None = None, *, timeout_secs: float = 10.0) -> str | None:
     """Obtain a GitHub token from explicit arg, env, or gh CLI.
 
-    Separated for easy mocking in tests: patch wt.server.github_client.get_github_token.
+    Separated for easy mocking in tests: patch devinfra.wt.server.github_client.get_github_token.
     Skips gh in WT_TEST_MODE to avoid network/process flakiness under test.
     """
     if token_arg:

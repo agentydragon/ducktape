@@ -26,7 +26,7 @@ from typing import Literal, Self
 
 from reaktiv import Signal
 
-from wt.shared.protocol import Collector, GitstatusdData
+from devinfra.wt.shared.protocol import Collector, GitstatusdData
 
 logger = logging.getLogger(__name__)
 

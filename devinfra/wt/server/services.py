@@ -6,12 +6,12 @@ from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import Protocol, cast, runtime_checkable
 
-from wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
-from wt.server.gitstatusd_listener import GitstatusdListener
-from wt.server.types import DiscoveredWorktree
-from wt.server.worktree_ids import make_worktree_id
-from wt.server.worktree_index import WorktreeIndex
-from wt.shared.protocol import Collector, GitstatusdData
+from devinfra.wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
+from devinfra.wt.server.gitstatusd_listener import GitstatusdListener
+from devinfra.wt.server.types import DiscoveredWorktree
+from devinfra.wt.server.worktree_ids import make_worktree_id
+from devinfra.wt.server.worktree_index import WorktreeIndex
+from devinfra.wt.shared.protocol import Collector, GitstatusdData
 
 
 class WorktreeIndexService:

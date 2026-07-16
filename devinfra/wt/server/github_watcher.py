@@ -21,14 +21,14 @@ from typing import TYPE_CHECKING
 
 from reaktiv import Effect, Signal
 
-from wt.shared.env import is_test_mode
-from wt.shared.fixtures import load_pr_fixture
-from wt.shared.github_models import PRData, PRState
-from wt.shared.protocol import Collector
+from devinfra.wt.shared.env import is_test_mode
+from devinfra.wt.shared.fixtures import load_pr_fixture
+from devinfra.wt.shared.github_models import PRData, PRState
+from devinfra.wt.shared.protocol import Collector
 
 if TYPE_CHECKING:
-    from wt.server.github_client import GitHubInterface
-    from wt.shared.configuration import Configuration
+    from devinfra.wt.server.github_client import GitHubInterface
+    from devinfra.wt.shared.configuration import Configuration
 
 logger = logging.getLogger(__name__)
 

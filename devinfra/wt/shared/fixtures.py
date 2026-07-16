@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from wt.shared.configuration import Configuration
-from wt.shared.github_models import PRData, PRState
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.github_models import PRData, PRState
 
 
 class PRFixtureEntry(BaseModel):

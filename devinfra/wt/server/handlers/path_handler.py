@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wt.server.rpc import RpcError, rpc
-from wt.server.services import WorktreeIndexService
-from wt.shared.configuration import Configuration
-from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from wt.shared.protocol import (
+from devinfra.wt.server.rpc import RpcError, rpc
+from devinfra.wt.server.services import WorktreeIndexService
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from devinfra.wt.shared.protocol import (
     ErrorCodes,
     TeleportCdThere,
     TeleportDoesNotExist,

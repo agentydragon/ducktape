@@ -9,11 +9,11 @@ import click
 import psutil
 from more_itertools import one
 
-from wt.client.cd_utils import emit_cd_command
-from wt.client.wt_client import WtClient, read_daemon_pid
-from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
-from wt.shared.env import is_test_mode
-from wt.shared.protocol import (
+from devinfra.wt.client.cd_utils import emit_cd_command
+from devinfra.wt.client.wt_client import WtClient, read_daemon_pid
+from devinfra.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
+from devinfra.wt.shared.env import is_test_mode
+from devinfra.wt.shared.protocol import (
     HookOutputEvent,
     HookStream,
     ProgressEvent,

@@ -4,9 +4,9 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    visibility = ["//wt:__subpackages__"],
+    visibility = ["//devinfra/wt:__subpackages__"],
     deps = [
-        "//wt/testing:conftest",
+        "//devinfra/wt/testing:conftest",
         "@pypi//pytest",
     ],
 )
@@ -17,8 +17,8 @@ py_test(
     data = ["//third_party/gitstatusd"],
     deps = [
         ":conftest",
-        "//wt/shared:git_utils",
-        "//wt/testing:asserts",
+        "//devinfra/wt/shared:git_utils",
+        "//devinfra/wt/testing:asserts",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -31,9 +31,9 @@ py_test(
     data = ["//third_party/gitstatusd"],
     deps = [
         ":conftest",
-        "//wt:cli",
-        "//wt/shared:protocol",
-        "//wt/testing:asserts",
+        "//devinfra/wt:cli",
+        "//devinfra/wt/shared:protocol",
+        "//devinfra/wt/testing:asserts",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -43,8 +43,8 @@ py_test(
     name = "test_integration_shell",
     srcs = ["test_integration_shell.py"],
     data = [
+        "//devinfra/wt:wt_cli",
         "//third_party/gitstatusd",
-        "//wt:wt_cli",
     ],
     deps = [
         ":conftest",

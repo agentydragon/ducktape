@@ -20,7 +20,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `ansible/`         | System configuration (playbooks)              |
 | `nix/`             | NixOS and home-manager configurations         |
 | `skills/`          | Agent skills and skill packaging              |
-| `wt/`              | Worktree management                           |
+| `devinfra/wt/`     | Worktree management                           |
 | `openai_utils/`    | OpenAI API utilities                          |
 | `tana/`            | Tana export toolkit                           |
 | `finance/`         | Portfolio tracking (Rust)                     |

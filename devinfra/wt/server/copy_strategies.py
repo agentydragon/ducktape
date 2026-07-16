@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from pathlib import Path
 
-from wt.shared.configuration import CowMethod
+from devinfra.wt.shared.configuration import CowMethod
 
 # Unified list of top-level entries to exclude when copying a worktree directory
 # Keep in sync with rsync excludes

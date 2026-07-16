@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from wt.testing.conftest import get_wt_package_dir
+from devinfra.wt.testing.conftest import get_wt_package_dir
 
 WT_DIR = get_wt_package_dir()
 

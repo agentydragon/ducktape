@@ -20,12 +20,12 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
-from wt.shared.protocol import BranchAheadBehind
+from devinfra.wt.shared.protocol import BranchAheadBehind
 
 if TYPE_CHECKING:
-    from wt.server.git_manager import GitManager
-    from wt.server.stores import DaemonStore
-    from wt.shared.configuration import Configuration
+    from devinfra.wt.server.git_manager import GitManager
+    from devinfra.wt.server.stores import DaemonStore
+    from devinfra.wt.shared.configuration import Configuration
 
 logger = logging.getLogger(__name__)
 

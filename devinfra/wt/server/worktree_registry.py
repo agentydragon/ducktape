@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from wt.server.types import DiscoveredWorktree
+from devinfra.wt.server.types import DiscoveredWorktree
 
 
 @dataclass

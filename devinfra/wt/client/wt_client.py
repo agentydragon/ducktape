@@ -24,10 +24,10 @@ import pygit2
 from more_itertools import one
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from wt.shared.configuration import Configuration
-from wt.shared.env import is_test_mode
-from wt.shared.error_handling import validate_worktree_name
-from wt.shared.protocol import (
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.env import is_test_mode
+from devinfra.wt.shared.error_handling import validate_worktree_name
+from devinfra.wt.shared.protocol import (
     ErrorCodes,
     ErrorResponse,
     HookOutputEvent,
@@ -189,7 +189,7 @@ class WtClient:
     async def _start_daemon_background(self) -> None:
         """Start daemon in background with a dedicated handshake pipe (no double-fork).
 
-        Implementation: create a pipe, launch wt.server.wt_server via subprocess.Popen,
+        Implementation: create a pipe, launch devinfra.wt.server.wt_server via subprocess.Popen,
         pass the write-end FD using pass_fds and WT_HANDSHAKE_FD so the daemon can emit
         JSON StartupMessage lines. Keep the read-end in this process for synchronous readiness.
         """
@@ -224,7 +224,7 @@ class WtClient:
                 stderr_dest = subprocess.DEVNULL
 
             subprocess.Popen(  # noqa: ASYNC220
-                [sys.executable, "-m", "wt.server.wt_server"],
+                [sys.executable, "-m", "devinfra.wt.server.wt_server"],
                 env=env,
                 stdout=stdout_dest,
                 stderr=stderr_dest,

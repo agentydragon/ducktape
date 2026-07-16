@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pygit2
 
-from wt.shared.configuration import Configuration
-from wt.shared.git_utils import git_run
-from wt.shared.protocol import CommitInfo
+from devinfra.wt.shared.configuration import Configuration
+from devinfra.wt.shared.git_utils import git_run
+from devinfra.wt.shared.protocol import CommitInfo
 
 
 def _resolve_to_commit(repo: pygit2.Repository, revspec: str) -> pygit2.Commit:

@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
-from wt.client.view_formatter import ViewFormatter
-from wt.client.wt_client import WtClient
-from wt.server.git_manager import GitManager
-from wt.server.github_client import GitHubInterface
-from wt.server.worktree_service import WorktreeService
-from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
-from wt.testing.data import MockBehaviors
+from devinfra.wt.client.view_formatter import ViewFormatter
+from devinfra.wt.client.wt_client import WtClient
+from devinfra.wt.server.git_manager import GitManager
+from devinfra.wt.server.github_client import GitHubInterface
+from devinfra.wt.server.worktree_service import WorktreeService
+from devinfra.wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
+from devinfra.wt.testing.data import MockBehaviors
 
 
 class MockFactory:

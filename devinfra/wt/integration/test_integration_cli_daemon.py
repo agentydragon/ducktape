@@ -37,8 +37,8 @@ import os
 import pygit2
 import pytest_bazel
 
-from wt.shared.git_utils import GitRunOptions, git_run
-from wt.testing.asserts import assert_output_contains
+from devinfra.wt.shared.git_utils import GitRunOptions, git_run
+from devinfra.wt.testing.asserts import assert_output_contains
 
 # from ..conftest import kill_daemon_at_wt_dir
 

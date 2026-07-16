@@ -87,7 +87,7 @@ py_test(
     name = "test_style",
     srcs = ["test_style.py"],
     deps = [
-        "//wt/testing:conftest",
+        "//devinfra/wt/testing:conftest",
         "@pypi//pytest_bazel",
     ],
 )

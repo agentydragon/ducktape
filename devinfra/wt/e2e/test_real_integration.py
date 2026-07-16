@@ -8,8 +8,8 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from wt.testing.git_helpers import add_and_commit, worktree_exists
-from wt.testing.utils import wait_until
+from devinfra.wt.testing.git_helpers import add_and_commit, worktree_exists
+from devinfra.wt.testing.utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
 

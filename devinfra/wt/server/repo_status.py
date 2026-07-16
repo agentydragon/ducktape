@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pygit2
 
-from wt.server.git_manager import GitManager, NoSuchRefError
-from wt.shared.protocol import CommitInfo
+from devinfra.wt.server.git_manager import GitManager, NoSuchRefError
+from devinfra.wt.shared.protocol import CommitInfo
 
 
 class RepoStatus:

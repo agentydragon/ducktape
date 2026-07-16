@@ -1,7 +1,7 @@
 """
 Integration tests for shell function interaction with the CLI.
 
-Tests the shell function installed via `python -m wt.shell.install` that users interact with, including fd3 redirection,
+Tests the shell function installed via `python -m devinfra.wt.shell.install` that users interact with, including fd3 redirection,
 exit code semantics, and process boundary interactions.
 """
 

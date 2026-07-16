@@ -9,9 +9,9 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from wt.server.handlers.status_handler import get_status
-from wt.server.rpc import ServiceDependencies
-from wt.shared.protocol import StatusParams, StatusResultError, StatusResultOk
+from devinfra.wt.server.handlers.status_handler import get_status
+from devinfra.wt.server.rpc import ServiceDependencies
+from devinfra.wt.shared.protocol import StatusParams, StatusResultError, StatusResultOk
 
 
 @pytest.fixture
