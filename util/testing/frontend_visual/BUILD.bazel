@@ -4,7 +4,20 @@ load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
-# Puppeteer-based visual regression test runner.
+# The one Puppeteer launcher for JS visual/screenshot tests. The flag/clock
+# assets it reads live in //util/testing:browser_launcher_assets, shared with
+# the Python launcher (//util/testing:frontend_visual).
+js_library(
+    name = "launcher",
+    srcs = ["launcher.mjs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":node_modules/puppeteer",
+        "//util/testing:browser_launcher_assets_js",
+    ],
+)
+
+# Puppeteer-based visual render-health test runner.
 js_library(
     name = "visual_test_lib",
     srcs = ["visual-test-lib.mjs"],
@@ -15,17 +28,8 @@ js_library(
         "//x/study_casino/frontend:__pkg__",
     ],
     deps = [
-        ":node_modules/puppeteer",
+        ":launcher",
         ":visual_review_manifest",
-    ],
-)
-
-js_library(
-    name = "puppeteer_lib",
-    srcs = ["puppeteer-lib.mjs"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":node_modules/puppeteer",
     ],
 )
 

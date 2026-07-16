@@ -1,8 +1,17 @@
-"""Shared helpers for Python Playwright visual-golden tests."""
+"""Shared helpers for Python Playwright visual render-health tests.
+
+The Chromium flag set and the frozen-clock init script are single-sourced with
+the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
+`util/testing/chromium-flags.json` and `util/testing/frozen-clock.js` (kept at
+this level — a data file under `frontend_visual/` would shadow this module as
+a namespace package), and both resolve the hermetic browser from
+`CHROMIUM_HEADLESS_SHELL`.
+"""
 
 from __future__ import annotations
 
 import base64
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -13,62 +22,29 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Playwright, ViewportSize
 
 
-DETERMINISTIC_BROWSER_ARGS = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--font-render-hinting=none",
-    "--disable-font-subpixel-positioning",
-    "--disable-lcd-text",
-    "--force-color-profile=srgb",
-    "--disable-accelerated-2d-canvas",
-    "--disable-gpu-compositing",
-    "--disable-software-rasterizer",
-    "--disable-skia-runtime-opts",
-    "--disable-partial-raster",
-    "--disable-backing-store-limit",
-    "--use-gl=swiftshader",
-    "--force-device-scale-factor=1",
-    "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
-    "--disable-accelerated-video-decode",
-    "--disable-canvas-aa",
-    "--disable-2d-canvas-clip-aa",
-    "--disable-webgl",
-    "--disable-webgl2",
-    "--blink-settings=imageAnimationPolicy=noAnimation",
-    "--disable-smooth-scrolling",
-    "--disable-threaded-animation",
-    "--disable-threaded-scrolling",
-    "--disable-checker-imaging",
-]
+_FLAGS = json.loads(get_required_path("_main/util/testing/chromium-flags.json").read_text())
+# Makes headless Chromium run in containerized/RBE environments.
+CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
+# Container base plus font/raster/compositing/animation pinning for stable renders.
+DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
+
+
+def chromium_executable() -> str | None:
+    """The hermetic headless-shell path from `CHROMIUM_HEADLESS_SHELL`, or None
+    to fall back to Playwright's own browser resolution (local runs)."""
+    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
+    return str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
 
 
 def launch_deterministic_browser(playwright_sync: Playwright) -> Browser:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    executable = str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
-    return playwright_sync.chromium.launch(headless=True, executable_path=executable, args=DETERMINISTIC_BROWSER_ARGS)
+    return playwright_sync.chromium.launch(
+        headless=True, executable_path=chromium_executable(), args=DETERMINISTIC_BROWSER_ARGS
+    )
 
 
 def frozen_clock_script(now_ms: int) -> str:
-    return f"""
-        ((nowMs) => {{
-          const OriginalDate = Date;
-          class FrozenDate extends OriginalDate {{
-            constructor(...args) {{
-              if (args.length === 0) {{
-                super(nowMs);
-              }} else {{
-                super(...args);
-              }}
-            }}
-            static now() {{
-              return nowMs;
-            }}
-          }}
-          globalThis.Date = FrozenDate;
-        }})({now_ms});
-        """
+    source = get_required_path("_main/util/testing/frozen-clock.js").read_text()
+    return f"(() => {{ {source} frozenClock({now_ms}); }})();"
 
 
 def deterministic_browser_context(

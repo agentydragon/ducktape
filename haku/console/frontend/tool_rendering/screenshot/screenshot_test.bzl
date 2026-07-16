@@ -51,18 +51,18 @@ def preview_screenshots(name, entry, deps, visibility = None):
         data = [
             ":%s_bundle" % name,
             "//haku/console/frontend:styles_css",
-            "//util/testing/frontend_visual:puppeteer_lib",
+            "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
             "@playwright_browsers//:chromium-headless-shell",
         ],
         env = {
             "HARNESS_JS": "$(rootpath :%s_bundle)" % name,
             "STYLES_CSS": "$(rootpath //haku/console/frontend:styles_css)",
-            "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
         },
         no_copy_to_bin = [
             ":%s_bundle" % name,
-            "//util/testing/frontend_visual:puppeteer_lib",
+            "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
             "@playwright_browsers//:chromium-headless-shell",
         ],

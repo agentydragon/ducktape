@@ -9,81 +9,34 @@ Scenarios:
 from __future__ import annotations
 
 import json
-import os
 import re
-import threading
 import time
 import urllib.request
 from collections.abc import Iterator
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
 import pytest_bazel
-import uvicorn
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.testing.asgi import serve_app_sync
 from x.study_casino.app import create_app
 from x.study_casino.changelog import LATEST_CHANGELOG_ID
 from x.study_casino.config import Settings
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page, Playwright, Route
+    from playwright.sync_api import Page, Route
 
-
-@pytest.fixture
-def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    executable = str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
-    b = playwright_sync.chromium.launch(
-        headless=True,
-        executable_path=executable,
-        # Flags needed for containerized/RBE environments (no user namespace,
-        # /dev/shm may be tiny).
-        args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-    )
-    try:
-        yield b
-    finally:
-        b.close()
-
-
-@pytest.fixture
-def page(browser: Browser) -> Iterator[Page]:
-    context = browser.new_context()
-    pg = context.new_page()
-    try:
-        yield pg
-    finally:
-        try:
-            pg.close()
-        finally:
-            context.close()
+# `browser` (with the shared container-safe flags) and `page` come from
+# util.playwright via conftest.py.
 
 
 @pytest.fixture
 def casino_server(db_url: str) -> Iterator[str]:
     frontend_dist = get_required_path("_main/x/study_casino/frontend/dist/index.html").parent
-    settings = Settings(database_url=db_url, frontend_dist_dir=frontend_dist)
-    app = create_app(settings)
-    port = pick_free_port("127.0.0.1")
-    cfg = uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning", loop="asyncio")
-    server = uvicorn.Server(cfg)
-    t = threading.Thread(target=server.run, name="casino-uvicorn-e2e", daemon=True)
-    t.start()
-    deadline = time.monotonic() + 10.0
-    while time.monotonic() < deadline and not server.started:
-        time.sleep(0.05)
-    if not server.started:
-        server.should_exit = True
-        t.join(timeout=5.0)
-        raise RuntimeError("backend did not start within 10s")
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        t.join(timeout=5.0)
+    app = create_app(Settings(database_url=db_url, frontend_dist_dir=frontend_dist))
+    with serve_app_sync(app) as base_url:
+        yield base_url
 
 
 def _attach_logs(page: Page) -> list[str]:

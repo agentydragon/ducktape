@@ -1,0 +1,29 @@
+{
+  "_comment": "Single source of the Chromium launch flags shared by the Python (util/testing/frontend_visual.py, Playwright) and JS (frontend_visual/launcher.mjs, Puppeteer) browser launchers. containerBase makes headless Chromium run in containerized/RBE environments; deterministicExtra additionally pins fonts, rasterization, compositing, and animation for stable renders.",
+  "containerBase": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+  "deterministicExtra": [
+    "--font-render-hinting=none",
+    "--disable-font-subpixel-positioning",
+    "--disable-lcd-text",
+    "--force-color-profile=srgb",
+    "--disable-accelerated-2d-canvas",
+    "--disable-gpu-compositing",
+    "--disable-software-rasterizer",
+    "--disable-skia-runtime-opts",
+    "--disable-partial-raster",
+    "--disable-backing-store-limit",
+    "--use-gl=swiftshader",
+    "--force-device-scale-factor=1",
+    "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
+    "--disable-accelerated-video-decode",
+    "--disable-canvas-aa",
+    "--disable-2d-canvas-clip-aa",
+    "--disable-webgl",
+    "--disable-webgl2",
+    "--blink-settings=imageAnimationPolicy=noAnimation",
+    "--disable-smooth-scrolling",
+    "--disable-threaded-animation",
+    "--disable-threaded-scrolling",
+    "--disable-checker-imaging"
+  ]
+}

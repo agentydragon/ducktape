@@ -14,11 +14,8 @@ devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import shutil
-import threading
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -29,14 +26,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bazel
-import uvicorn
-from testcontainers.postgres import PostgresContainer
 
-from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
-from util.oci import load_oci_image
+from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context, launch_deterministic_browser, stability_style
+from util.testing.postgres_fixtures import start_postgres_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 from x.study_casino.app import create_app
@@ -98,14 +92,11 @@ def browser(playwright_sync: Playwright) -> Iterator[Browser]:
 @pytest.fixture(scope="module")
 def casino_server() -> Iterator[str]:
     """uvicorn-backed casino server with a fresh Postgres testcontainer."""
-    load_oci_image(RYUK)
-    load_oci_image(POSTGRES_18)
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="casino")
-    container.start()
+    container = start_postgres_container()
     try:
         host = container.get_container_host_ip()
         port = int(container.get_exposed_port(5432))
-        db_url = f"postgresql+psycopg://postgres:postgres@{host}:{port}/casino"
+        db_url = f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
 
         frontend_dist = get_required_path("_main/x/study_casino/frontend/dist/index.html").parent
 
@@ -113,32 +104,11 @@ def casino_server() -> Iterator[str]:
         # sessions and a token balance via the server's own action endpoints
         # right after startup, before the screenshots run.
         settings = Settings(database_url=db_url, frontend_dist_dir=frontend_dist, admin_users={"default"})
-        app = create_app(settings)
-        server_port = pick_free_port("127.0.0.1")
-        server = uvicorn.Server(uvicorn.Config(app=app, host="127.0.0.1", port=server_port, log_level="warning"))
-
-        thread = threading.Thread(target=_run_uvicorn, args=(server,), name="casino-visual-uvicorn", daemon=True)
-        thread.start()
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and not server.started:
-            time.sleep(0.05)
-        if not server.started:
-            raise RuntimeError("casino server did not start within 30s")
-
-        origin = f"http://127.0.0.1:{server_port}"
-        _seed_fixture_state(origin)
-
-        try:
+        with serve_app_sync(create_app(settings)) as origin:
+            _seed_fixture_state(origin)
             yield origin
-        finally:
-            server.should_exit = True
-            thread.join(timeout=10)
     finally:
         container.stop()
-
-
-def _run_uvicorn(server: uvicorn.Server) -> None:
-    asyncio.run(server.serve())
 
 
 def _seed_fixture_state(origin: str) -> None:

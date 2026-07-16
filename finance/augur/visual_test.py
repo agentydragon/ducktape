@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import threading
 from collections import defaultdict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -25,7 +24,6 @@ from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
-import uvicorn
 
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
@@ -34,7 +32,7 @@ from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port, wait_for_port
+from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import (
     deterministic_browser_context,
     deterministic_style,
@@ -458,16 +456,8 @@ def hermetic_prices() -> dict[Platform, dict[str, float]]:
 def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str, float]]) -> Iterator[str]:
     # Inject hermetic mock clients so the calibration tab's auto-run never hits the network.
     app = build_dev_app(augur_config, price_clients=static_price_clients(mock_price_clients(hermetic_prices)))
-    port = pick_free_port("127.0.0.1")
-    server = uvicorn.Server(uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=server.run, name="augur-visual-uvicorn", daemon=True)
-    thread.start()
-    try:
-        wait_for_port("127.0.0.1", port, timeout_secs=30)
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(timeout=10)
+    with serve_app_sync(app) as base_url:
+        yield base_url
 
 
 @pytest.fixture

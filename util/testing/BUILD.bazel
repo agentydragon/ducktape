@@ -1,5 +1,6 @@
 """Testing utility libraries."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -99,10 +100,42 @@ py_library(
     ],
 )
 
+# Chromium launch flags + frozen-clock init script, single-sourced between
+# the Python launcher below and the JS one
+# (//util/testing/frontend_visual:launcher). They live at this level (not in
+# frontend_visual/) because a data file there would turn the directory into a
+# namespace package shadowing frontend_visual.py for mypy. The filegroup
+# feeds the Python side's runfiles; the js_library wraps the same files for
+# the JS launcher (rules_js requires same-package copy-to-bin).
+filegroup(
+    name = "browser_launcher_assets",
+    srcs = [
+        "chromium-flags.json",
+        "frozen-clock.js",
+    ],
+    visibility = ["//util/testing/frontend_visual:__pkg__"],
+)
+
+js_library(
+    name = "browser_launcher_assets_js",
+    srcs = [
+        "chromium-flags.json",
+        "frozen-clock.js",
+    ],
+    # frozen-clock.js is raw injected text (its `frozenClock` const is only
+    # referenced by the wrapper the launchers append), not a module — module
+    # lint rules like no-unused-vars don't apply.
+    tags = ["no-lint"],
+    visibility = ["//util/testing/frontend_visual:__pkg__"],
+)
+
 py_library(
     name = "frontend_visual",
     testonly = True,
     srcs = ["frontend_visual.py"],
+    # chromium-flags.json is read at import time — it must ride along with
+    # every consumer, not be re-declared per test.
+    data = [":browser_launcher_assets"],
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",

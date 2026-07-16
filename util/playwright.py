@@ -2,17 +2,21 @@
 
 Provides session-scoped Playwright manager, per-test browser and page fixtures.
 Uses hermetic Chromium from @playwright_browsers when CHROMIUM_HEADLESS_SHELL is
-set (Bazel), falling back to Playwright's default browser resolution.
+set (Bazel), falling back to Playwright's default browser resolution. The
+browser launches with the shared container-safe flags (needed on RBE, where
+there is no user namespace and /dev/shm is tiny); visual tests that need
+deterministic rendering override `browser` with
+`util.testing.frontend_visual.launch_deterministic_browser`.
 """
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+
+from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
@@ -27,9 +31,9 @@ def playwright_sync() -> Iterator[Playwright]:
 
 @pytest.fixture
 def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    executable = str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
-    browser = playwright_sync.chromium.launch(headless=True, executable_path=executable)
+    browser = playwright_sync.chromium.launch(
+        headless=True, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS
+    )
     try:
         yield browser
     finally:
