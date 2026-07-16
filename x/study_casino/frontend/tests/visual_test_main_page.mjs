@@ -6,8 +6,7 @@
 
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("main_page", import.meta.url, {
-  publishOnly: true,
+await main("main_page", {
   viewport: { width: 1200, height: 1400 },
   // Wait for fonts and the post-mount layout to settle. The harness disables
   // CSS animations, so a short delay is enough.

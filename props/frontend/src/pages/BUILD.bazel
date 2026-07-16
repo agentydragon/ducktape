@@ -94,6 +94,5 @@ js_library(
 visual_test(
     name = "visual_SnapshotDetail",
     srcs = ["visual_test_SnapshotDetail.mjs"],
-    baseline = "baselines/SnapshotDetail-chromium-linux.png",
     deps = [":SnapshotDetailPage"],
 )

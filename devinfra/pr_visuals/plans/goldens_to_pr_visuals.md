@@ -60,7 +60,7 @@ modified/removed — visible in the checks list so a skimmed comment isn't the
 only defense), retention decision (keep everything; bundles immutable,
 pointers forward-only), and docs.
 
-### PR 2 — pilot on study casino
+### PR 2 — pilot on study casino ✅ done (#3289)
 
 - Convert `visual_golden_test.py` to render-health + publish: delete the
   golden assert, the `UPDATE_GOLDEN` flow, and `frontend/__screenshots__/`.

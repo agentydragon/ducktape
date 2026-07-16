@@ -1,7 +1,8 @@
 # Augur frontend UI recommendations
 
 Captured 2026-05-28 from a review of `app.jsx`, `forms.jsx`, and the
-screenshots under `__screenshots__/`. This file is now only the active UX
+then-checked-in visual-test screenshots (now published per-PR via
+`devinfra/pr_visuals` instead). This file is now only the active UX
 backlog; delete entries as they land and tombstone the file once empty.
 
 ## Form Sidebar

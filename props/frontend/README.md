@@ -21,9 +21,9 @@ bazel build //props/frontend:bundle     # Production build
 bazel test //props/frontend:visual_tests # All visual regression tests
 ```
 
-## Visual Regression Testing
+## Visual Render-Health Testing
 
-Puppeteer-based visual regression testing via Bazel. Each scenario is a separate Bazel test target in the sub-package next to its component.
+Puppeteer-based render-health testing via Bazel. Each scenario is a separate Bazel test target in the sub-package next to its component; the test fails on harness/scenario load failures and uncaught page errors, and publishes the rendered PNG for PR visual review (no checked-in baselines — pixel changes are reviewed on the PR's visual-review page, see `devinfra/pr_visuals/README.md`).
 
 ```bash
 # Run all visual tests
@@ -33,27 +33,7 @@ bazel test //props/frontend:visual_tests
 bazel test //props/frontend/src/components:visual_DefinitionDetail
 ```
 
-Baselines are stored in `baselines/` directories next to each component (e.g., `src/components/baselines/`, `src/components/stats/baselines/`, `src/pages/baselines/`). Add test scenarios in `tests/harness/harness.ts` and per-scenario test files (e.g., `visual_test_Foo.mjs`) in the appropriate sub-package.
-
-### Updating baselines
-
-After intentional UI changes, update baselines directly via `bazel run`:
-
-```bash
-# Update a single baseline
-bazel run //props/frontend/src/components:visual_DefinitionDetail -- --update
-
-# Update all baselines
-bazel query 'kind("js_test", //props/frontend/...)' | grep visual_ | \
-  xargs -I{} bazel run {} -- --update
-
-# Verify tests pass with new baselines
-bazel test //props/frontend:visual_tests --nocache_test_results
-```
-
-The `--update` flag takes a screenshot and writes it directly to the source tree baseline directory. This requires `bazel run` (not `bazel test`) because it uses `BUILD_WORKSPACE_DIRECTORY` to locate the source tree.
-
-Failed tests also write `*-actual.png` and `*-diff.png` to `TEST_UNDECLARED_OUTPUTS_DIR` for manual inspection.
+Add test scenarios in `tests/harness/harness.ts` and per-scenario test files (e.g., `visual_test_Foo.mjs`) in the appropriate sub-package. Rendered `*-actual.png` files land in `TEST_UNDECLARED_OUTPUTS_DIR` for manual inspection.
 
 ## Issue overlay colors
 

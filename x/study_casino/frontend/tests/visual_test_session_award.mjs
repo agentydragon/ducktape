@@ -3,8 +3,7 @@
 
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("session_award", import.meta.url, {
-  publishOnly: true,
+await main("session_award", {
   viewport: { width: 900, height: 360 },
   waitMs: 250,
 });

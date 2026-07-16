@@ -15,8 +15,6 @@ js_library(
         "//x/study_casino/frontend:__pkg__",
     ],
     deps = [
-        ":node_modules/pixelmatch",
-        ":node_modules/pngjs",
         ":node_modules/puppeteer",
         ":visual_review_manifest",
     ],

@@ -89,17 +89,6 @@ py_library(
 )
 
 py_library(
-    name = "png_diff",
-    testonly = True,
-    srcs = ["png_diff.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//util:visual_diff",
-        "@pypi//pillow",
-    ],
-)
-
-py_library(
     name = "visual_review",
     testonly = True,
     srcs = ["visual_review.py"],

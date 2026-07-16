@@ -1,19 +1,19 @@
 /**
- * Shared infrastructure for per-scenario visual regression tests.
+ * Shared infrastructure for per-scenario visual render-health tests.
  *
  * Each scenario has its own js_test target that imports this lib and calls
  * main(scenarioName). This gives Bazel proper per-scenario caching and
- * parallelism: a change to CoverageHeatmap's baseline only reruns that test.
+ * parallelism: a change to CoverageHeatmap's harness deps only reruns that test.
  *
  * Uses file:// URLs to load the harness HTML directly — no HTTP server needed.
  * The harness bundle is IIFE format so it works without module CORS restrictions.
  *
- * To update a baseline: bazel run //path/to:visual_TestName -- --update
- * To inspect failures: check TEST_UNDECLARED_OUTPUTS_DIR for *-actual.png + *-diff.png.
- *
- * Scenarios that pass `publishOnly: true` keep no checked-in baseline at all:
- * the test gates render health only, and pixel changes are reviewed via the
- * published PR-visuals manifest.
+ * There are no checked-in pixel baselines: the test gates render health
+ * (harness loads, fonts load, the scenario mounts, zero uncaught page errors)
+ * and writes `<name>-actual.png` plus a visual-review manifest to undeclared
+ * outputs. Pixel changes are reviewed on the PR's visual-review page
+ * (devinfra/pr_visuals/publisher.py) instead of gating CI — see
+ * devinfra/pr_visuals/plans/goldens_to_pr_visuals.md.
  */
 
 // `document` is the browser page's, referenced inside page.evaluate callbacks (which run in the
@@ -21,9 +21,7 @@
 /* global document */
 
 import puppeteer from "puppeteer";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { PNG } from "pngjs";
-import pixelmatch from "pixelmatch";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 
@@ -32,137 +30,23 @@ import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Default baseline directory (adjacent to this lib file).
-// Can be overridden per-test via the baselineDir parameter to main().
-const DEFAULT_BASELINE_DIR = join(__dirname, "visual-regression.spec.ts-snapshots");
-
-// Pixel diff tolerance (percentage of total pixels). See visual-regression.spec.js for rationale.
-const PIXEL_DIFF_PERCENT = 2;
-
-/**
- * Determine whether update mode is active and where to write baselines.
- *
- * Returns { updateMode, writeDir } where writeDir is the source-tree path
- * when updating, or null for comparison mode.
- */
-function resolveUpdateMode() {
-  const updateRequested = process.argv.slice(2).includes("--update") || process.env.UPDATE_BASELINES === "1";
-  if (!updateRequested) return { updateMode: false, writeDir: null };
-
-  const workspaceDir = process.env.BUILD_WORKSPACE_DIRECTORY;
-  if (!workspaceDir) {
-    console.error(
-      "ERROR: --update requires BUILD_WORKSPACE_DIRECTORY (use 'bazel run', not 'bazel test').\n" +
-        "Usage: bazel run //path/to:visual_TestName -- --update"
-    );
-    process.exit(1);
-  }
-
-  const baselineRelPath = process.env.BASELINE_WORKSPACE_PATH;
-  if (!baselineRelPath) {
-    console.error("ERROR: BASELINE_WORKSPACE_PATH not set. Is the visual_test() macro up to date?");
-    process.exit(1);
-  }
-
-  return { updateMode: true, writeDir: join(workspaceDir, baselineRelPath) };
-}
-
-function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDir) {
-  if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
-  writeFileSync(join(outputDir, `${name}-actual.png`), screenshot);
-
-  if (updateWriteDir) {
-    if (!existsSync(updateWriteDir)) mkdirSync(updateWriteDir, { recursive: true });
-    const dest = join(updateWriteDir, `${name}-chromium-linux.png`);
-    writeFileSync(dest, screenshot);
-    console.log(`  Updated baseline: ${dest}`);
-    return { passed: true, updated: true };
-  }
-
-  const baselinePath = join(baselineDir, `${name}-chromium-linux.png`);
-  if (!existsSync(baselinePath)) {
-    if (!existsSync(baselineDir)) mkdirSync(baselineDir, { recursive: true });
-    writeFileSync(baselinePath, screenshot);
-    console.log(`  Creating baseline: ${name}`);
-    return { passed: true, created: true };
-  }
-
-  const baseline = PNG.sync.read(readFileSync(baselinePath));
-  const actual = PNG.sync.read(screenshot);
-
-  if (actual.width !== baseline.width || actual.height !== baseline.height) {
-    console.error(
-      `  ✗ Dimensions differ: baseline=${baseline.width}x${baseline.height}, actual=${actual.width}x${actual.height}`
-    );
-    return { passed: false, reason: "dimensions" };
-  }
-
-  const diff = new PNG({ width: baseline.width, height: baseline.height });
-  const numDiffPixels = pixelmatch(baseline.data, actual.data, diff.data, baseline.width, baseline.height, {
-    threshold: 0.3,
-  });
-
-  const totalPixels = baseline.width * baseline.height;
-  const diffPercent = (numDiffPixels / totalPixels) * 100;
-
-  if (diffPercent > PIXEL_DIFF_PERCENT) {
-    writeFileSync(join(outputDir, `${name}-diff.png`), PNG.sync.write(diff));
-    console.error(`  ✗ ${numDiffPixels} pixels differ (${diffPercent.toFixed(1)}% > ${PIXEL_DIFF_PERCENT}% tolerance)`);
-    return { passed: false };
-  }
-
-  if (numDiffPixels > 0) {
-    console.log(
-      `  ~ ${numDiffPixels} pixels differ (${diffPercent.toFixed(1)}% within ${PIXEL_DIFF_PERCENT}% tolerance)`
-    );
-  }
-  return { passed: true };
-}
-
 /**
  * Run a single visual scenario and exit 0 (pass) or 1 (fail).
  * Called from each per-scenario test file.
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
- * @param {string|null} callerUrl - import.meta.url of the calling test file (for baseline dir resolution).
- * @param {{ viewport?: { width: number, height: number }, baselineName?: string, colorScheme?: 'light' | 'dark', waitMs?: number, publishOnly?: boolean }} [options] - Optional overrides.
- *   baselineName overrides the filename stem for the baseline PNG (defaults to scenarioName).
+ * @param {{ viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', waitMs?: number }} [options] - Optional overrides.
+ *   outputName overrides the filename stem for the published PNG (defaults to scenarioName).
  *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
  *   waitMs overrides the settle delay after `#app > *` appears (defaults to 200).
- *   publishOnly skips the checked-in-baseline comparison: the test is a
- *   render-health gate (harness loads, scenario mounts, no page errors) and
- *   pixel changes are reviewed via the published PR-visuals manifest instead
- *   (see devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
  */
-export async function main(scenarioName, callerUrl = null, options = {}) {
-  const baselineName = options.baselineName || scenarioName;
+export async function main(scenarioName, options = {}) {
+  const outputName = options.outputName || scenarioName;
 
-  // Resolve baseline directory. Prefer BASELINE_WORKSPACE_PATH (set by the
-  // visual_test() Bazel macro) so baselines resolve correctly even when the
-  // test file lives in a subdirectory (e.g., tests/) separate from baselines/.
-  let baselineDir;
-  const baselineWsPath = process.env.BASELINE_WORKSPACE_PATH;
-  if (baselineWsPath && callerUrl) {
-    const callerDir = dirname(fileURLToPath(callerUrl));
-    const pkgPath = dirname(baselineWsPath);
-    const idx = callerDir.lastIndexOf(pkgPath);
-    if (idx >= 0 && (idx === 0 || callerDir[idx - 1] === "/")) {
-      baselineDir = join(callerDir.substring(0, idx), baselineWsPath);
-    }
-  }
-  if (!baselineDir) {
-    baselineDir = callerUrl ? join(dirname(fileURLToPath(callerUrl)), "baselines") : DEFAULT_BASELINE_DIR;
-  }
   const harnessPath = process.env.HARNESS_PATH || join(__dirname, "harness/dist/harness.js");
   const distDir = dirname(harnessPath);
   const harnessDir = distDir.endsWith("/dist") ? dirname(distDir) : distDir;
-  const outputDir = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "diffs");
-
-  const { updateMode, writeDir } = resolveUpdateMode();
-  if (options.publishOnly && updateMode) {
-    console.error("ERROR: --update is meaningless for a publishOnly scenario — there is no checked-in baseline.");
-    process.exit(1);
-  }
+  const outputDir = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "renders");
 
   const indexPath = resolve(join(harnessDir, "index.html"));
   if (!existsSync(indexPath)) {
@@ -170,7 +54,7 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     process.exit(1);
   }
 
-  const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), `chrome-user-data-${baselineName}`);
+  const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), `chrome-user-data-${outputName}`);
   mkdirSync(userDataDir, { recursive: true });
 
   const launchOptions = {
@@ -217,17 +101,13 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     launchOptions.executablePath = execPath;
   }
 
-  if (updateMode) {
-    console.log(`Updating baseline for: ${baselineName}`);
-  }
-
   const browser = await puppeteer.launch(launchOptions);
   let passed = false;
 
   try {
     const page = await browser.newPage();
     // Render health: any uncaught error in the page fails the test — with no
-    // pixel gate in publishOnly mode this is the primary crash detector.
+    // pixel gate this is the primary crash detector.
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error));
     const viewport = { width: 1200, height: 800, deviceScaleFactor: 1, ...options.viewport };
@@ -240,7 +120,7 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
 
     // Freeze the wall clock so time-relative formatters (e.g. date-fns
     // formatDistanceToNow used by formatAge) produce deterministic text.
-    // Without this, baselines drift as the mock dates cross date-fns
+    // Without this, renders drift as the mock dates cross date-fns
     // thresholds ("about 1 year" → "over 1 year", etc.).
     const frozenNowMs = Date.parse("2025-02-01T12:00:00Z");
     await page.evaluateOnNewDocument((nowMs) => {
@@ -273,7 +153,7 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
       process.exit(1);
     }
 
-    console.log(`Testing: ${baselineName} (page=${scenarioName})`);
+    console.log(`Testing: ${outputName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#app > *", { timeout: 5000 });
     await new Promise((r) => setTimeout(r, options.waitMs ?? 200));
@@ -282,38 +162,24 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     const screenshotData = await element.screenshot();
     const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 
-    let result;
-    if (options.publishOnly) {
-      if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
-      writeFileSync(join(outputDir, `${baselineName}-actual.png`), screenshot);
-      if (pageErrors.length > 0) {
-        console.error(`  ✗ ${pageErrors.length} browser page error(s):`);
-        for (const error of pageErrors) console.error(`    ${error.stack || error}`);
-        result = { passed: false, reason: "pageerror" };
-      } else {
-        result = { passed: true };
-      }
-    } else {
-      result = compareBaseline(baselineName, screenshot, outputDir, baselineDir, writeDir);
-    }
+    if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, `${outputName}-actual.png`), screenshot);
 
-    // `${baselineName}-actual.png` was retained in outputDir; publish it for
-    // PR visual review (devinfra/pr_visuals/publisher.py picks the manifest
-    // up from passing CI runs). Upsert so a runner invoking main() for
-    // several scenarios accumulates one manifest.
+    // Publish the render for PR visual review (devinfra/pr_visuals/publisher.py
+    // picks the manifest up from passing CI runs). Upsert so a runner invoking
+    // main() for several scenarios accumulates one manifest.
     upsertVisualReviewAsset(outputDir, {
-      title: baselineName,
-      asset: { path: `${baselineName}-actual.png`, label: baselineName },
+      title: outputName,
+      asset: { path: `${outputName}-actual.png`, label: outputName },
     });
 
-    if (result.updated) {
-      console.log("  ✓ Baseline updated");
-    } else if (result.created) {
-      console.log("  ✓ Baseline created");
-    } else if (result.passed) {
+    if (pageErrors.length > 0) {
+      console.error(`  ✗ ${pageErrors.length} browser page error(s):`);
+      for (const error of pageErrors) console.error(`    ${error.stack || error}`);
+    } else {
       console.log("  ✓ Passed");
+      passed = true;
     }
-    passed = result.passed;
   } finally {
     await browser.close();
   }

@@ -90,7 +90,34 @@ def deterministic_browser_context(
     return context
 
 
+def stability_style() -> str:
+    """Rendering-stability CSS without any font override — for pages that
+    deliberately keep their own bundled typography (e.g. the casino's
+    Outfit/Playfair fonts)."""
+    return """
+    :root,
+    body,
+    * {
+      caret-color: transparent !important;
+      -webkit-font-smoothing: none !important;
+      -moz-osx-font-smoothing: unset !important;
+      font-smooth: never !important;
+      text-rendering: geometricPrecision !important;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0s !important;
+      animation-delay: 0s !important;
+      transition-duration: 0s !important;
+      transition-delay: 0s !important;
+      scroll-behavior: auto !important;
+    }
+    """
+
+
 def deterministic_style() -> str:
+    """`stability_style` plus a hermetic Inter font forced everywhere."""
     font_bytes = get_required_path("_main/util/testing/frontend_visual/fonts/Inter.woff2").read_bytes()
     font_base64 = base64.b64encode(font_bytes).decode()
     return f"""
@@ -103,20 +130,6 @@ def deterministic_style() -> str:
     :root,
     body,
     * {{
-      caret-color: transparent !important;
       font-family: "Inter", sans-serif !important;
-      -webkit-font-smoothing: none !important;
-      -moz-osx-font-smoothing: unset !important;
-      font-smooth: never !important;
-      text-rendering: geometricPrecision !important;
     }}
-    *,
-    *::before,
-    *::after {{
-      animation-duration: 0s !important;
-      animation-delay: 0s !important;
-      transition-duration: 0s !important;
-      transition-delay: 0s !important;
-      scroll-behavior: auto !important;
-    }}
-    """
+    """ + stability_style()

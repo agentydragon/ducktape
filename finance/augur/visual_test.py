@@ -1,23 +1,19 @@
-"""Full-page visual goldens for representative public Augur URLs.
+"""Render-health checks + PR-visuals publication for representative Augur URLs.
 
-Update flow for intentional frontend changes:
+Each case boots the real dev server (hermetic prices), drives the page through
+its `wait_ready` DOM/geometry assertions (the real regression net), renders
+twice to prove determinism, and fails on any uncaught page error. The rendered
+PNGs plus a `visual-review.json` manifest go to undeclared outputs, where
+trusted CI (`devinfra/pr_visuals/publisher.py`) publishes them for review.
 
-    nix develop --command bazelisk test //finance/augur:visual_test \\
-        --test_env=UPDATE_GOLDEN=1 \\
-        --remote_upload_local_results=false --nocache_test_results
-
-Then copy the produced PNGs from the test's undeclared outputs into
-`augur/frontend/__screenshots__/` and rerun this test without `UPDATE_GOLDEN`.
-With BuildBuddy/RBE, use the invocation id printed by Bazel:
-
-    bbapi artifact download "$INV" "test.outputs/product_cash_runway.png" \\
-        -o augur/frontend/__screenshots__/product_cash_runway.png
+There is no checked-in pixel golden — pixel changes are reviewed on the PR's
+visual-review page, not gated in CI (see
+devinfra/pr_visuals/plans/goldens_to_pr_visuals.md).
 """
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import threading
 from collections import defaultdict
@@ -44,7 +40,6 @@ from util.testing.frontend_visual import (
     deterministic_style,
     launch_deterministic_browser,
 )
-from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
@@ -550,7 +545,7 @@ def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffi
 
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
-def test_augur_visual_golden(
+def test_augur_pages_render(
     page: Page, page_errors: list[str], augur_server: str, tmp_path: Path, case: VisualCase
 ) -> None:
     undeclared_dir = undeclared_outputs_dir()
@@ -566,25 +561,9 @@ def test_augur_visual_golden(
             f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
         )
 
-    # Always retain the candidate render + visual-review manifest for the PR
-    # visual-review publisher (devinfra/pr_visuals/publisher.py).
-    out_name = f"{case.name}.png"
-    retain_review_asset(first_path, title="Augur pages", label=case.name.replace("_", " "), name=out_name)
-
-    if os.environ.get("UPDATE_GOLDEN") == "1":
-        return
-
-    try:
-        expected_path = get_required_path(f"_main/finance/augur/frontend/__screenshots__/{out_name}")
-    except RuntimeError:
-        raise AssertionError(
-            f"No Augur visual golden checked in for {out_name}. Re-run with UPDATE_GOLDEN=1 "
-            f"and copy the produced PNG from undeclared outputs into augur/frontend/__screenshots__/."
-        ) from None
-
-    assert_png_matches_golden(
-        first_path, expected_path, name=case.name, out_dir=undeclared_dir, tolerance=0.0, intensity_threshold=1
-    )
+    # Retain the render + visual-review manifest for the PR visual-review
+    # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
+    retain_review_asset(first_path, title="Augur pages", label=case.name.replace("_", " "), name=f"{case.name}.png")
 
 
 if __name__ == "__main__":

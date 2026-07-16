@@ -574,12 +574,3 @@ vitest_bin.vitest_test(
         "//finance/augur/frontend/lib:format",
     ],
 )
-
-filegroup(
-    name = "visual_golden_snapshots",
-    testonly = True,
-    srcs = glob(
-        ["__screenshots__/*.png"],
-        allow_empty = True,
-    ),
-)

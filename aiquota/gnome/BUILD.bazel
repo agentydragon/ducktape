@@ -32,22 +32,12 @@ pkg_zip(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "snapshots",
-    testonly = True,
-    srcs = glob(
-        ["__snapshots__/*.png"],
-        allow_empty = True,
-    ),
-)
-
 py_test(
     name = "test_render",
     size = "medium",
     srcs = ["test_render.py"],
     data = [
         ":aiquota_zip",
-        ":snapshots",
         "//aiquota/testing:fixtures",
         "//gnome/test_image:gnome_shell_test",
     ],
@@ -56,7 +46,6 @@ py_test(
         "//aiquota/testing:quota_fixtures",
         "//util:oci",
         "//util/bazel:runfiles",
-        "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_review",
         "@pypi//docker",

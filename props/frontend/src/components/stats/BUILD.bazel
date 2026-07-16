@@ -55,27 +55,23 @@ js_library(
 visual_test(
     name = "visual_CoverageHeatmap",
     srcs = ["visual_test_CoverageHeatmap.mjs"],
-    baseline = "baselines/CoverageHeatmap-chromium-linux.png",
     deps = [":CoverageHeatmap"],
 )
 
 visual_test(
     name = "visual_DistributionChartRecall",
     srcs = ["visual_test_DistributionChartRecall.mjs"],
-    baseline = "baselines/DistributionChartRecall-chromium-linux.png",
     deps = [":DistributionChart"],
 )
 
 visual_test(
     name = "visual_DistributionChartTP",
     srcs = ["visual_test_DistributionChartTP.mjs"],
-    baseline = "baselines/DistributionChartTP-chromium-linux.png",
     deps = [":DistributionChart"],
 )
 
 visual_test(
     name = "visual_OccurrenceStatsTable",
     srcs = ["visual_test_OccurrenceStatsTable.mjs"],
-    baseline = "baselines/OccurrenceStatsTable-chromium-linux.png",
     deps = [":OccurrenceStats"],
 )

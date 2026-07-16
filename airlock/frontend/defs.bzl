@@ -1,4 +1,4 @@
-"""Shared Bazel macros for airlock/frontend visual regression tests."""
+"""Shared Bazel macros for airlock/frontend visual render-health tests."""
 
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 
@@ -19,27 +19,21 @@ _VISUAL_ENV = {
     "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
 }
 
-def visual_test(name, srcs, deps = [], baseline = None, size = "small"):
-    """Visual regression test for a single harness scenario.
+def visual_test(name, srcs, deps = [], size = "small"):
+    """Render-health + PR-visuals publication test for a single harness scenario.
 
     Args:
         name: Bazel target name (e.g., "visual_ListPage").
         srcs: Test source files (entry point first).
         deps: Additional data deps this test requires.
-        baseline: Baseline PNG path.
         size: Bazel test size (default "small").
     """
-    env = dict(_VISUAL_ENV)
-    env["BASELINE_WORKSPACE_PATH"] = native.package_name() + "/baselines"
-
-    baseline_data = [baseline] if baseline else native.glob(["baselines/*.png"])
-
     js_test(
         name = name,
         size = size,
         entry_point = srcs[0],
-        data = _VISUAL_BASE_DATA + deps + baseline_data,
-        env = env,
+        data = _VISUAL_BASE_DATA + deps,
+        env = _VISUAL_ENV,
         no_copy_to_bin = _VISUAL_BASE_DATA,
     )
 
@@ -60,7 +54,6 @@ def visual_test_matrix(pages, viewports = ["desktop", "mobile"], themes = _THEME
         deps: Additional data deps shared by all tests.
     """
     runner = "tests/visual_test_runner.mjs"
-    baseline_data = native.glob(["baselines/*.png"])
 
     for page in pages:
         for viewport in viewports:
@@ -73,13 +66,12 @@ def visual_test_matrix(pages, viewports = ["desktop", "mobile"], themes = _THEME
                     suffix_parts.append(theme)
 
                 suffix = ("_" + "_".join(suffix_parts)) if suffix_parts else ""
-                baseline_name = page + suffix
-                target_name = "visual_" + baseline_name
+                output_name = page + suffix
+                target_name = "visual_" + output_name
 
                 env = dict(_VISUAL_ENV)
-                env["BASELINE_WORKSPACE_PATH"] = native.package_name() + "/baselines"
                 env["VISUAL_TEST_PAGE"] = page
-                env["VISUAL_TEST_BASELINE"] = baseline_name
+                env["VISUAL_TEST_OUTPUT_NAME"] = output_name
                 env["VISUAL_TEST_COLOR_SCHEME"] = theme
                 env["VISUAL_TEST_VIEWPORT_W"] = vp["w"]
                 env["VISUAL_TEST_VIEWPORT_H"] = vp["h"]
@@ -88,7 +80,7 @@ def visual_test_matrix(pages, viewports = ["desktop", "mobile"], themes = _THEME
                     name = target_name,
                     size = "small",
                     entry_point = runner,
-                    data = _VISUAL_BASE_DATA + deps + baseline_data,
+                    data = _VISUAL_BASE_DATA + deps,
                     env = env,
                     no_copy_to_bin = _VISUAL_BASE_DATA,
                 )

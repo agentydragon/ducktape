@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 import threading
 import time
@@ -37,6 +36,7 @@ from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.oci import load_oci_image
+from util.testing.frontend_visual import deterministic_browser_context, launch_deterministic_browser, stability_style
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 from x.study_casino.app import create_app
@@ -86,46 +86,9 @@ CASES: tuple[Case, ...] = (
 )
 
 
-# Subset of Augur's deterministic browser flags — disables animation, sub-pixel
-# font rendering, GPU compositing, and webgl, so the rendered PNGs are stable
-# across hosts.
-DETERMINISTIC_BROWSER_ARGS = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--font-render-hinting=none",
-    "--disable-font-subpixel-positioning",
-    "--disable-lcd-text",
-    "--force-color-profile=srgb",
-    "--disable-accelerated-2d-canvas",
-    "--disable-gpu-compositing",
-    "--disable-software-rasterizer",
-    "--disable-skia-runtime-opts",
-    "--disable-partial-raster",
-    "--use-gl=swiftshader",
-    "--force-device-scale-factor=1",
-    "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
-    "--disable-accelerated-video-decode",
-    "--disable-canvas-aa",
-    "--disable-2d-canvas-clip-aa",
-    "--disable-webgl",
-    "--disable-webgl2",
-    "--blink-settings=imageAnimationPolicy=noAnimation",
-    "--disable-smooth-scrolling",
-    "--disable-threaded-animation",
-    "--disable-threaded-scrolling",
-    "--disable-checker-imaging",
-]
-
-
 @pytest.fixture
 def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    executable = str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
-    instance = playwright_sync.chromium.launch(
-        headless=True, executable_path=executable, args=DETERMINISTIC_BROWSER_ARGS
-    )
+    instance = launch_deterministic_browser(playwright_sync)
     try:
         yield instance
     finally:
@@ -225,63 +188,17 @@ def _post(origin: str, path: str, payload: dict) -> None:
             raise RuntimeError(f"seed {path} failed: HTTP {response.status}")
 
 
-def _deterministic_style() -> str:
-    return """
-    body, * {
-      caret-color: transparent !important;
-      -webkit-font-smoothing: none !important;
-      -moz-osx-font-smoothing: unset !important;
-      font-smooth: never !important;
-      text-rendering: geometricPrecision !important;
-    }
-    *, *::before, *::after {
-      animation-duration: 0s !important;
-      animation-delay: 0s !important;
-      transition-duration: 0s !important;
-      transition-delay: 0s !important;
-      scroll-behavior: auto !important;
-    }
-    """
-
-
-def _frozen_clock_init() -> str:
-    return f"""
-    ((nowMs) => {{
-      const OriginalDate = Date;
-      class FrozenDate extends OriginalDate {{
-        constructor(...args) {{
-          if (args.length === 0) {{
-            super(nowMs);
-          }} else {{
-            super(...args);
-          }}
-        }}
-        static now() {{
-          return nowMs;
-        }}
-      }}
-      globalThis.Date = FrozenDate;
-    }})({FROZEN_NOW_MS});
-    """
-
-
 def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
     """Render one case; fails on any browser page error (render health)."""
-    context = browser.new_context(
-        viewport=case.viewport,
-        device_scale_factor=1,
-        color_scheme="dark",
-        reduced_motion="reduce",
-        locale="en-US",
-        timezone_id="UTC",
+    context = deterministic_browser_context(
+        browser, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     )
-    context.add_init_script(_frozen_clock_init())
     page = context.new_page()
     page_errors: list[str] = []
     page.on("pageerror", lambda e: page_errors.append(f"{e}\n{getattr(e, 'stack', '')}"))
     try:
         page.goto(f"{origin}/{case.query}", wait_until="networkidle", timeout=30_000)
-        page.add_style_tag(content=_deterministic_style())
+        page.add_style_tag(content=stability_style())
         page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=15_000)
         # Force fonts to settle before screenshot.
         page.evaluate("() => document.fonts.ready.then(() => true)")

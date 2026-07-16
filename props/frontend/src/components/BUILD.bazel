@@ -204,48 +204,41 @@ js_library(
 visual_test(
     name = "visual_DefinitionDetail",
     srcs = ["visual_test_DefinitionDetail.mjs"],
-    baseline = "baselines/DefinitionDetail-chromium-linux.png",
     deps = [":DefinitionDetail"],
 )
 
 visual_test(
     name = "visual_FileViewerAnnotated",
     srcs = ["visual_test_FileViewerAnnotated.mjs"],
-    baseline = "baselines/FileViewerAnnotated-chromium-linux.png",
     deps = [":FileViewer"],
 )
 
 visual_test(
     name = "visual_FileViewerGroundTruth",
     srcs = ["visual_test_FileViewerGroundTruth.mjs"],
-    baseline = "baselines/FileViewerGroundTruth-chromium-linux.png",
     deps = [":FileViewer"],
 )
 
 visual_test(
     name = "visual_LLMRequests",
     srcs = ["visual_test_LLMRequests.mjs"],
-    baseline = "baselines/LLMRequests-chromium-linux.png",
     deps = [":LLMRequestViewer"],
 )
 
 visual_test(
     name = "visual_LLMRequestsToolCall",
     srcs = ["visual_test_LLMRequestsToolCall.mjs"],
-    baseline = "baselines/LLMRequestsToolCall-chromium-linux.png",
     deps = [":LLMRequestViewer"],
 )
 
 visual_test(
     name = "visual_RunsBrowser",
     srcs = ["visual_test_RunsBrowser.mjs"],
-    baseline = "baselines/RunsBrowser-chromium-linux.png",
     deps = [":RunsBrowser"],
 )
 
 visual_test(
     name = "visual_RunDetailCritic",
     srcs = ["visual_test_RunDetailCritic.mjs"],
-    baseline = "baselines/RunDetailCritic-chromium-linux.png",
     deps = [":RunDetail"],
 )

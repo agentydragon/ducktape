@@ -1,4 +1,4 @@
-"""Golden render tests for the ai-quota GNOME extension.
+"""Render-health + PR-visuals publication tests for the ai-quota GNOME extension.
 
 A single test container (//gnome/test_image:gnome_shell_test_image)
 is started once per module: boot.sh inside it brings up Xvfb, the
@@ -9,37 +9,27 @@ once per module) and the extension exports a session-bus interface
 lets this driver swap fixture state, open/close the popup menu, and
 query the menu's screen geometry.
 
-Each fixture renders to a single golden capturing both the panel
+Each fixture renders to a single PNG capturing both the panel
 indicator (with menu open, so the button shows its active state) and
 the open popup menu below it. The crop spans from the menu's left edge
 to the right edge of the screen and from the top of the panel to the
 bottom of the menu — so reviewers see the indicator's icons / pace
 labels and the menu's headers / bars / forecast strings in one image.
-The fixtures themselves document the scenario each golden covers.
+The fixtures themselves document the scenario each render covers.
 
-Update flow when the rendering changes intentionally:
-
-    bazelisk test //aiquota/gnome:test_render \\
-        --test_env=UPDATE_GOLDEN=1 \\
-        --remote_upload_local_results=false --nocache_test_results
-
-    INV=<invocation-id from build output>
-    for f in empty tints hot exhausted extra_enabled_not_burning stale_fallback; do
-      bbapi artifact download "$INV" "test.outputs/$f.png" \\
-        -o "aiquota/gnome/__snapshots__/$f.png"
-    done
-
-    # Eyeball, commit, then re-run without UPDATE_GOLDEN=1 to confirm green.
+There is no checked-in pixel golden — the renders publish to the PR's
+visual-review page via the `visual-review.json` manifest (see
+devinfra/pr_visuals/plans/goldens_to_pr_visuals.md); the hard gate is
+that gnome-shell boots, the extension reaches ENABLED, and every
+fixture opens its menu and screenshots successfully.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import shlex
-import shutil
 import time
 import zipfile
 from collections.abc import Iterator
@@ -54,7 +44,6 @@ from testcontainers.core.container import DockerContainer
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_fixture_data
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
-from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
@@ -329,7 +318,6 @@ def test_render(
     out_name = f"{fixture_name}.png"
     fixture_in_container = f"/fixtures/{fixture_name}.json"
     out_in_container = f"/out/{out_name}"
-    update_golden = os.environ.get("UPDATE_GOLDEN") == "1"
 
     try:
         # Defensively close in case a previous test left the menu open.
@@ -349,29 +337,11 @@ def test_render(
     actual_path = tmp_path / f"{fixture_name}.cropped.png"
     cropped.save(actual_path)
 
-    # Successful test results are the publisher's source of truth. Always retain
-    # the candidate and manifest, not only the failure diagnostics emitted by the
-    # golden comparator below.
+    # Retain the render + visual-review manifest for the PR visual-review
+    # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
     retain_review_asset(
         actual_path, title="AI quota GNOME extension", label=fixture_name.replace("_", " "), name=out_name
     )
-
-    if update_golden:
-        # Skip comparison; the retained candidate can be copied into __snapshots__/.
-        logger.warning("UPDATE_GOLDEN=1: wrote new golden to %s", undeclared_dir / out_name)
-        return
-
-    try:
-        expected_path = get_required_path(f"_main/aiquota/gnome/__snapshots__/{out_name}")
-    except RuntimeError:
-        shutil.copy(actual_path, undeclared_dir / f"{fixture_name}.actual.png")
-        pytest.fail(
-            f"No golden checked in for {out_name}. Re-run with --test_env=UPDATE_GOLDEN=1, "
-            f"then cp the produced {out_name} from undeclared outputs into "
-            f"aiquota/gnome/__snapshots__/."
-        )
-
-    assert_png_matches_golden(actual_path, expected_path, name=fixture_name, out_dir=undeclared_dir)
 
 
 if __name__ == "__main__":

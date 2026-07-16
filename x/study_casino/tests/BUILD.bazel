@@ -50,6 +50,7 @@ py_test(
         "//util:oci",
         "//util:playwright",
         "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
         "//util/testing:visual_review",
         "//x/study_casino:app",
