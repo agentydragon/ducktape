@@ -1,0 +1,35 @@
+# Build and push the agent workspace image (Claude Code CLI + Codex CLI +
+# dev basics) to GHCR. Consumed by the workspace SandboxTemplate in
+# cluster/k8s/agents/agent-sandbox/workspaces/.
+name: Agent Workspace Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "cluster/k8s/agents/agent-sandbox/workspace-image/**"
+      - ".github/workflows/agent-workspace-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: agent-workspace-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/agent-workspace
+          context: cluster/k8s/agents/agent-sandbox/workspace-image
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/agent-workspace:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/agent-workspace:buildcache,mode=max

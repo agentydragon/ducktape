@@ -23,6 +23,17 @@ to, creds already wired, Claude CLI installed) minus the persistence.
     after v0.5.1 ships a sandbox-with-extensions.yaml asset for GitOps engines);
     drop the GitRepository + HelmRelease then. -->
 
+- `workspace-image/` — the dedicated `ghcr.io/agentydragon/agent-workspace`
+  image (Claude Code + Codex CLIs, dev basics, no baked credentials, no haku
+  coupling). WebFetch/WebSearch are denied in baked Claude settings — GLM's
+  tool-call shape differs from Anthropic's, matching
+  `nix/home/claude_code/z-claude.nix`. Built by
+  `.github/workflows/agent-workspace-image.yml` on `devel` pushes; Flux image
+  automation rolls the template's tag. **Bootstrap gotcha**: until the first
+  post-merge build lands AND the GHCR package is flipped public once by hand,
+  the warm pod sits in `ImagePullBackOff` — it self-heals when the image
+  appears.
+
 - `workspaces/{namespace,app}/` — the dedicated `agent-workspaces` namespace
   (own ResourceQuota/LimitRange) and the `workspace` `SandboxTemplate` + warm
   pool + janitor `CleanupPolicy`. Deliberately **not** `claude-sandbox` — that
@@ -139,12 +150,13 @@ The template points `ANTHROPIC_BASE_URL` at
 `litellm.litellm.svc.cluster.local:4000` and reads `ANTHROPIC_AUTH_TOKEN` from
 `litellm-key-agent-workspaces` — a virtual key minted by
 <../../../../tf/gitops/litellm-keys/> (alias `agent-workspaces`, GLM-model
-allowlist shared with the haku zai lane, $25/30d budget) and
-reflector-mirrored into this namespace. That buys budget capping, model
-allowlisting, and usage observability per workspace lane; deleting the
+allowlist shared with the haku zai lane, deliberately no budget cap) and
+reflector-mirrored into this namespace. That buys model allowlisting and usage
+observability per workspace lane; deleting the
 `litellm_key.agent_workspaces` TF resource is the LLM kill switch.
-`ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` default to allowlisted GLM
-models so Claude Code doesn't request `claude-*` names the key rejects.
+`ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` both pin `glm-5.2-anthropic`
+(z-claude parity) so Claude Code doesn't request `claude-*` names the key
+rejects.
 
 Other credential classes follow the zones/codex-pod pattern: mirror a Secret
 into `agent-workspaces` (reflector or ESO) and reference it from the template.

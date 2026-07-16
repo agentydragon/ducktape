@@ -1,8 +1,9 @@
 # Disposable agent workspace: the agent-box workflow (a machine you go to,
-# creds wired, Claude CLI installed) minus the persistence. Reuses the haku
-# zone worker image (Claude Code + Codex CLIs, no baked credentials) and the
-# zone Job's pod hardening; unlike the zones this is trusted personal use —
-# open egress, quota-capped by the agent-workspaces namespace.
+# creds wired, Claude CLI installed) minus the persistence. Runs the dedicated
+# agent-workspace image (../workspace-image/ — Claude Code + Codex CLIs, no
+# baked credentials, WebFetch/WebSearch denied for GLM-lane parity with
+# z-claude) with the haku zone Job's pod hardening; unlike the zones this is
+# trusted personal use — open egress, quota-capped by the namespace.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
@@ -27,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workspace
-          image: ghcr.io/agentydragon/haku-zone-worker:devel-20260710172610-8af6f13 # {"$imagepolicy": "flux-system:haku-zone-worker"}
+          image: ghcr.io/agentydragon/agent-workspace:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:agent-workspace"}
           command: ["sleep", "infinity"]
           workingDir: /workspace
           securityContext:
@@ -35,11 +36,11 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            # All LLM traffic goes through the cluster LiteLLM (budget, model
+            # All LLM traffic goes through the cluster LiteLLM (model
             # allowlist, observability) — never direct to the provider. The
             # virtual key is minted by tf/gitops/litellm-keys (alias
-            # agent-workspaces, GLM models, $25/30d) and reflected into this
-            # namespace; deleting that TF resource is the kill switch.
+            # agent-workspaces, GLM models, no budget cap) and reflected into
+            # this namespace; deleting that TF resource is the kill switch.
             - name: ANTHROPIC_BASE_URL
               value: http://litellm.litellm.svc.cluster.local:4000
             - name: ANTHROPIC_AUTH_TOKEN
@@ -49,10 +50,11 @@ spec:
                   key: api-key
             # Defaults matching the key's allowlist — Claude Code would
             # otherwise request claude-* models LiteLLM rejects for this key.
+            # Both tiers pin glm-5.2 like z-claude (nix/home/claude_code/).
             - name: ANTHROPIC_MODEL
               value: glm-5.2-anthropic
             - name: ANTHROPIC_SMALL_FAST_MODEL
-              value: glm-4.5-air-anthropic
+              value: glm-5.2-anthropic
           resources:
             requests:
               cpu: 500m

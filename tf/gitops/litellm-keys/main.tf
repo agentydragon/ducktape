@@ -410,12 +410,11 @@ resource "kubernetes_secret" "codex_clients_key" {
 
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
 # trusted personal dev sandboxes. GLM lane only for now — same allowlist as the
-# zai worker lane; deleting this resource is the workspaces' LLM kill switch.
+# zai worker lane, deliberately no budget cap (operator-only consumers);
+# deleting this resource is the workspaces' LLM kill switch.
 resource "litellm_key" "agent_workspaces" {
-  key_alias       = "agent-workspaces"
-  models          = local.zai_lane_models
-  max_budget      = 25
-  budget_duration = "30d"
+  key_alias = "agent-workspaces"
+  models    = local.zai_lane_models
   metadata = {
     consumer = "agent-workspaces sandboxes"
   }

@@ -36,6 +36,9 @@ spec:
       name: activitywatch
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: agent-workspace
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: airlock
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
