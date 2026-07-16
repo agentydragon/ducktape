@@ -22,6 +22,11 @@ spec:
       labels:
         app.kubernetes.io/name: agent-workspace
     spec:
+      # The controller defaults sandbox DNS to public resolvers only
+      # (dnsPolicy: None + 8.8.8.8/1.1.1.1) — same internet-only philosophy as
+      # its Managed NetworkPolicy — so cluster names like litellm.litellm.svc
+      # never resolve (observed live 2026-07-16). Restore cluster DNS.
+      dnsPolicy: ClusterFirst
       # Private Forgejo package — ducktape-ci pull credential provisioned into
       # this namespace by tf/gitops/forgejo-images.
       imagePullSecrets:
