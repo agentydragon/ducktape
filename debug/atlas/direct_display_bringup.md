@@ -794,8 +794,8 @@ it is trivially avoidable.`seatphysical`→`Seatgame`(valid; also passes logind'
    `systemd-logind`** so the next boot logs which field logind refuses. This is the
    make-or-break datum: if it is a fixable PAM/tty detail or an SDDM version bug we
    fix in place; if SDDM 0.21's non-seat0 greeter path is fundamentally incompatible
-   with systemd-258 varlink logind, fall back to GDM + a `_findConflictingSession`
-   patch (proven to render a greeter on this NVIDIA seat; see 2026-07-11 entries).
+   with systemd-258 varlink logind, fall back to **GDM + a separate user for
+   seatphysical** (see the constraints + fallback ladder in "Next steps" below).
 
 ### Root cause 2 — seat0 GNOME lock: `ScreenShield` never claims its D-Bus name
 
@@ -827,14 +827,64 @@ proxmox-vms.tf`, `desk/`). Historical log entries above keep the old name.
 - Added `systemd.services.systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug"`
   (marked `DEBUG(added 2026-07-16)`, remove once the greeter is solved).
 
-### Next steps at reboot
+### Constraints (user decisions, 2026-07-16)
 
-Coordinate first — a rebuild restarts display-manager and drops the seat0 SPICE
-session.
+Both are hard "no"s, so the fallback ladder is narrower than the earlier entries
+in this log imply:
 
-1. `nixos-rebuild switch`, then reboot (udev seat TAGs persist in the db; only a
-   reboot fully re-homes the card to `seatphysical`).
-2. Read the logind debug log for the seatphysical greeter's `CreateSession` — capture the
-   exact refused field. Fix in place if tractable, else GDM+patch fallback.
-3. Live-attach gnome-shell on seat0 to prove why `ScreenShield` won't own its name;
-   likely needs `XDG_SESSION_ID` propagated into the GNOME systemd --user session.
+- **No autologin on seatphysical** — it must be a real login gate.
+- **No patching GDM / gnome-shell** — so the GDM `_findConflictingSession` patch
+  (proposed in the 2026-07-11 entries) is off the table.
+
+Goal: two working seats (seat0 GNOME on SPICE + seatphysical on the NVIDIA 5090)
+**and** a working screen lock on each.
+
+### Fallback ladder (given those constraints)
+
+1. **Fix the SDDM greeter in place** (primary; keeps same-user, keeps the deployed
+   setup). Blocked only by the varlink `CreateSession` rejection — the reboot
+   captures the exact field.
+2. **GDM + a separate user for seatphysical** (e.g. a `physical`/`games` account,
+   Steam library on a shared path with group access). GDM's _only_ blocker was the
+   same-user conflict dialog; a different user sidesteps it **unpatched**, GDM's
+   greeter is proven to render on this NVIDIA seat, and reverting to GDM restores
+   the seat0 lock for free. Cost: a second home/account.
+   - Note: a separate user does **not** help SDDM — SDDM's blocker is the varlink
+     greeter, which is user-independent.
+3. LightDM — distant third (weak Wayland greeter on NVIDIA; its clean fit was
+   autologin, which is ruled out).
+
+### Reboot procedure
+
+**Safety net (verified 2026-07-16):** `sshd` is active, key-only
+(`PermitRootLogin prohibit-password`, `PasswordAuthentication no`), independent of
+the graphical session. Reach wyrm2 from atlas/laptop at `192.168.1.72` (LAN) or
+`10.42.0.20` (nebula) — survives a display-manager restart. Recovery if the greeter
+crash-loops: `sudo systemctl restart display-manager`, the park-the-seat udev trick
+(2026-07-11 entry), or roll back (`sudo nixos-rebuild switch --rollback` / previous
+boot-menu generation).
+
+1. `sudo nixos-rebuild boot --flake ~/code/ducktape#wyrm2`, then `reboot`. Use
+   `boot` not `switch` — a reboot is required anyway to re-home the udev seat TAG
+   `seat-game` → `seatphysical` (TAGs persist in the udev db), and `boot` avoids a
+   mid-session DM restart that would drop seat0 twice.
+2. Capture the diagnostic over SSH (not dependent on the graphical session):
+
+   ```bash
+   loginctl list-seats                    # expect: seatphysical (no hyphen)
+   loginctl seat-status seatphysical      # is the NVIDIA card mastered here?
+   journalctl -b -u display-manager | grep -iE 'seatphysical|CreateSession|weston|Seat'
+   journalctl -b -u systemd-logind | grep -iE 'CreateSession|InvalidParameter|Seat|VTNr|TTY'
+   ```
+
+   The **rejected field** (`Seat`/`TTY`/`VTNr`) from the last command is the decision
+   point (see the fallback ladder). Also note whether the hyphen fix alone changed
+   greeter behavior.
+
+3. **seat0 lock** (independent of the reboot — broken live already): live-attach
+   gnome-shell to prove why `ScreenShield` won't own its D-Bus name. Leading suspect:
+   `XDG_SESSION_ID` not reaching the `org.gnome.Shell@wayland.service` systemd
+   `--user` unit (it runs in the seatless `user@1001.service` scope). Fix likely
+   propagates the login session id/env into the user manager.
+
+Remove the `SYSTEMD_LOG_LEVEL=debug` logind drop-in once the greeter is solved.
