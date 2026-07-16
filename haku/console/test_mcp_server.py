@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import httpx
@@ -606,28 +606,28 @@ async def test_tool_dispatch_reflects_only_target_server(
         )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
-    monkeypatch.setattr(
-        mcp_server_module,
-        "get_tool_call_actor",
-        lambda: AgentActor(
-            agent_id=UUID("40000000-0000-4000-8000-000000000001"),
-            operator_id=UUID("10000000-0000-4000-8000-000000000001"),
-            binding_id=UUID("50000000-0000-4000-8000-000000000001"),
-        ),
+    actor = AgentActor(
+        agent_id=UUID("40000000-0000-4000-8000-000000000001"),
+        operator_id=UUID("10000000-0000-4000-8000-000000000001"),
+        binding_id=UUID("50000000-0000-4000-8000-000000000001"),
     )
+    actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
+    actor_resolver.resolve = AsyncMock(return_value=actor)
     provider = mcp_server_module.OperatorToolProvider(
         mcp_server_module.ConsoleMcpContext(
             settings=settings,
             tool_calls=app.state.tool_call_service,
             oauth_store=app.state.mcp_operator_oauth_store,
             metadata_provider=app.state.tool_call_metadata_provider,
-        )
+        ),
+        actor_resolver,
     )
 
     tool = await provider._get_tool("beta_echo")
 
-    assert tool is not None
+    assert isinstance(tool, mcp_server_module.ProxyTool)
     assert tool.name == "beta_echo"
+    assert tool.actor == actor
     assert reflected == ["beta"]
 
 

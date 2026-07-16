@@ -44,7 +44,7 @@ from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorMiddleware, install_operator_session_route_guard
+from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_static_agents
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
@@ -200,9 +200,9 @@ def create_app(
         static_credentials=static_credential_registry,
         operator_identity_store=operator_identity_store,
     )
-    console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
-    console_mcp.add_middleware(
-        HakuMcpActorMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
+    actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
+    console_mcp = mcp_server.build_console_mcp(
+        console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver
     )
     # The console runs multiple interchangeable replicas. FastMCP's default stateful HTTP
     # transport keeps its session map in-process, so a subsequent request routed to another pod

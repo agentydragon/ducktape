@@ -45,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
-from haku.console.mcp_auth.fastmcp_adapter import get_tool_call_actor
+from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, _load_servers, server_tool_prefix
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
@@ -222,6 +222,7 @@ class ProxyTool(Tool):
     server_id: str
     upstream_tool_name: str
     passthrough: bool
+    actor: ToolCallActor
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         if self.passthrough:
@@ -239,7 +240,7 @@ class ProxyTool(Tool):
             title=title,
             wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
         )
-        actor = get_tool_call_actor()
+        actor = self.actor
         try:
             if isinstance(actor, OperatorActor):
                 return _direct_to_result(await ctx.tool_calls.execute_direct(req=req, actor=actor))
@@ -254,7 +255,9 @@ class ProxyTool(Tool):
         return _record_to_result(record, ctx.settings)
 
 
-def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, passthrough: bool) -> ProxyTool:
+def _build_proxy_tool(
+    context: ConsoleMcpContext, server_id: str, tool: Any, *, passthrough: bool, actor: ToolCallActor
+) -> ProxyTool:
     schema = tool.input_schema if isinstance(tool.input_schema, dict) and tool.input_schema else {"type": "object"}
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
@@ -274,6 +277,7 @@ def _build_proxy_tool(context: ConsoleMcpContext, server_id: str, tool: Any, *, 
         server_id=server_id,
         upstream_tool_name=tool.name,
         passthrough=passthrough,
+        actor=actor,
         meta={
             MCP_TOOL_META_KEY: McpProxyToolMetadata(
                 server_id=server_id,
@@ -292,9 +296,10 @@ class OperatorToolProvider(Provider):
     if a client calls a tool after its Operator disconnects that server.
     """
 
-    def __init__(self, context: ConsoleMcpContext) -> None:
+    def __init__(self, context: ConsoleMcpContext, actor_resolver: HakuMcpActorResolver) -> None:
         super().__init__()
         self._context = context
+        self._actor_resolver = actor_resolver
 
     async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
         meta = await metadata_for_operator(
@@ -313,13 +318,17 @@ class OperatorToolProvider(Provider):
             return []
         return [
             _build_proxy_tool(
-                self._context, server.id, tool, passthrough=is_unconditionally_auto_approved(server.id, tool.name)
+                self._context,
+                server.id,
+                tool,
+                passthrough=is_unconditionally_auto_approved(server.id, tool.name),
+                actor=actor,
             )
             for tool in meta.tools
         ]
 
     async def _list_tools(self) -> Sequence[Tool]:
-        actor = get_tool_call_actor()
+        actor = await self._actor_resolver.resolve()
         # gather preserves input order even when servers finish reflection out of order.
         reflected = await asyncio.gather(
             *(self._server_tools(server, actor) for server in _load_servers(self._context.settings))
@@ -327,7 +336,7 @@ class OperatorToolProvider(Provider):
         return [tool for server_tools in reflected for tool in server_tools]
 
     async def _get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None:
-        actor = get_tool_call_actor()
+        actor = await self._actor_resolver.resolve()
         candidates = [
             server
             for server in _load_servers(self._context.settings)
@@ -348,7 +357,9 @@ class OperatorToolProvider(Provider):
         return []
 
 
-def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> FastMCP:
+def build_console_mcp(
+    context: ConsoleMcpContext, *, auth: AuthProvider, actor_resolver: HakuMcpActorResolver
+) -> FastMCP:
     """Build the console MCP server with request-local proxy tools + auth.
 
     Authentication is composed by :mod:`haku.console.mcp_agent_auth`. The
@@ -357,9 +368,9 @@ def build_console_mcp(context: ConsoleMcpContext, *, auth: AuthProvider) -> Fast
     """
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
-    mcp.add_provider(OperatorToolProvider(context))
+    mcp.add_provider(OperatorToolProvider(context, actor_resolver))
 
-    current_actor_dependency = Depends(get_tool_call_actor)
+    current_actor_dependency = Depends(actor_resolver.resolve)
 
     @mcp.tool
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:

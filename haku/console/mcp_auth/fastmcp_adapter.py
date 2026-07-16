@@ -31,12 +31,9 @@ from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
-from fastmcp.server.middleware import CallNext, Middleware as FastMCPMiddleware, MiddlewareContext
-from fastmcp.tools import Tool, ToolResult
 from fastmcp.utilities.auth import parse_scopes
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.wrappers.base import BaseWrapper
-from mcp import types as mcp_types
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser, BearerAuthBackend
 from mcp.server.auth.provider import AccessToken as McpAccessToken, AuthorizeError, RefreshToken, TokenError
@@ -347,17 +344,7 @@ _GRANT_REQUEST: ContextVar[GrantAuthorization | None] = ContextVar("haku_agent_g
 _BEARER_FAILURE_OBSERVATION: ContextVar[_BearerFailureObservation | None] = ContextVar(
     "haku_bearer_failure_observation", default=None
 )
-_TOOL_CALL_ACTOR_CONTEXT: ContextVar[ToolCallActor | None] = ContextVar("haku_tool_call_actor", default=None)
 _OPERATOR_ACTOR_CLAIM = "haku.operator_actor"
-
-
-def get_tool_call_actor() -> ToolCallActor:
-    """FastMCP dependency accessor for the current authenticated Agent or Operator."""
-
-    actor = _TOOL_CALL_ACTOR_CONTEXT.get()
-    if actor is None:
-        raise ToolError("Tool-call actor is unavailable outside an authenticated tool call")
-    return actor
 
 
 def observe_bearer_operational_failure(error: BaseException) -> None:
@@ -533,14 +520,14 @@ class HakuFailurePreservingMultiAuth(MultiAuth):
         ]
 
 
-class HakuMcpActorMiddleware(FastMCPMiddleware):
-    """Resolve the authenticated MCP principal for discovery and dispatch.
+class HakuMcpActorResolver:
+    """Resolve and validate the authenticated MCP principal on demand.
 
     A browser-session token already contains the DB-revalidated OperatorActor. Bearer verification
-    has already established the signed FastMCP token and propagated its exact ``grant_id`` claim
-    before this middleware runs. The authority owns the atomic ``issued -> active`` transition; an
-    already active grant returns the same binding idempotently. Both discovery and dispatch
-    therefore run with the same verified principal and Operator authority.
+    has already established the signed FastMCP token and propagated its exact ``grant_id`` claim.
+    The authority owns the atomic ``issued -> active`` transition; an already active grant returns
+    the same binding idempotently. Callers receive the actor explicitly and either inject it into a
+    static tool or bind it into a request-built proxy tool; no ambient actor state is used.
     """
 
     def __init__(
@@ -549,31 +536,7 @@ class HakuMcpActorMiddleware(FastMCPMiddleware):
         self._grant_authority = grant_authority
         self._static_actor_resolver = static_actor_resolver
 
-    async def on_call_tool(
-        self,
-        context: MiddlewareContext[mcp_types.CallToolRequestParams],
-        call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
-    ) -> ToolResult:
-        actor = await self._resolve_actor()
-        actor_token = _TOOL_CALL_ACTOR_CONTEXT.set(actor)
-        try:
-            return await call_next(context)
-        finally:
-            _TOOL_CALL_ACTOR_CONTEXT.reset(actor_token)
-
-    async def on_list_tools(
-        self,
-        context: MiddlewareContext[mcp_types.ListToolsRequest],
-        call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
-    ) -> Sequence[Tool]:
-        actor = await self._resolve_actor()
-        actor_token = _TOOL_CALL_ACTOR_CONTEXT.set(actor)
-        try:
-            return await call_next(context)
-        finally:
-            _TOOL_CALL_ACTOR_CONTEXT.reset(actor_token)
-
-    async def _resolve_actor(self) -> ToolCallActor:
+    async def resolve(self) -> ToolCallActor:
         token = get_access_token()
         if token is None:
             raise ToolError("Agent grant is missing")
