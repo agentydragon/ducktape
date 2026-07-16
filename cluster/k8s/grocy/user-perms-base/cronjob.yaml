@@ -12,6 +12,12 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # A Job whose pod can never start (e.g. it pins a kustomize-hashed
+      # ConfigMap that a newer generation pruned) stays active forever --
+      # history limits and TTL apply only to finished Jobs. The deadline
+      # fails it; the TTL then garbage-collects it.
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
       backoffLimit: 2
       template:
         metadata:
