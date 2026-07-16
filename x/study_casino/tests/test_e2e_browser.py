@@ -240,11 +240,11 @@ def test_stop_and_save_shows_award_toast(page: Page, casino_server: str) -> None
     page.get_by_role("button", name="Stop & Save").click()
 
     # Server-computed award: 6 minutes → base credits + first-5-minutes daily
-    # bonus at streak day 1.
+    # bonus at streak day 1. (Match "daily bonus" inside the toast subtitle —
+    # the always-visible streak strip also mentions the daily bonus.)
     toast_credits = page.get_by_text(re.compile(r"^\+.*credits$"))
     toast_credits.wait_for(state="visible", timeout=10_000)
-    page.get_by_text("daily bonus").wait_for(state="visible", timeout=5_000)
-    page.get_by_text(re.compile(r"6m studied · 1-day streak")).wait_for(state="visible", timeout=5_000)
+    page.get_by_text(re.compile(r"6m studied · 1-day streak .*daily bonus")).wait_for(state="visible", timeout=5_000)
 
     page.get_by_role("button", name="Dismiss").click()
     toast_credits.wait_for(state="hidden", timeout=5_000)
