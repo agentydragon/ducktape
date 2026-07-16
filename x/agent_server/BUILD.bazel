@@ -117,7 +117,7 @@ py_binary(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint(
         "shim_bin",
         binary_package = "x/agent_server/policy_eval",

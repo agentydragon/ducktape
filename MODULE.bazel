@@ -192,13 +192,6 @@ oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 # shell. Debian slim provides bash + glibc + libstdc++ at ~30 MB compressed.
 # The hermetic Python toolchain is bundled in the interpreter layer.
 oci.pull(
-    name = "debian_slim",
-    digest = "sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a",
-    image = "mirror.gcr.io/library/debian",
-    platforms = ["linux/amd64"],
-    tag = "bookworm-slim",
-)
-oci.pull(
     name = "debian_trixie_slim",
     digest = "sha256:4ffb3a1511099754cddc70eb1b12e50ffdb67619aa0ab6c13fcd800a78ef7c7a",
     image = "mirror.gcr.io/library/debian",
@@ -312,7 +305,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.11",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -333,19 +326,19 @@ apt.install(
     manifest = "//devinfra/claude/claude_hook/container_e2e:trixie_e2e.yaml",
 )
 
-# Firecracker VM pod: iproute2, iptables, mount, procps, openssh-client on debian:bookworm-slim.
+# Firecracker VM pod: nftables on debian:trixie-slim.
 apt.install(
-    name = "bookworm_fc_vm_pod",
-    lock = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.lock.json",
-    manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
+    name = "trixie_fc_vm_pod",
+    lock = "//devinfra/firecracker/vm_pod:trixie_fc_vm_pod.lock.json",
+    manifest = "//devinfra/firecracker/vm_pod:trixie_fc_vm_pod.yaml",
 )
 
 # CPAP sync: nmcli (talks to host NetworkManager over dbus) + git (pushes to
-# the cpap-data Forgejo repo) on debian:bookworm-slim.
+# the cpap-data Forgejo repo) on debian:trixie-slim.
 apt.install(
-    name = "bookworm_cpap_sync",
-    lock = "//cpap:bookworm_cpap_sync.lock.json",
-    manifest = "//cpap:bookworm_cpap_sync.yaml",
+    name = "trixie_cpap_sync",
+    lock = "//cpap:trixie_cpap_sync.lock.json",
+    manifest = "//cpap:trixie_cpap_sync.yaml",
 )
 
 # JWT rotation image: git + ca-certificates on debian:trixie-slim for the
@@ -379,17 +372,6 @@ apt.install(
     manifest = "//finance/beancount_export:trixie_budget_exporter.yaml",
 )
 
-# loom/gym forecasting-eval driver: ca-certificates on debian:bookworm-slim so
-# `import pygit2` (via finance.evidence.checkout) can initialize libgit2's
-# OpenSSL cert locations — it fails the whole process at import without a system
-# CA bundle. (The docker CLI + compose plugin come from upstream static binaries,
-# not apt; see //loom/gym:BUILD.bazel.)
-apt.install(
-    name = "bookworm_loom_gym_eval",
-    lock = "//loom/gym:bookworm_loom_gym_eval.lock.json",
-    manifest = "//loom/gym:bookworm_loom_gym_eval.yaml",
-)
-
 # wayback cache service: libssl + CA bundle on debian:trixie-slim for the
 # Rust runtime image.
 apt.install(
@@ -397,7 +379,7 @@ apt.install(
     lock = "//loom/wayback/cache:trixie_wayback_cache.lock.json",
     manifest = "//loom/wayback/cache:trixie_wayback_cache.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "bookworm_loom_gym_eval", "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

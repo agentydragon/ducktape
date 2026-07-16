@@ -5,8 +5,8 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
 exports_files([
-    "bookworm_cpap_sync.yaml",
-    "bookworm_cpap_sync.lock.json",
+    "trixie_cpap_sync.yaml",
+    "trixie_cpap_sync.lock.json",
 ])
 
 py_library(
@@ -63,7 +63,7 @@ py_image_layer(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("sync_bin"),
     # Shared CA bundle so the C git binary can verify the Forgejo TLS cert; the apt
     # :flat layer alone has no usable bundle. See //third_party/debian_slim:cacerts.
@@ -73,7 +73,7 @@ oci_image(
     ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
-        "@bookworm_cpap_sync//:flat",
+        "@trixie_cpap_sync//:flat",
         "//third_party/debian_slim:cacerts",
         ":layers",
     ],

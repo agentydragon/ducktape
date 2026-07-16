@@ -104,7 +104,7 @@ py_image_layer(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("service_bin"),
     env = py_image_env(binary_name = "service_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},

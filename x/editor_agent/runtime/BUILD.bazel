@@ -32,7 +32,7 @@ py_image_layer(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     env = {
         "PATH": "/x/editor_agent/runtime:/x/editor_agent/runtime/_editor_submit.venv/bin:/usr/local/bin:/usr/bin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",

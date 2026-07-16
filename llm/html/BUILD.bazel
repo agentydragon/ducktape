@@ -19,7 +19,7 @@ filegroup(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint(
         "server_bin",
         binary_package = "llm/html/llm_html",

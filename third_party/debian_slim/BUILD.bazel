@@ -5,7 +5,7 @@ load("@rules_oci//oci:defs.bzl", "oci_load")
 # bazel run //third_party/debian_slim:load for manual loading.
 oci_load(
     name = "load",
-    image = "@debian_slim_linux_amd64",
+    image = "@debian_trixie_slim_linux_amd64",
     repo_tags = ["debian-slim:test"],
     visibility = ["//visibility:public"],
 )

@@ -38,7 +38,7 @@ def critic_variant(name, prompt_md):
     oci_image(
         name = name,
         visibility = ["//props:__subpackages__"],
-        base = "@debian_slim_linux_amd64",
+        base = "@debian_trixie_slim_linux_amd64",
         entrypoint = py_image_entrypoint("critic_bin", binary_package = "props/agents/critic"),
         env = py_image_env(extra_env = {
             "PROMPT_TEMPLATE_PATH": prompt_runfiles_path,

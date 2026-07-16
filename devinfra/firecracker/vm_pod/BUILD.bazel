@@ -5,8 +5,8 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
 exports_files([
-    "bookworm_fc_vm_pod.yaml",
-    "bookworm_fc_vm_pod.lock.json",
+    "trixie_fc_vm_pod.yaml",
+    "trixie_fc_vm_pod.lock.json",
 ])
 
 py_library(
@@ -71,12 +71,12 @@ py_image_layer(
 
 oci_image(
     name = "image",
-    base = "@debian_slim_linux_amd64",
+    base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("entrypoint_bin"),
     env = py_image_env(binary_name = "entrypoint_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
-        "@bookworm_fc_vm_pod//:flat",
+        "@trixie_fc_vm_pod//:flat",
         ":layers",
         "//devinfra/firecracker:firecracker_layer",
         "//devinfra/firecracker/initramfs:initramfs_layer",

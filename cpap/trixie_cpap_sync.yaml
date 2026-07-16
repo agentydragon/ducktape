@@ -1,0 +1,22 @@
+# Deb packages layered on debian:trixie-slim for the CPAP sync container.
+# nmcli talks to host NetworkManager over dbus (the cronjob mounts /run/dbus
+# and /var/run/NetworkManager from the host); git clones/pushes the cpap-data
+# Forgejo repo via https://git.allegedly.works. The CA bundle it needs comes from
+# //third_party/debian_slim:cacerts, not this apt layer.
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_cpap_sync//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "git"
+  - "network-manager"
