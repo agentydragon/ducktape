@@ -10,10 +10,10 @@ npm_link_all_packages(name = "node_modules")
 js_library(
     name = "launcher",
     srcs = ["launcher.mjs"],
-    data = ["//util/testing:browser_launcher_assets"],
     visibility = ["//visibility:public"],
     deps = [
         ":node_modules/puppeteer",
+        "//util/testing:browser_launcher_assets_js",
     ],
 )
 

@@ -1,5 +1,6 @@
 """Testing utility libraries."""
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -103,9 +104,20 @@ py_library(
 # the Python launcher below and the JS one
 # (//util/testing/frontend_visual:launcher). They live at this level (not in
 # frontend_visual/) because a data file there would turn the directory into a
-# namespace package shadowing frontend_visual.py for mypy.
+# namespace package shadowing frontend_visual.py for mypy. The filegroup
+# feeds the Python side's runfiles; the js_library wraps the same files for
+# the JS launcher (rules_js requires same-package copy-to-bin).
 filegroup(
     name = "browser_launcher_assets",
+    srcs = [
+        "chromium-flags.json",
+        "frozen-clock.js",
+    ],
+    visibility = ["//util/testing/frontend_visual:__pkg__"],
+)
+
+js_library(
+    name = "browser_launcher_assets_js",
     srcs = [
         "chromium-flags.json",
         "frozen-clock.js",
