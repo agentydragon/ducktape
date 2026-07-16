@@ -2,10 +2,10 @@
 
 The operator's **ResMed AirSense 11** sleep therapy data: nightly AHI (apnea-hypopnea
 index), leak rate, mask-on duration, and pressure — a direct signal on sleep quality and
-therapy compliance that nothing else here surfaces. Synced nightly from the machine's ez
-Share WiFi SD card into the private Forgejo repo `cpap-data/cpap-data` by the `cpap-sync`
-CronJob (currently suspended during a hardware relocation — see `cluster/docs/plan.md`;
-a suspended sync means recent nights may be missing, not that access is broken).
+therapy compliance that nothing else here surfaces. Synced from the machine's ez Share WiFi SD card into the private Forgejo repo
+`cpap-data/cpap-data` by the `cpap-sync` CronJob. **Live as of 2026-07-16** — the first
+post-reset sync landed that day after the operator un-suspended the job; a gap in recent
+nights means the sync hasn't run, not that access is broken.
 
 ## Reaching it
 
@@ -23,6 +23,12 @@ TOKEN=$(kubectl get secret haku-forgejo-tea -o jsonpath='{.data.token}' | base64
 git clone --filter=blob:none --no-checkout "https://haku:${TOKEN}@git.allegedly.works/cpap-data/cpap-data.git" /tmp/cpap-data
 git -C /tmp/cpap-data checkout main -- STR.EDF   # daily summary — start here
 ```
+
+**Fastest daily-summary path: `tools/cpap_scan.py` in haku-state** — fetches `STR.EDF` via
+the Forgejo raw API (`curl -n`, `haku` user) and parses it with stdlib `struct`, printing
+recent nights + sync freshness. Use it instead of a clone for summaries; clone only for
+waveforms. (Gotcha: the managed env has **no numpy/pandas**, so the skill's
+`examples/parse_str_edf.py` crashes — `cpap_scan.py` is the dependency-free reader.)
 
 `STR.EDF` is the daily-summary EDF (one record per night): `AHI`, `Leak.50`/`.95`,
 `Duration` (therapy minutes), `MaskOn`/`MaskOff`. Per-night waveforms live under
