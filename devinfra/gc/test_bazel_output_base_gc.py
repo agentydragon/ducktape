@@ -1,10 +1,8 @@
-import argparse
 import hashlib
 import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -32,20 +30,11 @@ def _make_base(root: Path, workspace: Path, *, name: str | None = None) -> Path:
     return base
 
 
-def _inspect(
-    base: Path, *, older_than_seconds: int = 0, now_ns: int | None = None, proc_root: Path = Path("/proc")
-) -> gc.Inspection:
-    return gc.inspect_output_base(
-        base,
-        uid=os.getuid(),
-        points=set(),
-        older_than_seconds=older_than_seconds,
-        now_ns=time.time_ns() if now_ns is None else now_ns,
-        proc_root=proc_root,
-    )
+def _inspect(base: Path, *, proc_root: Path = Path("/proc")) -> gc.Inspection:
+    return gc.inspect_output_base(base, uid=os.getuid(), points=set(), proc_root=proc_root)
 
 
-def test_missing_workspace_is_prunable(tmp_path: Path) -> None:
+def test_missing_workspace_is_immediately_prunable(tmp_path: Path) -> None:
     base = _make_base(tmp_path / "output", tmp_path / "gone")
     assert isinstance(_inspect(base), gc.PrunableBase)
 
@@ -134,27 +123,9 @@ def test_impossible_server_pid_requires_review(tmp_path: Path, value: str) -> No
 
 def test_nested_mount_requires_review(tmp_path: Path) -> None:
     base = _make_base(tmp_path / "output", tmp_path / "gone")
-    inspection = gc.inspect_output_base(
-        base, uid=os.getuid(), points={base / "nested"}, older_than_seconds=0, now_ns=time.time_ns()
-    )
+    inspection = gc.inspect_output_base(base, uid=os.getuid(), points={base / "nested"})
     assert isinstance(inspection, gc.ReviewBase)
     assert "mount point" in inspection.reason
-
-
-def test_recent_activity_respects_grace(tmp_path: Path) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    now_ns = time.time_ns()
-    inspection = _inspect(base, older_than_seconds=60, now_ns=now_ns)
-    assert isinstance(inspection, gc.RetainedBase)
-    assert inspection.reason == "activity is within the grace period (a minute)"
-
-
-def test_old_activity_becomes_prunable(tmp_path: Path) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    old_ns = time.time_ns() - 2 * 24 * 60 * 60 * 1_000_000_000
-    for path in (base, base / "README", base / "DO_NOT_BUILD_HERE", base / "server" / "cmdline"):
-        os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
-    assert isinstance(_inspect(base, older_than_seconds=24 * 60 * 60), gc.PrunableBase)
 
 
 def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path) -> None:
@@ -208,7 +179,7 @@ def test_delete_handles_read_only_directories(tmp_path: Path) -> None:
     proc = tmp_path / "proc"
     proc.mkdir()
 
-    results = gc.delete_prunable_bases([candidate], older_than_seconds=0, proc_root=proc, mountinfo_path=mountinfo)
+    results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
     assert results == [gc.DeletedBase(base)]
     assert not base.exists()
@@ -225,7 +196,7 @@ def test_delete_rechecks_workspace_absence(tmp_path: Path) -> None:
     proc = tmp_path / "proc"
     proc.mkdir()
 
-    results = gc.delete_prunable_bases([candidate], older_than_seconds=0, proc_root=proc, mountinfo_path=mountinfo)
+    results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
     assert isinstance(results[0], gc.SkippedBase)
     assert base.exists()
@@ -240,7 +211,7 @@ def test_delete_rechecks_mounts_under_lock(tmp_path: Path) -> None:
     mountinfo = tmp_path / "mountinfo"
     mountinfo.write_text(f"36 25 0:32 / {base}/nested rw - ext4 /dev/root rw\n")
 
-    results = gc.delete_prunable_bases([candidate], older_than_seconds=0, proc_root=proc, mountinfo_path=mountinfo)
+    results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
     assert isinstance(results[0], gc.SkippedBase)
     assert "mount point" in results[0].reason
@@ -259,7 +230,7 @@ def test_unreadable_nested_directory_fails_without_crashing(tmp_path: Path) -> N
     mountinfo = tmp_path / "mountinfo"
     mountinfo.write_text("")
 
-    results = gc.delete_prunable_bases([candidate], older_than_seconds=0, proc_root=proc, mountinfo_path=mountinfo)
+    results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
     result = results[0]
     if isinstance(result, gc.DeletedBase):
@@ -310,7 +281,7 @@ def test_main_is_dry_run_by_default(tmp_path: Path, capsys: pytest.CaptureFixtur
     root = tmp_path / "output"
     base = _make_base(root, tmp_path / "gone")
 
-    result = gc.main(["--output-user-root", str(root), "--older-than", "0s"])
+    result = gc.main(["--output-user-root", str(root)])
 
     assert result == 0
     assert base.exists()
@@ -323,19 +294,13 @@ def test_main_delete_removes_revalidated_candidate(tmp_path: Path, capsys: pytes
     root = tmp_path / "output"
     base = _make_base(root, tmp_path / "gone")
 
-    result = gc.main(["--output-user-root", str(root), "--older-than", "0s", "--delete"])
+    result = gc.main(["--output-user-root", str(root), "--delete"])
 
     assert result == 0
     assert not base.exists()
     stdout = capsys.readouterr().out
     assert f"DELETED {base}" in stdout
     assert "1 deleted, 0 skipped, 0 failed" in stdout
-
-
-def test_parse_duration() -> None:
-    assert gc.parse_duration("7d") == 7 * 24 * 60 * 60
-    with pytest.raises(argparse.ArgumentTypeError):
-        gc.parse_duration("not-a-duration")
 
 
 if __name__ == "__main__":

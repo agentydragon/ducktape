@@ -17,16 +17,14 @@ import shutil
 import stat
 import subprocess
 import sys
-import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import humanize
-from pytimeparse import parse as parse_timespan
 from tabulate import tabulate
 
 _HASHED_BASE_RE = re.compile(r"[0-9a-f]{32}")
@@ -89,14 +87,6 @@ class FailedBase:
 
 
 type DeletionResult = DeletedBase | SkippedBase | FailedBase
-
-
-def parse_duration(value: str) -> int:
-    """Parse a compact non-negative duration and return seconds."""
-    seconds = parse_timespan(value)
-    if not isinstance(seconds, int) or seconds < 0:
-        raise argparse.ArgumentTypeError("duration must be non-negative, such as 30m, 12h, or 7d")
-    return seconds
 
 
 def default_output_user_root() -> Path:
@@ -248,9 +238,7 @@ def _nested_mount(base: Path, points: set[Path]) -> Path | None:
     return next((point for point in sorted(points) if point == base or point.is_relative_to(base)), None)
 
 
-def inspect_output_base(
-    base: Path, *, uid: int, points: set[Path], older_than_seconds: int, now_ns: int, proc_root: Path = Path("/proc")
-) -> Inspection:
+def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: Path = Path("/proc")) -> Inspection:
     try:
         metadata = base.lstat()
     except OSError as error:
@@ -295,14 +283,6 @@ def inspect_output_base(
             return ReviewBase(base, f"workspace resolves to {resolved_workspace}, not {workspace}", last_activity_ns)
         return RetainedBase(base, workspace, "workspace exists", last_activity_ns)
 
-    cutoff_ns = now_ns - older_than_seconds * 1_000_000_000
-    if last_activity_ns > cutoff_ns:
-        return RetainedBase(
-            base,
-            workspace,
-            f"activity is within the grace period ({humanize.naturaldelta(timedelta(seconds=older_than_seconds))})",
-            last_activity_ns,
-        )
     return PrunableBase(base, workspace, _identity(metadata), last_activity_ns)
 
 
@@ -310,28 +290,16 @@ def scan_output_user_root(
     root: Path,
     *,
     uid: int | None = None,
-    older_than_seconds: int = 7 * 24 * 60 * 60,
-    now_ns: int | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
 ) -> list[Inspection]:
     uid = os.getuid() if uid is None else uid
     root = root.resolve(strict=True)
     points = mount_points(mountinfo_path=mountinfo_path)
-    scan_time_ns = time.time_ns() if now_ns is None else now_ns
     inspections: list[Inspection] = []
     for base in sorted(root.iterdir()):
         if _HASHED_BASE_RE.fullmatch(base.name):
-            inspections.append(
-                inspect_output_base(
-                    base,
-                    uid=uid,
-                    points=points,
-                    older_than_seconds=older_than_seconds,
-                    now_ns=scan_time_ns,
-                    proc_root=proc_root,
-                )
-            )
+            inspections.append(inspect_output_base(base, uid=uid, points=points, proc_root=proc_root))
         elif base.name.startswith(_QUARANTINE_PREFIX):
             inspections.append(ReviewBase(base, "incomplete previous GC quarantine", base.lstat().st_mtime_ns))
     return inspections
@@ -378,7 +346,6 @@ def delete_prunable_bases(
     candidates: Sequence[PrunableBase],
     *,
     uid: int | None = None,
-    older_than_seconds: int = 7 * 24 * 60 * 60,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
 ) -> list[DeletionResult]:
@@ -389,12 +356,7 @@ def delete_prunable_bases(
         try:
             with _bazel_lock(candidate.path, uid=uid):
                 fresh = inspect_output_base(
-                    candidate.path,
-                    uid=uid,
-                    points=mount_points(mountinfo_path=mountinfo_path),
-                    older_than_seconds=older_than_seconds,
-                    now_ns=time.time_ns(),
-                    proc_root=proc_root,
+                    candidate.path, uid=uid, points=mount_points(mountinfo_path=mountinfo_path), proc_root=proc_root
                 )
                 if not isinstance(fresh, PrunableBase):
                     results.append(SkippedBase(candidate.path, _inspection_reason(fresh)))
@@ -513,13 +475,6 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Bazel output user root (default: %(default)s)",
     )
-    parser.add_argument(
-        "--older-than",
-        type=parse_duration,
-        default=parse_duration("7d"),
-        metavar="DURATION",
-        help="require this much inactivity before pruning (default: 7d; units: s, m, h, d, w)",
-    )
     parser.add_argument("--all", action="store_true", help="also show retained output bases")
     parser.add_argument("--sizes", action="store_true", help="calculate allocated size with du (potentially slow)")
     parser.add_argument("--delete", action="store_true", help="revalidate and remove prunable output bases")
@@ -529,7 +484,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        inspections = scan_output_user_root(args.output_user_root, older_than_seconds=args.older_than)
+        inspections = scan_output_user_root(args.output_user_root)
     except (OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         return 1
@@ -542,7 +497,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     free_before = shutil.disk_usage(args.output_user_root).free
-    results = delete_prunable_bases(candidates, older_than_seconds=args.older_than)
+    results = delete_prunable_bases(candidates)
     free_space_change = shutil.disk_usage(args.output_user_root).free - free_before
     for result in results:
         if isinstance(result, DeletedBase):

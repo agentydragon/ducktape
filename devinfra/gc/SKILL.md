@@ -88,18 +88,14 @@ mixed list.
 Interpret the tool's classifications literally:
 
 - `PRUNE`: a default MD5-named base has agreeing Bazel provenance, its recorded
-  workspace is absent, no live Bazel server or nested mount was found, and the
-  inactivity grace has elapsed. After a cleanup request, run
+  workspace is absent, and no live Bazel server or nested mount was found.
+  After a cleanup request, run
   `bazel-output-base-gc --delete`; it revalidates and locks every candidate
   before deletion.
 - `KEEP`: leave it alone.
 - `REVIEW`: inspect the stated metadata, ownership, symlink, mount, live-use, or
   failed-quarantine issue. Never convert `REVIEW` into `rm -rf` without proving
   what the directory is and why removal is safe.
-
-Keep the default seven-day grace unless the user explicitly wants immediate
-reclamation and the recently removed workspaces are known. In that case,
-`--older-than 0s` still receives all other safety checks.
 
 Run the dry scan again after deletion. A nonzero delete result or a
 `.bazel-output-base-gc-*` quarantine means cleanup is incomplete and requires

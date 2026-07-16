@@ -38,16 +38,13 @@ Deleting a Git worktree does not delete its per-workspace output base. Bazel's
 tree; they do not reclaim hashed output bases.
 
 Run the local GC tool after worktree cleanup; it is a manual sweep, not part of
-`wt rm` or a scheduled job. The default command is a dry run. Its seven-day
-inactivity grace is conservative, so a recently built base is initially kept
-after its worktree is removed; `--older-than 0s` opts out when immediate
-reclamation is intentional:
+`wt rm` or a scheduled job. The default command is a dry run; a base becomes a
+candidate immediately after its recorded workspace disappears:
 
 ```bash
 bazel-output-base-gc
 bazel-output-base-gc --all --sizes
 bazel-output-base-gc --delete
-bazel-output-base-gc --older-than 0s --delete
 ```
 
 The command is distributed in the released, artifact-pinned Nix `ducktape`
