@@ -145,8 +145,9 @@ def _identity_store(database_url: str) -> PostgresOperatorIdentityStore:
     )
 
 
-def _actors(database_url: str) -> dict[str, ToolCallActor]:
-    identities = _identity_store(database_url)
+@pytest.fixture
+def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
+    identities = _identity_store(migrated_db_url)
     operator_ids = {
         "a": identities.resolve_configured_external_user_key("service-operator-a"),
         "b": identities.resolve_configured_external_user_key("service-operator-b"),
@@ -157,7 +158,7 @@ def _actors(database_url: str) -> dict[str, ToolCallActor]:
         reservation_id = uuid4()
         binding_id = uuid4()
         now = datetime.datetime.now(datetime.UTC)
-        engine = create_engine(database_url)
+        engine = create_engine(migrated_db_url)
         try:
             with Session(engine) as session, session.begin():
                 # These mutually-referencing rows use deferred foreign keys; flushing the Agent first
@@ -223,6 +224,26 @@ def _actors(database_url: str) -> dict[str, ToolCallActor]:
     return actors
 
 
+@pytest.fixture
+def ledger(migrated_db_url: str) -> _RecordingLedger:
+    return _RecordingLedger(migrated_db_url)
+
+
+@pytest.fixture
+def publisher() -> _RecordingInvalidationPublisher:
+    return _RecordingInvalidationPublisher()
+
+
+@pytest.fixture
+def executor() -> _RecordingExecutor:
+    return _RecordingExecutor()
+
+
+@pytest.fixture
+def tokens(actors: dict[str, ToolCallActor]) -> _OperatorTokens:
+    return _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
+
+
 def _service(
     *,
     database_url: str,
@@ -253,6 +274,25 @@ def _service(
     )
 
 
+@pytest.fixture
+def service(
+    migrated_db_url: str,
+    tmp_path: Path,
+    ledger: _RecordingLedger,
+    publisher: _RecordingInvalidationPublisher,
+    executor: _RecordingExecutor,
+    tokens: _OperatorTokens,
+) -> ToolCallApplicationService:
+    return _service(
+        database_url=migrated_db_url,
+        tmp_path=tmp_path,
+        ledger=ledger,
+        publisher=publisher,
+        executor=executor,
+        tokens=tokens,
+    )
+
+
 def _request(*, owner: str, wait_for_ms: int = 0) -> SubmitToolCallRequest:
     return SubmitToolCallRequest(
         server_id="operator-backend",
@@ -267,29 +307,20 @@ async def _always_approve(**_: Any) -> tuple[str, str]:
     return "policy:test", "approved by test policy"
 
 
-async def test_operator_direct_execution_has_no_ledger_or_event_side_effects(
-    migrated_db_url: str, tmp_path: Path
+async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effects(
+    actors: dict[str, ToolCallActor],
+    publisher: _RecordingInvalidationPublisher,
+    executor: _RecordingExecutor,
+    tokens: _OperatorTokens,
+    service: ToolCallApplicationService,
 ) -> None:
-    actors = _actors(migrated_db_url)
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
-    publisher = _RecordingPublisher()
-    executor = _RecordingExecutor()
-    ledger = PostgresToolCallLedger(migrated_db_url)
-    tokens = _OperatorTokens({operator.operator_id: "operator-token"})
-    service = _service(
-        database_url=migrated_db_url,
-        tmp_path=tmp_path,
-        ledger=ledger,
-        publisher=publisher,
-        executor=executor,
-        tokens=tokens,
-    )
 
     result = await service.execute_direct(req=_request(owner="browser"), actor=operator)
 
     assert result["content"][0]["text"] == "operator-backend:mutate"
-    assert executor.executions == [("operator-backend", "mutate", {"owner": "browser"}, "operator-token")]
+    assert executor.executions == [("operator-backend", "mutate", {"owner": "browser"}, "token-a")]
     assert tokens.lookups == [operator.operator_id]
     assert service.list_tool_calls(actor=operator) == []
     assert publisher.publications == []
@@ -298,22 +329,15 @@ async def test_operator_direct_execution_has_no_ledger_or_event_side_effects(
         await service.execute_direct(req=_request(owner="agent"), actor=actors["aa1"])
 
 
-async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str, tmp_path: Path) -> None:
-    """Every service read, event cursor, and transition is scoped from the authenticated actor."""
-    actors = _actors(migrated_db_url)
-    publisher = _RecordingInvalidationPublisher()
-    executor = _RecordingExecutor()
-    ledger = PostgresToolCallLedger(migrated_db_url)
-    tokens = _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
-    service = _service(
-        database_url=migrated_db_url,
-        tmp_path=tmp_path,
-        ledger=ledger,
-        publisher=publisher,
-        executor=executor,
-        tokens=tokens,
-    )
-
+async def test_two_operator_two_agent_authorization_matrix(
+    actors: dict[str, ToolCallActor],
+    publisher: _RecordingInvalidationPublisher,
+    executor: _RecordingExecutor,
+    ledger: _RecordingLedger,
+    tokens: _OperatorTokens,
+    service: ToolCallApplicationService,
+) -> None:
+    """Every service read and lifecycle transition is scoped from the authenticated actor."""
     records = {
         name: await service.submit_and_wait(req=_request(owner=name), actor=actor) for name, actor in actors.items()
     }
@@ -402,19 +426,11 @@ async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str,
     assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
 
 
-async def test_pending_wait_uses_actor_scoped_event_invalidation(migrated_db_url: str, tmp_path: Path) -> None:
-    actors = _actors(migrated_db_url)
+async def test_pending_wait_uses_actor_scoped_event_invalidation(
+    actors: dict[str, ToolCallActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
+) -> None:
     agent = actors["aa1"]
     operator = actors["oa"]
-    publisher = _RecordingInvalidationPublisher()
-    service = _service(
-        database_url=migrated_db_url,
-        tmp_path=tmp_path,
-        ledger=PostgresToolCallLedger(migrated_db_url),
-        publisher=publisher,
-        executor=_RecordingExecutor(),
-        tokens=_OperatorTokens({operator.operator_id: "token-a"}),
-    )
 
     waiting = asyncio.create_task(service.submit_and_wait(req=_request(owner="wait", wait_for_ms=1000), actor=agent))
     await asyncio.wait_for(publisher.subscribed.wait(), timeout=1)
@@ -433,18 +449,24 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(migrated_db_url
     assert publisher._waiters == {}
 
 
-async def test_pending_wait_rereads_after_subscribing_before_waiting(migrated_db_url: str, tmp_path: Path) -> None:
-    actors = _actors(migrated_db_url)
+async def test_pending_wait_rereads_after_subscribing_before_waiting(
+    migrated_db_url: str,
+    tmp_path: Path,
+    actors: dict[str, ToolCallActor],
+    ledger: _RecordingLedger,
+    executor: _RecordingExecutor,
+    tokens: _OperatorTokens,
+) -> None:
     agent = actors["aa1"]
     operator = actors["oa"]
     publisher = _TransitionBeforeYieldInvalidationPublisher()
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
-        ledger=PostgresToolCallLedger(migrated_db_url),
+        ledger=ledger,
         publisher=publisher,
-        executor=_RecordingExecutor(),
-        tokens=_OperatorTokens({operator.operator_id: "token-a"}),
+        executor=executor,
+        tokens=tokens,
     )
 
     async def transition_after_subscription_registration() -> None:
@@ -467,23 +489,14 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(migrated_db
 
 
 async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_agent(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    actors: dict[str, ToolCallActor],
+    ledger: _RecordingLedger,
+    executor: _RecordingExecutor,
+    tokens: _OperatorTokens,
+    service: ToolCallApplicationService,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actors = _actors(migrated_db_url)
-
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
-    ledger = _RecordingLedger(migrated_db_url)
-    publisher = _RecordingInvalidationPublisher()
-    executor = _RecordingExecutor()
-    tokens = _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
-    service = _service(
-        database_url=migrated_db_url,
-        tmp_path=tmp_path,
-        ledger=ledger,
-        publisher=publisher,
-        executor=executor,
-        tokens=tokens,
-    )
 
     submitted_actors = [actors["aa1"], actors["ab1"]]
     completed = [
@@ -503,17 +516,10 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
     assert after == before
 
 
-async def test_unknown_server_is_a_transport_independent_not_found(migrated_db_url: str, tmp_path: Path) -> None:
-    actors = _actors(migrated_db_url)
+async def test_unknown_server_is_a_transport_independent_not_found(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+) -> None:
     actor = actors["aa1"]
-    service = _service(
-        database_url=migrated_db_url,
-        tmp_path=tmp_path,
-        ledger=PostgresToolCallLedger(migrated_db_url),
-        publisher=_RecordingInvalidationPublisher(),
-        executor=_RecordingExecutor(),
-        tokens=_OperatorTokens({actor.operator_id: "token-a"}),
-    )
 
     with pytest.raises(McpServerNotFoundError, match="unknown MCP server: missing"):
         await service.submit_and_wait(
@@ -522,22 +528,25 @@ async def test_unknown_server_is_a_transport_independent_not_found(migrated_db_u
     assert service.list_tool_calls(actor=actor) == []
 
 
-async def test_auto_execution_finishes_before_best_effort_event_publication(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
+    migrated_db_url: str,
+    tmp_path: Path,
+    actors: dict[str, ToolCallActor],
+    ledger: _RecordingLedger,
+    executor: _RecordingExecutor,
+    tokens: _OperatorTokens,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actors = _actors(migrated_db_url)
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
-    ledger = _RecordingLedger(migrated_db_url)
     publisher = _RaisingInvalidationPublisher()
-    executor = _RecordingExecutor()
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=_OperatorTokens({actor.operator_id: "token-a"}),
+        tokens=tokens,
     )
 
     completed = await service.submit_and_wait(req=_request(owner="raising-publisher"), actor=actor)
@@ -550,13 +559,16 @@ async def test_auto_execution_finishes_before_best_effort_event_publication(
 
 
 async def test_executor_cancellation_terminalizes_before_reraising(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    migrated_db_url: str,
+    tmp_path: Path,
+    actors: dict[str, ToolCallActor],
+    ledger: _RecordingLedger,
+    publisher: _RecordingInvalidationPublisher,
+    tokens: _OperatorTokens,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actors = _actors(migrated_db_url)
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
-    ledger = _RecordingLedger(migrated_db_url)
-    publisher = _RecordingInvalidationPublisher()
     executor = _CancellingExecutor()
     service = _service(
         database_url=migrated_db_url,
@@ -564,7 +576,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
         ledger=ledger,
         publisher=publisher,
         executor=executor,
-        tokens=_OperatorTokens({actor.operator_id: "token-a"}),
+        tokens=tokens,
     )
 
     with pytest.raises(asyncio.CancelledError):
@@ -577,11 +589,9 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     assert publisher.publications == [(actor.operator_id, terminal.tool_call_id)]
 
 
-async def test_finish_only_accepts_running_calls(migrated_db_url: str) -> None:
-    actors = _actors(migrated_db_url)
+async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor], ledger: _RecordingLedger) -> None:
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
-    ledger = PostgresToolCallLedger(migrated_db_url)
     server = McpServerEntry(id="operator-backend", server_url="https://backend.invalid/mcp")
     record = ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
 
@@ -596,11 +606,11 @@ async def test_finish_only_accepts_running_calls(migrated_db_url: str) -> None:
         ledger.finish(record.tool_call_id, actor=operator, result={"again": True}, error=None)
 
 
-async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(migrated_db_url: str) -> None:
-    actors = _actors(migrated_db_url)
+async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(
+    migrated_db_url: str, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
+) -> None:
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
-    ledger = PostgresToolCallLedger(migrated_db_url)
     record = ledger.submit(
         server=McpServerEntry(id="operator-backend"),
         req=_request(owner="revoked-during-execution"),
