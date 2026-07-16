@@ -1,26 +1,45 @@
 # Gmail
 
-Read Gmail with the read-only Google token `$TOK` ([README](README.md)). List new
-mail since your bookmark — resume precisely with `q=after:<epoch-seconds>`, since Gmail's
-`after:YYYY/MM/DD` is only date-granular and would re-scan or skip part of a day (on the
-first run, a window like `newer_than:7d`):
+Two read paths; prefer the first:
+
+## Primary: haku-console's `gmail` MCP tools
+
+haku-console proxies an in-process `gmail` MCP server (own Google OAuth — independent of the
+`google-access-token` secret and its airlock refresher, so it survives that outage class). All
+read tools are auto-approved for authenticated agents under the reviewed console policy:
+`threads_list` (Gmail search-box `query` + `max_results`/`page_token` paging), `threads_get`,
+`messages_get` (`format` passes through: `minimal`/`metadata`/`full`/`raw`), `labels_list`,
+`labels_get`, `filters_list`, `filters_get`, `drafts_list`, `drafts_get`. Responses mirror
+Gmail's REST resource shapes verbatim.
+
+Reach it however your runtime wires it: managed sessions expose the tools directly as
+in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
+([`mcp_over_http.md`](mcp_over_http.md)) with the `haku-console-agent-api` bearer from
+`haku-sandbox`. Example:
+
+```bash
+TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
+fastmcp call https://haku.allegedly.works/mcp gmail_threads_list \
+  --input-json '{"query":"after:1784133277","max_results":100}' \
+  --auth "$TOKEN" --transport http
+```
+
+Writes (draft CRUD, `threads_modify_labels`, label CRUD, filter create/delete) exist on the same
+server but are approval-gated except the reviewed `haku/`-label carve-out — authority and its
+bounds live in `../instructions.md` → _Hard rules_, policy in your state's `manage_gmail_labels`
+procedure.
+
+## Fallback: REST with the read-only Google token
+
+The `google-access-token` path ([README](README.md)):
 `curl -s -H "Authorization: Bearer $TOK" 'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=newer_than:7d'`,
-then fetch each with `.../messages/{id}?format=metadata` (use `format=full` only
-when you must read a body to judge it). Useful `q=` filters: `is:unread`,
-`is:important`, `category:primary`. Look for:
+then `.../messages/{id}?format=metadata` (`format=full` only when you must read a body to judge
+it). Useful `q=` filters: `is:unread`, `is:important`, `category:primary`.
 
-- threads awaiting a reply from the operator (they're the last non-operator
-  participant, or a question is directed at them)
-- deadlines / dated asks buried in mail (RSVPs, payments due, document requests)
-- subscriptions, renewals, or price-increase notices worth cancelling
-- security / account alerts not yet acted on
+## Gotchas (verified; apply to both paths — they're Gmail query semantics)
 
-File one item per finding, referencing the thread by subject + sender + date. For
-actionable ones, write a `prepared_prompt` for an executor session (which has
-write access) to draft the reply / cancel / RSVP.
-
-## Gotchas (verified)
-
+- **Resume precisely with `q=after:<epoch-seconds>`** — `after:YYYY/MM/DD` is only date-granular
+  and re-scans or skips part of a day. First run: a window like `newer_than:7d`.
 - **Count `messages[]`, not `resultSizeEstimate`.** `resultSizeEstimate` is a rough
   mailbox-wide estimate (it reads ~the same large number for _every_ non-empty query) — it is
   **not** the match count. Use `len(messages)` and page with `nextPageToken`.

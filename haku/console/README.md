@@ -227,15 +227,17 @@ HTTP:
   smartness, no body decoding, no flattening: `threads_list` (paginated via
   `page_token`/`next_page_token`), `threads_get`/`messages_get` (with a `format` argument that
   passes straight through to Gmail — `minimal`/`metadata`/`full`, plus `raw` for messages),
-  `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_modify_labels`, and
-  label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Calls default to operator approval.
+  `labels_list`, `labels_get`, `filters_list`, `filters_get`, `drafts_list`, `drafts_get`.
+  Writes are draft CRUD (`drafts_create`, `drafts_update`, `drafts_delete`; never send),
+  `threads_modify_labels`, label CRUD (`labels_create`, `labels_patch`, `labels_delete`), and
+  filter create/delete (`filters_create`, `filters_delete`). Calls default to operator approval.
   The reviewed `v1` decision auto-approves Haku-agent calls to every
   read tool above, plus `threads_modify_labels` when every added/removed name starts with `haku/`,
   `labels_patch` only when both the current and new names start with `haku/` and no visibility is
   changed, and `labels_delete` only when the current label name starts with `haku/`. Patch/delete
   resolve the submitted label ID before deciding. Gmail affordances not
-  yet exposed (send, trash/delete, message-level modify, drafts list/send, attachments,
-  history, settings/filters) are tracked in `haku/console/TODO.md`.
+  yet exposed (send, trash/delete, message-level modify, attachments, history,
+  non-filter settings) are tracked in `haku/console/TODO.md`.
 - **`google_calendar`** (`haku.console.tools.google_calendar`). `create_event` creates a single
   event or an RRULE-backed series and stays operator-approved. `get_event`, `list_events`, and
   `list_event_instances` return focused recurrence-aware event models and auto-approve for

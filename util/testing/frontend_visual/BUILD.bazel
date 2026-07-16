@@ -18,6 +18,7 @@ js_library(
         ":node_modules/pixelmatch",
         ":node_modules/pngjs",
         ":node_modules/puppeteer",
+        ":visual_review_manifest",
     ],
 )
 

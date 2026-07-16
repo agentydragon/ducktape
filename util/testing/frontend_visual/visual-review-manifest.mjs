@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 export const VISUAL_REVIEW_SCHEMA = "ducktape.visual-review.v1";
@@ -17,4 +17,14 @@ export function writeVisualReviewManifest(outputDir, { title, assets }) {
   const destination = join(outputDir, VISUAL_REVIEW_MANIFEST);
   writeFileSync(destination, `${JSON.stringify({ schema: VISUAL_REVIEW_SCHEMA, title, assets }, null, 2)}\n`);
   return destination;
+}
+
+// Add one asset to the manifest, creating it if absent. Lets a runner retain
+// renders one at a time without knowing the full asset list upfront;
+// re-adding an existing path is a no-op.
+export function upsertVisualReviewAsset(outputDir, { title, asset }) {
+  const manifestPath = join(outputDir, VISUAL_REVIEW_MANIFEST);
+  const assets = existsSync(manifestPath) ? (JSON.parse(readFileSync(manifestPath, "utf8")).assets ?? []) : [];
+  if (!assets.some(({ path }) => path === asset.path)) assets.push(asset);
+  return writeVisualReviewManifest(outputDir, { title, assets });
 }

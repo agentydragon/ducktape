@@ -6,7 +6,10 @@ quality-of-life suggestions: "the eggs expire in two days → here's an omelette
 down to one roll of paper towels," "you're already out of the wall filler your project
 needs." You read it **read-only**: your Grocy user has empty permissions, so the Grocy
 API serves every read (200) and rejects every write (403) server-side — never try to
-add, consume, or edit stock.
+add, consume, or edit stock through this path. (Grocy **mutations** go through
+haku-console's `grocy-sf` proxy as approval-gated tool calls; the console also
+auto-approves its read-only `grocy_sf_*` subset, an equivalent read path when the
+console tools are on your wire.)
 
 ## Reaching it
 
