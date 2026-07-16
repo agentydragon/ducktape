@@ -49,7 +49,6 @@ py_test(
         "//util:net",
         "//util:oci",
         "//util:playwright",
-        "//util:visual_review",
         "//util/bazel:runfiles",
         "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",

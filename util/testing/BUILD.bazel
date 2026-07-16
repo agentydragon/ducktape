@@ -101,7 +101,10 @@ py_library(
     testonly = True,
     srcs = ["visual_review.py"],
     visibility = ["//visibility:public"],
-    deps = ["//util:visual_review"],
+    deps = [
+        ":undeclared_outputs",
+        "//util:visual_review",
+    ],
 )
 
 py_library(

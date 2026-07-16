@@ -2,6 +2,29 @@
 
 CI-side utilities and configuration.
 
+## PR visual review (`pr_visuals.py`)
+
+The "Publish PR visuals" workflow runs `pr_visuals.py` after every successful
+CI run. It scans the run's Bazel test invocations for targets whose undeclared
+outputs contain a `visual-review.json` manifest (schema: `util/visual_review.py`),
+downloads the referenced PNGs, publishes an immutable bundle to
+`s3.allegedly.works/pr-visuals`, and upserts a review comment on the PR.
+Cache-hit test targets don't republish artifacts, so each PR's bundle shows
+only the visual tests the PR invalidated.
+
+**Opting a visual test in** — use one of the shared harnesses and it's
+automatic:
+
+- JS (`js_test`): `util/testing/frontend_visual/visual-test-lib.mjs` retains
+  the rendered PNG and upserts the manifest on every run.
+- Python (`py_test`): call
+  `util.testing.visual_review.retain_review_asset(png, title=..., label=...)`
+  once per rendered case — it copies the PNG into undeclared outputs and
+  accumulates the manifest.
+- Custom drivers write the manifest themselves via
+  `writeVisualReviewManifest` / `write_visual_review_manifest`
+  (e.g. haku's `tool_rendering/screenshot/render.mjs`).
+
 ## `artifact_targets.json`
 
 Single source of truth for Bazel targets, artifact outputs, and release

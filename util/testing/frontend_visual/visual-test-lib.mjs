@@ -23,6 +23,8 @@ import pixelmatch from "pixelmatch";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 
+import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -265,6 +267,16 @@ export async function main(scenarioName, callerUrl = null, options = {}) {
     const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 
     const result = compareBaseline(baselineName, screenshot, outputDir, baselineDir, writeDir);
+
+    // compareBaseline retained `${baselineName}-actual.png` in outputDir;
+    // publish it for PR visual review (devinfra/ci/pr_visuals.py picks the
+    // manifest up from passing CI runs). Upsert so a runner invoking main()
+    // for several scenarios accumulates one manifest.
+    upsertVisualReviewAsset(outputDir, {
+      title: baselineName,
+      asset: { path: `${baselineName}-actual.png`, label: baselineName },
+    });
+
     if (result.updated) {
       console.log("  ✓ Baseline updated");
     } else if (result.created) {

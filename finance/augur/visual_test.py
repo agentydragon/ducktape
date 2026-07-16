@@ -46,6 +46,7 @@ from util.testing.frontend_visual import (
 )
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_review import retain_review_asset
 
 pytest_plugins = ("util.playwright",)
 
@@ -565,15 +566,17 @@ def test_augur_visual_golden(
             f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
         )
 
+    # Always retain the candidate render + visual-review manifest for the PR
+    # visual-review publisher (devinfra/ci/pr_visuals.py).
     out_name = f"{case.name}.png"
+    retain_review_asset(first_path, title="Augur pages", label=case.name.replace("_", " "), name=out_name)
+
     if os.environ.get("UPDATE_GOLDEN") == "1":
-        shutil.copy(first_path, undeclared_dir / out_name)
         return
 
     try:
         expected_path = get_required_path(f"_main/finance/augur/frontend/__screenshots__/{out_name}")
     except RuntimeError:
-        shutil.copy(first_path, undeclared_dir / out_name)
         raise AssertionError(
             f"No Augur visual golden checked in for {out_name}. Re-run with UPDATE_GOLDEN=1 "
             f"and copy the produced PNG from undeclared outputs into augur/frontend/__screenshots__/."

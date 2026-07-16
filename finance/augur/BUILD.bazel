@@ -130,6 +130,7 @@ py_test(
         "//util/testing:frontend_visual",
         "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
+        "//util/testing:visual_review",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

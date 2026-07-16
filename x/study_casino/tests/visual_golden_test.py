@@ -51,8 +51,7 @@ from util.net import pick_free_port
 from util.oci import load_oci_image
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.visual_review import write_visual_review_manifest
-from util.visual_review import VisualReviewAsset
+from util.testing.visual_review import retain_review_asset
 from x.study_casino.app import create_app
 from x.study_casino.config import Settings
 
@@ -301,17 +300,6 @@ def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffi
         context.close()
 
 
-def _write_manifest(undeclared_dir: Path) -> None:
-    write_visual_review_manifest(
-        undeclared_dir,
-        title="Study Casino views",
-        assets=[
-            VisualReviewAsset(path=f"{case.name}.png", label=case.name.replace("_", " ").replace(".", " · "))
-            for case in CASES
-        ],
-    )
-
-
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
 def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Path, case: Case) -> None:
     undeclared_dir = undeclared_outputs_dir()
@@ -325,12 +313,12 @@ def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Pa
             f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
         )
 
-    # Always retain the candidate render and the visual-review manifest — the
-    # PR-visuals publisher consumes them from the passing CI run (it references
-    # all cases, which is safe: a failed case fails CI and skips publication).
+    # Always retain the candidate render + visual-review manifest for the PR
+    # visual-review publisher (devinfra/ci/pr_visuals.py).
     out_name = f"{case.name}.png"
-    shutil.copy(first_path, undeclared_dir / out_name)
-    _write_manifest(undeclared_dir)
+    retain_review_asset(
+        first_path, title="Study Casino views", label=case.name.replace("_", " ").replace(".", " · "), name=out_name
+    )
 
     if os.environ.get("UPDATE_GOLDEN") == "1":
         return
