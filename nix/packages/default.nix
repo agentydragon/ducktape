@@ -255,6 +255,7 @@ rec {
       "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot"
       "cluster.skills.proxmox_vm.vm_interact"
       "devinfra.gc.output_base_gc"
+      "devinfra.ws.cli"
     ];
     propagatedBuildInputs = with python3Packages; [
       aiodocker
