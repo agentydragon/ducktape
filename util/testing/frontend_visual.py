@@ -2,8 +2,10 @@
 
 The Chromium flag set and the frozen-clock init script are single-sourced with
 the JS Puppeteer launcher (`frontend_visual/launcher.mjs`): both read
-`frontend_visual/chromium-flags.json` and `frontend_visual/frozen-clock.js`,
-and both resolve the hermetic browser from `CHROMIUM_HEADLESS_SHELL`.
+`util/testing/chromium-flags.json` and `util/testing/frozen-clock.js` (kept at
+this level — a data file under `frontend_visual/` would shadow this module as
+a namespace package), and both resolve the hermetic browser from
+`CHROMIUM_HEADLESS_SHELL`.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Playwright, ViewportSize
 
 
-_FLAGS = json.loads(get_required_path("_main/util/testing/frontend_visual/chromium-flags.json").read_text())
+_FLAGS = json.loads(get_required_path("_main/util/testing/chromium-flags.json").read_text())
 # Makes headless Chromium run in containerized/RBE environments.
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 # Container base plus font/raster/compositing/animation pinning for stable renders.
@@ -41,7 +43,7 @@ def launch_deterministic_browser(playwright_sync: Playwright) -> Browser:
 
 
 def frozen_clock_script(now_ms: int) -> str:
-    source = get_required_path("_main/util/testing/frontend_visual/frozen-clock.js").read_text()
+    source = get_required_path("_main/util/testing/frozen-clock.js").read_text()
     return f"(() => {{ {source} frozenClock({now_ms}); }})();"
 
 

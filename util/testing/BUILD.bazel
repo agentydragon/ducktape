@@ -99,13 +99,27 @@ py_library(
     ],
 )
 
+# Chromium launch flags + frozen-clock init script, single-sourced between
+# the Python launcher below and the JS one
+# (//util/testing/frontend_visual:launcher). They live at this level (not in
+# frontend_visual/) because a data file there would turn the directory into a
+# namespace package shadowing frontend_visual.py for mypy.
+filegroup(
+    name = "browser_launcher_assets",
+    srcs = [
+        "chromium-flags.json",
+        "frozen-clock.js",
+    ],
+    visibility = ["//util/testing/frontend_visual:__pkg__"],
+)
+
 py_library(
     name = "frontend_visual",
     testonly = True,
     srcs = ["frontend_visual.py"],
     # chromium-flags.json is read at import time — it must ride along with
     # every consumer, not be re-declared per test.
-    data = ["//util/testing/frontend_visual:launcher_assets"],
+    data = [":browser_launcher_assets"],
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",

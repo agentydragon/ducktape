@@ -4,27 +4,13 @@ load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
-# Chromium launch flags + frozen-clock init script, single-sourced between
-# the JS launcher below and the Python one (//util/testing:frontend_visual).
-# Shipped as plain data (not js_library srcs) — frozen-clock.js is raw
-# injected text, never imported as a module.
-filegroup(
-    name = "launcher_assets",
-    srcs = [
-        "chromium-flags.json",
-        "frozen-clock.js",
-    ],
-    visibility = ["//util/testing:__pkg__"],
-)
-
-# The one Puppeteer launcher for JS visual/screenshot tests.
+# The one Puppeteer launcher for JS visual/screenshot tests. The flag/clock
+# assets it reads live in //util/testing:browser_launcher_assets, shared with
+# the Python launcher (//util/testing:frontend_visual).
 js_library(
     name = "launcher",
-    srcs = [
-        "chromium-flags.json",
-        "frozen-clock.js",
-        "launcher.mjs",
-    ],
+    srcs = ["launcher.mjs"],
+    data = ["//util/testing:browser_launcher_assets"],
     visibility = ["//visibility:public"],
     deps = [
         ":node_modules/puppeteer",

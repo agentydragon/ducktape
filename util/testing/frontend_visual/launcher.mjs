@@ -14,13 +14,16 @@ import puppeteer from "puppeteer";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const FLAGS = JSON.parse(readFileSync(join(__dirname, "chromium-flags.json"), "utf8"));
+// The shared assets live one directory up: a data file under
+// util/testing/frontend_visual/ would turn that directory into a namespace
+// package shadowing the sibling frontend_visual.py module for mypy.
+const FLAGS = JSON.parse(readFileSync(join(__dirname, "..", "chromium-flags.json"), "utf8"));
 export const CONTAINER_BASE_ARGS = FLAGS.containerBase;
 export const DETERMINISTIC_EXTRA_ARGS = FLAGS.deterministicExtra;
 
 /** Init-script text that freezes the page's wall clock at `nowMs`. */
 export function frozenClockScript(nowMs) {
-  const source = readFileSync(join(__dirname, "frozen-clock.js"), "utf8");
+  const source = readFileSync(join(__dirname, "..", "frozen-clock.js"), "utf8");
   return `(() => { ${source}\nfrozenClock(${nowMs}); })();`;
 }
 
