@@ -1,1 +1,1 @@
-from util.playwright import playwright_sync
+from util.playwright import browser, page, playwright_sync

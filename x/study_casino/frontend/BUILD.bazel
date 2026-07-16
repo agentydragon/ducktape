@@ -279,7 +279,7 @@ filegroup(
         entry_point = "tests/visual_test_%s.mjs" % scenario,
         env = {
             "HARNESS_PATH": "$(rootpath :visual_harness_js)",
-            "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
             "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
             "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
             "EXPECTED_FONT_FAMILY": "Outfit",

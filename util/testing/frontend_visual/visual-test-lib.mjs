@@ -20,11 +20,11 @@
 // headless page, not Node) — declare it so this Node script lints under the .mjs node-globals block.
 /* global document */
 
-import puppeteer from "puppeteer";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 
+import { frozenClockScript, launchDeterministicBrowser } from "./launcher.mjs";
 import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -57,51 +57,11 @@ export async function main(scenarioName, options = {}) {
   const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), `chrome-user-data-${outputName}`);
   mkdirSync(userDataDir, { recursive: true });
 
-  const launchOptions = {
-    headless: true,
+  // --single-process + file access: the harness is loaded from a file:// URL.
+  const browser = await launchDeterministicBrowser({
+    args: ["--single-process", "--allow-file-access-from-files"],
     userDataDir,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--allow-file-access-from-files",
-      "--font-render-hinting=none",
-      "--disable-font-subpixel-positioning",
-      "--disable-lcd-text",
-      "--force-color-profile=srgb",
-      "--disable-accelerated-2d-canvas",
-      "--disable-gpu-compositing",
-      "--disable-software-rasterizer",
-      "--disable-skia-runtime-opts",
-      "--disable-partial-raster",
-      "--disable-backing-store-limit",
-      "--use-gl=swiftshader",
-      "--force-device-scale-factor=1",
-      "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
-      "--disable-accelerated-video-decode",
-      "--disable-canvas-aa",
-      "--disable-2d-canvas-clip-aa",
-      "--disable-webgl",
-      "--disable-webgl2",
-      "--blink-settings=imageAnimationPolicy=noAnimation",
-      "--disable-smooth-scrolling",
-      "--disable-threaded-animation",
-      "--disable-threaded-scrolling",
-      "--disable-checker-imaging",
-    ],
-  };
-
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    let execPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    const playwrightExec = join(execPath, "chrome-linux", "headless_shell");
-    if (existsSync(playwrightExec)) execPath = playwrightExec;
-    console.log(`Using browser at: ${execPath}`);
-    launchOptions.executablePath = execPath;
-  }
-
-  const browser = await puppeteer.launch(launchOptions);
+  });
   let passed = false;
 
   try {
@@ -122,23 +82,7 @@ export async function main(scenarioName, options = {}) {
     // formatDistanceToNow used by formatAge) produce deterministic text.
     // Without this, renders drift as the mock dates cross date-fns
     // thresholds ("about 1 year" → "over 1 year", etc.).
-    const frozenNowMs = Date.parse("2025-02-01T12:00:00Z");
-    await page.evaluateOnNewDocument((nowMs) => {
-      const OriginalDate = Date;
-      class FrozenDate extends OriginalDate {
-        constructor(...args) {
-          if (args.length === 0) {
-            super(nowMs);
-          } else {
-            super(...args);
-          }
-        }
-        static now() {
-          return nowMs;
-        }
-      }
-      globalThis.Date = FrozenDate;
-    }, frozenNowMs);
+    await page.evaluateOnNewDocument(frozenClockScript(Date.parse("2025-02-01T12:00:00Z")));
 
     const harnessUrl = `file://${indexPath}`;
 

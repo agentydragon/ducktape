@@ -14,7 +14,7 @@ _VISUAL_BASE_DATA = [
 
 _VISUAL_ENV = {
     "HARNESS_PATH": "$(rootpath //airlock/frontend:harness_js)",
-    "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
     "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
 }

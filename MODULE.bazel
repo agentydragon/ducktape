@@ -474,7 +474,7 @@ npm.npm_translate_lock(
         # Postinstall downloads Chromium (~280MB) which fails in sandboxed builds.
         # .puppeteerrc.cjs (skipDownload: true) isn't visible inside the lifecycle
         # hook sandbox. Browsers are provided hermetically via rules_playwright
-        # (@playwright_browsers//:chromium-headless-shell) and PUPPETEER_EXECUTABLE_PATH.
+        # (@playwright_browsers//:chromium-headless-shell) and CHROMIUM_HEADLESS_SHELL.
         "puppeteer",
     ],
     npmrc = "//:.npmrc",

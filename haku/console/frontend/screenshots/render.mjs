@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launchPuppeteerBrowser } from "../../../../util/testing/frontend_visual/puppeteer-lib.mjs";
+import { launchBrowser } from "../../../../util/testing/frontend_visual/launcher.mjs";
 import { writeVisualReviewManifest } from "../../../../util/testing/frontend_visual/visual-review-manifest.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -83,21 +83,10 @@ const harnessJs = readInput("HARNESS_JS", "dist", "harness.js");
 const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
-// Chromium: the BUILD wires PUPPETEER_EXECUTABLE_PATH to the hermetic @playwright_browsers
-// build under RBE; fall back to the ambient Playwright browser for a local `bazel run`.
-if (!process.env.PUPPETEER_EXECUTABLE_PATH && process.env.PLAYWRIGHT_BROWSERS_PATH) {
-  process.env.PUPPETEER_EXECUTABLE_PATH = join(process.env.PLAYWRIGHT_BROWSERS_PATH, "chromium");
-}
-
-const browser = await launchPuppeteerBrowser({
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--force-color-profile=srgb",
-  ],
-});
+// Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
+// @playwright_browsers build under RBE) or the ambient Playwright browser for
+// a local `bazel run` — both resolved inside launchBrowser.
+const browser = await launchBrowser({ args: ["--force-color-profile=srgb"] });
 const assets = [];
 try {
   for (const colorScheme of COLOR_SCHEMES) {

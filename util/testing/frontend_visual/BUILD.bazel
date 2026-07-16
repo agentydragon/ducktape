@@ -4,7 +4,34 @@ load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
-# Puppeteer-based visual regression test runner.
+# Chromium launch flags + frozen-clock init script, single-sourced between
+# the JS launcher below and the Python one (//util/testing:frontend_visual).
+# Shipped as plain data (not js_library srcs) — frozen-clock.js is raw
+# injected text, never imported as a module.
+filegroup(
+    name = "launcher_assets",
+    srcs = [
+        "chromium-flags.json",
+        "frozen-clock.js",
+    ],
+    visibility = ["//util/testing:__pkg__"],
+)
+
+# The one Puppeteer launcher for JS visual/screenshot tests.
+js_library(
+    name = "launcher",
+    srcs = [
+        "chromium-flags.json",
+        "frozen-clock.js",
+        "launcher.mjs",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":node_modules/puppeteer",
+    ],
+)
+
+# Puppeteer-based visual render-health test runner.
 js_library(
     name = "visual_test_lib",
     srcs = ["visual-test-lib.mjs"],
@@ -15,17 +42,8 @@ js_library(
         "//x/study_casino/frontend:__pkg__",
     ],
     deps = [
-        ":node_modules/puppeteer",
+        ":launcher",
         ":visual_review_manifest",
-    ],
-)
-
-js_library(
-    name = "puppeteer_lib",
-    srcs = ["puppeteer-lib.mjs"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":node_modules/puppeteer",
     ],
 )
 
