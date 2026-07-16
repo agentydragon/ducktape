@@ -798,26 +798,30 @@ it is trivially avoidable.`seatphysical`→`Seatgame`(valid; also passes logind'
    fundamentally incompatible with systemd-258 varlink logind, the only options left
    are LightDM or a bespoke `cage` + `gtkgreet` per-seat greeter.
 
-### Root cause 2 — seat0 GNOME lock: `ScreenShield` never claims its D-Bus name
+### Root cause 2 — seat0 GNOME lock: GNOME's lock hard-requires GDM (CONFIRMED)
 
-gnome-shell 49.4 is the live compositor (owns `wayland-0`) but does **not** own
-`org.gnome.Shell.ScreenShield`, so every lock path fails. Mechanism (source:
-`/code/github.com/GNOME/gnome-shell` tag 49.4):
+gnome-shell 49.4 is the live compositor but does **not** own
+`org.gnome.Shell.ScreenShield`, so every lock path fails. Root cause proven from
+source (tag 49.4) + live, 2026-07-16:
 
-- `screenShield.js:145 _getLoginSession()` awaits
-  `loginManager.getCurrentSessionProxy()` then `connectSignal('Lock', …)`. If the
-  proxy is null it throws and the shield never wires Lock/Unlock.
-- `loginManager.js:127` reads `XDG_SESSION_ID`; gnome-shell's env has **none**
-  (it runs as the `org.gnome.Shell@wayland.service` systemd --user unit, in
-  `user@1001.service` — the seatless manager scope, not `session-17.scope`). It
-  falls back to `/org/freedesktop/login1/session/auto`.
-- Live checks: `loginctl show-user agentydragon` has `Display=17`, and `session/auto`
-  resolves to `17` from a normal caller — so resolution _looks_ fine, yet
-  `ScreenShield` is still unowned. Why the shield init fails despite that is **not
-  yet proven** and needs a live attach to gnome-shell (dump whether
-  `getCurrentSessionProxy()` returned null and any JS rejection). Under GDM the lock
-  worked, so this is SDDM-session-registration-specific (missing `XDG_SESSION_ID`
-  into the systemd --user env is the leading suspect).
+- `main.js:238` builds the lock screen **only** `if (LoginManager.canLock())`.
+- `canLock()` (`loginManager.js`) does exactly one thing: a system-bus `Get` of the
+  `Version` property from **`org.gnome.DisplayManager`** (i.e. GDM), then
+  `return haveSystemd() && versionCompare('3.5.91', version)`, wrapped in
+  `catch { return false }`.
+- Live on wyrm2 the system bus has `org.freedesktop.DisplayManager` (SDDM) but **no
+  `org.gnome.DisplayManager`**; the exact call returns `ServiceUnknown` → `canLock()`
+  hits the catch → **false** → `ScreenShield` is never constructed → the D-Bus name is
+  never owned → no lock. (This also explains the total absence of session-resolution
+  logs — the code past the `canLock` gate never ran. The earlier `XDG_SESSION_ID`
+  theory was **wrong**; it never got that far.)
+- It is a **two-layer** GDM coupling: even unlock authenticates through GDM
+  (`Gdm.Client.open_reauthentication_channel` / `Gdm.UserVerifier`, `js/gdm/util.js`),
+  so forcing the lock up without GDM would leave it un-unlockable anyway.
+
+**Implication:** native GNOME screen lock ⟺ GDM — no config/glue fix exists under
+SDDM. With GDM out (constraints above), **seat0 cannot stay GNOME and lock.** See the
+Decision below.
 
 ### Done this session (config, no reboot yet)
 
@@ -841,33 +845,44 @@ path, with no clean fallback:
 Goal: two working seats (seat0 GNOME on SPICE + seatphysical on the NVIDIA 5090)
 **and** a working screen lock on each.
 
-### DM landscape under these constraints
+### The constraint conflict, and how it's resolved
 
-**GDM is fully out.** Its only blocker was the same-user conflict dialog, and its
-two escapes — patch gnome-shell, or a separate user — are both vetoed. So GDM
-cannot do same-user-two-seats here at all.
+The constraints collide once Root cause 2 is confirmed:
 
-That leaves **SDDM as the committed path** — the only mainstream DM with
-per-logind-seat greeters and no same-user veto. Committing to it means landing
-**two** independent SDDM/GNOME-integration fixes, neither yet proven here:
+- **GDM is fully out** — its only same-user escapes (patch gnome-shell, or a separate
+  user) are both vetoed, so it can't do same-user-two-seats here.
+- But **native GNOME lock ⟺ GDM** (Root cause 2). So {GNOME on seat0 + working lock}
+  and {no GDM} are mutually exclusive.
 
-1. **Greeter on seatphysical** — the varlink `CreateSession` rejection (the reboot
-   captures the exact field).
-2. **seat0 GNOME lock** — `ScreenShield` never claims its D-Bus name (worked under
-   GDM, broke under SDDM; leading suspect `XDG_SESSION_ID`/session-scope
-   propagation). Note seatphysical's _own_ lock is swaylock (wlroots,
-   DM-independent), so it is not at risk — only the seat0 GNOME lock is.
+The thing that gives is **seat0's desktop, not the DM**. SDDM is fine; GNOME's
+GDM-coupled lock is the sole problem. So:
 
-No clean drop-in fallback remains. If SDDM hits a wall on either fix, the only
-options left are worse, and both are fresh investigations:
+### Decision (2026-07-16): seat0 leaves GNOME for a sway/wlroots desktop
 
-- **LightDM** — same per-seat architecture, no same-user veto, but a weak Wayland
-  greeter (its greeters are X11); a real (non-autologin) greeter on this NVIDIA
-  seat is untested.
-- **Bespoke per-seat greeter** — a custom unit running `cage` (wlroots kiosk) +
-  `gtkgreet` with a PAM login on seatphysical. Satisfies every constraint but is
-  the most hand-rolled (custom unit + PAM stack) — essentially a mini-DM for the
-  seat.
+seat0 (SPICE/virtio) moves from GNOME to the **same sway/wlroots stack already
+running on seatphysical**, whose lock (`swaylock`) is DM-independent. That dissolves
+the conflict — every constraint holds at once:
+
+- **SDDM for both seats**, no GDM, no gnome-shell patch, no separate user, no
+  autologin.
+- **Lock on both seats** via `swaylock` (wlroots, works under any DM).
+- Same user, two seats; two sway sessions for one user coexist fine (sway has no
+  GNOME-style fixed D-Bus singletons).
+
+seat0 desktop components (user asks, 2026-07-16): a proper **notification center**
+(`swaync` — popups + a center panel), a **clock** and **notification area/tray**
+(`waybar` — both already configured), and an **app launcher reading the same sources
+GNOME does** (`wofi --show drun` / `fuzzel`, which read XDG `.desktop` entries from
+`$XDG_DATA_DIRS/applications` — exactly GNOME's app-grid source). Keybindings to be
+tuned toward the user's GNOME + Pop!\_OS-tiling-extension muscle memory (follow-up).
+
+Remaining work is now just **one** DM issue, not two: the seatphysical **greeter**
+(varlink `CreateSession`, captured at the reboot). The seat0 lock is no longer a DM
+problem — it's the seat0 desktop swap above.
+
+If the seatphysical greeter proves unfixable under SDDM, the fallbacks are LightDM
+(weak Wayland greeter, X11 greeters — untested on NVIDIA) or a bespoke `cage` +
+`gtkgreet` per-seat greeter (custom unit + PAM; most hand-rolled).
 
 ### Reboot procedure
 
@@ -896,31 +911,11 @@ boot-menu generation).
    point (see the fallback ladder). Also note whether the hyphen fix alone changed
    greeter behavior.
 
-3. **seat0 lock** (independent of the reboot — broken live already). Diagnose why
-   `ScreenShield` won't own its D-Bus name, tiered least- to most-intrusive so most
-   of the signal costs nothing:
-   1. **Read-only (no session impact).** gnome-shell's `loginManager.js` logs the
-      outcome of its session resolution at `ScreenShield` init — pull it from the
-      shell's journal (comm truncates to `.gnome-shell-wr`):
-      `"Will monitor session 17"` = `getCurrentSessionProxy()` succeeded (so the bug
-      is _not_ session resolution, and the `XDG_SESSION_ID` theory is wrong);
-      `"Unset XDG_SESSION_ID…"` + `"Could not get proxy"` / `"Failed to get session"`
-      = resolution failed → the fix is getting the session id/scope to the shell.
-      Plus introspection: `systemctl --user show-environment` (is `XDG_SESSION_ID`
-      set?), the shell's cgroup scope, `busctl --user` name ownership. All pure
-      reads — no restart, signal, or attach; the SPICE session is untouched.
-   2. **Brief gdb attach (sub-second pause, non-fatal), only if 1 is ambiguous.**
-      `gdb -p <shell-pid> -batch -ex 'call (void)gjs_dumpstack()'` (same non-fatal
-      technique as the 2026-07-11 greeter-freeze capture) to dump JS / inspect the
-      loginManager's `_currentSession`. Momentarily pauses the compositor; does not
-      kill it. Gate on user OK.
-   3. **Confirming the fix needs a re-login.** Wayland can't hot-reload the shell's
-      env (`XDG_SESSION_ID` is read once at startup), so _proving_ the fix restores
-      the lock requires restarting the seat0 session (or the reboot). Steps 1–2 tell
-      us the fix with high confidence first, so this confirms rather than gambles.
-
-   Leading suspect: `XDG_SESSION_ID` not reaching the `org.gnome.Shell@wayland.service`
-   systemd `--user` unit (it runs in the seatless `user@1001.service` scope). Fix
-   likely propagates the login session id/env into the user manager.
+3. **seat0 lock — root cause found (2026-07-16), no longer a DM fix.** The tier-1
+   read-only diagnosis (journal + D-Bus, zero session impact) proved Root cause 2:
+   `canLock()` is false because GDM's `org.gnome.DisplayManager` isn't on the bus, so
+   `ScreenShield` is never built. It is not fixable under SDDM. **Resolution is the
+   seat0 desktop swap (GNOME → sway + swaync/waybar/wofi/swaylock)** — see the
+   Decision section. Build task, not a reboot task.
 
 Remove the `SYSTEMD_LOG_LEVEL=debug` logind drop-in once the greeter is solved.
