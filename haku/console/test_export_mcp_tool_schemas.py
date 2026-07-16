@@ -39,13 +39,11 @@ async def test_exports_every_server_and_tool() -> None:
         "labels_list",
         "labels_patch",
         "messages_get",
-        "thread_previews",
         "threads_get",
         "threads_list",
         "threads_modify_labels",
     ]
     assert list(schema["properties"]["google_calendar"]["properties"]) == [
-        "calendar_summary",
         "create_event",
         "get_event",
         "list_event_instances",
@@ -152,12 +150,12 @@ async def test_exports_result_catalog() -> None:
     # A `-> None` return (gmail.labels_delete) has only a null wrapped result, so it is omitted —
     # the result tool set is a subset of the argument tool set.
     assert "labels_delete" not in gmail
+    assert "thread_previews" not in gmail
     assert "drafts_create" in gmail
     assert "threads_modify_labels" in gmail
     # `id` is the one required field of a Draft resource.
     assert gmail["drafts_create"].get("required") == ["id"]
     assert list(schema["properties"]["google_calendar"]["properties"]) == [
-        "calendar_summary",
         "create_event",
         "get_event",
         "list_event_instances",

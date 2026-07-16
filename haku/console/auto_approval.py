@@ -29,7 +29,6 @@ GMAIL_READ_TOOLS = frozenset(
     {
         "threads_list",
         "threads_get",
-        "thread_previews",
         "messages_get",
         "labels_list",
         "labels_get",
@@ -44,7 +43,7 @@ GMAIL_CONDITIONAL_TOOLS = frozenset({"threads_modify_labels", "labels_patch", "l
 
 # Calendar reads expose operator-owned event data but cannot modify it; authenticated agents receive
 # the same standing read authority as the existing Gmail and Grocy read tools.
-GOOGLE_CALENDAR_READ_TOOLS = frozenset({"calendar_summary", "get_event", "list_events", "list_event_instances"})
+GOOGLE_CALENDAR_READ_TOOLS = frozenset({"get_event", "list_events", "list_event_instances"})
 
 # The reviewed read-only subset of grocy-sf's tools (get/list only — every create/edit/delete/
 # add/consume/set/transfer/undo/merge/clear/upload stays approval-gated).

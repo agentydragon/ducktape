@@ -1,7 +1,5 @@
-"""Tests for CalendarToolsClient and resolve_calendar_summary over a fake googleapiclient-shaped
-Calendar service."""
+"""Tests for CalendarToolsClient over a fake googleapiclient-shaped Calendar service."""
 
-import base64
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,7 +13,6 @@ from haku.console.tools.google_calendar_client import (
     EventDateTime,
     ListCalendarEventInstancesArgs,
     ListCalendarEventsArgs,
-    resolve_calendar_summary,
 )
 
 
@@ -47,6 +44,7 @@ class _FakeEvents:
         self.listed.append(params)
         return _FakeExecutable(
             {
+                "summary": "Team (SF)",
                 "items": [{"id": "series1", "summary": "Standup", "recurrence": ["RRULE:FREQ=WEEKLY"]}],
                 "nextPageToken": "next-events",
             }
@@ -80,23 +78,11 @@ class _FakeExecutable:
 
 
 @dataclass
-class _FakeCalendarList:
-    entries: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    def get(self, *, calendarId):  # noqa: N803 -- mirrors Calendar API's kwarg casing
-        return _FakeExecutable(self.entries[calendarId])
-
-
-@dataclass
 class _FakeCalendarService:
     events_: _FakeEvents = field(default_factory=_FakeEvents)
-    calendar_list_: _FakeCalendarList = field(default_factory=_FakeCalendarList)
 
     def events(self) -> _FakeEvents:
         return self.events_
-
-    def calendarList(self) -> _FakeCalendarList:  # noqa: N802 -- mirrors Calendar API's camelCase
-        return self.calendar_list_
 
 
 @pytest.fixture
@@ -215,6 +201,7 @@ def test_list_events_maps_filters_and_pagination(service: _FakeCalendarService, 
     )
     assert page.events[0].event_id == "series1"
     assert page.next_page_token == "next-events"
+    assert page.summary == "Team (SF)"
     assert service.events_.listed == [
         {
             "calendarId": "team",
@@ -235,23 +222,6 @@ def test_list_event_instances_preserves_instance_linkage(
     assert page.events[0].recurring_event_id == "series1"
     assert page.events[0].original_start_time is not None
     assert service.events_.instances_listed == [{"calendarId": "primary", "eventId": "series1", "maxResults": 25}]
-
-
-def test_resolve_calendar_summary_prefers_override_and_links_by_cid(service: _FakeCalendarService) -> None:
-    service.calendar_list_.entries["team@group.calendar.google.com"] = {
-        "summary": "Team",
-        "summaryOverride": "Team (SF)",  # the operator's own rename wins over the calendar's own name
-    }
-    result = resolve_calendar_summary(service, "team@group.calendar.google.com")
-    assert result.calendar_id == "team@group.calendar.google.com"
-    assert result.summary == "Team (SF)"
-    cid = base64.b64encode(b"team@group.calendar.google.com").decode().rstrip("=")
-    assert result.html_link == f"https://calendar.google.com/calendar/u/0/r?cid={cid}"
-
-
-def test_resolve_calendar_summary_uses_summary_without_override(service: _FakeCalendarService) -> None:
-    service.calendar_list_.entries["c1"] = {"summary": "Holidays"}
-    assert resolve_calendar_summary(service, "c1").summary == "Holidays"
 
 
 if __name__ == "__main__":

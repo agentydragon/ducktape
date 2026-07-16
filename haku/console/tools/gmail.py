@@ -46,14 +46,12 @@ from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.gmail_client import (
     GMAIL_SERVER_ID,
     CreateGmailDraftArgs,
-    GmailThreadPreviewsResponse,
     GmailToolsClient,
     ListDraftsArgs,
     ModifyGmailThreadLabelsArgs,
     ModifyGmailThreadLabelsResult,
     SearchThreadsArgs,
     UpdateGmailDraftArgs,
-    preview_gmail_threads,
 )
 
 # The write scopes the label/draft/filter tools need. `gmail.modify` also covers every read the
@@ -113,11 +111,6 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
     ) -> Thread:
         """Fetch a Gmail thread and its messages (mirrors users.threads.get). `format` sets the detail level."""
         return gmail.threads_get(thread_id, format)
-
-    @mcp.tool
-    async def thread_previews(thread_ids: _ThreadIdsAnn) -> GmailThreadPreviewsResponse:
-        """Resolve thread ids to live subject, snippet, current labels, and Gmail links in one batch."""
-        return GmailThreadPreviewsResponse(threads=preview_gmail_threads(gmail.service, thread_ids))
 
     @mcp.tool
     async def messages_get(

@@ -239,9 +239,8 @@ HTTP:
 - **`google_calendar`** (`haku.console.tools.google_calendar`). `create_event` creates a single
   event or an RRULE-backed series and stays operator-approved. `get_event`, `list_events`, and
   `list_event_instances` return focused recurrence-aware event models and auto-approve for
-  authenticated Agents as transparent read tools. `calendar_summary` resolves a calendar id for
-  trusted console rendering through the same MCP server. Deferred Calendar API
-  affordances are inventoried in `TODO.md`.
+  authenticated Agents as transparent read tools. Deferred Calendar API affordances are inventoried
+  in `TODO.md`.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
   ordinary approval-gated tool call rather than a bespoke capability. It uses the
@@ -253,11 +252,10 @@ The `gmail` and `google_calendar` servers are built from **one** Airlock-issued 
 scopes), mounted from `haku-console-google-access-token` (`HAKU_CONSOLE_GOOGLE_TOKEN_DIR`) —
 kept separate from every other Google-scoped credential in the cluster and delivered only to this namespace.
 One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/README.md`.
-The trusted frontend resolves opaque ids by calling MCP tools with its Operator session:
-`gmail_thread_previews` supplies subject/snippet/current-labels for a pending
-`threads_modify_labels`, and `google_calendar_calendar_summary` maps a non-primary `calendar_id` to
-its display name and Google Calendar link for a pending `create_event`. Grocy and Tana previews use
-their servers' ordinary read tools the same way; there are no parallel preview-only HTTP routes.
+The trusted frontend resolves opaque ids by composing each server's ordinary MCP reads with its
+Operator session. Gmail combines `threads_get` with `labels_list`; Calendar uses `list_events`;
+Grocy and Tana likewise call their existing read tools. There are no preview-only MCP tools or
+parallel preview-only HTTP routes.
 
 ## Free-form UI — Haku's own UI, embedded
 

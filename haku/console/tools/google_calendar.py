@@ -23,13 +23,11 @@ from haku.console.tools.google_calendar_client import (
     CalendarEvent,
     CalendarEventsPage,
     CalendarReminder,
-    CalendarSummary,
     CalendarToolsClient,
     CreateCalendarEventArgs,
     EventDateTime,
     ListCalendarEventInstancesArgs,
     ListCalendarEventsArgs,
-    resolve_calendar_summary,
 )
 
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
@@ -106,15 +104,6 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
     ) -> CalendarEvent:
         """Fetch one event, recurring-series master, or recurring-event instance."""
         return calendar.get_event(calendar_id, event_id)
-
-    @mcp.tool
-    async def calendar_summary(
-        calendar_id: Annotated[
-            str, Field(description="Calendar id to resolve; 'primary' is the operator's main calendar.")
-        ] = "primary",
-    ) -> CalendarSummary:
-        """Resolve a calendar id to its live display name and Google Calendar link."""
-        return resolve_calendar_summary(calendar.service, calendar_id)
 
     @mcp.tool
     async def list_events(

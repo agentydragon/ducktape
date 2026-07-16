@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
 from enum import StrEnum
 from typing import Any
@@ -11,10 +10,6 @@ from zoneinfo import ZoneInfo
 from dateutil.rrule import rrulestr
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
-
-# Opens a specific calendar in the Google Calendar web UI. `cid` is the base64 of the calendar
-# id (Google strips the `=` padding), the same encoding its own "add by URL"/share links use.
-_CALENDAR_URL = "https://calendar.google.com/calendar/u/0/r?cid={cid}"
 
 
 class ReminderMethod(StrEnum):
@@ -178,6 +173,9 @@ class CalendarEventsPage(BaseModel):
 
     events: list[CalendarEvent] = Field(default_factory=list, validation_alias="items")
     next_page_token: str | None = Field(default=None, validation_alias="nextPageToken")
+    summary: str | None = Field(
+        default=None, description="Calendar display name returned by events.list; absent from event-instance pages."
+    )
 
 
 class ListCalendarEventsArgs(BaseModel):
@@ -199,26 +197,6 @@ class ListCalendarEventInstancesArgs(BaseModel):
     time_max: str | None = Field(default=None, description="RFC3339 upper bound for instance start time.")
     max_results: int = Field(default=50, ge=1, le=250)
     page_token: str | None = None
-
-
-class _CalendarListEntry(BaseModel):
-    """The slice of the Calendar API's `calendarList` entry the approval UI needs."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    summary: str
-    # The operator's own name for the calendar, when they've renamed it; wins over `summary`.
-    summary_override: str | None = Field(default=None, validation_alias="summaryOverride")
-
-
-class CalendarSummary(BaseModel):
-    """A calendar's display name plus a link into the Google Calendar web UI, for rendering a
-    pending `create_event` approval — the tool call carries only the `calendar_id`, so
-    the approval UI resolves the human-readable name here rather than showing the raw id."""
-
-    calendar_id: str
-    summary: str = Field(description="The calendar's display name (the operator's override if set).")
-    html_link: str = Field(description="Link to open this calendar in the Google Calendar web UI.")
 
 
 # --- Google Calendar `events.insert` request-body models (camelCase wire shape) ---
@@ -264,8 +242,7 @@ class _EventInsert(BaseModel):
 
 
 class CalendarToolsClient:
-    """Focused event reads and creation over a raw Calendar service. Calendar-name resolution is a
-    rendering-support read, not a tool op — see the module-level `resolve_calendar_summary`."""
+    """Focused event reads and creation over a raw Calendar service."""
 
     def __init__(self, service: Any) -> None:
         self.service = service
@@ -326,17 +303,3 @@ class CalendarToolsClient:
         if args.page_token is not None:
             params["pageToken"] = args.page_token
         return CalendarEventsPage.model_validate(self.service.events().instances(**params).execute())
-
-
-def resolve_calendar_summary(service: Any, calendar_id: str) -> CalendarSummary:
-    """The calendar's display name + a Google Calendar link, for rendering a pending
-    `create_event` approval. `calendarList` carries the operator's own naming
-    (`summaryOverride`), which the mounted token's `calendar.readonly` scope covers — a
-    rendering read, not a tool the agent invokes, so a free function over the raw service."""
-    entry = _CalendarListEntry.model_validate(service.calendarList().get(calendarId=calendar_id).execute())
-    cid = base64.b64encode(calendar_id.encode()).decode().rstrip("=")
-    return CalendarSummary(
-        calendar_id=calendar_id,
-        summary=entry.summary_override or entry.summary,
-        html_link=_CALENDAR_URL.format(cid=cid),
-    )

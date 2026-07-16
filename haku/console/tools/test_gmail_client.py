@@ -35,7 +35,6 @@ from haku.console.tools.gmail_client import (
     ModifyGmailThreadLabelsArgs,
     SearchThreadsArgs,
     UpdateGmailDraftArgs,
-    preview_gmail_threads,
 )
 
 
@@ -52,8 +51,7 @@ class _Executable:
 
 
 class _ThreadRequest:
-    """A pending users.threads.{get,modify}: executes directly (threads_get) or is folded
-    into a batch (preview_gmail_threads / modify_threads), which reads `result` back per id."""
+    """A pending users.threads.{get,modify} request."""
 
     def __init__(self, result: Any) -> None:
         self.result = result
@@ -71,8 +69,6 @@ class _FakeBatch:
         self._requests.append((request_id, request))
 
     def execute(self) -> None:
-        # A missing thread resolves to result=None, mirroring an inaccessible thread whose
-        # callback carries no response — preview_gmail_threads then skips it.
         for request_id, request in self._requests:
             self._callback(request_id, request.result, None)
 
@@ -478,29 +474,6 @@ def test_batch_modify_reuses_existing_label(svc: _FakeGmailService, client: Gmai
 def test_batch_modify_remove_requires_existing_label(client: GmailToolsClient) -> None:
     with pytest.raises(ValueError, match="do not exist"):
         client.threads_modify_labels(ModifyGmailThreadLabelsArgs(thread_ids=["t1"], remove=["ghost"]))
-
-
-def test_preview_threads_extracts_subject_snippet_and_labels(svc: _FakeGmailService) -> None:
-    svc.labels = [GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER)]
-    svc.thread_responses["t1"] = _dump(
-        Thread(
-            id="t1",
-            messages=[
-                Message(
-                    id="m1",
-                    snippet="hello world",
-                    label_ids=["Label_1", "UNKNOWN_ID"],
-                    payload=MessagePart(headers=[MessagePartHeader(name="Subject", value="Test subject")]),
-                )
-            ],
-        )
-    )
-    previews = preview_gmail_threads(svc, ["t1", "missing"])
-    assert previews.keys() == {"t1"}  # "missing" resolves to None -> omitted
-    assert previews["t1"].subject == "Test subject"
-    assert previews["t1"].snippet == "hello world"
-    assert previews["t1"].current_label_names == ["haku/triaged"]  # UNKNOWN_ID dropped
-    assert previews["t1"].gmail_url == "https://mail.google.com/mail/u/0/#all/t1"
 
 
 if __name__ == "__main__":
