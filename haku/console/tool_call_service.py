@@ -15,7 +15,7 @@ import logging
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval import auto_approve_tool_call
+from haku.console.auto_approval import SchemaDenial, auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.mcp_config import (
     InProcessServers,
@@ -48,6 +48,7 @@ class ToolCallRepository(Protocol):
         actor: ToolCallActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
+        auto_denial_reason: str | None = None,
     ) -> ToolCallRecord: ...
 
     def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord: ...
@@ -145,7 +146,7 @@ class ToolCallApplicationService:
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
         actor = self._require_actor(actor)
         server = _server_entry(self._settings, req.server_id)
-        auto_approval_policy_id, auto_approval_evaluation = await auto_approve_tool_call(
+        decision = await auto_approve_tool_call(
             actor=actor,
             server_id=server.id,
             tool_name=req.tool_name,
@@ -154,6 +155,28 @@ class ToolCallApplicationService:
             gmail=self._gmail_client,
             mcp=self._in_process_servers.get(server.id),
         )
+        if isinstance(decision, SchemaDenial):
+            # Arguments failed an owned in-process schema: the call can never execute, so it is
+            # persisted born-denied (full audit row, never pending) and the validation error goes
+            # straight back to the caller to self-correct (operator directive 2026-07-16).
+            record = self._repository.submit(
+                server=server,
+                req=req,
+                actor=actor,
+                auto_approval_evaluation=decision.evaluation,
+                auto_denial_reason=decision.reason,
+            )
+            logger.info(
+                "tool call %s auto-denied (schema) server=%s tool=%s caller=%s reason=%r",
+                record.tool_call_id,
+                record.server_id,
+                record.tool_name,
+                record.caller,
+                record.denial_reason,
+            )
+            await self._publish(actor.operator_id, record.tool_call_id)
+            return record
+        auto_approval_policy_id, auto_approval_evaluation = decision
 
         # A missing operator OAuth association must fail before a RUNNING row is durable. Once
         # persisted, every RUNNING call has all authorization needed to attempt execution.

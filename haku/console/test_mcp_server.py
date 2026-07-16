@@ -244,6 +244,23 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
     assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": calls[0].tool_call_id}
 
 
+async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness) -> None:
+    """A schema-invalid call on an owned in-process server is born-denied: the caller gets the
+    validation error immediately and nothing enters the approval queue (operator, 2026-07-16)."""
+    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
+        with pytest.raises(ToolError, match="single_events"):
+            await client.call_tool("google_calendar_list_events", {"single_events": True})
+
+    operator = OperatorActor(operator_id=harness.operator_id)
+    calls = harness.tool_calls.list_tool_calls(actor=operator)
+    assert len(calls) == 1
+    assert calls[0].status == ToolCallStatus.DENIED
+    assert calls[0].denial_reason is not None
+    assert "single_events" in calls[0].denial_reason
+    assert calls[0].auto_approval_evaluation == "denied: arguments failed the registered tool schema"
+    assert harness.tool_calls.pending_approvals(actor=operator) == []
+
+
 async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         result = await client.call_tool("google_calendar_get_event", {"event_id": "series1"})

@@ -64,7 +64,10 @@ haku-ui, enter only through the FastMCP adapter in `mcp_server.py`; the HTTP rou
 auto-approval decision, asks the trusted console frontend for approval when it does not match,
 executes the MCP tool, and keeps the result. The decision validates arguments
 against the existing FastMCP tool's generated schema; its audit-safe evaluation string is recorded
-even when the call stays manual, while errors are logged and fail closed. haku-state stores only authored requests
+even when the call stays manual. A call whose arguments fail an owned **in-process** schema is
+persisted **born-denied** — the validation error returns to the MCP caller immediately and the call
+never enters the approval queue (it can never execute, so it must not consume operator attention);
+console-side lookup/schema errors still fail closed to manual review. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 

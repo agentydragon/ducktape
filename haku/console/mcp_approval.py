@@ -146,6 +146,7 @@ class PostgresToolCallLedger:
         actor: ToolCallActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
+        auto_denial_reason: str | None = None,
     ) -> ToolCallRecord:
         with self._sessions.begin() as session:
             tool_call_id = f"tc_{secrets.token_hex(12)}"
@@ -165,7 +166,15 @@ class PostgresToolCallLedger:
                 case _:
                     raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
             now = datetime.datetime.now(datetime.UTC)
-            status = ToolCallStatus.RUNNING if auto_approval_policy_id is not None else ToolCallStatus.PENDING_APPROVAL
+            if auto_denial_reason is not None:
+                # Born-denied (schema-invalid on an owned in-process server): a full audit row
+                # that never passes through PENDING_APPROVAL and never reaches the queue.
+                assert auto_approval_policy_id is None, "a call cannot be both auto-approved and auto-denied"
+                status = ToolCallStatus.DENIED
+            elif auto_approval_policy_id is not None:
+                status = ToolCallStatus.RUNNING
+            else:
+                status = ToolCallStatus.PENDING_APPROVAL
             record = ToolCallRecord(
                 tool_call_id=tool_call_id,
                 server_id=server.id,
@@ -177,6 +186,7 @@ class PostgresToolCallLedger:
                 arguments=req.arguments,
                 rationale=req.rationale,
                 title=req.title,
+                denial_reason=auto_denial_reason,
                 approval_policy_id=auto_approval_policy_id,
                 auto_approval_evaluation=auto_approval_evaluation,
                 approved_at=now if auto_approval_policy_id is not None else None,

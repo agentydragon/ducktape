@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.auto_approval import UNCONDITIONAL_AUTO_APPROVAL_ID, auto_approve_tool_call
+from haku.console.auto_approval import UNCONDITIONAL_AUTO_APPROVAL_ID, SchemaDenial, auto_approve_tool_call
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.gmail import build_mcp
 from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
@@ -39,7 +39,7 @@ async def _policy_id(tool_name: str, arguments: dict, **kwargs):
     return policy_id
 
 
-async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | None, str | None]:
+async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | None, str | None] | SchemaDenial:
     calendar = Mock()
     return await auto_approve_tool_call(
         actor=AGENT_ACTOR,
@@ -110,16 +110,17 @@ async def test_calendar_create_stays_manual() -> None:
     assert evaluation == "manual: google_calendar/create_event is not auto-approved"
 
 
-async def test_calendar_read_rejects_invalid_arguments() -> None:
-    policy_id, evaluation = await _calendar_decision("list_events", {"max_results": 251})
-    assert policy_id is None
-    assert evaluation == "manual: arguments failed the registered tool schema"
+async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
+    denial = await _calendar_decision("list_events", {"max_results": 251})
+    assert isinstance(denial, SchemaDenial)
+    assert denial.evaluation == "denied: arguments failed the registered tool schema"
+    assert "251" in denial.reason  # the concrete validation error reaches the caller
 
 
-async def test_read_requires_valid_registered_tool_arguments() -> None:
-    policy_id, evaluation = await _decision("threads_list", {"query": "", "unexpected": True})
-    assert policy_id is None
-    assert evaluation == "manual: arguments failed the registered tool schema"
+async def test_read_with_unknown_argument_is_auto_denied() -> None:
+    denial = await _decision("threads_list", {"query": "", "unexpected": True})
+    assert isinstance(denial, SchemaDenial)
+    assert "unexpected" in denial.reason
 
 
 @pytest.mark.parametrize("field", ["add", "remove"])

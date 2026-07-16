@@ -91,7 +91,7 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
     backlog**, no minimum to surface. Update existing entries when evidence changed; never
     duplicate (today: match against the existing item slugs); don't re-raise a rejected idea
     without materially new evidence (say what's new).
-  - Re-rank; retire what's elapsed (today: `expired` past-`deadline` entries); **promote**
+  - Re-rank; retire what's elapsed (today: `expired` past-`act_by` entries); **promote**
     anything deferred whose wake trigger arrived; **defer** anything whose only next step is
     to wait (today: `snooze`); keep valid lower-priority work as backlog.
   - Bring your open set into conformance with your current method's conventions (today:

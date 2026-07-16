@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import jsonschema
@@ -16,6 +17,22 @@ logger = logging.getLogger(__name__)
 
 GMAIL_AUTO_APPROVAL_ID = "gmail_labels_v1"
 UNCONDITIONAL_AUTO_APPROVAL_ID = "unconditional_v1"
+SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
+
+
+@dataclass(frozen=True)
+class SchemaDenial:
+    """Arguments failed an owned in-process tool's schema — the call is terminally auto-denied.
+
+    Only in-process servers reach this decision (they are the only ones whose registered schema
+    the console can vouch for; remote servers validate upstream at execution). A call that can
+    never execute must fail fast to the caller with the validation error — not consume
+    approval-queue attention (operator directive 2026-07-16).
+    """
+
+    reason: str  # caller-facing denial reason: the concrete validation error
+    evaluation: str = SCHEMA_AUTO_DENIAL_EVALUATION  # audit string recorded on the row
+
 
 # Remote (operator_oauth) server ids — must match the console config
 # (`cluster/k8s/haku/console/config.yaml`). Kept as literals here (rather than imported from
@@ -91,12 +108,15 @@ def is_unconditionally_auto_approved(server_id: str, tool_name: str) -> bool:
     return tool_name in UNCONDITIONAL_AUTO_APPROVE.get(server_id, frozenset())
 
 
-async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> str | None:
+async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> SchemaDenial | str | None:
     """Validate arguments against the in-process tool's generated schema.
 
-    Returns an audit-safe error string on rejection, or None if valid. Lookup / schema errors are
-    logged and fail closed (rejected). Only usable for in-process servers (gmail/google_calendar);
-    remote servers have no in-process schema and are validated by the upstream at execution time.
+    Returns None if valid; a `SchemaDenial` when the *arguments* are invalid (terminal — the call
+    can never execute, so it auto-denies instead of queueing); or an audit-safe error string when
+    the console itself failed to look up or parse the schema — that is a console-side malfunction,
+    not a caller error, so it fails closed to manual review. Only usable for in-process servers
+    (gmail/google_calendar); remote servers have no in-process schema and are validated by the
+    upstream at execution time.
     """
     try:
         tool = await mcp.get_tool(tool_name)
@@ -108,8 +128,8 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
     try:
         jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().inputSchema)
     except jsonschema.ValidationError as exc:
-        logger.warning("auto-approval rejected invalid MCP arguments tool=%s: %s", tool_name, exc)
-        return "manual: arguments failed the registered tool schema"
+        logger.warning("auto-denied invalid MCP arguments tool=%s: %s", tool_name, exc)
+        return SchemaDenial(reason=f"arguments failed the registered tool schema: {exc.message}")
     except jsonschema.SchemaError:
         logger.exception("auto-approval tool schema is invalid tool=%s", tool_name)
         return "error: registered tool schema is invalid"
@@ -125,14 +145,15 @@ async def auto_approve_tool_call(
     label_prefix: str,
     gmail: GmailToolsClient | None,
     mcp: FastMCP | None,
-) -> tuple[str | None, str | None]:
-    """Return the approving policy ID and an audit-safe evaluation string.
+) -> tuple[str | None, str | None] | SchemaDenial:
+    """Return the approving policy ID and an audit-safe evaluation string, or a `SchemaDenial`.
 
     Applies to any authenticated agent (a static MCP bearer or an MCP OAuth client); interactive
     operator-browser calls never auto-approve. Unconditionally
     allowlisted read-only/safe operations (Gmail/Calendar/Grocy reads, tana `get_or_create_calendar_node`)
     approve regardless of arguments; gmail label mutations approve only when scoped to ``label_prefix``.
-    Any schema, lookup, or policy error is logged and fails closed.
+    Arguments that fail an owned in-process schema return `SchemaDenial` (terminal auto-denial);
+    any console-side schema, lookup, or policy error is logged and fails closed to manual review.
     """
     if not isinstance(actor, AgentActor):
         return None, None
@@ -141,6 +162,8 @@ async def auto_approve_tool_call(
         # servers (grocy-sf/tana-rw) validate at execution.
         if mcp is not None:
             error = await _validate_arguments(mcp, tool_name, arguments)
+            if isinstance(error, SchemaDenial):
+                return error
             if error is not None:
                 return None, error
         return UNCONDITIONAL_AUTO_APPROVAL_ID, f"approved: {server_id}/{tool_name} is allowlisted read-only/safe"
@@ -151,12 +174,14 @@ async def auto_approve_tool_call(
 
 async def _approve_gmail_label_op(
     tool_name: str, arguments: dict[str, Any], label_prefix: str, gmail: GmailToolsClient | None, mcp: FastMCP | None
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None] | SchemaDenial:
     """The reviewed gmail label-mutation boundary: approve only haku/-prefixed label changes."""
     if mcp is None:
         logger.error("gmail auto-approval: in-process Gmail server unavailable")
         return None, "error: in-process Gmail server unavailable"
     error = await _validate_arguments(mcp, tool_name, arguments)
+    if isinstance(error, SchemaDenial):
+        return error
     if error is not None:
         return None, error
     try:
