@@ -27,7 +27,6 @@ export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
-export type PendingApproval = components["schemas"]["PendingApproval"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 export type McpOperatorAuthStatus =
   | components["schemas"]["McpOperatorAuthConnected"]
@@ -76,7 +75,7 @@ export async function launchRoutine(text?: string): Promise<LaunchRoutineResult>
   return data;
 }
 
-export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
+export async function fetchPendingApprovals(): Promise<ToolCallRecord[]> {
   const { data, error } = await api.GET("/api/approvals/pending");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load pending approvals"));
   return data.approvals ?? [];

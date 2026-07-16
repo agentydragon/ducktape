@@ -13,7 +13,7 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
-import { fetchPendingApprovals, launchRoutine, type PendingApproval, type ToolCallRecord } from "./client.ts";
+import { fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { ShellChrome } from "./shell_chrome.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
@@ -76,8 +76,8 @@ export function HakuUiEmbed({
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
   const [pending, setPending] = useState<Escalation | null>(null);
-  const [toolApprovals, setToolApprovals] = useState<PendingApproval[]>([]);
-  const toolApprovalsRef = useRef<PendingApproval[]>([]);
+  const [toolApprovals, setToolApprovals] = useState<ToolCallRecord[]>([]);
+  const toolApprovalsRef = useRef<ToolCallRecord[]>([]);
   const knownToolApprovalIdsRef = useRef<Set<string> | null>(null);
   const [geolocationApprovals, setGeolocationApprovals] = useState<GeolocationApproval[]>([]);
   const geolocationApprovalsRef = useRef<GeolocationApproval[]>([]);
@@ -199,7 +199,7 @@ export function HakuUiEmbed({
     );
   }
 
-  function applyToolApprovals(approvals: PendingApproval[]) {
+  function applyToolApprovals(approvals: ToolCallRecord[]) {
     const incomingIds = new Set(approvals.map((approval) => approval.tool_call_id));
     const previousIds = knownToolApprovalIdsRef.current;
     const newApprovals =
@@ -212,7 +212,7 @@ export function HakuUiEmbed({
     }
   }
 
-  function removeToolApproval(toolCallId: string): PendingApproval[] {
+  function removeToolApproval(toolCallId: string): ToolCallRecord[] {
     const remaining = toolApprovalsRef.current.filter((approval) => approval.tool_call_id !== toolCallId);
     toolApprovalsRef.current = remaining;
     knownToolApprovalIdsRef.current = new Set(remaining.map((approval) => approval.tool_call_id));
@@ -430,11 +430,11 @@ export function HakuUiEmbed({
     }
   }
 
-  function approveToolApproval(approval: PendingApproval) {
+  function approveToolApproval(approval: ToolCallRecord) {
     void toolDecisions.approve(approval);
   }
 
-  function denyToolApproval(approval: PendingApproval, reason?: string) {
+  function denyToolApproval(approval: ToolCallRecord, reason?: string) {
     void toolDecisions.deny(approval, reason);
   }
 

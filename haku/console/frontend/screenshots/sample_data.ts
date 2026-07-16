@@ -6,7 +6,7 @@
 // tool_rendering/screenshot/mock_data.ts and re-exported here so mock_api serves them for the
 // history scene's data-fetching rows too.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
-import type { DeploymentInfo, McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "../client.ts";
+import type { DeploymentInfo, McpOperatorAuthStatus, ToolCallRecord } from "../client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
 export {
@@ -140,8 +140,8 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
   }),
 ];
 
-export const SAMPLE_PENDING: PendingApproval[] = [
-  {
+export const SAMPLE_PENDING: ToolCallRecord[] = [
+  toolCall({
     tool_call_id: "tc_p1",
     server_id: "grocy-sf",
     tool_name: "shopping_list_items_remove",
@@ -154,8 +154,11 @@ export const SAMPLE_PENDING: PendingApproval[] = [
     rationale: "These are already in stock after the Thrive delivery, so drop them from the list.",
     arguments: { ids: [3, 7, 12] },
     created_at: "2026-07-09T14:40:00Z",
-  },
-  {
+    updated_at: "2026-07-09T14:40:00Z",
+    status: "pending_approval",
+    result: null,
+  }),
+  toolCall({
     // A many-item grocy stock_add — exercises the compact widget's "first few + … +N more".
     tool_call_id: "tc_p2",
     server_id: STOCK_ADD_PENDING_FIXTURE.serverId,
@@ -169,7 +172,10 @@ export const SAMPLE_PENDING: PendingApproval[] = [
     rationale: "Thrive box delivered; adding its items to inventory.",
     arguments: STOCK_ADD_PENDING_FIXTURE.args,
     created_at: "2026-07-09T14:41:00Z",
-  },
+    updated_at: "2026-07-09T14:41:00Z",
+    status: "pending_approval",
+    result: null,
+  }),
 ];
 
 export function sampleRecentToolCalls(nowMs: number): RecentToolCall[] {

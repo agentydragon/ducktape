@@ -2,10 +2,10 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
-import type { PendingApproval, ToolCallRecord } from "./client.ts";
+import type { ToolCallRecord } from "./client.ts";
 import { executeToolCallDecision, toolCallDecisionFeedback, useToolCallDecision } from "./tool_call_decision.ts";
 
-function pendingApproval(overrides: Partial<PendingApproval> = {}): PendingApproval {
+function pendingApproval(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
   return {
     tool_call_id: "tc_1",
     server_id: "grocy-sf",
@@ -14,7 +14,11 @@ function pendingApproval(overrides: Partial<PendingApproval> = {}): PendingAppro
     caller: { kind: "operator" },
     rationale: "already in stock",
     arguments: { ids: [1, 2, 3] },
+    status: "pending_approval",
     created_at: "2026-07-07T10:00:00Z",
+    updated_at: "2026-07-07T10:00:00Z",
+    result: null,
+    error: null,
     ...overrides,
   };
 }

@@ -1328,8 +1328,7 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
     ).json()
     assert body["status"] == "pending_approval"
     assert body["result"] is None
-    assert pending["approvals"][0]["tool_call_id"] == body["tool_call_id"]
-    assert pending["approvals"][0]["title"] is None
+    assert pending["approvals"] == [body]
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 

@@ -116,20 +116,8 @@ class ToolCapabilitiesResponse(BaseModel):
     servers: list[ServerMetadata] = Field(default_factory=list)
 
 
-class PendingApproval(BaseModel):
-    tool_call_id: str
-    server_id: str
-    title: str | None = None
-    tool_name: str
-    caller: ToolCallCaller
-    rationale: str
-    arguments: dict[str, Any]
-    created_at: datetime.datetime
-    auto_approval_evaluation: str | None = None
-
-
 class PendingApprovalsResponse(BaseModel):
-    approvals: list[PendingApproval] = Field(default_factory=list)
+    approvals: list[ToolCallRecord] = Field(default_factory=list)
 
 
 class ToolCallListResponse(BaseModel):
@@ -621,20 +609,6 @@ def _mcp_error_message(result: mcp_types.CallToolResult) -> str:
     return "\n".join(text_blocks) or "MCP tool returned isError=true"
 
 
-def _pending_approval_from_record(record: ToolCallRecord) -> PendingApproval:
-    return PendingApproval(
-        tool_call_id=record.tool_call_id,
-        server_id=record.server_id,
-        title=record.title,
-        tool_name=record.tool_name,
-        caller=record.caller,
-        rationale=record.rationale,
-        arguments=record.arguments,
-        created_at=record.created_at,
-        auto_approval_evaluation=record.auto_approval_evaluation,
-    )
-
-
 async def _execution_auth(
     server: McpServerEntry, operator_id: UUID, oauth_store: PostgresMcpOperatorOAuthStore
 ) -> str | None:
@@ -744,9 +718,7 @@ async def get_tool_call(tool_call_id: str, service: ToolCallServiceDep, actor: O
 
 @router.get("/api/approvals/pending")
 async def pending_approvals(service: ToolCallServiceDep, actor: OperatorActorDep) -> PendingApprovalsResponse:
-    return PendingApprovalsResponse(
-        approvals=[_pending_approval_from_record(record) for record in service.pending_approvals(actor=actor)]
-    )
+    return PendingApprovalsResponse(approvals=service.pending_approvals(actor=actor))
 
 
 @router.get("/api/approvals/events")

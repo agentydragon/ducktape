@@ -16,7 +16,7 @@ import {
   type ScreenshotApproval,
   terminalStatusLabel,
 } from "./approval_state.ts";
-import type { PendingApproval } from "./client.ts";
+import type { ToolCallRecord } from "./client.ts";
 import { CodeBlock } from "./code_block.tsx";
 import { Field } from "./field.tsx";
 import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
@@ -32,13 +32,13 @@ export interface ShellChromeProps {
   // force it open.
   approvalsOpen: boolean;
   onApprovalsOpenChange: (open: boolean) => void;
-  pendingApprovals: PendingApproval[];
+  pendingApprovals: ToolCallRecord[];
   geolocationApprovals: GeolocationApproval[];
   screenshotApprovals: ScreenshotApproval[];
   decidingApprovalIds: readonly string[];
   recentToolCalls: RecentToolCall[];
-  onApproveTool: (approval: PendingApproval) => void;
-  onDenyTool: (approval: PendingApproval, reason?: string) => void;
+  onApproveTool: (approval: ToolCallRecord) => void;
+  onDenyTool: (approval: ToolCallRecord, reason?: string) => void;
   onApproveGeolocation: (approval: GeolocationApproval) => void;
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onApproveScreenshot: (approval: ScreenshotApproval) => void;
@@ -190,7 +190,7 @@ function ToolApprovalCard({
   onApprove,
   onDeny,
 }: {
-  approval: PendingApproval;
+  approval: ToolCallRecord;
   deciding: boolean;
   onApprove: () => void;
   onDeny: (reason?: string) => void;

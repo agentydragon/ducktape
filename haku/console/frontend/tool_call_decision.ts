@@ -1,12 +1,10 @@
 import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, terminalStatusLabel } from "./approval_state.ts";
-import { approveToolCall, denyToolCall, type PendingApproval, type ToolCallRecord } from "./client.ts";
+import { approveToolCall, denyToolCall, type ToolCallRecord } from "./client.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
 type ToolCallDecision = "approve" | "deny";
-type ToolCall = PendingApproval | ToolCallRecord;
-
 export interface ToolCallDecisionDependencies {
   approve: typeof approveToolCall;
   deny: typeof denyToolCall;
@@ -38,7 +36,7 @@ export function toolCallDecisionFeedback(
 }
 
 export async function executeToolCallDecision(
-  call: ToolCall,
+  call: ToolCallRecord,
   decision: ToolCallDecision,
   reason?: string,
   dependencies: ToolCallDecisionDependencies = DEFAULT_DEPENDENCIES
@@ -62,7 +60,7 @@ export function useToolCallDecision({ dependencies, onSuccess, onSettled }: Tool
   const [decidingToolCallIds, setDecidingToolCallIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const decide = useCallback(
-    async (call: ToolCall, decision: ToolCallDecision, reason?: string) => {
+    async (call: ToolCallRecord, decision: ToolCallDecision, reason?: string) => {
       setDecidingToolCallIds((ids) => new Set(ids).add(call.tool_call_id));
       try {
         const record = await executeToolCallDecision(call, decision, reason, dependencies);
@@ -82,7 +80,7 @@ export function useToolCallDecision({ dependencies, onSuccess, onSettled }: Tool
   return {
     decidingToolCallIds,
     isDeciding: (toolCallId: string) => decidingToolCallIds.has(toolCallId),
-    approve: (call: ToolCall) => decide(call, "approve"),
-    deny: (call: ToolCall, reason?: string) => decide(call, "deny", reason),
+    approve: (call: ToolCallRecord) => decide(call, "approve"),
+    deny: (call: ToolCallRecord, reason?: string) => decide(call, "deny", reason),
   };
 }

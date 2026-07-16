@@ -1,6 +1,6 @@
 import type { GeolocationOptions } from "@haku/console-bridge/protocol";
 
-import type { PendingApproval, ToolCallRecord } from "./client.ts";
+import type { ToolCallRecord } from "./client.ts";
 
 export interface GeolocationApproval {
   id: string;
@@ -20,7 +20,7 @@ interface ApprovalQueueItemBase {
 }
 
 export type ApprovalQueueItem =
-  | (ApprovalQueueItemBase & { kind: "tool"; approval: PendingApproval })
+  | (ApprovalQueueItemBase & { kind: "tool"; approval: ToolCallRecord })
   | (ApprovalQueueItemBase & { kind: "geolocation"; approval: GeolocationApproval })
   | (ApprovalQueueItemBase & { kind: "screenshot"; approval: ScreenshotApproval });
 
@@ -72,7 +72,7 @@ export function screenshotApprovalQueueId(id: string): string {
 }
 
 export function approvalQueueItems(
-  toolApprovals: readonly PendingApproval[],
+  toolApprovals: readonly ToolCallRecord[],
   geolocationApprovals: readonly GeolocationApproval[],
   screenshotApprovals: readonly ScreenshotApproval[]
 ): ApprovalQueueItem[] {
@@ -104,7 +104,7 @@ export function approvalQueueItems(
   ].sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt));
 }
 
-export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord): ApprovalDisplayFields {
+export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplayFields {
   const args = approval.arguments ?? {};
   const toolName = approval.tool_name ?? "unknown tool";
   return {
@@ -117,9 +117,9 @@ export function approvalDisplayFields(approval: PendingApproval | ToolCallRecord
     callerDisplayName: approval.caller.kind === "agent" ? approval.caller.display_name : "Operator",
     callerAgentId: approval.caller.kind === "agent" ? approval.caller.agent_id : null,
     createdAt: approval.created_at ?? null,
-    denialReason: "denial_reason" in approval ? (approval.denial_reason ?? null) : null,
-    approvalPolicyId: "approval_policy_id" in approval ? (approval.approval_policy_id ?? null) : null,
-    autoApprovalEvaluation: "auto_approval_evaluation" in approval ? (approval.auto_approval_evaluation ?? null) : null,
+    denialReason: approval.denial_reason ?? null,
+    approvalPolicyId: approval.approval_policy_id ?? null,
+    autoApprovalEvaluation: approval.auto_approval_evaluation ?? null,
   };
 }
 
