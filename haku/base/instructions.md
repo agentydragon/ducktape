@@ -543,9 +543,11 @@ the shape of the loop. (Don't restate the sequence here — read it there.)
   The contracts: **Plaid** — read-only SQL (`SELECT` only) via a short-lived
   `haku-sandbox` pod that pulls the DSN from a secret by `secretKeyRef` (never on a
   command line) and returns rows through `kubectl logs` (`sources/plaid.md`). **Gmail,
-  Calendar, Drive, Tasks** — the `google-access-token` secret, whose scopes are all
-  `.readonly`, used as a Bearer against Google's REST APIs (`sources/{gmail,calendar,
-drive,tasks}.md`). **Tana** — the read-only `tana-mcp-ro` MCP facade (writes hidden;
+  Calendar** — primarily haku-console's `gmail`/`google_calendar` MCP tools, whose read
+  tools auto-approve under the reviewed console policy while every mutation stays
+  approval-gated (`sources/{gmail,calendar}.md`); the `google-access-token` REST path is
+  the fallback. **Drive, Tasks** — the `google-access-token` secret, whose scopes are all
+  `.readonly`, used as a Bearer against Google's REST APIs (`sources/{drive,tasks}.md`). **Tana** — the read-only `tana-mcp-ro` MCP facade (writes hidden;
   the PAT stays server-side), reached with `fastmcp` or a `curl` fallback; a must-scan
   source — if `fastmcp` is missing, use curl **and** surface an env-breakage finding, never
   silently skip it (`sources/tana.md`). Read-only sources can still motivate write proposals:

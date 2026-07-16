@@ -20,9 +20,12 @@ grows its own techniques and records them in its state `memory/`.
 ## Sources
 
 - [`gmail`](gmail.md), [`calendar`](calendar.md),
-  [`drive`](drive.md), [`tasks`](tasks.md) — the Google surface, all on **one
-  read-only token**. Fetch it once and reuse as `$TOK` (its scopes are all
-  `.readonly`, so a write fails even if attempted):
+  [`drive`](drive.md), [`tasks`](tasks.md) — the Google surface. **Gmail and Calendar
+  reads go primarily through haku-console's `gmail`/`google_calendar` MCP tools**
+  (console-owned Google OAuth, auto-approved reads — see each guide; independent of the
+  `google-access-token` secret). Drive and Tasks have no console tools yet and stay on the
+  **one read-only token**, which also remains the Gmail/Calendar fallback. Fetch it once and
+  reuse as `$TOK` (its scopes are all `.readonly`, so a write fails even if attempted):
   `TOK=$(kubectl -n haku-sandbox get secret google-access-token -o jsonpath='{.data.access_token}' | base64 -d)`,
   then call the REST APIs with `Authorization: Bearer $TOK` (curl goes through the
   egress proxy transparently). Other Google products work the same way when the token
