@@ -793,9 +793,10 @@ it is trivially avoidable.`seatphysical`→`Seatgame`(valid; also passes logind'
    rejected field is not yet proven. **Added `SYSTEMD_LOG_LEVEL=debug` on
    `systemd-logind`** so the next boot logs which field logind refuses. This is the
    make-or-break datum: if it is a fixable PAM/tty detail or an SDDM version bug we
-   fix in place; if SDDM 0.21's non-seat0 greeter path is fundamentally incompatible
-   with systemd-258 varlink logind, fall back to **GDM + a separate user for
-   seatphysical** (see the constraints + fallback ladder in "Next steps" below).
+   fix in place. There is **no clean fallback** — GDM is out (see the constraints +
+   DM landscape in "Next steps" below); if SDDM 0.21's non-seat0 greeter path is
+   fundamentally incompatible with systemd-258 varlink logind, the only options left
+   are LightDM or a bespoke `cage` + `gtkgreet` per-seat greeter.
 
 ### Root cause 2 — seat0 GNOME lock: `ScreenShield` never claims its D-Bus name
 
@@ -829,30 +830,44 @@ proxmox-vms.tf`, `desk/`). Historical log entries above keep the old name.
 
 ### Constraints (user decisions, 2026-07-16)
 
-Both are hard "no"s, so the fallback ladder is narrower than the earlier entries
-in this log imply:
+Three hard "no"s — together they leave SDDM as essentially the only mainstream
+path, with no clean fallback:
 
 - **No autologin on seatphysical** — it must be a real login gate.
-- **No patching GDM / gnome-shell** — so the GDM `_findConflictingSession` patch
-  (proposed in the 2026-07-11 entries) is off the table.
+- **No patching GDM / gnome-shell** — the GDM `_findConflictingSession` patch
+  (2026-07-11 entries) is off the table.
+- **No separate user for seatphysical** — same user (agentydragon) on both seats.
 
 Goal: two working seats (seat0 GNOME on SPICE + seatphysical on the NVIDIA 5090)
 **and** a working screen lock on each.
 
-### Fallback ladder (given those constraints)
+### DM landscape under these constraints
 
-1. **Fix the SDDM greeter in place** (primary; keeps same-user, keeps the deployed
-   setup). Blocked only by the varlink `CreateSession` rejection — the reboot
-   captures the exact field.
-2. **GDM + a separate user for seatphysical** (e.g. a `physical`/`games` account,
-   Steam library on a shared path with group access). GDM's _only_ blocker was the
-   same-user conflict dialog; a different user sidesteps it **unpatched**, GDM's
-   greeter is proven to render on this NVIDIA seat, and reverting to GDM restores
-   the seat0 lock for free. Cost: a second home/account.
-   - Note: a separate user does **not** help SDDM — SDDM's blocker is the varlink
-     greeter, which is user-independent.
-3. LightDM — distant third (weak Wayland greeter on NVIDIA; its clean fit was
-   autologin, which is ruled out).
+**GDM is fully out.** Its only blocker was the same-user conflict dialog, and its
+two escapes — patch gnome-shell, or a separate user — are both vetoed. So GDM
+cannot do same-user-two-seats here at all.
+
+That leaves **SDDM as the committed path** — the only mainstream DM with
+per-logind-seat greeters and no same-user veto. Committing to it means landing
+**two** independent SDDM/GNOME-integration fixes, neither yet proven here:
+
+1. **Greeter on seatphysical** — the varlink `CreateSession` rejection (the reboot
+   captures the exact field).
+2. **seat0 GNOME lock** — `ScreenShield` never claims its D-Bus name (worked under
+   GDM, broke under SDDM; leading suspect `XDG_SESSION_ID`/session-scope
+   propagation). Note seatphysical's _own_ lock is swaylock (wlroots,
+   DM-independent), so it is not at risk — only the seat0 GNOME lock is.
+
+No clean drop-in fallback remains. If SDDM hits a wall on either fix, the only
+options left are worse, and both are fresh investigations:
+
+- **LightDM** — same per-seat architecture, no same-user veto, but a weak Wayland
+  greeter (its greeters are X11); a real (non-autologin) greeter on this NVIDIA
+  seat is untested.
+- **Bespoke per-seat greeter** — a custom unit running `cage` (wlroots kiosk) +
+  `gtkgreet` with a PAM login on seatphysical. Satisfies every constraint but is
+  the most hand-rolled (custom unit + PAM stack) — essentially a mini-DM for the
+  seat.
 
 ### Reboot procedure
 
