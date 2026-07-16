@@ -124,7 +124,7 @@ process-local store or Valkey.
 
 ### Canonical Agent authority and enrollment
 
-Alembic revision `0009` is the single forward-only database baseline. It directly installs one
+Alembic revision `0010` is the single forward-only database baseline. It directly installs one
 Postgres graph shared by interactive OAuth and configured static Agents:
 
 ```text
@@ -349,9 +349,9 @@ access is Authentik's application access policy.
 
 Postgres is **required**: it backs Operator/Agent authority, the approval ledger, FastMCP state, and
 the Operator OAuth token store. The console applies its Alembic baseline once at startup (`app.main`,
-before serving) — never as a side effect of constructing a store. Baseline `0009` directly creates
+before serving) — never as a side effect of constructing a store. Baseline `0010` directly creates
 the canonical Operator/identity and Agent/name/binding/grant/tool-principal graph. Its revision ID is
-deliberately retained from the deployed migration lineage: a database already stamped `0009` is a
+deliberately retained from the deployed migration lineage: a database already stamped `0010` is a
 no-op, while a fresh database creates the same frozen schema.
 
 Non-root, dropped caps, no service-account token. Credentials: the

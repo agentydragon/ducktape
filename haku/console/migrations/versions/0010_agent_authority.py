@@ -1,10 +1,12 @@
 """Create the canonical Haku console schema.
 
-Revision ID: 0009
+Revision ID: 0010
 Revises: None
 
-Revision ``0009`` was retained when the deployed migration chain was squashed. Databases already
-stamped at 0009 therefore remain at head, while fresh databases create this frozen schema directly.
+Revision ``0010`` was retained when the deployed migration chain was squashed. Databases already
+stamped at 0010 therefore remain at head, while fresh databases create this frozen schema directly.
+The deployed ``haku_0009_*`` function and trigger names remain unchanged so fresh and existing
+databases have the same physical schema.
 """
 
 from __future__ import annotations
@@ -15,13 +17,12 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB, UUID
 
-revision: str = "0009"
+revision: str = "0010"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _TOOL_CALL_STATUS_VALUES = ("pending_approval", "running", "ok", "error", "denied")
-_TOOL_CALL_EVENT_TYPE_VALUES = ("tool_call_submitted", "approval_pending", "tool_call_updated")
 _OPERATOR_STATUSES = ("active", "disabled")
 _CLIENT_REGISTRATION_KINDS = ("oauth_proxy_unclassified", "dcr", "cimd", "preregistered")
 _ENROLLMENT_PHASES = (
@@ -41,10 +42,6 @@ _CREDENTIAL_BINDING_STATUSES = ("issuing", "issued", "active", "revoked", "expir
 
 def _tool_call_status_enum(*, create_type: bool = False) -> ENUM:
     return ENUM(*_TOOL_CALL_STATUS_VALUES, name="tool_call_status", create_type=create_type)
-
-
-def _tool_call_event_type_enum(*, create_type: bool = False) -> ENUM:
-    return ENUM(*_TOOL_CALL_EVENT_TYPE_VALUES, name="tool_call_event_type", create_type=create_type)
 
 
 def _operator_status_enum(*, create_type: bool = False) -> ENUM:
@@ -118,7 +115,7 @@ def _create_core_tables() -> None:
     )
     op.create_index("idx_oidc_identities_anchor_id", "oidc_identities", ["anchor_id"])
 
-    # Column order matches the deployed 0009 catalog after the old chain's additive changes and
+    # Column order matches the deployed catalog after the old chain's additive changes and
     # cutovers. Keeping it stable makes schema dumps useful for exact baseline verification.
     op.create_table(
         "mcp_operator_oauth_associations",
@@ -192,20 +189,6 @@ def _create_core_tables() -> None:
         sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("idx_mcp_tool_calls_created_at", "mcp_tool_calls", ["created_at"])
-    op.create_table(
-        "mcp_tool_call_events",
-        sa.Column("event_id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("event_type", _tool_call_event_type_enum(), nullable=False),
-        sa.Column("tool_call_id", sa.Text(), nullable=False),
-        sa.Column("status", _tool_call_status_enum(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["tool_call_id"], ["mcp_tool_calls.tool_call_id"], name="fk_mcp_tool_call_events_call", ondelete="CASCADE"
-        ),
-    )
-    op.create_index(
-        "idx_mcp_tool_call_events_tool_call_id_event_id", "mcp_tool_call_events", ["tool_call_id", "event_id"]
-    )
 
 
 def _create_authority_tables() -> None:
@@ -1951,7 +1934,6 @@ def _create_deferred_graph_invariants() -> None:
 def upgrade() -> None:
     bind = op.get_bind()
     _tool_call_status_enum(create_type=True).create(bind, checkfirst=True)
-    _tool_call_event_type_enum(create_type=True).create(bind, checkfirst=True)
     _operator_status_enum(create_type=True).create(bind, checkfirst=True)
     _client_registration_kind(create_type=True).create(bind, checkfirst=True)
     _enrollment_phase(create_type=True).create(bind, checkfirst=True)
@@ -1967,4 +1949,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("0009 is the forward-only Haku console baseline")
+    raise RuntimeError("0010 is the forward-only Haku console baseline")

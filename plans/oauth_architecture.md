@@ -72,12 +72,12 @@ Acceptance:
 ### C1: simplify the authority schema after Connected Agents
 
 The deployed graph is safe but implements too much of its state machine twice: once in the
-transactional authority and again through 33 PostgreSQL functions in migration `0009`. Simplify the
-entities after H1 establishes the Connected Agents read contract and shows which joins are genuine
-friction, but before H3 lifecycle mutations make the current graph a product dependency. Then
-delete triggers made unnecessary by the smaller graph. Retain ordinary `NOT NULL`/`CHECK`/unique/FK
-constraints, the one-active-binding index, same-Agent predecessor integrity, and genuinely
-cross-row security rules.
+transactional authority and again through 33 `haku_0009_*` PostgreSQL functions retained in the
+deployed `0010` baseline. Simplify the entities after H1 establishes the Connected Agents read
+contract and shows which joins are genuine friction, but before H3 lifecycle mutations make the
+current graph a product dependency. Then delete triggers made unnecessary by the smaller graph.
+Retain ordinary `NOT NULL`/`CHECK`/unique/FK constraints, the one-active-binding index, same-Agent
+predecessor integrity, and genuinely cross-row security rules.
 
 Recommended terminal shape:
 
