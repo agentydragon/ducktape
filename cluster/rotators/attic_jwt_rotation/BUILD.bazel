@@ -68,12 +68,12 @@ oci_image(
     entrypoint = py_image_entrypoint("rotate_bin"),
     env = py_image_env(binary_name = "rotate_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # @trixie_attic_rotation provides git; cacerts_trixie the CA bundle that libgit2 is
+    # @trixie_attic_rotation provides git; cacerts the CA bundle that libgit2 is
     # pointed at (set_ssl_cert_locations in rotate.py); sops_layer the sops binary;
     # kubectl_layer the kubectl binary; layers the Python app + interpreter.
     tars = [
         "@trixie_attic_rotation//:flat",
-        "//third_party/debian_slim:cacerts_trixie",
+        "//third_party/debian_slim:cacerts",
         ":sops_layer",
         ":kubectl_layer",
         "//devinfra:node_bin_layer",

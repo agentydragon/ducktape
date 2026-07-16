@@ -758,7 +758,7 @@ py_test(
 )
 
 # ── OCI image (the haku-console service) ──────────────────────────────────────
-# CA bundle (//third_party/debian_slim:cacerts_trixie): system trust store on the bare
+# CA bundle (//third_party/debian_slim:cacerts): system trust store on the bare
 # slim base for the capability tier's outbound HTTPS call to the Anthropic fire URL
 # (api.anthropic.com).
 
@@ -809,7 +809,7 @@ oci_image(
     },
     tars = [
         ":server_layers",
-        "//third_party/debian_slim:cacerts_trixie",
+        "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],

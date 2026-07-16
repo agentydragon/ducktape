@@ -264,7 +264,7 @@ def rotate_cmd(
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
 
     # The image bakes /etc/ssl/certs/ca-certificates.crt via
-    # //third_party/debian_slim:cacerts_trixie; point libgit2 at it (it ignores
+    # //third_party/debian_slim:cacerts; point libgit2 at it (it ignores
     # GIT_SSL_CAINFO/SSL_CERT_FILE).
     _configure_ca_trust(Path("/etc/ssl/certs/ca-certificates.crt"))
 

@@ -35,7 +35,7 @@ py_binary(
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
-# CA bundle (//third_party/debian_slim:cacerts_trixie): pygit2's Settings() eagerly
+# CA bundle (//third_party/debian_slim:cacerts): pygit2's Settings() eagerly
 # loads libgit2's OpenSSL cert locations at *import* time, so `import pygit2` raises
 # GitError on the bare slim base before the scraper does anything. The upstream HTTPS
 # GETs still use certifi via httpx (see http_fetch).
@@ -63,7 +63,7 @@ oci_image(
     },
     tars = [
         ":layers",
-        "//third_party/debian_slim:cacerts_trixie",
+        "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
 )

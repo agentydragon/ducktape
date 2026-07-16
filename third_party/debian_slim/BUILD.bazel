@@ -14,17 +14,12 @@ oci_load(
 # distroless images. rules_distroless apt unpacks the ca-certificates deb but never runs
 # update-ca-certificates, so its :flat layer ships only loose certs under
 # /usr/share/ca-certificates and no bundle a system-trust client (C git/curl, libgit2)
-# can read. Add the matching layer to an oci_image's `tars` and set
+# can read. The bundle is release-independent PEM, so this one target serves both
+# bookworm- and trixie-based images. Add it to an oci_image's `tars` and set
 # SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt.
 # Usage guidance: STYLE.md § "System CA certificates in distroless images".
 cacerts(
-    name = "cacerts_bookworm",
-    package = "@ca_certificates_deb_bookworm//:data.tar.xz",
-    visibility = ["//visibility:public"],
-)
-
-cacerts(
-    name = "cacerts_trixie",
-    package = "@ca_certificates_deb_trixie//:data.tar.xz",
+    name = "cacerts",
+    package = "@ca_certificates_deb//:data.tar.xz",
     visibility = ["//visibility:public"],
 )

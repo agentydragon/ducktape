@@ -182,12 +182,13 @@ system-trust TLS client then fails to verify. The single repo-level fix is the s
 `cacerts` layer — never re-assemble a bundle at runtime, and never rely on the apt layer
 alone.
 
-Add the release-matched layer to the `oci_image` `tars`:
+Add the shared layer to the `oci_image` `tars` (one target for both bookworm- and
+trixie-based images — the bundle is release-independent PEM):
 
 ```python
 tars = [
     "@my_apt//:flat",
-    "//third_party/debian_slim:cacerts_bookworm",  # or :cacerts_trixie
+    "//third_party/debian_slim:cacerts",
     ":layers",
 ],
 ```

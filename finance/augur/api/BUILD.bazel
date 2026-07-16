@@ -398,7 +398,7 @@ oci_image(
     tars = [
         ":server_image_layers",
         "//finance/augur/fit/calibrated:trained_vecm_image_layer",
-        "//third_party/debian_slim:cacerts_trixie",
+        "//third_party/debian_slim:cacerts",
     ],
 )
 

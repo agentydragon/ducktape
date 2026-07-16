@@ -640,21 +640,14 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-# ca-certificates debs feeding //third_party/debian_slim:cacerts_{bookworm,trixie} —
-# the single repo-level source of a generated /etc/ssl/certs/ca-certificates.crt bundle
-# for distroless images (rules_distroless apt unpacks the deb but never runs
-# update-ca-certificates, so its :flat layer has no usable bundle). See that BUILD file
-# and STYLE.md § "System CA certificates in distroless images".
+# ca-certificates deb feeding //third_party/debian_slim:cacerts — the single repo-level
+# source of a generated /etc/ssl/certs/ca-certificates.crt bundle for distroless images
+# (rules_distroless apt unpacks the deb but never runs update-ca-certificates, so its
+# :flat layer has no usable bundle). The bundle is a release-independent PEM file, so one
+# deb (the newest, from trixie) serves both bookworm- and trixie-based images. See that
+# BUILD file and STYLE.md § "System CA certificates in distroless images".
 http_archive(
-    name = "ca_certificates_deb_bookworm",
-    build_file_content = 'exports_files(["data.tar.xz"])',
-    sha256 = "0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed",
-    type = "deb",
-    urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20230311+deb12u1_all.deb"],
-)
-
-http_archive(
-    name = "ca_certificates_deb_trixie",
+    name = "ca_certificates_deb",
     build_file_content = 'exports_files(["data.tar.xz"])',
     sha256 = "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184",
     type = "deb",
