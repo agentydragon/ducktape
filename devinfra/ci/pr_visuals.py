@@ -13,7 +13,7 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 import boto3
 from botocore.exceptions import ClientError
@@ -85,11 +85,12 @@ class S3BaselineSource:
 
     def fetch(self, key: str) -> bytes | None:
         try:
-            return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+            body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
         except ClientError as error:
             if _is_not_found(error):
                 return None
             raise
+        return cast(bytes, body)
 
 
 def _baseline_key(base_sha: str, slug: str, *parts: str) -> str:
