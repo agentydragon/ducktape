@@ -40,11 +40,9 @@ async function operatorMcpClient(): Promise<Client> {
 /** Invoke a proxied tool through the browser session on the console's canonical `/mcp` endpoint.
  * The server recognizes this as an Operator call, executes directly, and creates no approval row. */
 export async function callOperatorMcpTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  let result: unknown;
   try {
-    const result = await (await operatorMcpClient()).callTool({ name, arguments: args });
-    const error = mcpToolError(result);
-    if (error !== null) throw new Error(error);
-    return unwrapMcpToolResult(result);
+    result = await (await operatorMcpClient()).callTool({ name, arguments: args });
   } catch (error) {
     connectedClient = null;
     // Confirm whether the browser session expired. The shared OpenAPI response hook performs the
@@ -57,4 +55,7 @@ export async function callOperatorMcpTool(name: string, args: Record<string, unk
     }
     throw error;
   }
+  const error = mcpToolError(result);
+  if (error !== null) throw new Error(error);
+  return unwrapMcpToolResult(result);
 }
