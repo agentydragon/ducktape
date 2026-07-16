@@ -1,13 +1,13 @@
 # Disposable agent workspace: the agent-box workflow (a machine you go to,
 # creds wired, Claude CLI installed) minus the persistence. Reuses the haku
 # zone worker image (Claude Code + Codex CLIs, no baked credentials) and the
-# zone Job's pod hardening; unlike the zones this runs in claude-sandbox —
-# trusted personal use, open egress, quota-capped by the namespace.
+# zone Job's pod hardening; unlike the zones this is trusted personal use —
+# open egress, quota-capped by the agent-workspaces namespace.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
   name: workspace
-  namespace: claude-sandbox
+  namespace: agent-workspaces
 spec:
   podTemplate:
     metadata:
@@ -42,7 +42,7 @@ spec:
             - name: ANTHROPIC_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: zai-api-key # mirrored by agents/claude-zai-key/
+                  name: zai-api-key # mirrored by ../secrets/
                   key: ZAI_API_KEY
           resources:
             requests:

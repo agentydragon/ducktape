@@ -1,0 +1,18 @@
+# Sized for ~a dozen concurrent workspaces (each requests 500m/1Gi + a 10Gi
+# PVC per the workspace SandboxTemplate) plus warm-pool idle capacity.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: agent-workspaces-quota
+  namespace: agent-workspaces
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    pods: "12"
+    services: "12"
+    configmaps: "20"
+    persistentvolumeclaims: "15"
+    requests.storage: 150Gi

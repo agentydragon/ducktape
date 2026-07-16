@@ -1,7 +1,7 @@
 # agent-sandbox — disposable agent workspaces
 
 [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-controller plus a `workspace` template in `claude-sandbox`: click-a-command
+controller plus a `workspace` template in `agent-workspaces`: click-a-command
 disposable dev workspaces for agents — the agent-box workflow (a machine you go
 to, creds already wired, Claude CLI installed) minus the persistence.
 
@@ -23,24 +23,27 @@ to, creds already wired, Claude CLI installed) minus the persistence.
     after v0.5.1 ships a sandbox-with-extensions.yaml asset for GitOps engines);
     drop the GitRepository + HelmRelease then. -->
 
-- `workspaces/` — the `workspace` `SandboxTemplate` + warm pool in
-  `claude-sandbox`, plus a janitor `CleanupPolicy` for leaked sandboxes.
+- `workspaces/{namespace,secrets,app}/` — the dedicated `agent-workspaces`
+  namespace (own ResourceQuota/LimitRange), the ESO-mirrored z.ai key, and the
+  `workspace` `SandboxTemplate` + warm pool + janitor `CleanupPolicy`.
+  Deliberately **not** `claude-sandbox` — that namespace is Claude's own
+  disposable in-cluster scratch space, and hosting workspaces there would mix
+  tenants and quotas.
 
 ## Operating a workspace
 
 One object drives everything: a `SandboxClaim` named after your task. The claim
 adopts a pre-warmed `Sandbox` from the pool; claim name == sandbox name == pod
 name, so every `kubectl` command below uses the same handle. All commands
-assume `-n claude-sandbox`. The sandbox CRs are operator-only by design: the
-agent group's `role-sandbox` deliberately has no grant on them, so stamping and
-disposing workspaces takes your admin kubeconfig or Headlamp — agents operate
-on the resulting pod (exec/logs) like any other, and the workspace pods
-themselves mount no ServiceAccount token at all.
+assume `-n agent-workspaces`. The namespace is operator-only by design: no
+agent group has any RBAC in it, so stamping and disposing workspaces takes
+your admin kubeconfig or Headlamp, and the workspace pods themselves mount no
+ServiceAccount token at all.
 
 ### Create
 
 ```bash
-kubectl -n claude-sandbox apply -f - <<EOF
+kubectl -n agent-workspaces apply -f - <<EOF
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxClaim
 metadata:
@@ -60,15 +63,15 @@ deadline means the workspace lives until the 7-day janitor gets it.
 ### Inspect
 
 ```bash
-kubectl -n claude-sandbox get sandboxclaims,sandboxes,pods   # what exists
-kubectl -n claude-sandbox get sandbox ws-mytask -o yaml      # conditions (Ready/Suspended/Finished), nodeName, podIPs
-kubectl -n claude-sandbox describe sandboxwarmpool workspace # pool readiness (readyReplicas)
+kubectl -n agent-workspaces get sandboxclaims,sandboxes,pods   # what exists
+kubectl -n agent-workspaces get sandbox ws-mytask -o yaml      # conditions (Ready/Suspended/Finished), nodeName, podIPs
+kubectl -n agent-workspaces describe sandboxwarmpool workspace # pool readiness (readyReplicas)
 ```
 
 ### Work in it
 
 ```bash
-kubectl -n claude-sandbox exec -it ws-mytask -c workspace -- bash
+kubectl -n agent-workspaces exec -it ws-mytask -c workspace -- bash
 ```
 
 Inside: `/workspace` is the PVC (survives pod restarts and suspend/resume),
@@ -77,9 +80,9 @@ are already set (z.ai GLM), so `git clone ... && claude` just works. Moving
 files and reaching ports:
 
 ```bash
-kubectl -n claude-sandbox cp ./notes.md ws-mytask:/workspace/ -c workspace
-kubectl -n claude-sandbox cp ws-mytask:/workspace/out.tar.gz ./out.tar.gz -c workspace
-kubectl -n claude-sandbox port-forward pod/ws-mytask 8888:8888   # dev server in the workspace
+kubectl -n agent-workspaces cp ./notes.md ws-mytask:/workspace/ -c workspace
+kubectl -n agent-workspaces cp ws-mytask:/workspace/out.tar.gz ./out.tar.gz -c workspace
+kubectl -n agent-workspaces port-forward pod/ws-mytask 8888:8888   # dev server in the workspace
 ```
 
 ### Extend / pause / resume
@@ -87,24 +90,23 @@ kubectl -n claude-sandbox port-forward pod/ws-mytask 8888:8888   # dev server in
 ```bash
 # more time: push the deadline out (claim's lifecycle is authoritative;
 # verify it propagated to the Sandbox)
-kubectl -n claude-sandbox patch sandboxclaim ws-mytask --type=merge \
+kubectl -n agent-workspaces patch sandboxclaim ws-mytask --type=merge \
   -p '{"spec":{"lifecycle":{"shutdownTime":"'"$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"'"}}}'
-kubectl -n claude-sandbox get sandbox ws-mytask -o jsonpath='{.spec.shutdownTime}'
+kubectl -n agent-workspaces get sandbox ws-mytask -o jsonpath='{.spec.shutdownTime}'
 
 # pause: pod goes away, /workspace PVC stays; resume brings it back
-kubectl -n claude-sandbox patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Suspended"}}'
-kubectl -n claude-sandbox patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Running"}}'
+kubectl -n agent-workspaces patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Suspended"}}'
+kubectl -n agent-workspaces patch sandbox ws-mytask --type=merge -p '{"spec":{"operatingMode":"Running"}}'
 ```
 
 ### Dispose
 
 ```bash
-kubectl -n claude-sandbox delete sandboxclaim ws-mytask
+kubectl -n agent-workspaces delete sandboxclaim ws-mytask
 ```
 
 Or do nothing: `shutdownTime` garbage-collects it, and the `workspace-janitor`
-CleanupPolicy reaps anything older than 7 days as a backstop (same contract as
-the rest of `claude-sandbox`).
+CleanupPolicy reaps anything older than 7 days as a backstop.
 
 ### From Headlamp
 
@@ -121,9 +123,9 @@ a "new workspace" button is a candidate follow-up.
 ### Troubleshooting
 
 - **Claim stuck unclaimed**: pool exhausted or template broken —
-  `describe sandboxwarmpool workspace`, then `kubectl -n claude-sandbox get events`.
-- **Pod `Pending`**: usually the namespace ResourceQuota (8 CPU / 16Gi / 20
-  pods, shared with everything else in `claude-sandbox`) or PVC binding —
+  `describe sandboxwarmpool workspace`, then `kubectl -n agent-workspaces get events`.
+- **Pod `Pending`**: usually the namespace ResourceQuota
+  (`workspaces/namespace/resourcequota.yaml`) or PVC binding —
   `describe pod ws-mytask`.
 - **Controller-side questions**: `kubectl -n agent-sandbox-system logs deploy/agent-sandbox-controller`.
 
@@ -133,18 +135,18 @@ Standalone `Sandbox` objects (own `podTemplate`, no warm pool) also work — see
 ## Credentials
 
 Same delivery as the haku zones and codex-pod: Kubernetes Secret → env var in
-the pod spec. The template wires `ANTHROPIC_AUTH_TOKEN` from the existing
-`zai-api-key` Secret (mirrored into `claude-sandbox` by
-`../claude-zai-key/`) and points `ANTHROPIC_BASE_URL` at z.ai's Anthropic
-endpoint, so Claude Code CLI works out of the box. Additional credential
-classes follow the same pattern: mirror the Secret into `claude-sandbox` (ESO
-or sops) and reference it from the template.
+the pod spec. The template wires `ANTHROPIC_AUTH_TOKEN` from the `zai-api-key`
+Secret (ESO-mirrored into `agent-workspaces` by `workspaces/secrets/`, same
+source as `../claude-zai-key/`) and points `ANTHROPIC_BASE_URL` at z.ai's
+Anthropic endpoint, so Claude Code CLI works out of the box. Additional
+credential classes follow the same pattern: mirror the Secret into
+`agent-workspaces` (ESO or sops) and reference it from the template.
 
 ## Isolation
 
-Workspaces run as plain runc pods in `claude-sandbox` (trusted, personal-use —
-same trust level as the rest of the namespace, quota-capped by the existing
-ResourceQuota/LimitRange). No gVisor/Kata RuntimeClass exists in this cluster
+Workspaces run as plain runc pods in `agent-workspaces` (trusted, personal-use;
+quota-capped by the namespace ResourceQuota/LimitRange, no agent RBAC, no
+ServiceAccount tokens). No gVisor/Kata RuntimeClass exists in this cluster
 yet; when the gVisor Talos system extension lands, add
 `runtimeClassName: gvisor` to the template — the CRDs are designed for exactly
 that. Untrusted workloads stay in the haku zones perimeter until then.

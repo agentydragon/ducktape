@@ -1,6 +1,6 @@
 # Aggregates into the kyverno cleanup controller alongside
 # clusterrole-cleanup-controller-{jobs,workloads}.yaml. Consumer: the
-# workspace-janitor CleanupPolicy (agents/agent-sandbox/workspaces/) — kyverno
+# workspace-janitor CleanupPolicy (agents/agent-sandbox/workspaces/app/) — kyverno
 # rejects a CleanupPolicy at admission unless the controller can delete every
 # kind it matches.
 apiVersion: rbac.authorization.k8s.io/v1
