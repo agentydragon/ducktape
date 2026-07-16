@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
 MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
@@ -35,12 +35,6 @@ class ToolCallStatus(StrEnum):
     OK = "ok"
     ERROR = "error"
     DENIED = "denied"
-
-
-class ToolCallEventType(StrEnum):
-    TOOL_CALL_SUBMITTED = "tool_call_submitted"
-    APPROVAL_PENDING = "approval_pending"
-    TOOL_CALL_UPDATED = "tool_call_updated"
 
 
 class ApprovalDecision(StrEnum):
@@ -92,13 +86,3 @@ class ToolCallRecord(BaseModel):
     approval_policy_id: str | None = None
     auto_approval_evaluation: str | None = None
     approved_at: datetime.datetime | None = None
-
-
-class ToolCallEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    event_id: int
-    event_type: ToolCallEventType
-    tool_call_id: str
-    status: ToolCallStatus
-    created_at: datetime.datetime

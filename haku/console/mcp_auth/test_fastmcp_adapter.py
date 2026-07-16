@@ -21,7 +21,6 @@ from starlette.exceptions import HTTPException
 from starlette.requests import HTTPConnection
 
 from haku.console.mcp_auth.fastmcp_adapter import (
-    AgentActorAuthorityUnavailableError,
     AgentActorResolutionUnavailableError,
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
@@ -41,7 +40,6 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     StaticAgentActorResolver,
     TokenFamilyEvidence,
     assert_fastmcp_adapter_compatibility,
-    current_grant_request_context,
     get_tool_call_actor,
     observe_bearer_operational_failure,
 )
@@ -467,11 +465,13 @@ async def test_access_load_resolves_grant_before_and_after_fastmcp_validation() 
     authority = _authority()
     proxy = _bare_proxy(authority=authority)
     _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
-    seen_contexts: list[object] = []
 
-    async def fastmcp_load(self: object, token: str) -> AccessToken:
+    async def fastmcp_load(self: HakuAgentOAuthProxy, token: str) -> AccessToken:
         assert token == "local-access"
-        seen_contexts.append(current_grant_request_context())
+        assert self._translate_scopes_from_idp(["read"]) == ["read"]
+        with pytest.raises(TokenError) as exc_info:
+            self._translate_scopes_from_idp(["write"])
+        assert exc_info.value.error == "invalid_scope"
         return AccessToken(
             token="upstream-access",
             client_id="upstream-oidc-client",
@@ -485,10 +485,9 @@ async def test_access_load_resolves_grant_before_and_after_fastmcp_validation() 
 
     assert access is not None
     assert access.client_id == CLIENT_ID
-    assert len(seen_contexts) == 1
-    current = seen_contexts[0]
-    assert cast(Any, current).authorization.actor.binding_id == BINDING_ID
-    assert current_grant_request_context() is None
+    # The FastMCP bridge is request-local rather than leaking its grant into a
+    # later translation.
+    assert proxy._translate_scopes_from_idp(["write"]) == ["write"]
     assert authority.resolve_grant.await_count == 2
 
 
@@ -601,9 +600,11 @@ async def test_bearer_request_contexts_reset_when_fastmcp_raises() -> None:
     proxy = _bare_proxy()
     _install_token_payloads(proxy, {"local-access": _payload(jti="access-jti")})
 
-    async def fail_during_verification(self: object, token: str) -> None:
-        _ = self, token
-        assert current_grant_request_context() is not None
+    async def fail_during_verification(self: HakuAgentOAuthProxy, token: str) -> None:
+        _ = token
+        with pytest.raises(TokenError) as exc_info:
+            self._translate_scopes_from_idp(["write"])
+        assert exc_info.value.error == "invalid_scope"
         raise RuntimeError("FastMCP verification failed")
 
     with (
@@ -612,7 +613,7 @@ async def test_bearer_request_contexts_reset_when_fastmcp_raises() -> None:
     ):
         await proxy.load_access_token("local-access")
 
-    assert current_grant_request_context() is None
+    assert proxy._translate_scopes_from_idp(["write"]) == ["write"]
     observe_bearer_operational_failure(RuntimeError("outside any bearer request"))
     with patch.object(RetryableRefreshOIDCProxy, "load_access_token", new=AsyncMock(return_value=None)):
         assert await proxy.load_access_token("local-access") is None
@@ -944,7 +945,7 @@ async def test_unrecognized_static_tool_credential_fails_before_dispatch() -> No
 async def test_static_actor_authority_outage_is_typed_and_retryable() -> None:
     authority = _authority()
     static_actor_resolver = SimpleNamespace(
-        resolve_static_actor=AsyncMock(side_effect=AgentActorAuthorityUnavailableError())
+        resolve_static_actor=AsyncMock(side_effect=AgentGrantAuthorityUnavailableError())
     )
     middleware = HakuMcpActorMiddleware(
         cast(Any, authority), static_actor_resolver=cast(StaticAgentActorResolver, static_actor_resolver)

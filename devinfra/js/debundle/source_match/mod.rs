@@ -23,6 +23,7 @@
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) use anyhow::{Context, Result, bail};
+pub(crate) use serde::Serialize;
 pub(crate) use spec::{
     AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchClaim,
     SourceMatchIdentifierMode,

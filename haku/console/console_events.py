@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from haku.console import operator_auth
 from haku.console.config import Settings
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_calls import ToolCallEvent
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["console-events"])
@@ -37,7 +36,14 @@ class ConsoleHelloEvent(BaseModel):
     event_type: Literal["hello"] = "hello"
 
 
-type ConsoleEvent = ToolCallEvent | McpOperatorAuthChangedEvent
+class ToolCallsChangedEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: Literal["tool_calls_changed"] = "tool_calls_changed"
+    tool_call_id: str
+
+
+type ConsoleEvent = ToolCallsChangedEvent | McpOperatorAuthChangedEvent
 
 
 class _RoutedConsoleEvent(BaseModel):
@@ -166,8 +172,11 @@ class ConsoleEventHub:
             self._wake_all_tool_call_waiters()
             await self._close_connections(code=1012, reason="console event publish failed")
 
+    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
+        await self.broadcast(operator_id, [ToolCallsChangedEvent(tool_call_id=tool_call_id)])
+
     async def _deliver_locally(self, event_operator_id: UUID, event: ConsoleEvent) -> None:
-        if isinstance(event, ToolCallEvent):
+        if isinstance(event, ToolCallsChangedEvent):
             for waiter in self._tool_call_waiters.get((event_operator_id, event.tool_call_id), ()):
                 waiter.set()
         if not self._connections:

@@ -61,13 +61,7 @@ from haku.console.operator_identity import InactiveOperatorError, OperatorIdenti
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import backend_auth_for_operator
-from haku.console.tool_calls import (
-    AgentToolCallCaller,
-    OperatorToolCallCaller,
-    SubmitToolCallRequest,
-    ToolCallEventType,
-    ToolCallStatus,
-)
+from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, SubmitToolCallRequest, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
@@ -532,9 +526,9 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
         "shopping_lists_list",
         "shopping_list_get",
     }
-    assert tools["stock_add"]["status"] == "alive"
+    assert "status" not in tools["stock_add"]
     assert tools["stock_add"]["input_schema"]["type"] == "object"
-    assert tools["echo"]["status"] == "alive"
+    assert "status" not in tools["echo"]
     assert tools["echo"]["input_schema"]["type"] == "object"
     assert "bearer_token_secret" not in str(body)
 
@@ -1206,7 +1200,6 @@ def test_two_operator_two_agent_http_authorization_matrix(
             assert agents.get("/api/tool-calls", headers=headers).status_code == 401
             assert agents.get(f"/api/tool-calls/{call_ids[name]}", headers=headers).status_code == 401
             assert agents.get("/api/approvals/pending", headers=headers).status_code == 401
-            assert agents.get("/api/approvals/events", headers=headers).status_code == 401
             assert (
                 agents.post(
                     f"/api/tool-calls/{call_ids[name]}/decision", headers=headers, json={"decision": "deny"}
@@ -1224,8 +1217,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
         ):
             listed_ids = {call["tool_call_id"] for call in operator.get("/api/tool-calls").json()["tool_calls"]}
             pending_ids = {call["tool_call_id"] for call in operator.get("/api/approvals/pending").json()["approvals"]}
-            event_ids = {event["tool_call_id"] for event in operator.get("/api/approvals/events").json()["events"]}
-            assert listed_ids == pending_ids == event_ids == own_ids
+            assert listed_ids == pending_ids == own_ids
             assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 200 for call_id in own_ids)
             assert all(operator.get(f"/api/tool-calls/{call_id}").status_code == 404 for call_id in foreign_ids)
 
@@ -1309,7 +1301,6 @@ def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_
         assert operator_b.get("/api/tool-calls").json()["tool_calls"] == []
         assert operator_b.get(f"/api/tool-calls/{call_id}").status_code == 404
         assert operator_b.get("/api/approvals/pending").json()["approvals"] == []
-        assert operator_b.get("/api/approvals/events").json()["events"] == []
 
         b_csrf = csrf_token(operator_b)
         for decision in ("deny", "approve"):
@@ -1389,16 +1380,13 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         ledger._engine.dispose()
 
 
-def test_websocket_receives_pending_approval_event(operator_client: TestClient) -> None:
+def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
     with operator_client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
         assert ws.receive_json() == {"event_type": "hello"}
         submitted = _submit(operator_client)
         event = ws.receive_json()
-        events = operator_client.get("/api/approvals/events", params={"after_event_id": 0}).json()
-    assert event["event_type"] == "tool_call_submitted"
-    assert event["tool_call_id"] == submitted["tool_call_id"]
-    assert event["status"] == "pending_approval"
-    assert events["events"][0]["event_id"] == event["event_id"]
+    assert event == {"event_type": "tool_calls_changed", "tool_call_id": submitted["tool_call_id"]}
+    assert operator_client.get("/api/approvals/events").status_code == 404
 
 
 def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
@@ -1426,10 +1414,10 @@ def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
             ("a", _submit(operator_a, amount=3)["tool_call_id"]),
             ("b", _submit(operator_b, amount=4)["tool_call_id"]),
         ]
-        # Each submit publishes submitted + approval-pending. Global event ids interleave tenants;
-        # each socket must still see only its own two call ids.
-        received_a = [events_a.receive_json() for _ in range(4)]
-        received_b = [events_b.receive_json() for _ in range(4)]
+        # Each submit publishes one Operator-routed invalidation. Each socket must see only its own
+        # two call ids even when the durable writes interleave tenants.
+        received_a = [events_a.receive_json() for _ in range(2)]
+        received_b = [events_b.receive_json() for _ in range(2)]
 
     expected_a = {call_id for owner, call_id in submitted if owner == "a"}
     expected_b = {call_id for owner, call_id in submitted if owner == "b"}
@@ -1553,7 +1541,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     finally:
         engine.dispose()
 
-    assert version == "0009"
+    assert version == "0010"
     assert {
         "operators",
         "identity_anchors",
@@ -1570,9 +1558,12 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "mcp_operator_oauth_associations",
         "mcp_operator_oauth_flows",
     } <= tables
-    assert {"mcp_agent_operator", "mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(
-        tables
-    )
+    assert {
+        "mcp_agent_operator",
+        "mcp_tool_calls_legacy_unowned",
+        "mcp_tool_call_events",
+        "mcp_tool_call_events_legacy_unowned",
+    }.isdisjoint(tables)
     assert {
         "tool_call_id",
         "server_id",
@@ -1608,7 +1599,6 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
         "credential_kind": tuple(kind.value for kind in CredentialKind),
         "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
         "operator_status": tuple(status.value for status in OperatorStatus),
-        "tool_call_event_type": tuple(event_type.value for event_type in ToolCallEventType),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
     }
     assert baseline_values == current_values

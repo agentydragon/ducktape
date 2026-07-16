@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 from collections.abc import AsyncIterator
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
@@ -13,9 +12,13 @@ from fastapi import WebSocket
 from pydantic import ValidationError
 
 from haku.console import console_events
-from haku.console.console_events import ConsoleEventHub, ConsoleHelloEvent, McpOperatorAuthChangedEvent
+from haku.console.console_events import (
+    ConsoleEventHub,
+    ConsoleHelloEvent,
+    McpOperatorAuthChangedEvent,
+    ToolCallsChangedEvent,
+)
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_calls import ToolCallEvent, ToolCallEventType, ToolCallStatus
 
 OPERATOR_A = UUID("00000000-0000-0000-0000-00000000000a")
 OPERATOR_B = UUID("00000000-0000-0000-0000-00000000000b")
@@ -117,13 +120,7 @@ async def test_event_hub_routes_across_replicas_by_operator_id(migrated_db_url: 
 
 async def test_tool_call_subscription_is_scoped_and_does_not_require_a_websocket() -> None:
     hub = ConsoleEventHub("postgresql+psycopg://unused.invalid/db", operator_identity_store=_identity_store())
-    event = ToolCallEvent(
-        event_id=1,
-        event_type=ToolCallEventType.TOOL_CALL_UPDATED,
-        tool_call_id="tc_target",
-        status=ToolCallStatus.OK,
-        created_at=datetime.datetime(2026, 7, 15, tzinfo=datetime.UTC),
-    )
+    event = ToolCallsChangedEvent(tool_call_id="tc_target")
 
     async with (
         hub.subscribe(OPERATOR_A, "tc_target") as target,
@@ -141,17 +138,11 @@ async def test_tool_call_subscription_is_scoped_and_does_not_require_a_websocket
 async def test_tool_call_subscription_routes_across_replicas(migrated_db_url: str) -> None:
     publishing_hub = ConsoleEventHub(migrated_db_url, operator_identity_store=_identity_store())
     waiting_hub = ConsoleEventHub(migrated_db_url, operator_identity_store=_identity_store())
-    event = ToolCallEvent(
-        event_id=1,
-        event_type=ToolCallEventType.TOOL_CALL_UPDATED,
-        tool_call_id="tc_cross_replica",
-        status=ToolCallStatus.OK,
-        created_at=datetime.datetime(2026, 7, 15, tzinfo=datetime.UTC),
-    )
+    tool_call_id = "tc_cross_replica"
     try:
         await asyncio.gather(publishing_hub.start(), waiting_hub.start())
-        async with waiting_hub.subscribe(OPERATOR_A, event.tool_call_id) as changed:
-            await publishing_hub.broadcast(OPERATOR_A, [event])
+        async with waiting_hub.subscribe(OPERATOR_A, tool_call_id) as changed:
+            await publishing_hub.tool_call_changed(OPERATOR_A, tool_call_id)
             await asyncio.wait_for(changed.wait(), timeout=5)
     finally:
         await asyncio.gather(publishing_hub.aclose(), waiting_hub.aclose())

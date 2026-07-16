@@ -31,7 +31,6 @@ from haku.console.database_schema import (
     AgentNameReservation,
     CredentialBinding,
     McpToolCall,
-    McpToolCallEvent,
     McpToolCallPrincipal,
     Operator,
 )
@@ -62,8 +61,6 @@ from haku.console.tool_calls import (
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
-    ToolCallEvent,
-    ToolCallEventType,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -74,22 +71,10 @@ router = APIRouter(tags=["mcp-approval"])
 Csrf = Annotated[CsrfProtect, Depends()]
 
 
-class ToolMetadataBase(BaseModel):
+class ToolMetadata(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
-
-
-class AliveToolMetadata(ToolMetadataBase):
-    status: Literal["alive"] = "alive"
-
-
-class DegradedToolMetadata(ToolMetadataBase):
-    status: Literal["degraded"] = "degraded"
-    degraded_reason: str
-
-
-type ToolMetadata = Annotated[AliveToolMetadata | DegradedToolMetadata, Field(discriminator="status")]
 
 
 class ServerMetadataBase(BaseModel):
@@ -134,10 +119,6 @@ class ToolCallListResponse(BaseModel):
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
 
 
-class ToolCallEventsResponse(BaseModel):
-    events: list[ToolCallEvent] = Field(default_factory=list)
-
-
 class ApprovalDecisionResponse(BaseModel):
     tool_call: ToolCallRecord
 
@@ -177,7 +158,7 @@ class PostgresToolCallLedger:
         actor: ToolCallActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
-    ) -> tuple[ToolCallRecord, list[ToolCallEvent]]:
+    ) -> ToolCallRecord:
         with self._sessions.begin() as session:
             tool_call_id = f"tc_{secrets.token_hex(12)}"
             match actor:
@@ -215,17 +196,7 @@ class PostgresToolCallLedger:
             session.add(self._row_from_record(record))
             session.flush()
             session.add(principal)
-            events = [self._insert_event(session, ToolCallEventType.TOOL_CALL_SUBMITTED, record)]
-            events.append(
-                self._insert_event(
-                    session,
-                    ToolCallEventType.TOOL_CALL_UPDATED
-                    if auto_approval_policy_id is not None
-                    else ToolCallEventType.APPROVAL_PENDING,
-                    record,
-                )
-            )
-            return record, events
+            return record
 
     def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         with self._sessions.begin() as session:
@@ -257,32 +228,15 @@ class PostgresToolCallLedger:
             projections = session.execute(stmt.order_by(order).limit(limit)).tuples().all()
             return [self._record_from_projection(*projection) for projection in projections]
 
-    def events_after_id(self, *, actor: OperatorActor, after_event_id: int = 0) -> list[ToolCallEvent]:
-        operator_id = self._operator_id(actor)
-        with self._sessions.begin() as session:
-            rows = session.scalars(
-                select(McpToolCallEvent)
-                .join(McpToolCall, McpToolCall.tool_call_id == McpToolCallEvent.tool_call_id)
-                .join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
-                .outerjoin(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
-                .outerjoin(Agent, Agent.agent_id == CredentialBinding.agent_id)
-                .where(McpToolCallEvent.event_id > after_event_id)
-                .where(or_(McpToolCallPrincipal.operator_id == operator_id, Agent.owner_operator_id == operator_id))
-                .order_by(McpToolCallEvent.event_id)
-            ).all()
-        return [row.to_event() for row in rows]
-
-    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> tuple[ToolCallRecord, ToolCallEvent]:
+    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
         return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING, actor=actor)
 
-    def deny(
-        self, tool_call_id: str, reason: str | None, *, actor: OperatorActor
-    ) -> tuple[ToolCallRecord, ToolCallEvent]:
+    def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord:
         return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED, actor=actor, denial_reason=reason)
 
     def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
-    ) -> tuple[ToolCallRecord, ToolCallEvent]:
+    ) -> ToolCallRecord:
         if (result is None) == (error is None):
             raise ValueError("finish requires exactly one of result or error")
         with self._sessions.begin() as session:
@@ -300,9 +254,7 @@ class PostgresToolCallLedger:
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.result_json = result
             row.error = error
-            updated = self._record_from_principal(row, principal)
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
-            return updated, event
+            return self._record_from_principal(row, principal)
 
     def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID:
         """Revalidate the exact durable principal immediately before external execution."""
@@ -324,7 +276,7 @@ class PostgresToolCallLedger:
 
     def _transition_pending_approval(
         self, tool_call_id: str, status: ToolCallStatus, *, actor: OperatorActor, denial_reason: str | None = None
-    ) -> tuple[ToolCallRecord, ToolCallEvent]:
+    ) -> ToolCallRecord:
         operator_id = self._operator_id(actor)
         with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id, actor)
@@ -339,18 +291,7 @@ class PostgresToolCallLedger:
             row.denial_reason = denial_reason
             if status == ToolCallStatus.RUNNING:
                 row.approved_at = row.updated_at
-            updated = self._record_from_principal(row, principal)
-            event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
-            return updated, event
-
-    def _insert_event(self, session: Session, event_type: ToolCallEventType, record: ToolCallRecord) -> ToolCallEvent:
-        created_at = datetime.datetime.now(datetime.UTC)
-        row = McpToolCallEvent(
-            event_type=event_type, tool_call_id=record.tool_call_id, status=record.status, created_at=created_at
-        )
-        session.add(row)
-        session.flush()
-        return row.to_event()
+            return self._record_from_principal(row, principal)
 
     def _row_by_tool_call_id(self, session: Session, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
         stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
@@ -599,7 +540,7 @@ class McpMetadataProvider:
             schema = tool.inputSchema
             if not isinstance(schema, dict):
                 schema = {}
-            reflected.append(AliveToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
+            reflected.append(ToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
 
 
@@ -726,13 +667,6 @@ async def pending_approvals(service: ToolCallServiceDep, actor: OperatorActorDep
     return PendingApprovalsResponse(
         approvals=[_pending_approval_from_record(record) for record in service.pending_approvals(actor=actor)]
     )
-
-
-@router.get("/api/approvals/events")
-async def approval_events(
-    service: ToolCallServiceDep, actor: OperatorActorDep, after_event_id: int = 0
-) -> ToolCallEventsResponse:
-    return ToolCallEventsResponse(events=service.events_after_id(actor=actor, after_event_id=after_event_id))
 
 
 @router.post("/api/tool-calls/{tool_call_id}/decision")

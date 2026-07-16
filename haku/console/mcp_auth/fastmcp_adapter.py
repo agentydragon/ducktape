@@ -136,14 +136,6 @@ class TokenFamilyEvidence:
     refresh_jti: str | None
 
 
-@dataclass(frozen=True, slots=True)
-class GrantRequestContext:
-    """Grant resolution available while FastMCP verifies one bearer request."""
-
-    authorization: GrantAuthorization
-    token_scopes: frozenset[str]
-
-
 class OidcPrincipalResolver(Protocol):
     """Turn one upstream token response into a cryptographically verified principal."""
 
@@ -207,10 +199,6 @@ class GrantRejectedError(Exception):
 
 class AgentGrantAuthorityUnavailableError(Exception):
     """Haku cannot currently make an authoritative grant decision."""
-
-
-class AgentActorAuthorityUnavailableError(Exception):
-    """Haku cannot currently resolve a verified credential's canonical actor."""
 
 
 class BearerVerificationUnavailableError(AuthenticationError):
@@ -341,11 +329,6 @@ class AgentActorResolutionUnavailableError(ToolError):
     """A verified tool call could not resolve its canonical actor; retry is safe."""
 
 
-@dataclass(frozen=True, slots=True)
-class _GrantIssuanceContext:
-    authorization: GrantAuthorization
-
-
 @dataclass(slots=True)
 class _BearerFailureObservation:
     failure: BaseException | None = None
@@ -359,23 +342,13 @@ class _ReferenceGrant:
     jti: str
 
 
-_GRANT_ISSUANCE_CONTEXT: ContextVar[_GrantIssuanceContext | None] = ContextVar(
-    "haku_agent_grant_issuance_context", default=None
-)
-_GRANT_REQUEST_CONTEXT: ContextVar[GrantRequestContext | None] = ContextVar(
-    "haku_agent_grant_request_context", default=None
-)
+_GRANT_ISSUANCE: ContextVar[GrantAuthorization | None] = ContextVar("haku_agent_grant_issuance", default=None)
+_GRANT_REQUEST: ContextVar[GrantAuthorization | None] = ContextVar("haku_agent_grant_request", default=None)
 _BEARER_FAILURE_OBSERVATION: ContextVar[_BearerFailureObservation | None] = ContextVar(
     "haku_bearer_failure_observation", default=None
 )
 _TOOL_CALL_ACTOR_CONTEXT: ContextVar[ToolCallActor | None] = ContextVar("haku_tool_call_actor", default=None)
 _OPERATOR_ACTOR_CLAIM = "haku.operator_actor"
-
-
-def current_grant_request_context() -> GrantRequestContext | None:
-    """Return the grant being checked inside the current bearer verification."""
-
-    return _GRANT_REQUEST_CONTEXT.get()
 
 
 def get_tool_call_actor() -> ToolCallActor:
@@ -616,7 +589,7 @@ class HakuMcpActorMiddleware(FastMCPMiddleware):
             raise ToolError("Agent grant is missing")
         try:
             actor = _validate_agent_actor(await self._static_actor_resolver.resolve_static_actor(token))
-        except (AgentActorAuthorityUnavailableError, AgentGrantAuthorityUnavailableError) as error:
+        except AgentGrantAuthorityUnavailableError as error:
             raise AgentActorResolutionUnavailableError(
                 "Agent authorization is temporarily unavailable; retry the tool call"
             ) from error
@@ -764,11 +737,11 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         except AgentGrantAuthorityUnavailableError as error:
             raise _service_unavailable("Agent authorization is temporarily unavailable") from error
 
-        issue_token = _GRANT_ISSUANCE_CONTEXT.set(_GrantIssuanceContext(authorization))
+        issue_token = _GRANT_ISSUANCE.set(authorization)
         try:
             token = await super().exchange_authorization_code(client, authorization_code)
         finally:
-            _GRANT_ISSUANCE_CONTEXT.reset(issue_token)
+            _GRANT_ISSUANCE.reset(issue_token)
 
         evidence, _ = self._validate_issued_family(
             token, grant_id=authorization.grant_id, client_id=client_id, allowed_scopes=authorization.allowed_scopes
@@ -799,30 +772,23 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         ):
             raise TokenError("invalid_grant", _INVALID_GRANT)
         try:
-            authorization = await self._grant_authority.resolve_grant(
-                grant_id=reference.grant_id, client_id=client_id, token_scopes=frozenset(scopes)
-            )
-            _validate_grant_authorization(
-                authorization, grant_id=reference.grant_id, client_id=client_id, scopes=frozenset(scopes)
-            )
+            authorization = await self._resolve_authorization(reference, frozenset(scopes))
         except GrantRejectedError:
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
         except AgentGrantAuthorityUnavailableError as error:
             raise _service_unavailable("Agent authorization is temporarily unavailable") from error
 
-        issue_token = _GRANT_ISSUANCE_CONTEXT.set(_GrantIssuanceContext(authorization))
+        issue_token = _GRANT_ISSUANCE.set(authorization)
         try:
             token = await super().exchange_refresh_token(client, refresh_token, scopes)
         finally:
-            _GRANT_ISSUANCE_CONTEXT.reset(issue_token)
+            _GRANT_ISSUANCE.reset(issue_token)
 
         _, issued_scopes = self._validate_issued_family(
             token, grant_id=authorization.grant_id, client_id=client_id, allowed_scopes=authorization.allowed_scopes
         )
         try:
-            after = await self._grant_authority.resolve_grant(
-                grant_id=reference.grant_id, client_id=client_id, token_scopes=issued_scopes
-            )
+            after = await self._resolve_authorization(reference, issued_scopes)
             _require_same_actor(authorization, after, scopes=issued_scopes)
         except GrantRejectedError:
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
@@ -840,27 +806,20 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             return None
 
         try:
-            authorization = await self._grant_authority.resolve_grant(
-                grant_id=reference.grant_id, client_id=reference.client_id, token_scopes=reference.scopes
-            )
-            _validate_grant_authorization(
-                authorization, grant_id=reference.grant_id, client_id=reference.client_id, scopes=reference.scopes
-            )
+            authorization = await self._resolve_authorization(reference, reference.scopes)
         except GrantRejectedError:
             return None
         except AgentGrantAuthorityUnavailableError as error:
             raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
 
-        request_token = _GRANT_REQUEST_CONTEXT.set(
-            GrantRequestContext(authorization=authorization, token_scopes=reference.scopes)
-        )
+        request_token = _GRANT_REQUEST.set(authorization)
         observation = _BearerFailureObservation()
         observation_token = _BEARER_FAILURE_OBSERVATION.set(observation)
         try:
             validated = await super().load_access_token(token)
         finally:
             _BEARER_FAILURE_OBSERVATION.reset(observation_token)
-            _GRANT_REQUEST_CONTEXT.reset(request_token)
+            _GRANT_REQUEST.reset(request_token)
 
         if validated is None:
             if observation.failure is not None:
@@ -877,9 +836,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             returned_scopes = frozenset(access_token.scopes)
             if returned_grant_id != reference.grant_id or not returned_scopes <= reference.scopes:
                 raise GrantRejectedError
-            after = await self._grant_authority.resolve_grant(
-                grant_id=reference.grant_id, client_id=reference.client_id, token_scopes=returned_scopes
-            )
+            after = await self._resolve_authorization(reference, returned_scopes)
             _require_same_actor(authorization, after, scopes=returned_scopes)
         except (GrantRejectedError, KeyError, TypeError, ValueError):
             return None
@@ -912,25 +869,17 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
 
     def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
         translated = super()._translate_scopes_from_idp(scopes)
-        issue_context = _GRANT_ISSUANCE_CONTEXT.get()
-        request_context = _GRANT_REQUEST_CONTEXT.get()
-        authorization = (
-            issue_context.authorization
-            if issue_context is not None
-            else request_context.authorization
-            if request_context is not None
-            else None
-        )
+        authorization = _GRANT_ISSUANCE.get() or _GRANT_REQUEST.get()
         if authorization is not None and not frozenset(translated) <= authorization.allowed_scopes:
             raise TokenError("invalid_scope", "The upstream provider broadened the authorized scopes")
         return translated
 
     async def _extract_upstream_claims(self, idp_tokens: dict[str, Any]) -> dict[str, Any] | None:
         _ = idp_tokens
-        context = _GRANT_ISSUANCE_CONTEXT.get()
-        if context is None:
+        authorization = _GRANT_ISSUANCE.get()
+        if authorization is None:
             raise TokenError("invalid_grant", _INVALID_GRANT)
-        return {"grant_id": str(context.authorization.grant_id)}
+        return {"grant_id": str(authorization.grant_id)}
 
     async def _try_transparent_refresh(self, upstream_token_set: Any) -> Any:
         """Observe retryable failures before FastMCP converts them to ``None``."""
@@ -961,6 +910,17 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             scopes=frozenset(parse_scopes(scope) or []),
             jti=jti,
         )
+
+    async def _resolve_authorization(
+        self, reference: _ReferenceGrant, token_scopes: frozenset[str]
+    ) -> GrantAuthorization:
+        authorization = await self._grant_authority.resolve_grant(
+            grant_id=reference.grant_id, client_id=reference.client_id, token_scopes=token_scopes
+        )
+        _validate_grant_authorization(
+            authorization, grant_id=reference.grant_id, client_id=reference.client_id, scopes=token_scopes
+        )
+        return authorization
 
     def _validate_issued_family(
         self, token: OAuthToken, *, grant_id: UUID, client_id: str, allowed_scopes: frozenset[str]

@@ -8,16 +8,20 @@
 # via ducktape.sopsEnv and reflected into codex-pod.
 # CLIProxyAPI holds + auto-refreshes its OWN Codex OAuth session (separate from LiteLLM's).
 #
+# Auth is Bearer-only (ANTHROPIC_AUTH_TOKEN). CLIProxyAPI accepts both Authorization and
+# x-api-key, but setting both makes Claude Code warn "auth may not work as expected", so
+# `-u ANTHROPIC_API_KEY` strips any inherited key (e.g. wyrm2's real Anthropic key).
+#
 # Gateway model discovery is on, so `/model` lists the codex slugs
 # (gpt-5.4/5.5/5.6-sol/terra/luna/...). Reasoning effort is driven by Claude Code's
 # `effortLevel` setting; CLIProxyAPI forwards it to Codex reasoning.effort.
 { pkgs }:
 pkgs.writeShellScriptBin "codex-claude" ''
   exec env \
+    -u ANTHROPIC_API_KEY \
     IS_DEMO=1 \
     ANTHROPIC_BASE_URL=https://cli-proxy-api.allegedly.works \
     ANTHROPIC_AUTH_TOKEN="$CLIPROXY_CLIENT_KEY" \
-    ANTHROPIC_API_KEY="$CLIPROXY_CLIENT_KEY" \
     ANTHROPIC_MODEL=gpt-5.6-sol \
     ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5.6-luna \
     CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 \

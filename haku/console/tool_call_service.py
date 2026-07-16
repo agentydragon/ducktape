@@ -12,7 +12,6 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import Iterable
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -30,7 +29,6 @@ from haku.console.tool_calls import (
     ApprovalDecision,
     ApprovalDecisionRequest,
     SubmitToolCallRequest,
-    ToolCallEvent,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -50,7 +48,7 @@ class ToolCallRepository(Protocol):
         actor: ToolCallActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
-    ) -> tuple[ToolCallRecord, list[ToolCallEvent]]: ...
+    ) -> ToolCallRecord: ...
 
     def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord: ...
 
@@ -64,17 +62,13 @@ class ToolCallRepository(Protocol):
         newest_first: bool = False,
     ) -> list[ToolCallRecord]: ...
 
-    def events_after_id(self, *, actor: OperatorActor, after_event_id: int = 0) -> list[ToolCallEvent]: ...
+    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
 
-    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> tuple[ToolCallRecord, ToolCallEvent]: ...
-
-    def deny(
-        self, tool_call_id: str, reason: str | None, *, actor: OperatorActor
-    ) -> tuple[ToolCallRecord, ToolCallEvent]: ...
+    def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord: ...
 
     def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
-    ) -> tuple[ToolCallRecord, ToolCallEvent]: ...
+    ) -> ToolCallRecord: ...
 
     def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID: ...
 
@@ -86,7 +80,7 @@ class ToolExecutor(Protocol):
 
 
 class ToolCallEventPublisher(Protocol):
-    async def broadcast(self, operator_id: UUID, events: Iterable[ToolCallEvent]) -> None: ...
+    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None: ...
 
     def subscribe(
         self, operator_id: UUID, tool_call_id: str
@@ -169,7 +163,7 @@ class ToolCallApplicationService:
                 server=server, operator_id=actor.operator_id, oauth_store=self._oauth_store
             )
 
-        record, events = self._repository.submit(
+        record = self._repository.submit(
             server=server,
             req=req,
             actor=actor,
@@ -187,11 +181,9 @@ class ToolCallApplicationService:
             record.auto_approval_evaluation,
         )
         if record.status == ToolCallStatus.RUNNING:
-            record = await self._execute_and_publish(
-                record=record, server=server, auth_token=auth_token, actor=actor, preceding_events=events
-            )
+            record = await self._execute_and_publish(record=record, server=server, auth_token=auth_token, actor=actor)
         else:
-            await self._publish(actor.operator_id, events)
+            await self._publish(actor.operator_id, record.tool_call_id)
         return await self._wait_terminal(record.tool_call_id, actor, req.wait_for_ms)
 
     async def execute_direct(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> dict[str, Any]:
@@ -228,17 +220,13 @@ class ToolCallApplicationService:
         operator = self._require_operator(actor)
         return self._repository.list_tool_calls(actor=operator, statuses=[ToolCallStatus.PENDING_APPROVAL])
 
-    def events_after_id(self, *, actor: ToolCallActor, after_event_id: int = 0) -> list[ToolCallEvent]:
-        operator = self._require_operator(actor)
-        return self._repository.events_after_id(actor=operator, after_event_id=after_event_id)
-
     async def decide(
         self, *, tool_call_id: str, decision: ApprovalDecisionRequest, actor: ToolCallActor
     ) -> ToolCallRecord:
         operator = self._require_operator(actor)
         if decision.decision is ApprovalDecision.DENY:
-            record, event = self._repository.deny(tool_call_id, decision.reason, actor=operator)
-            await self._publish(operator.operator_id, [event])
+            record = self._repository.deny(tool_call_id, decision.reason, actor=operator)
+            await self._publish(operator.operator_id, record.tool_call_id)
             logger.info(
                 "tool call %s denied server=%s tool=%s reason=%r",
                 record.tool_call_id,
@@ -255,19 +243,11 @@ class ToolCallApplicationService:
         auth_token = await backend_auth_for_operator(
             server=server, operator_id=operator.operator_id, oauth_store=self._oauth_store
         )
-        running, event = self._repository.mark_running(tool_call_id, actor=operator)
-        return await self._execute_and_publish(
-            record=running, server=server, auth_token=auth_token, actor=operator, preceding_events=[event]
-        )
+        running = self._repository.mark_running(tool_call_id, actor=operator)
+        return await self._execute_and_publish(record=running, server=server, auth_token=auth_token, actor=operator)
 
     async def _execute_and_publish(
-        self,
-        *,
-        record: ToolCallRecord,
-        server: McpServerEntry,
-        auth_token: str | None,
-        actor: ToolCallActor,
-        preceding_events: list[ToolCallEvent],
+        self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: ToolCallActor
     ) -> ToolCallRecord:
         if record.status != ToolCallStatus.RUNNING:
             return record
@@ -277,17 +257,16 @@ class ToolCallApplicationService:
             result = await self._executor.execute(server, record.tool_name, record.arguments, auth_token)
         except asyncio.CancelledError as error:
             cancellation = error
-            updated, event = self._repository.finish(
+            updated = self._repository.finish(
                 record.tool_call_id, actor=actor, result=None, error="tool execution cancelled"
             )
         except Exception as error:
-            updated, event = self._repository.finish(record.tool_call_id, actor=actor, result=None, error=str(error))
+            updated = self._repository.finish(record.tool_call_id, actor=actor, result=None, error=str(error))
         else:
-            updated, event = self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
-        # RUNNING is already durable. Publish its preceding events only after terminal persistence,
-        # so a broken event adapter cannot prevent execution and strand the row. One ordered batch
-        # also prevents observers from seeing the terminal event before the RUNNING event.
-        await self._publish(execution_operator_id, [*preceding_events, event])
+            updated = self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
+        # The durable row is authoritative. One invalidation after terminal persistence is enough:
+        # observers re-read the complete record rather than replaying intermediate transitions.
+        await self._publish(execution_operator_id, updated.tool_call_id)
         logger.info(
             "tool call %s finished status=%s server=%s tool=%s",
             updated.tool_call_id,
@@ -299,14 +278,14 @@ class ToolCallApplicationService:
             raise cancellation
         return updated
 
-    async def _publish(self, operator_id: UUID, events: list[ToolCallEvent]) -> None:
+    async def _publish(self, operator_id: UUID, tool_call_id: str) -> None:
         """Best-effort invalidation after durable changes; the repository remains authoritative."""
         try:
-            await self._event_publisher.broadcast(operator_id, events)
+            await self._event_publisher.tool_call_changed(operator_id, tool_call_id)
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("failed to publish tool-call events for operator %s", operator_id)
+            logger.exception("failed to publish tool-call invalidation for operator %s", operator_id)
 
     async def _wait_terminal(self, tool_call_id: str, actor: ToolCallActor, wait_for_ms: int) -> ToolCallRecord:
         record = self._repository.get(tool_call_id, actor=actor)

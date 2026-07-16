@@ -37,7 +37,7 @@ components + **Tailwind v4** utilities — modeled on
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
 - `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the
   `/api/events/ws` WebSocket) that carries tool-call and operator-link changes. The server
-  broadcasts each event to every connected tab, so panels and the history view stay live without
+  broadcasts typed invalidations to every connected tab, so panels and the history view stay live without
   a reload — no client-side cross-tab plumbing needed. It
   auto-reconnects with backoff and returns a `LiveStatus` (`connecting`/`live`/`offline`) the
   shell uses to warn when the channel is down (and refetches on reconnect to catch up).

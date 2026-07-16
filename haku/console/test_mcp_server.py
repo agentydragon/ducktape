@@ -28,7 +28,7 @@ from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
-from haku.console.mcp_approval import AliveServerMetadata, AliveToolMetadata
+from haku.console.mcp_approval import AliveServerMetadata, ToolMetadata
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.operator_identity import VerifiedExternalIdentity
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -567,9 +567,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
         if server_id == "beta":
             await asyncio.sleep(0.01)
         return AliveServerMetadata(
-            server_id=server_id,
-            title=server_id,
-            tools=[AliveToolMetadata(name="echo", input_schema={"type": "object"})],
+            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
         )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
@@ -604,9 +602,7 @@ async def test_tool_dispatch_reflects_only_target_server(
         server_id = str(server.id)
         reflected.append(server_id)
         return AliveServerMetadata(
-            server_id=server_id,
-            title=server_id,
-            tools=[AliveToolMetadata(name="echo", input_schema={"type": "object"})],
+            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
         )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)

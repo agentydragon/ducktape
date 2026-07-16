@@ -50,6 +50,7 @@ rust_library(
         ":source_match_holes",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:serde",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
