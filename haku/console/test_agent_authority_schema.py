@@ -1271,18 +1271,6 @@ def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db
                 ),
                 {"binding_id": agent.binding_id},
             )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_call_events (
-                        event_type, tool_call_id, status, created_at
-                    ) VALUES (
-                        'tool_call_submitted', 'agent-call', 'pending_approval', :now
-                    )
-                    """
-                ),
-                {"now": _now()},
-            )
 
         with pytest.raises(IntegrityError), engine.begin() as conn:
             conn.execute(
@@ -1299,22 +1287,15 @@ def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM mcp_tool_calls WHERE tool_call_id = 'agent-call'"))
         with engine.connect() as conn:
-            counts = (
-                conn.execute(
-                    text(
-                        """
-                        SELECT
-                            (SELECT count(*) FROM mcp_tool_call_principals
-                             WHERE tool_call_id = 'agent-call') AS principals,
-                            (SELECT count(*) FROM mcp_tool_call_events
-                             WHERE tool_call_id = 'agent-call') AS events
-                        """
-                    )
+            principals = conn.scalar(
+                text(
+                    """
+                    SELECT count(*) FROM mcp_tool_call_principals
+                    WHERE tool_call_id = 'agent-call'
+                    """
                 )
-                .mappings()
-                .one()
             )
-            assert counts == {"principals": 0, "events": 0}
+            assert principals == 0
 
         with engine.begin() as conn:
             _insert_tool_call(conn, "operator-call")

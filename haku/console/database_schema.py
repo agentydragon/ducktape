@@ -31,7 +31,7 @@ from haku.console.agents.models import (
     EnrollmentPhase,
 )
 from haku.console.operator_identity import OperatorStatus
-from haku.console.tool_calls import ToolCallEvent, ToolCallEventType, ToolCallStatus
+from haku.console.tool_calls import ToolCallStatus
 from util.sqlalchemy_types import StrEnumColumn
 
 
@@ -518,32 +518,6 @@ class McpToolCallPrincipal(Base):
     binding_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("credential_bindings.binding_id", ondelete="RESTRICT"), nullable=True
     )
-
-
-class McpToolCallEvent(Base):
-    __tablename__ = "mcp_tool_call_events"
-    __table_args__ = (Index("idx_mcp_tool_call_events_tool_call_id_event_id", "tool_call_id", "event_id"),)
-
-    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    event_type: Mapped[ToolCallEventType] = mapped_column(
-        StrEnumColumn(ToolCallEventType, name="tool_call_event_type"), nullable=False
-    )
-    tool_call_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="CASCADE"), nullable=False
-    )
-    status: Mapped[ToolCallStatus] = mapped_column(
-        StrEnumColumn(ToolCallStatus, name="tool_call_status"), nullable=False
-    )
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-    def to_event(self) -> ToolCallEvent:
-        return ToolCallEvent(
-            event_id=self.event_id,
-            event_type=self.event_type,
-            tool_call_id=self.tool_call_id,
-            status=self.status,
-            created_at=self.created_at,
-        )
 
 
 class McpOperatorOAuthAssociation(Base):

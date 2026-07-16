@@ -6,8 +6,7 @@ import asyncio
 import contextlib
 import datetime
 import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
-from itertools import pairwise
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -37,8 +36,6 @@ from haku.console.tool_calls import (
     ApprovalDecision,
     ApprovalDecisionRequest,
     SubmitToolCallRequest,
-    ToolCallEvent,
-    ToolCallEventType,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -46,16 +43,14 @@ from haku.console.tool_calls import (
 
 class _RecordingPublisher:
     def __init__(self) -> None:
-        self.publications: list[tuple[UUID, list[ToolCallEvent]]] = []
+        self.publications: list[tuple[UUID, str]] = []
         self.subscribed = asyncio.Event()
         self._waiters: dict[tuple[UUID, str], set[asyncio.Event]] = {}
 
-    async def broadcast(self, operator_id: UUID, events: Iterable[ToolCallEvent]) -> None:
-        published = list(events)
-        self.publications.append((operator_id, published))
-        for event in published:
-            for waiter in self._waiters.get((operator_id, event.tool_call_id), ()):
-                waiter.set()
+    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
+        self.publications.append((operator_id, tool_call_id))
+        for waiter in self._waiters.get((operator_id, tool_call_id), ()):
+            waiter.set()
 
     @contextlib.asynccontextmanager
     async def subscribe(self, operator_id: UUID, tool_call_id: str) -> AsyncIterator[asyncio.Event]:
@@ -73,8 +68,8 @@ class _RecordingPublisher:
 
 
 class _RaisingPublisher(_RecordingPublisher):
-    async def broadcast(self, operator_id: UUID, events: Iterable[ToolCallEvent]) -> None:
-        await super().broadcast(operator_id, events)
+    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
+        await super().tool_call_changed(operator_id, tool_call_id)
         raise RuntimeError("event transport unavailable")
 
 
@@ -136,7 +131,7 @@ class _RecordingLedger(PostgresToolCallLedger):
 
     def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
-    ) -> tuple[ToolCallRecord, ToolCallEvent]:
+    ) -> ToolCallRecord:
         self.finish_actors.append(actor)
         return super().finish(tool_call_id, actor=actor, result=result, error=error)
 
@@ -306,8 +301,6 @@ async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str,
         ledger.get(records["oa"].tool_call_id, actor=invalid_actor)
     agent_as_operator: Any = actors["aa1"]
     with pytest.raises(TypeError, match="operator actor required"):
-        ledger.events_after_id(actor=agent_as_operator)
-    with pytest.raises(TypeError, match="operator actor required"):
         ledger.mark_running(records["aa1"].tool_call_id, actor=agent_as_operator)
 
     expected_visible = {
@@ -330,24 +323,13 @@ async def test_two_operator_two_agent_authorization_matrix(migrated_db_url: str,
         listed = service.list_tool_calls(actor=reader)
         assert {record.tool_call_id for record in listed} == {records[owner].tool_call_id for owner in visible}
 
-    operator_event_ids: dict[str, list[int]] = {}
     for operator_name, owned_names in (("oa", {"oa", "aa1", "aa2"}), ("ob", {"ob", "ab1", "ab2"})):
         pending = service.pending_approvals(actor=actors[operator_name])
         assert {record.tool_call_id for record in pending} == {records[owner].tool_call_id for owner in owned_names}
-        events = service.events_after_id(actor=actors[operator_name])
-        operator_event_ids[operator_name] = [event.event_id for event in events]
-        assert {event.tool_call_id for event in events} == {records[owner].tool_call_id for owner in owned_names}
-    # Submission order alternates tenants, so each actor-scoped cursor crosses foreign global IDs
-    # without exposing their rows.
-    assert all(
-        any(right - left > 1 for left, right in pairwise(event_ids)) for event_ids in operator_event_ids.values()
-    )
 
     for agent_name in ("aa1", "aa2", "ab1", "ab2"):
         with pytest.raises(OperatorActorRequiredError):
             service.pending_approvals(actor=actors[agent_name])
-        with pytest.raises(OperatorActorRequiredError):
-            service.events_after_id(actor=actors[agent_name])
         with pytest.raises(OperatorActorRequiredError):
             await service.decide(
                 tool_call_id=records[agent_name].tool_call_id,
@@ -533,17 +515,7 @@ async def test_auto_execution_finishes_before_best_effort_event_publication(
     assert service.get(completed.tool_call_id, actor=actor).status is ToolCallStatus.OK
     assert ledger.finish_actors == [actor]
     assert len(executor.executions) == 1
-    assert len(publisher.publications) == 1
-    assert [event.event_type for event in publisher.publications[0][1]] == [
-        ToolCallEventType.TOOL_CALL_SUBMITTED,
-        ToolCallEventType.TOOL_CALL_UPDATED,
-        ToolCallEventType.TOOL_CALL_UPDATED,
-    ]
-    assert [event.status for event in publisher.publications[0][1]] == [
-        ToolCallStatus.RUNNING,
-        ToolCallStatus.RUNNING,
-        ToolCallStatus.OK,
-    ]
+    assert publisher.publications == [(actor.operator_id, completed.tool_call_id)]
 
 
 async def test_executor_cancellation_terminalizes_before_reraising(
@@ -571,12 +543,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     assert terminal.status is ToolCallStatus.ERROR
     assert terminal.error == "tool execution cancelled"
     assert ledger.finish_actors == [actor]
-    assert len(publisher.publications) == 1
-    assert [event.status for event in publisher.publications[0][1]] == [
-        ToolCallStatus.RUNNING,
-        ToolCallStatus.RUNNING,
-        ToolCallStatus.ERROR,
-    ]
+    assert publisher.publications == [(actor.operator_id, terminal.tool_call_id)]
 
 
 async def test_finish_only_accepts_running_calls(migrated_db_url: str) -> None:
@@ -585,14 +552,14 @@ async def test_finish_only_accepts_running_calls(migrated_db_url: str) -> None:
     assert isinstance(operator, OperatorActor)
     ledger = PostgresToolCallLedger(migrated_db_url)
     server = McpServerEntry(id="operator-backend", server_url="https://backend.invalid/mcp")
-    record, _ = ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
+    record = ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
 
     with pytest.raises(ToolCallStateConflictError, match="not running"):
         ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
 
-    running, _ = ledger.mark_running(record.tool_call_id, actor=operator)
+    running = ledger.mark_running(record.tool_call_id, actor=operator)
     assert running.status is ToolCallStatus.RUNNING
-    finished, _ = ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
+    finished = ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
     assert finished.status is ToolCallStatus.OK
     with pytest.raises(ToolCallStateConflictError, match="not running"):
         ledger.finish(record.tool_call_id, actor=operator, result={"again": True}, error=None)
@@ -603,7 +570,7 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
     ledger = PostgresToolCallLedger(migrated_db_url)
-    record, _ = ledger.submit(
+    record = ledger.submit(
         server=McpServerEntry(id="operator-backend"),
         req=_request(owner="revoked-during-execution"),
         actor=agent,
@@ -624,7 +591,7 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
     finally:
         engine.dispose()
 
-    finished, _ = ledger.finish(record.tool_call_id, actor=agent, result={"ok": True}, error=None)
+    finished = ledger.finish(record.tool_call_id, actor=agent, result={"ok": True}, error=None)
     assert finished.status is ToolCallStatus.OK
 
 

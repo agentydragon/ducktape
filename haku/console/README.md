@@ -80,9 +80,9 @@ Core endpoints:
   YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
   associations.
   Connecting is available only while unconnected; disconnect first to replace an account link.
-- `GET /api/approvals/pending`, `GET /api/approvals/events?after_event_id=...`, and
-  `WebSocket /api/events/ws` — canonical-Operator-routed frontend catch-up + notifications. REST remains the source of
-  truth; the WebSocket only wakes the shell to refresh.
+- `GET /api/approvals/pending` and `WebSocket /api/events/ws` — canonical-Operator-routed
+  frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
+  wakes the shell to refresh.
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
