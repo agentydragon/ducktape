@@ -136,6 +136,7 @@
       modules-right = [
         "pulseaudio"
         "tray"
+        "custom/swaync"
       ];
       pulseaudio = {
         format = "Vol {volume}%";
@@ -148,6 +149,29 @@
       };
       clock.format = "{:%a %d %b  %H:%M}";
       tray.spacing = 8;
+      # Notification-center toggle. `swaync-client -swb` feeds waybar JSON; the
+      # label shows the state, trailing `*` = unread. Left-click opens the
+      # center, right-click toggles do-not-disturb. Plain-text labels to match
+      # the rest of the bar (no nerd-font dependency).
+      "custom/swaync" = {
+        tooltip = false;
+        format = "{icon}";
+        format-icons = {
+          none = "Notif";
+          notification = "Notif*";
+          dnd-none = "DND";
+          dnd-notification = "DND*";
+          inhibited-none = "Notif";
+          inhibited-notification = "Notif*";
+          dnd-inhibited-none = "DND";
+          dnd-inhibited-notification = "DND*";
+        };
+        return-type = "json";
+        exec = "swaync-client -swb";
+        on-click = "swaync-client -t -sw";
+        on-click-right = "swaync-client -d -sw";
+        escape = true;
+      };
     };
     style = ''
       * {
@@ -155,10 +179,53 @@
         font-size: 15px;
       }
       #pulseaudio,
-      #clock {
+      #clock,
+      #custom-swaync {
         padding: 0 10px;
       }
     '';
+  };
+
+  # Notification center for the sway seat(s): swaync gives popups + a slide-out
+  # center panel (history + do-not-disturb), toggled from the waybar
+  # custom/swaync module. Starts via the systemd user graphical-session
+  # (wayland.windowManager.sway.systemd.enable is on by default); if it does not
+  # come up, the sway session isn't reaching graphical-session.target — add
+  # `exec swaync` to the sway `startup` list.
+  #
+  # swaync owns the per-user-bus `org.freedesktop.Notifications` singleton, so it
+  # only functions once seat0 is off GNOME: GNOME's own daemon otherwise holds
+  # that name on the shared /run/user/1001/bus (the same shared-user-bus limit
+  # that keeps GNOME from running twice — see
+  # debug/atlas/direct_display_bringup.md).
+  services.swaync = {
+    enable = true;
+    settings = {
+      positionX = "right";
+      positionY = "top";
+      control-center-width = 500;
+      control-center-height = 600;
+      notification-window-width = 420;
+      timeout = 8;
+      timeout-low = 4;
+      timeout-critical = 0;
+      fit-to-screen = true;
+      keyboard-shortcuts = true;
+      image-visibility = "when-available";
+      widgets = [
+        "title"
+        "dnd"
+        "notifications"
+      ];
+      widget-config = {
+        title = {
+          text = "Notifications";
+          clear-all-button = true;
+          button-text = "Clear all";
+        };
+        dnd.text = "Do not disturb";
+      };
+    };
   };
 
   home.packages = [

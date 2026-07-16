@@ -157,16 +157,6 @@ in
     wayland.enable = true;
   };
 
-  # DEBUG(added 2026-07-16): verbose logind logging to capture the exact varlink
-  # CreateSession parameter that systemd 258 rejects for the seatphysical greeter.
-  # Symptom: `pam_systemd(sddm-greeter): CreateSession() varlink call:
-  # org.varlink.service.InvalidParameter` → no session → weston aborts
-  # ("XDG_RUNTIME_DIR is not set") → greeter never renders on seatphysical. logind
-  # names the refused field (Seat/TTY/VTNr) in logind-varlink.c at debug level.
-  # Remove once the seatphysical greeter creates its session (or we abandon the SDDM
-  # greeter). See debug/atlas/direct_display_bringup.md.
-  systemd.services.systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug";
-
   # GDM greeter dconf tweaks removed with the GDM→SDDM swap:
   # - idle-delay=0 kept the DP output awake so the FV43U KVM would not revert to
   #   USB-C before the seatphysical keyboard could wake it. TODO: re-establish the
@@ -401,11 +391,22 @@ in
     }
   '';
 
-  # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
-  #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
-  #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
-  systemd.services =
-    lib.mapAttrs'
+  # A single `systemd.services` assignment: NixOS merges module definitions
+  # across files, but two `systemd.services` keys in ONE attrset (the whole-attr
+  # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
+  # "attribute already defined" error — so mkMerge the fixed services in here.
+  systemd.services = lib.mkMerge [
+    # DEBUG(added 2026-07-16): verbose logind logging to capture the exact varlink
+    # CreateSession field systemd 258 rejects for the seatphysical greeter (no
+    # session → weston aborts, XDG_RUNTIME_DIR unset → greeter never renders).
+    # logind names the refused field (Seat/TTY/VTNr) in logind-varlink.c at debug
+    # level. Remove once the greeter is solved — see
+    # debug/atlas/direct_display_bringup.md.
+    { systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug"; }
+    # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
+    #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
+    #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
+    (lib.mapAttrs'
       (
         vg: dev:
         lib.nameValuePair "openebs-${vg}-setup" {
@@ -445,7 +446,9 @@ in
       {
         ssd = "/dev/vdc";
         hdd = "/dev/vdg";
-      };
+      }
+    )
+  ];
 
   # Intermediate directories for the nested repo cache mount.
   # The SSD disk is mounted at ~/.cache/bazel, then the HDD disk is mounted
