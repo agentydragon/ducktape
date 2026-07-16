@@ -25,7 +25,7 @@ Contains:
 - `claude-sandbox` namespace, ResourceQuota, LimitRange
 - Sandbox-internal Role + RoleBinding (`role-sandbox.yaml`, `rolebinding-sandbox.yaml`)
 - Sandbox-internal `rolebinding-ollama-consumer.yaml` (binds ClusterRole in claude-sandbox ns)
-- Four ClusterRoles: `cluster-diagnostics-reader`, `logs-configmaps-reader`,
+- ClusterRoles: `cluster-diagnostics-reader`, `logs-configmaps-reader`,
   `namespace-diagnostics-reader`, `secrets-reader`
 
 ### 2. `shared-rbac` — cluster-scoped bindings
