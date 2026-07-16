@@ -27,7 +27,11 @@ _USER_ID = String(length=64)
 
 
 class BalanceRow(Base):
-    """One canonical economy row per user."""
+    """One canonical economy row per user.
+
+    `credits` is stored as integer **millicredits** (credit value × 1000) — see
+    `credit_award.py`. Tokens are whole integers.
+    """
 
     __tablename__ = "balance"
     __table_args__ = (
@@ -38,6 +42,22 @@ class BalanceRow(Base):
     user_id: Mapped[str] = mapped_column(_USER_ID, primary_key=True)
     credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CreditStateRow(Base):
+    """Per-user streak and daily-bonus state (credit system v2).
+
+    Dates are ISO `YYYY-MM-DD` strings in Pacific time. Append-only
+    semantics: session edits/deletes never rewind this state.
+    """
+
+    __tablename__ = "credit_state"
+
+    user_id: Mapped[str] = mapped_column(_USER_ID, primary_key=True)
+    streak_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_qualifying_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    rest_days_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_first_bonus_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
 class SessionRow(Base):
@@ -94,7 +114,11 @@ class PrizeLogRow(Base):
 
 
 class GameEventRow(Base):
-    """Append-only server-resolved casino event audit record."""
+    """Append-only server-resolved casino event audit record.
+
+    `credits_before/after` and `server_credits` are balance snapshots in
+    integer millicredits; `wager_credits` is the wager in whole credits.
+    """
 
     __tablename__ = "game_events"
     __table_args__ = (
@@ -124,7 +148,10 @@ class GameEventRow(Base):
 
 
 class LedgerEventRow(Base):
-    """Append-only server-authoritative action log."""
+    """Append-only server-authoritative action log.
+
+    `credits_before/after` are balance snapshots in integer millicredits.
+    """
 
     __tablename__ = "ledger_events"
     __table_args__ = (
@@ -207,7 +234,8 @@ class StateSnapshotRow(Base):
 
 class BlackjackHandRow(Base):
     """Server-owned blackjack hand state between deal and settlement.
-    Composite PK `(user_id, id)`."""
+    Composite PK `(user_id, id)`. `credits_before` is a balance snapshot in
+    integer millicredits; the wager columns are whole credits."""
 
     __tablename__ = "blackjack_hands"
     __table_args__ = (Index("idx_blackjack_hands_user_status", "user_id", "status"),)

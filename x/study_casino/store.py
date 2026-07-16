@@ -15,6 +15,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from x.study_casino.actions import ActionResult, ImportData
+from x.study_casino.credit_award import (
+    get_or_create_credit_state,
+    millis_from_credits,
+    pacific_date,
+    rest_days_available,
+    streak_bonus_percent,
+)
 from x.study_casino.events import (
     BlackjackOutcome,
     GameEventMutation,
@@ -40,6 +48,7 @@ from x.study_casino.events import (
 from x.study_casino.games import RULES_VERSION, theoretical_bucket_rtp
 from x.study_casino.models import (
     BalanceRow,
+    CreditStateRow,
     GameEventRow,
     LedgerEventRow,
     PrizeLogRow,
@@ -50,7 +59,7 @@ from x.study_casino.models import (
     StateSnapshotRow,
 )
 from x.study_casino.rng import RngActionAudit
-from x.study_casino.state import BalanceRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
+from x.study_casino.state import BalanceRead, CreditStateRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
 from x.study_casino.stats import (
     SERVER_RESOLVED_SINCE_DATE,
     BlackjackOutcomeFreq,
@@ -344,7 +353,8 @@ class SqlStore:
         s.execute(delete(PrizeRow).where(PrizeRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
         balance = self._balance(s, username)
-        balance.credits = data.credits
+        # str() first — Decimal(float) would drag in binary-float artifacts.
+        balance.credits = millis_from_credits(Decimal(str(data.credits)))
         balance.tokens = data.tokens
 
         for session in data.sessions:
@@ -377,14 +387,19 @@ class SqlStore:
             )
 
     def replace_state_for_reset(self, s: Session, username: str) -> None:
-        """Wipe sessions/prize_log for `username`, zero their balance, keep
-        their prize catalog. Equivalent to the legacy `build_reset_casino`
-        behaviour."""
+        """Wipe sessions/prize_log for `username`, zero their balance and
+        streak state, keep their prize catalog. Equivalent to the legacy
+        `build_reset_casino` behaviour."""
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
         balance = self._balance(s, username)
         balance.credits = 0
         balance.tokens = 0
+        credit_state = get_or_create_credit_state(s, username)
+        credit_state.streak_days = 0
+        credit_state.last_qualifying_date = None
+        credit_state.rest_days_used = 0
+        credit_state.last_first_bonus_date = None
 
     # ── Internal ────────────────────────────────────────────────────────────
 
@@ -399,6 +414,7 @@ class SqlStore:
         if s.get(BalanceRow, username) is not None:
             return
         s.add(BalanceRow(user_id=username, credits=0, tokens=0))
+        s.add(CreditStateRow(user_id=username, streak_days=0, rest_days_used=0))
         for prize_id, name, cost in _DEFAULT_PRIZES:
             s.add(PrizeRow(user_id=username, id=prize_id, name=name, cost=cost))
         s.flush()
@@ -411,6 +427,8 @@ class SqlStore:
 
     def _state_dump(self, s: Session, username: str) -> StateDump:
         balance = self._balance(s, username)
+        credit_state = get_or_create_credit_state(s, username)
+        today_iso = pacific_date(int(time.time() * 1000)).isoformat()
         sessions = s.scalars(
             select(SessionRow).where(SessionRow.user_id == username).order_by(SessionRow.ended_at_ms.desc())
         ).all()
@@ -419,7 +437,13 @@ class SqlStore:
             select(PrizeLogRow).where(PrizeLogRow.user_id == username).order_by(PrizeLogRow.at_ms.desc())
         ).all()
         return StateDump(
-            balance=BalanceRead(credits=balance.credits, tokens=balance.tokens),
+            balance=BalanceRead(credits_millis=balance.credits, tokens=balance.tokens),
+            credit_state=CreditStateRead(
+                streak_days=credit_state.streak_days,
+                streak_bonus_percent=streak_bonus_percent(credit_state.streak_days),
+                rest_days_available=rest_days_available(credit_state.streak_days, credit_state.rest_days_used),
+                daily_bonus_claimed_today=credit_state.last_first_bonus_date == today_iso,
+            ),
             sessions=[
                 SessionRead(id=row.id, subject=row.subject, seconds=row.seconds, ended_at_ms=row.ended_at_ms)
                 for row in sessions

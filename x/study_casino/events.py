@@ -85,6 +85,9 @@ class GameEventMutation(BaseModel):
 
 
 class GameEventRead(BaseModel):
+    """Balance snapshots (`*_millis`) are integer millicredits;
+    `wager_credits` is the wager in whole credits."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: int
@@ -96,11 +99,11 @@ class GameEventRead(BaseModel):
     source: Literal["client_reported", "server_resolved"]
     wager_credits: int
     payout_tokens: int
-    credits_before: int
-    credits_after: int
+    credits_before_millis: int
+    credits_after_millis: int
     tokens_before: int
     tokens_after: int
-    server_credits: int
+    server_credits_millis: int
     server_tokens: int
     rules_version: str | None = None
     rng_version: str | None = None
@@ -120,11 +123,11 @@ def game_event_from_row(row: GameEventRow) -> GameEventRead:
         source=cast(Literal["client_reported", "server_resolved"], row.source),
         wager_credits=row.wager_credits,
         payout_tokens=row.payout_tokens,
-        credits_before=row.credits_before,
-        credits_after=row.credits_after,
+        credits_before_millis=row.credits_before,
+        credits_after_millis=row.credits_after,
         tokens_before=row.tokens_before,
         tokens_after=row.tokens_after,
-        server_credits=row.server_credits,
+        server_credits_millis=row.server_credits,
         server_tokens=row.server_tokens,
         rules_version=row.rules_version,
         rng_version=row.rng_version,
@@ -142,8 +145,8 @@ class LedgerEventRead(BaseModel):
     source: Literal["server_action", "legacy_client_sync"]
     rules_version: str
     rng_version: str | None = None
-    credits_before: int
-    credits_after: int
+    credits_before_millis: int
+    credits_after_millis: int
     tokens_before: int
     tokens_after: int
     details: dict[str, Any]
@@ -159,8 +162,8 @@ def ledger_event_from_row(row: LedgerEventRow) -> LedgerEventRead:
         source=cast(Literal["server_action", "legacy_client_sync"], row.source),
         rules_version=row.rules_version,
         rng_version=row.rng_version,
-        credits_before=row.credits_before,
-        credits_after=row.credits_after,
+        credits_before_millis=row.credits_before,
+        credits_after_millis=row.credits_after,
         tokens_before=row.tokens_before,
         tokens_after=row.tokens_after,
         details=json.loads(row.details_json),

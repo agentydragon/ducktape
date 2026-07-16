@@ -14,6 +14,23 @@ py_library(
 )
 
 py_library(
+    name = "credit_award",
+    srcs = ["credit_award.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":credit_constants",
+        ":models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "credit_constants",
+    srcs = ["credit_constants.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "models",
     srcs = ["models.py"],
     visibility = ["//visibility:public"],
@@ -81,6 +98,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":actions",
+        ":credit_award",
         ":events",
         ":games",
         ":models",
@@ -118,6 +136,7 @@ py_library(
         ":actions",
         ":auth",
         ":config",
+        ":credit_award",
         ":deployment",
         ":events",
         ":games",
@@ -188,6 +207,16 @@ py_test(
     deps = [
         ":config",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_credit_award",
+    srcs = ["test_credit_award.py"],
+    deps = [
+        ":credit_award",
+        ":models",
         "@pypi//pytest_bazel",
     ],
 )

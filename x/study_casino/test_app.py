@@ -124,7 +124,13 @@ def test_state_returns_seed_shape(client: TestClient) -> None:
     r = client.get("/state")
     assert r.status_code == 200
     state = r.json()
-    assert state["balance"] == {"credits": 0, "tokens": 0}
+    assert state["balance"] == {"credits_millis": 0, "tokens": 0}
+    assert state["credit_state"] == {
+        "streak_days": 0,
+        "streak_bonus_percent": 0,
+        "rest_days_available": 0,
+        "daily_bonus_claimed_today": False,
+    }
     assert state["sessions"] == []
     assert state["prize_log"] == []
     assert len(state["prizes"]) == 6
@@ -142,12 +148,18 @@ def test_session_complete_inserts_row_and_grants_credits(client: TestClient) -> 
         },
     )
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["result"]["seconds"] == 25 * 60
-    assert body["result"]["credits_earned"] == 25
+    result = r.json()["result"]
+    assert result["seconds"] == 25 * 60
+    # First live session of the day: streak day 1 (+1%) + 30-credit daily
+    # bonus → (25 + 30) × 1.01 = 55.55 credits = 55550 millis.
+    assert result["streak_days"] == 1
+    assert result["streak_bonus_percent"] == 1
+    assert result["daily_bonus_millis"] == 30300
+    assert result["credits_earned_millis"] == 55550
 
     state = client.get("/state").json()
-    assert state["balance"]["credits"] == 25
+    assert state["balance"]["credits_millis"] == 55550
+    assert state["credit_state"]["streak_days"] == 1
     assert len(state["sessions"]) == 1
     assert state["sessions"][0]["subject"] == "Biochem"
 
@@ -182,7 +194,7 @@ def test_session_complete_zero_seconds_writes_no_session_row(client: TestClient)
         },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["result"]["credits_earned"] == 0
+    assert r.json()["result"]["credits_earned_millis"] == 0
     assert client.get("/state").json()["sessions"] == []
 
 
@@ -197,7 +209,8 @@ def test_session_complete_is_idempotent(client: TestClient) -> None:
     first = client.post("/actions/session/complete", json=body).json()
     second = client.post("/actions/session/complete", json=body).json()
     assert second["event"]["id"] == first["event"]["id"]
-    assert client.get("/state").json()["balance"]["credits"] == 10
+    # Awarded once: (10 + 30 daily bonus) × 1.01 — the retry must not re-award.
+    assert client.get("/state").json()["balance"]["credits_millis"] == 40400
 
 
 def test_session_edit_and_delete_adjust_credits(client: TestClient) -> None:
@@ -209,13 +222,78 @@ def test_session_edit_and_delete_adjust_credits(client: TestClient) -> None:
         "/actions/session/edit", json={"client_action_id": "edit-1", "session_id": sid, "seconds": 10 * 60}
     )
     assert edit.status_code == 200, edit.text
-    assert edit.json()["result"]["credits_delta"] == -20
-    assert client.get("/state").json()["balance"]["credits"] == 10
+    assert edit.json()["result"]["credits_delta_millis"] == -20000
+    assert client.get("/state").json()["balance"]["credits_millis"] == 10000
 
     delete = client.post("/actions/session/delete", json={"client_action_id": "del-1", "session_id": sid})
     assert delete.status_code == 200, delete.text
     assert client.get("/state").json()["sessions"] == []
-    assert client.get("/state").json()["balance"]["credits"] == 0
+    assert client.get("/state").json()["balance"]["credits_millis"] == 0
+
+
+_DAY_MS = 24 * 3600 * 1000
+
+
+def _complete_session(client: TestClient, action_id: str, ended_at_ms: int, minutes: int = 10) -> dict:
+    r = client.post(
+        "/actions/session/complete",
+        json={
+            "client_action_id": action_id,
+            "subject": "Streak",
+            "start_time_ms": ended_at_ms - minutes * 60 * 1000,
+            "paused_duration_ms": 0,
+            "ended_at_ms": ended_at_ms,
+        },
+    )
+    assert r.status_code == 200, r.text
+    result = r.json()["result"]
+    assert isinstance(result, dict)
+    return result
+
+
+# Mid-afternoon Pacific (2023-11-14); stepping by whole days never crosses a
+# Pacific-midnight boundary within a session.
+_STREAK_BASE_MS = 1_700_000_000_000
+
+
+def test_streak_grows_on_consecutive_days_and_multiplies_awards(client: TestClient) -> None:
+    day1 = _complete_session(client, "streak-d1", _STREAK_BASE_MS)
+    assert day1["streak_days"] == 1
+    assert day1["credits_earned_millis"] == 40400  # (10 + 30 bonus) × 1.01
+    day2 = _complete_session(client, "streak-d2", _STREAK_BASE_MS + _DAY_MS)
+    assert day2["streak_days"] == 2
+    assert day2["credits_earned_millis"] == 40800  # (10 + 30 bonus) × 1.02
+
+
+def test_daily_bonus_fires_once_per_day(client: TestClient) -> None:
+    first = _complete_session(client, "bonus-1", _STREAK_BASE_MS)
+    assert first["daily_bonus_millis"] == 30300
+    second = _complete_session(client, "bonus-2", _STREAK_BASE_MS + 3_600_000)
+    assert second["daily_bonus_millis"] == 0
+    assert second["credits_earned_millis"] == 10100  # 10 × 1.01, no second bonus
+
+
+def test_streak_resets_after_gap_without_rest_days(client: TestClient) -> None:
+    _complete_session(client, "gap-d1", _STREAK_BASE_MS)
+    day4 = _complete_session(client, "gap-d4", _STREAK_BASE_MS + 3 * _DAY_MS)
+    assert day4["streak_days"] == 1
+    assert day4["streak_bonus_percent"] == 1
+
+
+def test_sub_threshold_session_earns_fractional_credits_without_streak(client: TestClient) -> None:
+    result = _complete_session(client, "tiny-1", _STREAK_BASE_MS, minutes=4)
+    assert result["streak_days"] == 0
+    assert result["daily_bonus_millis"] == 0
+    assert result["credits_earned_millis"] == 4000
+    assert client.get("/state").json()["credit_state"]["streak_days"] == 0
+
+
+def test_add_past_session_earns_credits_without_streak_effects(client: TestClient) -> None:
+    _grant_credits(client, 30)  # 30-minute backfill — over the daily threshold
+    state = client.get("/state").json()
+    assert state["balance"]["credits_millis"] == 30000
+    assert state["credit_state"]["streak_days"] == 0
+    assert state["credit_state"]["daily_bonus_claimed_today"] is False
 
 
 def test_convert_credits_to_tokens(client: TestClient) -> None:
@@ -223,7 +301,7 @@ def test_convert_credits_to_tokens(client: TestClient) -> None:
     r = client.post("/actions/convert", json={"client_action_id": "conv-1", "amount": 4})
     assert r.status_code == 200, r.text
     state = client.get("/state").json()
-    assert state["balance"] == {"credits": 6, "tokens": 4}
+    assert state["balance"] == {"credits_millis": 6000, "tokens": 4}
 
 
 def test_convert_insufficient_credits_returns_409(client: TestClient) -> None:
@@ -280,7 +358,7 @@ def test_slots_spin_writes_game_event(client: TestClient) -> None:
     assert body["game_event"]["rng_version"] == RNG_VERSION
 
     state = client.get("/state").json()
-    assert state["balance"]["credits"] == 4
+    assert state["balance"]["credits_millis"] == 4000
 
 
 def test_roulette_spin_writes_replayable_rng_audit(tmp_path: Path, db_url: str) -> None:
@@ -404,7 +482,7 @@ def test_import_replaces_state_and_writes_snapshot(client: TestClient) -> None:
     assert r.status_code == 200, r.text
 
     state = client.get("/state").json()
-    assert state["balance"] == {"credits": 0, "tokens": 5}
+    assert state["balance"] == {"credits_millis": 0, "tokens": 5}
     assert [s["id"] for s in state["sessions"]] == ["imp-1"]
     assert [p["id"] for p in state["prizes"]] == ["p-imp"]
 
@@ -414,7 +492,7 @@ def test_reset_zeroes_balance_keeps_prizes(client: TestClient) -> None:
     r = client.post("/actions/reset", json={"client_action_id": "reset-1"})
     assert r.status_code == 200, r.text
     state = client.get("/state").json()
-    assert state["balance"] == {"credits": 0, "tokens": 0}
+    assert state["balance"] == {"credits_millis": 0, "tokens": 0}
     assert state["sessions"] == []
     assert len(state["prizes"]) == 6
 
@@ -429,16 +507,16 @@ def test_users_have_isolated_state(tmp_path: Path, db_url: str) -> None:
     with TestClient(app) as client:
         app.dependency_overrides[dep] = lambda: "alice"
         _grant_credits(client, 50, action_id="alice-seed")
-        assert client.get("/state").json()["balance"]["credits"] == 50
+        assert client.get("/state").json()["balance"]["credits_millis"] == 50000
 
         app.dependency_overrides[dep] = lambda: "bob"
-        assert client.get("/state").json()["balance"]["credits"] == 0
+        assert client.get("/state").json()["balance"]["credits_millis"] == 0
         _grant_credits(client, 7, action_id="bob-seed")
-        assert client.get("/state").json()["balance"]["credits"] == 7
+        assert client.get("/state").json()["balance"]["credits_millis"] == 7000
 
         # Alice's balance is unchanged by bob's activity.
         app.dependency_overrides[dep] = lambda: "alice"
-        assert client.get("/state").json()["balance"]["credits"] == 50
+        assert client.get("/state").json()["balance"]["credits_millis"] == 50000
 
 
 def test_ws_emits_state_changed_on_connect(client: TestClient) -> None:
@@ -563,7 +641,7 @@ def test_admin_state_returns_target_user_state(tmp_path: Path, db_url: str) -> N
         app.dependency_overrides[dep] = lambda: "rai"
         r = c.get("/admin/state", params={"user": "auragon"})
         assert r.status_code == 200, r.text
-        assert r.json()["balance"]["credits"] == 12
+        assert r.json()["balance"]["credits_millis"] == 12000
 
 
 def test_admin_state_unknown_user_returns_404_without_seeding(tmp_path: Path, db_url: str) -> None:

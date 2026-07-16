@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 
-import { COLORS, SectionTitle, fmtHoursMin } from "./shared.jsx";
+import { COLORS, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
 import { fetchAdminUsers, fetchAdminUserState, useSyncStatus } from "./sync.js";
 
 export function AdminView({ addPrize, deletePrize, ownUsername }) {
@@ -64,7 +64,7 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
   };
 
   const prizes = targetState?.prizes ?? [];
-  const balance = targetState?.balance ?? { credits: 0, tokens: 0 };
+  const balance = targetState?.balance ?? { credits_millis: 0, tokens: 0 };
 
   return (
     <div>
@@ -100,8 +100,8 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
         </select>
         {selected && (
           <span style={{ color: COLORS.creamDim, fontSize: 12, marginLeft: 12 }}>
-            Balance: <strong style={{ color: COLORS.gold }}>{balance.credits.toLocaleString()}</strong> credits ·{" "}
-            <strong style={{ color: COLORS.rose }}>{balance.tokens.toLocaleString()}</strong> tokens
+            Balance: <strong style={{ color: COLORS.gold }}>{fmtCredits(balance.credits_millis / 1000)}</strong> credits
+            · <strong style={{ color: COLORS.rose }}>{balance.tokens.toLocaleString()}</strong> tokens
           </span>
         )}
       </div>

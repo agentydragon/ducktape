@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-import { COLORS, SectionTitle, fmtHoursMin } from "./shared.jsx";
+import { COLORS, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
 
 export function PrizesView({
   offline,
@@ -65,7 +65,7 @@ export function PrizesView({
               Credits available
             </div>
             <div className="display-font mono" style={{ fontSize: 22, color: COLORS.gold, fontWeight: 700 }}>
-              {credits.toLocaleString()}
+              {fmtCredits(credits)}
             </div>
           </div>
           <input
@@ -104,9 +104,9 @@ export function PrizesView({
                 {n}
               </button>
             ))}
-          {credits > 0 && (
+          {Math.floor(credits) > 0 && (
             <button
-              onClick={() => setConvertAmount(String(credits))}
+              onClick={() => setConvertAmount(String(Math.floor(credits)))}
               style={{
                 padding: "4px 10px",
                 fontSize: 11,
@@ -116,7 +116,7 @@ export function PrizesView({
                 cursor: "pointer",
               }}
             >
-              All ({credits})
+              All ({Math.floor(credits)})
             </button>
           )}
         </div>

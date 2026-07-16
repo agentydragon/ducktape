@@ -47,6 +47,11 @@ export function fmtHoursMin(sec) {
   return `${h}h ${m}m`;
 }
 
+// Credits are decimal (cents-backed server-side); always show 1 decimal place.
+export function fmtCredits(credits) {
+  return (credits ?? 0).toFixed(1);
+}
+
 export function getElapsedSec(session, now = Date.now()) {
   if (!session) return 0;
   let ms = now - session.startTime - (session.pausedDuration || 0);

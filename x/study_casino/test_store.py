@@ -68,7 +68,7 @@ def _blackjack_outcome(
 
 def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> None:
     state = store.state_dump(_U)
-    assert state.balance == BalanceRead(credits=0, tokens=0)
+    assert state.balance == BalanceRead(credits_millis=0, tokens=0)
     assert state.sessions == []
     assert state.prize_log == []
     assert len(state.prizes) == 6  # DEFAULT_PRIZES
@@ -77,7 +77,7 @@ def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> Non
 def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -> None:
     def grant_credits(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
-        balance.credits += 7
+        balance.credits += 7000  # 7 credits, in millis
         return ActionMutation(result=ConvertResult(amount=7), details={"reason": "test"})
 
     result = store.run_server_action(
@@ -85,12 +85,12 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
     )
     assert isinstance(result, ServerActionResult)
     assert result.event.action_type == "test.grant"
-    assert result.event.credits_before == 0
-    assert result.event.credits_after == 7
+    assert result.event.credits_before_millis == 0
+    assert result.event.credits_after_millis == 7000
     assert result.result == ConvertResult(amount=7)
 
     state = store.state_dump(_U)
-    assert state.balance.credits == 7
+    assert state.balance.credits_millis == 7000
 
     ledger = store.list_ledger_events(_U)
     assert len(ledger) == 1
@@ -100,7 +100,7 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
 def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     def grant_credits(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
-        balance.credits += 5
+        balance.credits += 5000
         return ActionMutation(result=ConvertResult(amount=5))
 
     first = store.run_server_action(
@@ -111,8 +111,8 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     )
     assert second.event.id == first.event.id
     assert second.result == first.result
-    # Mutator was NOT replayed — credits stayed at 5, not 10.
-    assert store.state_dump(_U).balance.credits == 5
+    # Mutator was NOT replayed — credits stayed at 5000 millis, not 10000.
+    assert store.state_dump(_U).balance.credits_millis == 5000
 
 
 def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
@@ -127,7 +127,7 @@ def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
         )
 
     # Transaction was rolled back: balance unchanged, no ledger row.
-    assert store.state_dump(_U).balance.credits == 0
+    assert store.state_dump(_U).balance.credits_millis == 0
     assert len(store.list_ledger_events(_U)) == 0
 
 
@@ -152,7 +152,8 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
     )
 
     state = store.state_dump(_U)
-    assert state.balance == BalanceRead(credits=11, tokens=22)
+    # ImportData.credits is decimal credits; stored as millis.
+    assert state.balance == BalanceRead(credits_millis=11000, tokens=22)
     assert [p.id for p in state.prizes] == ["p-only"]
 
     with store._Session() as s:
@@ -169,7 +170,7 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
 def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     def grant_then_reset(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
-        balance.credits = 50
+        balance.credits = 50000
         balance.tokens = 30
         return ActionMutation(result=ConvertResult(amount=50))
 
@@ -177,7 +178,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
         username=_U, client_action_id="act-grant", action_type="test.grant", mutator=grant_then_reset
     )
     pre_reset = store.state_dump(_U)
-    assert pre_reset.balance == BalanceRead(credits=50, tokens=30)
+    assert pre_reset.balance == BalanceRead(credits_millis=50000, tokens=30)
 
     def reset(s, _now_ms):
         store.replace_state_for_reset(s, _U)
@@ -192,7 +193,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     )
 
     state = store.state_dump(_U)
-    assert state.balance == BalanceRead(credits=0, tokens=0)
+    assert state.balance == BalanceRead(credits_millis=0, tokens=0)
     assert state.sessions == []
     assert state.prize_log == []
     assert len(state.prizes) == 6  # default catalog preserved
@@ -215,13 +216,13 @@ def test_state_persists_across_reopen(db_url: str) -> None:
 
     def grant(s, _now_ms):
         balance = next(iter(s.execute(_balance_select(_U)).scalars()))
-        balance.credits = 13
+        balance.credits = 13000
         return ActionMutation(result=ConvertResult(amount=13))
 
     store_a.run_server_action(username=_U, client_action_id="reopen-1", action_type="test.grant", mutator=grant)
 
     store_b = SqlStore(db_url)
-    assert store_b.state_dump(_U).balance.credits == 13
+    assert store_b.state_dump(_U).balance.credits_millis == 13000
 
 
 def test_two_users_share_db_without_collision(store: SqlStore) -> None:
@@ -230,13 +231,13 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     def grant_alice(s, _now_ms):
         balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == "alice").with_for_update())
         assert balance is not None
-        balance.credits += 10
+        balance.credits += 10000
         return ActionMutation(result=ConvertResult(amount=10))
 
     def grant_bob(s, _now_ms):
         balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == "bob").with_for_update())
         assert balance is not None
-        balance.credits += 99
+        balance.credits += 99000
         return ActionMutation(result=ConvertResult(amount=99))
 
     # Same client_action_id used for both — must NOT collide since the
@@ -244,8 +245,8 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     store.run_server_action(username="alice", client_action_id="dup-id", action_type="t", mutator=grant_alice)
     store.run_server_action(username="bob", client_action_id="dup-id", action_type="t", mutator=grant_bob)
 
-    assert store.state_dump("alice").balance.credits == 10
-    assert store.state_dump("bob").balance.credits == 99
+    assert store.state_dump("alice").balance.credits_millis == 10000
+    assert store.state_dump("bob").balance.credits_millis == 99000
     # Each user's ledger lists only their own row.
     assert len(store.list_ledger_events("alice")) == 1
     assert len(store.list_ledger_events("bob")) == 1

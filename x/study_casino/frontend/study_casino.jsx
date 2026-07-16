@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { SyncIcon } from "./SyncIcon.jsx";
 import { useCasino } from "./use_casino.js";
 import { useUrlState } from "./use_url_state.js";
-import { COLORS, fmtClock, getElapsedSec } from "./shared.jsx";
+import { COLORS, fmtClock, fmtCredits, getElapsedSec } from "./shared.jsx";
 import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
 import { StatsView } from "./StatsView.jsx";
@@ -28,6 +28,7 @@ export default function StudyCasino() {
     isAdmin,
     credits,
     tokens,
+    creditState,
     sessions,
     prizes,
     prizeLog,
@@ -314,7 +315,7 @@ export default function StudyCasino() {
               Credits
             </div>
             <div className="display-font mono" style={{ fontSize: 20, color: COLORS.gold, fontWeight: 700 }}>
-              {credits.toLocaleString()}
+              {fmtCredits(credits)}
             </div>
           </div>
           <SyncIcon />
@@ -456,6 +457,7 @@ export default function StudyCasino() {
             todayTotal={todayTotal}
             sessions={sessions}
             credits={credits}
+            creditState={creditState}
             start={startSession}
             pause={pauseSession}
             resume={resumeSession}

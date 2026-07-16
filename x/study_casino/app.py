@@ -89,6 +89,15 @@ from x.study_casino.actions import (
 )
 from x.study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.study_casino.config import Settings
+from x.study_casino.credit_award import (
+    MILLIS_PER_CREDIT,
+    award_live_session,
+    base_session_credits,
+    get_or_create_credit_state,
+    millis_from_credits,
+    streak_bonus_percent,
+    streak_multiplier,
+)
 from x.study_casino.deployment import build_deployment_info
 from x.study_casino.events import (
     BlackjackOutcome,
@@ -180,15 +189,19 @@ def _balance(s: Session, username: str) -> BalanceRow:
 
 
 def _require_credits(s: Session, username: str, amount: int) -> None:
+    """Require `amount` whole credits; the balance column stores millicredits."""
     if amount <= 0:
         raise ActionRejectedError("invalid_wager", "wager must be positive")
-    have = _balance(s, username).credits
-    if have < amount:
-        raise ActionRejectedError("insufficient_credits", f"need {amount} credits; have {have}")
+    have_millis = _balance(s, username).credits
+    if have_millis < amount * MILLIS_PER_CREDIT:
+        raise ActionRejectedError(
+            "insufficient_credits", f"need {amount} credits; have {have_millis / MILLIS_PER_CREDIT:g}"
+        )
 
 
-def _session_minutes(row: SessionRow) -> int:
-    return row.seconds // 60
+def _session_millis(seconds: int) -> int:
+    """Base (unmultiplied) credit value of a session, in millicredits."""
+    return millis_from_credits(base_session_credits(seconds))
 
 
 def _get_user_session(s: Session, username: str, session_id: str) -> SessionRow | None:
@@ -235,7 +248,7 @@ def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str) -
             raise ActionRejectedError("blackjack_double", "double is only available on the first two cards")
         _require_credits(s, username, current_wager)
         balance = _balance(s, username)
-        balance.credits -= current_wager
+        balance.credits -= current_wager * MILLIS_PER_CREDIT
         current_wager *= 2
         drawn, shoe = draw_cards(shoe, 1)
         player = [*player, *drawn]
@@ -453,18 +466,37 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 raise ActionRejectedError("session_id", "session id already exists")
             seconds = max(0, (body.ended_at_ms - body.start_time_ms - body.paused_duration_ms) // 1000)
             if seconds <= 0:
-                return ActionMutation(result=SessionCompleteResult(session_id=session_id, seconds=0, credits_earned=0))
-            minutes = seconds // 60
+                state = get_or_create_credit_state(s, username)
+                return ActionMutation(
+                    result=SessionCompleteResult(
+                        session_id=session_id,
+                        seconds=0,
+                        credits_earned_millis=0,
+                        daily_bonus_millis=0,
+                        streak_days=state.streak_days,
+                        streak_bonus_percent=streak_bonus_percent(state.streak_days),
+                    )
+                )
             s.add(
                 SessionRow(
                     id=session_id, user_id=username, subject=body.subject, seconds=seconds, ended_at_ms=body.ended_at_ms
                 )
             )
-            if minutes:
-                _balance(s, username).credits += minutes
+            # Flush so award_live_session's day-total query sees this session.
+            s.flush()
+            award = award_live_session(s, username, seconds=seconds, ended_at_ms=body.ended_at_ms)
+            if award.total_millis:
+                _balance(s, username).credits += award.total_millis
             return ActionMutation(
-                result=SessionCompleteResult(session_id=session_id, seconds=seconds, credits_earned=minutes),
-                details={"subject": body.subject},
+                result=SessionCompleteResult(
+                    session_id=session_id,
+                    seconds=seconds,
+                    credits_earned_millis=award.total_millis,
+                    daily_bonus_millis=award.daily_bonus_millis,
+                    streak_days=award.streak_days,
+                    streak_bonus_percent=streak_bonus_percent(award.streak_days),
+                ),
+                details={"subject": body.subject, "rest_day_consumed": award.rest_day_consumed},
             )
 
         return await commit_action(username=username, body=body, action_type="session.complete", mutator=mutate)
@@ -486,11 +518,16 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                     ended_at_ms=body.ended_at_ms,
                 )
             )
-            credits_earned = body.seconds // 60
-            if credits_earned:
-                _balance(s, username).credits += credits_earned
+            # Backfilled sessions earn multiplied credits but never advance
+            # streak or daily-bonus state (only live sessions qualify).
+            state = get_or_create_credit_state(s, username)
+            earned_millis = millis_from_credits(
+                base_session_credits(body.seconds) * streak_multiplier(state.streak_days)
+            )
+            if earned_millis:
+                _balance(s, username).credits += earned_millis
             return ActionMutation(
-                result=SessionAddPastResult(session_id=session_id, credits_earned=credits_earned),
+                result=SessionAddPastResult(session_id=session_id, credits_earned_millis=earned_millis),
                 details={"subject": body.subject, "seconds": body.seconds},
             )
 
@@ -504,17 +541,19 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             row = _get_user_session(s, username, body.session_id)
             if row is None:
                 raise ActionRejectedError("session", "completed session not found")
-            old_minutes = _session_minutes(row)
+            old_millis = _session_millis(row.seconds)
             if body.subject is not None:
                 row.subject = body.subject
             if body.seconds is not None:
                 row.seconds = body.seconds
-            delta = _session_minutes(row) - old_minutes
-            if delta:
+            # Base-rate delta only — streak/bonus state is append-only and
+            # awarded multipliers are not retroactively unwound.
+            delta_millis = _session_millis(row.seconds) - old_millis
+            if delta_millis:
                 balance = _balance(s, username)
-                balance.credits = max(0, balance.credits + delta)
+                balance.credits = max(0, balance.credits + delta_millis)
             return ActionMutation(
-                result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta=delta),
+                result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta_millis=delta_millis),
                 details={"subject": row.subject, "seconds": row.seconds},
             )
 
@@ -528,12 +567,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             row = _get_user_session(s, username, body.session_id)
             if row is None:
                 raise ActionRejectedError("session", "completed session not found")
-            credits_delta = -_session_minutes(row)
+            delta_millis = -_session_millis(row.seconds)
             s.delete(row)
             balance = _balance(s, username)
-            balance.credits = max(0, balance.credits + credits_delta)
+            balance.credits = max(0, balance.credits + delta_millis)
             return ActionMutation(
-                result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta=credits_delta)
+                result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta_millis=delta_millis)
             )
 
         return await commit_action(username=username, body=body, action_type="session.delete", mutator=mutate)
@@ -543,7 +582,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             _require_credits(s, username, body.amount)
             balance = _balance(s, username)
-            balance.credits -= body.amount
+            balance.credits -= body.amount * MILLIS_PER_CREDIT
             balance.tokens += body.amount
             return ActionMutation(result=ConvertResult(amount=body.amount))
 
@@ -648,7 +687,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             settlement = spin_slots(body.wager_credits, rng)
             balance = _balance(s, username)
-            balance.credits -= body.wager_credits
+            balance.credits -= body.wager_credits * MILLIS_PER_CREDIT
             balance.tokens += settlement.payout_tokens
             return ActionMutation(
                 result=SlotsActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
@@ -681,7 +720,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             except ValueError as e:
                 raise ActionRejectedError("roulette_bet", str(e)) from e
             balance = _balance(s, username)
-            balance.credits -= body.wager_credits
+            balance.credits -= body.wager_credits * MILLIS_PER_CREDIT
             balance.tokens += settlement.payout_tokens
             return ActionMutation(
                 result=RouletteActionResult(**settlement.outcome, payout_tokens=settlement.payout_tokens),
@@ -717,7 +756,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             player = [*p1, *p2]
             dealer = [*d1, *d2]
             balance = _balance(s, username)
-            balance.credits -= body.wager_credits
+            balance.credits -= body.wager_credits * MILLIS_PER_CREDIT
             credits_after_wager = balance.credits
             tokens_before_settle = balance.tokens
             hand_id = _blackjack_hand_id(username, body.client_action_id)
@@ -736,7 +775,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 status=status,
                 wager_credits=body.wager_credits,
                 current_wager_credits=body.wager_credits,
-                credits_before=credits_after_wager + body.wager_credits,
+                credits_before=credits_after_wager + body.wager_credits * MILLIS_PER_CREDIT,
                 tokens_before=tokens_before_settle,
                 shoe_json=json.dumps(shoe, separators=(",", ":")),
                 player_json=json.dumps(player, separators=(",", ":")),

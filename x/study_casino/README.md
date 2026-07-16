@@ -16,7 +16,9 @@ Lives at <https://casino.allegedly.works>.
 | `app.py`                               | FastAPI backend: REST + thin WebSocket fan-out, static frontend                                    |
 | `actions.py`                           | Pydantic schemas for server-authoritative action endpoints                                         |
 | `config.py`                            | Pydantic settings (DATABASE_URL, ADMIN_USERS, host, port, OIDC)                                    |
-| `models.py`                            | SQLAlchemy rows: balance, sessions, prizes, prize_log, ledger, snapshots, hands                    |
+| `credit_constants.py`                  | Tunable credit-system constants (streak increment, daily bonus, thresholds)                        |
+| `credit_award.py`                      | Milli-credit accounting, streak/daily-bonus computation (credit system v2)                         |
+| `models.py`                            | SQLAlchemy rows: balance, credit_state, sessions, prizes, prize_log, ledger, snapshots, hands      |
 | `events.py`                            | Pydantic schemas for game and ledger event reads                                                   |
 | `state.py`                             | Pydantic schemas for `GET /state` / `/me` / `/admin/users` / `/healthz` and the `/ws` payload      |
 | `export_schema.py`                     | Schema-only FastAPI app — prints OpenAPI JSON for the Zod codegen below                            |
@@ -68,9 +70,13 @@ prizes against their own token balance.
 Canonical state is a small relational schema in Postgres (CNPG `study-casino-db`),
 shared-schema with rows scoped by `user_id`:
 
+Credit amounts are integer **millicredits** (credit value × 1000) in every
+column and wire field (`*_millis`); tokens and wagers are whole integers.
+
 | Table               | Purpose                                                                         |
 | ------------------- | ------------------------------------------------------------------------------- |
-| `balance`           | One economy row per user; credits, tokens. CHECK constraints enforce `≥ 0`.     |
+| `balance`           | One economy row per user; credits (millis), tokens. CHECKs enforce `≥ 0`.       |
+| `credit_state`      | Per-user streak + daily-bonus state (Pacific days, append-only).                |
 | `sessions`          | One row per completed study session. In-progress sessions are client-side only. |
 | `prizes`            | User-editable prize catalog.                                                    |
 | `prize_log`         | Append-only redemption log.                                                     |

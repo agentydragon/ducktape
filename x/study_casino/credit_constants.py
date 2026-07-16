@@ -1,0 +1,16 @@
+"""Tunable constants for the credit system (see plans/credit_system_v2.md).
+
+Kept in one module so game balance can be tweaked without touching
+business logic. Milestone/break constants land with their phases.
+"""
+
+from decimal import Decimal
+
+# Streak
+DAILY_STREAK_STUDY_THRESHOLD_SECONDS = 300  # 5 minutes of study qualifies a day
+DAILY_STREAK_INCREMENT = Decimal("0.01")  # +1% credit bonus per streak day
+STREAK_MULTIPLIER_CAP = Decimal("1.0")  # max +100% (2x total)
+REST_DAY_STREAK_INTERVAL = 14  # streak days to earn 1 rest day
+
+# Daily bonus
+DAILY_FIRST_BONUS = Decimal(30)  # credits, first time over the threshold each day

@@ -76,9 +76,16 @@ export function useCasino() {
   const isAdmin = !!me?.is_admin;
   const username = me?.username ?? null;
 
-  const balance = state?.balance ?? { credits: 0, tokens: 0 };
-  const credits = Math.floor(balance.credits ?? 0);
+  const balance = state?.balance ?? { credits_millis: 0, tokens: 0 };
+  // Server tracks integer millicredits; convert to decimal credits at this seam.
+  const credits = (balance.credits_millis ?? 0) / 1000;
   const tokens = Math.floor(balance.tokens ?? 0);
+  const creditState = state?.credit_state ?? {
+    streak_days: 0,
+    streak_bonus_percent: 0,
+    rest_days_available: 0,
+    daily_bonus_claimed_today: false,
+  };
 
   // Server returns server-shaped fields (ended_at_ms, at_ms); the JSX layer
   // uses camelCase aliases (endedAt, at) — translate at this seam.
@@ -290,6 +297,7 @@ export function useCasino() {
     isAdmin,
     credits,
     tokens,
+    creditState,
     sessions,
     prizes,
     prizeLog,

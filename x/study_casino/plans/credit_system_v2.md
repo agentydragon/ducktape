@@ -1,6 +1,11 @@
 # Credit System v2 — Design Document
 
-Status: future design, not implemented. Anchored on the current
+Status: **phases 1–2 implemented** (milli-credit integer accounting via
+`credit_award.py` + `credit_constants.py`, streak/daily-bonus/rest-day state in
+`credit_state`); phases 3–5 (milestones, break time, richer UI) remain future
+work. Implementation deviation: amounts are integer **millicredits** (×1000),
+not cents (×100), and stay integers on the wire (`*_millis` fields,
+`streak_bonus_percent`) — no floats anywhere. Anchored on the current
 server-authoritative Postgres model: credit is computed and persisted
 server-side on each `/actions/*` mutation (recorded in `ledger_events`,
 surfaced read-only through `/state`); see <../README.md>. The mechanics
@@ -60,12 +65,13 @@ Session edits and deletes are server actions like any other and go into
 changed (old/new seconds, session ID). Streak and bonus state are not
 touched.
 
-### Cents-as-integer for all DB columns
+### Millis-as-integer for all DB columns and the wire
 
-All credit/token amounts in Postgres should be stored as integers representing
-cents (value × 100). The read-side JSON can expose decimal display values, but
-server code should use `Decimal` internally, multiply by 100 on DB write, and
-divide on DB read. No `Float` columns — avoids IEEE 754 drift.
+All credit amounts are stored and transmitted as integers representing
+millicredits (value × 1000). Server code uses `Decimal` internally and rounds
+to whole millis on write; the frontend divides by 1000 only for display. No
+`Float` columns and no floats on the wire — avoids IEEE 754 drift and float
+equality traps.
 
 ### 100-day ramp to 2x
 

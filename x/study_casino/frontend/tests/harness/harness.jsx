@@ -21,7 +21,13 @@ window.fetch = async () =>
 
 // Pre-populate the state cache with the same data the visual baseline expects.
 casinoSync.state.set({
-  balance: { credits: 142, tokens: 88 },
+  balance: { credits_millis: 142500, tokens: 88 },
+  credit_state: {
+    streak_days: 7,
+    streak_bonus_percent: 7,
+    rest_days_available: 0,
+    daily_bonus_claimed_today: true,
+  },
   sessions: [
     { id: "s1", subject: "Biochemistry", seconds: 3600, ended_at_ms: FROZEN_NOW_MS - 2 * 3600 * 1000 },
     { id: "s2", subject: "Anatomy", seconds: 1500, ended_at_ms: FROZEN_NOW_MS - 26 * 3600 * 1000 },

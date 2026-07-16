@@ -15,14 +15,28 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BalanceRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    credits: int
+    credits_millis: int = Field(description="Credit balance in integer millicredits (credit value × 1000).")
     tokens: int
+
+
+class CreditStateRead(BaseModel):
+    """Read-only streak/daily-bonus state derived server-side — the frontend
+    only displays it (see plans/credit_system_v2.md)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    streak_days: int
+    streak_bonus_percent: int = Field(description="Streak bonus applied to credit awards: 1%/day, capped at 100.")
+    rest_days_available: int
+    daily_bonus_claimed_today: bool = Field(
+        description="Whether the daily first-5-minutes bonus fired today (Pacific)."
+    )
 
 
 class SessionRead(BaseModel):
@@ -57,6 +71,7 @@ class StateDump(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     balance: BalanceRead
+    credit_state: CreditStateRead
     sessions: list[SessionRead]
     prizes: list[PrizeRead]
     prize_log: list[PrizeLogRead]

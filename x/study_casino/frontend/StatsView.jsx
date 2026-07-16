@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 
 import {
   COLORS,
+  fmtCredits,
   fmtHoursMin,
   mapSessionRead,
   SectionTitle,
@@ -109,7 +110,7 @@ export function StatsView({
         <StatCard label="Sessions" value={sessions.length.toLocaleString()} />
         <StatCard label="Earned from study" value={totalEarnedFromStudy.toLocaleString()} />
         <StatCard label="Tokens spent" value={totalSpent.toLocaleString()} />
-        <StatCard label="Credits" value={credits.toLocaleString()} accent />
+        <StatCard label="Credits" value={fmtCredits(credits)} accent />
         <StatCard label="Tokens" value={tokens.toLocaleString()} accent />
       </div>
 
