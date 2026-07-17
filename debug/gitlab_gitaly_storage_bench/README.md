@@ -60,14 +60,51 @@ kubectl -n gitlab-bench logs -l app.kubernetes.io/name=gitlab-storage-bench --ta
   | grep -E "^$LABEL,"
 ```
 
-Repeat steps 1–5 per cell. For the `rook-*` cells, point `$CELL` at the rook CephFS
-StorageClass; the rook HDD arm requires reconfiguring the trial Ceph cluster to HDD hosts
-(see the companion note — a single CephCluster can't mix `dataDirHostPath` roots, so the
-media arms run sequentially).
+Repeat steps 1–5 per cell. `rook-ssd` reuses the live trial Ceph cluster
+(`rook-cephfs-trial-ssd`). `rook-hdd` needs a **sequential rebuild** of the trial Ceph
+cluster onto the HDD hosts, because a single CephCluster can't mix `dataDirHostPath` roots
+per node (see <../distributed_storage_and_tiny_rook_ceph.md>).
+
+### Rook HDD arm rebuild
+
+Manifest: <rook-hdd-arm.yaml> (3 HDD hosts `ovh-ns{102453,103656,103711}`, 3-copy,
+loop-backed OSDs on `/var/mnt/local-path-ovh-hdd`, StorageClass `rook-cephfs-trial-hdd`).
+
+```bash
+# 1. Tear down the SSD arm. Rook's finalizer chain is
+#    SubVolumeGroup -> CephFilesystem -> CephCluster, and the SubVolumeGroup won't delete
+#    while CSI subvolumes (bench PVCs) linger. For a DISPOSABLE trial, force it:
+kubectl -n rook-ceph delete cephfilesystem trialfs-ssd --wait=false
+kubectl delete sc rook-cephfs-trial-ssd
+for cr in cephfilesystemsubvolumegroup/trialfs-ssd-csi cephfilesystem/trialfs-ssd \
+          cephblockpool/builtin-mgr cephcluster/rook-ceph; do
+  kubectl -n rook-ceph patch ${cr%/*} ${cr#*/} --type merge -p '{"metadata":{"finalizers":[]}}'
+done
+# force-clearing the CephCluster finalizer orphans its daemon pods — delete them:
+kubectl -n rook-ceph delete deploy -l app=rook-ceph-mon
+kubectl -n rook-ceph delete deploy -l app=rook-ceph-osd
+kubectl -n rook-ceph delete deploy -l app=rook-ceph-mgr
+kubectl -n rook-ceph delete deploy -l app=rook-ceph-mds
+kubectl -n rook-ceph delete daemonset rook-ceph-trial-loop-device-ssd
+
+# 2. Deploy the loop-device DaemonSet FIRST and confirm every node landed on /dev/loop3
+#    (the CephCluster selects it literally; losetup picking a different loop breaks OSDs):
+awk '/^---/{exit} {print}' rook-hdd-arm.yaml | kubectl apply -f -
+kubectl -n rook-ceph logs -l app.kubernetes.io/name=rook-ceph-trial-loop-device-hdd | grep ready:
+
+# 3. Apply the rest (CephCluster + CephFilesystem + StorageClass), wait for health:
+kubectl apply -f rook-hdd-arm.yaml
+# watch: kubectl -n rook-ceph get cephcluster,cephfilesystem  (osds 3/3, fs Ready)
+
+# 4. Point Gitaly at rook-cephfs-trial-hdd (step 1 reconfigure with __GITALY_SC__) and bench.
+```
 
 ## Teardown
 
 ```bash
 helm uninstall gitlab-bench -n gitlab-bench
 kubectl delete ns gitlab-bench
+# rook trial: delete CephFilesystem, then CephCluster (finalizer chain as above);
+# then the loop-device DaemonSet, and finally the loop backing files + detach the loop
+# devices on the OVH nodes (host access) and remove the CephCluster dataDirHostPath.
 ```
