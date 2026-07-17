@@ -59,7 +59,13 @@ describe("gmailPreviews", () => {
     expect(renderPreview(gmailPreviews.threads_modify_labels, { thread_ids: [], add: ["x"] }, "compact")).toBeNull();
   });
 
-  it("has no entry for read tools (self-descriptive args → raw JSON, no custom widget)", () => {
-    expect("threads_list" in gmailPreviews).toBe(false);
+  it("renders every Gmail read tool with a widget", () => {
+    expect(renderPreview(gmailPreviews.threads_get, { thread_id: "t1" }, "compact")).not.toBeNull();
+    expect(renderPreview(gmailPreviews.threads_list, { query: "from:alice" }, "detailed")).not.toBeNull();
+    expect(renderPreview(gmailPreviews.messages_get, { message_id: "m1" }, "compact")).not.toBeNull();
+  });
+
+  it("has no entry for read tools with no useful preview (self-descriptive or empty args)", () => {
+    expect("labels_list" in gmailPreviews).toBe(false);
   });
 });

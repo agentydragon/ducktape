@@ -5,6 +5,7 @@ load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//util:data_uri.bzl", "data_uri_module")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -174,10 +175,22 @@ js_library(
     deps = ["//:node_modules/react"],
 )
 
+# Gmail's and Google Calendar's official multicolor icon SVGs (MODULE.bazel's `gmail_icon_svg` /
+# `google_calendar_icon_svg` http_files), turned into TS data-URI constants at build time —
+# not checked in as base64 source, and not a runtime fetch to google.com either.
+data_uri_module(
+    name = "brand_icon_data",
+    consts = {
+        "GMAIL_ICON_DATA_URI": "@gmail_icon_svg//file",
+        "GOOGLE_CALENDAR_ICON_DATA_URI": "@google_calendar_icon_svg//file",
+    },
+)
+
 js_library(
     name = "icons",
     srcs = ["icons.tsx"],
     deps = [
+        ":brand_icon_data",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/react",
     ],

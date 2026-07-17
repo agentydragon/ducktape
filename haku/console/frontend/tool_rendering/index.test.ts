@@ -27,7 +27,7 @@ describe("toolPreview registry", () => {
   });
 
   it("returns null when the server is registered but the tool has no widget", () => {
-    expect(toolPreview("gmail", "threads_list", { query: "from:a" }, "detailed")).toBeNull();
+    expect(toolPreview("gmail", "labels_list", {}, "detailed")).toBeNull();
   });
 });
 

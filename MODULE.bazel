@@ -670,6 +670,25 @@ http_file(
     urls = ["https://raw.githubusercontent.com/grocy/grocy/v4.6.0/grocy.openapi.json"],
 )
 
+# Gmail's and Google Calendar's official multicolor product icon SVGs — Google's own versioned
+# gstatic-hosted assets, the same ones Google itself serves for these apps' icons. haku-console's
+# tool-call preview widgets embed them (as build-time-generated data URIs; see
+# haku/console/frontend/BUILD.bazel) to mark a link that opens in that app. Versioned URL, so
+# content is expected stable; bump the version path + sha256 if Google revises the mark.
+http_file(
+    name = "gmail_icon_svg",
+    downloaded_file_path = "gmail.svg",
+    sha256 = "4a255e631f5e08a0426ec385148d216eb5fe42c82ffa8097b7e44622c6862a6e",
+    urls = ["https://fonts.gstatic.com/s/i/productlogos/gmail_2020q4/v11/192px.svg"],
+)
+
+http_file(
+    name = "google_calendar_icon_svg",
+    downloaded_file_path = "calendar.svg",
+    sha256 = "26e9daec33d3a5859160c465c5e43d3bddef0c994efb1a4643135686eaf1c0cc",
+    urls = ["https://fonts.gstatic.com/s/i/productlogos/calendar_2020q4/v11/192px.svg"],
+)
+
 # FreeCAD 1.2.dev from conda.
 # Lockfile generated with pixi (not bazel run lockfile.update — rules_conda's
 # lock_environments target has a Python version conflict with our 3.13 toolchain).

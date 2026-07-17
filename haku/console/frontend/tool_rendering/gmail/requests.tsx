@@ -1,11 +1,14 @@
-// Per-tool-type rendering for haku-console's in-process `gmail` MCP server's write tools
-// (see haku/console/tools/gmail.py). Falls back to the generic raw-JSON view
+// Per-tool-type rendering for haku-console's in-process `gmail` MCP server (see
+// haku/console/tools/gmail.py). Falls back to the generic raw-JSON view
 // (approval_state.ts's argumentsJson) for anything that isn't shaped as expected — arguments
 // are only validated by the tool's own Pydantic model at execution time, not at submission,
-// so a pending approval's arguments could in principle be malformed. The read tools have no
-// widget here (their args — a query, an id, a format — are self-descriptive). The Zod schemas
-// below are built from the FastMCP input schemas advertised by tools/list. Execution still owns
-// cross-field rules that JSON Schema cannot express, such as add/remove label overlap.
+// so a pending approval's arguments could in principle be malformed. `threads_get`,
+// `threads_list`, and `messages_get` get a minimal identity preview (mirrors
+// google_calendar/requests.tsx's `get_event`/`list_events`); the remaining read tools
+// (`labels_list`, `filters_list`, `drafts_list`, …) still have no widget — their args are
+// either empty or self-descriptive. The Zod schemas below are built from the FastMCP input
+// schemas advertised by tools/list. Execution still owns cross-field rules that JSON Schema
+// cannot express, such as add/remove label overlap.
 
 import { Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
@@ -33,13 +36,19 @@ export const GMAIL_SERVER_ID = "gmail";
 
 const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
 const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
+const zGetGmailThreadArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_get");
+const zSearchGmailThreadsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_list");
+const zGetGmailMessageArgs = mcpToolSchema(GMAIL_SERVER_ID, "messages_get");
 
 type ModifyGmailThreadLabelsArgs = z.infer<typeof zModifyGmailThreadLabelsArgs>;
 type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
+type GetGmailThreadArgs = z.infer<typeof zGetGmailThreadArgs>;
+type SearchGmailThreadsArgs = z.infer<typeof zSearchGmailThreadsArgs>;
+type GetGmailMessageArgs = z.infer<typeof zGetGmailMessageArgs>;
 
 // A Gmail API thread id resolves directly in the web UI's `#all/` view — the same link the
 // backend builds for thread previews (haku/console/tools/gmail.py `_THREAD_URL`).
-function gmailThreadUrl(threadId: string): string {
+export function gmailThreadUrl(threadId: string): string {
   return `https://mail.google.com/mail/u/0/#all/${threadId}`;
 }
 
@@ -175,11 +184,31 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
   );
 }
 
-/** Per-tool preview widgets for the `gmail` server's write tools. Read tools have no entry —
- * their args (a query, an id, a format) are self-descriptive, so the raw-JSON fallback serves. */
+// Minimal identity previews for the three read tools worth a widget: the id/query is the whole
+// call, so it leads as the (unlabelled) title — same weight as google_calendar's `get_event`.
+function GetGmailThreadPreview({ args }: PreviewProps<GetGmailThreadArgs>) {
+  return <PreviewTitle>{args.thread_id}</PreviewTitle>;
+}
+
+function GetGmailMessagePreview({ args }: PreviewProps<GetGmailMessageArgs>) {
+  return <PreviewTitle>{args.message_id}</PreviewTitle>;
+}
+
+function SearchGmailThreadsPreview({ args }: PreviewProps<SearchGmailThreadsArgs>) {
+  return <PreviewText>Search: {args.query}</PreviewText>;
+}
+
+/** Per-tool preview widgets for the `gmail` server. The remaining read tools (`labels_list`,
+ * `filters_list`, `drafts_list`, …) have no entry — their args are empty or self-descriptive, so
+ * the raw-JSON fallback serves. */
 export const gmailPreviews = {
   threads_modify_labels: definePreview(zModifyGmailThreadLabelsArgs, ModifyGmailThreadLabelsPreview, (a) => ({
     text: `Gmail: Relabel ${plural(a.thread_ids.length, "thread")}`,
   })),
   drafts_create: definePreview(zCreateGmailDraftArgs, CreateGmailDraftPreview, () => ({ text: "Gmail: Draft email" })),
+  threads_get: definePreview(zGetGmailThreadArgs, GetGmailThreadPreview, () => ({ text: "Gmail: Get thread" })),
+  threads_list: definePreview(zSearchGmailThreadsArgs, SearchGmailThreadsPreview, () => ({
+    text: "Gmail: Search threads",
+  })),
+  messages_get: definePreview(zGetGmailMessageArgs, GetGmailMessagePreview, () => ({ text: "Gmail: Get message" })),
 } satisfies Record<string, ToolPreview>;

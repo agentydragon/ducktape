@@ -1,7 +1,21 @@
 """Shared utility libraries."""
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "data_uri",
+    srcs = ["data_uri.py"],
+    visibility = ["//visibility:public"],
+)
+
+# Turns a binary asset into a TS data-URI constant; see //devinfra/js:data_uri.bzl's macro.
+py_binary(
+    name = "data_uri_bin",
+    main_module = "util.data_uri",
+    visibility = ["//visibility:public"],
+    deps = [":data_uri"],
+)
 
 py_library(
     name = "otel",

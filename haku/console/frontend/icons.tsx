@@ -19,6 +19,8 @@ import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
 import IconWifiOff from "@tabler/icons-react/dist/esm/icons/IconWifiOff.mjs";
 import type { ComponentProps } from "react";
 
+import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon_data.ts";
+
 type TablerIconProps = ComponentProps<typeof IconChecklist>;
 
 /** Checklist — the shell's approvals-queue toggle. */
@@ -94,4 +96,24 @@ export function ListIcon(props: TablerIconProps) {
 /** List with detail lines — the "Full" (detailed) side of a card's detail toggle. */
 export function ListDetailsIcon(props: TablerIconProps) {
   return <IconListDetails size={20} {...props} />;
+}
+
+// Gmail's and Google Calendar's official multicolor app icons — not a Tabler glyph, so they
+// don't fit the wrapper pattern above. The data URI constants (imported above, from
+// brand_icon_data.ts) are generated at build time (BUILD.bazel's data_uri_module, over the SVGs
+// MODULE.bazel fetches as gmail_icon_svg / google_calendar_icon_svg) rather than pasted in as
+// source, so the bundle stays self-contained with no runtime fetch to google.com. Used only to
+// mark a link that opens in that app — the real brand mark reads unambiguously where a generic
+// mail/calendar glyph (MailIcon/CalendarIcon above) would not.
+
+/** Gmail's own multicolor icon — marks a link that opens Gmail (distinct from `MailIcon`
+ * above, which is the generic envelope glyph used for in-app mail-related fields). */
+export function GmailIcon({ size = 20 }: { size?: number }) {
+  return <img src={GMAIL_ICON_DATA_URI} alt="" width={size} height={size} style={{ display: "block" }} />;
+}
+
+/** Google Calendar's own multicolor icon — marks a link that opens Google Calendar (distinct
+ * from `CalendarIcon` above, the generic glyph used for in-app calendar-related fields). */
+export function GoogleCalendarIcon({ size = 20 }: { size?: number }) {
+  return <img src={GOOGLE_CALENDAR_ICON_DATA_URI} alt="" width={size} height={size} style={{ display: "block" }} />;
 }

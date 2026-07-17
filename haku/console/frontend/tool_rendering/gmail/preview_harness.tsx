@@ -29,7 +29,57 @@ const PREVIEW_FIXTURES = [
     },
     result: {
       id: "r-2603837261749773001",
-      message: { id: "18c9f7a2b3d4e5f6", threadId: "thread-42", labelIds: ["DRAFT"] },
+      message: {
+        id: "18c9f7a2b3d4e5f6",
+        threadId: "thread-42",
+        labelIds: ["DRAFT"],
+        payload: { headers: [{ name: "Subject", value: "Re: Q3 planning" }] },
+      },
+    },
+  },
+  {
+    title: "Get the Q3 planning thread",
+    serverId: "gmail",
+    toolName: "threads_get",
+    args: { thread_id: "t1", format: "full" },
+    result: {
+      id: "t1",
+      snippet: "Here are the notes and open questions from the Q3 planning session.",
+      messages: [
+        {
+          id: "m-t1",
+          threadId: "t1",
+          labelIds: ["INBOX", "Label_Work"],
+          snippet: "Here are the notes and open questions from the Q3 planning session.",
+          payload: { headers: [{ name: "Subject", value: "Q3 planning — notes + open questions" }] },
+        },
+      ],
+    },
+  },
+  {
+    title: "Search threads mentioning receipts",
+    serverId: "gmail",
+    toolName: "threads_list",
+    args: { query: "label:receipts after:2026/01/01" },
+    result: {
+      threads: [
+        { id: "t3", snippet: "Your order is on its way and should arrive this week." },
+        { id: "t5", snippet: "Your receipt for order #48213 is attached." },
+      ],
+      nextPageToken: "next-page",
+    },
+  },
+  {
+    title: "Get the dentist confirmation message",
+    serverId: "gmail",
+    toolName: "messages_get",
+    args: { message_id: "m-t2", format: "full" },
+    result: {
+      id: "m-t2",
+      threadId: "t2",
+      labelIds: ["INBOX"],
+      snippet: "Your appointment is confirmed for Tuesday morning.",
+      payload: { headers: [{ name: "Subject", value: "Re: dentist appointment confirmation" }] },
     },
   },
 ] satisfies (RegisteredToolPreviewFixture & { title: string })[];
