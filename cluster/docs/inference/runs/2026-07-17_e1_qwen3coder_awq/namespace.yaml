@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-bench
+  labels:
+    # Ad-hoc inference-experiment namespace. NOT Flux-managed: applied by hand
+    # with `kubectl apply -f runs/<run-id>/`. A kept config graduates to a
+    # Flux-managed dir under cluster/k8s/. See cluster/docs/inference/PLAN.md.
+    app.kubernetes.io/managed-by: inference-bench-manual

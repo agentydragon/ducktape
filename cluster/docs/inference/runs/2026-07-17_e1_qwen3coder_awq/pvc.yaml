@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache
+  namespace: llm-bench
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # SSD LVM on wyrm2 — co-located with the GPUs; faster cold model loads than HDD.
+  storageClassName: lvm-proxmox-ssd
+  resources:
+    requests:
+      storage: 120Gi

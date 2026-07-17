@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen3-coder
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: vllm-qwen3-coder
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-qwen3-coder
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-qwen3-coder
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          # Known-good wyrm2 config from cluster/docs/inference/vllm_history.md:
+          # AWQ 4-bit (compressed-tensors, auto-detected — do NOT pass
+          # --quantization awq), FP8 KV cache mandatory at long ctx, and
+          # --max-num-seqs 32 to avoid sampler-warmup OOM at 262K.
+          args:
+            - --model=cyankiwi/Qwen3-Coder-30B-A3B-Instruct-AWQ-4bit
+            - --served-model-name=qwen3-coder-awq
+            - --tensor-parallel-size=2
+            - --max-model-len=262144
+            - --kv-cache-dtype=fp8
+            - --gpu-memory-utilization=0.90
+            - --max-num-seqs=32
+            - --enable-auto-tool-choice
+            - --tool-call-parser=qwen3_coder
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              cpu: "4"
+              memory: 24Gi
+            limits:
+              nvidia.com/gpu: 2
+              memory: 48Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            # Cold start = model download (~17 GB AWQ) + load + CUDA graph
+            # capture at 262K. Allow up to 30 min before declaring failure.
+            periodSeconds: 15
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: dshm
+          # vLLM tensor-parallel workers communicate over /dev/shm; the k8s
+          # default 64 MB is far too small and causes NCCL/shm crashes.
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
