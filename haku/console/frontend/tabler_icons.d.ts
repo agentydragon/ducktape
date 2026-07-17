@@ -69,6 +69,11 @@ declare module "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs" {
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
+declare module "@tabler/icons-react/dist/esm/icons/IconWifi.mjs" {
+  import type { FC, SVGProps } from "react";
+  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
+  export default Icon;
+}
 declare module "@tabler/icons-react/dist/esm/icons/IconWifiOff.mjs" {
   import type { FC, SVGProps } from "react";
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;

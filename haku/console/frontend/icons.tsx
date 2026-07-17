@@ -16,6 +16,7 @@ import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
 import IconRepeat from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
+import IconWifi from "@tabler/icons-react/dist/esm/icons/IconWifi.mjs";
 import IconWifiOff from "@tabler/icons-react/dist/esm/icons/IconWifiOff.mjs";
 import type { ComponentProps } from "react";
 
@@ -81,6 +82,11 @@ export function RepeatIcon(props: TablerIconProps) {
 /** Envelope — a Gmail draft's recipients / a thread list. */
 export function MailIcon(props: TablerIconProps) {
   return <IconMail size={20} {...props} />;
+}
+
+/** Wifi — the shell's live-sync ok indicator. */
+export function WifiIcon(props: TablerIconProps) {
+  return <IconWifi size={20} {...props} />;
 }
 
 /** Crossed-out wifi — the shell's "live updates disconnected" indicator. */

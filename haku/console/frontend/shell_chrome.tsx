@@ -19,7 +19,7 @@ import {
 import type { ToolCallRecord } from "./client.ts";
 import { CodeBlock } from "./code_block.tsx";
 import { Field } from "./field.tsx";
-import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiOffIcon } from "./icons.tsx";
+import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiIcon, WifiOffIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { SettingsPanel } from "./settings_panel.tsx";
 import { SUCCESS_COLOR } from "./theme.ts";
@@ -45,9 +45,12 @@ export interface ShellChromeProps {
   onDenyScreenshot: (approval: ScreenshotApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
   onOpenToolCalls: () => void;
-  // Live tool-call WebSocket health: when `offline`, the chrome shows a toggle for a warning
-  // panel so a dead channel (approvals only update on reload) is visible, not silent.
+  // Live tool-call WebSocket health: drives the sync-status icon that is always visible (as an
+  // ok-sync indicator) and the clickable panel that explains the current state.
   liveStatus: LiveStatus;
+  // Whether the last REST fetch of pending approvals failed. Shown in the sync-status panel
+  // and turns the icon orange, so transient load errors are visible without a toast flood.
+  syncError: boolean;
   // Location-sharing chrome (rendered only while the standing grant is held): a map-pin toggle
   // with a live indicator while a watch is actively reading, opening a stop/withdraw panel.
   geoGranted: boolean;
@@ -153,27 +156,40 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
   );
 }
 
-// Shown from the crossed-wifi toggle when the live tool-call WebSocket is down: explains that
-// approvals may be stale until the connection recovers. Without this a broken live channel is
-// invisible — the approvals list just silently stops updating between reloads (the exact
-// failure the missing nginx WS upgrade caused). The socket auto-reconnects, so the toggle
-// clears itself once it's back.
-function OfflinePanel() {
+// Sync-status panel: always accessible via the wifi icon in the toolbar. Shows the current
+// state of the live WebSocket channel and the last REST fetch outcome in one place, so the
+// operator never has to wonder whether the approval list is current.
+function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; syncError: boolean }) {
+  const offline = liveStatus === "offline";
+  const unhealthy = offline || syncError;
   return (
-    <section className="haku-shell-card haku-shell-side-panel" aria-label="Live updates offline">
+    <section className="haku-shell-card haku-shell-side-panel" aria-label="Sync status">
       <Stack gap="xs">
         <Group justify="space-between" align="center" wrap="nowrap">
           <Text fw={600} size="sm">
-            Live updates offline
+            Sync status
           </Text>
-          <Badge color="orange" variant="light">
-            Reconnecting
+          <Badge color={unhealthy ? "orange" : liveStatus === "connecting" ? "yellow" : "teal"} variant="light">
+            {offline ? "Offline" : liveStatus === "connecting" ? "Connecting" : syncError ? "Fetch error" : "Live"}
           </Badge>
         </Group>
-        <Text size="xs" c="dimmed">
-          The console lost its live connection, so new tool calls and approvals won't appear on their own. It keeps
-          retrying; reload the page to refresh immediately.
-        </Text>
+        {offline && (
+          <Text size="xs" c="dimmed">
+            The console lost its live connection, so new tool calls and approvals won't appear on their own. It keeps
+            retrying; reload the page to refresh immediately.
+          </Text>
+        )}
+        {!offline && syncError && (
+          <Text size="xs" c="dimmed">
+            The last attempt to load pending approvals failed. The list may be stale; reload the page to retry
+            immediately.
+          </Text>
+        )}
+        {!unhealthy && (
+          <Text size="xs" c="dimmed">
+            Live updates are connected and the approval list loaded successfully.
+          </Text>
+        )}
       </Stack>
     </section>
   );
@@ -523,7 +539,7 @@ function ChromeToggle({
   );
 }
 
-export type ShellPanel = "approvals" | "settings" | "location" | "screenshot" | "offline";
+export type ShellPanel = "approvals" | "settings" | "location" | "screenshot" | "sync-status";
 
 export function nextShellPanel(selected: ShellPanel | null, clicked: ShellPanel): ShellPanel | null {
   return selected === clicked ? null : clicked;
@@ -537,13 +553,14 @@ export function selectedShellPanel(approvalsOpen: boolean, openPanel: ShellPanel
 
 // The persistent shell chrome over the framed haku-ui: a floating top-right toolbar whose
 // mutually-exclusive toggles behave like deselectable tabs. Toggles are neutral gray; only
-// genuinely semantic cues keep a color (red pending count, orange offline, green
+// genuinely semantic cues keep a color (red pending count, orange offline/error, green
 // live-location/live-capture dot).
 export function ShellChrome(props: ShellChromeProps) {
   const {
     approvalsOpen,
     onApprovalsOpenChange,
     liveStatus,
+    syncError,
     geoGranted,
     tracking,
     onWithdrawGeolocation,
@@ -555,17 +572,14 @@ export function ShellChrome(props: ShellChromeProps) {
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   const offline = liveStatus === "offline";
+  const syncUnhealthy = offline || syncError;
   const selectedPanel = selectedShellPanel(approvalsOpen, openPanel);
 
   useEffect(() => {
-    if (
-      (openPanel === "location" && !geoGranted) ||
-      (openPanel === "screenshot" && !screenshotGranted) ||
-      (openPanel === "offline" && !offline)
-    ) {
+    if ((openPanel === "location" && !geoGranted) || (openPanel === "screenshot" && !screenshotGranted)) {
       setOpenPanel(null);
     }
-  }, [geoGranted, offline, openPanel, screenshotGranted]);
+  }, [geoGranted, openPanel, screenshotGranted]);
 
   function togglePanel(panel: ShellPanel) {
     const next = nextShellPanel(selectedPanel, panel);
@@ -576,16 +590,20 @@ export function ShellChrome(props: ShellChromeProps) {
   return (
     <div className="haku-shell-chrome" style={{ zIndex: PANEL_Z }}>
       <Group className="haku-shell-toolbar" gap={0} wrap="nowrap">
-        {offline && (
-          <ChromeToggle
-            open={selectedPanel === "offline"}
-            label="Live updates disconnected"
-            color="orange"
-            onClick={() => togglePanel("offline")}
-          >
-            <WifiOffIcon />
-          </ChromeToggle>
-        )}
+        <ChromeToggle
+          open={selectedPanel === "sync-status"}
+          label={
+            syncUnhealthy
+              ? "Live updates: error"
+              : liveStatus === "connecting"
+                ? "Live updates: connecting"
+                : "Live updates: connected"
+          }
+          color={syncUnhealthy ? "orange" : undefined}
+          onClick={() => togglePanel("sync-status")}
+        >
+          {syncUnhealthy ? <WifiOffIcon /> : <WifiIcon />}
+        </ChromeToggle>
         {geoGranted && (
           <Indicator color="green" size={10} offset={6} processing disabled={!tracking} withBorder>
             <ChromeToggle
@@ -638,7 +656,7 @@ export function ShellChrome(props: ShellChromeProps) {
           {selectedPanel === "screenshot" && screenshotGranted && (
             <ScreenshotPanel sharing={sharingScreen} onWithdraw={onWithdrawScreenshot} />
           )}
-          {selectedPanel === "offline" && offline && <OfflinePanel />}
+          {selectedPanel === "sync-status" && <SyncStatusPanel liveStatus={liveStatus} syncError={syncError} />}
         </div>
       )}
     </div>
