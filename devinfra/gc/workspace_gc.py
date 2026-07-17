@@ -115,10 +115,16 @@ def _status(item: Classification) -> str:
     return "REVIEW"
 
 
+def _activity(item: Classification) -> str:
+    if item.last_activity is None:
+        return "?"
+    return item.last_activity.astimezone().isoformat(timespec="seconds")
+
+
 def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
     visible = items if include_kept else [item for item in items if not isinstance(item, RetainedWorktree)]
     rows = [
-        [_status(item), _short(item.worktree.path), item.worktree.branch or "(detached)", item.reason]
+        [_status(item), _activity(item), _short(item.worktree.path), item.worktree.branch or "(detached)", item.reason]
         for item in visible
     ]
     counts = {
@@ -126,7 +132,8 @@ def render_worktrees(items: list[Classification], *, include_kept: bool) -> str:
         "kept": sum(isinstance(item, RetainedWorktree) for item in items),
         "review": sum(isinstance(item, ReviewWorktree) for item in items),
     }
-    parts = [tabulate(rows, headers=["STATUS", "WORKTREE", "BRANCH", "DETAIL"], tablefmt="plain")] if rows else []
+    headers = ["STATUS", "LAST ACTIVITY", "WORKTREE", "BRANCH", "DETAIL"]
+    parts = [tabulate(rows, headers=headers, tablefmt="plain")] if rows else []
     parts.append(
         f"Summary: {len(items)} worktrees; {counts['prunable']} prunable, "
         f"{counts['kept']} kept, {counts['review']} review"
