@@ -1,7 +1,8 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# Console-signed exec capability: the cross-language security primitive. The console signs here;
-# `hostexecd` (Rust) verifies. Keep the byte encoding in lockstep with the Rust verifier.
+# Console-signed exec capability (EdDSA JWT): the cross-language security primitive. The console
+# mints here; `hostexecd` (Rust) verifies. Keep the JWT claim contract in lockstep with the Rust
+# verifier (hostexec/hostexecd/capability.rs) and its pinned vectors.
 py_library(
     name = "capability",
     srcs = ["capability.py"],
@@ -9,6 +10,7 @@ py_library(
     deps = [
         "@pypi//cryptography",
         "@pypi//pydantic",
+        "@pypi//pyjwt",
     ],
 )
 
@@ -30,6 +32,7 @@ py_test(
     deps = [
         ":capability",
         "//:conftest",
+        "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

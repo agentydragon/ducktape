@@ -2,7 +2,7 @@
 
 Three parties share these shapes:
 - the **agent** calls the MCP tool with `HostexecRunInput`;
-- the **console** approves, then mints a `SignedCapability` and forwards the operator's Authentik
+- the **console** approves, then mints a capability JWT and forwards the operator's Authentik
   token;
 - `hostexec-mcp` POSTs `HostexecRequest` to **`hostexecd`**, which returns a `BaseExecResult`
   (reused from `mcp_infra.exec.models` — same shape every exec backend returns).
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.hostexec.capability import RunAs, SignedCapability
+from haku.hostexec.capability import RunAs
 from mcp_infra.exec.models import ExecArgsBase
 
 
@@ -35,14 +35,14 @@ class HostexecRequest(BaseModel):
     """`hostexec-mcp` → `hostexecd` HTTP body (POST /exec).
 
     `token` is the approving operator's forwarded Authentik JWT (carries the revocable
-    `hostexec-<run_as>-<host>` authorization). `capability` is the console countersignature
-    binding this exact command. `hostexecd` requires **both**: the token authorizes the identity,
-    the capability binds the command. `run_as`/`argv`/`cwd` are what actually gets executed;
-    `hostexecd` cross-checks them against the capability before running.
+    `hostexec-<run_as>-<host>` authorization). `capability` is the console-minted capability JWT
+    (`aud=hostexec-capability`) binding this exact command. `hostexecd` requires **both**: the
+    token authorizes the identity, the capability binds the command. `run_as`/`argv`/`cwd` are
+    what actually gets executed; `hostexecd` cross-checks them against the capability first.
     """
 
     token: str = Field(description="Forwarded operator Authentik JWT (aud=hostexec)")
-    capability: SignedCapability
+    capability: str = Field(description="Console-minted capability JWT (aud=hostexec-capability)")
     run_as: RunAs
     argv: list[str] = Field(min_length=1)
     cwd: str | None = None

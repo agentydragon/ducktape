@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Security-critical: the console-signed capability verifier (Rust side of the cross-language JWT
+# contract). Keep in lockstep with haku/hostexec/capability.py (the signer + pinned vectors).
+rust_library(
+    name = "capability",
+    srcs = ["capability.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:jsonwebtoken",
+        "@crates//:serde",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "capability_test",
+    size = "small",
+    srcs = ["capability_test.rs"],
+    edition = "2024",
+    deps = [":capability"],
+)

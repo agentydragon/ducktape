@@ -89,10 +89,14 @@ clunky `run_as`; covers only k8s nodes, whereas `hostexecd`-over-Nebula covers a
 1. **Authentik token** (JWKS-validated: sig/aud/exp) whose `hostexec-<run_as>-<host>` group
    claim authorizes _this operator identity_ to run as `run_as` on this host. The revocable
    authority — a group you grant/revoke centrally in `tf/gitops/agent-machine-access`.
-2. **Console argv countersignature** over `(host, run_as, sha256(argv), cwd, nonce, exp)`,
-   signed at approval time with a key that lives with the console (the trust boundary, a Secret
-   Haku cannot read); public key deployed to each host. `nonce` single-use + short `exp` bind
-   _this exact command, once_. (Signer + canonical encoding: `capability.py`.)
+2. **Console-minted capability JWT** — an EdDSA (Ed25519) JWT carrying `host`, `run_as`, `argv`,
+   `cwd`, `nonce`, `exp` and `aud=hostexec-capability`, minted at approval time with a key that
+   lives with the console (the trust boundary, a Secret Haku cannot read); public key deployed to
+   each host. `hostexecd` verifies the signature/aud/exp and re-checks the request's
+   `host`/`run_as`/`argv` equal the signed claims; `nonce` single-use + short `exp` bind _this
+   exact command, once_. Standard JWT (PyJWT signer + Rust `jsonwebtoken` verifier) — no custom
+   cross-language encoding. Signer + verifier + pinned vectors: `capability.py`,
+   `hostexecd/capability.rs`.
 
 What this genuinely buys (not theater):
 
@@ -148,7 +152,7 @@ Haku (agent, prompt-injectable)
 haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPROVAL)
   │  operator clicks Approve in trusted chrome (CSRF, Authentik-operator-only; root = 2nd confirm)
   │  console forwards approving operator's short-lived Authentik token (aud=hostexec)
-  │  console countersigns (host, run_as, sha256(argv), cwd, nonce, exp)
+  │  console mints capability JWT (EdDSA: host, run_as, argv, cwd, nonce, exp; aud=hostexec-capability)
   ▼
 hostexec-mcp  (own namespace; NO standing host credential — forwards token + countersig only)
   │  HTTPS POST over Nebula → https://<host>.nebula:PORT/exec
@@ -166,28 +170,28 @@ result returns through console → ledger row RUNNING→done ; agent gets result
 
 - **`hostexec-mcp`** (cluster): subclass `EnhancedFastMCP` (model: <../../mcp_infra/exec/direct.py>).
   One `hostexec_run` tool taking the already-defined `HostexecRunInput` (`wire.py`). It resolves
-  the forwarded operator token, requests the console countersignature, POSTs `HostexecRequest`
-  to `hostexecd`, returns `BaseExecResult`. Bazel `py_binary → oci_image` (template:
+  the forwarded operator token + the console-minted capability JWT, POSTs `HostexecRequest` to
+  `hostexecd`, returns `BaseExecResult`. Bazel `py_binary → oci_image` (template:
   `grocy_mcp/BUILD.bazel`); k8s Deployment/Service/HTTPRoute/flux-kustomization under
   `cluster/k8s/agents/hostexec-mcp/` (own namespace, unprivileged); reach the mesh (give the pod
   a Nebula identity or route via node — confirm during build). Register in
   <../../cluster/k8s/haku/console/config.yaml> with `operator_oauth`.
-- **`hostexecd`** (host, **minimal Rust** — `axum` + `jsonwebtoken` + `ed25519-dalek`): the
-  OIDC-RS exec service. Validates the Authentik JWT + the console countersignature, drops
-  privileges to `run_as`, execs argv (mirror the `run_proc` shape in
-  <../../mcp_infra/exec/subprocess.py>), caps output, logs to journald/auditd. Deployed by nix as a
-  systemd unit on `wyrm2` + `rugged` (uniform `nix/nixos/hosts/<host>/default.nix`), bound to
-  `nebula1`, Nebula-firewalled to the console/pod peer, fail-closed. Its capability verify must
-  reproduce the Python signer's canonical encoding — the pinned vectors in `test_capability.py`
-  are the cross-language contract.
+- **`hostexecd`** (host, **minimal Rust** — `axum` + `jsonwebtoken`): the OIDC-RS exec service.
+  The capability verifier exists (`hostexecd/capability.rs`); remaining is the axum `POST /exec`
+  handler, Authentik JWT validation against cached JWKS (incl. the `hostexec-<run_as>-<host>`
+  group check), the nonce replay store, the exec (mirror the `run_proc` shape in
+  <../../mcp_infra/exec/subprocess.py>) with output caps + timeout, privilege-drop to `run_as`,
+  and journald/auditd logging. Deployed by nix as a systemd unit on `wyrm2` + `rugged` (uniform
+  `nix/nixos/hosts/<host>/default.nix`), bound to `nebula1`, Nebula-firewalled to the console/pod
+  peer, fail-closed.
 - **Authentik provider + groups:** a `hostexec` OAuth2 application/provider in
   `tf/gitops/agent-machine-access` (clone `kubectl_passthrough_mcp`) with a scope mapping
   emitting `hostexec-*` group claims; the four `hostexec-{user,root}-{wyrm2,rugged}` groups
   granted to the operator identity.
-- **Console argv-signing + approval hook:** a signing keypair (private key a `haku-console`
-  Secret Haku can't read, minted by `tf/gitops/agent-machine-access`; public key to each host
-  via nix); the console mints the countersignature (via `capability.py`) at approval time for
-  `hostexec-mcp` calls.
+- **Console capability-signing + approval hook:** an Ed25519 signing keypair (private key a
+  `haku-console` Secret Haku can't read, minted by `tf/gitops/agent-machine-access`; public key
+  PEM to each host via nix); the console mints the capability JWT (via `capability.py`) at
+  approval time for `hostexec-mcp` calls.
 - **Approval-card renderer:** `haku/console/frontend/tool_rendering/hostexec/` modeled on the
   `kubectl/` renderer — show `host`, `run_as` (`root` loud + second confirm), full `argv`,
   `cwd`, `rationale`.
