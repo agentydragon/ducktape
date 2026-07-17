@@ -107,10 +107,21 @@ jobs:
                 echo "::error::pull_request CI expected github.sha to be a two-parent synthetic merge commit"
                 exit 1
               fi
-              if [ "$BASE" != "${{ github.event.pull_request.base.sha }}" ] \
-                || [ "$PR_HEAD" != "${{ github.event.pull_request.head.sha }}" ]; then
-                echo "::error::synthetic merge parents do not match the pull_request event"
+              # Only the HEAD parent (^2) must match the event. It guards against a
+              # stale merge ref that predates the current PR head — we'd otherwise test
+              # the wrong code, and a re-run fixes it once GitHub regenerates the ref.
+              if [ "$PR_HEAD" != "${{ github.event.pull_request.head.sha }}" ]; then
+                echo "::error::synthetic merge head parent ($PR_HEAD) != PR head (${{ github.event.pull_request.head.sha }}); merge ref is stale — re-run once GitHub regenerates it"
                 exit 1
+              fi
+              # The BASE parent (^1) is whatever devel was when GitHub built the merge.
+              # It legitimately drifts ahead of github.event...base.sha when devel
+              # advances between the event firing and merge generation (frequent given
+              # devel churn), and ^1 is still the correct bazel-diff base: diffing
+              # ^1 -> merge yields exactly the PR's delta either way. So a drifted base is
+              # fine and must not fail CI — note it for visibility only.
+              if [ "$BASE" != "${{ github.event.pull_request.base.sha }}" ]; then
+                echo "::notice::base advanced since the PR event (event base ${{ github.event.pull_request.base.sha }} -> merge base $BASE); diffing against the merge's base parent, which is correct"
               fi
               echo "before-revision: $BASE"
               echo "pr-head:         $PR_HEAD"
