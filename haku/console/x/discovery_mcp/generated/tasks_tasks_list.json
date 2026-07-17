@@ -1,0 +1,60 @@
+{
+  "name": "tasks_tasks_list",
+  "description": "Returns all tasks in the specified task list. Doesn't return assigned tasks by default (from Docs, Chat Spaces). A user can have up to 20,000 non-hidden tasks per list and up to 100,000 tasks in total at a time.",
+  "read_only": true,
+  "scopes": ["https://www.googleapis.com/auth/tasks", "https://www.googleapis.com/auth/tasks.readonly"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "maxResults": {
+        "type": "integer",
+        "description": "Maximum number of tasks returned on one page. Optional. The default is 20 (max allowed: 100). (format: int32)"
+      },
+      "showCompleted": {
+        "type": "boolean",
+        "description": "Flag indicating whether completed tasks are returned in the result. Note that showHidden must also be True to show tasks completed in first party clients, such as the web UI and Google's mobile apps. Optional. The default is True."
+      },
+      "showDeleted": {
+        "type": "boolean",
+        "description": "Flag indicating whether deleted tasks are returned in the result. Optional. The default is False."
+      },
+      "showAssigned": {
+        "type": "boolean",
+        "description": "Optional. Flag indicating whether tasks assigned to the current user are returned in the result. Optional. The default is False."
+      },
+      "pageToken": {
+        "type": "string",
+        "description": "Token specifying the result page to return. Optional."
+      },
+      "showHidden": {
+        "type": "boolean",
+        "description": "Flag indicating whether hidden tasks are returned in the result. Optional. The default is False."
+      },
+      "tasklist": {
+        "type": "string",
+        "description": "Task list identifier."
+      },
+      "dueMin": {
+        "type": "string",
+        "description": "Lower bound for a task's due date (as a RFC 3339 timestamp) to filter by. Optional. The default is not to filter by due date."
+      },
+      "dueMax": {
+        "type": "string",
+        "description": "Upper bound for a task's due date (as a RFC 3339 timestamp) to filter by. Optional. The default is not to filter by due date."
+      },
+      "completedMax": {
+        "type": "string",
+        "description": "Upper bound for a task's completion date (as a RFC 3339 timestamp) to filter by. Optional. The default is not to filter by completion date."
+      },
+      "updatedMin": {
+        "type": "string",
+        "description": "Lower bound for a task's last modification time (as a RFC 3339 timestamp) to filter by. Optional. The default is not to filter by last modification time."
+      },
+      "completedMin": {
+        "type": "string",
+        "description": "Lower bound for a task's completion date (as a RFC 3339 timestamp) to filter by. Optional. The default is not to filter by completion date."
+      }
+    },
+    "required": ["tasklist"]
+  }
+}

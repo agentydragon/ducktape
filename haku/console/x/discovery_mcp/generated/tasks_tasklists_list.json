@@ -1,0 +1,19 @@
+{
+  "name": "tasks_tasklists_list",
+  "description": "Returns all the authenticated user's task lists. A user can have up to 2000 lists at a time.",
+  "read_only": true,
+  "scopes": ["https://www.googleapis.com/auth/tasks", "https://www.googleapis.com/auth/tasks.readonly"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "pageToken": {
+        "type": "string",
+        "description": "Token specifying the result page to return. Optional."
+      },
+      "maxResults": {
+        "type": "integer",
+        "description": "Maximum number of task lists returned on one page. Optional. The default is 1000 (max allowed: 1000). (format: int32)"
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "drive_files_get",
+  "description": "Gets a file's metadata or content by ID. For more information, see [Search for files and folders](https://developers.google.com/workspace/drive/api/guides/search-files). If you provide the URL parameter `alt=media`, then the response includes the file contents in the response body. Downloading content with `alt=media` only works if the file is stored in Drive. To download Google Docs, Sheets, and Slides use [`files.export`](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/export) instead. For more information, see [Download and export files](https://developers.google.com/workspace/drive/api/guides/manage-downloads).",
+  "read_only": true,
+  "scopes": [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.appdata",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.meet.readonly",
+    "https://www.googleapis.com/auth/drive.metadata",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive.photos.readonly",
+    "https://www.googleapis.com/auth/drive.readonly"
+  ],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "supportsTeamDrives": {
+        "type": "boolean",
+        "description": "Deprecated: Use `supportsAllDrives` instead."
+      },
+      "fileId": {
+        "type": "string",
+        "description": "The ID of the file."
+      },
+      "supportsAllDrives": {
+        "type": "boolean",
+        "description": "Whether the requesting application supports both My Drives and shared drives."
+      },
+      "includeLabels": {
+        "type": "string",
+        "description": "A comma-separated list of IDs of labels to include in the `labelInfo` part of the response."
+      },
+      "includePermissionsForView": {
+        "type": "string",
+        "description": "Specifies which additional view's permissions to include in the response. Only `published` is supported."
+      },
+      "acknowledgeAbuse": {
+        "type": "boolean",
+        "description": "Whether the user is acknowledging the risk of downloading known malware or other abusive files. This is only applicable when the `alt` parameter is set to `media` and the user is the owner of the file or an organizer of the shared drive in which the file resides."
+      }
+    },
+    "required": ["fileId"]
+  }
+}
