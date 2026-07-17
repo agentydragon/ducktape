@@ -454,9 +454,47 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
         repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
     )
     assert "**2 modified**, 1 new, 0 removed, 1 unchanged" in body
+    # Each preview is a before/after/diff table row.
+    assert "| Before | After | Diff |" in body
+    assert "tests/ex-visuals-abcdef/baseline/a.png" in body
+    assert "tests/ex-visuals-abcdef/a.png" in body
     assert "tests/ex-visuals-abcdef/diff/a.png" in body
     assert "tests/ex-visuals-abcdef/diff/b.png" in body
     assert "50.0% changed" in body
+
+
+def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
+    """No diff overlay exists when dimensions changed — the Diff cell is text."""
+    review_tests = [
+        ReviewTest(
+            target_label="//t:a",
+            slug="s",
+            title="T",
+            summary=ClassificationCounts(modified=1),
+            assets=[
+                ReviewAsset(
+                    path="a.png",
+                    label="a",
+                    classification="modified",
+                    changed_fraction=0.4,
+                    changed_pixels=9,
+                    candidate_dimensions=[8, 10],
+                    baseline_dimensions=[16, 16],
+                    dimension_changed=True,
+                )
+            ],
+        )
+    ]
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=review_tests,
+        base_sha="f" * 40,
+    )
+    assert "baseline/a.png" in body
+    assert "_(dimensions changed)_" in body
+    assert "diff/a.png" not in body
 
 
 def test_success_comment_body_drops_previews_over_budget() -> None:
@@ -480,8 +518,11 @@ def test_success_comment_body_drops_previews_over_budget() -> None:
         review_tests=review_tests,
         base_sha="f" * 40,
     )
-    assert body.count("<img ") == 1
+    # Over budget with two previews → falls back to one (three imgs: before/after/diff).
+    assert body.count("<img ") == 3
+    assert "baseline/a.png" in body
     assert "diff/a.png" in body
+    assert "b.png" not in body
     assert len(body) <= COMMENT_BUDGET
 
 

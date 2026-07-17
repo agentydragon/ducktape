@@ -466,9 +466,9 @@ def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
 
 
 def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> str:
-    """Append up to two modified-asset diff previews, respecting the byte budget."""
+    """Append up to two modified-asset before/after/diff tables, respecting the byte budget."""
     modified = [
-        (asset.changed_fraction or 0.0, test.slug, asset.path, asset.label)
+        (asset.changed_fraction or 0.0, test.slug, asset)
         for test in review_tests
         for asset in test.assets
         if asset.classification == "modified"
@@ -478,11 +478,24 @@ def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> 
         return base
     for limit in (2, 1):
         lines = ["", "### Top changes"]
-        for fraction, slug, path, label in modified[:limit]:
+        for fraction, slug, asset in modified[:limit]:
+            test_url = f"{url}tests/{slug}"
+            # Dimension changes produce no diff overlay (the images can't be
+            # compared pixel-for-pixel), so that cell degrades to text.
+            diff_cell = (
+                f'<img src="{test_url}/diff/{asset.path}" width="260">'
+                if not asset.dimension_changed
+                else "_(dimensions changed)_"
+            )
             lines += [
-                f'<img src="{url}tests/{slug}/diff/{path}" width="400">',
-                f"`{label}` · {fraction:.1%} changed",
                 "",
+                f"`{asset.label}` · {fraction:.1%} changed",
+                "",
+                "| Before | After | Diff |",
+                "| --- | --- | --- |",
+                f'| <img src="{test_url}/baseline/{asset.path}" width="260"> '
+                f'| <img src="{test_url}/{asset.path}" width="260"> '
+                f"| {diff_cell} |",
             ]
         body = base + "\n" + "\n".join(lines)
         if len(body) <= COMMENT_BUDGET:
