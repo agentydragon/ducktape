@@ -6,11 +6,13 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # NixOS 26.05 — scoped to wyrm2 only (its `mkNixos` overrides `nixpkgs` +
-    # `home-manager` to these). wyrm2 needs 26.05 for the
-    # `services.displayManager.plasma-login-manager` module (SDDM's release is
-    # stalled and lacks the non-seat0 greeter fix; PLM ships it — see
-    # debug/atlas/direct_display_bringup/greeters.md). Every other host stays on
-    # 25.11 to keep the RBE/CI build images and servers off an unplanned bump.
+    # `home-manager` to these). wyrm2 needs 26.05 for GNOME 50: its
+    # gnome-remote-desktop headless "Remote Login" carries the handover fix
+    # (nixpkgs#504490, in gsd >= 50.0) that GNOME 49 on 25.11 lacks — see
+    # debug/atlas/direct_display_bringup/README.md. (The original reason was the
+    # plasma-login-manager multiseat attempt, now abandoned for single-seat0 +
+    # remote; the pin stays for GNOME 50.) Every other host stays on 25.11 to
+    # keep the RBE/CI build images and servers off an unplanned bump.
     # TODO(nixpkgs-bump): do the wholesale 25.11 -> 26.05 bump for ALL hosts +
     #   home-manager, then delete these wyrm2-only inputs and the per-host
     #   `nixpkgs`/`home-manager` overrides in `mkNixos`. Blocked on rebuilding +

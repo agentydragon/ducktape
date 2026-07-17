@@ -165,7 +165,7 @@ in
   # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
   # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
   # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
-  # decision: debug/atlas/direct_display_bringup/{README.md,greeters.md}.
+  # decision: debug/atlas/direct_display_bringup/README.md (full multiseat saga archived under archive/).
 
   # seat0 defaults to GNOME. mutter is what honours `mutter-device-ignore` (see the
   # udev rules below), so the single-display isolation only works under
