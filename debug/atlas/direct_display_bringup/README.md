@@ -32,7 +32,10 @@ What works and why this is where we landed:
 
 Artifacts in this directory: <greeters.md> (grounded DM capability matrix),
 <seat-diag.sh> (DM-agnostic seat/DRM/logind diagnostic — `sudo bash seat-diag.sh`),
-<plm-mr155-per-seat-greeter.patch> (shelved PLM per-seat greeter backport).
+<plm-mr155-per-seat-greeter.patch> (shelved PLM per-seat greeter backport),
+<login_zombie_recovery.md> (recovery runbook for "login succeeds but desktop
+never appears" — leaked `graphical-session.target` + zombie session scope; note
+that restarting the display manager does **not** fix it).
 
 ## State (2026-07-02 ~23:00)
 

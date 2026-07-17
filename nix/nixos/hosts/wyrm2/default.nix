@@ -188,6 +188,15 @@ in
   # shared user bus.
   services.displayManager.defaultSession = "sway";
 
+  # CLEANUP(added 2026-07-17): remove once the seatphysical *sway* login is
+  # root-caused. GDM's daemon logs nothing after PAM without this, so a failed
+  # login reads as an inscrutable freeze. Enabling it is what let us name the
+  # GNOME failure (a leaked graphical-session.target zombie — now documented +
+  # recoverable, see debug/atlas/direct_display_bringup/login_zombie_recovery.md).
+  # The sway-on-seatphysical no-compositor wedge is still open, so keep verbose
+  # logging on until that one is captured too.
+  services.displayManager.gdm.debug = true;
+
   # TODO(kvm-no-blank): the pre-SDDM GDM config set login-screen idle-delay=0 to
   # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
   # seatphysical keyboard could wake it. Re-establish that no-blank guarantee for
