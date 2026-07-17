@@ -14,7 +14,7 @@ Build a new remote MCP server `hostexec-mcp` modeled on
 it is approval-gated by construction. **Transport: SSH over the existing Nebula mesh** —
 it reuses machinery that already exists (sshd + declarative `authorized_keys` on every host)
 and needs **no standing privileged pod**, unlike the pod-on-node alternative (which is why
-it wins even though every in-scope host — `wyrm2`, `rugged`, `iguana` — is now a k8s node).
+it wins even though every in-scope host — `wyrm2` and `rugged` — is now a k8s node).
 **Authorization = Authentik, not a standing key:** make it
 "kubectl-passthrough for SSH" — the console forwards the approving operator's short-lived
 **Authentik** token, and a small fail-closed host-side verifier authorizes the operator's real
