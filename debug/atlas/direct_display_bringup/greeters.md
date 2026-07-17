@@ -328,13 +328,24 @@ VirtualTerminal::path(…); m_pam->setItem(PAM_TTY, …); }` — the guard is pr
 
 ### greetd — cannot reach seat-game ❌
 
+Upstream <https://git.sr.ht/~kennylevinsen/greetd>. **Re-verified 2026-07-17**
+against a fresh clone (`master` `867d5dd`, `Cargo.toml` version `0.10.3`) — the
+conclusion below stands, source-confirmed.
+
 - **Hardcoded seat0**: `greetd/src/session/worker.rs:216` puts the literal
-  `"XDG_SEAT=seat0"` into the PAM env of every session it starts. No config override.
-  - **Grounded (greetd `0.10.3`)**: `greetd/src/session/worker.rs:206` —
-    `"XDG_SEAT=seat0".to_string()` in the PAM env list (line `:216` on `master`; `:206`
-    at tag `0.10.3`). No override path.
-- **VT-based**: `greetd/src/terminal/mod.rs` drives sessions via `KDGRAPHICS`/`KDTEXT`
-  ioctls on `/dev/ttyN`. seat-game has no VTs.
+  `"XDG_SEAT=seat0".to_string()` into the PAM env of every session it starts. No
+  config override; there is no per-seat knob.
+  - **Grounded (greetd `master` `867d5dd`, calls itself `0.10.3`)**:
+    `greetd/src/session/worker.rs:216` — `"XDG_SEAT=seat0".to_string()` as the first
+    entry of the `prepared_env` array passed to PAM before `open_session` (`:215`).
+    (Line drifts across revisions — was `:206` at an earlier `0.10.3` snapshot.)
+- **VT-based**: `greetd/src/session/worker.rs:179-207` opens and (optionally)
+  switches a kernel VT (`Terminal::open`, `vt_setactivate`) and sets `XDG_VTNR` from
+  the configured `[terminal] vt` (`:184`); `greetd/src/terminal/mod.rs` drives it via
+  `KDGRAPHICS`/`KDTEXT` ioctls on `/dev/ttyN`. seat-game has no VTs — and per
+  [systemd's DM-writing spec](https://systemd.io/WRITING_DISPLAY_MANAGERS/) "only the
+  special seat 'seat0' actually knows kernel VTs," so a VT-driven DM structurally
+  cannot serve a non-seat0 seat.
   - **Grounded (greetd `0.10.3`)**: `greetd/src/terminal/mod.rs` — `KdMode::Graphics =>
 ioctl::KDGRAPHICS` / `KdMode::Text => ioctl::KDTEXT` (`:20-21`), `kd_setmode` (`:92`),
     `VT_SETMODE`/`VT_ACTIVATE` VT switching (`:143`).

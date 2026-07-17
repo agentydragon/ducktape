@@ -26,9 +26,10 @@ failing`. It is _not_ the same-user veto (that step is never reached; seat0 was
 > on [systemd#42247](https://github.com/systemd/systemd/issues/42247) (**open**
 > RFE, filed 2026-05-22). So **no self-contained GDM patch fixes this today.** For
 > a real physical-seat login, use an SDDM-lineage DM (PLM + the shelved MR 155
-> backport clears every known blocker) or a non-GDM path (greetd — unverified for
-> this host; the matrix currently claims it hardcodes `seat0`, re-check before
-> relying on it). Full grounded write-up: <greeters.md> GDM section.
+> backport clears every known blocker). **Not** greetd: source-verified out — it
+> hardcodes `XDG_SEAT=seat0` and is VT-driven, so it cannot target a non-seat0
+> seat (see greetd row + section below). Full grounded write-up: <greeters.md>
+> GDM section.
 
 What is proven vs. retracted:
 
@@ -44,7 +45,8 @@ What is proven vs. retracted:
   at <plm-mr155-per-seat-greeter.patch> (builds green) is the best-supported
   option — SDDM-lineage DMs _do_ complete non-seat0 user logins, PLM ships the
   SDDM `cda8d93` VC-tty fix, and MR 155 fixes PLM's per-seat greeter singleton.
-  greetd is an untested alternative. Grounded matrix + caveats: <greeters.md>.
+  greetd is **not** an option — source-verified out (hardcodes `XDG_SEAT=seat0`,
+  VT-driven; see greetd section). Grounded matrix + caveats: <greeters.md>.
 
 Artifacts in this directory: <greeters.md> (grounded DM capability matrix),
 <seat-diag.sh> (DM-agnostic seat/DRM/logind diagnostic — `sudo bash seat-diag.sh`),
@@ -711,14 +713,21 @@ then no conflict exists and the login should proceed directly.
 ### 2026-07-11 — greetd ruled out for seat-game
 
 Considered swapping seat-game's greeter to greetd (no conflict check). Rejected after
-reading greetd source (`/code/github.com/kennylevinsen/greetd`):
+reading greetd source (upstream <https://git.sr.ht/~kennylevinsen/greetd>, cloned to
+`/code/git.sr.ht/~kennylevinsen/greetd`; **re-verified 2026-07-17** against `master`
+`867d5dd`, `Cargo.toml` version `0.10.3`):
 
-- **Hardcoded seat**: `greetd/src/session/worker.rs:216` puts `XDG_SEAT=seat0` in the
-  PAM env for every session it starts — no config override. greetd can only ever
-  create seat0 sessions; it cannot target seat-game.
-- **VT-based**: `greetd/src/terminal/mod.rs` drives sessions via `KDGRAPHICS`/`KDTEXT`
-  ioctls on `/dev/ttyN`. seat-game has `CAN_TTY=0` (no VTs), so there is no terminal
-  for greetd to manage there.
+- **Hardcoded seat**: `greetd/src/session/worker.rs:216` puts the literal
+  `"XDG_SEAT=seat0".to_string()` into the PAM env of every session it starts — no
+  config override. greetd can only ever create seat0 sessions; it cannot target
+  seat-game.
+- **VT-based**: `greetd/src/session/worker.rs:179-207` opens/activates a kernel VT
+  (`Terminal::open`, `vt_setactivate`) and sets `XDG_VTNR` from the configured
+  `[terminal] vt` (`:184`); `greetd/src/terminal/mod.rs` drives it via
+  `KDGRAPHICS`/`KDTEXT` ioctls on `/dev/ttyN`. Only `seat0` has kernel VTs
+  ([systemd — Writing Display Managers](https://systemd.io/WRITING_DISPLAY_MANAGERS/):
+  "only the special seat 'seat0' actually knows kernel VTs"), so there is no
+  terminal for greetd to manage on seat-game.
 
 greetd is single-seat/seat0/VT-oriented. (Note: a later source review found SDDM and
 LightDM _do_ support per-logind-seat multi-seat and have no same-user veto — see
