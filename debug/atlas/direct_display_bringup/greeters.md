@@ -346,9 +346,11 @@ conclusion below stands, source-confirmed.
   [systemd's DM-writing spec](https://systemd.io/WRITING_DISPLAY_MANAGERS/) "only the
   special seat 'seat0' actually knows kernel VTs," so a VT-driven DM structurally
   cannot serve a non-seat0 seat.
-  - **Grounded (greetd `0.10.3`)**: `greetd/src/terminal/mod.rs` — `KdMode::Graphics =>
-ioctl::KDGRAPHICS` / `KdMode::Text => ioctl::KDTEXT` (`:20-21`), `kd_setmode` (`:92`),
-    `VT_SETMODE`/`VT_ACTIVATE` VT switching (`:143`).
+  - **Grounded (greetd `master` `867d5dd`, `0.10.3`)**: `greetd/src/terminal/mod.rs` —
+    `KdMode::Text => ioctl::KDTEXT` / `KdMode::Graphics => ioctl::KDGRAPHICS` (`:23-24`),
+    `fn kd_setmode` (`:91`), `fn vt_setactivate` doing `VT_SETMODE`+`VT_ACTIVATE`
+    (`:144`, doc-comment `:142`). (Line numbers re-verified 2026-07-17; the old
+    `:20-21/:92/:143` had drifted a few lines.)
 - **No same-user veto** (irrelevant — it can't target the seat at all).
 - **Verdict**: deliberately minimal seat0/VT tool. Dead on arrival for non-seat0 seats.
   (It _is_ a perfect fit for seat0 itself, e.g. if pairing greetd-on-seat0 with a
