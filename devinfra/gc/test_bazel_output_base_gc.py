@@ -56,10 +56,30 @@ def test_dangling_workspace_symlink_is_not_prunable(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("metadata", ["README", "DO_NOT_BUILD_HERE", "server/cmdline"])
-def test_missing_provenance_requires_review(tmp_path: Path, metadata: str) -> None:
+def test_single_missing_record_still_classifies(tmp_path: Path, metadata: str) -> None:
+    # Any one record may be gone — notably server/cmdline for a server that never
+    # persisted it — and the surviving records still recover the workspace, so the
+    # base is prunable rather than stuck in review.
     base = _make_base(tmp_path / "output", tmp_path / "gone")
     (base / metadata).unlink()
-    assert isinstance(_inspect(base), gc.ReviewBase)
+    assert isinstance(_inspect(base), gc.PrunableBase)
+
+
+def test_single_surviving_record_is_enough(tmp_path: Path) -> None:
+    # Two records gone, one left: the base name == md5(workspace) still anchors it.
+    base = _make_base(tmp_path / "output", tmp_path / "gone")
+    (base / "server" / "cmdline").unlink()
+    (base / "DO_NOT_BUILD_HERE").unlink()
+    assert isinstance(_inspect(base), gc.PrunableBase)
+
+
+def test_all_records_absent_requires_review(tmp_path: Path) -> None:
+    base = _make_base(tmp_path / "output", tmp_path / "gone")
+    for metadata in ("README", "DO_NOT_BUILD_HERE", "server/cmdline"):
+        (base / metadata).unlink()
+    inspection = _inspect(base)
+    assert isinstance(inspection, gc.ReviewBase)
+    assert "no workspace record" in inspection.reason
 
 
 def test_fifo_metadata_requires_review_without_blocking(tmp_path: Path) -> None:
@@ -73,12 +93,12 @@ def test_fifo_metadata_requires_review_without_blocking(tmp_path: Path) -> None:
     assert "not a regular file" in inspection.reason
 
 
-def test_disagreeing_readme_requires_review(tmp_path: Path) -> None:
+def test_disagreeing_records_require_review(tmp_path: Path) -> None:
     base = _make_base(tmp_path / "output", tmp_path / "gone")
     (base / "README").write_text("WORKSPACE: /different\n")
     inspection = _inspect(base)
     assert isinstance(inspection, gc.ReviewBase)
-    assert "README workspace does not match" in inspection.reason
+    assert "workspace records disagree" in inspection.reason
 
 
 def test_nondefault_output_base_requires_review(tmp_path: Path) -> None:

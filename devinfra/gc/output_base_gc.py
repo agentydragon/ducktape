@@ -1,9 +1,10 @@
 """Find and safely remove Bazel output bases whose workspaces are gone.
 
 Only default, MD5-named output bases directly below one output user root are
-eligible. Bazel's persisted server command line is the primary provenance;
-README and DO_NOT_BUILD_HERE are required corroboration rather than APIs.
-Ambiguous state is reported for manual review and is never deleted.
+eligible. The workspace is recovered from whichever of the base's own records
+(server/cmdline, README, DO_NOT_BUILD_HERE) are present — a dead or never-started
+server does not block cleanup — and every present record must agree and hash to the
+base name. Ambiguous state is reported for manual review and is never deleted.
 """
 
 import argparse
@@ -124,46 +125,91 @@ def _single_flag(arguments: Sequence[str], name: str) -> str:
     return values[0]
 
 
-def _read_server_provenance(base: Path, *, uid: int) -> tuple[Path, int]:
-    contents, cmdline_stat = _read_owned_regular(base / "server" / "cmdline", uid=uid)
+def _optional_owned_regular(path: Path, *, uid: int, limit: int = _METADATA_LIMIT) -> bytes | None:
+    """Contents of a uid-owned regular file, or None if it is absent.
+
+    Only a missing file is tolerated: a present-but-unreadable, non-regular,
+    wrong-owner, or oversized file still raises, so corrupt provenance never passes
+    silently as "not present".
+    """
+    try:
+        contents, _ = _read_owned_regular(path, uid=uid, limit=limit)
+    except MetadataError as error:
+        if isinstance(error.__cause__, FileNotFoundError):
+            return None
+        raise
+    return contents
+
+
+def _workspace_from_cmdline(base: Path, *, uid: int) -> Path | None:
+    contents = _optional_owned_regular(base / "server" / "cmdline", uid=uid)
+    if contents is None:
+        return None
     raw_arguments = contents.split(b"\0")
     if raw_arguments and raw_arguments[-1] == b"":
         raw_arguments.pop()
     if not raw_arguments or any(not argument for argument in raw_arguments):
         raise MetadataError("server/cmdline is not a non-empty NUL-delimited argument list")
     arguments = [os.fsdecode(argument) for argument in raw_arguments]
-
     expected_output_base = os.fspath(base.resolve(strict=True))
     output_base = _single_flag(arguments, "--output_base")
     if output_base != expected_output_base:
         raise MetadataError(f"server/cmdline output base is {output_base}, expected {expected_output_base}")
+    return Path(_single_flag(arguments, "--workspace_directory"))
 
-    workspace_text = _single_flag(arguments, "--workspace_directory")
-    workspace = Path(workspace_text)
+
+def _workspace_from_readme(base: Path, *, uid: int) -> Path | None:
+    contents = _optional_owned_regular(base / "README", uid=uid)
+    if contents is None:
+        return None
+    first_line = contents.splitlines()[0] if contents else b""
+    prefix = b"WORKSPACE: "
+    if not first_line.startswith(prefix):
+        raise MetadataError("README first line is not 'WORKSPACE: <path>'")
+    return Path(os.fsdecode(first_line.removeprefix(prefix)))
+
+
+def _workspace_from_marker(base: Path, *, uid: int) -> Path | None:
+    contents = _optional_owned_regular(base / "DO_NOT_BUILD_HERE", uid=uid)
+    if contents is None:
+        return None
+    return Path(os.fsdecode(contents))
+
+
+def _read_workspace_provenance(base: Path, *, uid: int) -> Path:
+    """Recover the base's workspace from any of its independent on-disk records.
+
+    server/cmdline, README, and DO_NOT_BUILD_HERE each record the workspace path,
+    and the base directory name is that path's MD5 — the anchor that makes any one
+    record authoritative. A dead or never-started server (no server/cmdline) does
+    not block classification: every record that *is* present must agree and hash to
+    the base name, and only all three being absent is genuinely undetermined.
+    """
+    sources = {
+        "server/cmdline": _workspace_from_cmdline(base, uid=uid),
+        "README": _workspace_from_readme(base, uid=uid),
+        "DO_NOT_BUILD_HERE": _workspace_from_marker(base, uid=uid),
+    }
+    present = {name: workspace for name, workspace in sources.items() if workspace is not None}
+    if not present:
+        raise MetadataError("no workspace record (server/cmdline, README, DO_NOT_BUILD_HERE all absent)")
+    if len(set(present.values())) != 1:
+        raise MetadataError(f"workspace records disagree: {present}")
+    workspace = next(iter(present.values()))
     if not workspace.is_absolute():
-        raise MetadataError(f"server/cmdline workspace is not absolute: {workspace_text}")
-
-    readme, readme_stat = _read_owned_regular(base / "README", uid=uid)
-    first_line = readme.splitlines()[0] if readme else b""
-    expected_readme_line = b"WORKSPACE: " + os.fsencode(workspace)
-    if first_line != expected_readme_line:
-        raise MetadataError("README workspace does not match server/cmdline")
-
-    marker, marker_stat = _read_owned_regular(base / "DO_NOT_BUILD_HERE", uid=uid)
-    if marker != os.fsencode(workspace):
-        raise MetadataError("DO_NOT_BUILD_HERE workspace does not match server/cmdline")
-
+        raise MetadataError(f"workspace is not absolute: {workspace}")
     workspace_hash = hashlib.md5(os.fsencode(workspace), usedforsecurity=False).hexdigest()
     if workspace_hash != base.name:
         raise MetadataError(f"workspace hashes to {workspace_hash}, not {base.name}")
+    return workspace
 
-    return workspace, max(cmdline_stat.st_mtime_ns, readme_stat.st_mtime_ns, marker_stat.st_mtime_ns)
 
-
-def _last_activity_ns(base: Path, provenance_mtime_ns: int) -> int:
-    timestamps = [base.lstat().st_mtime_ns, provenance_mtime_ns]
+def _last_activity_ns(base: Path) -> int:
+    timestamps = [base.lstat().st_mtime_ns]
     paths = [
         base / "command.log",
+        base / "README",
+        base / "DO_NOT_BUILD_HERE",
         base / "server" / "cmdline",
         base / "server" / "jvm.out",
         base / "server" / "server.starttime",
@@ -255,8 +301,8 @@ def inspect_output_base(base: Path, *, uid: int, points: set[Path], proc_root: P
         )
 
     try:
-        workspace, provenance_mtime_ns = _read_server_provenance(base, uid=uid)
-        last_activity_ns = _last_activity_ns(base, provenance_mtime_ns)
+        workspace = _read_workspace_provenance(base, uid=uid)
+        last_activity_ns = _last_activity_ns(base)
         lock_stat = (base / "lock").lstat()
         if not stat.S_ISREG(lock_stat.st_mode) or lock_stat.st_uid != uid:
             raise MetadataError("lock is not a regular file owned by the current user")
