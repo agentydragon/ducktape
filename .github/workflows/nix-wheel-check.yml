@@ -80,12 +80,15 @@ jobs:
       # as push-images.yml.
       # run_from_commit: actions/checkout in PR mode doesn't fetch a local
       # `devel` ref, so bb remote's default base-branch patch sync fails with
-      # `git rev-parse devel: exit status 128`. Same rationale as bazel-ci.yml.
+      # `git rev-parse devel: exit status 128`. On pull_request events,
+      # github.sha is the synthetic merge commit, keeping the remote build on
+      # the same base+PR tree as the GitHub runner. Same rationale as
+      # bazel-ci.yml.
       - name: Build artifacts from source
         uses: ./.github/actions/bb-remote
         with:
           args: build ${{ steps.inputs.outputs.bazel_targets }} --remote_download_outputs=toplevel
-          run_from_commit: ${{ github.event.pull_request.head.sha || github.sha }}
+          run_from_commit: ${{ github.sha }}
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (so aiquota's wheel

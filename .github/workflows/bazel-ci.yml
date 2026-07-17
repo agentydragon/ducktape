@@ -51,17 +51,19 @@ jobs:
       # binary-file *deletions* — for a deleted binary it emits "Binary files differ" with no
       # applyable hunk, so the runner's `git apply` fails (exit 255) before Bazel even runs.
       # Checking out the commit skips patch sync entirely. Safe here because the CI checkout is
-      # a clean commit (no uncommitted changes for the patch path to drop). Uses the PR head
-      # SHA (on origin, fetchable by the runner); GITHUB_SHA for push/dispatch. This also makes
-      # the old "create local devel ref" step unnecessary — run_from_commit skips base
-      # resolution (@{upstream}) entirely. See devinfra/docs/bb_remote_internals.md
-      # §"Git state synchronization" ("--run_from_commit disables patches").
+      # a clean commit (no uncommitted changes for the patch path to drop). On pull_request
+      # events, github.sha is GitHub's synthetic refs/pull/<n>/merge commit, so Bazel evaluates
+      # and tests the PR combined with its event-time base instead of the isolated PR head.
+      # GitHub serves that commit by exact SHA even though it is not an origin branch. On
+      # push/dispatch, github.sha is the pushed/dispatched commit. See
+      # devinfra/docs/bb_remote_internals.md §"Git state synchronization"
+      # ("--run_from_commit disables patches").
       - name: Test + Build + lint
         id: bb-remote
         uses: ./.github/actions/bb-remote
         with:
           rbe_image: ${{ inputs.rbe_image }}
-          run_from_commit: ${{ github.event.pull_request.head.sha || github.sha }}
+          run_from_commit: ${{ github.sha }}
           linkage_roles: test,build
           script: |
             set -euo pipefail
@@ -76,7 +78,8 @@ jobs:
             trap finalize_bb_runner_probe EXIT
 
             # On PRs, test/build only the targets bazel-diff reports as
-            # affected by the diff vs. origin/devel. Devel-branch push runs
+            # affected by the diff from the merge commit's base parent to the
+            # synthetic merge tree. Devel-branch push runs
             # below still test `//...`, so a PR that IS in the affected set
             # of a broken area still fails as it should; PRs unrelated to
             # the broken area are unblocked.
@@ -92,24 +95,26 @@ jobs:
             # silent fallback would let a broken-devel failure re-block
             # unrelated PRs, defeating the whole policy.
             if [ "${{ github.event_name }}" = "pull_request" ]; then
-              # bb-remote's runner cloned shallow (`git fetch --depth=1 <sha>`),
-              # so origin/devel has no shared ancestor with HEAD and
-              # `git merge-base` errors out. Deepen 200 commits of devel
-              # history (covers roughly a week+ of activity — enough for any
-              # non-stale PR without paying full-unshallow cost). `--deepen`
-              # errors on a non-shallow repo, hence the fallback.
-              git fetch --deepen=200 --no-tags origin devel 2>/dev/null \
-                || git fetch --no-tags origin devel
-              # If merge-base still doesn't resolve, the PR base is older
-              # than the deepened window — refuse rather than silently
-              # over-approximating the affected set. Author needs to rebase.
-              if ! BASE=$(git merge-base origin/devel HEAD 2>/dev/null); then
-                echo "::error::PR base is more than 200 commits behind origin/devel — please rebase on devel and re-push."
+              # bb-remote initially fetches the exact commit at depth 1, which
+              # makes Git treat the synthetic merge as a parentless shallow
+              # root. Fetch the same exact SHA at depth 2 so both merge parents
+              # are available without downloading unrelated branch history.
+              HEAD_SHA=$(git rev-parse HEAD)
+              git fetch --depth=2 --no-tags origin "$HEAD_SHA"
+
+              if ! BASE=$(git rev-parse "${HEAD_SHA}^1" 2>/dev/null) \
+                || ! PR_HEAD=$(git rev-parse "${HEAD_SHA}^2" 2>/dev/null); then
+                echo "::error::pull_request CI expected github.sha to be a two-parent synthetic merge commit"
                 exit 1
               fi
-              HEAD_SHA=$(git rev-parse HEAD)
+              if [ "$BASE" != "${{ github.event.pull_request.base.sha }}" ] \
+                || [ "$PR_HEAD" != "${{ github.event.pull_request.head.sha }}" ]; then
+                echo "::error::synthetic merge parents do not match the pull_request event"
+                exit 1
+              fi
               echo "before-revision: $BASE"
-              echo "head:            $HEAD_SHA"
+              echo "pr-head:         $PR_HEAD"
+              echo "merge:           $HEAD_SHA"
 
               mkdir -p /tmp/bd-cache
               # `bazel query` (not cquery) — cheap: no analysis, no toolchain
