@@ -2,8 +2,9 @@ from datetime import UTC, datetime
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
-from devinfra.ws.cli import claim_manifest, parse_ttl, shutdown_time
+from devinfra.ws.cli import app, claim_manifest, parse_ttl, shutdown_time
 
 NOW = datetime(2026, 7, 16, 12, 0, 0, tzinfo=UTC)
 
@@ -28,6 +29,23 @@ def test_claim_manifest_shape() -> None:
     assert m["metadata"] == {"name": "ws-test", "namespace": "agent-workspaces"}
     assert m["spec"]["warmPoolRef"] == {"name": "zai"}
     assert m["spec"]["lifecycle"] == {"shutdownPolicy": "Delete", "shutdownTime": "2026-07-16T13:30:00Z"}
+
+
+@pytest.mark.parametrize("argv", [[], ["--help"]], ids=["bare", "help"])
+def test_quick_reference_rendered(argv: list[str]) -> None:
+    output = CliRunner().invoke(app, argv).output
+    # Each example survives as its own line — catches rich/click re-wrapping
+    # collapsing the block, not just the substrings existing somewhere.
+    for example in ["ws new -t codex exp --ttl 3d", "ws extend exp 24h", "ws rm exp / ws rm --all"]:
+        assert any(example in line for line in output.splitlines()), f"{example}\n----\n{output}"
+
+
+def test_quick_reference_alignment_survives() -> None:
+    # The two columns stay apart — proves the fenced block rendered verbatim
+    # rather than re-flowed into prose.
+    output = CliRunner().invoke(app, ["--help"]).output
+    line = next(ln for ln in output.splitlines() if "ws templates" in ln)
+    assert "ws templates                   LLM lanes" in line
 
 
 if __name__ == "__main__":

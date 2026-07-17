@@ -20,7 +20,24 @@ NAMESPACE = "agent-workspaces"
 CONTAINER = "workspace"
 _ADOPTION_TIMEOUT_S = 120
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+# Shown by bare `ws` and `ws --help`. Typer's rich help re-flows plain epilog
+# text into one paragraph (ignoring click's \b convention), so this relies on
+# markdown mode: fenced blocks render verbatim, preserving the alignment.
+_QUICK_REFERENCE = """\
+Quick reference:
+
+```text
+ws templates                   LLM lanes + warm-pool readiness
+ws new -t zai                  claim a warm GLM workspace + shell in
+ws new -t codex exp --ttl 3d   named claim, codex lane, 3-day deadline
+ws ls                          claims: template, sandbox, phase, deadline
+ws sh [exp]                    tmux shell into a claim (default: newest)
+ws extend exp 24h              push the auto-delete deadline to now+24h
+ws rm exp / ws rm --all        dispose (cascades sandbox + PVC)
+```
+"""
+
+app = typer.Typer(no_args_is_help=True, add_completion=False, rich_markup_mode="markdown", epilog=_QUICK_REFERENCE)
 
 
 def _kubectl(*args: str, capture: bool = True) -> str:
