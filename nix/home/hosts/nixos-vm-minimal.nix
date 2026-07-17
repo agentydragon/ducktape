@@ -4,7 +4,6 @@
 # Downloaded directly from GitHub during cloud-init to bootstrap VMs without
 # requiring the full ducktape repo clone. Must remain standalone (no imports).
 {
-  config,
   pkgs,
   lib,
   ...

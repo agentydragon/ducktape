@@ -160,6 +160,11 @@
         };
       };
 
+      sharedHmModules = [
+        inputs.sops-nix.homeManagerModules.sops
+        ./nix/home/modules/google-drive.nix
+      ];
+
       mkHome =
         {
           hostname,
@@ -171,21 +176,21 @@
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
 
-          modules = [
-            inputs.sops-nix.homeManagerModules.sops
-            ./nix/home/modules/google-drive.nix
-            ./nix/home/hosts/${hostname}.nix
-            {
-              _module.args = hmCommonArgs // {
-                inherit
-                  enableGui
-                  isNixOS
-                  isK8sWorker
-                  ;
-              };
-            }
-          ]
-          ++ extraModules;
+          modules =
+            sharedHmModules
+            ++ [
+              ./nix/home/hosts/${hostname}.nix
+              {
+                _module.args = hmCommonArgs // {
+                  inherit
+                    enableGui
+                    isNixOS
+                    isK8sWorker
+                    ;
+                };
+              }
+            ]
+            ++ extraModules;
         };
 
       mkNixos =
@@ -238,10 +243,7 @@
                   home-manager.useGlobalPkgs = true;
                   home-manager.useUserPackages = true;
                   home-manager.extraSpecialArgs = hmExtraSpecialArgs;
-                  home-manager.sharedModules = [
-                    inputs.sops-nix.homeManagerModules.sops
-                    ./nix/home/modules/google-drive.nix
-                  ];
+                  home-manager.sharedModules = sharedHmModules;
                   home-manager.users.${username} = inlineHomeManager.module;
                 }
               else

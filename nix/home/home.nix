@@ -7,10 +7,6 @@
 
   isNixOS,
   isK8sWorker,
-  nix-colors,
-  solarizedLight,
-  solarizedDark,
-  terminalFont,
   ducktape-artifacts,
   ...
 }:
