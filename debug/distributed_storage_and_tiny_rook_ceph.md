@@ -220,11 +220,15 @@ Two shapes do that:
 - **Single-writer Forgejo** on RWO fast local storage, with replication moved to the
   application layer (scheduled mirror/bundle) — recommendation #1 in the companion note.
 - **A forge whose storage layer is already single-writer-per-repo**: this is exactly what
-  GitLab's **Gitaly** (and GitHub's Spokes) do — stateless frontends talk to a git RPC
-  service that owns the repos on local disk, so frontends scale horizontally with no RWX
-  share. Worth benching Gitaly across `{rook, seaweedfs} x {hdd, ssd}` to see whether its
-  single-writer architecture keeps git-push fast on network-backed storage where the
-  Forgejo-RWX shape did not. (Tracked separately; see the Gitaly bench note.)
+  GitLab's **Gitaly Cluster / Praefect** (and GitHub's Spokes) do — stateless frontends
+  talk to a git RPC service, and each repo is replicated across 3 Gitaly nodes with a
+  single writer per repo and async replication, so there is no shared mount and no
+  single-node dependency. **Measured** in <gitlab_gitaly_storage_bench/analysis.md>: on the
+  same seaweedfs-ssd storage, HA-to-HA, Gitaly Cluster beats Forgejo's 2-replica RWX on
+  every operation — git push 1.4x, contents write 3.8x, read 5x, version 8x faster — and
+  under Praefect the storage backend barely moves push latency (0.79–1.16s across
+  rook/seaweedfs × ssd/hdd, all below Forgejo-RWX's 1.63s). Confirmed from both sides: the
+  RWX shared mount is the penalty, not the disk.
 
 ## Teardown contract
 
