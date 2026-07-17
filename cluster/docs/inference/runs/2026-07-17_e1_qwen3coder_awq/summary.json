@@ -1,0 +1,66 @@
+{
+  "model": "qwen3-coder-awq",
+  "base_url": "http://localhost:8000/v1",
+  "tool_calls": {
+    "single": {
+      "ok": true,
+      "n_calls": 1
+    },
+    "parallel": {
+      "ok": true,
+      "n_calls": 2,
+      "cities": ["paris", "tokyo"]
+    },
+    "multi_turn": {
+      "ok": true,
+      "reply": "The weather in Berlin is currently 18\u00b0C and sunny."
+    }
+  },
+  "latency": [
+    {
+      "target_ctx": 8192,
+      "prompt_tokens": 7608,
+      "ttft_p50": 0.18448269399959827,
+      "ttft_p95": 0.7684567939995759,
+      "decode_tps_median": 271.2992243831863,
+      "reps_ok": 3,
+      "reps": 3
+    },
+    {
+      "target_ctx": 32768,
+      "prompt_tokens": 31029,
+      "ttft_p50": 0.3992076349986746,
+      "ttft_p95": 3.0146438640003907,
+      "decode_tps_median": 234.7481707291495,
+      "reps_ok": 3,
+      "reps": 3
+    },
+    {
+      "target_ctx": 131072,
+      "prompt_tokens": 128884,
+      "ttft_p50": 0.4534575159996166,
+      "ttft_p95": 27.55910587800099,
+      "decode_tps_median": 199.48755365232992,
+      "reps_ok": 3,
+      "reps": 3
+    }
+  ],
+  "context": [
+    {
+      "target_ctx": 131072,
+      "allocated_ok": true,
+      "prompt_tokens": 124819,
+      "error": null,
+      "needle_depths_ok": [0.1, 0.5, 0.9],
+      "needle_depths_fail": []
+    },
+    {
+      "target_ctx": 262144,
+      "allocated_ok": true,
+      "prompt_tokens": 255669,
+      "error": null,
+      "needle_depths_ok": [0.1, 0.5, 0.9],
+      "needle_depths_fail": []
+    }
+  ]
+}

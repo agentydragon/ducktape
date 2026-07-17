@@ -19,9 +19,9 @@ table; a known dead end is a result.
 
 ## Coding-agent configurations
 
-| Config                                                                             | Runtime | Quant | Allocated ctx | Effective ctx | Decode tok/s @128K | Peak VRAM | Coding quality | Tool calls | Run |
-| ---------------------------------------------------------------------------------- | ------- | ----- | ------------- | ------------- | ------------------ | --------- | -------------- | ---------- | --- |
-| _(none accepted yet — first row lands with E1, the k8s vLLM Qwen3-Coder baseline)_ |         |       |               |               |                    |           |                |            |     |
+| Config              | Runtime         | Quant              | Allocated ctx | Effective ctx | Decode tok/s @128K | Peak VRAM            | Coding quality    | Tool calls   | Run                                               |
+| ------------------- | --------------- | ------------------ | ------------- | ------------- | ------------------ | -------------------- | ----------------- | ------------ | ------------------------------------------------- |
+| Qwen3-Coder-30B-A3B | vLLM 0.25.1 TP2 | AWQ 4-bit + FP8 KV | 262K `local`  | 262K `local~` | 199 `local`        | 30.7/29.9 GB `local` | leaderboard `ext` | pass `local` | [E1](runs/2026-07-17_e1_qwen3coder_awq/README.md) |
 
 ## Long-context attempts
 
