@@ -58,6 +58,36 @@ function ShellChromeScene() {
   );
 }
 
+// Sync-status toolbar in the healthy state: neutral wifi icon, "Live" panel.
+function ShellChromeSyncOkScene() {
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
+  return (
+    <ShellChrome
+      {...chromeProps}
+      liveStatus="live"
+      syncError={null}
+      approvalsOpen={approvalsOpen}
+      onApprovalsOpenChange={setApprovalsOpen}
+      recentToolCalls={[]}
+    />
+  );
+}
+
+// Sync-status toolbar in the error state: orange WifiOff icon, fetch-error panel.
+function ShellChromeSyncErrorScene() {
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
+  return (
+    <ShellChrome
+      {...chromeProps}
+      liveStatus="live"
+      syncError="Failed to load pending approvals: Unauthorized"
+      approvalsOpen={approvalsOpen}
+      onApprovalsOpenChange={setApprovalsOpen}
+      recentToolCalls={[]}
+    />
+  );
+}
+
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
@@ -74,10 +104,13 @@ function sceneElement(scene: string) {
         </div>
       );
     case "chrome":
-      // The whole shell chrome: the toggle-button toolbar (offline warning + location pin +
-      // settings + approvals) over the panel column. Approvals starts open; render.mjs switches
-      // between the mutually exclusive panel tabs.
+      // The whole shell chrome: the toggle-button toolbar over the panel column. Approvals starts
+      // open; render.mjs switches between the mutually exclusive panel tabs.
       return <ShellChromeScene />;
+    case "chrome-sync-ok":
+      return <ShellChromeSyncOkScene />;
+    case "chrome-sync-error":
+      return <ShellChromeSyncErrorScene />;
     // The history page; render.mjs expands its first rows into their detailed state (opening the
     // Metadata disclosure) with a click sequence, so one shot shows both compact and detailed rows.
     default:

@@ -44,6 +44,18 @@ const SCENES = [
     viewport: { width: 860, height: 1260 },
     clicks: ['[aria-label="Screenshot capture: live"]'],
   },
+  // Sync-status toolbar in the healthy state: neutral wifi icon open to the "Live" panel.
+  {
+    name: "chrome-sync-ok",
+    viewport: { width: 600, height: 300 },
+    clicks: ['[aria-label="Live updates: connected"]'],
+  },
+  // Sync-status toolbar in the error state: orange WifiOff icon open to the fetch-error panel.
+  {
+    name: "chrome-sync-error",
+    viewport: { width: 600, height: 300 },
+    clicks: ['[aria-label="Live updates: error"]'],
+  },
 ];
 const COLOR_SCHEMES = ["light", "dark"];
 
