@@ -127,11 +127,14 @@ in
     mode = "0600";
   };
 
-  # Ollama with CUDA for local GPU inference (also used by k8s ollama pod, but
-  # useful standalone when cluster is down or for ad-hoc tasks).
-  # Models stored on Proxmox CSI PVC (200Gi) or ~/downloads/ollama-models/.
+  # Ollama with CUDA for local GPU inference — DISABLED. Redundant with the
+  # in-cluster ollama pod, which schedules onto wyrm2's own 5090 anyway, so this
+  # was a second instance contending for the same GPU rather than a separate-host
+  # fallback. Dropping it also avoids the from-source CUDA build (compiles every
+  # LLM arch) on nixpkgs bumps. Re-enable if a cluster-down local-inference path
+  # is actually needed; models were on the Proxmox CSI PVC (200Gi) / ~/downloads/ollama-models/.
+  # pkgs.ollama-cuda
   environment.systemPackages = [
-    pkgs.ollama-cuda
     pkgs.lvm2_dmeventd # LVM tools with dmeventd client support for thin pool autoextend
     pkgs.freecad
   ];
