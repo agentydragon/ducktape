@@ -156,9 +156,11 @@ agents`, non-GET → operator-gated, with a few overrides (the existing `haku/`-
 same discovery `schemas` also generate **response types**, so Python/TS typing rides along at every
 tier regardless of input slimming.
 
-**Discovery-doc source (versioning + typing).** Vendor the ~7 snapshots the tools use and generate
-schemas + types from them at build time, refreshed deliberately. Alternatives: read from the pinned
-`google-api-python-client` wheel's bundled static cache (already a dep, but its snapshot lags the
-live API by months), or git-pin Google's `googleapis/discovery-artifact-manager`. The live Discovery
-endpoint is latest-not-immutable, so it is not a reproducible build input. Detail + tradeoffs:
-`haku/console/x/discovery_mcp/README.md`.
+**Discovery-doc source (versioning + typing).** Read the docs from the pinned
+`google-api-python-client` wheel's bundled static cache (`@pypi//google_api_python_client`) — no
+giant schema JSON committed to the repo; the docs are a Bazel dep, pinned with the wheel. If the
+wheel's snapshot lag ever matters, git-pin Google's `googleapis/discovery-artifact-manager` instead
+(versioned, fresher, still not vendored). Do **not** vendor the raw discovery JSON in-repo (~1.3 MB;
+rejected for bloat), and don't read the live Discovery endpoint (latest-not-immutable → not a
+reproducible build input). The same `schemas` generate response types, so typing shares the source.
+Detail + tradeoffs: `haku/console/x/discovery_mcp/README.md`.

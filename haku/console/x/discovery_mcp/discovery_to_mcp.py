@@ -1,20 +1,27 @@
 """Spike: generate MCP tool schemas from Google API Discovery Documents.
 
-Pure stdlib. Loads a vendored discovery doc, resolves a chosen method's parameters +
-(for writes) its request-body schema, and emits an MCP-style tool
-`{name, description, inputSchema, ...}` — no hand-written schema.
+Loads a discovery doc, resolves a chosen method's parameters + (for writes) its request-body
+schema, and emits an MCP-style tool `{name, description, inputSchema, ...}` — no hand-written
+schema.
 
-Goal of the spike: see whether the generated `inputSchema` is (a) clean enough to hand an
-LLM as an MCP tool and (b) a sane basis for the haku-console Google servers. Run:
-`python3 discovery_to_mcp.py`.
+The discovery docs are **not vendored**: they come from the static cache bundled in the pinned
+`google-api-python-client` wheel (`googleapiclient/discovery_cache/documents/*.json`), read via
+`importlib.resources`. So there's no giant JSON in the repo — the docs are a Bazel dep, pinned
+with the wheel (`@pypi//google_api_python_client`). Run:
+`bb run //haku/console/x/discovery_mcp:discovery_to_mcp`.
+
+Goal of the spike: see whether the generated `inputSchema` is (a) clean enough to hand an LLM as
+an MCP tool and (b) a sane basis for the haku-console Google servers.
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from importlib.resources import files
+from typing import Any
 
-DOCS = Path(__file__).parent / "discovery_docs"
+# The discovery docs bundled inside the pinned google-api-python-client wheel.
+_DOCS = files("googleapiclient.discovery_cache.documents")
 
 # Discovery scalar type -> JSON Schema type. `any` stays untyped.
 _SCALAR = {"string": "string", "integer": "integer", "number": "number", "boolean": "boolean"}
@@ -23,14 +30,15 @@ _SCALAR = {"string": "string", "integer": "integer", "number": "number", "boolea
 _STRING_FORMATS = {"int64", "uint64", "google-datetime", "date-time", "date", "byte", "google-duration"}
 
 
-def load(api_version: str) -> dict:
-    return json.loads((DOCS / f"{api_version}.json").read_text())
+def load(api_version: str) -> dict[str, Any]:
+    """Load a bundled discovery doc, e.g. ``drive.v3``."""
+    return json.loads(_DOCS.joinpath(f"{api_version}.json").read_text())
 
 
-def find_method(doc: dict, method_id: str) -> dict:
+def find_method(doc: dict[str, Any], method_id: str) -> dict[str, Any]:
     """Locate a method by its dotted `id` (e.g. drive.files.list) anywhere in the resource tree."""
 
-    def walk(node: dict) -> dict | None:
+    def walk(node: dict[str, Any]) -> dict[str, Any] | None:
         for m in (node.get("methods") or {}).values():
             if m.get("id") == method_id:
                 return m
@@ -44,7 +52,7 @@ def find_method(doc: dict, method_id: str) -> dict:
     return m
 
 
-def to_json_schema(node: dict, schemas: dict, seen: frozenset[str] = frozenset()) -> dict:
+def to_json_schema(node: dict[str, Any], schemas: dict[str, Any], seen: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Convert one Discovery parameter/property/schema node to JSON Schema.
 
     `seen` guards $ref cycles (e.g. Drive `File` nests itself); a repeat collapses to a bare
@@ -55,7 +63,7 @@ def to_json_schema(node: dict, schemas: dict, seen: frozenset[str] = frozenset()
             return {"type": "object", "description": f"(recursive {ref}, elided)"}
         return to_json_schema(schemas[ref], schemas, seen | {ref})
 
-    out: dict = {}
+    out: dict[str, Any] = {}
     disc_type = node.get("type")
 
     # Discovery marks repeated *parameters* with `repeated: true` instead of type=array.
@@ -89,10 +97,10 @@ def to_json_schema(node: dict, schemas: dict, seen: frozenset[str] = frozenset()
     return out
 
 
-def method_to_tool(doc: dict, method_id: str) -> dict:
+def method_to_tool(doc: dict[str, Any], method_id: str) -> dict[str, Any]:
     method = find_method(doc, method_id)
     schemas = doc.get("schemas", {})
-    props: dict = {}
+    props: dict[str, Any] = {}
     required: list[str] = []
 
     for pname, p in (method.get("parameters") or {}).items():
@@ -104,7 +112,7 @@ def method_to_tool(doc: dict, method_id: str) -> dict:
         props["body"] = to_json_schema(request, schemas)
         required.append("body")
 
-    input_schema: dict = {"type": "object", "properties": props}
+    input_schema: dict[str, Any] = {"type": "object", "properties": props}
     if required:
         input_schema["required"] = required
 
@@ -135,21 +143,22 @@ ALLOWLIST = [
 
 
 def main() -> None:
-    out_dir = Path(__file__).parent / "generated"
-    out_dir.mkdir(exist_ok=True)
     docs = {av: load(av) for av in {av for av, _, _ in ALLOWLIST}}
+    tools = {mid: (tier, method_to_tool(docs[av], mid)) for av, mid, tier in ALLOWLIST}
 
     print(f"{'tier':<18}{'tool':<34}{'kind':<7}{'#props':<7}{'schema chars'}")
     print("-" * 78)
-    for av, mid, tier in ALLOWLIST:
-        tool = method_to_tool(docs[av], mid)
-        (out_dir / f"{tool['name']}.json").write_text(json.dumps(tool, indent=2))
+    for _, mid, _ in ALLOWLIST:
+        tier, tool = tools[mid]
         blob = json.dumps(tool["inputSchema"])
         kind = "read" if tool["read_only"] else "write"
         nprops = len(tool["inputSchema"]["properties"])
         print(f"{tier:<18}{tool['name']:<34}{kind:<7}{nprops:<7}{len(blob)}")
 
-    print(f"\nFull tool JSON written to {out_dir}/")
+    # Show one full generated read tool so the output is self-contained.
+    example = tools["tasks.tasks.list"][1]
+    print(f"\n--- example generated tool: {example['name']} ---")
+    print(json.dumps(example, indent=2))
 
 
 if __name__ == "__main__":

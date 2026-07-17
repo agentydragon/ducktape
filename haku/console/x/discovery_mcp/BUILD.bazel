@@ -1,0 +1,14 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "discovery_to_mcp_lib",
+    srcs = ["discovery_to_mcp.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//google_api_python_client"],
+)
+
+py_binary(
+    name = "discovery_to_mcp",
+    main_module = "haku.console.x.discovery_mcp.discovery_to_mcp",
+    deps = [":discovery_to_mcp_lib"],
+)

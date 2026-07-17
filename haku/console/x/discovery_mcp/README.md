@@ -3,12 +3,17 @@
 Can we generate haku-console's Google MCP tool schemas from Google's API **Discovery Documents**
 instead of hand-coding them? **Yes — for reads it's near-turnkey.** This spike proves it out.
 
-Run: `python3 discovery_to_mcp.py` (pure stdlib; reads the vendored docs in `discovery_docs/`,
-writes tools to `generated/`).
+Run: `bb run //haku/console/x/discovery_mcp:discovery_to_mcp` (prints the summary table + one full
+generated tool).
+
+**The discovery docs are not vendored.** They're read from the static cache bundled in the pinned
+`google-api-python-client` wheel (`@pypi//google_api_python_client` →
+`googleapiclient/discovery_cache/documents/*.json`) via `importlib.resources` — so no giant JSON
+lives in this repo; the docs are a Bazel dep, pinned with the wheel.
 
 ## What the spike does
 
-`discovery_to_mcp.py` loads a discovery doc, finds a method by its dotted id (e.g.
+`discovery_to_mcp.py` loads a bundled discovery doc, finds a method by its dotted id (e.g.
 `drive.files.list`), and converts its `parameters` (+ request-body `$ref` for writes) into an
 MCP-style `{name, description, read_only, scopes, inputSchema}` — resolving `$ref`s against the
 doc's `schemas`, mapping the Discovery dialect to JSON Schema, and guarding `$ref` cycles.
@@ -32,8 +37,7 @@ doc's `schemas`, mapping the Discovery dialect to JSON Schema, and guarding `$re
 
 **Reads convert cleanly** (300–8k chars): flat query params, typed, `enum`+`enumDescriptions`
 folded into the description, `required` correct, arrays handled, and the per-method `scopes`
-captured. Good enough to hand an LLM as-is (see `generated/tasks_tasks_list.json`,
-`generated/gmail_users_messages_list.json`).
+captured. Good enough to hand an LLM as-is (run the target to print a full example).
 
 **Writes balloon** (`calendar.events.insert` → 44-property recursive `Event` body, 35k chars) —
 they need hand-shaping. But writes are **not** on the read token and stay a separately-authored,
@@ -55,30 +59,27 @@ executor + console auth/policy. That's a concrete G3 implementation.
 
 ## Where the discovery docs come from (the versioning / typing question)
 
-Three options; the docs are the single source for both MCP schemas **and** response typing (the
-`schemas` map has `Message`/`Event`/`File`/`Task` etc., so one snapshot generates Pydantic/TS
-types too — no drift between tool schema and types).
+Three ways to source them:
 
 - **A. The pinned wheel's static cache.** `google-api-python-client==2.192.0` (already in
   `requirements_bazel.txt`) bundles every target API at
   `googleapiclient/discovery_cache/documents/*.json` — bazel-referenceable via the pypi dep, zero
   new infra. Caveat: the snapshot tracks the wheel release (currently `revision 20260112`, ~6
   months behind live `20260713`); bump the wheel to refresh. Fine for stable read params.
-- **B. Vendor snapshots in-repo** (what `discovery_docs/` here demonstrates). Explicit, reviewable
-  diffs when Google changes an API, decoupled from the wheel, deterministic codegen input. A small
-  refresh script re-pulls from `https://www.googleapis.com/discovery/v1/apis/{api}/{v}/rest`.
-- **C. Bazel-reference a versioned hosted source.** The **live** Discovery endpoint is
+- **B. Bazel-reference a versioned hosted source.** The **live** Discovery endpoint is
   latest-not-immutable → not reproducible, bad for `http_file`. But Google's
   `googleapis/discovery-artifact-manager` GitHub repo is the canonical **git-versioned** store of
-  discovery artifacts → `http_archive`/git-pin a commit. This is the "hosted somewhere versioned"
-  option — it exists.
+  discovery artifacts → `http_archive`/git-pin a commit. Fresher than the wheel, controllable, and
+  still no giant JSON in our repo.
+- **C. Vendor snapshots in-repo.** Explicit reviewable diffs, but it commits ~1.3 MB of Google's
+  schema JSON — rejected: not worth the repo bloat.
 
-**Recommendation:** B — vendor the ~7 snapshots we use and generate MCP schemas + response types
-from them at build time, refreshed deliberately. A is fine if we'd rather not vendor; C if we want
-pinning without committing JSON.
+**Recommendation:** A (the spike already uses it — zero infra, docs pinned with the wheel). Move to
+B if the wheel's snapshot lag ever matters for a param we need. The docs are the single source for
+both the MCP `inputSchema` **and** response typing (the `schemas` map has
+`Message`/`Event`/`File`/`Task`…), so one source generates Pydantic/TS types too — no drift.
 
 ## Files
 
-- `discovery_to_mcp.py` — the converter + curated allowlist.
-- `discovery_docs/*.json` — vendored discovery snapshots (live `revision`, fetched for the spike).
-- `generated/*.json` — generated MCP tools (regenerable; committed for review).
+- `discovery_to_mcp.py` — the converter + curated allowlist (reads docs from the pinned wheel).
+- `BUILD.bazel` — `py_binary` over `@pypi//google_api_python_client`.
