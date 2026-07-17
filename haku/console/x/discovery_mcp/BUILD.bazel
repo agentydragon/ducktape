@@ -12,3 +12,20 @@ py_binary(
     main_module = "haku.console.x.discovery_mcp.discovery_to_mcp",
     deps = [":discovery_to_mcp_lib"],
 )
+
+py_library(
+    name = "tool_factory_lib",
+    srcs = ["tool_factory.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":discovery_to_mcp_lib",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "tool_factory",
+    main_module = "haku.console.x.discovery_mcp.tool_factory",
+    deps = [":tool_factory_lib"],
+)
