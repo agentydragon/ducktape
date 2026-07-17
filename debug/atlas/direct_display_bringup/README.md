@@ -5,6 +5,35 @@ Goal: games on wyrm2 render **and scan out** on a 5090 plugged straight into
 the monitor's DP input; desktop stays on SPICE/virtio; keyboard reaches wyrm2
 via the FV43U's USB-B hub uplink → atlas USB port → QEMU port passthrough.
 
+## Current status & decision (2026-07-17)
+
+**Display manager: GDM**, accepting a same-user-one-seat-at-a-time limitation.
+Everything below this section is the chronological investigation log; this is
+the standing summary.
+
+What works and why this is where we landed:
+
+- The physical seat renders. `seatphysical` (`card0` = 5090 at `01:00.0`,
+  monitor on `DP-1`) is a real non-seat0 logind seat; the `seatspare` udev pin
+  parks the second 5090 (`02:00.0`) so it can't be grabbed as a competing
+  DRM-master output. GPU/DRM/modeset chain is **proven** (greeter rendered on the
+  panel — see the 2026-07-17 BREAKTHROUGH entry).
+- No packaged DM clears both hard requirements — drive a non-seat0 seat **and**
+  not veto a same-user login. Grounded matrix: <greeters.md>. In short: SDDM
+  0.21.0 sends a VC tty logind rejects (fix unreleased 2+ yrs); PLM ships that fix
+  but its greeter runtime is a single per-user-manager singleton (KDE bug 520483,
+  per-seat fix MR 155 unmerged); GDM drives both seats cleanly but its gnome-shell
+  greeter refuses a session for a user already logged in on another seat.
+- **Chosen trade-off:** GDM. Both seats show a greeter; only one is logged in at
+  a time (log out of seat0 SPICE to use seatphysical, and back). This is the
+  least-painful working config. A verified PLM per-seat backport (builds green) is
+  parked at <plm-mr155-per-seat-greeter.patch> for the day a PLM release ships the
+  fix and simultaneous dual-login becomes worth carrying a patch.
+
+Artifacts in this directory: <greeters.md> (grounded DM capability matrix),
+<seat-diag.sh> (DM-agnostic seat/DRM/logind diagnostic — `sudo bash seat-diag.sh`),
+<plm-mr155-per-seat-greeter.patch> (shelved PLM per-seat greeter backport).
+
 ## State (2026-07-02 ~23:00)
 
 - Video path GPU→cable→panel: **verified working** (monitor locks 3840×2160
@@ -1220,7 +1249,8 @@ just at the unit-name/env layer rather than the wayland-socket layer we guessed.
 
 ### Probes in flight
 
-1. `~/seat-diag2.sh` (root): with seat0's greeter gone, the fixed-name units are free —
+1. A root probe (the merged <seat-diag.sh>'s ancestor): with seat0's greeter gone, the
+   fixed-name units are free —
    `systemctl --user start plasma-login-wayland.target` as `plasmalogin` may revive kwin
    on seatphysical **now, without reboot**, since session `c2` is still active and its
    `startplasma` was plausibly the last env writer. If the monitor lights up, the whole
@@ -1231,8 +1261,8 @@ just at the unit-name/env layer rather than the wayland-socket layer we guessed.
 ### Solution space for axis 3 (if upstream hasn't fixed it)
 
 - **Serialize greeters**: only one greeter needed at a time in practice — e.g. re-trigger
-  the target for the still-waiting seat after the other seat logs in (what seat-diag2
-  tests manually).
+  the target for the still-waiting seat after the other seat logs in (tested manually
+  at the time).
 - **Autologin + immediate lock on seat0 (SPICE) only**: the no-autologin constraint is
   for the physical seat; autologin on the virtio seat with `swaylock` at session start
   would mean only seatphysical ever needs a greeter. Risk: SDDM-lineage `[Autologin]` is
@@ -1243,7 +1273,8 @@ just at the unit-name/env layer rather than the wayland-socket layer we guessed.
 
 ### 2026-07-17 — BREAKTHROUGH: greeter rendered on the physical monitor (manual revival)
 
-`seat-diag3.sh` proved the entire render chain. Procedure: with seat0's greeter gone
+A one-off revival script (later merged into <seat-diag.sh>) proved the entire render
+chain. Procedure: with seat0's greeter gone
 (user logged into sway there), inject session `c2`'s env into the `plasmalogin` user
 manager and restart the fixed-name units:
 
@@ -1263,10 +1294,12 @@ this seat under the PLM/26.05 stack — the monitor had shown output under earli
 pre-PLM configurations (settings unrecorded). No card1 fallback, no permission
 errors.
 
-The exact procedure is captured as <seat-diag3.sh> in this directory (alongside
-<seat-drm-diag.sh> — the DRM-client/seat-assignment dump that found the card2
-contention — and <seat-diag2.sh>, which snapshots the user-manager env, proved the
-last-writer-wins env race, and showed `card0` masterless).
+The revival procedure is the code block above (inject the seatphysical greeter
+session's env into the shared `plasmalogin` user manager, then restart the
+greeter target); it was a PLM-specific one-off and is preserved here as prose, not
+as a script. The reusable DRM-client/seat/logind diagnostic that found the card2
+contention lives in the consolidated <seat-diag.sh> (the earlier one-off
+`seat-drm-diag.sh` / `seat-diag2.sh` / `seat-diag3.sh` were merged into it).
 
 Conclusions:
 
@@ -1319,17 +1352,26 @@ The PLM single-instance greeter is **known upstream and unfixed in every release
   seat that is — empirically seat0 boots first, but ordering is logind enumeration, not
   contractual).
 
-Workaround-3 (automated re-kick of seat-diag3) is **weakened** by the observed dirty-
-revival defect: the revived greeter's `Authenticator` QML singleton lands on the
-placeholder-screen engine and the login button is inert. A re-kick would have to
-guarantee clean kwin-before-greeter output ordering to produce a usable greeter.
+The automated-re-kick workaround is **weakened** by the observed dirty-revival defect:
+the revived greeter's `Authenticator` QML singleton lands on the placeholder-screen
+engine and the login button is inert. A re-kick would have to guarantee clean
+kwin-before-greeter output ordering to produce a usable greeter.
 
-### Chosen fix: backport MR 155 onto PLM 6.6.6 (in progress, 2026-07-17)
+### PLM per-seat backport — built, then SHELVED for GDM (2026-07-17)
 
-Decision (user constraint: **no autologin on any seat**, which rules out the
-per-seat-autologin workaround entirely): carry KDE's own per-seat greeter fix,
-**MR 155**, as a nix patch on the 6.6.6 package we already deploy. Fallback if it
-misbehaves at runtime: SDDM `v0.21.0` + cherry-picked `cda8d93` (greeter process per
+Given **no autologin on any seat**, the per-seat-autologin workaround was out, so the
+plan was to carry KDE's own per-seat greeter fix, **MR 155**, as a nix patch on the
+6.6.6 package. The backport was completed and **builds green** (details below), and is
+kept at <plm-mr155-per-seat-greeter.patch>.
+
+**It was not deployed.** After the accumulated axis-1b → GPU-contention → single-greeter
+saga, the user opted for the least-painful working config — **GDM**, accepting that only
+one seat is logged in at a time — rather than carry an unmerged-MR patch on a frozen PLM
+release. See the "Current status & decision" section at the top. The backport stays on
+the shelf: deploy it (re-add the `plasma-login-manager` enable + package override that
+were in commit `351ef66b2`, and point the override at the patch's archived path) if a
+PLM release still hasn't shipped MR 155/167 when simultaneous dual-login becomes worth
+it. Fallback beyond that: SDDM `v0.21.0` + cherry-picked `cda8d93` (greeter process per
 display — axis 3 structurally absent, but reopens the unproven SDDM-wayland-greeter-
 on-NVIDIA question on a base frozen since 2024).
 
@@ -1352,7 +1394,9 @@ Backport status:
   `patches` and reproduce its substitution on the templated unit via `postPatch`
   (`substituteInPlace ... @CMAKE_INSTALL_FULL_BINDIR@/kwin_wayland →
 ${kdePackages.kwin}/bin/kwin_wayland`).
-- Compile test against the locked `nixpkgs-2605` rev (`4382ed2b7a68`): running.
+- Compile test against the locked `nixpkgs-2605` rev (`4382ed2b7a68`): **passed** —
+  package builds, templated `plasma-login-*@<seat>` units present with the per-seat
+  socket/env and no `BusName=org.kde.KWin`.
 
 Tombstone condition for the patch: drop when a PLM release ships MR 155 or MR 167.
 

@@ -142,75 +142,45 @@ in
   # Podman
   virtualisation.podman.enable = true;
 
-  # Display manager: plasma-login-manager (PLM), not GDM or SDDM.
+  # Display manager: GDM (inherited from gui.nix; no host override needed).
   #
-  # - GDM refuses a second graphical session for an already-logged-in user (its
-  #   gnome-shell greeter's machine-wide _findConflictingSession, no per-seat
-  #   exclude) — blocked same-user multi-seat login on seatphysical.
-  # - SDDM follows logind seats (per-seat greeter, XDG_SEAT per seat, no same-user
-  #   veto), but its shipped 0.21.0 release hands the non-seat0 greeter a VC tty
-  #   (`tty0`), which systemd-258's varlink logind rejects
-  #   (`InvalidParameter{Seat}`) → no session → black seatphysical. The fix
-  #   (upstream cda8d93) is stuck on `develop`, unreleased for 2+ years.
-  # - PLM is KDE's actively-released SDDM fork (default DM for Plasma 6): same
-  #   per-seat greeter model + no same-user veto, AND it ships the non-seat0 tty
-  #   fix in released code. It launches sway on both seats (session-agnostic; only
-  #   the greeter is KDE). Needs nixpkgs 26.05 — wyrm2-only bump in flake.nix.
+  # The dual-seat goal (independent greeters/logins on seat0 SPICE + seatphysical
+  # 5090) needs a DM that both (a) drives a non-seat0 logind seat and (b) does not
+  # veto a same-user login. No packaged DM clears both today:
+  # - SDDM 0.21.0 (shipped): follows seats + no veto, but hands the non-seat0
+  #   greeter a VC tty (`tty0`) that systemd-258's varlink logind rejects
+  #   (`InvalidParameter{Seat}`). Fix (cda8d93) unreleased for 2+ years.
+  # - PLM (KDE's SDDM fork): ships the tty fix, but its greeter runtime is a
+  #   single per-user-manager singleton (fixed-name units + last-writer-wins env,
+  #   KDE bug 520483), so the second seat stays black. The per-seat fix (MR 155)
+  #   is unmerged; a working backport is archived at
+  #   debug/atlas/direct_display_bringup/plm-mr155-per-seat-greeter.patch (builds
+  #   green) for when a PLM release ships it.
+  # - GDM: the cleanest multi-seat daemon (per-seat gnome-shell greeter, logind
+  #   splits the GPUs by ID_SEAT tag — renders on seatphysical), but its
+  #   gnome-shell greeter runs `_findConflictingSession` and refuses to start a
+  #   session for a user already logged in on another seat. No setting disables
+  #   it short of patching gnome-shell.
+  #
+  # Accepted trade-off (2026-07-17): use GDM and live with the same-user veto —
+  # both seats show a greeter, but only ONE can be logged in at a time (log out of
+  # seat0 SPICE to use seatphysical, and vice-versa). This is the least-painful
+  # working config; the PLM backport stays on the shelf if simultaneous dual
+  # login becomes worth carrying a patch.
   #
   # Full analysis + candidate matrix (Axis 1b = the VC-tty criterion):
   # debug/atlas/direct_display_bringup/greeters.md and README.md.
-  #
-  # gdm.enable is set in the shared gui.nix module, so it is force-disabled here
-  # rather than removed (other hosts still use GDM).
-  services.displayManager.gdm.enable = lib.mkForce false;
-  services.displayManager.plasma-login-manager.enable = true;
-  # PLM 6.6.6's greeter runtime is single-instance (fixed-name user units +
-  # last-writer-wins env under the one shared `plasmalogin` user manager), so
-  # with two graphical seats only one greeter compositor exists and the other
-  # seat stays black (upstream bug 520483). Backport of upstream MR 155
-  # ("greeter: instantiate the greeter stack per seat"): templated
-  # `plasma-login-*@<seat>` units, per-seat `%t/plasma-login/<seat>.env`, and a
-  # per-seat kwin socket `wayland-login-<seat>` in place of the
-  # `BusName=org.kde.KWin` singleton. nixpkgs' `kwin-path.patch` targets the
-  # pre-rename unit file, so it is dropped and its kwin store-path substitution
-  # is reapplied to the templated unit in postPatch.
-  # CLEANUP(added 2026-07-17): drop patch + override once a PLM release ships
-  #   MR 155 or MR 167 (invent.kde.org/plasma/plasma-login-manager) and nixpkgs
-  #   packages it.
-  services.displayManager.plasma-login-manager.package =
-    pkgs.kdePackages.plasma-login-manager.overrideAttrs
-      (old: {
-        patches =
-          lib.filter (p: !lib.hasSuffix "kwin-path.patch" (baseNameOf (toString p))) old.patches
-          ++ [ ./plm-mr155-per-seat-greeter.patch ];
-        postPatch = (old.postPatch or "") + ''
-          substituteInPlace src/frontend/startkde/plasma-login-kwin_wayland@.service.in \
-            --replace-fail "@CMAKE_INSTALL_FULL_BINDIR@/kwin_wayland" "${pkgs.kdePackages.kwin}/bin/kwin_wayland"
-        '';
-      });
-  # Login-keyring unlock is inherited, not configured here: PLM's `plasmalogin`
-  # PAM service substacks/includes the `login` stack, which already carries
-  # pam_gnome_keyring (gnome-keyring module default, gui.nix enables the daemon).
-  # So the keyring unlocks at login without a per-service enableGnomeKeyring line
-  # — unlike SDDM, whose PAM service did not delegate to `login`.
-  #
-  # Default both seats to the sway session. seat0 stays off GNOME so its lock
-  # works (GNOME's lock hard-requires GDM — canLock() queries
-  # org.gnome.DisplayManager, absent under PLM; see
-  # debug/atlas/direct_display_bringup/README.md). sway locks via swaylock.
+
+  # Default both seats to sway (session-agnostic under GDM). sway locks via
+  # swaylock; seat0 stays off GNOME so a second GNOME never contends for the
+  # shared user bus.
   services.displayManager.defaultSession = "sway";
 
-  # GDM greeter dconf tweaks removed with the GDM→SDDM swap:
-  # - idle-delay=0 kept the DP output awake so the FV43U KVM would not revert to
-  #   USB-C before the seatphysical keyboard could wake it. TODO: re-establish the
-  #   no-blank guarantee for the SDDM seatphysical greeter (weston idle) if the KVM
-  #   reverts again — see debug/atlas/direct_display_bringup/README.md.
-  # - enable-animations=false was a wrong theory for the "frozen greeter": the
-  #   real cause was the conflicting-session dialog, now gone with GDM.
-  #
-  #   Old GDM-specific wiring, for reference if reverting:
-  #   services.displayManager.gdm.wayland = true;
-  #   services.displayManager.gdm.debug = true;
+  # TODO(kvm-no-blank): the pre-SDDM GDM config set login-screen idle-delay=0 to
+  # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
+  # seatphysical keyboard could wake it. Re-establish that no-blank guarantee for
+  # the GDM greeter if the KVM reverts again — see
+  # debug/atlas/direct_display_bringup/README.md.
 
   # Sway session for the game seat (seatphysical, on the display 5090). A real WM to
   # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
@@ -452,20 +422,6 @@ in
   # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
-    # DEBUG(added 2026-07-16): seatphysical greeter bring-up diagnostics. The SDDM
-    # root cause is solved (0.21.0 sent a VC tty on the non-seat0 seat → varlink
-    # `InvalidParameter{Seat}`; confirmed via the logind wire log — see README.md),
-    # and the fix is the move to PLM. Kept here because PLM live multi-seat (kwin
-    # greeter on the NVIDIA seat) is still UNVERIFIED: logind at debug makes
-    # sd-varlink log the whole exchange, so we can confirm the seatphysical
-    # `CreateSession` now returns a session (no InvalidParameter) instead of being
-    # rejected. QT_LOGGING_RULES on `plasmalogin` (PLM's real unit; `display-manager`
-    # is just an alias) cranks the Qt greeter/kwin logging (spammy, intentional).
-    # Remove all of this once PLM multi-seat is verified on the physical seat.
-    {
-      systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug";
-      plasmalogin.environment.QT_LOGGING_RULES = "*.debug=true";
-    }
     # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
     #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
     #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
