@@ -52,6 +52,18 @@ function VersionLink({ version }: { version: DeploymentVersion }) {
   );
 }
 
+// A plain (un-boxed) section label + blurb over the boxed cards it introduces.
+function SectionHeading({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <Text fw={600}>{title}</Text>
+      <Text size="xs" c="dimmed" mt={4}>
+        {description}
+      </Text>
+    </div>
+  );
+}
+
 function McpAccountCard({
   status,
   onConnect,
@@ -177,13 +189,10 @@ export function SettingsPanel() {
       </Group>
       <div className="haku-shell-scroll">
         <Stack gap="xs">
-          <section className="haku-shell-card">
-            <Text fw={600}>MCP accounts</Text>
-            <Text size="xs" c="dimmed" mt={4}>
-              Operator OAuth links for connected MCP servers. Connect one to let the console execute its tools with your
-              account.
-            </Text>
-          </section>
+          <SectionHeading
+            title="MCP accounts"
+            description="Operator OAuth links for connected MCP servers. Connect one to let the console execute its tools with your account."
+          />
           {statusesError && (
             <Text c="red" size="sm">
               Failed to load MCP accounts: {statusesError}
@@ -210,7 +219,7 @@ export function SettingsPanel() {
             />
           ))}
           {deployment && (
-            <section className="haku-shell-card">
+            <div>
               <Text fw={600}>Version</Text>
               <Stack gap={2} mt={4}>
                 {versions.map((version) => (
@@ -222,7 +231,7 @@ export function SettingsPanel() {
                   </Text>
                 )}
               </Stack>
-            </section>
+            </div>
           )}
           {deploymentError && (
             <Text c="red" size="sm">
