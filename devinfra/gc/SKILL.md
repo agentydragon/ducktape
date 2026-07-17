@@ -29,6 +29,9 @@ with an ad hoc script.
   summarize retained state. Do not turn that into permission to delete remote branches,
   unique work, shared caches, or unrelated build state.
 - Keep the active worktree, the main checkout, and anything used by a running process.
+- Never discard uncommitted changes on your own. Reverting (`git checkout`/`restore`,
+  `git clean`, `worktree remove --force`) is destructive and requires explicit user
+  approval each time — surface the finding and propose it, but let the user decide.
 - Prefer `workspace-gc` from the released, artifact-pinned Nix `ducktape` package. In a
   Ducktape source checkout where it is absent, load the devshell and use
   `bb run //devinfra/gc:workspace_gc --` as the command prefix.
@@ -79,9 +82,10 @@ real disposition. The report's `LAST ACTIVITY` column and the PR annotation on a
 
 - **What is dirty?** `git -C PATH status --porcelain`, then `git -C PATH diff --stat`. If
   the only changes are regenerated or reformatted `BUILD.bazel` / other build-tool output
-  (e.g. a buildifier reflow of a `third_party` file), that is noise, not work — revert just
-  those files (`git -C PATH checkout -- FILE`) and re-scan; the tree usually flips to a
-  clean PRUNE.
+  (e.g. a buildifier reflow of a `third_party` file), that is noise, not work. Report it and
+  **propose** reverting just those files (`git -C PATH checkout -- FILE`), which makes the
+  tree flip to a clean PRUNE — but never run the revert without explicit user approval:
+  `git checkout` discards uncommitted state and is not the agent's to decide.
 - **How stale?** `git -C PATH rev-list --left-right --count origin/HEAD...HEAD`. A tree
   thousands of commits behind is almost certainly an abandoned spike; its uncommitted churn
   is stale mass-reformat noise, not recoverable work.
