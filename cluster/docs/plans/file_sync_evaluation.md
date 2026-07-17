@@ -245,7 +245,7 @@ enough storage for full replication. Simplest to deploy, most reliable offline.
 
 ## Next Steps
 
-1. Deploy Seafile CE on the cluster (official Helm chart on `proxmox-csi-retain`)
+1. Deploy Seafile CE on the cluster (official Helm chart on `lvm-proxmox-hdd`)
 2. Test SeaDrive on Linux (FUSE mount, cache behavior, offline resilience)
 3. Test selective sync granularity and cache eviction behavior
 4. Migrate data from old VPS Syncthing to Seafile

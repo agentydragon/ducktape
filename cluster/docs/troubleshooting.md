@@ -303,18 +303,6 @@ If rebooting both lighthouses leaves peers stuck (tunnels reported alive, no
 re-handshake, decrypt failures), see
 <troubleshooting/nebula_lighthouse_reboot_stale_tunnel.md>.
 
-### Proxmox CSI
-
-CSI "401 Unauthorized" usually means the token is missing in Proxmox, not an auth config error.
-
-```bash
-kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\.yaml}' | base64 -d
-kubectl logs deployment/proxmox-csi-plugin-controller -n csi-proxmox
-```
-
-If the SOPS secret fails to decrypt, check the age key in `flux-system/sops-age-cluster-secrets`.
-To verify the CSI token: `tofu state show 'proxmox_virtual_environment_user_token.persistent["csi"]'`.
-
 ### DNS & cert-manager
 
 ```bash

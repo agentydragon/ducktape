@@ -437,10 +437,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       or a different architecture before wiring Authentik to use it. Re-measure steady-state
       Postgres connections afterward before deciding whether any DB limit or
       worker-concurrency changes are still needed.
-- [ ] Investigate why `proxmox-csi-retain` publishes zero `CSIStorageCapacity` objects —
-      the scheduler sees 0 available space and refuses to schedule `WaitForFirstConsumer`
-      PVCs, creating a deadlock. Likely a Proxmox API connectivity issue in
-      `proxmox-proxy`. Check `csi-proxmox` controller logs and `proxmox-proxy` logs.
 - [ ] Consider OpenEBS LVM on Talos nodes; Talos has `machine.disks` or `machine.volumes`.
       Would allow firecracker fast-clone on OVH workers.
 - [ ] Trial SeaweedFS with both the upstream operator and CSI driver. Deploy the
@@ -563,7 +559,8 @@ See <plans/file_sync_evaluation.md>.
 ## OVH-Only Resilience Invariants
 
 **Rule**: These services MUST work with OVH only (Proxmox completely down). No
-`proxmox-csi-retain` storage or Proxmox-pinned workloads.
+Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned
+workloads.
 
 | Service   | Status | Storage            | Notes                                                         |
 | --------- | ------ | ------------------ | ------------------------------------------------------------- |
@@ -575,7 +572,7 @@ See <plans/file_sync_evaluation.md>.
 
 **Compliance checklist** for critical-path changes:
 
-1. No `proxmox-csi-retain` PVCs in dependency chain
+1. No Proxmox-pinned PVCs (`lvm-proxmox-*`, `local-path-proxmox`) in dependency chain
 2. No `topology.kubernetes.io/region: proxmox` affinity
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
@@ -583,18 +580,19 @@ See <plans/file_sync_evaluation.md>.
 **Proxmox-dependent services** (tolerate downtime by design): Harbor,
 Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
-### Migrating off `proxmox-csi-retain` on wyrm2
+### Proxmox CSI removed (2026-07-16)
 
-**Rationale**: Proxmox CSI hotplugs SCSI disks onto the VM. The bpg/proxmox Terraform
-provider treats all disks as a single TypeSet with no stable keys — it can't distinguish
-Terraform-managed disks from CSI-managed ones. This forces `lifecycle { ignore_changes = [disk] }`
-on the entire VM, which means Terraform can't manage _any_ wyrm2 disks (including intentional
-ones like cache disks). Eliminating proxmox-csi usage on wyrm2 lets us eventually remove the
-ignore rule and manage all disks declaratively.
+Proxmox CSI (`proxmox-csi-retain`) is gone — it crash-looped after the network
+topology change broke its path to the Proxmox API, and a single physical Proxmox host
+means LVM-local storage has the same failure domain anyway. Rationale and full context:
+<lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers now use
+`lvm-proxmox-hdd`.
 
-**Migration**: Replace `proxmox-csi-retain` PVCs with `local-path-proxmox` (same failure
-domain, no CSI disk hotplug). Remaining `proxmox-csi-retain` consumers on wyrm2:
-`ollama/llm-models` (200Gi), `devbot-workspace` (20Gi), `devbot-config` (5Gi).
+- [ ] Now that CSI no longer hotplugs SCSI disks onto wyrm2, remove the
+      `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM in
+      `terraform/main/proxmox-nodes.tf` so Terraform can manage all wyrm2 disks
+      declaratively. (The bpg/proxmox provider treats disks as one keyless TypeSet;
+      the ignore rule was only there to avoid fighting CSI-managed disks.)
 
 ## Operational Hardening
 

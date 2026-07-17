@@ -37,7 +37,7 @@ OVH-HA uses `local-path-ovh` (constrained to the OVH kimsufi nodes via
 `allowedTopologies`); Proxmox-single uses `local-path`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
-host). No `proxmox-csi-retain` for CNPG.
+host).
 
 ### R4: `initdb.secret` must exist before the Cluster resource
 

@@ -8,24 +8,13 @@
 # TODO: Consider whether terraform@pve is still needed now that root@pam!tofu exists.
 # Infrastructure and k8s-worker-proxmox could read the root token from the keyring via
 # their own .envrc instead. Keeping for now for least-privilege (TerraformAdmin is
-# narrower than root). kubernetes-csi@pve is definitely still needed — it runs inside
-# the cluster and can't access the keyring.
+# narrower than root).
+#
+# The kubernetes-csi@pve user/token was removed 2026-07-16 with the Proxmox CSI driver
+# (see cluster/docs/lessons_learned/2026_07_16_disable_proxmox_csi.md).
 locals {
   # Persistent Proxmox users - survive VM lifecycle
   pve_persistent_users = {
-    csi = {
-      name    = "kubernetes-csi@pve"
-      comment = "Kubernetes CSI driver service account (persistent)"
-      role    = "CSI"
-      privs = [
-        "Datastore.Allocate",
-        "Datastore.AllocateSpace",
-        "Datastore.Audit",
-        "VM.Audit",
-        "VM.Config.Disk",
-      ]
-      token = "csi"
-    }
     terraform = {
       name    = "terraform@pve"
       comment = "Terraform automation user (persistent)"

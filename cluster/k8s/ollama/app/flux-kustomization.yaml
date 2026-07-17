@@ -17,4 +17,3 @@ spec:
     - name: gateway
     - name: cert-manager-environment
     - name: nvidia-device-plugin
-    - name: proxmox-csi

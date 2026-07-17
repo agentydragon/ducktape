@@ -412,7 +412,7 @@ metadata:
   name: devbot-workspace
   namespace: agents
 spec:
-  storageClassName: proxmox-csi
+  storageClassName: lvm-proxmox-hdd
   accessModes:
     - ReadWriteOnce
   resources:
@@ -425,7 +425,7 @@ metadata:
   name: devbot-config
   namespace: agents
 spec:
-  storageClassName: proxmox-csi
+  storageClassName: lvm-proxmox-hdd
   accessModes:
     - ReadWriteOnce
   resources:

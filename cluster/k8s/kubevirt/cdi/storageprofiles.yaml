@@ -74,16 +74,6 @@ spec:
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
 metadata:
-  name: proxmox-csi-retain
-spec:
-  claimPropertySets:
-    - accessModes: [ReadWriteOnce]
-      volumeMode: Filesystem
-  cloneStrategy: copy
----
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: StorageProfile
-metadata:
   name: seaweedfs-ovh
 spec:
   claimPropertySets:

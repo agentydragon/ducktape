@@ -77,7 +77,7 @@ spec:
     existingSecretAdminPassword: "harbor-admin-initial"
     existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
 
-    # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
+    # Pin all components to Proxmox — PVCs use lvm-proxmox-hdd and
     # cross-site latency (OVH<->Proxmox via KubeSpan) causes liveness probe
     # timeouts when core/nginx are on OVH but database/redis are on Proxmox.
     # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md

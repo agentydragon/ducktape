@@ -92,9 +92,8 @@ e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 | `seaweedfs-ovh-ssd`  | SeaweedFS CSI          | `hil-ovh` | NVMe-backed SeaweedFS (`diskType: ssd`) — Forgejo git hot tier                                       |
 | `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                               |
 | `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                |
-| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API                                                                        |
 
-Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
+OpenEBS LVM is constrained to nodes
 with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
 CNPG database placement (OVH-HA vs Proxmox-single) follows <docs/cnpg_conventions.md>.
 
@@ -114,8 +113,9 @@ wyrm2 (NixOS, 2x RTX 5090) provides `nvidia.com/gpu` resources; GPU pods need
 ### OVH-Only Resilience Invariants
 
 DNS (AWS Route 53) and the public website must keep working/recovering with OVH
-only (no Proxmox) — so they must not depend on `proxmox-csi-retain` storage or
-Proxmox-pinned nodes. Full invariant set, compliance tracking, and fix plan:
+only (no Proxmox) — so they must not depend on Proxmox-pinned storage
+(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set,
+compliance tracking, and fix plan:
 <docs/plan.md> § "OVH-Only Resilience Invariants".
 
 ## SSO (Authentik)

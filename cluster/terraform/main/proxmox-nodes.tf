@@ -159,9 +159,8 @@ locals {
 
   # Common node labels for all Proxmox nodes
   proxmox_node_labels = {
-    "topology.kubernetes.io/region"                   = "proxmox"
-    "topology.kubernetes.io/zone"                     = "atlas"
-    "csi.proxmox.sinextra.dev/max-volume-attachments" = "29"
+    "topology.kubernetes.io/region" = "proxmox"
+    "topology.kubernetes.io/zone"   = "atlas"
   }
 
 }

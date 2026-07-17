@@ -40,8 +40,9 @@ Backing Datastore". Original incident write-up:
 
 ## CRITICAL: OVH-Only Resilience
 
-DNS and website MUST work with OVH only (without Proxmox). No `proxmox-csi-retain` storage
-or Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience Invariants".
+DNS and website MUST work with OVH only (without Proxmox). No Proxmox-pinned storage
+(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. See <docs/plan.md>
+"OVH-Only Resilience Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 

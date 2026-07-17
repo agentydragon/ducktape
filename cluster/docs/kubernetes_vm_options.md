@@ -57,8 +57,8 @@ region-local, with:
   storage.
 - `lvm-proxmox-ssd` and `lvm-proxmox-hdd`: OpenEBS LVM LocalPV on Proxmox
   nodes.
-- `proxmox-csi-retain`: Proxmox API-backed block storage, currently being
-  migrated away from for some workloads.
+- `proxmox-csi-retain`: removed (Proxmox CSI uninstalled 2026-07-16; see
+  <lessons_learned/2026_07_16_disable_proxmox_csi.md>).
 - `longhorn`: removed (uninstalled 2026-05-13; storage classes deleted).
 - SeaweedFS is present for object/S3 workloads and experimental CSI/FUSE use,
   but repo notes already say not to use it for core infra until recovery,
@@ -69,10 +69,6 @@ Implications:
 - A VM on `lvm-proxmox-*` is good for fast local storage, but the VM is tied to
   the Proxmox node/VG. This does not solve "node died, restart elsewhere."
 - A VM on `local-path-*` is even more node-coupled.
-- A VM on `proxmox-csi-retain` may survive Kubernetes node churn if the backing
-  Proxmox volume can attach to another suitable node, but the cluster docs say
-  Proxmox CSI has topology/API constraints and some services are migrating off
-  it.
 - There is currently no `VolumeSnapshotClass` in the cluster, based on existing
   `volsync-backup.yaml` comments and `rg` inspection. KubeVirt snapshots need a
   snapshot-capable CSI class.
