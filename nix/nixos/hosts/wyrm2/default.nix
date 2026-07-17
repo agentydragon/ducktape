@@ -406,12 +406,17 @@ in
     # gnome-remote-desktop system RDP (remote login) — configure the system daemon
     # imperatively via grdctl once at boot (no declarative NixOS surface). Self-signed
     # TLS (RDP is tunnel/localhost-only); no set-credentials (GDM does the auth on the
-    # handover login). VERIFY on first boot: confirm the system daemon accepts a
-    # tunnelled RDP connection and that the cert path/perms suit the grd service user.
+    # handover login).
+    # Two gotchas learned live (2026-07-17): `grdctl --system` shells out to `pkexec`,
+    # which is the setuid wrapper under /run/wrappers/bin (not on the unit's default
+    # PATH); and the daemon runs as user `gnome-remote-desktop`, so it must own/read
+    # the TLS key (openssl writes it root:root). VERIFY on first boot: the system
+    # daemon accepts a tunnelled RDP connection (the NVIDIA-headless path is untested).
     {
       grd-system-rdp-setup = {
         description = "Configure gnome-remote-desktop system RDP (remote login)";
         wantedBy = [ "multi-user.target" ];
+        after = [ "systemd-sysusers.service" ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
@@ -421,6 +426,8 @@ in
           pkgs.openssl
         ];
         script = ''
+          # grdctl --system elevates via the setuid pkexec wrapper.
+          export PATH="/run/wrappers/bin:$PATH"
           dir=/var/lib/gnome-remote-desktop
           cert=$dir/rdp-tls.crt
           key=$dir/rdp-tls.key
@@ -428,8 +435,11 @@ in
           if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
             openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
               -subj "/CN=wyrm2" -keyout "$key" -out "$cert"
-            chmod 0640 "$key"
           fi
+          # Daemon runs as user gnome-remote-desktop; it must read the key.
+          chown gnome-remote-desktop:gnome-remote-desktop "$cert" "$key"
+          chmod 0644 "$cert"
+          chmod 0640 "$key"
           grdctl --system rdp set-tls-cert "$cert"
           grdctl --system rdp set-tls-key "$key"
           grdctl --system rdp enable
