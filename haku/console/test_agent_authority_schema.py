@@ -569,6 +569,9 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
     engine = create_engine(db_url)
     operator_id = uuid4()
     try:
+        with engine.connect() as conn:
+            head_version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -583,7 +586,10 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
         apply_migrations(db_url)
 
         with engine.connect() as conn:
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0010"
+            # Re-applying when already at head is a no-op: the stamp is unchanged (asserting a
+            # specific revision literal would just re-check the current head — a change detector)
+            # and pre-existing rows survive rather than being recreated.
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == head_version
             assert (
                 conn.execute(
                     text("SELECT count(*) FROM operators WHERE operator_id = :operator_id"),

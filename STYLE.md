@@ -217,7 +217,11 @@ Then, by TLS client:
   tests that use them, in the same change.
 - **No pure change-detector tests**: don't assert a checked-in literal equals itself
   copied into the test. Test semantics: invalid values rejected, invariants hold,
-  behavior differs by mode.
+  behavior differs by mode. Example: never assert the current Alembic head revision
+  (`SELECT version_num … == "0011"`) — that literal just tracks whatever the newest
+  migration happens to be, so every migration breaks the test for no behavioral reason.
+  Test the property instead: applying migrations to a fresh DB matches the ORM metadata,
+  and re-applying at head is idempotent (the stamp is unchanged and existing rows survive).
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
