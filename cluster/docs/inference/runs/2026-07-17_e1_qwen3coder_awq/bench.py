@@ -55,9 +55,17 @@ class RequestResult:
     ok: bool
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    # ttft_s clocks the first token of ANY kind (reasoning or content), so it is
+    # honest for reasoning models whose reasoning tokens precede the answer.
     ttft_s: float | None = None
+    # ttfc_s = time to first *content* (answer) token; for a reasoning model the
+    # gap ttfc_s - ttft_s is the reasoning latency before the user sees an answer.
+    ttfc_s: float | None = None
     total_s: float | None = None
+    # decode_tps counts ALL output tokens (reasoning + content) over generation
+    # time — the apples-to-apples tokens/s: what you pay in tokens is capability.
     decode_tps: float | None = None
+    reasoning_tokens: int | None = None
     error: str | None = None
     text: str | None = None
 
@@ -74,6 +82,7 @@ def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int
     }
     dispatch = time.monotonic()
     first_tok: float | None = None
+    first_content: float | None = None
     chunks: list[str] = []
     usage: dict | None = None
     try:
@@ -90,11 +99,15 @@ def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int
                 if event.get("usage"):
                     usage = event["usage"]
                 for choice in event.get("choices", []):
-                    piece = choice.get("delta", {}).get("content")
-                    if piece:
-                        if first_tok is None:
-                            first_tok = time.monotonic()
-                        chunks.append(piece)
+                    delta = choice.get("delta", {})
+                    reasoning = delta.get("reasoning_content")
+                    content = delta.get("content")
+                    if (reasoning or content) and first_tok is None:
+                        first_tok = time.monotonic()
+                    if content:
+                        if first_content is None:
+                            first_content = time.monotonic()
+                        chunks.append(content)
     except (httpx.HTTPError, json.JSONDecodeError) as e:
         return RequestResult(ok=False, error=f"{type(e).__name__}: {e}")
 
@@ -108,8 +121,10 @@ def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int
         prompt_tokens=usage["prompt_tokens"],
         completion_tokens=completion,
         ttft_s=first_tok - dispatch,
+        ttfc_s=(first_content - dispatch) if first_content is not None else None,
         total_s=end - dispatch,
         decode_tps=decode_tps,
+        reasoning_tokens=(usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
         text="".join(chunks),
     )
 
@@ -120,7 +135,9 @@ class LatencyPoint:
     prompt_tokens: int | None
     ttft_p50: float | None
     ttft_p95: float | None
-    decode_tps_median: float | None
+    ttfc_p50: float | None  # time to first content token (answer, post-reasoning)
+    decode_tps_median: float | None  # all output tokens (incl. reasoning) / gen time
+    reasoning_tokens_median: float | None
     reps_ok: int
     reps: int
 
@@ -130,17 +147,21 @@ def measure_latency(base_url, model, target_ctx: int, reps: int, timeout: float)
     results = [stream_chat(base_url, model, [{"role": "user", "content": prompt}], 256, timeout) for _ in range(reps)]
     ok = [r for r in results if r.ok]
     ttfts = sorted(r.ttft_s for r in ok if r.ttft_s is not None)
+    ttfcs = sorted(r.ttfc_s for r in ok if r.ttfc_s is not None)
 
     def pct(xs, p):
         return xs[min(len(xs) - 1, int(p * len(xs)))] if xs else None
 
     tps = [r.decode_tps for r in ok if r.decode_tps]
+    rtoks = [r.reasoning_tokens for r in ok if r.reasoning_tokens is not None]
     return LatencyPoint(
         target_ctx=target_ctx,
         prompt_tokens=ok[0].prompt_tokens if ok else None,
         ttft_p50=pct(ttfts, 0.5),
         ttft_p95=pct(ttfts, 0.95),
+        ttfc_p50=pct(ttfcs, 0.5),
         decode_tps_median=statistics.median(tps) if tps else None,
+        reasoning_tokens_median=statistics.median(rtoks) if rtoks else None,
         reps_ok=len(ok),
         reps=reps,
     )
@@ -275,7 +296,8 @@ def main() -> int:
         summary["latency"].append(asdict(pt))
         print(
             f"  ctx~{ctx}: ptok={pt.prompt_tokens} ttft_p50={pt.ttft_p50} "
-            f"decode_tps={pt.decode_tps_median} ({pt.reps_ok}/{pt.reps})",
+            f"ttfc_p50={pt.ttfc_p50} decode_tps={pt.decode_tps_median} "
+            f"reasoning_tok={pt.reasoning_tokens_median} ({pt.reps_ok}/{pt.reps})",
             file=sys.stderr,
         )
 
