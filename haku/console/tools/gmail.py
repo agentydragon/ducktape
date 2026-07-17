@@ -17,11 +17,9 @@ Gmail API affordances not yet exposed.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 from fastmcp import FastMCP
-from googleapiclient.discovery import build
 from pydantic import Field
 
 from gmail_api.filters import FilterAction, FilterCriteria, FiltersListResponse, GmailFilter
@@ -42,7 +40,6 @@ from gmail_api.messages import (
     ThreadFormat,
     ThreadsListResponse,
 )
-from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.gmail_client import (
     GMAIL_SERVER_ID,
     CreateGmailDraftArgs,
@@ -53,18 +50,7 @@ from haku.console.tools.gmail_client import (
     SearchThreadsArgs,
     UpdateGmailDraftArgs,
 )
-
-# The write scopes the label/draft/filter tools need. `gmail.modify` also covers every read the
-# search/get tools do, so no read-only scope is required; `gmail.settings.basic` covers filter
-# CRUD. The mounted `haku_console_google` Airlock token (shared with the `google_calendar`
-# server) carries these plus the read-only scopes; requesting a subset here is harmless — the
-# externally-rotated access token already holds whatever Airlock granted.
-# See cluster/k8s/haku/console/README.md.
-GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
-GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
-GMAIL_SETTINGS_BASIC_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
-GMAIL_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_COMPOSE_SCOPE, GMAIL_SETTINGS_BASIC_SCOPE]
-
+from haku.console.tools.google_service import build_google_api_service
 
 # Module-level, not local to build_mcp(): `from __future__ import annotations` makes every
 # tool parameter annotation a string, resolved by pydantic against this module's globals at
@@ -257,7 +243,6 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
     return mcp
 
 
-def build_gmail_client(token_dir: Path) -> GmailToolsClient:
-    creds = credentials_from_token_dir(token_dir, GMAIL_SCOPES)
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False, static_discovery=True)
-    return GmailToolsClient(service)
+def build_gmail_client_from_token(access_token: str | None) -> GmailToolsClient:
+    """Build the Gmail client for one call from the acting Operator's access token."""
+    return GmailToolsClient(build_google_api_service("gmail", "v1", access_token))

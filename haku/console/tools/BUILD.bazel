@@ -23,17 +23,26 @@ py_library(
 )
 
 py_library(
+    name = "google_service",
+    srcs = ["google_service.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
+
+py_library(
     name = "gmail",
     srcs = ["gmail.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         ":gmail_client",
+        ":google_service",
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
-        "//gmail_api:service",
         "@pypi//fastmcp_slim",
-        "@pypi//google_api_python_client",
         "@pypi//pydantic",
     ],
 )
@@ -44,9 +53,8 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         ":google_calendar_client",
-        "//gmail_api:service",
+        ":google_service",
         "@pypi//fastmcp_slim",
-        "@pypi//google_api_python_client",
         "@pypi//pydantic",
     ],
 )

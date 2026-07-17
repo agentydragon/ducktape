@@ -12,6 +12,8 @@ import asyncio
 import contextlib
 import datetime
 import logging
+from collections.abc import Awaitable, Callable
+from enum import Enum, auto
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -24,6 +26,7 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
     _server_entry,
 )
+from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_calls import (
     ApprovalDecision,
@@ -32,7 +35,7 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from haku.console.tools.gmail_client import GmailToolsClient
+from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +95,19 @@ class OperatorOAuthTokenStore(Protocol):
     async def access_token_for(self, *, server: McpServerEntry, operator_id: UUID) -> str | None: ...
 
 
+class ProviderConnectionTokenStore(Protocol):
+    async def access_token_for(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> str | None: ...
+
+
+# Resolves the acting Operator's Gmail client for auto-approval label lookups (or None when the
+# Operator has no Google connection). Production builds it from the provider store; tests inject one.
+GmailClientProvider = Callable[[UUID], Awaitable[GmailToolsClient | None]]
+
+
+async def _no_gmail_client(_operator_id: UUID) -> GmailToolsClient | None:
+    return None
+
+
 class OperatorActorRequiredError(PermissionError):
     """Raised when an AgentActor reaches an operator-only lifecycle operation."""
 
@@ -110,15 +126,52 @@ class ToolCallStateConflictError(RuntimeError):
     """The requested lifecycle transition is invalid for the call's durable state."""
 
 
-async def backend_auth_for_operator(
-    *, server: McpServerEntry, operator_id: UUID, oauth_store: OperatorOAuthTokenStore
-) -> str | None:
+async def _require_operator_linked_token(token: Awaitable[str | None], server_id: str) -> str:
+    """Await an operator-linked token (provider connection or operator OAuth), or fail loud."""
+    resolved = await token
+    if not resolved:
+        raise BackendAccountNotConnectedError(server_id)
+    return resolved
+
+
+class ServerAuthMode(Enum):
+    """How a connected MCP server resolves its backend auth for an operator."""
+
+    PROVIDER = auto()
+    OPERATOR_OAUTH = auto()
+    STATIC = auto()
+
+
+def server_auth_mode(server: McpServerEntry) -> ServerAuthMode:
+    """Select a server's backend-auth mode. The per-mode failure behavior is the caller's."""
+    if server.provider_connection is not None:
+        return ServerAuthMode.PROVIDER
     if _operator_oauth_enabled(server):
-        token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
-        if not token:
-            raise BackendAccountNotConnectedError(server.id)
-        return token
-    return _credential_token(server)
+        return ServerAuthMode.OPERATOR_OAUTH
+    return ServerAuthMode.STATIC
+
+
+async def backend_auth_for_operator(
+    *,
+    server: McpServerEntry,
+    operator_id: UUID,
+    oauth_store: OperatorOAuthTokenStore,
+    provider_store: ProviderConnectionTokenStore | None = None,
+) -> str | None:
+    match server_auth_mode(server):
+        case ServerAuthMode.PROVIDER:
+            assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
+            if provider_store is None:
+                raise RuntimeError(f"MCP server {server.id} needs a provider connection store")
+            return await _require_operator_linked_token(
+                provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id), server.id
+            )
+        case ServerAuthMode.OPERATOR_OAUTH:
+            return await _require_operator_linked_token(
+                oauth_store.access_token_for(server=server, operator_id=operator_id), server.id
+            )
+        case ServerAuthMode.STATIC:
+            return _credential_token(server)
 
 
 class ToolCallApplicationService:
@@ -133,7 +186,8 @@ class ToolCallApplicationService:
         executor: ToolExecutor,
         oauth_store: OperatorOAuthTokenStore,
         in_process_servers: InProcessServers,
-        gmail_client: GmailToolsClient | None,
+        gmail_client_provider: GmailClientProvider = _no_gmail_client,
+        provider_store: ProviderConnectionTokenStore | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -141,19 +195,29 @@ class ToolCallApplicationService:
         self._executor = executor
         self._oauth_store = oauth_store
         self._in_process_servers = in_process_servers
-        self._gmail_client = gmail_client
+        self._gmail_client_provider = gmail_client_provider
+        self._provider_store = provider_store
+
+    async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
+        return await backend_auth_for_operator(
+            server=server, operator_id=operator_id, oauth_store=self._oauth_store, provider_store=self._provider_store
+        )
 
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
         actor = self._require_actor(actor)
         server = _server_entry(self._settings, req.server_id)
+        # Gmail label auto-approval resolves label IDs against the acting Operator's own Gmail; the
+        # schema check needs the tool's input schema, so build the (credential-independent) server.
+        gmail = await self._gmail_client_provider(actor.operator_id) if server.id == GMAIL_SERVER_ID else None
+        server_builder = self._in_process_servers.get(server.id)
         decision = await auto_approve_tool_call(
             actor=actor,
             server_id=server.id,
             tool_name=req.tool_name,
             arguments=req.arguments,
             label_prefix=self._settings.gmail_auto_approve_label_prefix,
-            gmail=self._gmail_client,
-            mcp=self._in_process_servers.get(server.id),
+            gmail=gmail,
+            mcp=server_builder(None) if server_builder is not None else None,
         )
         if isinstance(decision, SchemaDenial):
             # Arguments failed an owned in-process schema: the call can never execute, so it is
@@ -182,9 +246,7 @@ class ToolCallApplicationService:
         # persisted, every RUNNING call has all authorization needed to attempt execution.
         auth_token = None
         if auto_approval_policy_id is not None:
-            auth_token = await backend_auth_for_operator(
-                server=server, operator_id=actor.operator_id, oauth_store=self._oauth_store
-            )
+            auth_token = await self._backend_auth(server, actor.operator_id)
 
         record = self._repository.submit(
             server=server,
@@ -214,9 +276,7 @@ class ToolCallApplicationService:
 
         operator = self._require_operator(actor)
         server = _server_entry(self._settings, req.server_id)
-        auth_token = await backend_auth_for_operator(
-            server=server, operator_id=operator.operator_id, oauth_store=self._oauth_store
-        )
+        auth_token = await self._backend_auth(server, operator.operator_id)
         logger.info(
             "operator direct MCP call server=%s tool=%s operator_id=%s", server.id, req.tool_name, operator.operator_id
         )
@@ -263,9 +323,7 @@ class ToolCallApplicationService:
 
         pending = self._repository.get(tool_call_id, actor=operator)
         server = _server_entry(self._settings, pending.server_id)
-        auth_token = await backend_auth_for_operator(
-            server=server, operator_id=operator.operator_id, oauth_store=self._oauth_store
-        )
+        auth_token = await self._backend_auth(server, operator.operator_id)
         running = self._repository.mark_running(tool_call_id, actor=operator)
         return await self._execute_and_publish(record=running, server=server, auth_token=auth_token, actor=operator)
 

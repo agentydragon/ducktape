@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from uuid import UUID
 
 import yaml
@@ -19,6 +20,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 
 from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import Settings
+from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -49,6 +51,22 @@ class McpServerEntry(BaseModel):
     server_url: str | None = None
     bearer_token_secret: str | None = None
     operator_oauth: McpOperatorOAuthConfig | None = None
+    # For an in-process server that executes as the acting Operator's linked external account
+    # (Google today): the tool call resolves that Operator's provider access token before
+    # executing. It is the console's own replacement for the Airlock-brokered token.
+    provider_connection: ProviderConnectionKind | None = None
+
+    @model_validator(mode="after")
+    def _reject_conflicting_operator_token_sources(self) -> McpServerEntry:
+        # Both claim the operator-linked token; a config setting both is meaningless because
+        # provider_connection wins and operator_oauth would be silently ignored. A static
+        # bearer_token_secret coexisting is intentional (reflection/fallback wiring).
+        if self.provider_connection is not None and self.operator_oauth is not None:
+            raise ValueError(
+                f"MCP server {self.id!r} sets both provider_connection and operator_oauth; "
+                "an operator-linked server uses exactly one token source"
+            )
+        return self
 
 
 class ConsoleMcpConfig(BaseModel):
@@ -199,12 +217,24 @@ def _credential_token(server: McpServerEntry) -> str | None:
 # directly and opens an in-memory `FastMCPTransport` — so both `McpToolExecutor` and
 # `McpMetadataProvider` run the exact same `Client(...)` calls either way; only this
 # lookup differs.
-InProcessServers = dict[str, FastMCP]
+#
+# The registry holds *builders*, not prebuilt instances: a provider-backed server (gmail,
+# google_calendar) is built per execution from the acting Operator's access token, so the
+# credential flows in by argument with no shared/ambient state. The token is None only when
+# building for tool-schema reflection (`tools/list` never invokes a tool). Credential-free
+# servers (routine, tests) use `const_in_process_server`.
+InProcessServerBuilder = Callable[[str | None], FastMCP]
+InProcessServers = dict[str, InProcessServerBuilder]
 
 
-def _transport(server: McpServerEntry, in_process: InProcessServers) -> FastMCP | str:
-    if in_process_server := in_process.get(server.id):
-        return in_process_server
+def const_in_process_server(mcp: FastMCP) -> InProcessServerBuilder:
+    """A builder that ignores the token and always returns ``mcp`` (credential-free servers, tests)."""
+    return lambda _token: mcp
+
+
+def _transport(server: McpServerEntry, in_process: InProcessServers, auth_token: str | None) -> FastMCP | str:
+    if builder := in_process.get(server.id):
+        return builder(auth_token)
     if server.server_url is not None:
         return server.server_url
     raise RuntimeError(f"MCP server {server.id!r} has no server_url and no in-process registration")

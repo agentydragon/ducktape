@@ -3,12 +3,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { shortDate } from "./approval_state.ts";
 import {
+  connectMcpOperatorAuth,
+  connectProviderConnection,
   disconnectMcpOperatorAuth,
+  disconnectProviderConnection,
   fetchDeploymentInfo,
   fetchMcpOperatorAuthStatuses,
+  fetchProviderConnections,
   type DeploymentInfo,
   type McpOperatorAuthStatus,
-  connectMcpOperatorAuth,
+  type ProviderConnectionKind,
+  type ProviderConnectionStatus,
 } from "./client.ts";
 import { useConsoleEvents } from "./console_events.ts";
 import { ExternalLink } from "./link.tsx";
@@ -65,26 +70,28 @@ function SectionHeading({ title, description }: { title: string; description: st
   );
 }
 
-function McpAccountCard({
-  status,
+// Shared presentational card for an operator connection (MCP account or provider). Takes only
+// primitives so each caller does its own discriminated-union narrowing to compute the strings.
+function ConnectionCard({
+  title,
+  subtitle,
+  connected,
   onConnect,
   onDisconnect,
 }: {
-  status: McpOperatorAuthStatus;
+  title: string;
+  subtitle: string;
+  connected: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  const connected = status.status === "connected";
-  const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
   return (
     <section className="haku-shell-card">
       <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
         <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{status.server_id}</Text>
+          <Text fw={600}>{title}</Text>
           <Text size="xs" c="dimmed">
-            {connected
-              ? `Linked for ${status.username}${until ? ` until ${until}` : ""}`
-              : `Not linked for ${status.username}`}
+            {subtitle}
           </Text>
         </Stack>
         <Badge color={connected ? "teal" : "gray"} variant="light">
@@ -106,12 +113,66 @@ function McpAccountCard({
   );
 }
 
+function McpAccountCard({
+  status,
+  onConnect,
+  onDisconnect,
+}: {
+  status: McpOperatorAuthStatus;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const connected = status.status === "connected";
+  const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
+  return (
+    <ConnectionCard
+      title={status.server_id}
+      subtitle={
+        connected
+          ? `Linked for ${status.username}${until ? ` until ${until}` : ""}`
+          : `Not linked for ${status.username}`
+      }
+      connected={connected}
+      onConnect={onConnect}
+      onDisconnect={onDisconnect}
+    />
+  );
+}
+
+function providerLabel(provider: ProviderConnectionKind): string {
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
+function ProviderConnectionCard({
+  status,
+  onConnect,
+  onDisconnect,
+}: {
+  status: ProviderConnectionStatus;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const connected = status.status === "connected";
+  const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
+  return (
+    <ConnectionCard
+      title={providerLabel(status.provider)}
+      subtitle={connected ? `Connected${until ? ` · token until ${until}` : ""}` : "Not connected"}
+      connected={connected}
+      onConnect={onConnect}
+      onDisconnect={onDisconnect}
+    />
+  );
+}
+
 // Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
 // shell chrome's mutually exclusive panels.
 export function SettingsPanel() {
   const [statuses, setStatuses] = useState<McpOperatorAuthStatus[] | null>(null);
+  const [providerStatuses, setProviderStatuses] = useState<ProviderConnectionStatus[] | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [statusesError, setStatusesError] = useState<string | null>(null);
+  const [providerStatusesError, setProviderStatusesError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadGeneration = useRef(0);
@@ -131,6 +192,17 @@ export function SettingsPanel() {
         setStatusesError(e instanceof Error ? e.message : String(e));
       }
     );
+    const providerRequest = fetchProviderConnections().then(
+      (nextProviderStatuses) => {
+        if (generation !== loadGeneration.current) return;
+        setProviderStatuses(nextProviderStatuses);
+        setProviderStatusesError(null);
+      },
+      (e: unknown) => {
+        if (generation !== loadGeneration.current) return;
+        setProviderStatusesError(e instanceof Error ? e.message : String(e));
+      }
+    );
     const deploymentRequest = fetchDeploymentInfo().then(
       (nextDeployment) => {
         if (generation !== loadGeneration.current) return;
@@ -142,7 +214,7 @@ export function SettingsPanel() {
         setDeploymentError(e instanceof Error ? e.message : String(e));
       }
     );
-    void Promise.all([statusesRequest, deploymentRequest]).then(() => {
+    void Promise.all([statusesRequest, providerRequest, deploymentRequest]).then(() => {
       if (generation === loadGeneration.current) setLoading(false);
     });
   }, []);
@@ -155,7 +227,12 @@ export function SettingsPanel() {
   );
 
   useConsoleEvents((event) => {
-    if (event.event_type === "sync" || event.event_type === "mcp_operator_auth_changed") load();
+    if (
+      event.event_type === "sync" ||
+      event.event_type === "mcp_operator_auth_changed" ||
+      event.event_type === "provider_connection_changed"
+    )
+      load();
   });
 
   function connect(serverId: string) {
@@ -177,6 +254,26 @@ export function SettingsPanel() {
         toastSuccess("MCP account disconnected", serverId);
       },
       (e: unknown) => toastError("Couldn't disconnect MCP account", e)
+    );
+  }
+
+  function connectProvider(provider: ProviderConnectionKind) {
+    connectProviderConnection(provider).then(
+      (started) => {
+        if (!openExternal(started.authorization_url)) {
+          toastError("Pop-up blocked", POPUP_HINT);
+          return;
+        }
+        toastSuccess("Account connection started", "Finish the authorization in the new tab.");
+      },
+      (e: unknown) => toastError("Couldn't start account connection", e)
+    );
+  }
+
+  function disconnectProvider(provider: ProviderConnectionKind) {
+    disconnectProviderConnection(provider).then(
+      () => toastSuccess("Account disconnected", providerLabel(provider)),
+      (e: unknown) => toastError("Couldn't disconnect account", e)
     );
   }
 
@@ -217,6 +314,23 @@ export function SettingsPanel() {
               status={status}
               onConnect={() => connect(status.server_id)}
               onDisconnect={() => disconnect(status.server_id)}
+            />
+          ))}
+          <SectionHeading
+            title="Connected accounts"
+            description="The Google account the console uses for the Gmail and Calendar tools. Connect once to let them run as your account; disconnect to revoke."
+          />
+          {providerStatusesError && (
+            <Text c="red" size="sm">
+              Failed to load connected accounts: {providerStatusesError}
+            </Text>
+          )}
+          {providerStatuses?.map((status) => (
+            <ProviderConnectionCard
+              key={status.provider}
+              status={status}
+              onConnect={() => connectProvider(status.provider)}
+              onDisconnect={() => disconnectProvider(status.provider)}
             />
           ))}
           {deployment && (

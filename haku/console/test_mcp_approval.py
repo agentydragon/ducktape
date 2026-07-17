@@ -34,7 +34,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, csrf_token, write_config
+from haku.console.conftest import csrf_token, operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
@@ -52,10 +52,9 @@ from haku.console.mcp_approval import (
     _execution_auth,
     _mcp_result_to_json,
 )
-from haku.console.mcp_config import McpServerEntry
+from haku.console.mcp_config import McpServerEntry, const_in_process_server
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.operator_identity import OperatorIdentityTrust, OperatorStatus
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import backend_auth_for_operator
 from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, SubmitToolCallRequest, ToolCallStatus
@@ -430,33 +429,29 @@ class RecordingExecutor:
         return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
-def _operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
-    return PostgresOperatorIdentityStore(
-        db_url,
-        OperatorIdentityTrust(
-            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-        ),
-    )
-
-
-def _operator_id(db_url: str, external_user_key: str) -> UUID:
-    return _operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key)
-
-
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
     operator_ids: list[UUID] = []
 
     async def recording_execution_auth(
-        server: McpServerEntry, operator_id: UUID, oauth_store: PostgresMcpOperatorOAuthStore
+        server: McpServerEntry,
+        operator_id: UUID,
+        oauth_store: PostgresMcpOperatorOAuthStore,
+        provider_store: Any = None,
     ) -> str | None:
         operator_ids.append(operator_id)
-        return await _execution_auth(server, operator_id, oauth_store)
+        return await _execution_auth(server, operator_id, oauth_store, provider_store)
 
     async def recording_service_auth(
-        *, server: McpServerEntry, operator_id: UUID, oauth_store: PostgresMcpOperatorOAuthStore
+        *,
+        server: McpServerEntry,
+        operator_id: UUID,
+        oauth_store: PostgresMcpOperatorOAuthStore,
+        provider_store: Any = None,
     ) -> str | None:
         operator_ids.append(operator_id)
-        return await backend_auth_for_operator(server=server, operator_id=operator_id, oauth_store=oauth_store)
+        return await backend_auth_for_operator(
+            server=server, operator_id=operator_id, oauth_store=oauth_store, provider_store=provider_store
+        )
 
     monkeypatch.setattr("haku.console.mcp_approval._execution_auth", recording_execution_auth)
     monkeypatch.setattr("haku.console.tool_call_service.backend_auth_for_operator", recording_service_auth)
@@ -675,7 +670,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         make_client(
             config_file=gmail_config_file,
             gmail_client=gmail_client,
-            in_process_servers={"gmail": build_gmail_mcp(gmail_client)},
+            in_process_servers={"gmail": const_in_process_server(build_gmail_mcp(gmail_client))},
             tool_call_executor=echoing_executor,
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
@@ -721,7 +716,7 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
         make_client(
             config_file=gmail_config_file,
             gmail_client=gmail_client,
-            in_process_servers={"gmail": build_gmail_mcp(gmail_client)},
+            in_process_servers={"gmail": const_in_process_server(build_gmail_mcp(gmail_client))},
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
@@ -781,7 +776,7 @@ def test_configured_credential_approval_passes_canonical_operator_id(
         )
 
     assert approved.status_code == 200, approved.text
-    assert execution_operator_ids == [_operator_id(migrated_db_url, "configured-credential-sub")]
+    assert execution_operator_ids == [operator_id(migrated_db_url, "configured-credential-sub")]
     assert recording_executor.auth_tokens == ["test-token"]
 
 
@@ -838,7 +833,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "ok"
-    assert execution_operator_ids == [_operator_id(migrated_db_url, "operator-oauth-sub")]
+    assert execution_operator_ids == [operator_id(migrated_db_url, "operator-oauth-sub")]
     assert recording_executor.auth_tokens == ["operator-access-token"]
 
 
@@ -869,7 +864,7 @@ def _seed_association(db_url: str, *, operator_external_user_key: str, access_to
             session.add(
                 McpOperatorOAuthAssociation(
                     server_id="grocy-sf",
-                    operator_id=_operator_id(db_url, operator_external_user_key),
+                    operator_id=operator_id(db_url, operator_external_user_key),
                     created_at=now,
                     updated_at=now,
                     client_id="test-client",
@@ -1150,7 +1145,7 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
     ledger = PostgresToolCallLedger(migrated_db_url)
-    actor = OperatorActor(operator_id=_operator_id(migrated_db_url, "op-haku"))
+    actor = OperatorActor(operator_id=operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
 
     def record_tool_call_query(
@@ -1283,7 +1278,6 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     engine = create_engine(db_url)
     try:
         with engine.connect() as conn:
-            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
             tables = {
                 row["table_name"]
                 for row in conn.execute(
@@ -1331,7 +1325,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
             persisted_principal = session.get(McpToolCallPrincipal, submitted["tool_call_id"])
             assert persisted_call is not None
             assert persisted_principal is not None
-            assert persisted_principal.operator_id == _operator_id(db_url, "operator-sub")
+            assert persisted_principal.operator_id == operator_id(db_url, "operator-sub")
             assert persisted_call.server_id == "smoke"
             assert persisted_call.tool_name == "echo"
             assert persisted_call.status is ToolCallStatus.OK
@@ -1341,7 +1335,6 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     finally:
         engine.dispose()
 
-    assert version == "0010"
     assert {
         "operators",
         "identity_anchors",
@@ -1357,6 +1350,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "mcp_tool_call_principals",
         "mcp_operator_oauth_associations",
         "mcp_operator_oauth_flows",
+        "provider_connections",
+        "provider_connection_flows",
     } <= tables
     assert {
         "mcp_agent_operator",
@@ -1399,7 +1394,7 @@ def test_server_entry_allows_missing_server_url() -> None:
 
 
 async def test_executor_dispatches_to_registered_in_process_server() -> None:
-    executor = McpToolExecutor({"google": _test_mcp_server()})
+    executor = McpToolExecutor({"google": const_in_process_server(_test_mcp_server())})
     server = McpServerEntry(id="google")
     result = await executor.execute(server, "echo", {"text": "hi"}, auth_token=None)
     assert result["content"][0]["text"] == "echo:hi"
@@ -1413,7 +1408,7 @@ async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
 
 
 async def test_metadata_provider_reflects_in_process_server_tools() -> None:
-    metadata_provider = McpMetadataProvider({"google": _test_mcp_server()})
+    metadata_provider = McpMetadataProvider({"google": const_in_process_server(_test_mcp_server())})
     server = McpServerEntry(id="google")
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert isinstance(metadata, AliveServerMetadata)

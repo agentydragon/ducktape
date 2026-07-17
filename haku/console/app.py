@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
@@ -36,6 +37,7 @@ from haku.console import (
     mcp_operator_oauth,
     mcp_server,
     operator_auth,
+    provider_connection,
     tool_call_service,
 )
 from haku.console.agents import enrollment_routes
@@ -49,7 +51,8 @@ from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_st
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tools import gmail as gmail_tools, google_calendar as google_calendar_tools, routine as routine_tools
+from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 
 APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
@@ -116,7 +119,6 @@ def create_app(
     tool_call_executor: mcp_approval.McpToolExecutor | None = None,
     tool_call_metadata_provider: mcp_approval.McpMetadataProvider | None = None,
     gmail_client: gmail_tools.GmailToolsClient | None = None,
-    calendar_client: google_calendar_tools.CalendarToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
@@ -129,6 +131,14 @@ def create_app(
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         database_url, operator_identity_store=operator_identity_store
+    )
+    # Per-Operator external provider connections (Google today), replacing Airlock's brokered
+    # token. Only providers with a configured OAuth client are offered.
+    provider_clients = (
+        {ProviderConnectionKind.GOOGLE: settings.google_client} if settings.google_client is not None else {}
+    )
+    provider_connection_store = provider_connection.PostgresProviderConnectionStore(
+        database_url, operator_identity_store=operator_identity_store, provider_clients=provider_clients
     )
     agent_authority = PostgresAgentAuthority(
         database_url, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
@@ -157,19 +167,24 @@ def create_app(
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
         fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
     )
-    # Google clients back the two in-process MCP servers (gmail and google_calendar).
-    if gmail_client is None and settings.google_token_dir is not None:
-        gmail_client = gmail_tools.build_gmail_client(settings.google_token_dir)
-    if calendar_client is None and settings.google_token_dir is not None:
-        calendar_client = google_calendar_tools.build_calendar_client(settings.google_token_dir)
+
+    # The gmail/google_calendar in-process servers are built per call from the acting Operator's
+    # Google access token, resolved from the provider-connection store. Auto-approval label lookups
+    # use the same per-Operator Gmail client; a test may inject a fixed `gmail_client` instead.
+    async def gmail_client_provider(operator_id: UUID) -> gmail_tools.GmailToolsClient | None:
+        if gmail_client is not None:
+            return gmail_client
+        token = await provider_connection_store.access_token_for(
+            provider=ProviderConnectionKind.GOOGLE, operator_id=operator_id
+        )
+        return gmail_tools.build_gmail_client_from_token(token) if token is not None else None
+
     # `haku_routine` fires the Haku claude-code-web routine as an approval-gated MCP tool (the
     # standard queue), superseding the bespoke launch-routine capability tier. Same
-    # `launch_routine` config/secret; independent of the Google grant above.
+    # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     if in_process_servers is None:
-        in_process_servers = build_in_process_servers(
-            InProcessServerDependencies(gmail=gmail_client, calendar=calendar_client, routine_launcher=routine_launcher)
-        )
+        in_process_servers = build_in_process_servers(InProcessServerDependencies(routine_launcher=routine_launcher))
     if tool_call_executor is None:
         tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
     if tool_call_metadata_provider is None:
@@ -181,7 +196,8 @@ def create_app(
         executor=tool_call_executor,
         oauth_store=mcp_operator_oauth_store,
         in_process_servers=in_process_servers,
-        gmail_client=gmail_client,
+        gmail_client_provider=gmail_client_provider,
+        provider_store=provider_connection_store,
     )
 
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
@@ -191,6 +207,7 @@ def create_app(
         settings=settings,
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
+        provider_store=provider_connection_store,
         metadata_provider=tool_call_metadata_provider,
     )
 
@@ -239,6 +256,7 @@ def create_app(
     app.state.operator_identity_store = operator_identity_store
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
+    app.state.provider_connection_store = provider_connection_store
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
@@ -284,6 +302,7 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
+    app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(enrollment_routes.router)
 
     deployment_info = build_deployment_info()

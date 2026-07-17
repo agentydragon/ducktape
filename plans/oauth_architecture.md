@@ -123,11 +123,15 @@ The per-tool-call deep link is an independent console improvement tracked in
 
 This is later than the common Agent lifecycle:
 
-1. **G1:** replace Haku's singleton Airlock-issued Google token with Haku-owned per-Operator
-   connect/status/reconnect/revoke, private refresh storage, and execution-time Operator selection.
-   This is a downstream-provider relationship, not Agent enrollment or an Agent-held credential.
-2. **G2:** after live proof, remove only `haku_console_google`, its Secret publication/External
-   Secrets mirror, and the console token mount.
+1. **G1 (done):** the console owns the per-Operator Google connection —
+   `haku/console/provider_connection.py` (Postgres per-Operator refresh storage + in-process
+   self-refresh), the `/api/provider-connections/*` connect/status/disconnect flow, the
+   `provider_connection: google` marker with execution-time Operator selection, and the Settings
+   → Connected accounts UI. The console token mount is already dropped. A downstream-provider
+   relationship, not Agent enrollment or an Agent-held credential.
+2. **G2 (pending live proof):** once an Operator has connected and it's verified live, remove only
+   `haku_console_google`, its Secret publication/External Secrets mirror, and its airlock-side
+   producer.
 
 Do not couple G1/G2 to Airlock's unrelated Oura, BSC, or remaining credential consumers.
 

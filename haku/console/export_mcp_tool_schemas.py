@@ -122,11 +122,15 @@ def build_schema_servers() -> dict[str, FastMCP]:
     inert = _InertCollaborator()
     # `Any` is intentional at this reflection-only boundary: no collaborator may be
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
-    # loudly if FastMCP ever changes its registration behavior.
+    # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
+    # build their own inert client from a None token; only routine needs the inert launcher.
     dependency: Any = inert
-    servers = build_in_process_servers(
-        InProcessServerDependencies(gmail=dependency, calendar=dependency, routine_launcher=dependency)
-    )
+    servers = {
+        server_id: builder(None)
+        for server_id, builder in build_in_process_servers(
+            InProcessServerDependencies(routine_launcher=dependency)
+        ).items()
+    }
     servers[GROCY_SF_SERVER_ID] = build_batch_tools_mcp(
         ServerSettings(grocy_url="https://grocy.invalid"),
         client_provider=borrowed_http_client_provider(cast(GrocyClient, inert)),

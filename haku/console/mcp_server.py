@@ -48,6 +48,7 @@ from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvide
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, _load_servers, server_tool_prefix
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -98,6 +99,7 @@ class ConsoleMcpContext:
     settings: Settings
     tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
+    provider_store: PostgresProviderConnectionStore
     metadata_provider: McpMetadataProvider
 
 
@@ -307,6 +309,7 @@ class OperatorToolProvider(Provider):
             server=server,
             metadata_provider=self._context.metadata_provider,
             oauth_store=self._context.oauth_store,
+            provider_store=self._context.provider_store,
         )
         if isinstance(meta, DegradedServerMetadata):
             logger.info(

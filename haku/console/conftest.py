@@ -17,6 +17,7 @@ from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import itsdangerous
 import pytest
@@ -30,7 +31,8 @@ from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_RETURN_TO_KEY, SESSION_USER_KEY
-from haku.console.operator_identity import VerifiedExternalIdentity
+from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
 from util.testing.postgres import force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
@@ -114,6 +116,21 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     )
 
 
+def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
+    """The `PostgresOperatorIdentityStore` tests need, trusting the app-owned test OIDC issuer."""
+    return PostgresOperatorIdentityStore(
+        db_url,
+        OperatorIdentityTrust(
+            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+        ),
+    )
+
+
+def operator_id(db_url: str, external_user_key: str) -> UUID:
+    """Resolve a controller-fed external user key to its canonical Operator UUID."""
+    return operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key)
+
+
 def csrf_token(client: TestClient) -> str:
     """Fetch a CSRF token (and set the signed double-submit cookie) via `GET /api/capabilities/csrf`."""
     token = client.get("/api/capabilities/csrf").json()["csrf_token"]
@@ -164,7 +181,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         tool_call_executor: Any | None = None,
         tool_call_metadata_provider: Any | None = None,
         gmail_client: Any | None = None,
-        calendar_client: Any | None = None,
         in_process_servers: Any | None = None,
         config_file: Path | None = None,
         operator: bool = False,
@@ -189,7 +205,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             tool_call_executor=tool_call_executor,
             tool_call_metadata_provider=tool_call_metadata_provider,
             gmail_client=gmail_client,
-            calendar_client=calendar_client,
             in_process_servers=in_process_servers,
         )
         operator_identity = None

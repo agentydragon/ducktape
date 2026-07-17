@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
-import type { DeploymentInfo, McpOperatorAuthStatus, ToolCallRecord } from "../client.ts";
+import type { DeploymentInfo, McpOperatorAuthStatus, ProviderConnectionStatus, ToolCallRecord } from "../client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -182,6 +182,16 @@ export const SAMPLE_MCP: McpOperatorAuthStatus[] = [
     connected_at: "2026-07-01T09:00:00Z",
     token_expires_at: "2026-08-01T09:00:00Z",
     scope: "read write",
+  },
+];
+
+export const SAMPLE_PROVIDER_CONNECTIONS: ProviderConnectionStatus[] = [
+  {
+    provider: "google",
+    status: "connected",
+    connected_at: "2026-07-01T09:00:00Z",
+    token_expires_at: "2026-07-17T10:00:00Z",
+    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar.events",
   },
 ];
 

@@ -39,38 +39,43 @@ write the same policy twice.
 The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
 reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
 `google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
-creation), both behind the ordinary operator-approval queue — are both built from the single `haku_console_google` Airlock
-token and need a one-time browser consent for its provider before they're functional. The
-console pod itself starts fine either way (the token volume is `optional: true`); until consent
-happens, those servers' tools error on invocation instead of running.
+creation), both behind the ordinary operator-approval queue — execute as the **acting
+Operator's own Google account**: each call resolves that Operator's per-Operator Google access
+token from the console's own connection store (`haku/console/provider_connection.py`),
+self-refreshed in-process. This replaces Airlock's brokered `haku_console_google` token — the
+console holds the Google OAuth client and each Operator's refresh token itself. The console pod
+starts fine before anything is connected; until an Operator connects, both servers are
+`degraded` (hidden from that Operator) and their tools return a "connect your Google account"
+error.
 
 Authenticated-agent Calendar reads (`get_event`, `list_events`, `list_event_instances`) are
 reviewed transparent auto-approved tools; `create_event` always remains operator-approved.
 
-0. No Google console change needed: `haku_console_google` reuses the `google` provider's
-   already-registered redirect URI (`…/oauth/callback/google`) on the same OAuth client —
-   the callback resolves the provider from OAuth `state`, not the path.
-1. Visit `https://airlock.allegedly.works/oauth/authorize/haku_console_google` and consent
-   as the target Google account. Airlock's callback writes `haku-console-google-tokens`
-   (refresh) and `haku-console-google-access-token` (access-only) into the `airlock`
-   namespace; the refresh loop keeps the access token fresh thereafter.
-2. ESO mirrors `haku-console-google-access-token` into the `haku-console` namespace within
-   ~1m. No restart needed — the console re-reads the mounted token via google-auth's
-   `refresh_handler` on each rotation.
+**Deploy prerequisites (operator, one time):**
 
-Provider config: `agents/airlock/config.yaml` (`haku_console_google`); the same Google
-OAuth client as `google` is reused via
-`HAKU_CONSOLE_GOOGLE_CLIENT_ID/SECRET` (`agents/airlock/deployment.yaml`).
+1. **Google OAuth client secret.** Author the `haku-console-google-client-credentials` Secret
+   (keys `client_id`, `client_secret`) in the `haku-console` namespace with the shared Google
+   OAuth client's credentials, `sops -e -i` it, and add it to `kustomization.yaml`. The
+   deployment reads it via `HAKU_CONSOLE_GOOGLE_CLIENT__CLIENT_ID/SECRET` (`optional: true`, so
+   the pod starts without it — both servers just stay degraded). Deliberately a console-owned
+   Secret, independent of Airlock's `google-client-credentials` (no ESO/reflector coupling to
+   the `airlock` namespace).
+2. **Redirect URI.** Register `https://haku.allegedly.works/api/provider-connections/callback`
+   as an authorized redirect URI on that Google OAuth client, or the callback fails with
+   `redirect_uri_mismatch`.
+
+**Connect (operator, per account):** open the console's Settings → Connected accounts and click
+**Connect** on Google, then complete consent (`access_type=offline`, `prompt=consent`). The
+callback stores the refresh token in the console's Postgres and self-refreshes the access token
+thereafter; Disconnect revokes it.
 
 Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, plus every read-only scope the
 `google` provider carries (`gmail.readonly`, `drive.readonly`, `drive.activity.readonly`,
 `calendar.readonly`, `tasks.readonly`, `contacts.readonly`, `documents.readonly`,
-`spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`) — kept in one grant
-since the console's `gmail` and `google_calendar` servers both consume it, and carrying the
-read scopes means a future haku-console read feature outside Gmail (Drive/Docs/…) needs no
-second consent round-trip. Deliberately its own provider (not reusing `google`) so no other
-consumer's token is ever upgraded to this scope set. See
-`haku/docs/security.md` for the enforcement-inventory entry.
+`spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`) — requested in one grant
+(`haku/console/provider_connection_registry.py`) so the console can read across the same surface
+without a second consent round-trip. See `haku/docs/security.md` for the enforcement-inventory
+entry.
 
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
 

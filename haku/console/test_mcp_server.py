@@ -29,7 +29,7 @@ from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.mcp_approval import AliveServerMetadata, ToolMetadata
-from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.operator_identity import VerifiedExternalIdentity
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
@@ -140,12 +140,10 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     )
     settings = console_settings(migrated_db_url, config_file=config_file, ui_base_url="https://haku.test")
     in_process = {
-        gmail_tools.GMAIL_SERVER_ID: gmail_tools.build_mcp(gmail_client),
-        calendar_tools.GOOGLE_CALENDAR_SERVER_ID: calendar_tools.build_mcp(calendar_client),
+        gmail_tools.GMAIL_SERVER_ID: const_in_process_server(gmail_tools.build_mcp(gmail_client)),
+        calendar_tools.GOOGLE_CALENDAR_SERVER_ID: const_in_process_server(calendar_tools.build_mcp(calendar_client)),
     }
-    app = create_app(
-        settings, gmail_client=gmail_client, calendar_client=calendar_client, in_process_servers=in_process
-    )
+    app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process)
     operator_id = app.state.operator_identity_store.resolve_configured_external_user_key("42")
     other_operator_id = app.state.operator_identity_store.resolve_configured_external_user_key("99")
     with serve_app_sync(app) as base:
@@ -635,6 +633,7 @@ async def test_tool_dispatch_reflects_only_target_server(
             settings=settings,
             tool_calls=app.state.tool_call_service,
             oauth_store=app.state.mcp_operator_oauth_store,
+            provider_store=app.state.provider_connection_store,
             metadata_provider=app.state.tool_call_metadata_provider,
         ),
         actor_resolver,

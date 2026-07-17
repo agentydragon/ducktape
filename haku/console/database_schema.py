@@ -31,8 +31,9 @@ from haku.console.agents.models import (
     EnrollmentPhase,
 )
 from haku.console.operator_identity import OperatorStatus
+from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import StrEnumColumn
+from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
 
 
 class Base(DeclarativeBase):
@@ -570,6 +571,61 @@ class McpOperatorOAuthFlow(Base):
     token_endpoint_auth_method: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
     resource: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ProviderConnection(Base):
+    """One Operator's linked account for a well-known OAuth provider (Google today).
+
+    One row per ``(operator_id, provider)`` — a single Google connection backs both the
+    ``gmail`` and ``google_calendar`` in-process servers. The console self-refreshes
+    ``access_token`` from ``refresh_token`` using the provider's fixed client (injected from
+    Settings, never stored here); ``token_revision`` guards a concurrent refresh/reconnect.
+    """
+
+    __tablename__ = "provider_connections"
+    __table_args__ = (
+        UniqueConstraint("connection_id", name="uq_provider_connections_connection_id"),
+        Index("idx_provider_connections_operator", "operator_id"),
+    )
+
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
+    )
+    provider: Mapped[ProviderConnectionKind] = mapped_column(
+        StringBackedStrEnumColumn(ProviderConnectionKind), primary_key=True
+    )
+    connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
+    token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_type: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProviderConnectionFlow(Base):
+    """Short-lived authorization-code + PKCE flow state for a pending provider connection."""
+
+    __tablename__ = "provider_connection_flows"
+    __table_args__ = (
+        Index("idx_provider_connection_flows_operator", "operator_id"),
+        Index("idx_provider_connection_flows_expires_at", "expires_at"),
+    )
+
+    state: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[ProviderConnectionKind] = mapped_column(
+        StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    code_verifier: Mapped[str] = mapped_column(Text, nullable=False)
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

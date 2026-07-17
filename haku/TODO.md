@@ -65,19 +65,11 @@ slices over the deployed schema, not another identity migration:
 
 ## Google connection ownership and Airlock
 
-The current Airlock-credential-backed `gmail` and `google_calendar` tool surfaces are intentionally global to
-authenticated Haku Agents during this transitional state. Do not add a temporary per-Operator
-owner mapping around the singleton token. Introduce Operator scoping when Haku owns the downstream
-Google connection itself:
-
-- **Give Haku per-Operator Google connections.** Replace the singleton Airlock-issued
-  `haku_console_google` token with Haku-owned connect/status/reconnect/revoke, private refresh-token
-  storage, and execution-time Operator selection. This is a downstream-provider relationship,
-  separate from Agent enrollment and Agent credentials.
-- **Retire only Haku's Airlock dependency after live proof.** Remove the
-  `haku_console_google` provider, its access-token publication/External Secrets mirror, and the
-  haku-console token mount. Do not couple this to Airlock's unrelated Oura, BSC, or other
-  credential consumers, and do not treat retirement of the OAuth broker as a prerequisite.
+- **Retire Haku's Airlock dependency, after live proof.** The console now owns the per-Operator
+  Google connection (`provider_connection.py`); once an Operator has connected Google and it's
+  verified live, remove the `haku_console_google` Airlock provider and its access-token
+  publication/External Secrets mirror. Do not couple this to Airlock's unrelated Oura, BSC, or
+  other credential consumers, and do not treat retirement of the OAuth broker as a prerequisite.
 - **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
   whether every Operator should share one routine launcher. Specify whether the launcher is a
   global Haku capability or an Operator-owned downstream resource before relying on it in a

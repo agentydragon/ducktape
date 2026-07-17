@@ -140,6 +140,18 @@ class McpOAuthConfig(BaseModel):
         )
 
 
+class ProviderOAuthClientConfig(BaseModel):
+    """A pre-registered OAuth client for a per-Operator provider connection.
+
+    The console runs the authorization-code + PKCE flow with this client and self-refreshes
+    the resulting per-Operator tokens. The secret lives only in the haku-console namespace
+    (Haku cannot read it) and is never persisted to the database.
+    """
+
+    client_id: str
+    client_secret: SecretStr
+
+
 class Settings(BaseSettings):
     # env_nested_delimiter so launch_routine.{routine_id,token} read from
     # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
@@ -180,14 +192,12 @@ class Settings(BaseSettings):
     # stores are always constructed; migrations are applied once at startup (see app.main).
     database_url: SecretStr
 
-    # Directory holding the Airlock-managed `haku_console_google` access token (files:
-    # access_token, expires_at), mounted from the haku-console-google-access-token
-    # secret. Backs the two in-process MCP servers built from this one grant: `gmail`
-    # (haku.console.tools.gmail — search/read threads+messages+labels, draft creation,
-    # thread-label changes, label CRUD) and `google_calendar` (haku.console.tools.google_calendar —
-    # recurrence-aware calendar event reads/creation). Unset disables both servers (their capability entries
-    # report `degraded`) and the Gmail thread-preview endpoint.
-    google_token_dir: Path | None = None
+    # Pre-registered Google OAuth client backing per-Operator Google connections (the `gmail`
+    # and `google_calendar` in-process servers). Reads HAKU_CONSOLE_GOOGLE_CLIENT__{CLIENT_ID,
+    # CLIENT_SECRET}. Unset → no Google connection is offered (both servers stay degraded). This
+    # replaces Airlock's brokered `haku_console_google` token: the console now holds the client and
+    # each Operator's refresh token itself. See haku/console/provider_connection.py.
+    google_client: ProviderOAuthClientConfig | None = None
     # Namespace whose Gmail label mutations Haku may auto-approve. labels_list is
     # wholesale because Haku already has standing Gmail read authority.
     gmail_auto_approve_label_prefix: str = "haku/"

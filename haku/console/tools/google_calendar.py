@@ -11,14 +11,11 @@ Registered as MCP server id `google_calendar` in `cluster/k8s/haku/console/confi
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 from fastmcp import FastMCP
-from googleapiclient.discovery import build
 from pydantic import Field
 
-from gmail_api.service import credentials_from_token_dir
 from haku.console.tools.google_calendar_client import (
     CalendarEvent,
     CalendarEventsPage,
@@ -29,15 +26,9 @@ from haku.console.tools.google_calendar_client import (
     ListCalendarEventInstancesArgs,
     ListCalendarEventsArgs,
 )
+from haku.console.tools.google_service import build_google_api_service
 
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
-
-# The one write scope this tool needs. The mounted `haku_console_google` Airlock token
-# (shared with the `gmail` server) carries this plus every other scope in the grant;
-# requesting a subset here is harmless — the externally-rotated access token already holds
-# whatever Airlock granted. See cluster/k8s/haku/console/README.md.
-CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
-CALENDAR_SCOPES = [CALENDAR_EVENTS_SCOPE]
 
 
 # Module-level, not local to build_mcp(): `from __future__ import annotations` makes every
@@ -170,7 +161,6 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
     return mcp
 
 
-def build_calendar_client(token_dir: Path) -> CalendarToolsClient:
-    creds = credentials_from_token_dir(token_dir, CALENDAR_SCOPES)
-    service = build("calendar", "v3", credentials=creds, cache_discovery=False, static_discovery=True)
-    return CalendarToolsClient(service)
+def build_calendar_client_from_token(access_token: str | None) -> CalendarToolsClient:
+    """Build the Calendar client for one call from the acting Operator's access token."""
+    return CalendarToolsClient(build_google_api_service("calendar", "v3", access_token))

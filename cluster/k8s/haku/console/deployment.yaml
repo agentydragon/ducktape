@@ -138,16 +138,31 @@ spec:
                 secretKeyRef:
                   name: haku-console-csrf-secret
                   key: secret
-            # Two in-process MCP servers built from this one token: `gmail` (Gmail reads
-            # mirroring the REST API, draft creation, thread-label changes, label CRUD — see
-            # haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware event reads +
-            # approval-gated creation — google_calendar.py).
-            # haku-console-google-access-token (access_token + expires_at) is written
-            # by Airlock's haku_console_google provider into the airlock namespace and
-            # mirrored here by ESO; re-read via google-auth's refresh_handler, no
-            # restart needed on rotation.
-            - name: HAKU_CONSOLE_GOOGLE_TOKEN_DIR
-              value: /etc/haku-console-google-token
+            # Two in-process MCP servers execute as the acting Operator's own Google account:
+            # `gmail` (Gmail reads mirroring the REST API, draft creation, thread-label changes,
+            # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware
+            # event reads + approval-gated creation — google_calendar.py). Each call resolves that
+            # Operator's per-Operator Google token from the console's own connection store
+            # (haku/console/provider_connection.py), self-refreshed in-process.
+            #
+            # The console holds the shared Google OAuth client (client_id/secret) and runs the
+            # per-Operator authorization-code flow itself, replacing Airlock's brokered
+            # haku_console_google token. optional: true so the pod starts before the secret exists;
+            # until it does (and an Operator connects from the Access tab) both servers are degraded.
+            # The secret is authored by the operator (see cluster/k8s/haku/console/README.md), and
+            # the console callback URI must also be registered on the Google OAuth client.
+            - name: HAKU_CONSOLE_GOOGLE_CLIENT__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-google-client-credentials
+                  key: client_id
+                  optional: true
+            - name: HAKU_CONSOLE_GOOGLE_CLIENT__CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-google-client-credentials
+                  key: client_secret
+                  optional: true
             # Operator-facing origin, used to build the deep-link `url` the /mcp promise +
             # read tools return (https://haku.allegedly.works/tool-calls/<id>, Authentik-gated).
             - name: HAKU_CONSOLE_UI_BASE_URL
@@ -240,9 +255,6 @@ spec:
             - name: config
               mountPath: /etc/haku-console/config
               readOnly: true
-            - name: haku-console-google-token
-              mountPath: /etc/haku-console-google-token
-              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -295,14 +307,5 @@ spec:
         - name: config
           configMap:
             name: haku-console-config
-        - name: haku-console-google-token
-          # optional: true so a missing token (before the one-time operator OAuth
-          # consent below) never blocks the whole console pod from starting — only
-          # the in-process `gmail` + `google_calendar` MCP servers degrade
-          # (google_token_dir empty -> their FastMCP instances never registered ->
-          # those capability entries report `degraded`, everything else unaffected).
-          secret:
-            secretName: haku-console-google-access-token
-            optional: true
         - name: nginx-conf
           emptyDir: {}

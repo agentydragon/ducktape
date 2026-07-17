@@ -13,7 +13,7 @@ Shared Gmail API building blocks used across the repo's Gmail tooling
   with `Model.model_validate(response)` and serializes back unchanged.
 - `service.py` — `build_gmail_service(token_file)` builds an authenticated Gmail
   v1 client from an authorized-user OAuth token JSON (`gmail.modify` scope).
-  `credentials_from_token_dir(token_dir, scopes)` is the generic (any Google API, any
-  scopes) building block behind `build_gmail_service_from_token_dir` — reused by
-  `haku/console/tools/{gmail,google}.py` to build the Gmail and Calendar services from one
-  Airlock-rotated, multi-scope token.
+  `credentials_from_token_dir(token_dir, scopes)` builds google-auth credentials whose
+  `refresh_handler` re-reads a mounted access-token dir (the Airlock-mounted-token path); it and
+  `build_gmail_service_from_token_dir` remain for that path. (haku-console's per-Operator path
+  builds bearer-only `Credentials(token=…)` directly from its own kept-fresh token.)

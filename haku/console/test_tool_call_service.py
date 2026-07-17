@@ -18,12 +18,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_settings, write_config
+from haku.console.conftest import console_settings, operator_identity_store, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -136,18 +134,9 @@ class _RecordingLedger(PostgresToolCallLedger):
         return super().finish(tool_call_id, actor=actor, result=result, error=error)
 
 
-def _identity_store(database_url: str) -> PostgresOperatorIdentityStore:
-    return PostgresOperatorIdentityStore(
-        database_url,
-        OperatorIdentityTrust(
-            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-        ),
-    )
-
-
 @pytest.fixture
 def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
-    identities = _identity_store(migrated_db_url)
+    identities = operator_identity_store(migrated_db_url)
     operator_ids = {
         "a": identities.resolve_configured_external_user_key("service-operator-a"),
         "b": identities.resolve_configured_external_user_key("service-operator-b"),
@@ -270,7 +259,6 @@ def _service(
         executor=executor,
         oauth_store=tokens,
         in_process_servers={},
-        gmail_client=None,
     )
 
 

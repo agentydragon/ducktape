@@ -55,6 +55,7 @@ py_library(
     srcs = ["mcp_config.py"],
     deps = [
         ":config",
+        ":provider_connection_registry",
         "//haku/console/agents:naming",
         "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
@@ -67,12 +68,10 @@ py_library(
     name = "in_process_servers",
     srcs = ["in_process_servers.py"],
     deps = [
+        ":mcp_config",
         "//haku/console/tools:gmail",
-        "//haku/console/tools:gmail_client",
         "//haku/console/tools:google_calendar",
-        "//haku/console/tools:google_calendar_client",
         "//haku/console/tools:routine",
-        "@pypi//fastmcp_slim",
     ],
 )
 
@@ -100,6 +99,7 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":operator_identity",
+        ":provider_connection_registry",
         "//haku/console/agents:models",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
@@ -187,6 +187,63 @@ py_library(
 )
 
 py_library(
+    name = "provider_connection_registry",
+    srcs = ["provider_connection_registry.py"],
+)
+
+py_library(
+    name = "provider_connection",
+    srcs = ["provider_connection.py"],
+    deps = [
+        ":config",
+        ":console_events",
+        ":database_schema",
+        ":deps",
+        ":oauth_callback_page",
+        ":oauth_token_support",
+        ":operator_auth",
+        ":operator_identity_store",
+        ":provider_connection_registry",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_provider_connection",
+    size = "medium",
+    srcs = ["test_provider_connection.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":config",
+        ":conftest",
+        ":database_schema",
+        ":mcp_config",
+        ":operator_identity",
+        ":operator_identity_store",
+        ":provider_connection",
+        ":provider_connection_registry",
+        ":tool_call_service",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "mcp_agent_auth",
     srcs = ["mcp_agent_auth.py"],
     deps = [
@@ -230,7 +287,9 @@ py_library(
         ":auto_approval",
         ":config",
         ":mcp_config",
+        ":provider_connection_registry",
         ":tool_call_actor",
+        "//haku/console/tools:gmail",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
     ],
@@ -248,6 +307,7 @@ py_library(
         ":mcp_operator_oauth",
         ":operator_auth",
         ":operator_identity",
+        ":provider_connection",
         ":tool_call_actor",
         ":tool_call_service",
         "@ducktape_haku//haku/console:tool_calls",
@@ -297,6 +357,7 @@ py_library(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":provider_connection",
         ":tool_call_actor",
         ":tool_call_service",
         "//haku/console/mcp_auth:fastmcp_adapter",
@@ -377,6 +438,7 @@ py_library(
         ":config",
         ":operator_auth",
         ":operator_identity_store",
+        ":provider_connection_registry",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//psycopg",
@@ -540,12 +602,13 @@ py_library(
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
+        ":provider_connection",
+        ":provider_connection_registry",
         ":tool_call_service",
         "//haku/console/agents:authorization",
         "//haku/console/agents:enrollment_routes",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
-        "//haku/console/tools:google_calendar",
         "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
@@ -634,6 +697,7 @@ py_library(
         ":database_migrate",
         ":operator_auth",
         ":operator_identity",
+        ":operator_identity_store",
         ":tool_call_actor",
         "//third_party/containers:rlocations",
         "//util:oci",

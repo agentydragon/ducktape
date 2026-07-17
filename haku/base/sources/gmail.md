@@ -4,8 +4,9 @@ Two read paths; prefer the first:
 
 ## Primary: haku-console's `gmail` MCP tools
 
-haku-console proxies an in-process `gmail` MCP server (own Google OAuth — independent of the
-`google-access-token` secret and its airlock refresher, so it survives that outage class). All
+haku-console proxies an in-process `gmail` MCP server (the console's own per-Operator Google
+OAuth — refresh token in the console's Postgres, self-refreshed in-process — independent of the
+`google-access-token` secret and Airlock entirely, so it survives that outage class). All
 read tools are auto-approved for authenticated agents under the reviewed console policy:
 `threads_list` (Gmail search-box `query` + `max_results`/`page_token` paging), `threads_get`,
 `messages_get` (`format` passes through: `minimal`/`metadata`/`full`/`raw`), `labels_list`,

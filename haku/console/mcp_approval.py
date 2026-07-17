@@ -41,19 +41,22 @@ from haku.console.mcp_config import (
     McpServerNotFoundError,
     _credential_token,
     _load_servers,
-    _operator_oauth_enabled,
     _transport,
 )
 from haku.console.mcp_operator_oauth import OAuthStoreDep, PostgresMcpOperatorOAuthStore
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
+from haku.console.provider_connection import ProviderConnectionStoreDep
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
+    ProviderConnectionTokenStore,
+    ServerAuthMode,
     ToolCallApplicationService,
     ToolCallNotFoundError,
     ToolCallStateConflictError,
     backend_auth_for_operator,
+    server_auth_mode,
 )
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -516,7 +519,7 @@ class McpToolExecutor:
     async def execute(
         self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
     ) -> dict[str, Any]:
-        async with Client(_transport(server, self._in_process), auth=auth_token) as client:
+        async with Client(_transport(server, self._in_process, auth_token), auth=auth_token) as client:
             result = await client.call_tool_mcp(tool_name, arguments)
         if result.isError:
             raise RuntimeError(_mcp_error_message(result))
@@ -529,7 +532,7 @@ class McpMetadataProvider:
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
         try:
-            async with Client(_transport(server, self._in_process), auth=auth_token) as client:
+            async with Client(_transport(server, self._in_process, auth_token), auth=auth_token) as client:
                 tools = await client.list_tools()
         except Exception as e:
             return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
@@ -559,10 +562,15 @@ def _mcp_error_message(result: mcp_types.CallToolResult) -> str:
 
 
 async def _execution_auth(
-    server: McpServerEntry, operator_id: UUID, oauth_store: PostgresMcpOperatorOAuthStore
+    server: McpServerEntry,
+    operator_id: UUID,
+    oauth_store: PostgresMcpOperatorOAuthStore,
+    provider_store: ProviderConnectionTokenStore | None = None,
 ) -> str | None:
     try:
-        return await backend_auth_for_operator(server=server, operator_id=operator_id, oauth_store=oauth_store)
+        return await backend_auth_for_operator(
+            server=server, operator_id=operator_id, oauth_store=oauth_store, provider_store=provider_store
+        )
     except BackendAccountNotConnectedError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -581,33 +589,83 @@ def _raise_tool_call_http_error(
     raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedAuth:
+    """A reflection auth token (None for a credential-free server) resolved for the acting operator."""
+
+    token: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DegradedAuth:
+    """Reflection cannot proceed for the acting operator; the server renders degraded with this reason."""
+
+    reason: str
+
+
+async def _resolve_operator_metadata_auth(
+    *,
+    operator_id: UUID,
+    server: McpServerEntry,
+    oauth_store: PostgresMcpOperatorOAuthStore,
+    provider_store: ProviderConnectionTokenStore | None,
+) -> _ResolvedAuth | _DegradedAuth:
+    """Resolve the operator-linked reflection token per the server's auth mode, or a degraded reason.
+
+    Deviation from `backend_auth_for_operator` (which shares the mode selection via `server_auth_mode`):
+    a missing operator-linked token, a missing static credential, or a missing provider store degrades
+    reflection here rather than raising.
+    """
+    match server_auth_mode(server):
+        case ServerAuthMode.PROVIDER:
+            assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
+            auth_token = (
+                await provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id)
+                if provider_store is not None
+                else None
+            )
+            if not auth_token:
+                return _DegradedAuth(
+                    f"Connect your {server.provider_connection} account in the console to use this server."
+                )
+            return _ResolvedAuth(auth_token)
+        case ServerAuthMode.OPERATOR_OAUTH:
+            auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
+            if not auth_token:
+                return _DegradedAuth(
+                    f"Connect your {server.id} MCP account in the console to reflect this server's tools."
+                )
+            return _ResolvedAuth(auth_token)
+        case ServerAuthMode.STATIC:
+            try:
+                return _ResolvedAuth(_credential_token(server))
+            except Exception as e:
+                return _DegradedAuth(str(e))
+
+
 async def metadata_for_operator(
     *,
     operator_id: UUID,
     server: McpServerEntry,
     metadata_provider: McpMetadataProvider,
     oauth_store: PostgresMcpOperatorOAuthStore,
+    provider_store: ProviderConnectionTokenStore | None = None,
 ) -> ServerMetadata:
-    if _operator_oauth_enabled(server):
-        auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
-        if not auth_token:
-            return DegradedServerMetadata(
-                server_id=server.id,
-                title=server.id,
-                tools=[],
-                degraded_reason=f"Connect your {server.id} MCP account in the console to reflect this server's tools.",
-            )
-        return await metadata_provider.metadata(server, auth_token)
-    try:
-        auth_token = _credential_token(server)
-    except Exception as e:
-        return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
-    return await metadata_provider.metadata(server, auth_token)
+    resolution = await _resolve_operator_metadata_auth(
+        operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
+    )
+    if isinstance(resolution, _DegradedAuth):
+        return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=resolution.reason)
+    return await metadata_provider.metadata(server, resolution.token)
 
 
 @router.get("/api/capabilities/mcp-servers")
 async def mcp_servers(
-    settings: SettingsDep, metadata_provider: MetadataProviderDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep
+    settings: SettingsDep,
+    metadata_provider: MetadataProviderDep,
+    oauth_store: OAuthStoreDep,
+    provider_store: ProviderConnectionStoreDep,
+    actor: OperatorActorDep,
 ) -> ToolCapabilitiesResponse:
     return ToolCapabilitiesResponse(
         servers=[
@@ -616,6 +674,7 @@ async def mcp_servers(
                 server=server,
                 metadata_provider=metadata_provider,
                 oauth_store=oauth_store,
+                provider_store=provider_store,
             )
             for server in _load_servers(settings)
         ]
