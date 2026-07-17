@@ -7,6 +7,7 @@
   config,
   pkgs,
   lib,
+  ducktapePackages,
   ...
 }:
 let
@@ -40,6 +41,24 @@ in
     ${wyrm2}
     ${rugged}
   '';
+
+  sops.secrets.zai_api_key_file = {
+    sopsFile = ../../../secrets/shared/zai.yaml;
+    key = "zai_api_key";
+  };
+
+  xdg.configFile."aiquota/config.toml" = {
+    text = ''
+      [zai]
+      api_key_path = "${config.sops.secrets.zai_api_key_file.path}"
+    '';
+  };
+
+  home.packages = [ ducktapePackages.aiquota ];
+
+  programs.gnome-shell.extensions = [
+    { package = ducktapePackages.aiquota; }
+  ];
 
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";

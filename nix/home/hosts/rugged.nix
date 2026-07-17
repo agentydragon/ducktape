@@ -83,7 +83,7 @@
     )
     // {
       zai_api_key_file = {
-        sopsFile = ../../../secrets/home/rugged/zai.yaml;
+        sopsFile = ../../../secrets/shared/zai.yaml;
         key = "zai_api_key";
       };
     };
