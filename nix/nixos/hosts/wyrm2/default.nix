@@ -79,7 +79,19 @@ in
     open = true; # Required for Blackwell (RTX 5090) — proprietary module refuses these GPUs
     nvidiaSettings = false; # No X settings app for headless GPU compute
   };
-  hardware.nvidia-container-toolkit.enable = true;
+  hardware.nvidia-container-toolkit = {
+    enable = true;
+    # NixOS defaults the CDI generator to index-named devices (0/1/all), but the
+    # k8s device plugin (deviceIDStrategy=uuid, the upstream default) references
+    # GPUs by UUID (nvidia.com/gpu=GPU-<uuid>). Harmless on containerd 1.x (CDI
+    # off; GPU injection went through the nvidia-container-runtime.cdi env-var
+    # handler), but containerd 2.x enables CDI and now resolves those UUID refs
+    # against this spec — unresolvable with index names, so GPU pods fail to
+    # start with "unresolvable CDI devices". Emit UUID names to match the plugin
+    # and keep stable device identity.
+    # See cluster/docs/lessons_learned/2026_07_17_gpu_cdi_uuid_naming_containerd2.md
+    device-name-strategy = "uuid";
+  };
 
   # GPU health monitoring — periodic telemetry + dmesg error watcher.
   # See debug/atlas/gpu_lockup_20260417/README.md for context.
