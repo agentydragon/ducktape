@@ -156,13 +156,11 @@ async def backend_auth_for_operator(
     server: McpServerEntry,
     operator_id: UUID,
     oauth_store: OperatorOAuthTokenStore,
-    provider_store: ProviderConnectionTokenStore | None = None,
+    provider_store: ProviderConnectionTokenStore,
 ) -> str | None:
     match server_auth_mode(server):
         case ServerAuthMode.PROVIDER:
             assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
-            if provider_store is None:
-                raise RuntimeError(f"MCP server {server.id} needs a provider connection store")
             return await _require_operator_linked_token(
                 provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id), server.id
             )
@@ -186,8 +184,8 @@ class ToolCallApplicationService:
         executor: ToolExecutor,
         oauth_store: OperatorOAuthTokenStore,
         in_process_servers: InProcessServers,
+        provider_store: ProviderConnectionTokenStore,
         gmail_client_provider: GmailClientProvider = _no_gmail_client,
-        provider_store: ProviderConnectionTokenStore | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -195,8 +193,8 @@ class ToolCallApplicationService:
         self._executor = executor
         self._oauth_store = oauth_store
         self._in_process_servers = in_process_servers
-        self._gmail_client_provider = gmail_client_provider
         self._provider_store = provider_store
+        self._gmail_client_provider = gmail_client_provider
 
     async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
         return await backend_auth_for_operator(

@@ -22,6 +22,7 @@ from haku.console.conftest import console_settings, operator_identity_store, wri
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError
+from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -259,6 +260,9 @@ def _service(
         executor=executor,
         oauth_store=tokens,
         in_process_servers={},
+        provider_store=PostgresProviderConnectionStore(
+            database_url, operator_identity_store=operator_identity_store(database_url), provider_clients={}
+        ),
     )
 
 

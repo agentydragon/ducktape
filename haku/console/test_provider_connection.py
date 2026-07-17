@@ -29,7 +29,7 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
 @pytest.fixture
-def store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
+def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
     identity_store = operator_identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("op-provider")
     store = PostgresProviderConnectionStore(
@@ -38,6 +38,16 @@ def store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UU
         provider_clients={GOOGLE: ProviderOAuthClientConfig(client_id="client-123", client_secret=SecretStr("s3cret"))},
     )
     return store, operator_id
+
+
+@pytest.fixture
+def store(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> PostgresProviderConnectionStore:
+    return _store_env[0]
+
+
+@pytest.fixture
+def operator_id(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> UUID:
+    return _store_env[1]
 
 
 async def _connect(
@@ -68,8 +78,9 @@ async def _connect(
     await store.complete_callback(state=state, code="auth-code", operator_id=operator_id)
 
 
-async def test_connect_flow_builds_google_consent_url(store_env: tuple[PostgresProviderConnectionStore, UUID]) -> None:
-    store, operator_id = store_env
+async def test_connect_flow_builds_google_consent_url(
+    store: PostgresProviderConnectionStore, operator_id: UUID
+) -> None:
     flow = await store.connect_flow(provider=GOOGLE, operator_id=operator_id, public_base_url="https://haku.test")
     parsed = urlsplit(flow.authorization_url)
     query = parse_qs(parsed.query)
@@ -82,9 +93,8 @@ async def test_connect_flow_builds_google_consent_url(store_env: tuple[PostgresP
 
 
 async def test_callback_persists_connection(
-    store_env: tuple[PostgresProviderConnectionStore, UUID], monkeypatch: pytest.MonkeyPatch
+    store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store, operator_id = store_env
     await _connect(store, operator_id, monkeypatch)
     assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) == "at-1"
     connections = store.list_statuses(operator_id=operator_id).connections
@@ -92,9 +102,8 @@ async def test_callback_persists_connection(
 
 
 async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token(
-    store_env: tuple[PostgresProviderConnectionStore, UUID], migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
+    store: PostgresProviderConnectionStore, operator_id: UUID, migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store, operator_id = store_env
     await _connect(store, operator_id, monkeypatch, access_token="at-1", refresh_token="rt-1")
 
     engine = create_engine(migrated_db_url)
@@ -122,9 +131,8 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
 
 
 async def test_disconnect_removes_connection(
-    store_env: tuple[PostgresProviderConnectionStore, UUID], monkeypatch: pytest.MonkeyPatch
+    store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store, operator_id = store_env
     await _connect(store, operator_id, monkeypatch)
     store.disconnect(provider=GOOGLE, operator_id=operator_id)
     assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) is None
@@ -133,17 +141,15 @@ async def test_disconnect_removes_connection(
 
 
 async def test_connect_when_already_connected_conflicts(
-    store_env: tuple[PostgresProviderConnectionStore, UUID], monkeypatch: pytest.MonkeyPatch
+    store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store, operator_id = store_env
     await _connect(store, operator_id, monkeypatch)
     with pytest.raises(HTTPException) as excinfo:
         await store.connect_flow(provider=GOOGLE, operator_id=operator_id, public_base_url="https://haku.test")
     assert excinfo.value.status_code == 409
 
 
-async def test_access_token_for_unconnected_is_none(store_env: tuple[PostgresProviderConnectionStore, UUID]) -> None:
-    store, operator_id = store_env
+async def test_access_token_for_unconnected_is_none(store: PostgresProviderConnectionStore, operator_id: UUID) -> None:
     assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) is None
 
 

@@ -565,7 +565,7 @@ async def _execution_auth(
     server: McpServerEntry,
     operator_id: UUID,
     oauth_store: PostgresMcpOperatorOAuthStore,
-    provider_store: ProviderConnectionTokenStore | None = None,
+    provider_store: ProviderConnectionTokenStore,
 ) -> str | None:
     try:
         return await backend_auth_for_operator(
@@ -608,21 +608,19 @@ async def _resolve_operator_metadata_auth(
     operator_id: UUID,
     server: McpServerEntry,
     oauth_store: PostgresMcpOperatorOAuthStore,
-    provider_store: ProviderConnectionTokenStore | None,
+    provider_store: ProviderConnectionTokenStore,
 ) -> _ResolvedAuth | _DegradedAuth:
     """Resolve the operator-linked reflection token per the server's auth mode, or a degraded reason.
 
     Deviation from `backend_auth_for_operator` (which shares the mode selection via `server_auth_mode`):
-    a missing operator-linked token, a missing static credential, or a missing provider store degrades
-    reflection here rather than raising.
+    a missing operator-linked token or a missing static credential degrades reflection here rather
+    than raising.
     """
     match server_auth_mode(server):
         case ServerAuthMode.PROVIDER:
             assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
-            auth_token = (
-                await provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id)
-                if provider_store is not None
-                else None
+            auth_token = await provider_store.access_token_for(
+                provider=server.provider_connection, operator_id=operator_id
             )
             if not auth_token:
                 return _DegradedAuth(
@@ -649,7 +647,7 @@ async def metadata_for_operator(
     server: McpServerEntry,
     metadata_provider: McpMetadataProvider,
     oauth_store: PostgresMcpOperatorOAuthStore,
-    provider_store: ProviderConnectionTokenStore | None = None,
+    provider_store: ProviderConnectionTokenStore,
 ) -> ServerMetadata:
     resolution = await _resolve_operator_metadata_auth(
         operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
