@@ -55,76 +55,16 @@ async def test_tool_surface(client):
     assert GMAIL_SERVER_ID == "gmail"
 
 
-# --- generated reads: Google-native params, pinned userId=me, verbatim result ---
-async def test_threads_list_dispatches_with_pagination_args(gmail: Mock, client):
+# --- generated reads: one representative round-trip proves the wiring (spec -> FastMCP -> executor
+# -> service call with userId pinned -> verbatim result). Per-tool schema/overlay/dispatch behavior
+# is covered once in test_google_discovery.py; the surface test above guards the full name set. ---
+async def test_generated_read_round_trip(gmail: Mock, client):
     threads = gmail.service.users.return_value.threads.return_value
     threads.list.return_value.execute.return_value = {"threads": [{"id": "t1"}], "nextPageToken": "N"}
     result = await client.call_tool("threads_list", {"q": "from:a", "maxResults": 5, "pageToken": "P"})
     assert not result.is_error
     assert result.structured_content["nextPageToken"] == "N"  # raw Gmail camelCase, verbatim
     threads.list.assert_called_once_with(userId="me", q="from:a", maxResults=5, pageToken="P")
-
-
-async def test_threads_get_dispatches_with_format(gmail: Mock, client):
-    threads = gmail.service.users.return_value.threads.return_value
-    threads.get.return_value.execute.return_value = {"id": "t1"}
-    result = await client.call_tool("threads_get", {"id": "t1", "format": "metadata"})
-    assert not result.is_error
-    threads.get.assert_called_once_with(userId="me", id="t1", format="metadata")
-
-
-async def test_threads_get_omits_format_when_unset(gmail: Mock, client):
-    threads = gmail.service.users.return_value.threads.return_value
-    threads.get.return_value.execute.return_value = {"id": "t1"}
-    await client.call_tool("threads_get", {"id": "t1"})
-    threads.get.assert_called_once_with(userId="me", id="t1")  # no client default; Gmail chooses
-
-
-async def test_messages_get_dispatches_with_raw_format(gmail: Mock, client):
-    messages = gmail.service.users.return_value.messages.return_value
-    messages.get.return_value.execute.return_value = {"id": "m1", "raw": "UkFX"}
-    result = await client.call_tool("messages_get", {"id": "m1", "format": "raw"})
-    assert not result.is_error
-    assert result.structured_content["raw"] == "UkFX"
-    messages.get.assert_called_once_with(userId="me", id="m1", format="raw")
-
-
-async def test_labels_list_dispatches(gmail: Mock, client):
-    labels = gmail.service.users.return_value.labels.return_value
-    labels.list.return_value.execute.return_value = {"labels": [{"id": "L1", "name": "x", "type": "user"}]}
-    result = await client.call_tool("labels_list", {})
-    assert not result.is_error
-    labels.list.assert_called_once_with(userId="me")
-
-
-async def test_labels_get_dispatches(gmail: Mock, client):
-    labels = gmail.service.users.return_value.labels.return_value
-    labels.get.return_value.execute.return_value = {"id": "L1", "name": "x", "type": "user"}
-    await client.call_tool("labels_get", {"id": "L1"})
-    labels.get.assert_called_once_with(userId="me", id="L1")
-
-
-async def test_filters_get_dispatches(gmail: Mock, client):
-    filters = gmail.service.users.return_value.settings.return_value.filters.return_value
-    filters.get.return_value.execute.return_value = {"id": "F1"}
-    await client.call_tool("filters_get", {"id": "F1"})
-    filters.get.assert_called_once_with(userId="me", id="F1")
-
-
-async def test_drafts_list_dispatches_with_pagination_args(gmail: Mock, client):
-    drafts = gmail.service.users.return_value.drafts.return_value
-    drafts.list.return_value.execute.return_value = {"drafts": [{"id": "d1"}], "nextPageToken": "N"}
-    result = await client.call_tool("drafts_list", {"q": "receipts", "maxResults": 5, "pageToken": "P"})
-    assert not result.is_error
-    assert result.structured_content["nextPageToken"] == "N"
-    drafts.list.assert_called_once_with(userId="me", q="receipts", maxResults=5, pageToken="P")
-
-
-async def test_drafts_get_omits_format_when_unset(gmail: Mock, client):
-    drafts = gmail.service.users.return_value.drafts.return_value
-    drafts.get.return_value.execute.return_value = {"id": "d1"}
-    await client.call_tool("drafts_get", {"id": "d1"})
-    drafts.get.assert_called_once_with(userId="me", id="d1")
 
 
 async def test_read_rejects_unknown_argument(client):

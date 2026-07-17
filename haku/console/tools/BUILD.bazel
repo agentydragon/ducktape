@@ -181,3 +181,14 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_test(
+    name = "test_google_discovery",
+    srcs = ["test_google_discovery.py"],
+    deps = [
+        ":google_discovery",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
