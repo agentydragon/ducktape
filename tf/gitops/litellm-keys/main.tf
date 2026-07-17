@@ -409,9 +409,9 @@ resource "kubernetes_secret" "codex_clients_key" {
 }
 
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
-# trusted personal dev sandboxes. GLM lane only for now — same allowlist as the
-# zai worker lane, deliberately no budget cap (operator-only consumers);
-# deleting this resource is the workspaces' LLM kill switch.
+# trusted personal dev sandboxes, one key per LLM lane (zai below, codex
+# further down) — deliberately no budget caps (operator-only consumers);
+# deleting a lane's key resource is that lane's LLM kill switch.
 resource "litellm_key" "agent_workspaces" {
   key_alias = "agent-workspaces"
   models    = local.zai_lane_models
@@ -437,5 +437,36 @@ resource "kubernetes_secret" "agent_workspaces_key" {
 
   data = {
     api-key = litellm_key.agent_workspaces.key
+  }
+}
+
+# codex workspace lane: the codex CLI's baked LiteLLM provider
+# (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses
+# the chatgpt/ Codex-account models, same allowlist as codex-pod.
+resource "litellm_key" "agent_workspaces_codex" {
+  key_alias = "agent-workspaces-codex"
+  models    = local.oai_lane_models
+  metadata = {
+    consumer = "agent-workspaces codex-lane sandboxes"
+  }
+}
+
+# Reflected into agent-workspaces, where the codex-lane SandboxTemplate reads
+# it as LITELLM_API_KEY (the env_key named by the baked codex config).
+resource "kubernetes_secret" "agent_workspaces_codex_key" {
+  metadata {
+    name      = "litellm-key-agent-workspaces-codex"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for the codex workspace lane (chatgpt/ oai models only); reflected into agent-workspaces for the codex SandboxTemplate"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-workspaces"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agent-workspaces"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.agent_workspaces_codex.key
   }
 }

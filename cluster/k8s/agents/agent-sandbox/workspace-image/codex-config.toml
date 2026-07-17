@@ -1,0 +1,23 @@
+# Codex → cluster LiteLLM (chatgpt/ Codex-account models), mirroring the
+# codex-pod baked config (x/codex_pod_image/home.nix) but with the in-cluster
+# base URL. env_key names the env var carrying the LiteLLM virtual key — only
+# the codex-lane SandboxTemplate sets it, so on other lanes codex simply has
+# no credentials. wire_api=responses: LiteLLM serves these models over the
+# Responses API (streaming-only).
+model = "gpt-5.6-sol-chatgpt"
+model_provider = "litellm"
+model_reasoning_effort = "xhigh"
+# Disposable operator-trusted pod, same as codex-pod: run unattended.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[model_providers.litellm]
+name = "Cluster LiteLLM"
+base_url = "http://litellm.litellm.svc.cluster.local:4000/v1"
+env_key = "LITELLM_API_KEY"
+wire_api = "responses"
+
+# Pre-trust the work root so codex's directory-trust prompt never fires there
+# (the claude side does the same via the seeded ~/.claude.json).
+[projects."/workspace"]
+trust_level = "trusted"

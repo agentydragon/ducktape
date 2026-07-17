@@ -3,4 +3,6 @@ kind: Kustomization
 resources:
   - sandboxtemplate-zai.yaml
   - sandboxwarmpool-zai.yaml
+  - sandboxtemplate-codex.yaml
+  - sandboxwarmpool-codex.yaml
   - cleanuppolicy-workspace-janitor.yaml

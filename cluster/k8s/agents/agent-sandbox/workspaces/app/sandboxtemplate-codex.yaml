@@ -1,0 +1,70 @@
+# codex LLM lane: OpenAI Codex-account models via the cluster LiteLLM. Same
+# image and pod anatomy as the zai template (see sandboxtemplate-zai.yaml for
+# the networkPolicyManagement/dnsPolicy/storageClassName rationale — all three
+# are load-bearing); only the credential env differs. The codex CLI picks up
+# the baked ~/.codex/config.toml (workspace-image/codex-config.toml), whose
+# provider reads the key from LITELLM_API_KEY.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: codex
+  namespace: agent-workspaces
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-workspace
+    spec:
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workspace
+          image: git.allegedly.works/ducktape-ci/agent-workspace:devel-20260716204816-2d86e57 # {"$imagepolicy": "flux-system:agent-workspace"}
+          command: ["sleep", "infinity"]
+          workingDir: /workspace
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # LiteLLM virtual key (alias agent-workspaces-codex, chatgpt/ oai
+            # models, no budget cap) minted by tf/gitops/litellm-keys and
+            # reflected into this namespace; deleting that TF resource is the
+            # lane's kill switch.
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-agent-workspaces-codex
+                  key: api-key
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+  volumeClaimTemplatesPolicy: Overrides
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        storageClassName: seaweedfs-ovh
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

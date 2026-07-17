@@ -1,7 +1,7 @@
 # agent-sandbox — disposable agent workspaces
 
 [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-controller plus per-LLM-lane templates (`zai` today) in `agent-workspaces`: click-a-command
+controller plus per-LLM-lane templates (`zai`, `codex`) in `agent-workspaces`: click-a-command
 disposable dev workspaces for agents — the agent-box workflow (a machine you go
 to, creds already wired, Claude CLI installed) minus the persistence.
 
@@ -38,8 +38,9 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 - `workspaces/{namespace,app}/` — the dedicated `agent-workspaces` namespace
   (own ResourceQuota/LimitRange) and the LLM-lane `SandboxTemplate`s + warm
   pools + janitor `CleanupPolicy`. Templates are named by lane like the haku
-  zones — `zai` (GLM via LiteLLM) today; future lanes (e.g. `codex` for OpenAI
-  models, also via LiteLLM) add a sibling template + pool. Deliberately **not** `claude-sandbox` — that
+  zones — `zai` (GLM, `claude` CLI) and `codex` (OpenAI Codex-account models,
+  `codex` CLI), both via LiteLLM; a new lane adds a sibling template + pool +
+  key. Deliberately **not** `claude-sandbox` — that
   namespace is Claude's own disposable in-cluster scratch space, and hosting
   workspaces there would mix tenants and quotas.
 
@@ -157,17 +158,23 @@ Standalone `Sandbox` objects (own `podTemplate`, no warm pool) also work — see
 ## Credentials
 
 **LLM traffic goes through the cluster LiteLLM, never direct to a provider.**
-The template points `ANTHROPIC_BASE_URL` at
-`litellm.litellm.svc.cluster.local:4000` and reads `ANTHROPIC_AUTH_TOKEN` from
-`litellm-key-agent-workspaces` — a virtual key minted by
-<../../../../tf/gitops/litellm-keys/> (alias `agent-workspaces`, GLM-model
-allowlist shared with the haku zai lane, deliberately no budget cap) and
-reflector-mirrored into this namespace. That buys model allowlisting and usage
-observability per workspace lane; deleting the
-`litellm_key.agent_workspaces` TF resource is the LLM kill switch.
-`ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` both pin `glm-5.2-anthropic`
-(z-claude parity) so Claude Code doesn't request `claude-*` names the key
-rejects.
+Each lane holds its own virtual key minted by
+<../../../../tf/gitops/litellm-keys/> and reflector-mirrored into this
+namespace — model allowlisting and per-lane usage observability, deliberately
+no budget caps; deleting a lane's `litellm_key.*` TF resource is that lane's
+LLM kill switch.
+
+- `zai`: the template points `ANTHROPIC_BASE_URL` at
+  `litellm.litellm.svc.cluster.local:4000` and reads `ANTHROPIC_AUTH_TOKEN`
+  from `litellm-key-agent-workspaces` (GLM-model allowlist shared with the
+  haku zai lane). `ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` both pin
+  `glm-5.2-anthropic` (z-claude parity) so Claude Code doesn't request
+  `claude-*` names the key rejects.
+- `codex`: the image bakes `~/.codex/config.toml`
+  (`workspace-image/codex-config.toml`) with a LiteLLM provider over the
+  Responses API; the template supplies `LITELLM_API_KEY` from
+  `litellm-key-agent-workspaces-codex` (`*-chatgpt` Codex-account models,
+  same allowlist as codex-pod).
 
 Other credential classes follow the zones/codex-pod pattern: mirror a Secret
 into `agent-workspaces` (reflector or ESO) and reference it from the template.
