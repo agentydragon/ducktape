@@ -1,6 +1,7 @@
 # Plan: remote command execution on operator machines (Haku)
 
-**Status:** design proposal, not built (operator, 2026-07-17).
+**Status:** design proposal, not built; core decisions locked (operator, 2026-07-17) — see
+_Decisions_ below.
 **Ask:** let Haku run shell commands on the operator's machines (`wyrm2`, `rugged`,
 `iguana`, …) with **no auto-approval**, and the ability to run as `agentydragon`
 **or `root`** once the operator approves. Which transport — SSH over Nebula, a privileged
@@ -16,11 +17,12 @@ and needs **no standing privileged pod**, unlike the pod-on-node alternative (wh
 it wins even though every in-scope host — `wyrm2`, `rugged`, `iguana` — is now a k8s node).
 **Authorization = Authentik, not a standing key:** make it
 "kubectl-passthrough for SSH" — the console forwards the approving operator's short-lived
-**Authentik** token, and a small host-side verifier authorizes the operator's real identity
-(the `hostexec-<run_as>-<host>` group claim) against Authentik's JWKS. The `hostexec-mcp` pod
-holds only an inert transport SSH key, never the authority. "May run root on `wyrm2`" is then
-an Authentik group you grant/revoke centrally, exactly like cluster-admin. A privileged
-pod-on-node is rejected as the primary transport (below).
+**Authentik** token, and a small fail-closed host-side verifier authorizes the operator's real
+identity (the `hostexec-<run_as>-<host>` group claim) against Authentik's JWKS **and** checks a
+console countersignature binding the exact `argv`. The `hostexec-mcp` pod holds only an inert
+transport SSH key, never the authority. "May run root on `wyrm2`" is then an Authentik group you
+grant/revoke centrally, exactly like cluster-admin. A privileged pod-on-node is rejected as the
+primary transport (below).
 
 ## What is already decided for us
 
@@ -70,16 +72,19 @@ privileged pod, a proper approval card, and host-side audit.
 Hosts come from the mesh roster (<../../nebula-mesh.json>); reachability from
 <../../cluster/README.md> node table.
 
-| Host     | Nebula IP    | Always on?   | k8s node? | In scope?               | Notes                                                          |
-| -------- | ------------ | ------------ | --------- | ----------------------- | -------------------------------------------------------------- |
-| `wyrm2`  | `10.42.0.20` | yes (home)   | yes       | **yes**                 | GPU box; primary always-on target                              |
-| `rugged` | `10.42.0.30` | no (roaming) | yes       | **yes**                 | roaming tablet; fail-fast when offline; `destination_mtu` 1100 |
-| `iguana` | `10.42.0.31` | no (roaming) | yes       | same class as `rugged`  | other roaming laptop; include unless told otherwise            |
-| `atlas`  | `10.42.0.5`  | yes (home)   | no        | **no** (operator 07-17) | Proxmox hypervisor; dropped from scope                         |
-| `pixel6` | `10.42.0.50` | —            | no        | no                      | excluded — no sshd                                             |
+| Host     | Nebula IP    | Always on?   | k8s node? | In scope?                       | Notes                                                          |
+| -------- | ------------ | ------------ | --------- | ------------------------------- | -------------------------------------------------------------- |
+| `wyrm2`  | `10.42.0.20` | yes (home)   | yes       | **yes** (`agentydragon`+`root`) | GPU box; primary always-on target                              |
+| `rugged` | `10.42.0.30` | no (roaming) | yes       | **yes** (`agentydragon`+`root`) | roaming tablet; fail-fast when offline; `destination_mtu` 1100 |
+| `iguana` | `10.42.0.31` | no (roaming) | yes       | deferred (TODO, 07-17)          | other roaming laptop; add later, same NixOS config as `rugged` |
+| `atlas`  | `10.42.0.5`  | yes (home)   | no        | **no** (operator 07-17)         | Proxmox hypervisor; dropped from scope                         |
+| `pixel6` | `10.42.0.50` | —            | no        | no                              | excluded — no sshd                                             |
 
-Run-as targets per host: `agentydragon` (unprivileged) and `root` (privileged). Root is an
-explicit per-host allowlist (a `hostexec-root-<host>` group), not implicitly everywhere.
+v1 grants both `agentydragon` and `root` on `wyrm2` and `rugged` — one
+`hostexec-{user,root}-{wyrm2,rugged}` Authentik group each. Root is an explicit per-host
+allowlist (the `hostexec-root-<host>` group), not implicit. Note `rugged` is a roaming
+personal tablet that travels on cellular, so its `root` grant has more physical exposure than
+`wyrm2`'s — accepted (operator, 07-17); the approval card renders `root` loudly regardless.
 
 **Consequence of dropping `atlas`:** every in-scope host is now a k8s node. That removes the
 one host that _forced_ SSH over a privileged pod — so the transport choice is re-justified on
@@ -202,25 +207,29 @@ unexpired Authentik token** bearing the `hostexec-root-<host>` claim. Concretely
   `authorized_keys`).
 - **The residual it does _not_ remove:** a **live, fully-compromised `hostexec-mcp` pod** holds
   the key _and_ catches operator tokens transiting it at approval time, so within a live token's
-  window it can run root. Identical to a compromised kubectl-passthrough pod today; nothing that
-  rides a relay avoids it. Only the argv countersignature below narrows it (binds the _exact_
-  approved command the relay can't forge), and even that can't stop a compromised relay from
-  getting a malicious command approved via the card.
+  window it could run root. The **console argv countersignature (included in v1, below)** closes
+  the command-swap half of this — the relay can no longer run a _different_ command than the one
+  approved. What no relay-riding design can remove: a compromised relay socially engineering the
+  operator into approving a malicious command via the card. That last hop is operator judgment,
+  which is the ask ("root given approval").
 
 Bottom line: you cannot have "agent runs root given approval" without _some_ component, if
-compromised at the instant of a live approval, being able to run root. The job here is not to
-make root impossible (root-given-approval is the ask) but to guarantee root never happens
-_without_ an approval, and is always attributed, time-boxed, and revocable. The token verifier
-keeps all four; L0 (below) gives them up.
+compromised at the instant of a live approval, being able to run the approved command. The job
+here is not to make root impossible (root-given-approval is the ask) but to guarantee root never
+happens _without_ an approval, only for the exact command approved, and is always attributed,
+time-boxed, and revocable. The token verifier + argv countersignature keep all of that; L0
+(below) gives them up.
 
-### Optional hardening — console-countersigned argv binding
+### Command binding — console-countersigned argv (included in v1)
 
-If you want hostexec **stronger** than kubectl-passthrough (defend against a compromised relay
-swapping the command), add a second, small per-approval assertion: the console signs
-`sha256(argv) + nonce + exp` at approval time and the host verifier checks it alongside the
-Authentik token. This is a tiny bespoke key on the console side (the trust boundary), binding
-the _exact command_ the operator approved. Additive — layer it only if the relay-swap residual
-matters to you.
+Decided (operator, 07-17): bind the **exact** command, not just who/run*as/host. At approval
+time the console signs `(host, run_as, sha256(argv), cwd, nonce, exp)` with a small bespoke key
+that lives with the console (the trust boundary, a Secret Haku cannot read); its public key is
+deployed to each host via nix. The host verifier checks this countersignature **alongside** the
+Authentik token: the Authentik token authorizes \_identity → may run_as on host* (revocable
+group), the countersignature binds _this exact command, once_ (`nonce` single-use, short `exp`).
+A compromised relay therefore can't swap in a different command, and can't replay a spent one.
+The two checks must agree on `(host, run_as)`.
 
 ### L0 — standing keys (rejected)
 
@@ -239,13 +248,14 @@ Haku (agent, prompt-injectable)
 haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPROVAL)
   │  operator clicks Approve in trusted chrome (CSRF, Authentik-operator-only)
   │  console forwards the approving operator's short-lived Authentik token (aud=hostexec)
-  │  [optional] console countersigns sha256(argv)+nonce+exp
+  │  console countersigns (host, run_as, sha256(argv), cwd, nonce, exp)
   ▼
 hostexec-mcp  (own namespace; unprivileged transport SSH key only — no authority of its own)
   │  ssh <run_as>@10.42.0.x  → ForceCommand/AuthorizedKeysCommand verifier
   ▼
 target host: verifier validates Authentik JWT (JWKS: sig/aud/exp) + group authorizes run_as
-  │            [optional] checks console argv countersignature → exec → journald/auditd log
+  │            AND checks console argv countersignature (agree on host/run_as; nonce fresh)
+  │            → exec → journald/auditd log
   │  stdout/stderr/exit (capped) ──────────────────────────────────────────────┘
   ▼
 result returns through console → ledger row RUNNING→done ; agent gets result or a promise
@@ -267,22 +277,27 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
 - **Register:** one entry in <../../cluster/k8s/haku/console/config.yaml> under `mcp.servers`
   with `operator_oauth` (matches kubectl-passthrough — the console forwards the approving
   operator's Authentik token). Approval-gated automatically.
-- **Authentik provider:** add a `hostexec` OAuth2 application/provider in
+- **Authentik provider + groups:** add a `hostexec` OAuth2 application/provider in
   `tf/gitops/agent-machine-access` (clone the `kubectl_passthrough_mcp` provider) with a scope
-  mapping that emits the operator's `hostexec-*` group claims; create the `hostexec-{user,root}-<host>`
-  groups and grant them to the operator identity per the root-scope decision below.
+  mapping that emits the operator's `hostexec-*` group claims; create the four v1 groups
+  `hostexec-{user,root}-{wyrm2,rugged}` and grant all four to the operator identity.
+- **Console argv-signing key:** a small signing keypair for the countersignature — private key
+  a `haku-console` Secret (Haku cannot read it), minted by `tf/gitops/agent-machine-access`
+  alongside the other console secrets; public key deployed to each host via nix for the
+  verifier. The console signs `(host, run_as, sha256(argv), cwd, nonce, exp)` at approval time.
 - **Approval card:** add a renderer under `haku/console/frontend/tool_rendering/hostexec/`
-  modeled on the existing `kubectl/` renderer — show `host`, `run_as` (render `root` in red /
+  modeled on the existing `kubectl/` renderer — show `host`, `run_as` (render `root` in red,
   behind an extra confirm), full `argv`, `cwd`, and the agent's `rationale` prominently.
 - **Host trust + transport key:** deploy the host-side verifier
-  (`AuthorizedKeysCommand`/`ForceCommand` shim + cached Authentik JWKS) declaratively via nix;
-  add one **unprivileged transport** `hostexec` keypair (<../../ssh_keys/> + <../../nix/ssh-keys.nix>)
-  to each in-scope host's `openssh.authorizedKeys.keys` for the `agentydragon` user and
-  (per-host allowlist) `root`, every entry pinned to `command="<verifier>"` so the key reaches
-  nothing but the shim. All in-scope hosts (`wyrm2`, `rugged`, `iguana`) are NixOS, so this is
-  uniform `nix/nixos/hosts/<host>/default.nix` config — no `atlas`/Debian special case. The
-  transport private key is SOPS-encrypted and deployed only into the `hostexec-mcp` namespace
-  Secret (Haku cannot read it); it grants only "reach the verifier," never execution on its own.
+  (`AuthorizedKeysCommand`/`ForceCommand` shim + cached Authentik JWKS + the console
+  argv-signing public key) declaratively via nix; add one **unprivileged transport** `hostexec`
+  keypair (<../../ssh_keys/> + <../../nix/ssh-keys.nix>) to each in-scope host's
+  `openssh.authorizedKeys.keys` for the `agentydragon` user and `root`, every entry pinned to
+  `command="<verifier>"` so the key reaches nothing but the shim. Both in-scope hosts (`wyrm2`,
+  `rugged`) are NixOS, so this is uniform `nix/nixos/hosts/<host>/default.nix` config — no
+  `atlas`/Debian special case. The transport private key is SOPS-encrypted and deployed only
+  into the `hostexec-mcp` namespace Secret (Haku cannot read it); it grants only "reach the
+  verifier," never execution on its own.
 - **Audit (double-entry):** console ledger `McpToolCall` (args, rationale, operator, result) +
   host-side journald/auditd from the verifier wrapper.
 
@@ -290,41 +305,54 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
 
 - **"No auto-approval":** never add `hostexec-mcp` tools to `UNCONDITIONAL_AUTO_APPROVE`
   (`haku/console/auto_approval.py`). Every call becomes a `PENDING_APPROVAL` row needing an
-  operator click. (Optionally add an extra friction for `run_as=root`: a second top-layer
-  confirm or a standing "root enabled" operator toggle, honoring invariant #4.)
+  operator click. `run_as=root` renders loudly and behind a second confirm on the card (default;
+  invariant #4).
 - **"As agentydragon or root, given approval":** the `run_as` tool field, surfaced loudly on
-  the approval card; the host verifier executes it only if the forwarded operator token's
-  `hostexec-<run_as>-<host>` group authorizes exactly that user on that host.
+  the approval card; the host executes only when the forwarded operator token's
+  `hostexec-<run_as>-<host>` group authorizes exactly that user on that host **and** the console
+  countersignature matches the exact `argv`.
 
-## Open decisions for the operator
+## Decisions (operator, 2026-07-17)
 
-1. ~~**Credential model**~~ — **decided (operator, 07-17): Authentik-minted operator tokens
-   with a fail-closed host verifier; no standing root key.** v1 stands up the `hostexec`
-   Authentik provider + host JWKS verifier. L0 rejected.
-2. **argv binding:** ship at kubectl-passthrough parity (Authentik token only), or add the
-   console argv countersignature to defend against a compromised relay swapping the command.
-   (This is the only remaining lever on the live-relay residual named above.)
-3. **Root scope:** which in-scope hosts get a `hostexec-root-<host>` group at all. Open
-   question: `rugged` (the operator's own tablet) is in scope for exec — is `run_as=root`
-   wanted there too, or `agentydragon`-only on `rugged` with root reserved to `wyrm2`?
-4. **Extra root friction:** plain approval card vs a second confirm / standing root toggle.
-5. **`iguana`:** in with `rugged` (same roaming-laptop class, uniform NixOS config) unless the
-   operator wants it left out.
+1. **Credential model** — Authentik-minted operator tokens with a fail-closed host verifier;
+   **no standing root key**. v1 stands up the `hostexec` Authentik provider + host JWKS verifier.
+   L0 rejected.
+2. **Command binding** — **include full argv**: the console countersigns the exact `argv`
+   (+`host`/`run_as`/`nonce`/`exp`) so a compromised relay cannot swap or replay commands.
+3. **Root scope** — `root` allowed on **both `wyrm2` and `rugged`** (four groups
+   `hostexec-{user,root}-{wyrm2,rugged}`). `rugged`'s root exposure (roaming personal tablet)
+   is accepted.
+4. **`iguana`** — deferred; add later (TODO below).
+5. **Root friction** — root renders loudly + second confirm on the approval card (default;
+   adjustable).
+
+## Future expansion (TODO)
+
+- **`iguana`** — add to scope: one `hostexec` transport-key entry + `hostexec-{user,root}-iguana`
+  groups; identical NixOS config to `rugged`, so purely additive.
+- **Non-node hosts if scope grows** (e.g. `atlas`, or a future box) — SSH-over-Nebula already
+  covers them uniformly; only the per-host verifier + groups are new. This is why Option A was
+  chosen over the pod-on-node path.
+- **Tighten the last residual** — if the "compromised relay gets a malicious command approved
+  via the card" hop ever needs closing, that is fundamentally an approval-card-integrity /
+  operator-judgment problem, not a transport one.
 
 ## Risks / residuals
 
-- **L0 residual (if chosen):** `hostexec-mcp` pod/Secret compromise = silent root everywhere.
-  The Authentik-token path removes it (pod holds only an inert transport key; authority is the
-  short-lived forwarded operator token).
-- **Relay-swap residual (parity with kubectl-passthrough):** a compromised `hostexec-mcp` pod
-  holding a live forwarded token could, in its short window, run a different command as the
-  approved `run_as`. Accepted for kubectl-passthrough today; the optional argv countersignature
-  (decision 2) closes it for hostexec.
+- **Live-relay residual (narrowed, not zero):** a compromised `hostexec-mcp` pod holding a live
+  forwarded token can no longer swap or replay the command (argv countersignature, decision 2) —
+  it is reduced to whatever the operator literally approved. The irreducible hop is a compromised
+  relay socially engineering the operator into approving a malicious command; that is the
+  "root given approval" ask, mitigated by the loud root confirm.
+- **The verifier is the single load-bearing component.** If the host-side shim is not
+  fail-closed (or a key is authorized directly as `root`), the whole model collapses to L0.
+  Treat it as security-critical, reviewed code; test the deny paths.
 - **Console + Authentik are the trust roots** — as they already are for every approval-gated
-  tool and all machine access. No new trust root is introduced.
-- **Roaming hosts** (`rugged`, `iguana`) are frequently offline and roam on cellular
-  (`rugged` at `destination_mtu` 1100); treat unreachability as a normal, fast-failing
-  outcome, not an error to retry indefinitely.
+  tool and all machine access. No new trust root is introduced (the console argv-signing key
+  lives with the console, which is already the trust boundary).
+- **Roaming hosts** (`rugged`) are frequently offline and roam on cellular (`destination_mtu`
+  1100); treat unreachability as a normal, fast-failing outcome, not an error to retry
+  indefinitely.
 - **Fits the roadmap:** a concrete instance of PLAN.md → _"letting Haku take some actions
-  itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, per-approval grant
-  enforced by the perimeter is exactly what that section sketches.
+  itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, per-approval,
+  argv-bound grant enforced by the perimeter is exactly what that section sketches.
