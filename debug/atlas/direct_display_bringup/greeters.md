@@ -64,15 +64,15 @@ newly-found trap that bites even axis-1-capable DMs on **systemd ≥ 258**.
 
 ## Summary
 
-| DM                            | Axis 1: VT-less multi-seat | Axis 1b: no VC-tty (systemd ≥258) | Same-user veto | Wayland greeter        | Verdict for wyrm2                                                                                                  |
-| ----------------------------- | -------------------------- | --------------------------------- | -------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **SDDM `v0.21.0` (shipped)**  | ✅ yes                     | ❌ **sends `tty0`** (PamBackend)  | ✅ none        | ⚠️ via compositor cmd  | **Blocked today** — this is what runs; needs `cda8d93`                                                             |
-| **SDDM `develop`/+`cda8d93`** | ✅ yes                     | ✅ guarded                        | ✅ none        | ⚠️ via compositor cmd  | Fixes 1b; unreleased → backport patch or pin                                                                       |
-| **plasma-login-manager**      | ⚠️ daemon yes; greeter ❌  | ✅ **guarded (verified)**         | ✅ none        | ✅ (kwin greeter)      | 1b fix released, BUT greeter is single-instance (fixed-name user units) — 2nd seat black; verified live 2026-07-17 |
-| **GDM**                       | ✅ yes                     | ✅ (sets VTNr only on seat0)      | ❌ **blocks**  | ✅ (gnome-shell)       | **CHOSEN (2026-07-17)** accepting the veto: both seats greet, one login at a time — see README decision            |
-| **LightDM**                   | ✅ yes                     | ⚠️ unverified (X11-centric)       | ✅ none        | ⚠️ weak (greeters X11) | Wayland multiseat effectively X11-only; weak fit                                                                   |
-| **greetd** (+cage/ReGreet)    | ❌ seat0 hardcoded         | n/a (can't reach seat)            | ✅ none        | ✅ (any wl greeter)    | `XDG_SEAT=seat0` hardcoded + VT-driven → can't target                                                              |
-| ly / emptty / nodm            | ❌ tty-only                | n/a                               | ✅ none        | ❌ (tty/X)             | Single seat0 only                                                                                                  |
+| DM                            | Axis 1: VT-less multi-seat | Axis 1b: no VC-tty (systemd ≥258) | Same-user veto | Wayland greeter        | Verdict for wyrm2                                                                                                                                                                      |
+| ----------------------------- | -------------------------- | --------------------------------- | -------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SDDM `v0.21.0` (shipped)**  | ✅ yes                     | ❌ **sends `tty0`** (PamBackend)  | ✅ none        | ⚠️ via compositor cmd  | **Blocked today** — this is what runs; needs `cda8d93`                                                                                                                                 |
+| **SDDM `develop`/+`cda8d93`** | ✅ yes                     | ✅ guarded                        | ✅ none        | ⚠️ via compositor cmd  | Fixes 1b; unreleased → backport patch or pin                                                                                                                                           |
+| **plasma-login-manager**      | ⚠️ daemon yes; greeter ❌  | ✅ **guarded (verified)**         | ✅ none        | ✅ (kwin greeter)      | 1b fix released, BUT greeter is single-instance (fixed-name user units) — 2nd seat black; verified live 2026-07-17                                                                     |
+| **GDM**                       | ⚠️ **greeter only**        | ✅ (sets VTNr only on seat0)      | ❌ blocks      | ✅ (gnome-shell)       | **SUPERSEDED (2026-07-17)** — non-seat0 _user_ login never launches a compositor (gdm!291 unmerged, blocked on systemd#42247); greeter renders, login wedges. See GDM section + README |
+| **LightDM**                   | ✅ yes                     | ⚠️ unverified (X11-centric)       | ✅ none        | ⚠️ weak (greeters X11) | Wayland multiseat effectively X11-only; weak fit                                                                                                                                       |
+| **greetd** (+cage/ReGreet)    | ❌ seat0 hardcoded         | n/a (can't reach seat)            | ✅ none        | ✅ (any wl greeter)    | `XDG_SEAT=seat0` hardcoded + VT-driven → can't target                                                                                                                                  |
+| ly / emptty / nodm            | ❌ tty-only                | n/a                               | ✅ none        | ❌ (tty/X)             | Single seat0 only                                                                                                                                                                      |
 
 ✅ = supports / no obstacle. "Same-user veto ✅ none" means it does **not** block — good.
 Axis 1b added 2026-07-17; **it is the criterion that flips the shipped SDDM from "best
@@ -80,7 +80,37 @@ candidate" to "blocked until patched."**
 
 ## Per-DM findings
 
-### GDM 49.2 — multi-seat ✅, but same-user veto ❌
+### GDM — greeter on non-seat0 ✅, but non-seat0 _user login_ never completes ❌
+
+> **CORRECTION (2026-07-17, empirically verified on wyrm2, GDM `50.1`):** the
+> "chosen GDM, accept the veto" verdict below is **wrong** and is superseded. The
+> same-user veto is **not the operative blocker** — GDM never gets far enough to
+> hit it. On a real non-`seat0` seat (VT-less, `vtnr=0`), a user login
+> **authenticates, opens the PAM session, then never launches a compositor.**
+> Live GDM debug log: `GdmSession: type wayland, program? no, seat seatphysical`
+> → `session display mode set to logind-managed` → `session-opened` → _(nothing)_
+> → `GdmDisplay: Session never registered, failing`. The greeter renders on the
+> seat (so GPU/DRM/seat wiring is fine); the **user session** cannot start.
+>
+> **Root cause (primary sources, verified 2026-07-17):** GDM's multiseat Wayland
+> work was split in two. Part 1 —
+> [gdm!174](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/174) "Multiseat
+> enablement for Wayland (gdm side)" — is **merged** (2023-05-08; present in GDM
+> ≥45), and only lands the greeter + the `logind-managed` plumbing. Part 2 —
+> [gdm!291](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/291) "Multiseat
+> enablement (gdm side, part 2)", which finishes the VT-less **user-session**
+> handoff — is **open, never merged**, and its own description says it is
+> "Currently blocked on <https://github.com/systemd/systemd/issues/42247>".
+> That systemd RFE ("Allow display managers to start sessions in background on
+> non-VT seats") is **open** (filed 2026-05-22). So there is **no self-contained
+> GDM patch** that fixes this today; the chain bottoms out in unshipped logind.
+> Compositor-side [gnome-shell!2230](https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2230)
+> is likewise open. Net: **GDM cannot do a non-seat0 user login as of GDM 50 /
+> GNOME 50.** For a real login on the physical seat, use an SDDM-lineage DM (see
+> PLM row) or a non-GDM path — do not fight GDM.
+>
+> The same-user-veto analysis that follows remains factually correct about
+> gnome-shell's greeter, but it is downstream of a step wyrm2 never reaches.
 
 - **Multi-seat**: `GdmLocalDisplayFactory` enumerates seats via logind `ListSeats`
   (`gdm-local-display-factory.c:1029`) and subscribes to `SeatNew`/`SeatRemoved` /
@@ -107,7 +137,11 @@ candidate" to "blocked until patched."**
     consulted), keeps only `Type` wayland/x11 and `State` active/online. `_onSessionOpened`
     returns after `_showConflictingSessionDialog` **without** `this._startSession`
     (`:1291-1305`).
-- **Verdict**: the only DM that fails purely on axis 2. Everything else it does is right.
+- **Verdict**: ~~the only DM that fails purely on axis 2 (veto); everything else it
+  does is right.~~ **Superseded (see CORRECTION above):** GDM also fails a **new
+  axis** — completing a _user_ session on a VT-less non-seat0 seat — which bites
+  before the veto ever applies (gdm!291 unmerged, blocked on systemd#42247).
+  Greeter-only on the second seat; not viable for a physical-seat login today.
 
 ### SDDM — axis 1 ✅, no same-user veto ✅, but **shipped release fails axis 1b** ❌
 

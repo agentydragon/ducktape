@@ -7,28 +7,44 @@ via the FV43U's USB-B hub uplink → atlas USB port → QEMU port passthrough.
 
 ## Current status & decision (2026-07-17)
 
-**Display manager: GDM**, accepting a same-user-one-seat-at-a-time limitation.
-Everything below this section is the chronological investigation log; this is
-the standing summary.
+**Display manager: GDM — SUPERSEDED.** The physical-seat greeter renders under
+GDM, but **GDM cannot complete a _user_ login on the non-seat0 seat at all**
+(verified 2026-07-17, below). The earlier "GDM, accept the same-user veto"
+decision was validated on the greeter rendering, not on a completed login, and is
+retracted. Everything under the chronological log below predates this correction.
 
-What works and why this is where we landed:
+> **CORRECTION (2026-07-17, empirically verified on wyrm2, GDM `50.1`, primary
+> sources checked):** a user login on `seatphysical` authenticates, opens the PAM
+> session (`session display mode set to logind-managed` → `session-opened`), then
+> **never launches a compositor** → `GdmDisplay: Session never registered,
+failing`. It is _not_ the same-user veto (that step is never reached; seat0 was
+> logged out). It is an unfinished upstream feature: GDM's multiseat Wayland work
+> split into part 1 ([gdm!174](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/174),
+> **merged** 2023-05-08 — greeter + `logind-managed` plumbing only) and part 2
+> ([gdm!291](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/291), **open,
+> never merged** — the VT-less user-session handoff), and part 2 is itself blocked
+> on [systemd#42247](https://github.com/systemd/systemd/issues/42247) (**open**
+> RFE, filed 2026-05-22). So **no self-contained GDM patch fixes this today.** For
+> a real physical-seat login, use an SDDM-lineage DM (PLM + the shelved MR 155
+> backport clears every known blocker) or a non-GDM path (greetd — unverified for
+> this host; the matrix currently claims it hardcodes `seat0`, re-check before
+> relying on it). Full grounded write-up: <greeters.md> GDM section.
 
-- The physical seat renders. `seatphysical` (`card0` = 5090 at `01:00.0`,
-  monitor on `DP-1`) is a real non-seat0 logind seat; the `seatspare` udev pin
-  parks the second 5090 (`02:00.0`) so it can't be grabbed as a competing
-  DRM-master output. GPU/DRM/modeset chain is **proven** (greeter rendered on the
-  panel — see the 2026-07-17 BREAKTHROUGH entry).
-- No packaged DM clears both hard requirements — drive a non-seat0 seat **and**
-  not veto a same-user login. Grounded matrix: <greeters.md>. In short: SDDM
-  0.21.0 sends a VC tty logind rejects (fix unreleased 2+ yrs); PLM ships that fix
-  but its greeter runtime is a single per-user-manager singleton (KDE bug 520483,
-  per-seat fix MR 155 unmerged); GDM drives both seats cleanly but its gnome-shell
-  greeter refuses a session for a user already logged in on another seat.
-- **Chosen trade-off:** GDM. Both seats show a greeter; only one is logged in at
-  a time (log out of seat0 SPICE to use seatphysical, and back). This is the
-  least-painful working config. A verified PLM per-seat backport (builds green) is
-  parked at <plm-mr155-per-seat-greeter.patch> for the day a PLM release ships the
-  fix and simultaneous dual-login becomes worth carrying a patch.
+What is proven vs. retracted:
+
+- **Proven, still holds:** the physical seat renders. `seatphysical` (`card0` =
+  5090 at `01:00.0`, monitor on `DP-1`) is a real non-seat0 logind seat; the
+  `seatspare` udev pin parks the second 5090 (`02:00.0`) so it can't be grabbed as
+  a competing DRM-master output. GPU/DRM/modeset chain is **proven** (greeter
+  rendered on the panel — see the 2026-07-17 BREAKTHROUGH entry).
+- **Retracted:** "GDM drives both seats cleanly; accept the same-user veto." GDM
+  drives both seats' _greeters_ cleanly, but cannot start a _user session_ on the
+  non-seat0 seat (above). The veto was never the operative blocker.
+- **Path forward (not yet chosen):** PLM + the verified per-seat backport parked
+  at <plm-mr155-per-seat-greeter.patch> (builds green) is the best-supported
+  option — SDDM-lineage DMs _do_ complete non-seat0 user logins, PLM ships the
+  SDDM `cda8d93` VC-tty fix, and MR 155 fixes PLM's per-seat greeter singleton.
+  greetd is an untested alternative. Grounded matrix + caveats: <greeters.md>.
 
 Artifacts in this directory: <greeters.md> (grounded DM capability matrix),
 <seat-diag.sh> (DM-agnostic seat/DRM/logind diagnostic — `sudo bash seat-diag.sh`),

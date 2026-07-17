@@ -97,10 +97,22 @@ The teardown leak is the actual bug. Options, roughly in order of preference:
 
 Until one of those lands, every messy logout re-arms the trap.
 
-## Not this bug (still open)
+## Not this bug — the other seatphysical failure (root-caused 2026-07-17)
 
-Sway has **no** one-session-per-user guard, so the _sway_-on-`seatphysical`
-no-compositor wedge (session 9, 2026-07-17) was **not** this zombie — it's a
-separate issue (VT-less greeter→session handoff, or the earlier wlroots
-`Failed to import DMA-BUF FD … No such device` on the NVIDIA seat). Diagnose
-that on its own; don't assume this runbook covers it.
+There is a **second, unrelated** reason a `seatphysical` login wedges, and it is
+NOT this zombie: **GDM cannot complete a user login on a non-seat0 seat at all.**
+Symptom looks similar (no desktop) but the log differs — with `graphical-session.target`
+inactive and no zombie session, GDM still does: `session display mode set to
+logind-managed` → `session-opened` → _(no compositor)_ → `Session never
+registered, failing`, identically for **sway and GNOME** (sway has no
+one-session-per-user guard, so this is clearly not the "already running" abort).
+
+Root cause (verified, primary sources): GDM's multiseat Wayland support ships
+only part 1 ([gdm!174](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/174),
+merged — greeter only); the VT-less user-session handoff
+([gdm!291](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/291)) is unmerged,
+blocked on [systemd#42247](https://github.com/systemd/systemd/issues/42247).
+There is no GDM fix today → needs an SDDM-lineage DM (PLM + MR 155 backport) or a
+non-GDM path. Full write-up + the retracted "GDM decision": <greeters.md> and
+<README.md>. (The earlier wlroots `Failed to import DMA-BUF FD … No such device`
+was a red herring from one earlier attempt, not the operative blocker.)
