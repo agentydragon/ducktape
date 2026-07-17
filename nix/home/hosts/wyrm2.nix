@@ -123,8 +123,10 @@
         "XF86AudioLowerVolume" = "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-";
         "XF86AudioMute" = "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
 
-        # Terminal on Super+Return (sway default) AND Super+t (GNOME media key).
+        # Terminal on Super+Return (sway default), Super+t (GNOME media key), and
+        # Ctrl+Alt+t (GNOME custom "Launch Terminal" binding).
         "Mod4+t" = "exec foot";
+        "Control+Mod1+t" = "exec foot";
         # Lock on Super+Escape (GNOME screensaver binding). NOT Super+l — that is
         # pop-shell focus-right.
         "Mod4+Escape" = "exec swaylock -f";
