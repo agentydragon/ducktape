@@ -113,10 +113,30 @@ With media held equal, CephFS is dramatically faster across the board — includ
 tiny-`fsync` workload where the HDD arm had made it look 4.88x _slower_. That inversion
 confirms the HDD arm's fsync penalty was three-copy loop-backed HDD BlueStore, not
 CephFS itself: the kernel CephFS client's metadata and write path clearly beats
-SeaweedFS's FUSE + filer + volume-server round trips on the same disks. The
-application-path (two-replica Forgejo) SSD comparison was not captured — that bench job
-failed (`curl (22) ... error: 500`) before producing numbers, so only the direct-fs SSD
-arm is measured.
+SeaweedFS's FUSE + filer + volume-server round trips on the same disks.
+
+### Two-replica Forgejo path: media-controlled SSD (CephFS SSD versus SeaweedFS SSD)
+
+The application-path SSD comparison was originally lost — both e2e Jobs are one-shot
+(`backoffLimit: 0`, `restartPolicy: Never`) and a transient Forgejo 500 during repo
+setup killed them with no retry. Re-run 2026-07-17 against the still-live bench Forgejo
+(CephFS) and production Forgejo (SeaweedFS); the transient 500 did not recur. Raw data
+in <results/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-control.csv> (20 samples per
+operation per arm); medians below, lower is better.
+
+| Operation          | SeaweedFS SSD | CephFS SSD | CephFS relative result |
+| ------------------ | ------------: | ---------: | ---------------------: |
+| version request    |         0.349 |      0.307 |           1.14x faster |
+| contents API read  |         0.499 |      0.354 |           1.41x faster |
+| contents API write |         3.356 |      1.003 |           3.35x faster |
+| tiny Git push      |         1.630 |      2.550 |           1.56x slower |
+
+Even media-controlled, the application path is more mixed than the direct-fs path:
+CephFS wins reads and (unlike the HDD arm) clearly wins the contents API write, but it
+is meaningfully _slower_ for the tiny Git push. So the 23x/36x direct-fs commit/clone
+advantage does **not** carry through Forgejo's push path — receive-pack, hooks, and the
+separate per-instance database dominate there and erase the filesystem gain. Read and
+contents-write latency are where CephFS would actually help this workload.
 
 ### Operational findings
 
@@ -142,15 +162,18 @@ arm is measured.
 
 Reading the arms together: the HDD arm's fsync penalty was a media/replication artifact
 (three-copy loop-backed HDD), not a CephFS property. On media-controlled SSD, CephFS is
-uniformly and dramatically faster than SeaweedFS on the direct filesystem path (4.6x
+uniformly and dramatically faster than SeaweedFS on the **direct filesystem path** (4.6x
 fsync, 23x tiny commits, 36x clone) — the kernel CephFS client avoids SeaweedFS's FUSE +
-filer + volume-server round trips that dominate tiny-write and clone latency. That makes
-CephFS a genuinely promising SeaweedFS replacement for git-write-latency-sensitive
-workloads, strong enough to justify a follow-up on **real raw devices** (not loop-backed)
-with SSD DB/WAL and a completed application-path (Forgejo) SSD comparison, which this
-trial did not capture. The loop-backed OSD topology here is a measurement mechanism, not
-a production design, so this is a "worth building properly and re-measuring" result, not
-a drop-in migration decision.
+filer + volume-server round trips that dominate tiny-write and clone latency. But that
+raw-filesystem win only partially survives the **Forgejo application path**: CephFS keeps
+the read and contents-write advantages (1.1–3.4x) yet is 1.56x _slower_ for tiny Git
+pushes, because receive-pack, hooks, and the per-instance database — not the filesystem —
+dominate the push. So CephFS is a genuinely promising SeaweedFS replacement where read /
+contents-write latency is the pain point, but it is not a blanket git-write win. Either
+way this justifies a follow-up on **real raw devices** (not loop-backed) with SSD DB/WAL
+before any migration; the loop-backed OSD topology here is a measurement mechanism, not a
+production design, so this is a "worth building properly and re-measuring" result, not a
+drop-in migration decision.
 
 ## Teardown contract
 
