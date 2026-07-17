@@ -1,14 +1,13 @@
-# Plan: remote command execution on operator machines (Haku)
+# hostexec — remote command execution on operator machines
 
-**Status:** design proposal, not built; core decisions locked (operator, 2026-07-17) — see
-_Decisions_ below.
-**Ask:** let Haku run shell commands on the operator's machines (`wyrm2`, `rugged`, …) with
-**no auto-approval**, and the ability to run as `agentydragon` **or `root`** once the operator
-approves.
+**Ask (operator, 2026-07-17):** let Haku run shell commands on the operator's machines
+(`wyrm2`, `rugged`, …) with **no auto-approval**, and the ability to run as `agentydragon`
+**or `root`** once the operator approves. Core decisions are locked (see _Decisions_); the
+capability/wire contract exists (`capability.py`, `wire.py`), the rest is remaining work below.
 
 ## TL;DR
 
-Build a new remote MCP server `hostexec-mcp` modeled on
+A new remote MCP server `hostexec-mcp` modeled on
 <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, registered in the console catalog so it is
 **approval-gated by construction**. On approval the console forwards the approving operator's
 short-lived **Authentik** token to `hostexec-mcp`, which makes an authenticated HTTPS call
@@ -34,9 +33,9 @@ and the doctrine in <../docs/security.md> fixes the shape of any answer:
 - **Execution runs under the approving operator's own authority, never a standing Haku
   credential.** kubectl-passthrough forwards the operator's own OAuth JWT straight to
   kube-apiserver (`cluster_auth_mode = "passthrough"`,
-  <../../cluster/k8s/agents/kubectl-passthrough-mcp/app/configmap.yaml>); it holds no credential
-  of its own. "There is no narrower RBAC backstop underneath either path" — the approval click
-  in trusted console chrome is the gate.
+  <../../cluster/k8s/agents/kubectl-passthrough-mcp/app/configmap.yaml>); it holds no credential of
+  its own. "There is no narrower RBAC backstop underneath either path" — the approval click in
+  trusted console chrome is the gate.
 - **Everything is in the ledger** (`McpToolCall` row, scoped to the exact principal —
   `haku/console/tool_call_service.py`), and the **approval surface is trusted chrome only**
   (security.md invariant #4).
@@ -53,15 +52,13 @@ Two consequences make most of the work free:
 So the real design question is narrow: **what carries an approved command to a shell on
 `wyrm2`/`rugged`, and under what credential.**
 
-## Transport decision: a host-side OIDC exec service, not SSH
+## Transport: a host-side OIDC exec service, not SSH
 
 Once the host authenticates the operator's Authentik token, it **is** an OIDC resource server,
 and the natural transport is a small authenticated HTTP endpoint — not sshd + a `ForceCommand`
 shim.
 
-### Recommended — `hostexecd`, a minimal host-side OIDC exec service over Nebula ✅
-
-`hostexec-mcp` POSTs `{token, countersignature, run_as, argv, cwd, timeout_ms}` over Nebula to
+`hostexec-mcp` POSTs `{token, capability, run_as, argv, cwd, timeout_ms}` over Nebula to
 `hostexecd` on the target host. `hostexecd` runs as root (systemd), validates the Authentik JWT
 against cached JWKS, validates the console countersignature, drops privileges to `run_as`,
 execs argv (`execve`, no shell), and returns a capped `BaseExecResult`.
@@ -77,36 +74,25 @@ execs argv (`execve`, no shell), and returns a capped `BaseExecResult`.
   `hostexecd` to `nebula1`, firewall it to the console/pod peer, and the token requirement
   backstops reachability.
 
-### Why not SSH (rejected)
-
-SSH would reuse the sshd already on each host — but once auth is the Authentik token, it adds a
-**transport SSH key** (an extra standing credential to manage/rotate/pin, and the entire "is
-the key root?" reasoning) and `SSH_ORIGINAL_COMMAND` plumbing to smuggle the token +
-countersignature + argv, for **no benefit**. The honest counterpoint — "sshd is battle-tested,
-`hostexecd` is new root-capable code" — loses because we are writing the root-capable verifier
-either way; sshd would only wrap it and bolt on a key.
-
-### Why not a privileged pod-on-node (rejected)
-
-All in-scope hosts are k8s nodes, so a privileged `hostPID` pod could `nsenter` the host
-(<../../cluster/k8s/egress-proxy-rugged/> is the pin-to-node precedent). Rejected: it needs a
-**standing privileged/`hostPID` root pod resident on each node** — including the roaming
-personal tablet `rugged` — a larger always-on footprint than a minimal firewalled service,
-likely blocked by pod-security/Kyverno, with clunky `run_as` and a weaker audit trail; and it
-covers only k8s nodes. `hostexecd` over Nebula covers any mesh host uniformly.
+Rejected alternatives: **SSH** — once auth is the Authentik token, it only adds a standing
+transport key and `SSH_ORIGINAL_COMMAND` plumbing, for no benefit; we write the root-capable
+verifier either way. **Privileged pod-on-node** — a standing `hostPID` root pod resident on
+each node (including the roaming tablet `rugged`), likely blocked by pod-security/Kyverno, with
+clunky `run_as`; covers only k8s nodes, whereas `hostexecd`-over-Nebula covers any mesh host
+(<../../cluster/k8s/egress-proxy-rugged/> is the pin-to-node precedent it loses to).
 
 ## Authorization model (no standing key, no theater)
 
-State it plainly. `hostexecd` executes **only** when both independent checks pass, and they
-must agree on `(host, run_as)`:
+`hostexecd` executes **only** when both independent checks pass, and they must agree on
+`(host, run_as)`:
 
 1. **Authentik token** (JWKS-validated: sig/aud/exp) whose `hostexec-<run_as>-<host>` group
-   claim authorizes _this operator identity_ to run as `run_as` on this host. This is the
-   revocable authority — a group you grant/revoke centrally in `tf/gitops/agent-machine-access`.
+   claim authorizes _this operator identity_ to run as `run_as` on this host. The revocable
+   authority — a group you grant/revoke centrally in `tf/gitops/agent-machine-access`.
 2. **Console argv countersignature** over `(host, run_as, sha256(argv), cwd, nonce, exp)`,
    signed at approval time with a key that lives with the console (the trust boundary, a Secret
-   Haku cannot read); public key deployed to each host. `nonce` single-use + short `exp` make
-   it bind _this exact command, once_.
+   Haku cannot read); public key deployed to each host. `nonce` single-use + short `exp` bind
+   _this exact command, once_. (Signer + canonical encoding: `capability.py`.)
 
 What this genuinely buys (not theater):
 
@@ -138,8 +124,7 @@ always attributed, time-boxed, and revocable. This design keeps all of that.
 
 ## Target matrix
 
-Hosts from the mesh roster (<../../nebula-mesh.json>); reachability from
-<../../cluster/README.md>.
+Hosts from the mesh roster (<../../nebula-mesh.json>); reachability from <../../cluster/README.md>.
 
 | Host     | Nebula IP    | Always on?   | In scope?                       | Notes                                            |
 | -------- | ------------ | ------------ | ------------------------------- | ------------------------------------------------ |
@@ -158,7 +143,7 @@ the card renders `root` loudly regardless.
 
 ```text
 Haku (agent, prompt-injectable)
-  │  hostexec_run {host, run_as, argv, cwd?, timeout_ms?}  (approval envelope + rationale)
+  │  hostexec_run {host, run_as, cmd, cwd?, timeout_ms?}  (approval envelope + rationale)
   ▼
 haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPROVAL)
   │  operator clicks Approve in trusted chrome (CSRF, Authentik-operator-only; root = 2nd confirm)
@@ -177,56 +162,49 @@ hostexecd on target host (systemd, root, bound to nebula1, firewalled to console
 result returns through console → ledger row RUNNING→done ; agent gets result or a promise
 ```
 
-## Components to build (v1)
+## Remaining work
 
 - **`hostexec-mcp`** (cluster): subclass `EnhancedFastMCP` (model: <../../mcp_infra/exec/direct.py>).
-  One `hostexec_run` tool taking `host`, `run_as`, and the exec fields from
-  <../../mcp_infra/exec/models.py> (`ExecArgsBase` / `BaseExecResult`, byte/timeout caps). It
-  resolves the forwarded operator token, requests the console countersignature, POSTs to
-  `hostexecd`, returns `BaseExecResult`. Bazel `py_binary → oci_image` (template:
+  One `hostexec_run` tool taking the already-defined `HostexecRunInput` (`wire.py`). It resolves
+  the forwarded operator token, requests the console countersignature, POSTs `HostexecRequest`
+  to `hostexecd`, returns `BaseExecResult`. Bazel `py_binary → oci_image` (template:
   `grocy_mcp/BUILD.bazel`); k8s Deployment/Service/HTTPRoute/flux-kustomization under
   `cluster/k8s/agents/hostexec-mcp/` (own namespace, unprivileged); reach the mesh (give the pod
-  a Nebula identity or route via node — confirm during build, same requirement SSH would have
-  had). Register in <../../cluster/k8s/haku/console/config.yaml> with `operator_oauth`.
-- **`hostexecd`** (host): a **minimal** OIDC-RS exec service. Validates Authentik JWT + console
-  countersignature, drops privileges to `run_as`, execs argv (reuse the `run_proc` pattern in
-  <../../mcp_infra/exec/subprocess.py>), caps output, logs to journald/auditd. Deployed by nix
-  as a systemd unit on `wyrm2` + `rugged` (uniform `nix/nixos/hosts/<host>/default.nix`), bound
-  to `nebula1`, Nebula-firewalled to the console/pod peer, fail-closed. **Open decision:**
-  language/shape (minimal Rust vs. Python reusing the shared capability lib + JWT tooling).
-- **`capability` (shared lib):** the countersignature model + sign (console) / verify
-  (`hostexecd`). Ed25519 over `(host, run_as, sha256(argv), cwd, nonce, exp)`. Fully unit-tested,
-  transport-independent — buildable first.
+  a Nebula identity or route via node — confirm during build). Register in
+  <../../cluster/k8s/haku/console/config.yaml> with `operator_oauth`.
+- **`hostexecd`** (host, **minimal Rust** — `axum` + `jsonwebtoken` + `ed25519-dalek`): the
+  OIDC-RS exec service. Validates the Authentik JWT + the console countersignature, drops
+  privileges to `run_as`, execs argv (mirror the `run_proc` shape in
+  <../../mcp_infra/exec/subprocess.py>), caps output, logs to journald/auditd. Deployed by nix as a
+  systemd unit on `wyrm2` + `rugged` (uniform `nix/nixos/hosts/<host>/default.nix`), bound to
+  `nebula1`, Nebula-firewalled to the console/pod peer, fail-closed. Its capability verify must
+  reproduce the Python signer's canonical encoding — the pinned vectors in `test_capability.py`
+  are the cross-language contract.
 - **Authentik provider + groups:** a `hostexec` OAuth2 application/provider in
   `tf/gitops/agent-machine-access` (clone `kubectl_passthrough_mcp`) with a scope mapping
   emitting `hostexec-*` group claims; the four `hostexec-{user,root}-{wyrm2,rugged}` groups
   granted to the operator identity.
 - **Console argv-signing + approval hook:** a signing keypair (private key a `haku-console`
   Secret Haku can't read, minted by `tf/gitops/agent-machine-access`; public key to each host
-  via nix); the console mints the countersignature at approval time for `hostexec-mcp` calls.
+  via nix); the console mints the countersignature (via `capability.py`) at approval time for
+  `hostexec-mcp` calls.
 - **Approval-card renderer:** `haku/console/frontend/tool_rendering/hostexec/` modeled on the
   `kubectl/` renderer — show `host`, `run_as` (`root` loud + second confirm), full `argv`,
   `cwd`, `rationale`.
-- **Audit (double-entry):** console ledger `McpToolCall` + host-side journald/auditd.
 
 ## Decisions (operator, 2026-07-17)
 
 1. **Authorization** — Authentik-minted operator tokens + a fail-closed host verifier; **no
-   standing key**. L0 (standing SSH key) rejected.
+   standing key**. A standing-SSH-key variant was rejected.
 2. **Transport** — a **host-side OIDC exec service (`hostexecd`) over Nebula**, not SSH and not
    a privileged pod. SSH is redundant once auth is the Authentik token and would only add a
    standing key.
-3. **Command binding** — **include full argv**: console countersigns the exact `argv`
+3. **`hostexecd` language** — minimal **Rust** (smallest root TCB, no interpreter on the host).
+4. **Command binding** — **full argv**: console countersigns the exact `argv`
    (+`host`/`run_as`/`nonce`/`exp`); a compromised relay can't swap or replay.
-4. **Root scope** — `root` on **both `wyrm2` and `rugged`** (four
-   `hostexec-{user,root}-{wyrm2,rugged}` groups). `rugged`'s exposure accepted.
-5. **`iguana`** — deferred (TODO below).
-6. **Root friction** — root renders loudly + second confirm on the card (default; adjustable).
-
-## Open decisions
-
-- **`hostexecd` language/shape** — minimal Rust (small, no interpreter on the host, easy to
-  audit) vs. Python (reuses the shared `capability` lib + the repo's Authentik JWT tooling).
+5. **Root scope** — `root` on **both `wyrm2` and `rugged`**. `rugged`'s exposure accepted.
+6. **`iguana`** — deferred (TODO below).
+7. **Root friction** — root renders loudly + second confirm on the card (default; adjustable).
 
 ## Future expansion (TODO)
 
@@ -241,8 +219,9 @@ result returns through console → ledger row RUNNING→done ; agent gets result
 ## Risks / residuals
 
 - **Live-relay residual (narrowed, not zero):** a compromised `hostexec-mcp` pod within a live
-  token window can run _the exact approved command_ — it cannot swap or replay (countersignature
-  - nonce). Irreducible hop: social-engineering an approval, mitigated by the loud root confirm.
+  token window can run _the exact approved command_ — it cannot swap or replay (the
+  countersignature plus its nonce bind the argv). Irreducible hop: social-engineering an
+  approval, mitigated by the loud root confirm.
 - **`hostexecd` is the single load-bearing component** and a root-capable network service.
   Keep it minimal, bound to `nebula1`, firewalled to the console/pod peer, fail-closed,
   privilege-dropping, argv-`execve` (no shell); test the deny paths as security-critical.
@@ -251,7 +230,6 @@ result returns through console → ledger row RUNNING→done ; agent gets result
   already the trust boundary).
 - **Roaming hosts** (`rugged`) are frequently offline; treat unreachability as a normal,
   fast-failing outcome, not an error to retry indefinitely.
-- **Fits the roadmap:** a concrete instance of PLAN.md → _"letting Haku take some actions
-  itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, per-approval,
+- **Fits the roadmap:** a concrete instance of <../PLAN.md> → _"letting Haku take some
+  actions itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, per-approval,
   argv-bound grant enforced by the perimeter is exactly what that section sketches.
-  </content>
