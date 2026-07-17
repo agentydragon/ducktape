@@ -19,9 +19,10 @@ import pygit2
 _INVOCATION_ID_DIR = Path.home() / ".cache" / "bbr"
 _INVOCATION_ID_FILE = _INVOCATION_ID_DIR / "last_invocation_id"
 
-# Commits HEAD can be ahead of the likely bb-remote diff base before we warn
-# that it looks stale (see check_base_branch_freshness).
-_STALE_BASE_WARNING_THRESHOLD = 30
+# Commits HEAD can be ahead of the likely bb-remote diff base before we refuse
+# to run (see check_base_branch_freshness) — at that distance the runner-side
+# patchset tends to fail to apply outright, after minutes of setup.
+_STALE_BASE_ERROR_THRESHOLD = 30
 
 # Bazel commands recognized by bb remote (from BuildBuddy cli/parser/bazelrc).
 _BAZEL_COMMANDS = frozenset(
@@ -98,13 +99,15 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
     is stale (no recent `git fetch`), the patchset balloons and can even fail
     outright (unappliable binary patches on a huge diff). This deliberately
     never fetches — bbr running network calls on every invocation would be
-    its own surprise — it only inspects locally-known refs, so a warning here
+    its own surprise — it only inspects locally-known refs, so a message here
     means "you should `git fetch`", not "bbr already tried and failed".
 
     The default branch name comes only from `buildbuddy.remote-bazel-default-branch`,
     which `bb remote` itself detects and caches on every run — never a
-    hardcoded guess. Returns a warning to print, or None if there's nothing to
-    flag (including "couldn't tell" — silence, not a guess).
+    hardcoded guess. Returns an error message (main() refuses to run unless
+    BBR_ALLOW_STALE_BASE is set — past the threshold the run is near-certain
+    to waste minutes and fail), or None if there's nothing to flag (including
+    "couldn't tell" — silence, not a guess).
     """
     remote = _config_get(repo, "buildbuddy.remote-bazel-remote-name") or "origin"
     default_branch = _config_get(repo, "buildbuddy.remote-bazel-default-branch")
@@ -126,14 +129,16 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
         return None
 
     ahead, _behind = repo.ahead_behind(repo.head.target, tracking_ref.target)
-    if ahead <= _STALE_BASE_WARNING_THRESHOLD:
+    if ahead <= _STALE_BASE_ERROR_THRESHOLD:
         return None
 
     return (
         f"bbr: HEAD is {ahead} commits ahead of {remote}/{default_branch}, "
-        f"bb remote's likely diff base for this branch. If {remote}/{default_branch} "
-        f"is stale, the patchset it generates may be huge or fail to apply. Consider: "
-        f"git fetch {remote} {default_branch}"
+        f"bb remote's likely diff base for this branch — the patchset it generates "
+        f"would be huge and likely fail to apply on the runner. Fix: "
+        f"git fetch {remote} {default_branch} (also fetch {current_branch} there "
+        f"if it's pushed, so bb can base on it directly). "
+        f"Set BBR_ALLOW_STALE_BASE=1 to run anyway."
     )
 
 
@@ -250,6 +255,8 @@ Environment variables:
   BBR_BAZELRC       Path to a bazelrc-format file with Bazel flags to forward.
                     Lines are parsed as "<command> <flag>" (prefix stripped).
   BBR_REMOTE_ARGS   Space-separated `bb remote` flags injected before the verb.
+  BBR_ALLOW_STALE_BASE  Run even when the likely diff base looks stale (bbr
+                    normally refuses — see bb_remote_internals.md).
 
 Examples:
   bbr test //foo:bar                          # basic test
@@ -270,8 +277,10 @@ def main() -> None:
         args.remove("--dry-run")
 
     repo = pygit2.Repository(".")
-    if warning := check_base_branch_freshness(repo):
-        print(warning, file=sys.stderr)
+    if message := check_base_branch_freshness(repo):
+        print(message, file=sys.stderr)
+        if not os.environ.get("BBR_ALLOW_STALE_BASE"):
+            sys.exit(1)
     cmd = build_command(repo, args)
 
     if dry_run:

@@ -15,7 +15,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.bbr import (
-    _STALE_BASE_WARNING_THRESHOLD,
+    _STALE_BASE_ERROR_THRESHOLD,
     RepoConfig,
     _bazelrc_args,
     _env_args,
@@ -328,7 +328,7 @@ def _repo_on_branch(tmp_path: Path, branch: str) -> tuple[pygit2.Repository, pyg
 class TestCheckBaseBranchFreshness:
     """`check_base_branch_freshness` is a no-network sanity check on bb
     remote's likely `<default-branch>@{upstream}` diff base (see
-    devinfra/docs/bb_remote_internals.md) — it never fetches, only warns.
+    devinfra/docs/bb_remote_internals.md) — it never fetches, only reports (main() turns a report into a hard error).
     """
 
     def test_no_bb_config_returns_none(self, tmp_path: Path) -> None:
@@ -359,7 +359,7 @@ class TestCheckBaseBranchFreshness:
 
         # Now make devel's tracking ref stale too — this time it should warn,
         # proving the "tracked feature branch" check didn't short-circuit.
-        for i in range(_STALE_BASE_WARNING_THRESHOLD + 5):
+        for i in range(_STALE_BASE_ERROR_THRESHOLD + 5):
             parent = _commit(repo, "refs/heads/feature", f"c{i}", [parent])
         warning = check_base_branch_freshness(repo)
         assert warning is not None
@@ -372,11 +372,11 @@ class TestCheckBaseBranchFreshness:
         repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
         assert check_base_branch_freshness(repo) is None
 
-    def test_stale_tracking_ref_warns(self, tmp_path: Path) -> None:
+    def test_stale_tracking_ref_reports(self, tmp_path: Path) -> None:
         repo, base = _repo_on_branch(tmp_path, "feature")
         repo.references.create("refs/remotes/origin/devel", base)
         parent = base
-        for i in range(_STALE_BASE_WARNING_THRESHOLD + 5):
+        for i in range(_STALE_BASE_ERROR_THRESHOLD + 5):
             parent = _commit(repo, "refs/heads/feature", f"c{i}", [parent])
         repo.config["buildbuddy.remote-bazel-default-branch"] = "devel"
 
@@ -385,12 +385,14 @@ class TestCheckBaseBranchFreshness:
         assert warning is not None
         assert "origin/devel" in warning
         assert "git fetch origin devel" in warning
+        assert "BBR_ALLOW_STALE_BASE" in warning
+        assert "feature" in warning  # names the current branch as fetchable base
 
     def test_respects_configured_remote_and_branch(self, tmp_path: Path) -> None:
         repo, base = _repo_on_branch(tmp_path, "feature")
         repo.references.create("refs/remotes/upstream/main", base)
         parent = base
-        for i in range(_STALE_BASE_WARNING_THRESHOLD + 5):
+        for i in range(_STALE_BASE_ERROR_THRESHOLD + 5):
             parent = _commit(repo, "refs/heads/feature", f"c{i}", [parent])
         repo.config["buildbuddy.remote-bazel-remote-name"] = "upstream"
         repo.config["buildbuddy.remote-bazel-default-branch"] = "main"
