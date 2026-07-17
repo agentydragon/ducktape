@@ -14,7 +14,7 @@ Gmail's REST resource shapes verbatim.
 
 Reach it however your runtime wires it: managed sessions expose the tools directly as
 in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
-([`mcp_over_http.md`](mcp_over_http.md)) with the `haku-console-agent-api` bearer from
+(<mcp_over_http.md>) with the `haku-console-agent-api` bearer from
 `haku-sandbox`. Example:
 
 ```bash

@@ -220,7 +220,7 @@ accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
 way — the application service still owns approval/audit and the HTTP adapter still owns CSRF,
 with the same live `tools/list` reflection and just a different transport (`_transport()` in
 `mcp_approval.py` picks the registered in-process
-`FastMCP` for a server id, falling back to `server_url`). There are three today, built like
+`FastMCP` for a server id, falling back to `server_url`). The in-process servers are built like
 standalone MCP servers from `@mcp.tool`-decorated functions. The only transport difference is that
 `create_app` hands the `FastMCP` object straight to the executor instead of serving it over
 HTTP:

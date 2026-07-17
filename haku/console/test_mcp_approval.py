@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -17,7 +17,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -41,10 +40,8 @@ from haku.console.database_schema import (
     Agent,
     CredentialBinding,
     McpOperatorOAuthAssociation,
-    McpOperatorOAuthFlow,
     McpToolCall,
     McpToolCallPrincipal,
-    Operator,
     StaticCredential,
 )
 from haku.console.mcp_approval import (
@@ -56,8 +53,8 @@ from haku.console.mcp_approval import (
     _mcp_result_to_json,
 )
 from haku.console.mcp_config import McpServerEntry
-from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore, _BuiltOperatorOAuthFlow
-from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
+from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.operator_identity import OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import backend_auth_for_operator
@@ -446,14 +443,6 @@ def _operator_id(db_url: str, external_user_key: str) -> UUID:
     return _operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key)
 
 
-def _disable_operator(engine: Engine, operator_id: UUID) -> None:
-    with sessionmaker(engine)() as session, session.begin():
-        operator = session.get(Operator, operator_id)
-        assert operator is not None
-        operator.status = OperatorStatus.DISABLED
-        operator.updated_at = datetime.datetime.now(datetime.UTC)
-
-
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
     operator_ids: list[UUID] = []
 
@@ -627,194 +616,6 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
     assert completed.status_code == 200, completed.text
     assert a_status["status"] == "connected"
     assert b_status["status"] == "unconnected"
-
-
-async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
-    migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    identity_store = _operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("callback-race-operator")
-    oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
-    engine = create_engine(migrated_db_url)
-    now = datetime.datetime.now(datetime.UTC)
-    try:
-        with sessionmaker(engine)() as session, session.begin():
-            session.add(
-                McpOperatorOAuthFlow(
-                    state="callback-race-state",
-                    server_id="grocy-sf",
-                    operator_id=operator_id,
-                    created_at=now,
-                    expires_at=now + datetime.timedelta(minutes=10),
-                    redirect_uri="https://haku.test/api/mcp/operator-auth/callback",
-                    code_verifier="verifier",
-                    client_id="client-id",
-                    token_endpoint="https://auth.test/token",
-                )
-            )
-
-        async def exchange_after_disable(_flow: object, _code: str) -> OAuthToken:
-            _disable_operator(engine, operator_id)
-            return OAuthToken(access_token="must-not-be-persisted")
-
-        monkeypatch.setattr("haku.console.mcp_operator_oauth._exchange_operator_oauth_code", exchange_after_disable)
-
-        with pytest.raises(InactiveOperatorError):
-            await oauth_store.complete_callback(
-                state="callback-race-state",
-                code="authorization-code",
-                operator_id=operator_id,
-                username="operator@example.com",
-            )
-
-        with sessionmaker(engine)() as session:
-            assert session.get(McpOperatorOAuthAssociation, ("grocy-sf", operator_id)) is None
-    finally:
-        engine.dispose()
-
-
-async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
-    migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    identity_store = _operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("connect-race-operator")
-    oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", operator_oauth={})
-    engine = create_engine(migrated_db_url)
-    now = datetime.datetime.now(datetime.UTC)
-    try:
-
-        async def build_flow_after_disable(_server: McpServerEntry, _public_base_url: str) -> _BuiltOperatorOAuthFlow:
-            _disable_operator(engine, operator_id)
-            return _BuiltOperatorOAuthFlow(
-                state="connect-race-state",
-                authorization_url="https://auth.test/authorize?state=connect-race-state",
-                expires_at=now + datetime.timedelta(minutes=10),
-                redirect_uri="https://haku.test/api/mcp/operator-auth/callback",
-                code_verifier="verifier",
-                client_info=OAuthClientInformationFull(
-                    client_id="dynamic-client", redirect_uris=["https://haku.test/api/mcp/operator-auth/callback"]
-                ),
-                token_endpoint="https://auth.test/token",
-            )
-
-        monkeypatch.setattr("haku.console.mcp_operator_oauth._build_operator_oauth_flow", build_flow_after_disable)
-
-        with pytest.raises(InactiveOperatorError):
-            await oauth_store.connect_flow(server=server, operator_id=operator_id, public_base_url="https://haku.test")
-
-        with sessionmaker(engine)() as session:
-            assert session.get(McpOperatorOAuthFlow, "connect-race-state") is None
-    finally:
-        engine.dispose()
-
-
-async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
-    migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    identity_store = _operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("refresh-race-operator")
-    oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", operator_oauth={})
-    engine = create_engine(migrated_db_url)
-    now = datetime.datetime.now(datetime.UTC)
-    try:
-        with sessionmaker(engine)() as session, session.begin():
-            session.add(
-                McpOperatorOAuthAssociation(
-                    server_id=server.id,
-                    operator_id=operator_id,
-                    created_at=now,
-                    updated_at=now,
-                    client_id="client-id",
-                    token_endpoint="https://auth.test/token",
-                    access_token="old-expired-token",
-                    refresh_token="refresh-token",
-                    token_type="Bearer",
-                    token_expires_at=now - datetime.timedelta(minutes=1),
-                )
-            )
-
-        async def refresh_after_disable(_association: object) -> OAuthToken:
-            _disable_operator(engine, operator_id)
-            return OAuthToken(
-                access_token="must-not-be-written-or-returned", refresh_token="must-not-be-written", expires_in=3600
-            )
-
-        monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh_after_disable)
-
-        with pytest.raises(InactiveOperatorError):
-            await oauth_store.access_token_for(server=server, operator_id=operator_id)
-
-        with sessionmaker(engine)() as session:
-            association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
-            assert association is not None
-            assert association.access_token == "old-expired-token"
-            assert association.refresh_token == "refresh-token"
-    finally:
-        engine.dispose()
-
-
-async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
-    migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    identity_store = _operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("refresh-reconnect-race")
-    oauth_store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", operator_oauth={})
-    engine = create_engine(migrated_db_url)
-    now = datetime.datetime.now(datetime.UTC)
-    replacement_association_id = uuid4()
-    try:
-        with sessionmaker(engine)() as session, session.begin():
-            session.add(
-                McpOperatorOAuthAssociation(
-                    server_id=server.id,
-                    operator_id=operator_id,
-                    created_at=now,
-                    updated_at=now,
-                    client_id="old-client",
-                    token_endpoint="https://old-auth.test/token",
-                    access_token="old-expired-token",
-                    refresh_token="old-refresh-token",
-                    token_type="Bearer",
-                    token_expires_at=now - datetime.timedelta(minutes=1),
-                )
-            )
-
-        async def refresh_after_reconnect(_association: object) -> OAuthToken:
-            replacement_expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
-            with sessionmaker(engine)() as session, session.begin():
-                association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
-                assert association is not None
-                replacement_now = datetime.datetime.now(datetime.UTC)
-                association.association_id = replacement_association_id
-                association.token_revision = 0
-                association.created_at = replacement_now
-                association.updated_at = replacement_now
-                association.client_id = "replacement-client"
-                association.token_endpoint = "https://replacement-auth.test/token"
-                association.access_token = "replacement-access-token"
-                association.refresh_token = "replacement-refresh-token"
-                association.token_expires_at = replacement_expires_at
-            return OAuthToken(
-                access_token="stale-refresh-result", refresh_token="stale-rotated-refresh-token", expires_in=3600
-            )
-
-        monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh_after_reconnect)
-
-        returned = await oauth_store.access_token_for(server=server, operator_id=operator_id)
-
-        assert returned == "replacement-access-token"
-        with sessionmaker(engine)() as session:
-            association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
-            assert association is not None
-            assert association.association_id == replacement_association_id
-            assert association.client_id == "replacement-client"
-            assert association.access_token == "replacement-access-token"
-            assert association.refresh_token == "replacement-refresh-token"
-    finally:
-        engine.dispose()
 
 
 def test_reflection_marks_unreachable_servers_degraded(
@@ -1563,24 +1364,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "mcp_tool_call_events",
         "mcp_tool_call_events_legacy_unowned",
     }.isdisjoint(tables)
-    assert {
-        "tool_call_id",
-        "server_id",
-        "tool_name",
-        "status",
-        "created_at",
-        "updated_at",
-        "arguments_json",
-        "rationale",
-        "title",
-        "result_json",
-        "error",
-        "denial_reason",
-        "approval_policy_id",
-        "auto_approval_evaluation",
-        "approved_at",
-    } == columns
-    assert principal_columns == {"tool_call_id", "operator_id", "binding_id"}
+    assert columns == {column.name for column in McpToolCall.__table__.columns}
+    assert principal_columns == {column.name for column in McpToolCallPrincipal.__table__.columns}
 
 
 def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:

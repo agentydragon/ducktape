@@ -36,7 +36,7 @@ write the same policy twice.
 
 ## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
-The console's two in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
+The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
 reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
 `google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
 creation), both behind the ordinary operator-approval queue — are both built from the single `haku_console_google` Airlock
