@@ -65,11 +65,6 @@ slices over the deployed schema, not another identity migration:
 
 ## Google connection ownership and Airlock
 
-- **Retire Haku's Airlock dependency, after live proof.** The console now owns the per-Operator
-  Google connection (`provider_connection.py`); once an Operator has connected Google and it's
-  verified live, remove the `haku_console_google` Airlock provider and its access-token
-  publication/External Secrets mirror. Do not couple this to Airlock's unrelated Oura, BSC, or
-  other credential consumers, and do not treat retirement of the OAuth broker as a prerequisite.
 - **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
   whether every Operator should share one routine launcher. Specify whether the launcher is a
   global Haku capability or an Operator-owned downstream resource before relying on it in a

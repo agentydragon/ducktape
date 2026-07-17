@@ -5,8 +5,9 @@ real `FastMCP` server attached via an in-memory transport (see `gmail.py` for th
 so the application service's approval/audit lifecycle and the HTTP adapter's CSRF/reflection
 behavior run unchanged.
 Registered as MCP server id `google_calendar` in `cluster/k8s/haku/console/config.yaml` (no
-`server_url`). Shares the `haku_console_google` Airlock token with the `gmail` server. See
-`haku/docs/security.md` for the credential/consent model.
+`server_url`). Executes as the acting Operator's own Google account via the console's per-Operator
+connection store (`provider_connection.py`, `provider_connection: google`) — the same store the
+`gmail` server uses. See `haku/docs/security.md` for the credential/consent model.
 """
 
 from __future__ import annotations

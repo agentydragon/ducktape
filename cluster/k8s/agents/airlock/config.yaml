@@ -58,48 +58,6 @@ oauth:
       extra_auth_params:
         access_type: offline
         prompt: consent
-    # Separate OAuth grant for haku-console's in-process `gmail` + `google_calendar` MCP
-    # servers (haku/console/tools/gmail.py, google_calendar.py): calendar event creation,
-    # Gmail reads, thread label changes, draft creation, label CRUD — behind haku-console's
-    # operator-approval queue. Airlock only brokers this credential; Haku owns tool
-    # policy, approval, execution, and audit. Kept distinct from `google` (read-only) so no
-    # other consumer's token is ever upgraded to this scope set. Its access token
-    # (haku-console-google-access-token) is delivered ONLY to the haku-console
-    # namespace. Carries the same read-only scopes as `google` too (not just the
-    # write scopes the three tools need) so haku-console can read across the same
-    # surface without a second grant/consent round-trip later.
-    - name: haku_console_google
-      provider_type: oauth2
-      display_name: Google (haku-console — calendar + gmail, privileged)
-      authorize_url: https://accounts.google.com/o/oauth2/v2/auth
-      token_url: https://oauth2.googleapis.com/token
-      scopes:
-        - https://www.googleapis.com/auth/calendar.events
-        - https://www.googleapis.com/auth/gmail.modify
-        - https://www.googleapis.com/auth/gmail.compose
-        - https://www.googleapis.com/auth/gmail.settings.basic
-        - https://www.googleapis.com/auth/gmail.readonly
-        - https://www.googleapis.com/auth/drive.readonly
-        - https://www.googleapis.com/auth/drive.activity.readonly
-        - https://www.googleapis.com/auth/calendar.readonly
-        - https://www.googleapis.com/auth/tasks.readonly
-        - https://www.googleapis.com/auth/contacts.readonly
-        - https://www.googleapis.com/auth/documents.readonly
-        - https://www.googleapis.com/auth/spreadsheets.readonly
-        - https://www.googleapis.com/auth/presentations.readonly
-        - https://www.googleapis.com/auth/youtube.readonly
-      # Piggyback on the `google` provider's already-registered redirect URI (same
-      # OAuth client), so this needs NO new redirect URI in the Google console. The
-      # callback resolves the provider from OAuth `state`, not this path.
-      redirect_uri: https://airlock.allegedly.works/oauth/callback/google
-      refresh_secret:
-        name: haku-console-google-tokens
-      access_secret:
-        name: haku-console-google-access-token
-      refresh_margin_seconds: 300
-      extra_auth_params:
-        access_type: offline
-        prompt: consent
     - name: bsc
       provider_type: oauth2
       display_name: Blue Shield of California (FHIR sandbox)

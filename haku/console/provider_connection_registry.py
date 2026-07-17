@@ -37,11 +37,10 @@ class ProviderConnectionDescriptor:
         return " ".join(self.scopes)
 
 
-# The Google scope set mirrors the retired Airlock ``haku_console_google`` grant so the
-# per-Operator token carries identical capabilities: calendar-event + Gmail writes plus the
-# broad read-only surface. Keep in sync with cluster/k8s/agents/airlock/config.yaml until G2
-# removes that provider. The gmail/google_calendar tools request narrower per-service scope
-# subsets; the linked token already holds whatever was granted here.
+# The Google scope set carries calendar-event + Gmail writes plus a broad read-only surface, giving
+# the per-Operator token the same capabilities as the retired Airlock ``haku_console_google`` grant it
+# replaced. The gmail/google_calendar tools request narrower per-service scope subsets; the linked
+# token already holds whatever was granted here.
 _GOOGLE_SCOPES = (
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/gmail.modify",
