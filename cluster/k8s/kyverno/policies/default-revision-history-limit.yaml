@@ -1,0 +1,58 @@
+# Default spec.revisionHistoryLimit to 3 on workloads that don't set it.
+#
+# The apiserver default is 10, so every Deployment that omits the field keeps up
+# to 10 old (scaled-to-zero) ReplicaSets. Across ~138 Deployments that left ~660
+# dead ReplicaSets around, inflating kube-state-metrics: it emits 9
+# kube_replicaset_* series per RS and caches every object, which was a large part
+# of why KSM outgrew its memory limit and started OOMKilling. Capping history to 3
+# lets the Deployment controller garbage-collect the excess while keeping a few
+# revisions for rollback.
+#
+# Only defaults when the field is unset, so it never fights a workload (or its
+# Helm chart / Flux source) that sets revisionHistoryLimit explicitly.
+#
+# Admission-only (background: false) because the Kyverno background controller has
+# no RBAC to update these workloads. It doesn't need to: matching UPDATE means the
+# existing backlog clears on each object's next Flux/operator reconcile (an SSA
+# apply is an UPDATE admission), after which the controller prunes old ReplicaSets.
+# StatefulSets/DaemonSets are covered too (same field, bounds ControllerRevision
+# history).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: default-revision-history-limit
+  annotations:
+    policies.kyverno.io/title: Default revisionHistoryLimit
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
+    policies.kyverno.io/description: >-
+      Sets spec.revisionHistoryLimit to 3 on Deployments, StatefulSets, and
+      DaemonSets that do not specify it, to bound accumulated revision history
+      (dead ReplicaSets / ControllerRevisions) and the kube-state-metrics series
+      and memory that track them.
+spec:
+  admission: true
+  background: false
+  rules:
+    - name: default-revision-history-limit
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              operations:
+                - CREATE
+                - UPDATE
+      preconditions:
+        all:
+          # Fire only when the field is unset (null coalesces to the -1 sentinel).
+          - key: "{{ request.object.spec.revisionHistoryLimit || `-1` }}"
+            operator: Equals
+            value: -1
+      mutate:
+        patchStrategicMerge:
+          spec:
+            revisionHistoryLimit: 3
