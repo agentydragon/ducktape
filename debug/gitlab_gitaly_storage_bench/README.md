@@ -1,6 +1,6 @@
 # GitLab + Gitaly storage bench
 
-Companion to <../distributed_storage_and_tiny_rook_ceph.md>. That trial showed the
+Companion to <../git_storage_latency_and_ha.md>. That trial showed the
 Forgejo git-write penalty is a **shared-RWX** problem: multiple Forgejo replicas mount
 one git PVC `RWX`, and that shared mount tanks git push (badly on SeaweedFS, and even on
 CephFS via MDS cap coordination). GitLab's architecture avoids the shared mount — stateless
@@ -8,7 +8,7 @@ webservice replicas proxy to a single **Gitaly** that owns the repos on one `RWO
 harness benches whether that single-writer design keeps git push fast on network-backed
 storage across `{rook, seaweedfs} x {hdd, ssd}`.
 
-Same four operations and sample counts as the Forgejo bench (`../forgejo_git_write_latency.md`):
+Same four operations and sample counts as the Forgejo bench (`../git_storage_latency_and_ha.md`):
 20x API `version`, 20x contents read, 20x contents write, 20 tiny git pushes over HTTP.
 
 ## Design
@@ -63,7 +63,7 @@ kubectl -n gitlab-bench logs -l app.kubernetes.io/name=gitlab-storage-bench --ta
 Repeat steps 1–5 per cell. `rook-ssd` reuses the live trial Ceph cluster
 (`rook-cephfs-trial-ssd`). `rook-hdd` needs a **sequential rebuild** of the trial Ceph
 cluster onto the HDD hosts, because a single CephCluster can't mix `dataDirHostPath` roots
-per node (see <../distributed_storage_and_tiny_rook_ceph.md>).
+per node (see <../git_storage_latency_and_ha.md>).
 
 ### Rook HDD arm rebuild
 
@@ -98,6 +98,20 @@ kubectl apply -f rook-hdd-arm.yaml
 
 # 4. Point Gitaly at rook-cephfs-trial-hdd (step 1 reconfigure with __GITALY_SC__) and bench.
 ```
+
+**Two rook-state gotchas** (force-tearing-down the SSD arm leaves cascading state):
+
+- The `rook-ceph-mon-endpoints` ConfigMap and `rook-ceph-mon` Secret carry a
+  `ceph.rook.io/disaster-protection` finalizer that **silently blocks their deletion**, so
+  the operator keeps reconstructing the old cluster identity (and the old mon→node mapping).
+  Clear that finalizer to actually remove them / let the namespace terminate.
+- After a force-teardown the operator re-pins mons to the _old_ nodes via the mon-endpoints
+  `mapping`, conflicting with the new `tier=hdd` affinity (mons stay `Pending`). The reliable
+  fix is to **patch the mapping's node names to the target HDD hosts** (Name/Hostname/Address =
+  each node's InternalIP), delete the mon Deployments, and let the operator recreate them
+  pinned to the HDD nodes. Cleaner alternative: use rook's _ordered_ teardown (delete
+  consumers → CephFS → CephCluster and let the cleanup jobs run) instead of force-clearing
+  finalizers.
 
 ## Teardown
 
