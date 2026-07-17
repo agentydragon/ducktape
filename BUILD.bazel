@@ -366,7 +366,6 @@ py_wheel(
         "unidiff>=0.7.0",
         # gmail_archiver deps
         "beautifulsoup4",
-        "email-reply-parser",
         "google-api-python-client",
         "google-auth-httplib2",
         "google-auth-oauthlib",

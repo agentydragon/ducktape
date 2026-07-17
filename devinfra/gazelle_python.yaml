@@ -112,7 +112,6 @@ manifest:
     dotenv: python_dotenv
     durationpy: durationpy
     e2e-tests: splitwise
-    email_reply_parser: email_reply_parser
     email_validator: email_validator
     et_xmlfile: et_xmlfile
     exceptiongroup: exceptiongroup
@@ -553,7 +552,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -663,4 +662,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: a8475d07a4b71608bffd9822a8e32a82ddf6365396182fe70e08c0fa59070e1c
+integrity: 91fbd4f98acf69749c5fd907a7163d4b1eaf66143c6cd500943e46b0b83726b8

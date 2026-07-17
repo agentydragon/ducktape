@@ -267,6 +267,7 @@ rec {
       platformdirs
       pydantic
       pygit2
+      pygithub
       rich
       structlog
       tenacity
