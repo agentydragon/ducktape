@@ -1285,3 +1285,80 @@ units): PLM version bump; carried nix patch templating units per seat; boot-time
 serialization (automated equivalent of the env-retarget revival); autologin+lock on
 seat0 (SPICE) so only the physical seat ever needs a greeter — must first verify PLM
 autologin is seat0-only.
+
+Follow-up on the revived greeter: entering a password **froze** it — expected artifact,
+not a new axis. At submit time: `GreeterState.qml:147: TypeError: Property 'login' of
+object Authenticator is not a function` — the `Authenticator` singleton was registered
+on the greeter's placeholder-screen QML engine (kwin's output appeared after greeter
+start in the dirty revival), so the visible UI's engine has null singletons and the
+login button is inert; the daemon only ever received `Connect`, never `Login`. A
+cleanly ordered start (kwin output before greeter UI load, as on normal boot — the
+seat0 greeter authenticated fine this morning) does not hit this. Conclusion stands:
+fix the orchestration, and the login path is expected to work.
+
+### Axis-3 upstream status (researched 2026-07-17)
+
+The PLM single-instance greeter is **known upstream and unfixed in every release**:
+
+- **Bug**: bugs.kde.org **520483** (product plasmalogin, ASSIGNED, reported vs 6.6.0) —
+  two-seat/two-GPU setup, second seat not isolated.
+- **Fix MR**: invent.kde.org plasma-login-manager **MR 155** "greeter: instantiate the
+  greeter stack per seat" (branch `520483-per-seat-greeter`, commits `e4895e1f`,
+  `b9649836`) — templated `@SEAT` units, per-seat `$XDG_RUNTIME_DIR/plasma-login/SEAT.env`
+  instead of shared manager env, per-seat kwin socket `wayland-login-SEAT`. **Open,
+  unmerged, `need_rebase`** as of 2026-07-16. Competing: **MR 167** (systemd-managed
+  greeter session, `DynamicUser=true`, "will fix the multi-seat case") — also unmerged.
+- **Releases**: latest tag v6.7.3 (2026-07-14) still fixed-name units +
+  `BusName=org.kde.KWin` singleton. nixos-unstable packages 6.7.3; nixos-26.05 has
+  6.6.6 — **no version bump fixes this**.
+- **Per-seat autologin** (`[Autologin][<seat>]` subgroup, MR 154 merged, lets a named
+  seat skip its greeter): **master only** — verified absent from v6.6.6
+  (`Display.cpp:132` global `mainConfig.Autologin` + `daemonApp->first` gate) and
+  v6.7.3 (`Display.cpp:131` global + `tryLockFirstLogin()` latch).
+- Note: v6.6.6's global `[Autologin]` fires on the **first Display created** (whichever
+  seat that is — empirically seat0 boots first, but ordering is logind enumeration, not
+  contractual).
+
+Workaround-3 (automated re-kick of seat-diag3) is **weakened** by the observed dirty-
+revival defect: the revived greeter's `Authenticator` QML singleton lands on the
+placeholder-screen engine and the login button is inert. A re-kick would have to
+guarantee clean kwin-before-greeter output ordering to produce a usable greeter.
+
+### Chosen fix: backport MR 155 onto PLM 6.6.6 (in progress, 2026-07-17)
+
+Decision (user constraint: **no autologin on any seat**, which rules out the
+per-seat-autologin workaround entirely): carry KDE's own per-seat greeter fix,
+**MR 155**, as a nix patch on the 6.6.6 package we already deploy. Fallback if it
+misbehaves at runtime: SDDM `v0.21.0` + cherry-picked `cda8d93` (greeter process per
+display — axis 3 structurally absent, but reopens the unproven SDDM-wayland-greeter-
+on-NVIDIA question on a base frozen since 2024).
+
+Backport status:
+
+- Fetched `MR 155.diff` from invent.kde.org (559 lines, +221/−49, ~20 files — mostly
+  unit-file templating: `plasma-login-kwin_wayland@.service.in`,
+  `plasma-login-wayland@.target`, `plasma-login@.service.in`,
+  `plasma-wallpaper@.service.in`, per-seat `%t/plasma-login/%i.env` EnvironmentFile,
+  per-seat kwin `--socket wayland-login-%i`, drops the `BusName=org.kde.KWin`
+  singleton).
+- Does not apply raw to v6.6.6; `git apply --3way` leaves exactly two conflicts, both
+  trivial: (1) `Seat.cpp` — master-only `tryLockFirstLogin()` (MR 160) appears as
+  context; dropped, keeping the real addition `handleTtyFailure()` +
+  `m_ttyExhausted`; (2) the kwin unit rename — resolved to the MR's templated
+  content. Result applies clean on pristine v6.6.6; no master-only symbols referenced.
+- **nixpkgs gotcha**: `kdePackages.plasma-login-manager` carries `kwin-path.patch`
+  (hardcodes the kwin store path into `plasma-login-kwin_wayland.service.in`), which
+  collides with our rename. Fix in the override: filter `kwin-path.patch` out of
+  `patches` and reproduce its substitution on the templated unit via `postPatch`
+  (`substituteInPlace ... @CMAKE_INSTALL_FULL_BINDIR@/kwin_wayland →
+${kdePackages.kwin}/bin/kwin_wayland`).
+- Compile test against the locked `nixpkgs-2605` rev (`4382ed2b7a68`): running.
+
+Tombstone condition for the patch: drop when a PLM release ships MR 155 or MR 167.
+
+Separately, <greeters.md> has been through a grounding pass: every capability claim
+now carries a commit/tag-pinned source citation, corrected line numbers, and explicit
+`unverified` markers where a primary source was not traced (notably LightDM's axis-1b
+behavior). Key confirmations: systemd's varlink `CreateSession` VC-tty rejection is
+new in v258 (`logind-varlink.c:154,195-199`; file absent at v257), and **PLM master
+still has fixed-name units — no release or branch fixes axis 3 as of 2026-07**.
