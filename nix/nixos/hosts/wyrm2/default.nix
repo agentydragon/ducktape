@@ -164,6 +164,30 @@ in
   # rather than removed (other hosts still use GDM).
   services.displayManager.gdm.enable = lib.mkForce false;
   services.displayManager.plasma-login-manager.enable = true;
+  # PLM 6.6.6's greeter runtime is single-instance (fixed-name user units +
+  # last-writer-wins env under the one shared `plasmalogin` user manager), so
+  # with two graphical seats only one greeter compositor exists and the other
+  # seat stays black (upstream bug 520483). Backport of upstream MR 155
+  # ("greeter: instantiate the greeter stack per seat"): templated
+  # `plasma-login-*@<seat>` units, per-seat `%t/plasma-login/<seat>.env`, and a
+  # per-seat kwin socket `wayland-login-<seat>` in place of the
+  # `BusName=org.kde.KWin` singleton. nixpkgs' `kwin-path.patch` targets the
+  # pre-rename unit file, so it is dropped and its kwin store-path substitution
+  # is reapplied to the templated unit in postPatch.
+  # CLEANUP(added 2026-07-17): drop patch + override once a PLM release ships
+  #   MR 155 or MR 167 (invent.kde.org/plasma/plasma-login-manager) and nixpkgs
+  #   packages it.
+  services.displayManager.plasma-login-manager.package =
+    pkgs.kdePackages.plasma-login-manager.overrideAttrs
+      (old: {
+        patches =
+          lib.filter (p: !lib.hasSuffix "kwin-path.patch" (baseNameOf (toString p))) old.patches
+          ++ [ ./plm-mr155-per-seat-greeter.patch ];
+        postPatch = (old.postPatch or "") + ''
+          substituteInPlace src/frontend/startkde/plasma-login-kwin_wayland@.service.in \
+            --replace-fail "@CMAKE_INSTALL_FULL_BINDIR@/kwin_wayland" "${pkgs.kdePackages.kwin}/bin/kwin_wayland"
+        '';
+      });
   # Login-keyring unlock is inherited, not configured here: PLM's `plasmalogin`
   # PAM service substacks/includes the `login` stack, which already carries
   # pam_gnome_keyring (gnome-keyring module default, gui.nix enables the daemon).
