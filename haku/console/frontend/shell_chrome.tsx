@@ -48,9 +48,10 @@ export interface ShellChromeProps {
   // Live tool-call WebSocket health: drives the sync-status icon that is always visible (as an
   // ok-sync indicator) and the clickable panel that explains the current state.
   liveStatus: LiveStatus;
-  // Whether the last REST fetch of pending approvals failed. Shown in the sync-status panel
-  // and turns the icon orange, so transient load errors are visible without a toast flood.
-  syncError: boolean;
+  // Error message from the last REST fetch of pending approvals, or null on success. Shown in
+  // the sync-status panel and turns the icon orange so transient load errors are visible without
+  // a toast flood.
+  syncError: string | null;
   // Location-sharing chrome (rendered only while the standing grant is held): a map-pin toggle
   // with a live indicator while a watch is actively reading, opening a stop/withdraw panel.
   geoGranted: boolean;
@@ -159,9 +160,9 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
 // Sync-status panel: always accessible via the wifi icon in the toolbar. Shows the current
 // state of the live WebSocket channel and the last REST fetch outcome in one place, so the
 // operator never has to wonder whether the approval list is current.
-function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; syncError: boolean }) {
+function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; syncError: string | null }) {
   const offline = liveStatus === "offline";
-  const unhealthy = offline || syncError;
+  const unhealthy = offline || syncError !== null;
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Sync status">
       <Stack gap="xs">
@@ -170,7 +171,13 @@ function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; sy
             Sync status
           </Text>
           <Badge color={unhealthy ? "orange" : liveStatus === "connecting" ? "yellow" : "teal"} variant="light">
-            {offline ? "Offline" : liveStatus === "connecting" ? "Connecting" : syncError ? "Fetch error" : "Live"}
+            {offline
+              ? "Offline"
+              : liveStatus === "connecting"
+                ? "Connecting"
+                : syncError !== null
+                  ? "Fetch error"
+                  : "Live"}
           </Badge>
         </Group>
         {offline && (
@@ -179,10 +186,9 @@ function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; sy
             retrying; reload the page to refresh immediately.
           </Text>
         )}
-        {!offline && syncError && (
+        {!offline && syncError !== null && (
           <Text size="xs" c="dimmed">
-            The last attempt to load pending approvals failed. The list may be stale; reload the page to retry
-            immediately.
+            Failed to load pending approvals: {syncError}
           </Text>
         )}
         {!unhealthy && (
@@ -572,7 +578,7 @@ export function ShellChrome(props: ShellChromeProps) {
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   const offline = liveStatus === "offline";
-  const syncUnhealthy = offline || syncError;
+  const syncUnhealthy = offline || syncError !== null;
   const selectedPanel = selectedShellPanel(approvalsOpen, openPanel);
 
   useEffect(() => {

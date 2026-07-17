@@ -37,7 +37,7 @@ const chromeProps: Omit<ShellChromeProps, "approvalsOpen" | "onApprovalsOpenChan
   onDismissRecentToolCall: noop,
   onOpenToolCalls: noop,
   liveStatus: "offline",
-  syncError: false,
+  syncError: null,
   geoGranted: true,
   tracking: true,
   onWithdrawGeolocation: noop,

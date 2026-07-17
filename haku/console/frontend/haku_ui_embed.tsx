@@ -159,7 +159,7 @@ export function HakuUiEmbed({
   // tab-capture stream (mirrors geoGranted/tracking above).
   const [screenshotGranted, setScreenshotGranted] = useState(() => hasScreenshotGrant());
   const [sharingScreen, setSharingScreen] = useState(false);
-  const [syncError, setSyncError] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // The shell (never the iframe) holds the one live getDisplayMedia stream, reused across
   // requests so only the first capture (or the first after the operator's browser-native "Stop
@@ -276,10 +276,10 @@ export function HakuUiEmbed({
   function refreshToolApprovals() {
     void fetchPendingApprovals().then(
       (approvals) => {
-        setSyncError(false);
+        setSyncError(null);
         applyToolApprovals(approvals);
       },
-      (_e: unknown) => setSyncError(true)
+      (e: unknown) => setSyncError(e instanceof Error ? e.message : String(e))
     );
   }
 
