@@ -14,9 +14,13 @@ description: >
 One tool covers both domains: `workspace-gc` has a `worktrees` scanner (local git
 worktrees whose work is already merged) and a `bazel-bases` scanner (Bazel output bases
 whose workspace is gone). Both use the same PRUNE/KEEP/REVIEW model, are dry by default,
-and revalidate every candidate immediately before removing it. Let the tool make the
-clear-cut calls; spend your judgment on the REVIEW items and never recreate its deletion
-logic with an ad hoc script.
+and revalidate every candidate immediately before removing it.
+
+**The tool automates what's easy to automate; you apply intelligence where the automation
+needs supplementation.** It makes the clear-cut calls — an ancestor merge, a merged PR, a
+missing workspace. You supplement: inspect the dirty KEEP trees the tool can't reason about
+(build noise vs. real work), judge the REVIEW items, and never recreate its deletion logic
+with an ad hoc script.
 
 ## Establish Intent And Scope
 
@@ -55,7 +59,9 @@ custom cache locations rather than assuming the default is the only root.
   `--force`** (so a tree that turned dirty is skipped), and **never deletes branches** —
   the work stays reachable through them.
 - `KEEP`: main checkout, the invoking worktree, uncommitted (tracked or untracked)
-  changes, an open PR, or a live process. Leave it.
+  changes, an open PR, or a live process. Not safe to auto-prune — but inspect it anyway
+  (see below); most KEEP rows are dirty trees and the label alone doesn't say whether the
+  dirt is real work.
 - `REVIEW`: clean but has commits not in main and no merged PR, a detached HEAD with
   unique commits, or an undeterminable default branch. Judge these yourself — inspect the
   commits/PR and decide; removal must not make any commit unreachable.
@@ -63,6 +69,28 @@ custom cache locations rather than assuming the default is the only root.
 The PR cross-check uses `GITHUB_TOKEN` or `gh auth token`; pass `--no-prs` to classify on
 git signals only (offline). After pruning, re-run `git worktree prune --dry-run --verbose`
 and run `git worktree prune --verbose` only if every listed record is confirmed stale.
+
+### Inspect KEEP worktrees, don't just trust the label
+
+`KEEP` means "not auto-prunable", not "leave unexamined". The tool cannot tell real
+uncommitted work from build-tool noise, so look inside each dirty KEEP row and report its
+real disposition. The report's `LAST ACTIVITY` column and the PR annotation on a dirty row
+(`uncommitted changes (PR #N merged)`) are the first triage signals:
+
+- **What is dirty?** `git -C PATH status --porcelain`, then `git -C PATH diff --stat`. If
+  the only changes are regenerated or reformatted `BUILD.bazel` / other build-tool output
+  (e.g. a buildifier reflow of a `third_party` file), that is noise, not work — revert just
+  those files (`git -C PATH checkout -- FILE`) and re-scan; the tree usually flips to a
+  clean PRUNE.
+- **How stale?** `git -C PATH rev-list --left-right --count origin/HEAD...HEAD`. A tree
+  thousands of commits behind is almost certainly an abandoned spike; its uncommitted churn
+  is stale mass-reformat noise, not recoverable work.
+- **Is the work already safe elsewhere?** Commits pushed to a remote branch, or a merged PR
+  (the report annotates the dirty row's PR state), survive worktree removal — so the tree
+  can go once you confirm nothing uncommitted still matters.
+
+Classify each dirty KEEP as build-noise, abandoned-spike, or live-WIP; only live-WIP is a
+genuine keep.
 
 ## Bazel Output Bases
 
