@@ -384,6 +384,8 @@ def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
     assert "baseline_fallback" not in metadata
     assert metadata["assets"][0]["classification"] == "new"
     assert metadata["summary"] == {"modified": 0, "new": 1, "removed": 0, "unchanged": 0}
+    # No modified asset to prefer — the aggregate index page still gets a thumbnail.
+    assert metadata["preview"]["classification"] == "new"
 
 
 def test_write_baseline_pointers_puts_mutable_json() -> None:
@@ -461,6 +463,100 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     assert "tests/ex-visuals-abcdef/diff/a.png" in body
     assert "tests/ex-visuals-abcdef/diff/b.png" in body
     assert "50.0% changed" in body
+
+
+def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
+    review_tests = [
+        ReviewTest(
+            target_label="//a:x",
+            slug="a",
+            title="A",
+            summary=ClassificationCounts(modified=4, new=12, removed=0, unchanged=2),
+            assets=[],
+        ),
+        ReviewTest(
+            target_label="//b:y",
+            slug="b",
+            title="B",
+            summary=ClassificationCounts(modified=0, new=0, removed=0, unchanged=5),
+            assets=[],
+        ),
+    ]
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=review_tests,
+        base_sha="f" * 40,
+    )
+    # Exact-line membership, not substring: the headline totals legitimately spell out
+    # "0 removed" too (it always reports all four buckets), so a bare `in body` check would
+    # pass even if the per-test bullet still leaked its own zero segments.
+    lines = body.splitlines()
+    assert "- [`//a:x`](https://v/commits/sha/tests/a/index.html): 4 modified, 12 new" in lines
+    assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html): unchanged" in lines
+
+
+def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None:
+    """A PR that only adds new fixtures (no existing screenshot changed) must still get image
+    previews in the comment, not just the text counts — this was the bug: `_with_diff_previews`
+    only ever collected `modified` assets and bailed out with no previews at all otherwise."""
+    review_tests = [
+        ReviewTest(
+            target_label="//ex:visuals",
+            slug="ex-visuals-abcdef",
+            title="Ex",
+            summary=ClassificationCounts(modified=0, new=2, removed=0, unchanged=1),
+            assets=[
+                ReviewAsset(path="a.png", label="a", classification="new"),
+                ReviewAsset(path="b.png", label="b", classification="new"),
+                ReviewAsset(path="c.png", label="c", classification="unchanged"),
+            ],
+        )
+    ]
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=review_tests,
+        base_sha="f" * 40,
+    )
+    assert "### New screenshots" in body
+    assert "tests/ex-visuals-abcdef/a.png" in body
+    assert "tests/ex-visuals-abcdef/b.png" in body
+    assert body.count("<img ") == 2
+
+
+def test_success_comment_body_shows_both_modified_and_new_previews() -> None:
+    review_tests = [
+        ReviewTest(
+            target_label="//ex:visuals",
+            slug="s",
+            title="Ex",
+            summary=ClassificationCounts(modified=1, new=1),
+            assets=[
+                ReviewAsset(
+                    path="changed.png",
+                    label="changed",
+                    classification="modified",
+                    changed_fraction=0.3,
+                    changed_pixels=1,
+                ),
+                ReviewAsset(path="added.png", label="added", classification="new"),
+            ],
+        )
+    ]
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=review_tests,
+        base_sha="f" * 40,
+    )
+    assert "### Top changes" in body
+    assert "### New screenshots" in body
+    assert "tests/s/diff/changed.png" in body
+    assert "tests/s/added.png" in body
 
 
 def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:

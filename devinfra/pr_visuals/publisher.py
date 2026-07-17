@@ -292,6 +292,19 @@ def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
     return summary
 
 
+def _pick_preview(assets: list[ReviewAsset]) -> ReviewAsset | None:
+    """The one asset shown as a test's thumbnail on the aggregate index page.
+
+    Prefers a `modified` asset (there's a diff to draw attention to); falls back to a `new` one
+    (a target whose assets are all new — e.g. its first publish, or a PR that only adds fixtures
+    to an existing target — otherwise gets no thumbnail at all).
+    """
+    return next(
+        (asset for asset in assets if asset.classification == "modified"),
+        next((asset for asset in assets if asset.classification == "new"), None),
+    )
+
+
 def _classify_test_assets(
     test: DownloadedVisualTest, baseline: ResolvedBaseline, baseline_source: BaselineSource, target_dir: Path
 ) -> list[ReviewAsset]:
@@ -396,7 +409,7 @@ def build_bundle(
             base_sha=baseline.commit_sha if baseline is not None else base_sha,
             baseline_fallback=baseline.fallback if baseline is not None else None,
             summary=_asset_summary(assets) if base_sha else None,
-            preview=next((asset for asset in assets if asset.classification == "modified"), None) if base_sha else None,
+            preview=_pick_preview(assets) if base_sha else None,
         )
         (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
         page = review_test.model_dump(exclude_none=True)
@@ -471,7 +484,8 @@ def _preview_img(url: str) -> str:
 
 
 def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> str:
-    """Append up to two modified-asset before/after/diff tables, respecting the byte budget."""
+    """Append up to two modified-asset before/after/diff tables and up to two new-asset
+    previews, respecting the byte budget."""
     modified = [
         (asset.changed_fraction or 0.0, test.slug, asset)
         for test in review_tests
@@ -479,33 +493,53 @@ def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> 
         if asset.classification == "modified"
     ]
     modified.sort(key=lambda item: item[0], reverse=True)
-    if not modified:
+    new = [(test.slug, asset) for test in review_tests for asset in test.assets if asset.classification == "new"]
+    if not modified and not new:
         return base
     for limit in (2, 1):
-        lines = ["", "### Top changes"]
-        for fraction, slug, asset in modified[:limit]:
-            test_url = f"{url}tests/{slug}"
-            # Dimension changes produce no diff overlay (the images can't be
-            # compared pixel-for-pixel), so that cell degrades to text.
-            diff_cell = (
-                _preview_img(f"{test_url}/diff/{asset.path}")
-                if not asset.dimension_changed
-                else "_(dimensions changed)_"
-            )
-            lines += [
-                "",
-                f"`{asset.label}` · {fraction:.1%} changed",
-                "",
-                "| Before | After | Diff |",
-                "| --- | --- | --- |",
-                f"| {_preview_img(f'{test_url}/baseline/{asset.path}')} "
-                f"| {_preview_img(f'{test_url}/{asset.path}')} "
-                f"| {diff_cell} |",
-            ]
+        lines: list[str] = []
+        if modified:
+            lines += ["", "### Top changes"]
+            for fraction, slug, asset in modified[:limit]:
+                test_url = f"{url}tests/{slug}"
+                # Dimension changes produce no diff overlay (the images can't be
+                # compared pixel-for-pixel), so that cell degrades to text.
+                diff_cell = (
+                    _preview_img(f"{test_url}/diff/{asset.path}")
+                    if not asset.dimension_changed
+                    else "_(dimensions changed)_"
+                )
+                lines += [
+                    "",
+                    f"`{asset.label}` · {fraction:.1%} changed",
+                    "",
+                    "| Before | After | Diff |",
+                    "| --- | --- | --- |",
+                    f"| {_preview_img(f'{test_url}/baseline/{asset.path}')} "
+                    f"| {_preview_img(f'{test_url}/{asset.path}')} "
+                    f"| {diff_cell} |",
+                ]
+        if new:
+            # No baseline to compare against — one image each, not a before/after/diff table.
+            lines += ["", "### New screenshots"]
+            for slug, asset in new[:limit]:
+                test_url = f"{url}tests/{slug}"
+                lines += ["", f"`{asset.label}`", "", _preview_img(f"{test_url}/{asset.path}")]
         body = base + "\n" + "\n".join(lines)
         if len(body) <= COMMENT_BUDGET:
             return body
     return base
+
+
+def _format_test_counts(counts: ClassificationCounts) -> str:
+    """`"4 modified, 12 new"` — only the non-zero buckets, so an untouched target's bullet line
+    doesn't read `"0 modified, 0 new, 0 removed"`. `"unchanged"` when every bucket is zero."""
+    parts = [
+        f"{count} {label}"
+        for count, label in ((counts.modified, "modified"), (counts.new, "new"), (counts.removed, "removed"))
+        if count
+    ]
+    return ", ".join(parts) if parts else "unchanged"
 
 
 def success_comment_body(
@@ -541,10 +575,7 @@ def success_comment_body(
     ]
     for test in review_tests:
         counts = test.summary or ClassificationCounts()
-        lines.append(
-            f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): "
-            f"{counts.modified} modified, {counts.new} new, {counts.removed} removed"
-        )
+        lines.append(f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {_format_test_counts(counts)}")
     return _with_diff_previews("\n".join(lines), review_tests, url)
 
 

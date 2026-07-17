@@ -38,12 +38,19 @@
           {% endif %}
         </p>
         <div class="assets">
-          {% if test.preview %}
+          {% if test.preview and test.preview.classification == "modified" %}
           <figure>
             <a href="tests/{{ test.slug }}/index.html#{{ test.preview.path }}">
               <img src="tests/{{ test.slug }}/diff/{{ test.preview.path }}" alt="{{ test.preview.label }} diff" loading="lazy">
             </a>
             <figcaption>{{ test.preview.label }} diff</figcaption>
+          </figure>
+          {% elif test.preview %}
+          <figure>
+            <a href="tests/{{ test.slug }}/index.html#{{ test.preview.path }}">
+              <img src="tests/{{ test.slug }}/{{ test.preview.path }}" alt="{{ test.preview.label }}" loading="lazy">
+            </a>
+            <figcaption>{{ test.preview.label }} (new)</figcaption>
           </figure>
           {% elif not test.summary %}
             {% for asset in test.assets[:2] %}
