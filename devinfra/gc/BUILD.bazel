@@ -2,7 +2,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
 py_library(
-    name = "bazel_output_base_gc_lib",
+    name = "output_base_gc_lib",
     srcs = ["output_base_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
@@ -11,18 +11,48 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "bazel_output_base_gc",
-    main_module = "devinfra.gc.output_base_gc",
+py_library(
+    name = "worktree_gc_lib",
+    srcs = ["worktree_gc.py"],
     visibility = ["//visibility:public"],
-    deps = [":bazel_output_base_gc_lib"],
+)
+
+py_library(
+    name = "workspace_gc_lib",
+    srcs = ["workspace_gc.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":output_base_gc_lib",
+        ":worktree_gc_lib",
+        "@pypi//pygithub",
+        "@pypi//tabulate",
+    ],
+)
+
+# Single tool: `workspace-gc {bazel-bases,worktrees}` reclaims Bazel output bases and stale
+# git worktrees. (Supersedes the former standalone `bazel-output-base-gc`.)
+py_binary(
+    name = "workspace_gc",
+    main_module = "devinfra.gc.workspace_gc",
+    visibility = ["//visibility:public"],
+    deps = [":workspace_gc_lib"],
 )
 
 py_test(
     name = "test_bazel_output_base_gc",
     srcs = ["test_bazel_output_base_gc.py"],
     deps = [
-        ":bazel_output_base_gc_lib",
+        ":output_base_gc_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_worktree_gc",
+    srcs = ["test_worktree_gc.py"],
+    deps = [
+        ":worktree_gc_lib",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

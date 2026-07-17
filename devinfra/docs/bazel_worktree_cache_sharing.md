@@ -43,24 +43,26 @@ Deleting a Git worktree does not delete its per-workspace output base. Bazel's
 tree; they do not reclaim hashed output bases.
 
 Run the local GC tool after worktree cleanup; it is a manual sweep, not part of
-`wt rm` or a scheduled job. The default command is a dry run; a base becomes a
-candidate immediately after its recorded workspace disappears:
+worktree removal or a scheduled job. The default command is a dry run; a base
+becomes a candidate immediately after its recorded workspace disappears:
 
 ```bash
-bazel-output-base-gc
-bazel-output-base-gc --all --sizes
-bazel-output-base-gc --delete
+workspace-gc bazel-bases
+workspace-gc bazel-bases --all --sizes
+workspace-gc bazel-bases --delete
 ```
 
 The command is distributed in the released, artifact-pinned Nix `ducktape`
 package. While developing an unmerged version from this repository, run the
 source target instead:
-`bb run //devinfra/gc:bazel_output_base_gc -- --all`.
+`bb run //devinfra/gc:workspace_gc -- bazel-bases --all`.
 
 The tool only auto-selects direct-child, default MD5-named output bases whose
-recorded workspace no longer exists. It requires the persisted NUL-delimited
-`server/cmdline`, `README`, and `DO_NOT_BUILD_HERE` records to agree; verifies
-the workspace-path hash; and rejects live servers, symlinks, and nested mounts.
+recorded workspace no longer exists. It recovers the workspace from whichever of
+the persisted `server/cmdline`, `README`, and `DO_NOT_BUILD_HERE` records are
+present (a dead or never-started server does not block cleanup), requires the
+present records to agree, verifies the workspace-path hash, and rejects live
+servers, symlinks, and nested mounts.
 Missing or contradictory provenance is reported as `REVIEW` and never deleted
 automatically. Deletion repeats the checks while holding Bazel's byte-range
 lock, refusing a busy lock, then moves the base to a sibling quarantine before
