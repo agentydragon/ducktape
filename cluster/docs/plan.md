@@ -582,11 +582,13 @@ Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Proxmox CSI removed (2026-07-16)
 
-Proxmox CSI (`proxmox-csi-retain`) is gone — it crash-looped after the network
-topology change broke its path to the Proxmox API, and a single physical Proxmox host
-means LVM-local storage has the same failure domain anyway. Rationale and full context:
-<lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers now use
-`lvm-proxmox-hdd`.
+Proxmox CSI (`proxmox-csi-retain`) is gone. Primary reason: it hotplugs each PV as a
+virtual SCSI disk onto the VM, capping PVs-per-node (`max-volume-attachments = 29`) —
+too low, and OpenEBS LVM has no such limit. It had also started crash-looping after
+the network topology change broke its path to the Proxmox API, and with a single
+physical Proxmox host LVM-local storage has the same failure domain anyway. Rationale
+and full context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers
+now use `lvm-proxmox-hdd`.
 
 - [ ] Now that CSI no longer hotplugs SCSI disks onto wyrm2, remove the
       `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM in
