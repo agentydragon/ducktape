@@ -4,9 +4,10 @@
 // (gmail_api/messages.py's `Draft`, camelCase wire aliases), of which the widget uses only the
 // `id` that deep-links into Gmail's drafts view, where the operator reviews and sends it.
 
-import { Anchor, Group } from "@mantine/core";
+import { Group } from "@mantine/core";
 import type { z } from "zod";
 
+import { ExternalLink } from "../../link.tsx";
 import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 import { PreviewText } from "../vocabulary.tsx";
@@ -25,9 +26,9 @@ function CreateGmailDraftResultView({ result, variant }: ResultPreviewProps<Draf
   // detailed (the link's href carries it for anyone who needs it compact).
   return (
     <Group gap={6}>
-      <Anchor href={gmailDraftUrl(result.id)} target="_blank" rel="noreferrer" size="sm">
+      <ExternalLink href={gmailDraftUrl(result.id)} size="sm">
         Open draft in Gmail ↗
-      </Anchor>
+      </ExternalLink>
       {variant === "detailed" && (
         <PreviewText span size="xs" c="dimmed">
           draft {result.id}

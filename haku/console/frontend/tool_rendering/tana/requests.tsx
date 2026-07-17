@@ -2,12 +2,13 @@
 // desktop-backed server only receives opaque node ids, so the browser resolves names by calling
 // read_node through the console's same-origin Operator MCP session.
 
-import { Anchor, Group, Stack } from "@mantine/core";
+import { Group, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
+import { ExternalLink } from "../../link.tsx";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary.tsx";
@@ -82,9 +83,9 @@ function useTanaNodePreviews(nodeIds: string[]): Record<string, TanaNodePreview>
 function TanaNodeLink({ nodeId, previews }: { nodeId: string; previews: Record<string, TanaNodePreview> | null }) {
   const preview = previews?.[nodeId];
   return preview ? (
-    <Anchor href={tanaNodeUrl(nodeId)} target="_blank" rel="noreferrer" size="sm">
+    <ExternalLink href={tanaNodeUrl(nodeId)} size="sm">
       {preview.name}
-    </Anchor>
+    </ExternalLink>
   ) : (
     <PreviewText span className="haku-shell-mono" c="dimmed">
       {nodeId}

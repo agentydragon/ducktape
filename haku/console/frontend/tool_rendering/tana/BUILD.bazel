@@ -15,6 +15,7 @@ js_library(
         "//:node_modules/zod",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
+        "//haku/console/frontend:link",
         "//haku/console/frontend:tana_client",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:variant",

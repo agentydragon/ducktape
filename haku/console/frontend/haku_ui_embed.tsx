@@ -1,4 +1,3 @@
-import { Anchor } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -18,6 +17,7 @@ import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { ShellChrome } from "./shell_chrome.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
+import { ExternalLink } from "./link.tsx";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { rememberEmbedPath, viewForPathname } from "./routing.ts";
 import { ScreenshotSession } from "./screenshot_capture.ts";
@@ -405,12 +405,7 @@ export function HakuUiEmbed({
     }
     void launchRoutine(action.prompt || undefined)
       .then((result) => {
-        toastSuccess(
-          "Haku run launched",
-          <Anchor href={result.session_url} target="_blank" rel="noreferrer">
-            Open session
-          </Anchor>
-        );
+        toastSuccess("Haku run launched", <ExternalLink href={result.session_url}>Open session</ExternalLink>);
         reply({ type: "launchResult", id: action.id, ok: true, sessionUrl: result.session_url });
       })
       .catch((e: unknown) => {

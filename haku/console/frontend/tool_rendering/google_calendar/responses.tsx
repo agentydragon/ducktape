@@ -2,11 +2,12 @@
 // generated from FastMCP's advertised outputSchema; the backend's CalendarEvent projection is the
 // shared create/get/list/instances wire contract.
 
-import { Anchor, Stack } from "@mantine/core";
+import { Stack } from "@mantine/core";
 import type { z } from "zod";
 
 import { Field } from "../../field.tsx";
 import { ClockIcon, MapPinIcon, UsersIcon } from "../../icons.tsx";
+import { ExternalLink } from "../../link.tsx";
 import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 import { COMPACT_ITEM_LIMIT, MoreLine, PreviewText, PreviewTitle } from "../vocabulary.tsx";
@@ -54,9 +55,9 @@ function CalendarEventView({ event, variant }: { event: CalendarEvent; variant: 
         </>
       )}
       {event.html_link && (
-        <Anchor href={event.html_link} target="_blank" rel="noreferrer" size="sm">
+        <ExternalLink href={event.html_link} size="sm">
           Open event in Google Calendar ↗
-        </Anchor>
+        </ExternalLink>
       )}
       {variant === "detailed" && (
         <PreviewText size="xs" c="dimmed">

@@ -222,6 +222,15 @@ js_library(
 )
 
 js_library(
+    name = "link",
+    srcs = ["link.tsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "code_block",
     srcs = ["code_block.tsx"],
     deps = [
@@ -374,6 +383,7 @@ js_library(
         ":approval_state",
         ":client",
         ":console_events",
+        ":link",
         ":open_external",
         ":toast",
         "//:node_modules/@mantine/core",
@@ -392,13 +402,13 @@ js_library(
         ":console_events",
         ":geolocation",
         ":geolocation_grant",
+        ":link",
         ":open_external",
         ":screenshot_capture",
         ":screenshot_grant",
         ":shell_chrome",
         ":toast",
         "//:node_modules/@haku/console-bridge",
-        "//:node_modules/@mantine/core",
         "//:node_modules/react",
     ],
 )

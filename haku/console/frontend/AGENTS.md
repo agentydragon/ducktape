@@ -111,6 +111,9 @@ with the rarely-useful parts folded away:
 - **Icons** replace labels only where the glyph is unambiguous (🕐 time, 📍 place, 👥 people);
   otherwise a short inline label.
 - **Semantic color is not the accent** — reserve red for genuinely destructive or failed states.
+- **Links use `link.tsx`'s `ExternalLink`**, never a bare Mantine `Anchor` — it always opens in a
+  new tab and underlines by default, since a screenshot can't show a hover state and even live
+  the click affordance shouldn't require moving the pointer.
 
 **Datetimes and durations** use the shared concise forms — `formatTimestamp` (relative when
 near, full value on hover) for a wall-clock instant, `formatEventDateTimeRange` for a calendar

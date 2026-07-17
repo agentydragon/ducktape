@@ -7,7 +7,7 @@
 // below are built from the FastMCP input schemas advertised by tools/list. Execution still owns
 // cross-field rules that JSON Schema cannot express, such as add/remove label overlap.
 
-import { Anchor, Group, Loader, Stack } from "@mantine/core";
+import { Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
@@ -15,6 +15,7 @@ import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../../gmail_client.ts";
 import { MailIcon } from "../../icons.tsx";
+import { ExternalLink } from "../../link.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import {
@@ -56,9 +57,9 @@ function GmailThreadRow({
   }
   return (
     <Stack gap={2}>
-      <Anchor href={preview.gmail_url} target="_blank" rel="noreferrer" size="sm">
+      <ExternalLink href={preview.gmail_url} size="sm">
         {preview.subject ?? "(no subject)"}
-      </Anchor>
+      </ExternalLink>
       {showLabels && preview.current_label_names.length > 0 && (
         <Group gap={4}>
           {preview.current_label_names.map((name) => (
@@ -166,9 +167,9 @@ function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraf
       </Field>
       {detailed ? <CodeBlock value={args.body} /> : <CompactBody body={args.body} />}
       {args.thread_id && (
-        <Anchor href={gmailThreadUrl(args.thread_id)} target="_blank" rel="noreferrer" size="xs">
+        <ExternalLink href={gmailThreadUrl(args.thread_id)} size="xs">
           Reply in thread ↗
-        </Anchor>
+        </ExternalLink>
       )}
     </Stack>
   );

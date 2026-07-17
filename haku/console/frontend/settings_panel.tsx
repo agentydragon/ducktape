@@ -1,4 +1,4 @@
-import { Anchor, Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { shortDate } from "./approval_state.ts";
@@ -11,6 +11,7 @@ import {
   connectMcpOperatorAuth,
 } from "./client.ts";
 import { useConsoleEvents } from "./console_events.ts";
+import { ExternalLink } from "./link.tsx";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
@@ -34,9 +35,9 @@ function VersionLink({ version }: { version: DeploymentVersion }) {
   const commit = version.image.source_commit?.slice(0, 12);
   if (!commit) return null;
   const content = version.image.source_commit_url ? (
-    <Anchor href={version.image.source_commit_url} target="_blank" rel="noreferrer" size="xs" ff="monospace">
+    <ExternalLink href={version.image.source_commit_url} size="xs" ff="monospace">
       {commit}
-    </Anchor>
+    </ExternalLink>
   ) : (
     <Text size="xs" ff="monospace">
       {commit}

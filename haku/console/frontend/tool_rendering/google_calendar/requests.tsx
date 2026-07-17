@@ -4,7 +4,7 @@
 // schema below is built from the FastMCP input schema advertised by tools/list. Execution-only
 // Pydantic cross-field validators may be stricter than that structural schema.
 
-import { Anchor, Loader, Stack } from "@mantine/core";
+import { Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { rrulestr } from "rrule";
 import type { z } from "zod";
@@ -12,6 +12,7 @@ import type { z } from "zod";
 import { fetchCalendarSummary, type CalendarSummary } from "../../calendar_client.ts";
 import { Field } from "../../field.tsx";
 import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, RepeatIcon, UsersIcon } from "../../icons.tsx";
+import { ExternalLink } from "../../link.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
@@ -192,9 +193,9 @@ function CalendarField({ calendarId }: { calendarId: string }) {
   return (
     <Field icon={<CalendarIcon size={15} />} label="Calendar">
       {summary ? (
-        <Anchor href={summary.html_link} target="_blank" rel="noreferrer" size="sm">
+        <ExternalLink href={summary.html_link} size="sm">
           {summary.summary}
-        </Anchor>
+        </ExternalLink>
       ) : failed ? (
         // Name lookup failed (e.g. deleted calendar, wrong account) — fall back to the raw id.
         <PreviewText span>{calendarId}</PreviewText>
