@@ -27,9 +27,10 @@ table; a known dead end is a result.
 
 ## Long-context attempts
 
-| Config                                                                   | Runtime | Advertised ctx | Allocated ctx | Effective ctx | Notes | Run |
-| ------------------------------------------------------------------------ | ------- | -------------- | ------------- | ------------- | ----- | --- |
-| _(none accepted yet — first row lands with E3, the Nemotron 1M attempt)_ |         |                |               |               |       |     |
+| Config                 | Runtime         | Advertised ctx | Allocated ctx | Effective ctx | Notes                                                                                                                                        | Run                                               |
+| ---------------------- | --------------- | -------------- | ------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Qwen2.5-7B-Instruct-1M | vLLM 0.25.1 TP2 | 1,010,000      | **blocked**   | —             | dual-chunk attention needs flash-attn (no sm_120 kernel; FlashInfer errors on `layer_idx`). Memory fits (~28 GB KV); kernel doesn't. `local` | [E3](runs/2026-07-17_e3_qwen25_7b_1m/README.md)   |
+| _ceiling today_        | vLLM 0.25.1     | —              | ~256K         | 262K (E1)     | standard attention tops out ~256K; true 1M awaits newer vLLM/flash-attn-sm120 or SGLang                                                      | [E1](runs/2026-07-17_e1_qwen3coder_awq/README.md) |
 
 ## Historical (pre-program)
 

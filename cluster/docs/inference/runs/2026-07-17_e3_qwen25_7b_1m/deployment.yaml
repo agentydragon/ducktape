@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen25-1m
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: vllm-qwen25-1m
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-qwen25-1m
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-qwen25-1m
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          # The genuine 1M attempt. Qwen2.5-7B-Instruct-1M is native 1,010,000
+          # positions with only 4 KV heads / 28 layers → ~28 KB/token at FP8 KV,
+          # so 1M tokens ≈ 28 GB KV. TP2 gives the full 64 GB so both the 1M KV
+          # and the ~15 GB fp16 weights fit. max-num-seqs kept low: warmup would
+          # otherwise try to allocate max-num-seqs × max-model-len of KV.
+          args:
+            - --model=Qwen/Qwen2.5-7B-Instruct-1M
+            - --served-model-name=qwen25-7b-1m
+            - --tensor-parallel-size=2
+            # The native 1M relies on dual-chunk attention (DCA), which needs
+            # flash-attn — unavailable for Blackwell sm_120 in this vLLM build
+            # (only FlashInfer/Triton), and FlashInfer errors on DCA's layer_idx.
+            # So DCA is disabled and we push context via the model's high
+            # rope_theta (1e7) extrapolation instead; the needle probe then shows
+            # where effective context actually breaks without DCA.
+            - '--hf-overrides={"dual_chunk_attention_config": null}'
+            - --max-model-len=524288
+            - --kv-cache-dtype=fp8
+            - --gpu-memory-utilization=0.92
+            - --max-num-seqs=2
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              cpu: "4"
+              memory: 24Gi
+            limits:
+              nvidia.com/gpu: 2
+              memory: 48Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 160
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen25-1m
+  namespace: llm-bench
+spec:
+  selector:
+    app.kubernetes.io/name: vllm-qwen25-1m
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
