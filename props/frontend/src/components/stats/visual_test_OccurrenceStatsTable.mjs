@@ -1,3 +1,3 @@
 import { main } from "../../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("OccurrenceStatsTable");
+await main("OccurrenceStatsTable", { element: "#shot" });

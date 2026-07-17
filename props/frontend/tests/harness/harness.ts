@@ -656,7 +656,7 @@ const mockCriticRunDetail = {
 
 // --- Page Scenarios ---
 
-const pages: Record<string, { component: any; props: Record<string, unknown> }> = {
+const pages: Record<string, { component: any; props: Record<string, unknown>; wrapperClassName?: string }> = {
   // Definition detail page - shows stats, CLI command, recall table
   DefinitionDetail: {
     component: DefinitionDetail,
@@ -707,7 +707,9 @@ const pages: Record<string, { component: any; props: Record<string, unknown> }> 
     },
   },
 
-  // Distribution chart - recall histogram
+  // Distribution chart - recall histogram. OverviewPage.svelte pairs two of these in
+  // `grid grid-cols-2 gap-4`, so the chart's real rendered width is half that row — reproduce the
+  // same grid here (rather than the harness's full width) so the shot matches production.
   DistributionChartRecall: {
     component: DistributionChart,
     props: {
@@ -717,9 +719,10 @@ const pages: Record<string, { component: any; props: Record<string, unknown> }> 
       valueFormat: (v: number) => `${(v * 100).toFixed(1)}%`,
       color: "rgb(59, 130, 246)",
     },
+    wrapperClassName: "grid grid-cols-2 gap-4",
   },
 
-  // Distribution chart - TP count histogram
+  // Distribution chart - TP count histogram (see DistributionChartRecall re: grid width)
   DistributionChartTP: {
     component: DistributionChart,
     props: {
@@ -729,6 +732,7 @@ const pages: Record<string, { component: any; props: Record<string, unknown> }> 
       valueFormat: (v: number) => `${v.toFixed(0)}`,
       color: "rgb(34, 197, 94)",
     },
+    wrapperClassName: "grid grid-cols-2 gap-4",
   },
 
   // Coverage heatmap
@@ -803,9 +807,23 @@ if (!pageName) {
 } else if (!pages[pageName]) {
   app.innerHTML = `<div style="color: red; padding: 20px;">Unknown page: ${pageName}</div>`;
 } else {
-  const { component, props } = pages[pageName];
+  const { component, props, wrapperClassName } = pages[pageName];
+  // #shot is the visual test's screenshot target (see visual-test-lib.mjs's required `element`
+  // option): a plain pass-through div for a real full-page component, or — when wrapperClassName
+  // reproduces a real production container (e.g. the two-up stats grid) — the actual grid cell, so
+  // the shot's width matches how the component truly renders instead of the harness's full width.
+  const shot = document.createElement("div");
+  shot.id = "shot";
+  if (wrapperClassName) {
+    const wrapper = document.createElement("div");
+    wrapper.className = wrapperClassName;
+    wrapper.appendChild(shot);
+    app.appendChild(wrapper);
+  } else {
+    app.appendChild(shot);
+  }
   mount(component, {
-    target: app,
+    target: shot,
     props,
   });
 }

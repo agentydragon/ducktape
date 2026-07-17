@@ -1,3 +1,3 @@
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("FileViewerGroundTruth");
+await main("FileViewerGroundTruth", { element: "#shot" });

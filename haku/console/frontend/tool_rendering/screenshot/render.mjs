@@ -16,8 +16,9 @@ import { writeVisualReviewManifest } from "../../../../../util/testing/frontend_
 const HERE = dirname(fileURLToPath(import.meta.url));
 const COLOR_SCHEMES = ["light", "dark"];
 const PREVIEW_VARIANTS = ["compact", "detailed"];
-// Matches the approvals panel's width: `width: min(32rem, …)` in frontend/styles.src.css.
-const PREVIEW_WIDTH = 512;
+// Just needs to be wider than `.haku-shell-panels`'s `min(32rem, …)` cap — card.tsx renders the
+// card inside that real class, so its own CSS (not this viewport) owns the card's width.
+const VIEWPORT_WIDTH = 1200;
 
 function outputDir() {
   if (process.env.SCREENSHOT_OUT_DIR) return resolve(process.env.SCREENSHOT_OUT_DIR);
@@ -75,8 +76,8 @@ const browser = await launchBrowser({ args: ["--force-color-profile=srgb"] });
 const assets = [];
 try {
   // Discover the fixture manifest (slug + label per sample) the harness exposes, then capture one
-  // page per fixture × variant × scheme. Each page renders a single card in isolation at the real
-  // approvals-panel width — no shared gallery, so a card's width is exactly the viewport.
+  // page per fixture × variant × scheme. Each page renders a single card in isolation, at its real
+  // approvals-panel width (card.tsx's `.haku-shell-panels` wrapper) — no shared gallery.
   const discover = await browser.newPage();
   await discover.setContent(pageHtml(css, harnessJs, COLOR_SCHEMES[0], { __FIXTURE__: 0, __VARIANT__: "compact" }), {
     waitUntil: "load",
@@ -92,7 +93,7 @@ try {
     for (const colorScheme of COLOR_SCHEMES) {
       for (const variant of PREVIEW_VARIANTS) {
         const page = await browser.newPage();
-        await page.setViewport({ width: PREVIEW_WIDTH, height: 900, deviceScaleFactor: 2 });
+        await page.setViewport({ width: VIEWPORT_WIDTH, height: 900, deviceScaleFactor: 2 });
         await page.emulateMediaFeatures([
           { name: "prefers-reduced-motion", value: "reduce" },
           { name: "prefers-color-scheme", value: colorScheme },

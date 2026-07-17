@@ -35,12 +35,24 @@ const __dirname = dirname(__filename);
  * Called from each per-scenario test file.
  *
  * @param {string} scenarioName - Harness page name (e.g. "ListPage").
- * @param {{ viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', waitMs?: number }} [options] - Optional overrides.
+ * @param {{ element: string, viewport?: { width: number, height: number }, outputName?: string, colorScheme?: 'light' | 'dark', waitMs?: number }} options - Overrides.
+ *   element is the CSS selector to screenshot. Required — there is no default — so every scenario
+ *   states its choice explicitly: '#app' for a scenario that is genuinely a full page/full app, or
+ *   a scenario-specific selector (conventionally '#shot') for a single component, so the crop is
+ *   that component's own bounding box rather than an arbitrarily large page around it. See
+ *   https://github.com/agentydragon/ducktape/pull/3343 for the bug this guards against.
  *   outputName overrides the filename stem for the published PNG (defaults to scenarioName).
  *   colorScheme sets the `prefers-color-scheme` media feature (defaults to 'light').
  *   waitMs overrides the settle delay after `#app > *` appears (defaults to 200).
  */
-export async function main(scenarioName, options = {}) {
+export async function main(scenarioName, options) {
+  if (!options?.element) {
+    throw new Error(
+      "main() requires options.element: pass '#app' for a genuine full-page scenario, or a " +
+        "scenario-specific selector (e.g. '#shot') for a single component — there is no default, " +
+        "so every scenario states which one it is."
+    );
+  }
   const outputName = options.outputName || scenarioName;
 
   const harnessPath = process.env.HARNESS_PATH || join(__dirname, "harness/dist/harness.js");
@@ -102,7 +114,8 @@ export async function main(scenarioName, options = {}) {
     await page.waitForSelector("#app > *", { timeout: 5000 });
     await new Promise((r) => setTimeout(r, options.waitMs ?? 200));
 
-    const element = await page.$("#app");
+    const element = await page.$(options.element);
+    if (!element) throw new Error(`main(): element ${options.element} not found`);
     const screenshotData = await element.screenshot();
     const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 

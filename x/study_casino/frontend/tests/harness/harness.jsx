@@ -84,6 +84,12 @@ const CHANGELOG_FIXTURE = [
 
 // Standalone component scenarios render over the app's felt background with
 // the shared stylesheet so classes like .deco-corners and .btn apply.
+// minHeight: 100vh matters only for a scenario whose real subject is itself a
+// `position: fixed` full-viewport overlay (e.g. ChangelogModal) — a fixed
+// element contributes no size to its DOM ancestors, so #app still needs an
+// explicit height to have a non-collapsed bounding box for its own element
+// screenshot. A normal-flow child (e.g. SessionAwardToast, wrapped in its own
+// #shot below) doesn't need or use this height at all.
 function Standalone({ children }) {
   return (
     <div
@@ -152,13 +158,21 @@ switch (page) {
     element = <StudyCasino />;
     break;
   case "session_award":
+    // #shot is visual-test-lib.mjs's screenshot target: an inline-block box that shrink-wraps the
+    // toast (plus a little padding for its shadow), so the PNG is just the toast on its felt
+    // backdrop — not however much of the viewport the test happens to ask for.
     element = (
       <Standalone>
-        <SessionAwardToast award={AWARD_FIXTURE} onDismiss={() => {}} />
+        <div id="shot" style={{ display: "inline-block", padding: 16 }}>
+          <SessionAwardToast award={AWARD_FIXTURE} onDismiss={() => {}} />
+        </div>
       </Standalone>
     );
     break;
   case "changelog":
+    // ChangelogModal is a real `position: fixed; inset: 0` blocking overlay in production (dims
+    // the whole screen behind a centered card) — genuinely full-viewport, not a small element
+    // artificially forced full-page, so this scene is captured via #app/viewport, not #shot.
     element = (
       <Standalone>
         <ChangelogModal entries={CHANGELOG_FIXTURE} onAck={() => {}} />

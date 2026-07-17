@@ -1,3 +1,3 @@
 import { main } from "../../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("DistributionChartRecall");
+await main("DistributionChartRecall", { element: "#shot" });

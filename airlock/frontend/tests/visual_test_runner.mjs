@@ -11,7 +11,8 @@ if (!page || !outputName) {
   process.exit(1);
 }
 
-const options = { outputName, colorScheme, waitMs: 500 };
+// OAuthPage is a genuine full-page view.
+const options = { element: "#app", outputName, colorScheme, waitMs: 500 };
 if (viewportWidth !== 1200 || viewportHeight !== 800) {
   options.viewport = { width: viewportWidth, height: viewportHeight };
 }

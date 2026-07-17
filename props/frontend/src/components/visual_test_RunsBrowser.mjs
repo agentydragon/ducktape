@@ -1,3 +1,3 @@
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 
-await main("RunsBrowser");
+await main("RunsBrowser", { element: "#shot" });
