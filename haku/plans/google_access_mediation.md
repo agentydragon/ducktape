@@ -109,3 +109,56 @@ never added here.
 As each product reaches full console read coverage, drop its scope from the `google` Airlock grant.
 When every scope above is covered (or dropped), remove the `google` grant, its ESO, and the
 `haku-sandbox` reflection — that completes G3 and ends Haku's Airlock dependency.
+
+## Implementation: tiered, discovery-generated tools
+
+Don't hand-code the schemas. Google API **Discovery Documents** already carry every method's
+parameters, request/response schemas, and required scopes; a spike
+(`haku/console/x/discovery_mcp/` — converter, generated examples, and the versioning options)
+confirms they generate clean MCP `inputSchema`s for reads near-turnkey (writes balloon into deep
+recursive bodies). So build the surface as **one hand-written spine plus three tiers of tool
+specs**.
+
+**Spine (written once):** per-Operator token resolution (`provider_connection.py`), a generic
+`googleapiclient` executor that runs any method by id, and the approval envelope. Fixed cost
+regardless of tool count.
+
+**Three tiers:**
+
+1. **Fully generated** — simple reads, few params (`tasks.tasklists.list`, `labels.get`,
+   `files.get`, `drafts.get`). Point the spine at the method; the generated schema is fine as-is.
+2. **Generated + slimmed** (most tools) — big-param reads (`drive.files.list` ~25 params,
+   `calendar.events.list` ~19, `messages.list`). Generate the schema, then apply a **subtractive
+   overlay**: allowlist the params worth exposing, pin constants (`userId=me`), drop noise
+   (`showDeleted`, `corpora`).
+3. **Hand-written thin** — writes / shaped ops (`send`, `events.insert`). Author a small
+   purpose-built schema (`{to, subject, body}`) and map it to the Google body in code (as the gmail
+   drafts tool already does). Discovery is reference, not the tool. Stay approval-gated.
+
+**Overlay, never fork.** A tool spec references `method_id` + an allowlist/pin set; regeneration
+re-derives the schema and re-applies the overlay, and **fails loudly if the overlay names a param
+Google removed**. That keeps a ~40-tool surface maintainable against Google's API drift — small
+specs, not forked schemas.
+
+```python
+# tier 1/2 — generated schema, curated surface; policy defaults from httpMethod
+GenTool("gmail.users.messages.list", expose=["q", "maxResults", "pageToken", "labelIds"], pin={"userId": "me"})
+GenTool("drive.files.list",          expose=["q", "orderBy", "pageSize", "pageToken", "fields"])
+GenTool("tasks.tasklists.list")      # nothing to slim
+
+# tier 3 — custom schema + mapper, never the discovery body
+ShapedTool("gmail_send", input=SendMail, method="gmail.users.messages.send",
+           build=lambda a: {"userId": "me", "body": {"raw": mime(a)}}, approve="operator")
+```
+
+**Policy is mostly derived, not configured:** default `GET → auto-approve for authenticated
+agents`, non-GET → operator-gated, with a few overrides (the existing `haku/`-label carve-out). The
+same discovery `schemas` also generate **response types**, so Python/TS typing rides along at every
+tier regardless of input slimming.
+
+**Discovery-doc source (versioning + typing).** Vendor the ~7 snapshots the tools use and generate
+schemas + types from them at build time, refreshed deliberately. Alternatives: read from the pinned
+`google-api-python-client` wheel's bundled static cache (already a dep, but its snapshot lags the
+live API by months), or git-pin Google's `googleapis/discovery-artifact-manager`. The live Discovery
+endpoint is latest-not-immutable, so it is not a reproducible build input. Detail + tradeoffs:
+`haku/console/x/discovery_mcp/README.md`.
