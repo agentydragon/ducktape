@@ -46,6 +46,18 @@ annoying.
 
 **Proper fix:** The nix installer should add sourcing to `/etc/zsh/zshenv` instead of/in addition to `/etc/zsh/zshrc`. This is arguably a gap in nix's shell integration.
 
+## Wire wyrm2 GitHub SSH key
+
+wyrm2 is the only desktop host missing `ducktape.githubSsh`. All others
+(rugged, atlas, gecko, iguana) have `ssh_keys/<host>-github.sops.key` and
+`ducktape.githubSsh.sopsFile` wired. Steps:
+
+1. `ssh-keygen -t ed25519 -f /tmp/wyrm2-github` on wyrm2 (or here)
+2. Upload the public key to GitHub → Settings → SSH keys
+3. `sops -e -i ssh_keys/wyrm2-github.sops.key` (binary encrypt the private key)
+4. Add `ducktape.githubSsh.sopsFile = ../../../ssh_keys/wyrm2-github.sops.key;` to `nix/home/hosts/wyrm2.nix`
+5. Import `../modules/github-ssh.nix` in wyrm2.nix (already done via the module option)
+
 ## Deduplicate wyrm2/rugged/iguana host configs
 
 wyrm2, rugged, and iguana import nearly identical module sets (gui, workstation, bazel, system-inspection-sudo, k8s-worker) and have similar `k8sWorker` config. Extract common setup into a shared module (e.g., `modules/k8s-workstation.nix`).
