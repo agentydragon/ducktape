@@ -156,46 +156,47 @@ in
 
   # Display manager: GDM (inherited from gui.nix; no host override needed).
   #
-  # The dual-seat goal (independent greeters/logins on seat0 SPICE + seatphysical
-  # 5090) needs a DM that both (a) drives a non-seat0 logind seat and (b) does not
-  # veto a same-user login. No packaged DM clears both today:
-  # - SDDM 0.21.0 (shipped): follows seats + no veto, but hands the non-seat0
-  #   greeter a VC tty (`tty0`) that systemd-258's varlink logind rejects
-  #   (`InvalidParameter{Seat}`). Fix (cda8d93) unreleased for 2+ years.
-  # - PLM (KDE's SDDM fork): ships the tty fix, but its greeter runtime is a
-  #   single per-user-manager singleton (fixed-name units + last-writer-wins env,
-  #   KDE bug 520483), so the second seat stays black. The per-seat fix (MR 155)
-  #   is unmerged; a working backport is archived at
-  #   debug/atlas/direct_display_bringup/plm-mr155-per-seat-greeter.patch (builds
-  #   green) for when a PLM release ships it.
-  # - GDM: the cleanest multi-seat daemon (per-seat gnome-shell greeter, logind
-  #   splits the GPUs by ID_SEAT tag — renders on seatphysical), but its
-  #   gnome-shell greeter runs `_findConflictingSession` and refuses to start a
-  #   session for a user already logged in on another seat. No setting disables
-  #   it short of patching gnome-shell.
-  #
-  # Accepted trade-off (2026-07-17): use GDM and live with the same-user veto —
-  # both seats show a greeter, but only ONE can be logged in at a time (log out of
-  # seat0 SPICE to use seatphysical, and vice-versa). This is the least-painful
-  # working config; the PLM backport stays on the shelf if simultaneous dual
-  # login becomes worth carrying a patch.
-  #
-  # Full analysis + candidate matrix (Axis 1b = the VC-tty criterion):
-  # debug/atlas/direct_display_bringup/greeters.md and README.md.
+  # SINGLE-SEAT0 + REMOTE model (2026-07-17, supersedes the old multi-seat design).
+  # The physical monitor and a remote console are never needed at the same time, so
+  # we do NOT run a second logind seat. The display 5090 (01:00.0) is seat0's sole
+  # graphical output — a normal, fully-supported GDM seat0 login, so the physical
+  # seat "just works" — and remote access is a *session, not a seat*
+  # (gnome-remote-desktop, below; reach it over an SSH-key tunnel on nebula). This
+  # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
+  # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
+  # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
+  # decision: debug/atlas/direct_display_bringup/{README.md,greeters.md}.
 
-  # Default both seats to sway (session-agnostic under GDM). sway locks via
-  # swaylock; seat0 stays off GNOME so a second GNOME never contends for the
-  # shared user bus.
-  services.displayManager.defaultSession = "sway";
+  # seat0 defaults to GNOME. mutter is what honours `mutter-device-ignore` (see the
+  # udev rules below), so the single-display isolation only works under
+  # GNOME/mutter — NOT sway, which (via wlroots) claims every seat DRM card and
+  # ignores that tag. programs.sway stays enabled for experimentation, but a sway
+  # seat0 login would grab all three GPUs until pinned with WLR_DRM_DEVICES.
+  services.displayManager.defaultSession = "gnome";
 
-  # CLEANUP(added 2026-07-17): remove once the seatphysical *sway* login is
-  # root-caused. GDM's daemon logs nothing after PAM without this, so a failed
-  # login reads as an inscrutable freeze. Enabling it is what let us name the
-  # GNOME failure (a leaked graphical-session.target zombie — now documented +
-  # recoverable, see debug/atlas/direct_display_bringup/login_zombie_recovery.md).
-  # The sway-on-seatphysical no-compositor wedge is still open, so keep verbose
-  # logging on until that one is captured too.
+  # CLEANUP(added 2026-07-17): remove once gnome-remote-desktop headless login is
+  # confirmed working on this NVIDIA host. GDM's daemon is silent after PAM without
+  # this, so any greeter→session failure reads as an inscrutable freeze — keep
+  # verbose logging on through the GRD bring-up (the nixpkgs#504490 handover fix is
+  # already in gsd 50.1, but the NVIDIA-headless GRD path is untested here).
+  # Recovery for the leaked-session zombie this can expose:
+  # debug/atlas/direct_display_bringup/login_zombie_recovery.md.
   services.displayManager.gdm.debug = true;
+
+  # Remote access = a *session, not a seat*: gnome-remote-desktop "Remote Login"
+  # (system RDP with GDM handover) starts a fresh headless GNOME session on connect
+  # — no prior local login needed, and its virtual monitor resizes to the client.
+  # Reach it over an SSH-key tunnel on nebula (`ssh -L 3389:localhost:3389
+  # <wyrm2-nebula>`, then RDP to localhost:3389): RDP is NOT firewalled open, so the
+  # only path in is the key-only SSH already configured — nebula cert + SSH key are
+  # the gates, the RDP password is just the login step. The grd-system-rdp-setup
+  # service below runs the imperative grdctl config once. VERIFY on first boot; see
+  # the GRD bring-up notes in debug/atlas/direct_display_bringup/README.md.
+  services.gnome.gnome-remote-desktop.enable = true;
+
+  # The GRD system-RDP setup one-shot (grd-system-rdp-setup) is defined in the
+  # `systemd.services = lib.mkMerge [ … ]` block below — this module can't also use a
+  # dotted `systemd.services.<x> =` (whole-attr constraint; see the note there).
 
   # TODO(kvm-no-blank): the pre-SDDM GDM config set login-screen idle-delay=0 to
   # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
@@ -203,15 +204,15 @@ in
   # the GDM greeter if the KVM reverts again — see
   # debug/atlas/direct_display_bringup/README.md.
 
-  # Sway session for the game seat (seatphysical, on the display 5090). A real WM to
-  # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
-  # the seat0 SPICE GNOME session on the shared user bus (GNOME's fixed D-Bus
-  # names are the reason a second GNOME can't run for one user; sway has none).
-  # Games run directly in this session (the display GPU is also the render GPU —
-  # see the programs.steam note below); no gamescope.
-  # NVIDIA: --unsupported-gpu is mandatory; hardware cursors off (wlroots can't
-  # do them on this NVIDIA path). On seatphysical logind hands sway only the display
-  # 5090, so no manual WLR_DRM_DEVICES pinning is needed.
+  # Sway kept as an OPTIONAL seat0 session (NOT the default — GNOME is, because only
+  # mutter honours the mutter-device-ignore isolation). A real WM to game/debug from,
+  # run as agentydragon. NVIDIA: --unsupported-gpu is mandatory; hardware cursors off
+  # (wlroots can't do them on this NVIDIA path).
+  # CAVEAT (single-seat0): wlroots ignores mutter-device-ignore, so a sway seat0
+  # login enumerates ALL THREE seat0 cards (virtio + both 5090s) and picks the wrong
+  # one / "Found N GPUs". To actually use sway here it must be pinned to the display
+  # 5090 (01:00.0) via a colon-free WLR_DRM_DEVICES symlink — NOT yet wired. Open
+  # sway-on-seat0 question tracked in the decision doc.
   programs.sway = {
     enable = true;
     wrapperFeatures.gtk = true;
@@ -227,11 +228,8 @@ in
       slurp # region select for grim
     ];
   };
-  # NVIDIA: wlroots can't do hardware cursors on this path. GPU selection is left
-  # to the seat assignment — seatphysical owns only the display 5090 (01:00.0), so
-  # libseat hands sway the right device. (Don't set WLR_DRM_DEVICES to the
-  # by-path node: it's a colon-separated list, and the PCI address's colons make
-  # wlroots split it into garbage — "Found 0 GPUs".)
+  # NVIDIA: wlroots can't do hardware cursors on this path. Kept for the optional
+  # sway seat0 session above; harmless for the default GNOME/mutter session.
   environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
 
   # Steam — games run on the RTX 5090s (direct display via seatphysical, or
@@ -286,64 +284,26 @@ in
     capSysAdmin = true;
     openFirewall = true;
   };
-  # Rule 1: upstream's 60-sunshine.rules — the nixpkgs sunshine package ships
-  # no udev rules, so the module's `services.udev.packages = [ package ]` is
-  # a no-op and Sunshine gets "Permission denied" creating virtual
-  # keyboard/mouse.
-  # Rules 2+3: multiseat for the direct-display gaming plan — see
-  # debug/atlas/direct_display_bringup/README.md.
-  # - The display 5090 (guest 01:00.0 = hostpci0; DP cable to the FV43U)
-  #   belongs to logind seat "seatphysical": GDM spawns a separate greeter
-  #   there, independent of the seat0 SPICE desktop. Do NOT
-  #   mutter-device-ignore this card — the seatphysical greeter must use it.
-  #   Why 01:00.0 and not 02:00.0: DXVK/Vulkan renders on the first-PCI GPU
-  #   (01:00.0) by default, and the two 5090s are identical (same
-  #   vendor:device 10de:2b85) so no selector can pin the game to a specific
-  #   one. Putting the monitor on 01:00.0 makes render==display==01:00.0 →
-  #   no cross-PCIe copy per frame (that copy was the ~15 FPS lag). See
-  #   debug/atlas/direct_display_bringup/README.md.
-  # - The other 5090 (02:00.0, headless compute) stays on seat0 but is
-  #   hidden from mutter: multi-GPU mutter with NVIDIA cards crash-looped
-  #   (SIGSEGV) as primary and rendered black as copy target (2026-07-02).
-  # Gotcha: udev TAGS persist in the udev db — removing/changing these
-  # rules needs a VM reboot to fully take effect.
+  # Rule 1: upstream's 60-sunshine.rules — the nixpkgs sunshine package ships no
+  # udev rules, so the module's `services.udev.packages = [ package ]` is a no-op
+  # and Sunshine gets "Permission denied" creating virtual keyboard/mouse.
+  # Rules 2+3: seat0 single-display — hide the virtio-gpu (00:01.0, SPICE console)
+  # and the spare 5090 (02:00.0, headless compute) from mutter so seat0 renders
+  # only on the display 5090 (01:00.0). This replaces the old seatphysical/seatspare
+  # multi-seat rules: multi-GPU mutter with NVIDIA SIGSEGV'd as primary / rendered
+  # black as copy target (2026-07-02), so mutter must see exactly one card. Render
+  # nodes are not seat- or ignore-gated, so Sunshine / game render-offload still
+  # reaches the spare GPU. The TEX Shura keyboard (04d9:0532) needs no rule now — it
+  # just defaults to seat0.
+  # CAVEAT: `mutter-device-ignore` is honoured by MUTTER ONLY — wlroots/sway ignores
+  # it and would grab all three cards (that's why seat0 defaults to GNOME above).
+  # virtio stays a plain text/recovery VT console. Gotcha: udev TAGS persist in the
+  # udev db — a VM reboot is needed to fully apply a change here.
   services.udev.extraRules = ''
     KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
+    SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:00:01.0", TAG+="mutter-device-ignore"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", TAG+="mutter-device-ignore"
   '';
-  # seatphysical device assignments must run at priority 72 — BEFORE systemd's
-  # 73-seat-late.rules finalizes seat bookkeeping (extraRules lands in
-  # 99-local.rules, which is too late: libinput saw ID_SEAT there but logind
-  # denied TakeDevice to the seatphysical greeter). Same slot loginctl-attach
-  # uses. Devices: the display 5090 (guest 01:00.0), and the TEX Shura
-  # (04d9:0532), which arrives via QEMU port-path passthrough ONLY when the
-  # monitor's KVM routes its hub to USB-B — in this guest it is unambiguously
-  # the seatphysical keyboard. See debug/atlas/direct_display_bringup/README.md.
-  services.udev.packages = [
-    (pkgs.writeTextFile {
-      name = "seatphysical-udev-rules";
-      destination = "/lib/udev/rules.d/72-seatphysical.rules";
-      text = ''
-        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", ENV{ID_SEAT}="seatphysical"
-        # Spare NVIDIA (02:00.0) has no monitor connected. It defaults to seat0,
-        # where sway (wlroots) claims EVERY seat DRM card as a DRM-master output —
-        # so seat0's sway grabbed this headless GPU, and the seatphysical greeter's
-        # kwin then couldn't cleanly own its own card0 (atomic-commit permission
-        # denied; it also probed this node and was denied). Park it on an isolated
-        # seat (`seatspare`, no hyphen so it passes logind's seat_name_is_valid) so
-        # NEITHER seat0 nor seatphysical enumerates it, leaving card0 (01:00.0) as
-        # the physical seat's sole display. Strip master-of-seat so `seatspare` is
-        # non-graphical and PLM spawns no greeter there. Render nodes are not
-        # seat-gated, so Sunshine / game render-offload still reaches this GPU.
-        # See debug/atlas/direct_display_bringup/README.md (2026-07-17).
-        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", ENV{ID_SEAT}="seatspare", ENV{ID_TAG_MASTER_OF_SEAT}="0", TAG-="master-of-seat"
-        # No KERNEL=="event*" filter: logind resolves an evdev node's seat via
-        # its PARENT input-class device, so inputNN needs ID_SEAT too (event-
-        # only assignment = libinput claims it but logind denies TakeDevice).
-        SUBSYSTEM=="input", ATTRS{idVendor}=="04d9", ATTRS{idProduct}=="0532", TAG+="seat", ENV{ID_SEAT}="seatphysical"
-      '';
-    })
-  ];
   # Composite the cursor into frames instead of the hardware cursor plane —
   # Sunshine's KMS capture can't grab the cursor plane on virtio-gpu, so the
   # Moonlight stream has no cursor otherwise.
@@ -443,6 +403,39 @@ in
   # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
+    # gnome-remote-desktop system RDP (remote login) — configure the system daemon
+    # imperatively via grdctl once at boot (no declarative NixOS surface). Self-signed
+    # TLS (RDP is tunnel/localhost-only); no set-credentials (GDM does the auth on the
+    # handover login). VERIFY on first boot: confirm the system daemon accepts a
+    # tunnelled RDP connection and that the cert path/perms suit the grd service user.
+    {
+      grd-system-rdp-setup = {
+        description = "Configure gnome-remote-desktop system RDP (remote login)";
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+        };
+        path = [
+          pkgs.gnome-remote-desktop
+          pkgs.openssl
+        ];
+        script = ''
+          dir=/var/lib/gnome-remote-desktop
+          cert=$dir/rdp-tls.crt
+          key=$dir/rdp-tls.key
+          install -d -m 0755 "$dir"
+          if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
+            openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
+              -subj "/CN=wyrm2" -keyout "$key" -out "$cert"
+            chmod 0640 "$key"
+          fi
+          grdctl --system rdp set-tls-cert "$cert"
+          grdctl --system rdp set-tls-key "$key"
+          grdctl --system rdp enable
+        '';
+      };
+    }
     # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
     #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
     #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
