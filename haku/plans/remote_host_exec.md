@@ -185,6 +185,34 @@ not the exact `argv` (OIDC claims come from user/group attributes, not per-reque
 it authorizes "this operator may run root on `wyrm2` for the next N seconds," not "…may run
 exactly _this_ command once." That is the same granularity kubectl-passthrough has.
 
+### What the transport key alone grants (no theater) — decided: token verifier (operator, 07-17)
+
+State this plainly so the approval story isn't oversold. **In this design there is no SSH key
+that grants root.** The pod's transport key is `command=`-pinned to the verifier — it lands you
+_in_ the verifier, not a shell — and the verifier **fail-closes unless it also receives a valid,
+unexpired Authentik token** bearing the `hostexec-root-<host>` claim. Concretely:
+
+- **Transport key at rest (exfiltrated), no token → cannot execute.** You reach a verifier that
+  says no. That is the whole point of the shim, and it is the single load-bearing component: if
+  the verifier is ever sloppy — key authorized directly as `root`, or not fail-closed — we are
+  back to L0 and the token _is_ theater. It lives or dies on those ~30 lines.
+- **What the verifier genuinely buys (not theater):** key-at-rest can't run anything; every exec
+  is time-boxed (tokens expire), attributed to the Authentik identity in the token, and
+  **centrally revocable** (revoke the group in Authentik → every host refuses, touching no
+  `authorized_keys`).
+- **The residual it does _not_ remove:** a **live, fully-compromised `hostexec-mcp` pod** holds
+  the key _and_ catches operator tokens transiting it at approval time, so within a live token's
+  window it can run root. Identical to a compromised kubectl-passthrough pod today; nothing that
+  rides a relay avoids it. Only the argv countersignature below narrows it (binds the _exact_
+  approved command the relay can't forge), and even that can't stop a compromised relay from
+  getting a malicious command approved via the card.
+
+Bottom line: you cannot have "agent runs root given approval" without _some_ component, if
+compromised at the instant of a live approval, being able to run root. The job here is not to
+make root impossible (root-given-approval is the ask) but to guarantee root never happens
+_without_ an approval, and is always attributed, time-boxed, and revocable. The token verifier
+keeps all four; L0 (below) gives them up.
+
 ### Optional hardening — console-countersigned argv binding
 
 If you want hostexec **stronger** than kubectl-passthrough (defend against a compromised relay
@@ -194,12 +222,13 @@ Authentik token. This is a tiny bespoke key on the console side (the trust bound
 the _exact command_ the operator approved. Additive — layer it only if the relay-swap residual
 matters to you.
 
-### L0 — standing keys (throwaway MVP only)
+### L0 — standing keys (rejected)
 
 Two standing SSH keys (`agentydragon`, `root`) as Secrets in the `hostexec-mcp` namespace,
-`from=`-pinned + forced-command-logged. Fastest to stand up to validate ergonomics; residual =
-pod compromise is root-everywhere. Only as a scaffold you replace with the Authentik-token
-path before this is trusted with root.
+`from=`-pinned + forced-command-logged. Fastest to build, but here **the key _is_ root**:
+whoever holds it runs anything as root, anytime, no approval — the approval card is advisory
+only against a pod compromise. Rejected (operator, 07-17) precisely to avoid that; kept here
+only to name what the token verifier is buying over it.
 
 ## Recommended architecture (end to end)
 
@@ -269,11 +298,12 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
 
 ## Open decisions for the operator
 
-1. **Credential model:** Authentik-minted operator tokens (recommended) vs L0 standing keys
-   first. Determines whether v1 stands up the `hostexec` Authentik provider + host JWKS
-   verifier now or after an ergonomics MVP.
+1. ~~**Credential model**~~ — **decided (operator, 07-17): Authentik-minted operator tokens
+   with a fail-closed host verifier; no standing root key.** v1 stands up the `hostexec`
+   Authentik provider + host JWKS verifier. L0 rejected.
 2. **argv binding:** ship at kubectl-passthrough parity (Authentik token only), or add the
    console argv countersignature to defend against a compromised relay swapping the command.
+   (This is the only remaining lever on the live-relay residual named above.)
 3. **Root scope:** which in-scope hosts get a `hostexec-root-<host>` group at all. Open
    question: `rugged` (the operator's own tablet) is in scope for exec — is `run_as=root`
    wanted there too, or `agentydragon`-only on `rugged` with root reserved to `wyrm2`?
