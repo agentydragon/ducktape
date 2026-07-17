@@ -276,6 +276,32 @@ under the current MM PID), which is expected behavior — MM puts modem in
 LOW_POWER before the kernel's MHI suspend path, modem comes back from
 NAND-boot on resume. No MHI/SBL wedge observed.
 
+**Still confirmed working, 2026-07-17.** Three more clean re-enumeration
+cycles, modem index `modem0 → modem1 → modem2` (all under MM PID 1489,
+service up since 2026-07-16 02:34):
+
+- 2026-07-16 10:28:13 suspend → `modem0` disabled cleanly.
+- 2026-07-17 14:42:05 resume → `modem1` created 14:42:25, connected 14:42:42.
+- 2026-07-17 14:43:40 suspend → `modem1` disabled → 14:43:42 resume →
+  `modem2` created 14:44:02, connected 14:44:18.
+
+No MHI/SBL wedge: kernel log has **no** `Resuming from non M3 state`,
+`failed to resume device`, or `Recovery failed` signature for the day, and
+`mmcli -m` shows the modem `connected` on lte+5gnr afterward. MM flag +
+udev runtime-PM pin still holding.
+
+**Gotcha — the transient "modem not visible" window.** For ~20–40 s after
+each resume the modem re-probes and is genuinely absent from `mmcli -L`:
+the MHI/MBIM interface is unresponsive at first (a burst of
+`[/dev/wwan0mbim0] MBIM error: Transaction timed out` in the MM log), then
+the modem is re-created and re-registers. Running `mmcli -L` inside that
+window correctly reports no modem, but it is **not** a wedge — it clears
+itself in well under a minute. This is exactly what happened when the modem
+"looked missing" on 2026-07-17 (two suspend/resume cycles ~2 min apart, each
+followed by a re-probe gap). Distinguish a real wedge by the dmesg SYS_ERROR
+/ `Recovery failed: -25` signature and `mhi0 channels: NONE` persisting past
+~1 min, not by a single empty `mmcli -L` right after wakeup.
+
 ## Remaining next steps
 
 **2. Run the suspend experiment matrix**
@@ -572,39 +598,67 @@ cat /sys/bus/pci/devices/0000:71:00.0/power/control
 Then let the machine idle on WiFi for longer than the historical 28-minute
 failure window and confirm no `Resuming from non M3 state (SYS ERROR)`.
 
-**P1 — Kernel quirk patch for prevention, deferred**. Do not carry this
-locally unless the userspace timing fix above still fails. The upstream
-driver already has `mhi_foxconn_dw5934e_info.no_m3` and the
-runtime-autosuspend gate already checks it:
-`if (pci_pme_capable(... PCI_D3hot) && !(info->no_m3))`. This prevents the
-driver from enabling the broken runtime M3 path in the first place.
+**P1 — Kernel quirk `.no_m3 = true` for the DW5934e — NOT NEEDED in
+practice (kernel-source audit 2026-07-17).**
 
-- Possible local/upstream patch: set `.no_m3 = true` for PCI `105b:e11d`
-  in `mhi_foxconn_dw5934e_info`.
-- Upstream path: send the quirk to
-  `loic.poulain@linaro.org` / `mhi@lists.linux.dev` (and consider the sibling
-  productized Foxconn SDX72 IDs after checking them).
-  The current behavior is wrong for this productized-vendor module: the
-  device advertises M3/PME capability, but observed runtime M3 resume can put
-  it in SYS_ERR and the no-SBL recovery path cannot restore it.
+Correction to an earlier claim in this doc: the upstream driver does **not**
+set `no_m3` on this modem. The _field_ exists and the gate checks it
+(`pci_generic.c:1425`, `if (pci_pme_capable(pdev, PCI_D3hot) && !(info->no_m3))`),
+but `mhi_foxconn_dw5934e_info` carries no `.no_m3`. Verified byte-identical
+across the local **v6.19** tree and **current mainline master** (fetched
+2026-07-17), so it is also absent from the running **7.2.0-rc2** kernel. The
+_only_ device with `.no_m3 = true` upstream is `mhi_qcom_qdu100_info` (a
+QDU100 DU accelerator, not a modem) — the precedent to cite if upstreaming.
 
-**P1b — Kernel quirk patch for failed recovery**. If upstream pushes back on
-declaring M3 unsupported, add a productized-device recovery quirk instead:
-avoid in-place `pci_try_reset_function()` after MHI runtime-resume failure and
-prefer full remove/rescan semantics, because local evidence shows FLR leaves
-this modem in PBL while remove/rescan re-probes cleanly. This is less direct
-than `.no_m3 = true` because it handles the aftermath, not the trigger.
+**Why the patch isn't needed:** `no_m3` and the deployed P0b userspace pin
+produce the _identical_ runtime outcome — the modem never enters runtime M3.
+`no_m3` skips `pm_runtime_use_autosuspend()` at probe; P0b writes
+`power/control=on` so autosuspend, though enabled, never fires. Live proof
+the userspace path is holding (2026-07-17): `power/runtime_suspended_time=0`
+(modem has never runtime-suspended this boot), `power/control=on`, and
+**zero** `non M3 state (SYS ERROR)` / `Recovery failed` across the 5 boots
+since the 2026-06-24 `add|bind|change`+verifier fix (~23 days, incl. a
+13-day and a 4-day boot). The only thing the kernel patch buys is
+race-freeness (immunity to a probe-timing or rebind reset of
+`power/control`), and there is no evidence that race still bites.
+
+**Standby patch** (apply only if the userspace pin ever races again): add
+`.no_m3 = true` to `mhi_foxconn_dw5934e_info` for PCI `105b:e11d`, carried as
+a `boot.kernelPatches` entry. The same one-liner is the upstream submission
+(to `loic.poulain@linaro.org` / `mhi@lists.linux.dev`); rationale: the module
+advertises M3/PME capability, but observed runtime M3 resume can drop it into
+SYS_ERR and the no-SBL recovery path (`.fw = NULL`) cannot restore it.
+Consider the sibling productized Foxconn SDX72 IDs (e.g. `t99w640`, which
+shares `modem_foxconn_sdx72_config`) at the same time.
+
+**P1b — `reset_on_remove` (new driver field, noted 2026-07-17).** Since this
+investigation was written the driver gained `.reset_on_remove`
+(`pci_generic.c:1462`: `if (mhi_pdev->reset_on_remove) mhi_soc_reset(...)` on
+driver removal), currently set only on `mhi_qcom_qdu100_info`. Setting it for
+the DW5934e would make `modem.sh recover`'s PCI remove/rescan issue a clean
+SoC reset on teardown — the kernel-level version of the old P1b idea (prefer
+a clean reset over in-place FLR). Optional hardening, low value while P0b
+prevents the wedge; would ride along in the same standby patch.
 
 **P4 ❌ DISPROVEN — BIOS WwanAutoSense flip**. Reboot showed
 `reset_method` stayed `flr bus`, with no `acpi`; this did not expose the DSDT
 WWEN-gated power-cycle methods.
 
-**P2 — Obtain SBL firmware blob for SDX72**. Locate
-`qcom/sdx72m/foxconn/sbl1.mbn` (or `xbl.elf`) from a Windows driver,
-Foxconn engineering channel, or extracted from device. Install in
-`/lib/firmware/qcom/sdx72m/foxconn/`. Patch
-`mhi_foxconn_dw5934e_info.fw` to point at it. Then the existing
-recovery path would actually succeed: FLR → PBL → host loads SBL → AMSS.
+**P2 — Obtain SBL firmware blob for SDX72 — still unavailable upstream
+(firmware audit 2026-07-17).** The `.fw` (host-side SBL/xbl) mechanism exists
+and is used: `mhi_qcom_qdu100_info` sets `.fw = "qcom/qdu100/xbl_s.melf"`. The
+DW5934e sets only `.edl` and no `.fw`, so on a PBL fall-through
+`mhi_fw_load_handler` has nothing to load and aborts (the documented wedge).
+linux-firmware (pinned nix store, checked 2026-07-17) ships `qcom/sdx35` and
+`qcom/sdx61` but **no `sdx72m` directory at all** — not even the `edl.mbn` the
+driver references. So there is no upstream SBL/xbl/EDL for this SoC.
+
+To pursue: locate `qcom/sdx72m/foxconn/sbl1.mbn` (or `xbl.elf`) from a Windows
+driver, Foxconn engineering channel, or extracted from device; install under
+`/lib/firmware/qcom/sdx72m/foxconn/`; set `mhi_foxconn_dw5934e_info.fw` to
+point at it. Then the existing recovery path succeeds: FLR → PBL → host loads
+SBL → AMSS. Lower value now that P0b prevents the idle wedge in the first
+place — this is the belt to P0b's suspenders.
 
 - Risk: legal-ish (binary blob redistribution).
 

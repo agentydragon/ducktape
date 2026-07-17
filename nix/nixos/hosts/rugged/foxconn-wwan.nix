@@ -134,6 +134,14 @@ in
     # ships `.fw = NULL`), did an FLR, and wedged the modem into PBL with no
     # channels, invisible to MM/GNOME until recovery.
     #
+    # This is the userspace equivalent of the driver's `.no_m3 = true` quirk
+    # (pci_generic.c gate: `pci_pme_capable(...) && !info->no_m3`): no_m3 skips
+    # enabling autosuspend at probe, this pins power/control=on so the enabled
+    # autosuspend never fires — identical M0-at-idle outcome. Upstream does NOT
+    # set no_m3 for 105b:e11d (verified v6.19/master/7.2-rc2, 2026-07-17; only
+    # qcom-qdu100 uses it), so we prevent the wedge here instead of carrying a
+    # kernel patch. Standby patch + evidence: debug/rugged/hw/modem_suspend_research.md §"P1".
+    #
     # The first mitigation only matched PCI add; that was too early because
     # mhi_pci_probe() later calls pm_runtime_set_autosuspend_delay(..., 2000)
     # and re-allows runtime autosuspend. Keep the direct udev write for add,
