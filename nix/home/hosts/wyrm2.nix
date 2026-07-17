@@ -115,12 +115,40 @@
         # seatphysical seat (see notes below); swaylock keeps the output live.
         { command = "swayidle -w timeout 300 'swaylock -f'"; }
       ];
+      # Keybindings mirror the user's GNOME + pop-shell muscle memory (dconf survey
+      # in debug/atlas/direct_display_bringup.md). Focus stays on sway's default
+      # Super+hjkl, which is exactly pop-shell focus-{left,down,up,right}.
       keybindings = lib.mkOptionDefault {
         "XF86AudioRaiseVolume" = "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+";
         "XF86AudioLowerVolume" = "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-";
         "XF86AudioMute" = "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
-        # GNOME-style manual lock.
-        "Mod4+l" = "exec swaylock -f";
+
+        # Terminal on Super+Return (sway default) AND Super+t (GNOME media key).
+        "Mod4+t" = "exec foot";
+        # Lock on Super+Escape (GNOME screensaver binding). NOT Super+l — that is
+        # pop-shell focus-right.
+        "Mod4+Escape" = "exec swaylock -f";
+
+        # Window management: pop-shell defaults + GNOME close/maximize.
+        "Mod4+q" = "kill";
+        "Mod4+g" = "floating toggle";
+        "Mod4+o" = "layout toggle split";
+        "Mod4+s" = "layout toggle stacking split";
+        # GNOME toggle-maximized; fullscreen is the tiling analog.
+        "Mod4+m" = "fullscreen";
+        "Mod4+slash" = "exec wofi --show drun";
+        # GNOME toggle-message-tray → open the swaync notification center.
+        "Mod4+v" = "exec swaync-client -t -sw";
+
+        # Horizontal workspaces on the arrows (GNOME switch-to-workspace-left/right),
+        # overriding sway's default arrow-focus — focus lives on Super+hjkl.
+        "Mod4+Left" = "workspace prev";
+        "Mod4+Right" = "workspace next";
+        "Mod4+Shift+Left" = "move container to workspace prev";
+        "Mod4+Shift+Right" = "move container to workspace next";
+
+        # Region screenshot to clipboard (Print, mirroring the GNOME flameshot key).
+        "Print" = ''exec grim -g "$(slurp)" - | wl-copy'';
       };
     };
   };
