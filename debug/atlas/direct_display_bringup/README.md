@@ -7,6 +7,28 @@ via the FV43U's USB-B hub uplink → atlas USB port → QEMU port passthrough.
 
 ## Current status & decision (2026-07-17)
 
+> **DIRECTION CHANGE (2026-07-17): drop multi-seat entirely — single `seat0` +
+> remote access.** The physical monitor and a remote console are never needed at
+> the same time (confirmed with the owner), so there is no reason to run two
+> independent local graphical seats. Make the **display 5090 the sole `seat0`
+> graphical output** — a normal, fully-supported GDM `seat0` login, so the
+> physical seat "just works" — and reach the desktop over the network with a
+> **remote session, not a seat** (gnome-remote-desktop RDP, including its headless
+> remote-login mode, or the **Sunshine** host already configured here). This
+> **retires the entire non-seat0 GDM problem**: no PLM, no MR 155 backport, no
+> carried patch. SPICE is demoted to a Proxmox recovery console, not a graphical
+> login seat.
+>
+> Only carry-over constraint: `seat0` would then enumerate all three GPUs (virtio
+> plus both 5090s), and multi-GPU mutter SIGSEGV'd here before (2026-07-02) — so
+> keep `seat0` single-display by `mutter-device-ignore`-ing the virtio-gpu and the
+> spare 5090, leaving the display 5090 as `seat0`'s only output. That is _simpler_
+> than today's two-seat setup (no `seatspare`, no non-seat0 seat). **Config change
+> not yet applied.**
+>
+> Everything below (the GDM / PLM / greetd multiseat analysis) is retained for the
+> record but is now **moot for wyrm2** — we are not pursuing a multi-seat DM.
+
 **Display manager: GDM — SUPERSEDED.** The physical-seat greeter renders under
 GDM, but **GDM cannot complete a _user_ login on the non-seat0 seat at all**
 (verified 2026-07-17, below). The earlier "GDM, accept the same-user veto"
@@ -41,12 +63,15 @@ What is proven vs. retracted:
 - **Retracted:** "GDM drives both seats cleanly; accept the same-user veto." GDM
   drives both seats' _greeters_ cleanly, but cannot start a _user session_ on the
   non-seat0 seat (above). The veto was never the operative blocker.
-- **Path forward (not yet chosen):** PLM + the verified per-seat backport parked
-  at <plm-mr155-per-seat-greeter.patch> (builds green) is the best-supported
-  option — SDDM-lineage DMs _do_ complete non-seat0 user logins, PLM ships the
-  SDDM `cda8d93` VC-tty fix, and MR 155 fixes PLM's per-seat greeter singleton.
-  greetd is **not** an option — source-verified out (hardcodes `XDG_SEAT=seat0`,
-  VT-driven; see greetd section). Grounded matrix + caveats: <greeters.md>.
+- **Path forward (CHOSEN — see DIRECTION CHANGE above):** single `seat0` + remote
+  access. The multi-seat DM question is retired for wyrm2. The PLM + verified
+  per-seat backport at <plm-mr155-per-seat-greeter.patch> (builds green) stays
+  **shelved as a fallback only if** two independent _simultaneous local_ graphical
+  seats ever become a real requirement — SDDM-lineage DMs _do_ complete non-seat0
+  user logins, PLM ships the SDDM `cda8d93` VC-tty fix, and MR 155 fixes PLM's
+  per-seat greeter singleton. greetd is **not** an option — source-verified out
+  (hardcodes `XDG_SEAT=seat0`, VT-driven; see greetd section). Grounded matrix +
+  caveats: <greeters.md>.
 
 Artifacts in this directory: <greeters.md> (grounded DM capability matrix),
 <seat-diag.sh> (DM-agnostic seat/DRM/logind diagnostic — `sudo bash seat-diag.sh`),
