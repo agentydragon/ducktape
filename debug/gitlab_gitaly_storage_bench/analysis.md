@@ -33,9 +33,11 @@ Median seconds, lower is better. Raw CSVs in <results/praefect_3node/>.
 | seaweedfs-SSD   |   0.044 |         0.099 |          0.885 |    1.155 |
 | rook-cephfs-SSD |   0.053 |         0.100 |          0.702 |    0.790 |
 | seaweedfs-HDD   |   0.046 |         0.099 |          0.870 |    0.970 |
-| rook-cephfs-HDD |     TBD |           TBD |            TBD |      TBD |
+| rook-cephfs-HDD |   0.058 |         0.082 |          1.897 |    1.490 |
 
-(rook-HDD pending — requires rebuilding the trial Ceph cluster on HDD OSDs.)
+The rook-HDD cell required a full sequential Ceph rebuild onto the HDD hosts (3-copy);
+recovering from the force-teardown of the SSD arm was fiddly — see the rebuild playbook
+and its rook-state gotchas in <README.md>.
 
 ### Anchor: same workload on the two _multi-node_ Forgejo/GitLab HA shapes
 
@@ -57,11 +59,14 @@ over that while providing HA.
    faster. rook-cephfs-SSD pushes at 0.79s — 2.1x faster than Forgejo-RWX. Both topologies
    avoid a single-node dependency; Praefect is simply a better way to get there.
 
-2. **Under Praefect, the storage backend barely moves git push** (0.79–1.16s across
-   seaweedfs-ssd/hdd and rook-ssd — seaweedfs-HDD even edged seaweedfs-SSD, within noise).
-   That is the tell: with single-writer-per-repo + async replication, push isn't gated on
-   the shared-filesystem metadata round trips that dominated the Forgejo RWX share. The
-   version/read floors (~0.045 / ~0.099s) are storage-independent, as expected.
+2. **Under Praefect, the storage backend has a modest effect on git push** — the full 2x2
+   spans 0.79s (rook-ssd) to 1.49s (rook-hdd), ~1.9x. The 3-copy loop-backed HDD Ceph is the
+   slowest cell (write 1.9s, push 1.5s), consistent with the Forgejo trial's HDD arm. But
+   even that worst cell (1.49s) still beats Forgejo 2-replica RWX (1.63s), and all four cells
+   sit below it. So the RWX-vs-single-writer _architecture_ dominates the media/replication
+   choice: with single-writer-per-repo + async replication, push isn't gated on the shared-
+   filesystem metadata round trips that dominated the Forgejo RWX share. Version/read floors
+   (~0.05 / ~0.10s) are storage-independent, as expected.
 
 3. **The RWX shared mount was the villain, not the disk — now confirmed from both sides.**
    The rook trial showed Forgejo is slow even on fast storage (2-mounter RWX cap

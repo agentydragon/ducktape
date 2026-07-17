@@ -226,9 +226,10 @@ Two shapes do that:
   single-node dependency. **Measured** in <gitlab_gitaly_storage_bench/analysis.md>: on the
   same seaweedfs-ssd storage, HA-to-HA, Gitaly Cluster beats Forgejo's 2-replica RWX on
   every operation — git push 1.4x, contents write 3.8x, read 5x, version 8x faster — and
-  under Praefect the storage backend barely moves push latency (0.79–1.16s across
-  rook/seaweedfs × ssd/hdd, all below Forgejo-RWX's 1.63s). Confirmed from both sides: the
-  RWX shared mount is the penalty, not the disk.
+  across the full `{rook, seaweedfs} × {ssd, hdd}` matrix push stays 0.79–1.49s, every cell
+  below Forgejo-RWX's 1.63s (even 3-copy HDD Ceph, the slowest). Confirmed from both sides:
+  the RWX shared mount is the penalty, and the single-writer architecture dominates the
+  media/replication choice.
 
 ## Teardown contract
 
