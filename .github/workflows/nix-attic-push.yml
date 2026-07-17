@@ -9,6 +9,17 @@ on:
     branches: [main, devel]
   workflow_dispatch:
 
+# Serialize per branch: each job is a full ~12-min eval+push, and rapid devel
+# pushes otherwise stampede (many overlapping runs on cold ephemeral stores, none
+# seeing the others' pushes, so nothing warms the cache). cancel-in-progress is
+# false on purpose: queued runs execute in order, so the first primes the Attic
+# cache and every later run starts warm (--skip-cached skips the unchanged
+# closures) instead of re-fetching gigabytes. Cancelling mid-run would instead
+# keep aborting before completion during a burst, so the cache never warms.
+concurrency:
+  group: nix-attic-push-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   nix-attic-push:
     name: Build & push to Attic
