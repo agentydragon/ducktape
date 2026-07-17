@@ -142,9 +142,29 @@ py_library(
 )
 
 py_library(
+    name = "oauth_callback_page",
+    srcs = ["oauth_callback_page.py"],
+    data = ["oauth_callback.html.j2"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//jinja2",
+    ],
+)
+
+py_library(
+    name = "oauth_token_support",
+    srcs = ["oauth_token_support.py"],
+    deps = [
+        ":config",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "mcp_operator_oauth",
     srcs = ["mcp_operator_oauth.py"],
-    data = ["mcp_operator_auth_callback.html.j2"],
     deps = [
         ":config",
         ":console_events",
@@ -152,13 +172,14 @@ py_library(
         ":database_schema",
         ":deps",
         ":mcp_config",
+        ":oauth_callback_page",
+        ":oauth_token_support",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//httpx",
-        "@pypi//jinja2",
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",

@@ -16,7 +16,6 @@ from __future__ import annotations
 import base64
 import datetime
 import secrets
-from pathlib import Path
 from typing import Annotated, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
 from uuid import UUID
@@ -25,7 +24,6 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi_csrf_protect import CsrfProtect
-from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
@@ -36,7 +34,6 @@ from mcp.client.auth.utils import (
     handle_auth_metadata_response,
     handle_protected_resource_response,
     handle_registration_response,
-    handle_token_response_scopes,
 )
 from mcp.client.streamable_http import MCP_PROTOCOL_VERSION
 from mcp.shared.auth import (
@@ -48,12 +45,11 @@ from mcp.shared.auth import (
 )
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from mcp.types import LATEST_PROTOCOL_VERSION
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 from haku.console import operator_auth
-from haku.console.config import Settings
 from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
@@ -64,6 +60,8 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
     _server_entry,
 )
+from haku.console.oauth_callback_page import render_oauth_callback_page
+from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at, token_is_fresh
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
@@ -71,7 +69,6 @@ Csrf = Annotated[CsrfProtect, Depends()]
 
 MCP_OPERATOR_AUTH_CALLBACK_PATH = "/api/mcp/operator-auth/callback"
 MCP_OPERATOR_AUTH_FLOW_TTL = datetime.timedelta(minutes=10)
-MCP_OPERATOR_AUTH_REFRESH_SKEW = datetime.timedelta(seconds=60)
 
 router = APIRouter(tags=["mcp-operator-oauth"])
 
@@ -292,7 +289,7 @@ class PostgresMcpOperatorOAuthStore:
         if flow.expires_at < now:
             raise HTTPException(status_code=410, detail="OAuth flow expired; start connection again")
         token = await _exchange_operator_oauth_code(flow, code)
-        token_expires_at = _token_expires_at(token, now)
+        expires_at = token_expires_at(token, now)
         with self._sessions.begin() as session:
             # The code exchange is external I/O. Make active status and association persistence one
             # atomic final step; never store a token if a disable committed while it was in flight.
@@ -319,7 +316,7 @@ class PostgresMcpOperatorOAuthStore:
                 refresh_token=token.refresh_token,
                 token_type=token.token_type,
                 scope=token.scope or flow.scope,
-                token_expires_at=token_expires_at,
+                token_expires_at=expires_at,
             )
             session.add(existing)
             return _oauth_status_from_row(flow.server_id, username, existing)
@@ -342,13 +339,13 @@ class PostgresMcpOperatorOAuthStore:
             if row is None:
                 return None
             now = datetime.datetime.now(datetime.UTC)
-            if _association_token_is_fresh(row, now):
+            if token_is_fresh(row.token_expires_at, now):
                 return row.access_token
             if not row.refresh_token:
                 return None
             snapshot = OperatorOAuthRefreshState.from_row(row)
         refreshed = await _refresh_operator_oauth_token(snapshot)
-        token_expires_at = _token_expires_at(refreshed, datetime.datetime.now(datetime.UTC))
+        expires_at = token_expires_at(refreshed, datetime.datetime.now(datetime.UTC))
         with self._sessions.begin() as session:
             # Refresh is external I/O. Revalidate in the same transaction as both the token write
             # and return so a disable committed during refresh cannot produce a usable token.
@@ -361,7 +358,7 @@ class PostgresMcpOperatorOAuthStore:
                 # lock. A concurrent refresh or disconnect/reconnect owns the row now; never let
                 # this stale response overwrite it. Its current fresh token is safe to use, while
                 # an already-expired replacement must be retried from a new snapshot.
-                if _association_token_is_fresh(row, datetime.datetime.now(datetime.UTC)):
+                if token_is_fresh(row.token_expires_at, datetime.datetime.now(datetime.UTC)):
                     return row.access_token
                 raise RuntimeError("MCP OAuth association changed during refresh; retry the tool call")
             row.updated_at = datetime.datetime.now(datetime.UTC)
@@ -369,7 +366,7 @@ class PostgresMcpOperatorOAuthStore:
             row.refresh_token = refreshed.refresh_token or row.refresh_token
             row.token_type = refreshed.token_type
             row.scope = refreshed.scope or row.scope
-            row.token_expires_at = token_expires_at
+            row.token_expires_at = expires_at
             row.token_revision += 1
             return row.access_token
 
@@ -387,10 +384,6 @@ def _operator_username(request: Request) -> str:
     return operator_auth.operator_username(request) or "operator"
 
 
-def _public_base_url(settings: Settings) -> str:
-    return settings.public_base_url.rstrip("/")
-
-
 def _oauth_status_from_row(
     server_id: str, username: str, row: McpOperatorOAuthAssociation | None
 ) -> McpOperatorAuthStatus:
@@ -403,16 +396,6 @@ def _oauth_status_from_row(
         token_expires_at=row.token_expires_at,
         scope=row.scope,
     )
-
-
-def _token_expires_at(token: OAuthToken, now: datetime.datetime) -> datetime.datetime | None:
-    if token.expires_in is None:
-        return None
-    return now + datetime.timedelta(seconds=token.expires_in)
-
-
-def _association_token_is_fresh(association: McpOperatorOAuthAssociation, now: datetime.datetime) -> bool:
-    return association.token_expires_at is None or association.token_expires_at > now + MCP_OPERATOR_AUTH_REFRESH_SKEW
 
 
 def _metadata_request_headers() -> dict[str, str]:
@@ -609,12 +592,9 @@ async def _exchange_operator_oauth_code(flow: OperatorOAuthFlowState, code: str)
     data, headers = _token_request_auth(data, flow)
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(flow.token_endpoint, data=data, headers=headers)
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"MCP OAuth token exchange failed: {response.status_code}")
-    try:
-        return await handle_token_response_scopes(response)
-    except ValidationError as e:
-        raise HTTPException(status_code=502, detail=f"MCP OAuth token response was invalid: {e}") from e
+    return await parse_token_response(
+        response, label="MCP OAuth token exchange", error=lambda m: HTTPException(status_code=502, detail=m)
+    )
 
 
 async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) -> OAuthToken:
@@ -631,44 +611,12 @@ async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) 
     data, headers = _token_request_auth(data, association)
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(association.token_endpoint, data=data, headers=headers)
-    if response.status_code != 200:
-        raise RuntimeError(f"MCP OAuth token refresh failed: {response.status_code}")
-    try:
-        return await handle_token_response_scopes(response)
-    except ValidationError as e:
-        raise RuntimeError(f"MCP OAuth refresh response was invalid: {e}") from e
-
-
-# The callback page is served here (not from the SPA) because the OAuth provider redirects
-# straight to this backend endpoint, where the code→token exchange runs; the page's only job
-# is to report the outcome. The server publishes association changes through the console event
-# hub. The markup lives in a sibling template (loaded once at import) so it stays lintable
-# rather than a Python blob.
-# TODO: make this a SPA-style page instead of a backend-served .html template — have the callback
-# run the token exchange, then redirect to a frontend route that renders the outcome.
-_CALLBACK_TEMPLATE = Environment(
-    loader=FileSystemLoader(Path(__file__).parent),
-    autoescape=select_autoescape(enabled_extensions=("html", "j2")),
-    undefined=StrictUndefined,
-).get_template("mcp_operator_auth_callback.html.j2")
+    return await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
 
 
 def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:
     title = "MCP account connected" if ok else "MCP account connection failed"
-    csp_nonce = secrets.token_urlsafe(32)
-    return HTMLResponse(
-        status_code=status_code,
-        content=_CALLBACK_TEMPLATE.render(title=title, message=message, csp_nonce=csp_nonce),
-        headers={
-            "Cache-Control": "no-store",
-            "Content-Security-Policy": (
-                "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; "
-                f"script-src 'none'; style-src 'nonce-{csp_nonce}'"
-            ),
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return render_oauth_callback_page(title, message, status_code=status_code)
 
 
 @router.get("/api/mcp/operator-auth")
@@ -695,7 +643,7 @@ async def connect_mcp_operator_auth(
     except McpServerNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return await oauth_store.connect_flow(
-        server=server, operator_id=actor.operator_id, public_base_url=_public_base_url(settings)
+        server=server, operator_id=actor.operator_id, public_base_url=public_base_url(settings)
     )
 
 
