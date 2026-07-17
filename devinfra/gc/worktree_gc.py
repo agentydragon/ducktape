@@ -8,8 +8,13 @@ catches squash/rebase-merges; or the branch is empty) or by a merged GitHub PR f
 branch. Everything else is kept (dirty/active/live/open-PR) or reported for manual review
 (clean but unique unmerged work, detached HEAD with unique commits, undeterminable main).
 
-PR state is supplied as an injected mapping so this module stays git-only and dependency-
-free; the CLI (workspace_gc) fills it in via PyGithub.
+Git access is via pygit2 for content queries. Worktree enumeration and removal use the
+git CLI: `worktree list --porcelain` returns the main worktree and every linked one with
+its branch in one call (pygit2's `list_worktrees()` gives only linked-worktree names), and
+`worktree remove` refuses a dirty tree and deletes the working directory including
+read-only files (pygit2's `Worktree.prune()` does neither by default). PR state is an
+injected mapping so this module needs no network; the CLI (workspace_gc) fills it via
+PyGithub.
 """
 
 from __future__ import annotations
@@ -19,7 +24,10 @@ import os
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+
+import pygit2
 
 
 class PrState(enum.StrEnum):
@@ -38,25 +46,27 @@ class PrInfo:
 class Worktree:
     path: Path
     branch: str | None  # None for a detached HEAD
-    head: str
 
 
 @dataclass(frozen=True, slots=True)
 class PrunableWorktree:
     worktree: Worktree
     reason: str
+    last_activity: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
 class RetainedWorktree:
     worktree: Worktree
     reason: str
+    last_activity: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewWorktree:
     worktree: Worktree
     reason: str
+    last_activity: datetime | None
 
 
 type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
@@ -74,26 +84,19 @@ def _git_out(repo: Path, *args: str) -> str:
     return _git(repo, *args).stdout.strip()
 
 
-def _git_ok(repo: Path, *args: str) -> bool:
-    return _git(repo, *args, check=False).returncode == 0
-
-
 def list_worktrees(repo: Path) -> list[Worktree]:
     """Every worktree of `repo`, parsed from `git worktree list --porcelain`."""
     worktrees: list[Worktree] = []
     path: Path | None = None
-    head = ""
     branch: str | None = None
     for line in [*_git_out(repo, "worktree", "list", "--porcelain").splitlines(), ""]:
         if line.startswith("worktree "):
             path = Path(line.removeprefix("worktree "))
-        elif line.startswith("HEAD "):
-            head = line.removeprefix("HEAD ")
         elif line.startswith("branch "):
             branch = line.removeprefix("branch ").removeprefix("refs/heads/")
         elif line == "" and path is not None:
-            worktrees.append(Worktree(path=path, branch=branch, head=head))
-            path, head, branch = None, "", None
+            worktrees.append(Worktree(path=path, branch=branch))
+            path, branch = None, None
     return worktrees
 
 
@@ -110,28 +113,49 @@ def main_worktree(repo: Path) -> Path:
     return Path(_git_out(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).parent
 
 
-def _dirty(path: Path) -> bool:
-    # --porcelain lists tracked changes and untracked files; any line means "not clean".
-    return bool(_git_out(path, "status", "--porcelain"))
+def _dirty(pg: pygit2.Repository) -> bool:
+    # status() reports tracked changes and untracked files (ignored excluded by default);
+    # any entry means the tree is not clean.
+    return bool(pg.status())
 
 
-def _content_in_main(repo: Path, head: str, main: str) -> bool:
-    """True when `head` adds nothing not already in `main`.
+def _last_activity(pg: pygit2.Repository, path: Path) -> datetime | None:
+    """Most recent sign of work: the HEAD commit or the newest mtime among uncommitted
+    (changed or untracked) files, so a dirty tree reflects when it was last *touched*."""
+    times: list[datetime] = []
+    if not pg.head_is_unborn:
+        commit = pg[pg.head.target].peel(pygit2.Commit)
+        tz = timezone(timedelta(minutes=commit.commit_time_offset))
+        times.append(datetime.fromtimestamp(commit.commit_time, tz=tz))
+    for rel in pg.status():
+        try:
+            times.append(datetime.fromtimestamp((path / rel).lstat().st_mtime, tz=UTC))
+        except OSError:
+            continue
+    return max(times) if times else None
 
-    Covers a direct merge (HEAD is an ancestor of main), an empty branch (no commits past
-    the merge base), and a squash/rebase-merge (merging HEAD into main yields main's exact
-    tree, so HEAD contributed no net change).
+
+def _content_in_main(pg: pygit2.Repository, main: str) -> bool:
+    """True when the worktree's HEAD adds nothing not already in `main`.
+
+    Covers a direct merge (HEAD is an ancestor of main), an empty branch (HEAD is the merge
+    base), and a squash/rebase-merge (merging HEAD into main yields main's exact tree, so
+    HEAD contributed no net change).
     """
-    if _git_ok(repo, "merge-base", "--is-ancestor", head, main):
+    head = pg.head.target
+    main_commit = pg.revparse_single(main).peel(pygit2.Commit)
+    main_oid = main_commit.id
+    if pg.descendant_of(main_oid, head):  # main descends from HEAD, i.e. HEAD is in main
         return True
-    merge_base = _git_out(repo, "merge-base", main, head)
-    if merge_base and _git_out(repo, "rev-list", "--count", f"{merge_base}..{head}") == "0":
-        return True
-    merged = _git(repo, "merge-tree", "--write-tree", main, head, check=False)
-    if merged.returncode != 0:  # non-zero == merge conflict, i.e. real divergence
+    base = pg.merge_base(main_oid, head)
+    if base is None:
         return False
-    merged_tree = merged.stdout.splitlines()[0] if merged.stdout else ""
-    return bool(merged_tree) and merged_tree == _git_out(repo, "rev-parse", f"{main}^{{tree}}")
+    if base == head:
+        return True
+    index = pg.merge_commits(main_oid, head)
+    if index.conflicts is not None:  # real divergence
+        return False
+    return index.write_tree(pg) == main_commit.tree.id
 
 
 def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/proc")) -> dict[Path, list[int]]:
@@ -154,7 +178,6 @@ def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/pro
 def classify_worktree(
     worktree: Worktree,
     *,
-    repo: Path,
     main: str,
     pr_states: dict[str, PrInfo],
     main_path: Path,
@@ -162,25 +185,37 @@ def classify_worktree(
     live_pids: list[int],
 ) -> Classification:
     path = worktree.path
+    pg = pygit2.Repository(os.fspath(path))
+    activity = _last_activity(pg, path)
+
+    def keep(reason: str) -> RetainedWorktree:
+        return RetainedWorktree(worktree, reason, activity)
+
+    def prune(reason: str) -> PrunableWorktree:
+        return PrunableWorktree(worktree, reason, activity)
+
+    def review(reason: str) -> ReviewWorktree:
+        return ReviewWorktree(worktree, reason, activity)
+
     if path == main_path:
-        return RetainedWorktree(worktree, "main checkout")
+        return keep("main checkout")
     if active_path is not None and path == active_path:
-        return RetainedWorktree(worktree, "the invoking worktree")
+        return keep("the invoking worktree")
     if live_pids:
-        return RetainedWorktree(worktree, f"a process is working in it (pid {live_pids[0]})")
-    if _dirty(path):
-        return RetainedWorktree(worktree, "uncommitted changes")
+        return keep(f"a process is working in it (pid {live_pids[0]})")
+    if _dirty(pg):
+        return keep("uncommitted changes")
 
     pr = pr_states.get(worktree.branch) if worktree.branch else None
     if pr is not None and pr.state is PrState.OPEN:
-        return RetainedWorktree(worktree, f"open PR #{pr.number}")
+        return keep(f"open PR #{pr.number}")
     if pr is not None and pr.state is PrState.MERGED:
-        return PrunableWorktree(worktree, f"PR #{pr.number} merged")
-    if _content_in_main(repo, worktree.head, main):
-        return PrunableWorktree(worktree, f"changes already in {main}")
+        return prune(f"PR #{pr.number} merged")
+    if _content_in_main(pg, main):
+        return prune(f"changes already in {main}")
     if worktree.branch is None:
-        return ReviewWorktree(worktree, f"detached HEAD with commits not in {main}")
-    return ReviewWorktree(worktree, f"commits not in {main} and no merged PR")
+        return review(f"detached HEAD with commits not in {main}")
+    return review(f"commits not in {main} and no merged PR")
 
 
 def classify_worktrees(
@@ -197,7 +232,6 @@ def classify_worktrees(
     return [
         classify_worktree(
             wt,
-            repo=repo,
             main=main,
             pr_states=pr_states,
             main_path=main_path,

@@ -1,4 +1,6 @@
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -88,6 +90,17 @@ def test_untracked_file_is_kept(repo: Path, proc: Path) -> None:
     path = _add(repo, "wt", "feature")
     (path / "scratch").write_text("x\n")
     assert isinstance(_classify(repo, path, proc), wg.RetainedWorktree)
+
+
+def test_last_activity_reflects_uncommitted_file_mtime(repo: Path, proc: Path) -> None:
+    path = _add(repo, "wt", "feature")
+    edited = path / "base"
+    edited.write_text("dirty\n")
+    future = time.time() + 10_000  # newer than the HEAD commit
+    os.utime(edited, (future, future))
+    result = _classify(repo, path, proc)
+    assert result.last_activity is not None
+    assert result.last_activity.timestamp() == pytest.approx(future, abs=2)
 
 
 def test_detached_head_with_commit_is_review(repo: Path, proc: Path) -> None:

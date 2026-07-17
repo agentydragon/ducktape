@@ -15,6 +15,7 @@ py_library(
     name = "worktree_gc_lib",
     srcs = ["worktree_gc.py"],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
 )
 
 py_library(
