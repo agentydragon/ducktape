@@ -20,8 +20,10 @@ import { writeVisualReviewManifest } from "../../../../util/testing/frontend_vis
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // The console's full-page application surfaces (ToolCallsPage, ShellChrome) are position:fixed,
-// so a viewport screenshot — not an #app element shot — is what captures them. Each scene is a
-// separate page load driven by window.__SCENE__ (see harness.tsx).
+// so a viewport screenshot — not an #app element shot — is what captures them. A scene that sets
+// `element` is instead captured as an element screenshot of that selector (the settings panel,
+// which is a normal-flow chrome surface, not a fixed overlay). Each scene is a separate page load
+// driven by window.__SCENE__ (see harness.tsx).
 const SCENES = [
   // The history page, showing both row states in one shot: flip the first row's Brief/Full
   // selector to Full (its segments are icons, so match the "Full" icon by aria-label) and open
@@ -32,7 +34,9 @@ const SCENES = [
     viewport: { width: 1200, height: 1500 },
     clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
   },
-  { name: "settings", viewport: { width: 1200, height: 900 } },
+  // The settings panel is captured as an element shot of its `#shot` wrapper (harness.tsx), so
+  // the PNG is just the panel and its card shadows — not a mostly-empty viewport.
+  { name: "settings", viewport: { width: 1200, height: 900 }, element: "#shot" },
   // The whole shell chrome: approvals starts selected; switch to screenshot so the capture checks
   // both the active tab styling and its mutually exclusive panel.
   {
@@ -90,7 +94,7 @@ const browser = await launchBrowser({ args: ["--force-color-profile=srgb"] });
 const assets = [];
 try {
   for (const colorScheme of COLOR_SCHEMES) {
-    for (const { name, viewport, click, clicks, fullPage = false } of SCENES) {
+    for (const { name, viewport, click, clicks, element, fullPage = false } of SCENES) {
       const page = await browser.newPage();
       await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
       await page.emulateMediaFeatures([
@@ -110,7 +114,15 @@ try {
         await new Promise((r) => setTimeout(r, 300));
       }
       const file = `${name}-${colorScheme}.png`;
-      writeFileSync(join(outDir, file), await page.screenshot({ fullPage }));
+      let shot;
+      if (element) {
+        const handle = await page.$(element);
+        if (!handle) throw new Error(`scene ${name}: element ${element} not found`);
+        shot = await handle.screenshot();
+      } else {
+        shot = await page.screenshot({ fullPage });
+      }
+      writeFileSync(join(outDir, file), shot);
       assets.push({ path: file, label: `${name} - ${colorScheme}` });
       console.log(`wrote ${join(outDir, file)}`);
       await page.close();

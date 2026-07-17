@@ -61,10 +61,15 @@ function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
       // The settings panel (a chrome surface); fetches /api/mcp/operator-auth on mount —
-      // mock_api.ts serves SAMPLE_MCP. Boxed to a panel-ish width for the shot.
+      // mock_api.ts serves SAMPLE_MCP. Render it inside its real shell column
+      // (.haku-shell-panels, which owns the panel width) so the shot tracks the true layout
+      // instead of a hardcoded number; #shot is render.mjs's element-screenshot target and
+      // shrink-wraps that column, with padding so the shot includes the card shadows.
       return (
-        <div style={{ maxWidth: 520, margin: 16 }}>
-          <SettingsPanel />
+        <div id="shot" style={{ display: "inline-block", padding: 24 }}>
+          <div className="haku-shell-panels">
+            <SettingsPanel />
+          </div>
         </div>
       );
     case "chrome":
