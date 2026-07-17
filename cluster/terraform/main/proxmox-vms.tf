@@ -240,15 +240,11 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     timeout = "2m"
   }
 
-  lifecycle {
-    ignore_changes = [
-      # Proxmox CSI hotplugs scsi disks — provider can't distinguish
-      # tofu-managed from CSI disks (TypeSet, no stable keys).
-      # Intentional new disks such as virtio8 (/var/lib/colibri) must be hotplugged manually
-      # and then kept in this resource as the desired VM shape.
-      disk,
-    ]
-  }
+  # No `ignore_changes = [disk]`: the Proxmox CSI driver that used to hotplug
+  # unmanaged scsi disks onto this VM was removed 2026-07-16
+  # (see cluster/docs/lessons_learned/2026_07_16_disable_proxmox_csi.md), so the
+  # `disk` blocks above are now the full, authoritative disk shape. tofu manages
+  # all wyrm2 disks declaratively again.
 
   depends_on = [module.wyrm2_image]
 }

@@ -595,11 +595,12 @@ physical Proxmox host LVM-local storage has the same failure domain anyway. Rati
 and full context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers
 now use `lvm-proxmox-hdd`.
 
-- [ ] Now that CSI no longer hotplugs SCSI disks onto wyrm2, remove the
-      `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM in
-      `terraform/main/proxmox-nodes.tf` so Terraform can manage all wyrm2 disks
-      declaratively. (The bpg/proxmox provider treats disks as one keyless TypeSet;
-      the ignore rule was only there to avoid fighting CSI-managed disks.)
+The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM (only there to avoid
+fighting CSI-hotplugged disks) has been removed, so tofu manages all wyrm2 disks
+declaratively again. The `disk` blocks in `terraform/main/proxmox-vms.tf` are now the
+authoritative shape — the next `bazel run //cluster:bootstrap` re-plans them, so eyeball
+that plan for unexpected resizes/deletions (e.g. any CSI-retained orphan disks) before
+applying.
 
 ## Operational Hardening
 
