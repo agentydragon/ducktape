@@ -290,3 +290,13 @@ TODO list); it is not gated on E1–E5.
 - **Deepening `ext?` numbers.** Any external number that starts driving a real
   decision (e.g. picking the default coding model) becomes a candidate for a
   local eval run; <TODO.md> tracks these individually.
+- **Intelligence-ceiling axis: bigger/smarter models at the edge of runnable.**
+  The E1–E5 set is deliberately mid-size (fast, resident). A worthwhile separate
+  axis is "how much more capability can we get if we accept it's slow / barely
+  fits" — e.g. **gpt-oss-120b** (MXFP4 ≈ 63 GB, right at the 64 GB aggregate-VRAM
+  edge; likely needs a little CPU/RAM offload or aggressive KV/context limits),
+  and similarly large MoEs. This overlaps the exotic/offload lane's premise —
+  the GLM-5.2-on-Colibri appeal is "full frontier-class quality, just slow" —
+  but framed as its own knob: trade latency/fit for raw model intelligence and
+  measure the capability-per-slowdown. Worth a dedicated run once E1–E5 map the
+  fast tier.
