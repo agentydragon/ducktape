@@ -239,6 +239,18 @@ py_test(
 )
 
 py_test(
+    name = "test_actions",
+    srcs = ["test_actions.py"],
+    deps = [
+        ":actions",
+        ":events",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_credit_award",
     srcs = ["test_credit_award.py"],
     deps = [

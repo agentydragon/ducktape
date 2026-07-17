@@ -5,6 +5,8 @@ import {
   fmtCredits,
   fmtHoursMin,
   mapSessionRead,
+  AdminUserPicker,
+  ErrorBanner,
   SectionTitle,
   StatCard,
   AddPastSessionForm,
@@ -115,23 +117,12 @@ export function StatsView({
       </div>
 
       {isAdmin && (
-        <div
-          className="panel"
-          style={{ padding: 12, marginBottom: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
-        >
-          <span style={{ color: COLORS.creamDim, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            Viewing habits for
-          </span>
-          <input
-            value={viewingUser}
-            onChange={(e) => setViewingUser(e.target.value)}
-            placeholder="(yourself)"
-            style={{ minWidth: 200 }}
-          />
-          <button className="btn" onClick={refreshTarget}>
-            Reload
-          </button>
-        </div>
+        <AdminUserPicker
+          label="Viewing habits for"
+          value={viewingUser}
+          onChange={setViewingUser}
+          onReload={refreshTarget}
+        />
       )}
 
       {viewingOther && (
@@ -142,20 +133,7 @@ export function StatsView({
         </div>
       )}
 
-      {targetError && (
-        <div
-          style={{
-            background: "rgba(180,40,40,0.25)",
-            border: `1px solid ${COLORS.red}`,
-            padding: "10px 14px",
-            marginBottom: 16,
-            color: COLORS.cream,
-            fontSize: 13,
-          }}
-        >
-          {targetError}
-        </div>
-      )}
+      {targetError && <ErrorBanner>{targetError}</ErrorBanner>}
 
       <StudyHabitsSections sessions={habitsSessions} />
 
@@ -190,8 +168,8 @@ export function StatsView({
       <SectionTitle>Data</SectionTitle>
       <div className="panel" style={{ padding: 20 }}>
         <div style={{ fontSize: 13, color: COLORS.creamDim, marginBottom: 16, lineHeight: 1.6 }}>
-          Your state is saved automatically to this artifact's persistent storage. It survives reloads, tab closes, and
-          returning days later. Export a JSON backup any time you want a copy outside of Claude.
+          Your state is saved automatically on the server and synced to every device you sign in from. Export a JSON
+          backup any time you want an offline copy.
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>

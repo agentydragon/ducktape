@@ -11,11 +11,12 @@ import {
   SectionTitle,
 } from "./shared.jsx";
 
-// Server-computed award breakdown of the just-completed session
-// (SessionCompleteResult) — every number comes from the backend.
+// Server-computed award breakdown of the just-completed session — every
+// number comes from the backend (SessionCompleteResult, converted to
+// decimal credits by use_casino's stopSession).
 export function SessionAwardToast({ award, onDismiss }) {
   const minutes = Math.round(award.seconds / 60);
-  const multiplier = (1 + award.streak_bonus_percent / 100).toFixed(2);
+  const multiplier = (1 + award.streakBonusPercent / 100).toFixed(2);
   return (
     <div
       className="deco-corners"
@@ -47,16 +48,14 @@ export function SessionAwardToast({ award, onDismiss }) {
         ×
       </button>
       <div className="display-font" style={{ fontSize: 24, color: COLORS.goldBright, fontWeight: 700 }}>
-        +{fmtCredits(award.credits_earned_millis / 1000)} credits
+        +{fmtCredits(award.creditsEarned)} credits
       </div>
       <div style={{ marginTop: 6, fontSize: 13, color: COLORS.cream, letterSpacing: "0.05em" }}>
-        {minutes}m studied · {award.streak_days}-day streak ×{multiplier}
-        {award.daily_bonus_millis > 0 && (
+        {minutes}m studied · {award.streakDays}-day streak ×{multiplier}
+        {award.dailyBonus > 0 && (
           <>
             {" "}
-            · includes{" "}
-            <strong style={{ color: COLORS.goldBright }}>+{fmtCredits(award.daily_bonus_millis / 1000)}</strong> daily
-            bonus
+            · includes <strong style={{ color: COLORS.goldBright }}>+{fmtCredits(award.dailyBonus)}</strong> daily bonus
           </>
         )}
       </div>

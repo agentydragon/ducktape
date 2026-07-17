@@ -154,7 +154,16 @@ export function useCasino() {
         ended_at_ms: endedAt,
       });
       writeActiveSession(null);
-      if (response.result?.credits_earned_millis > 0) setLastAward(response.result);
+      // Millis → decimal credits at this seam, like `credits` above.
+      if (response.result?.credits_earned_millis > 0) {
+        setLastAward({
+          creditsEarned: response.result.credits_earned_millis / 1000,
+          dailyBonus: response.result.daily_bonus_millis / 1000,
+          seconds: response.result.seconds,
+          streakDays: response.result.streak_days,
+          streakBonusPercent: response.result.streak_bonus_percent,
+        });
+      }
     } catch {
       // postAction surfaced the error already; keep the active session so the user can retry.
     }

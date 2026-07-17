@@ -9,11 +9,11 @@ rows inside one transaction and writes a `ledger_events` row keyed by
 
 from __future__ import annotations
 
-import datetime as _dt
 import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, get_args
@@ -648,7 +648,7 @@ def _aggregate_game(
     # somehow predates 2026-05-07.
     by_day: dict[str, list[GameEventRead]] = {}
     for e in game_events:
-        day = _dt.datetime.fromtimestamp(e.occurred_at_ms / 1000.0, tz=_dt.UTC).date().isoformat()
+        day = datetime.fromtimestamp(e.occurred_at_ms / 1000.0, tz=UTC).date().isoformat()
         if day < SERVER_RESOLVED_SINCE_DATE:
             continue
         by_day.setdefault(day, []).append(e)

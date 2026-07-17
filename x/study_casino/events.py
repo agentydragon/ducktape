@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from x.study_casino.models import (
     BlackjackOutcomeKind,
@@ -120,8 +120,14 @@ class GameEventRead(BaseModel):
     credits_after_millis: int
     tokens_before: int
     tokens_after: int
-    server_credits_millis: int
-    server_tokens: int
+    server_credits_millis: int = Field(
+        description="Server-authoritative credit balance after the event. Equals `credits_after_millis` for "
+        "server_resolved rows; kept separate because legacy client_reported rows carried client-claimed "
+        "before/after balances that could disagree with the server's."
+    )
+    server_tokens: int = Field(
+        description="Server-authoritative token balance after the event (see `server_credits_millis`)."
+    )
     rules_version: str | None = None
     rng_version: str | None = None
     outcome: GameOutcome

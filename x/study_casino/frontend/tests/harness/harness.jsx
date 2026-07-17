@@ -57,14 +57,14 @@ const BASE_STATE = {
   prize_log: [{ id: "log1", name: "Anime episode break", cost: 60, at_ms: FROZEN_NOW_MS - 24 * 3600 * 1000 }],
 };
 
-// A 25-minute session on streak day 7: (25 + 30 bonus) × 1.07.
+// A 25-minute session on streak day 7: (25 + 30 bonus) × 1.07. Same shape
+// use_casino's stopSession builds from SessionCompleteResult (decimal credits).
 const AWARD_FIXTURE = {
-  session_id: "s-award",
   seconds: 25 * 60,
-  credits_earned_millis: 58850,
-  daily_bonus_millis: 32100,
-  streak_days: 7,
-  streak_bonus_percent: 7,
+  creditsEarned: 58.85,
+  dailyBonus: 32.1,
+  streakDays: 7,
+  streakBonusPercent: 7,
 };
 
 const CHANGELOG_FIXTURE = [

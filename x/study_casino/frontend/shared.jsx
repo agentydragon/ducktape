@@ -155,6 +155,48 @@ export function bucketStudyTime(sessions, granularity) {
   }));
 }
 
+/** Red inline error banner. Shared by the admin-capable views. */
+export function ErrorBanner({ children }) {
+  return (
+    <div
+      style={{
+        background: "rgba(180,40,40,0.25)",
+        border: `1px solid ${COLORS.red}`,
+        padding: "10px 14px",
+        marginBottom: 16,
+        color: COLORS.cream,
+        fontSize: 13,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Admin free-text user picker panel ("Viewing … for <input> Reload").
+ *  Shared by StatsView and CasinoStatsView; an empty value means "yourself". */
+export function AdminUserPicker({ label, value, onChange, onReload }) {
+  return (
+    <div
+      className="panel"
+      style={{ padding: 12, marginBottom: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+    >
+      <span style={{ color: COLORS.creamDim, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+        {label}
+      </span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="(yourself)"
+        style={{ minWidth: 200 }}
+      />
+      <button className="btn" onClick={onReload}>
+        Reload
+      </button>
+    </div>
+  );
+}
+
 export function SectionTitle({ children, small }) {
   return (
     <div

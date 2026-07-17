@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 
-import { COLORS, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
+import { COLORS, ErrorBanner, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
 import { fetchAdminUsers, fetchAdminUserState, useSyncStatus } from "./sync.js";
 
 export function AdminView({ addPrize, deletePrize, ownUsername }) {
@@ -70,20 +70,7 @@ export function AdminView({ addPrize, deletePrize, ownUsername }) {
     <div>
       <SectionTitle>Admin: manage prize catalogs</SectionTitle>
 
-      {error && (
-        <div
-          style={{
-            background: "rgba(180,40,40,0.25)",
-            border: `1px solid ${COLORS.red}`,
-            padding: "10px 14px",
-            marginBottom: 16,
-            color: COLORS.cream,
-            fontSize: 13,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       <div className="panel" style={{ padding: 16, marginBottom: 24, display: "flex", gap: 12, alignItems: "center" }}>
         <span style={{ color: COLORS.creamDim, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>

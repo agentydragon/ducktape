@@ -74,8 +74,9 @@ class CasinoSync {
       if (resp.ok) {
         this.me.set(zMeResponse.parse(await resp.json()));
       }
-    } catch {
+    } catch (e) {
       // /me is best-effort; if it fails we still try /state and /ws.
+      console.warn("[Casino] /me fetch failed:", e);
     }
     await this.fetchState();
     this.fetchDeploymentInfo();
@@ -122,8 +123,9 @@ class CasinoSync {
       const resp = await fetch("/deployment", { credentials: "same-origin" });
       if (!resp.ok) return;
       this.deploymentInfo.set(zDeploymentInfo.parse(await resp.json()));
-    } catch {
+    } catch (e) {
       // Deployment metadata is informational; keep the main app usable if it is missing.
+      console.warn("[Casino] /deployment fetch failed:", e);
     }
   }
 
@@ -192,8 +194,9 @@ class CasinoSync {
         if (msg.type === "state_changed") {
           this.fetchState();
         }
-      } catch {
-        // ignore malformed WS frames
+      } catch (e) {
+        // A malformed frame is dropped, but the connection stays up.
+        console.warn("[Casino] ignoring malformed WS frame:", e);
       }
     };
 

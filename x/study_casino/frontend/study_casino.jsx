@@ -99,21 +99,6 @@ export function CasinoStyles() {
     input:focus, select:focus { outline: none; border-color: ${COLORS.gold}; }
     select option { background: ${COLORS.feltDark}; color: ${COLORS.cream}; }
 
-    @keyframes spin-wheel {
-      from { transform: rotate(var(--from)); }
-      to   { transform: rotate(var(--to)); }
-    }
-
-    @keyframes reel-spin {
-      from { transform: translateY(0); }
-      to { transform: translateY(var(--to)); }
-    }
-
-    @keyframes pulse-gold {
-      0%, 100% { box-shadow: 0 0 0 rgba(232,184,74,0); }
-      50% { box-shadow: 0 0 20px rgba(232,184,74,0.6); }
-    }
-
     @keyframes pulse-dot {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
@@ -489,7 +474,6 @@ export default function StudyCasino() {
           <CasinoView
             offline={offline}
             credits={credits}
-            tokens={tokens}
             spinSlots={spinSlots}
             spinRoulette={spinRoulette}
             blackjackDeal={blackjackDeal}
@@ -593,7 +577,6 @@ const GAMES = ["roulette", "blackjack", "slots"];
 function CasinoView({
   offline,
   credits,
-  tokens,
   spinSlots,
   spinRoulette,
   blackjackDeal,
@@ -606,7 +589,6 @@ function CasinoView({
   const gameProps = {
     offline,
     credits,
-    tokens,
     spinSlots,
     spinRoulette,
     blackjackDeal,

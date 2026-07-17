@@ -143,12 +143,10 @@ class _WSManager:
     def remove(self, username: str, ws: WebSocket) -> None:
         self._connections[username].discard(ws)
 
-    async def push(self, username: str, message: dict, exclude: WebSocket | None = None) -> None:
-        """Fan out `message` to every connected client for `username` except `exclude`."""
+    async def push(self, username: str, message: dict) -> None:
+        """Fan out `message` to every connected client for `username`."""
         dead: list[WebSocket] = []
         for ws in list(self._connections.get(username, ())):
-            if ws is exclude:
-                continue
             try:
                 await ws.send_json(message)
             except Exception:

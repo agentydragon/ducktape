@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 
-import { COLORS, SectionTitle } from "./shared.jsx";
+import { COLORS, AdminUserPicker, ErrorBanner, SectionTitle } from "./shared.jsx";
 import { fetchCasinoStats, useCasinoState } from "./sync.js";
 
 const PCT_FORMATTER = new Intl.NumberFormat("en-US", {
@@ -109,39 +109,10 @@ export function CasinoStatsView({ isAdmin }) {
       </div>
 
       {isAdmin && (
-        <div
-          className="panel"
-          style={{ padding: 12, marginBottom: 18, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
-        >
-          <span style={{ color: COLORS.creamDim, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            Viewing stats for
-          </span>
-          <input
-            value={targetUser}
-            onChange={(e) => setTargetUser(e.target.value)}
-            placeholder="(yourself)"
-            style={{ minWidth: 200 }}
-          />
-          <button className="btn" onClick={refresh}>
-            Reload
-          </button>
-        </div>
+        <AdminUserPicker label="Viewing stats for" value={targetUser} onChange={setTargetUser} onReload={refresh} />
       )}
 
-      {error && (
-        <div
-          style={{
-            background: "rgba(180,40,40,0.25)",
-            border: `1px solid ${COLORS.red}`,
-            padding: "10px 14px",
-            marginBottom: 16,
-            color: COLORS.cream,
-            fontSize: 13,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {stats && (
         <>

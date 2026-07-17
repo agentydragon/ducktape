@@ -14,6 +14,34 @@ function numColor(n) {
   return RED.has(n) ? "red" : "black";
 }
 
+// Module-level (not defined inside Roulette's render) so React keeps the
+// mounted <button> across re-renders instead of remounting it on every
+// bet-amount keystroke.
+function BetTypeBtn({ value, betType, setBetType, spinning, children, size = "md" }) {
+  return (
+    <button
+      onClick={() => setBetType(value)}
+      disabled={spinning}
+      style={{
+        padding: size === "sm" ? "6px 10px" : "10px 14px",
+        background: betType === value ? COLORS.gold : "rgba(0,0,0,0.3)",
+        color: betType === value ? COLORS.feltDeep : COLORS.cream,
+        border: `1px solid ${betType === value ? COLORS.gold : "rgba(212,165,72,0.4)"}`,
+        cursor: spinning ? "not-allowed" : "pointer",
+        fontFamily: "'Outfit', sans-serif",
+        fontSize: size === "sm" ? 12 : 13,
+        fontWeight: 500,
+        letterSpacing: "0.05em",
+        textTransform: "uppercase",
+        transition: "all 0.15s",
+        opacity: spinning ? 0.6 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function Roulette({ offline, credits, spinRoulette }) {
   const [betAmount, setBetAmount] = useState(10);
   const [betType, setBetType] = useState("red");
@@ -65,28 +93,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
     }, 4200);
   };
 
-  const BetTypeBtn = ({ value, children, size = "md" }) => (
-    <button
-      onClick={() => setBetType(value)}
-      disabled={spinning}
-      style={{
-        padding: size === "sm" ? "6px 10px" : "10px 14px",
-        background: betType === value ? COLORS.gold : "rgba(0,0,0,0.3)",
-        color: betType === value ? COLORS.feltDeep : COLORS.cream,
-        border: `1px solid ${betType === value ? COLORS.gold : "rgba(212,165,72,0.4)"}`,
-        cursor: spinning ? "not-allowed" : "pointer",
-        fontFamily: "'Outfit', sans-serif",
-        fontSize: size === "sm" ? 12 : 13,
-        fontWeight: 500,
-        letterSpacing: "0.05em",
-        textTransform: "uppercase",
-        transition: "all 0.15s",
-        opacity: spinning ? 0.6 : 1,
-      }}
-    >
-      {children}
-    </button>
-  );
+  const betBtnProps = { betType, setBetType, spinning };
 
   return (
     <div className="game-grid" style={{ "--sidebar-min": "280px", "--sidebar-max": "360px" }}>
@@ -339,30 +346,40 @@ export function Roulette({ offline, credits, spinRoulette }) {
             </span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-            <BetTypeBtn value="red">
+            <BetTypeBtn {...betBtnProps} value="red">
               <span style={{ color: betType === "red" ? COLORS.feltDeep : COLORS.red }}>●</span> Red
             </BetTypeBtn>
-            <BetTypeBtn value="black">
+            <BetTypeBtn {...betBtnProps} value="black">
               <span>●</span> Black
             </BetTypeBtn>
-            <BetTypeBtn value="odd">Odd</BetTypeBtn>
-            <BetTypeBtn value="even">Even</BetTypeBtn>
-            <BetTypeBtn value="low">1–18</BetTypeBtn>
-            <BetTypeBtn value="high">19–36</BetTypeBtn>
+            <BetTypeBtn {...betBtnProps} value="odd">
+              Odd
+            </BetTypeBtn>
+            <BetTypeBtn {...betBtnProps} value="even">
+              Even
+            </BetTypeBtn>
+            <BetTypeBtn {...betBtnProps} value="low">
+              1–18
+            </BetTypeBtn>
+            <BetTypeBtn {...betBtnProps} value="high">
+              19–36
+            </BetTypeBtn>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 4 }}>
-            <BetTypeBtn value="dozen1" size="sm">
+            <BetTypeBtn {...betBtnProps} value="dozen1" size="sm">
               1st 12
             </BetTypeBtn>
-            <BetTypeBtn value="dozen2" size="sm">
+            <BetTypeBtn {...betBtnProps} value="dozen2" size="sm">
               2nd 12
             </BetTypeBtn>
-            <BetTypeBtn value="dozen3" size="sm">
+            <BetTypeBtn {...betBtnProps} value="dozen3" size="sm">
               3rd 12
             </BetTypeBtn>
           </div>
           <div style={{ marginTop: 8 }}>
-            <BetTypeBtn value="number">Single Number (35:1)</BetTypeBtn>
+            <BetTypeBtn {...betBtnProps} value="number">
+              Single Number (35:1)
+            </BetTypeBtn>
             {betType === "number" && (
               <div style={{ marginTop: 8 }}>
                 <input

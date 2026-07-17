@@ -262,7 +262,6 @@ def public_blackjack_state(
         current_wager=current_wager,
         player_cards=player,
         dealer_cards=dealer if done else dealer[:1],
-        hole_hidden=not done and len(dealer) > 1,
         player_value=hand_value(player),
         dealer_value=hand_value(dealer) if done else hand_value(dealer[:1]),
         settlement=BlackjackSettlement(**settlement.outcome.model_dump(), payout_tokens=settlement.payout_tokens)
@@ -304,7 +303,6 @@ def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
     p_triple = 0.0
     rtp_triple = 0.0
     p_pair = 0.0
-    rtp_pair = 0.0
     for i, sym in enumerate(SLOT_SYMBOLS):
         p_i = sym.weight / total_weight
         # P(triple of this symbol) = p_i^3, payout = wager * symbol.payout, so RTP contribution = p_i^3 * payout

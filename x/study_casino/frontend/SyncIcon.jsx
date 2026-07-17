@@ -1,14 +1,7 @@
 import React, { useEffect, useState } from "react";
 
+import { COLORS } from "./shared.jsx";
 import { casinoSync, useSyncRejection, useSyncStatus } from "./sync.js";
-
-const COLORS = {
-  gold: "#d4a548",
-  cream: "#f5e8c7",
-  creamDim: "#c9bc9a",
-  red: "#d44040",
-  feltDeep: "#1f0a10",
-};
 
 function iconProps(status) {
   switch (status.kind) {

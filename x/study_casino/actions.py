@@ -153,7 +153,6 @@ class BlackjackHandStateResult(BaseModel):
     current_wager: int
     player_cards: list[Card]
     dealer_cards: list[Card]
-    hole_hidden: bool
     player_value: int
     dealer_value: int
     settlement: BlackjackSettlement | None

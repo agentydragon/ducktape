@@ -124,7 +124,9 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
     setPlayerHand(state.player_cards || []);
     setDealerHand(state.dealer_cards || []);
     setWager(state.current_wager || 0);
-    setHoleHidden(!!state.hole_hidden);
+    // The server sends only the upcard while the hand is in progress; the
+    // hole-card placeholder is shown exactly while phase is "playing".
+    setHoleHidden(state.phase === "playing");
     if (state.phase === "done" && state.settlement) {
       const payout = state.settlement.payout_tokens || 0;
       setResult({ outcome: state.settlement.outcome, payout, text: state.settlement.text });
