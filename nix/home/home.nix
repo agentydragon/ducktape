@@ -328,7 +328,7 @@ in
       gitstatus
 
       nodejs_24
-      nodePackages.pnpm
+      pnpm
       bun
 
       rustc
