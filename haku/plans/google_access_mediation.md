@@ -164,3 +164,42 @@ wheel's snapshot lag ever matters, git-pin Google's `googleapis/discovery-artifa
 rejected for bloat), and don't read the live Discovery endpoint (latest-not-immutable → not a
 reproducible build input). The same `schemas` generate response types, so typing shares the source.
 Detail + tradeoffs: `haku/console/x/discovery_mcp/README.md`.
+
+**Build vs. reuse.** Own the discovery→JSON-Schema converter — ~90 lines of stdlib, the mapping is
+small and frozen (classic Workspace APIs use no `variant`/`oneOf`), and the value-add (curation
+overlay, approval envelope, per-Operator auth) is ours regardless. Make it **fail loud** on any
+Discovery construct it doesn't handle rather than mis-convert. Do **not** own execution or type
+codegen: reuse `googleapiclient`'s dynamic client for calls, and `datamodel-code-generator` (JSON
+Schema → Pydantic) for response types. Avoid discovery→OpenAPI→`FastMCP.from_openapi` — a bigger
+dependency that still doesn't yield approval-gated per-Operator tools.
+
+**Frontend types (Zod) — no new pipeline.** The frontend already derives runtime Zod validators + TS
+types from the live MCP `tools/list` via `export_mcp_tool_schemas` → `js_json_schema` →
+`z.fromJSONSchema` (`frontend/mcp_tool_schema.ts`). A generated tool appears in `tools/list` like any
+other, so it flows through unchanged — register it and add it to the exporter allowlist. The one
+constraint is on the converter: emit only the JSON-Schema subset `z.fromJSONSchema` accepts (standard
+keywords; `enumDescriptions` folded into `description`; `int64→string`; recursion collapsed) — the
+Zod-import build step is the gate that catches a violation. **Advertise full generated result schemas
+too — do not trim until a large/recursive output actually forces it;** the same `--results` path
+generates their validators. (`z.fromJSONSchema` is Zod-experimental — a pre-existing bet, one seam a
+Zod bump could churn.)
+
+## Migration order (existing gmail/calendar tools)
+
+Switch the existing hand-written tools in this order, using them as the factory's validation baseline
+before building the new surface:
+
+1. **gmail reads** (`labels`/`filters`/`drafts` `list`+`get`, then `messages_get`, `threads_get`,
+   `threads_list`) — they already return the REST shape **verbatim**, so a generated tool is
+   behavior-identical and can be **diffed** against the hand-written one to prove the factory. Pure
+   GET → matches derived auto-approve; lowest blast radius. Surfaces the overlay's expose/pin and any
+   param-rename need (friendly `query` vs Google `q`).
+2. **calendar reads** (`get_event`, `list_events`, `list_event_instances`) — deliberate, not free:
+   they currently return **shaped** recurrence-aware models the frontend/Haku consume, so migrating
+   means dropping the shaping (a response-contract change) or keeping a thin shaping layer. Decide the
+   shaping when you get here.
+
+**Hold (tier 3, stay hand-written):** gmail writes that build bodies or carry policy — `drafts_create`/
+`drafts_update`, `threads_modify_labels`, `labels_patch`/`labels_delete`, `filters_create` (the
+`haku/`-label carve-out) — and `create_event` (RRULE building). New Drive/Tasks/Docs/Sheets/People
+tools are **born generated** — no migration.
