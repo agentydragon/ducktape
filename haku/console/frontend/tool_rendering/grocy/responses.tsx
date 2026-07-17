@@ -60,7 +60,17 @@ const zShoppingListGetResult = z.looseObject({
     })
   ),
 });
-const zSystemInfoResult = z.looseObject({});
+// Grocy's `GET /system/info` nests the app version in its own object ({Version, ReleaseDate, …})
+// rather than a bare string — typed explicitly so the widget can format it instead of falling
+// through to a blind `String(value)` (which used to print "[object Object]").
+const zSystemInfoResult = z.looseObject({
+  grocy_version: z.looseObject({ Version: z.string(), ReleaseDate: z.string().nullish() }).nullish(),
+  php_version: z.string().nullish(),
+  sqlite_version: z.string().nullish(),
+  db_version: z.union([z.string(), z.number()]).nullish(),
+  os: z.string().nullish(),
+  client: z.string().nullish(),
+});
 
 function splitRows<Ok extends object>(rows: readonly (Ok | ErrorRow)[]): { ok: Ok[]; failed: ErrorRow[] } {
   const ok: Ok[] = [];
@@ -338,16 +348,40 @@ function ShoppingListGetResultView({ result, variant }: ResultPreviewProps<z.inf
   );
 }
 
+function SystemInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <PreviewText>
+      <PreviewText span c="dimmed">
+        {label}:{" "}
+      </PreviewText>
+      {value}
+    </PreviewText>
+  );
+}
+
 function SystemInfoResultView({ result }: ResultPreviewProps<z.infer<typeof zSystemInfoResult>>) {
+  const rows: { key: string; label: string; value: string }[] = [];
+  if (result.grocy_version) {
+    rows.push({
+      key: "grocy_version",
+      label: "grocy version",
+      value: result.grocy_version.ReleaseDate
+        ? `${result.grocy_version.Version} (${result.grocy_version.ReleaseDate})`
+        : result.grocy_version.Version,
+    });
+  }
+  if (result.php_version) rows.push({ key: "php_version", label: "php version", value: result.php_version });
+  if (result.sqlite_version) {
+    rows.push({ key: "sqlite_version", label: "sqlite version", value: result.sqlite_version });
+  }
+  if (result.db_version != null)
+    rows.push({ key: "db_version", label: "db version", value: String(result.db_version) });
+  if (result.os) rows.push({ key: "os", label: "os", value: result.os });
+  if (result.client) rows.push({ key: "client", label: "client", value: result.client });
   return (
     <Stack gap={2}>
-      {Object.entries(result).map(([key, value]) => (
-        <PreviewText key={key}>
-          <PreviewText span c="dimmed">
-            {key.replaceAll("_", " ")}:{" "}
-          </PreviewText>
-          {String(value)}
-        </PreviewText>
+      {rows.map((row) => (
+        <SystemInfoRow key={row.key} label={row.label} value={row.value} />
       ))}
     </Stack>
   );

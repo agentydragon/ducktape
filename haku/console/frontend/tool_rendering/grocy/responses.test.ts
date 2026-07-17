@@ -104,7 +104,10 @@ describe("grocyResultPreviews", () => {
       ],
       [grocyResultPreviews.products_list, [{ id: 1, name: "Oats" }]],
       [grocyResultPreviews.quantity_units_list, [{ id: 2, name: "Gram", name_plural: "Grams" }]],
-      [grocyResultPreviews.get_system_info, { grocy_version: "4.5.0" }],
+      [
+        grocyResultPreviews.get_system_info,
+        { grocy_version: { Version: "4.5.0", ReleaseDate: "2026-01-15" }, php_version: "8.3.0", os: "Linux" },
+      ],
       [
         grocyResultPreviews.shopping_list_get,
         {

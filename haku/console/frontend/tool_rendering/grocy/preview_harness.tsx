@@ -168,6 +168,22 @@ const PREVIEW_FIXTURES = [
       { kind: "ok", item_id: 7, product_name: "Spinach", amount: 200, qu_name: "Gram" },
     ],
   },
+  {
+    title: "Check the Grocy server version",
+    serverId: "grocy-sf",
+    toolName: "get_system_info",
+    args: {},
+    // grocy_version nests {Version, ReleaseDate} rather than a bare string — this fixture is the
+    // regression check for the "[object Object]" bug (see responses.tsx's SystemInfoResultView).
+    result: {
+      grocy_version: { Version: "4.6.0", ReleaseDate: "2026-03-06" },
+      php_version: "8.5.3",
+      sqlite_version: "3.51.2",
+      db_version: 255,
+      os: "Linux 6.12.80 #1-NixOS SMP PREEMPT_DYNAMIC Thu Apr 2 11:09:54 UTC 2026 x86_64",
+      client: "python-httpx/0.28.1",
+    },
+  },
 ] satisfies (RegisteredToolPreviewFixture & { title: string })[];
 
 mountPreviewCards(PREVIEW_FIXTURES);
