@@ -1,0 +1,73 @@
+# GitLab bench-trimmed values. __GITALY_SC__ is substituted per storage cell.
+# Only Gitaly's storage varies; PG/Redis/MinIO stay on local-path-ovh-ssd so the
+# comparison isolates the git repo store (same discipline as the Forgejo bench,
+# which held the DB on SSD for both arms).
+global:
+  edition: ce
+  hosts:
+    domain: bench.local
+    https: false
+  ingress:
+    enabled: false
+    configureCertmanager: false
+  nodeSelector:
+    topology.kubernetes.io/region: hil
+installCertmanager: false
+nginx-ingress:
+  enabled: false
+prometheus:
+  install: false
+gitlab-runner:
+  install: false
+registry:
+  enabled: false
+gitlab:
+  toolbox:
+    replicas: 1
+    persistence:
+      enabled: false
+  webservice:
+    replicaCount: 3
+    minReplicas: 3
+    maxReplicas: 3
+    ingress:
+      enabled: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+  sidekiq:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 800Mi
+  gitaly:
+    persistence:
+      storageClass: __GITALY_SC__
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+  gitlab-shell:
+    minReplicas: 1
+    maxReplicas: 1
+  kas:
+    enabled: false
+postgresql:
+  primary:
+    persistence:
+      storageClass: local-path-ovh-ssd
+      size: 8Gi
+redis:
+  master:
+    persistence:
+      storageClass: local-path-ovh-ssd
+      size: 2Gi
+minio:
+  persistence:
+    storageClass: local-path-ovh-ssd
+    size: 10Gi
+certmanager-issuer:
+  email: bench@invalid.example
