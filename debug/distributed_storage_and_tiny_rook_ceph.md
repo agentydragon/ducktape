@@ -131,12 +131,39 @@ operation per arm); medians below, lower is better.
 | contents API write |         3.356 |      1.003 |           3.35x faster |
 | tiny Git push      |         1.630 |      2.550 |           1.56x slower |
 
-Even media-controlled, the application path is more mixed than the direct-fs path:
+Even media-controlled, the application path looked more mixed than the direct-fs path:
 CephFS wins reads and (unlike the HDD arm) clearly wins the contents API write, but it
-is meaningfully _slower_ for the tiny Git push. So the 23x/36x direct-fs commit/clone
-advantage does **not** carry through Forgejo's push path — receive-pack, hooks, and the
-separate per-instance database dominate there and erase the filesystem gain. Read and
-contents-write latency are where CephFS would actually help this workload.
+was 1.56x _slower_ for the tiny Git push. The next section shows that push penalty is not
+intrinsic to CephFS.
+
+### Isolating the Git-push penalty: single-replica CephFS
+
+The bench Forgejo runs **two replicas on one RWX CephFS PVC**, so the repo directory has
+two CephFS mounters. Hypothesis: git push is a metadata storm (quarantine object writes,
+atomic ref renames, reflog updates, hook subprocess spawns), and with two mounters the
+MDS cannot grant either client exclusive caps — every mutation on a shared path costs a
+synchronous cap revoke/regrant round-trip, which is exactly the cost the single-client
+direct-fs test avoided. Reads and single-request API ops pay this much less.
+
+Test (2026-07-17): scale the bench Forgejo to one replica (a single mounter) and re-run
+the same bench. Raw data in
+<results/rook_ceph_forgejo_2026_07_11/forgejo-e2e-ssd-cephfs-single-replica.csv>.
+
+| Operation          | CephFS 1-replica | CephFS 2-replica | SeaweedFS SSD |
+| ------------------ | ---------------: | ---------------: | ------------: |
+| version request    |            0.282 |            0.307 |         0.349 |
+| contents API read  |            0.307 |            0.354 |         0.499 |
+| contents API write |            0.793 |            1.003 |         3.356 |
+| tiny Git push      |            0.915 |            2.550 |         1.630 |
+
+Confirmed. Removing the second mounter cut Git push **2.79x** (2.550 -> 0.915 s), while the
+single-request ops barely moved (version, read, contents-write improved only 1.1-1.3x
+because they touch few shared-metadata paths). Single-mounter CephFS is now faster than
+SeaweedFS on **every** operation, including push (1.78x). So the earlier "CephFS is slower
+for pushes" result was an artifact of the **RWX two-replica mount**, not of CephFS or of
+Forgejo's receive-pack path. The practical implication: to get CephFS's full git benefit,
+the repo store wants a single active writer (single-replica, RWO, or app-level sharding),
+not a naive two-replica RWX share.
 
 ### Operational findings
 
@@ -164,16 +191,18 @@ Reading the arms together: the HDD arm's fsync penalty was a media/replication a
 (three-copy loop-backed HDD), not a CephFS property. On media-controlled SSD, CephFS is
 uniformly and dramatically faster than SeaweedFS on the **direct filesystem path** (4.6x
 fsync, 23x tiny commits, 36x clone) — the kernel CephFS client avoids SeaweedFS's FUSE +
-filer + volume-server round trips that dominate tiny-write and clone latency. But that
-raw-filesystem win only partially survives the **Forgejo application path**: CephFS keeps
-the read and contents-write advantages (1.1–3.4x) yet is 1.56x _slower_ for tiny Git
-pushes, because receive-pack, hooks, and the per-instance database — not the filesystem —
-dominate the push. So CephFS is a genuinely promising SeaweedFS replacement where read /
-contents-write latency is the pain point, but it is not a blanket git-write win. Either
-way this justifies a follow-up on **real raw devices** (not loop-backed) with SSD DB/WAL
-before any migration; the loop-backed OSD topology here is a measurement mechanism, not a
-production design, so this is a "worth building properly and re-measuring" result, not a
-drop-in migration decision.
+filer + volume-server round trips that dominate tiny-write and clone latency. The
+**Forgejo application path** initially looked mixed (CephFS 1.56x _slower_ for tiny Git
+push), but the single-replica test showed that was a **two-replica RWX cap-coordination
+artifact**: with one mounter, CephFS is faster than SeaweedFS on every operation,
+including push (1.78x). So the honest read is that CephFS beats SeaweedFS across this whole
+workload **provided the git repo store has a single active writer** — the naive
+two-replica RWX share is what erased the push win, not CephFS.
+
+This justifies a follow-up on **real raw devices** (not loop-backed) with SSD DB/WAL and a
+single-writer repo topology before any migration; the loop-backed OSD layout here is a
+measurement mechanism, not a production design, so this is a "worth building properly and
+re-measuring" result, not a drop-in migration decision.
 
 ## Teardown contract
 
