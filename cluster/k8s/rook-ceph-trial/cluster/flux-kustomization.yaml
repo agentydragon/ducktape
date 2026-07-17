@@ -4,6 +4,7 @@ metadata:
   name: rook-ceph-trial-cluster
   namespace: flux-system
 spec:
+  suspend: true # rook-ceph storage trial complete (2026-07-17); winding down, see debug/distributed_storage_and_tiny_rook_ceph.md
   interval: 10m
   retryInterval: 1m
   timeout: 30m

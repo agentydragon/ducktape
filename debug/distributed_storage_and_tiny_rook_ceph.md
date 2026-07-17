@@ -1,6 +1,7 @@
 # Distributed storage and a tiny Rook/Ceph trial
 
-**Status:** HDD arm measured 2026-07-11; SSD control arm in progress.
+**Status:** Complete. HDD arm and media-controlled SSD control arm both measured
+2026-07-11; trial torn down 2026-07-17.
 
 This is the implementation companion to <forgejo_git_write_latency.md>. The existing
 SeaweedFS Forgejo attribution bench found 31x slower tiny commits and 254x slower local
@@ -94,6 +95,29 @@ access, essentially tied for contents writes, and worse for this tiny-push workl
 The two Forgejo deployments have matching topology and versions but separate
 databases, so the direct filesystem test is the stronger storage attribution.
 
+### Direct filesystem path: media-controlled SSD (CephFS SSD versus SeaweedFS SSD)
+
+The SSD control arm removes the media confound: both CephFS and SeaweedFS run on the
+same OVH SSD nodes (CephFS on two-copy loop-backed OSDs, SeaweedFS on its production
+SSD volume servers). Raw data in
+<results/rook_ceph_forgejo_2026_07_11/direct-storage-ssd-control.csv> (five alternating
+rounds); medians below, lower is better.
+
+| Operation                 | SeaweedFS SSD | CephFS SSD | CephFS relative result |
+| ------------------------- | ------------: | ---------: | ---------------------: |
+| 200 x 4 KiB `fsync` files |          4.34 |       0.95 |            4.6x faster |
+| 50 tiny Git commits       |         27.46 |       1.17 |             23x faster |
+| local Git clone           |          5.75 |       0.16 |             36x faster |
+
+With media held equal, CephFS is dramatically faster across the board — including the
+tiny-`fsync` workload where the HDD arm had made it look 4.88x _slower_. That inversion
+confirms the HDD arm's fsync penalty was three-copy loop-backed HDD BlueStore, not
+CephFS itself: the kernel CephFS client's metadata and write path clearly beats
+SeaweedFS's FUSE + filer + volume-server round trips on the same disks. The
+application-path (two-replica Forgejo) SSD comparison was not captured — that bench job
+failed (`curl (22) ... error: 500`) before producing numbers, so only the direct-fs SSD
+arm is measured.
+
 ### Operational findings
 
 - Pod networking worked for MON, OSD, MDS, and CSI traffic; host networking was not
@@ -116,10 +140,17 @@ databases, so the direct filesystem test is the stronger storage attribution.
   effect on medians, but loop-backed OSDs remain a trial mechanism, not a production
   recommendation.
 
-For this workload, CephFS is worth a follow-up on real raw devices (and preferably
-SSD DB/WAL) if clone/read latency is the priority. This loop-backed HDD result does
-not justify replacing SeaweedFS solely for write latency: the gains are
-operation-dependent, and tiny durable writes can be materially worse.
+Reading the arms together: the HDD arm's fsync penalty was a media/replication artifact
+(three-copy loop-backed HDD), not a CephFS property. On media-controlled SSD, CephFS is
+uniformly and dramatically faster than SeaweedFS on the direct filesystem path (4.6x
+fsync, 23x tiny commits, 36x clone) — the kernel CephFS client avoids SeaweedFS's FUSE +
+filer + volume-server round trips that dominate tiny-write and clone latency. That makes
+CephFS a genuinely promising SeaweedFS replacement for git-write-latency-sensitive
+workloads, strong enough to justify a follow-up on **real raw devices** (not loop-backed)
+with SSD DB/WAL and a completed application-path (Forgejo) SSD comparison, which this
+trial did not capture. The loop-backed OSD topology here is a measurement mechanism, not
+a production design, so this is a "worth building properly and re-measuring" result, not
+a drop-in migration decision.
 
 ## Teardown contract
 
