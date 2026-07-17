@@ -175,6 +175,16 @@ def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/pro
     return live
 
 
+def _pr_phrase(pr: PrInfo) -> str:
+    match pr.state:
+        case PrState.OPEN:
+            return f"open PR #{pr.number}"
+        case PrState.MERGED:
+            return f"PR #{pr.number} merged"
+        case PrState.CLOSED:
+            return f"closed PR #{pr.number}"
+
+
 def classify_worktree(
     worktree: Worktree,
     *,
@@ -203,14 +213,15 @@ def classify_worktree(
         return keep("the invoking worktree")
     if live_pids:
         return keep(f"a process is working in it (pid {live_pids[0]})")
-    if _dirty(pg):
-        return keep("uncommitted changes")
-
     pr = pr_states.get(worktree.branch) if worktree.branch else None
+    if _dirty(pg):
+        # Uncommitted work is never auto-pruned, but surface the branch's PR so a dirty
+        # tree whose PR already merged reads as stale scratch, not live work.
+        return keep("uncommitted changes" + (f" ({_pr_phrase(pr)})" if pr is not None else ""))
     if pr is not None and pr.state is PrState.OPEN:
-        return keep(f"open PR #{pr.number}")
+        return keep(_pr_phrase(pr))
     if pr is not None and pr.state is PrState.MERGED:
-        return prune(f"PR #{pr.number} merged")
+        return prune(_pr_phrase(pr))
     if _content_in_main(pg, main):
         return prune(f"changes already in {main}")
     if worktree.branch is None:

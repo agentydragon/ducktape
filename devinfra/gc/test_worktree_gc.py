@@ -92,6 +92,24 @@ def test_untracked_file_is_kept(repo: Path, proc: Path) -> None:
     assert isinstance(_classify(repo, path, proc), wg.RetainedWorktree)
 
 
+def test_dirty_with_open_pr_notes_the_pr(repo: Path, proc: Path) -> None:
+    path = _add(repo, "wt", "feature")
+    (path / "base").write_text("dirty\n")
+    result = _classify(repo, path, proc, pr_states={"feature": PrInfo(9, PrState.OPEN)})
+    assert isinstance(result, wg.RetainedWorktree)
+    assert result.reason == "uncommitted changes (open PR #9)"
+
+
+def test_dirty_with_merged_pr_is_kept_and_flagged(repo: Path, proc: Path) -> None:
+    # Uncommitted work always wins over the merged-PR prune, but the reason surfaces the
+    # merge so the tree reads as stale scratch worth clearing by hand.
+    path = _add(repo, "wt", "feature")
+    (path / "base").write_text("dirty\n")
+    result = _classify(repo, path, proc, pr_states={"feature": PrInfo(5, PrState.MERGED)})
+    assert isinstance(result, wg.RetainedWorktree)
+    assert result.reason == "uncommitted changes (PR #5 merged)"
+
+
 def test_last_activity_reflects_uncommitted_file_mtime(repo: Path, proc: Path) -> None:
     path = _add(repo, "wt", "feature")
     edited = path / "base"
