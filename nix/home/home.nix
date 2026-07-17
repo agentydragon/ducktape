@@ -86,6 +86,7 @@ in
     ./opencode
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
+    ./modules/aiquota.nix
   ];
   # Workstations use the cluster/local (gpt-oss) Codex model providers + profiles.
   ducktape.codex.localModels.enable = true;

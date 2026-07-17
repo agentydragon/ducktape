@@ -57,18 +57,9 @@
     };
   };
 
-  # Place decrypted z.ai API key where aiquota reads it.
-  # The Python CLI reads ~/.config/aiquota/config.toml for the key path.
-  sops.secrets.zai_api_key_file = {
-    sopsFile = ../../../secrets/home/wyrm2/zai.yaml;
-    key = "zai_api_key";
-  };
-
-  xdg.configFile."aiquota/config.toml" = {
-    text = ''
-      [zai]
-      api_key_path = "${config.sops.secrets.zai_api_key_file.path}"
-    '';
+  ducktape.aiquota = {
+    enable = true;
+    sopsFile = ../../../secrets/shared/zai.yaml;
   };
 
   # Steam defaults "GPU accelerated rendering in web views" OFF on NVIDIA +
@@ -287,7 +278,6 @@
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
-    ducktapePackages.aiquota
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
     pkgs.inkscape
@@ -302,9 +292,6 @@
     pkgs.tor-browser
     pkgs.tuxguitar
     ducktapePackages.tana-outliner
-  ];
-  programs.gnome-shell.extensions = [
-    { package = ducktapePackages.aiquota; }
   ];
 
   # drivefs is provided by gaffer-private CI via cache.allegedly.works/gaffer

@@ -44,56 +44,46 @@
   };
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
-  sops.secrets =
-    builtins.listToAttrs (
-      map
-        (
-          {
-            name,
-            sopsFile,
-            filename,
-          }:
-          {
-            inherit name;
-            value = {
-              sopsFile = ../../../ssh_keys/${sopsFile};
-              format = "binary";
-              path = "${config.home.homeDirectory}/.ssh/${filename}";
-              mode = "0600";
-            };
-          }
-        )
-        [
-          {
-            name = "wyrm_ssh_key";
-            sopsFile = "rugged-wyrm.sops.key";
-            filename = "wyrm_agentydragon_user_id_ed25519";
-          }
-          {
-            name = "vps_root_ssh_key";
-            sopsFile = "rugged-vps-root.sops.key";
-            filename = "vps_root_id_ed25519";
-          }
-          {
-            name = "vps_user_ssh_key";
-            sopsFile = "rugged-vps-user.sops.key";
-            filename = "vps_agentydragon_user_id_ed25519";
-          }
-        ]
-    )
-    // {
-      zai_api_key_file = {
-        sopsFile = ../../../secrets/shared/zai.yaml;
-        key = "zai_api_key";
-      };
-    };
+  sops.secrets = builtins.listToAttrs (
+    map
+      (
+        {
+          name,
+          sopsFile,
+          filename,
+        }:
+        {
+          inherit name;
+          value = {
+            sopsFile = ../../../ssh_keys/${sopsFile};
+            format = "binary";
+            path = "${config.home.homeDirectory}/.ssh/${filename}";
+            mode = "0600";
+          };
+        }
+      )
+      [
+        {
+          name = "wyrm_ssh_key";
+          sopsFile = "rugged-wyrm.sops.key";
+          filename = "wyrm_agentydragon_user_id_ed25519";
+        }
+        {
+          name = "vps_root_ssh_key";
+          sopsFile = "rugged-vps-root.sops.key";
+          filename = "vps_root_id_ed25519";
+        }
+        {
+          name = "vps_user_ssh_key";
+          sopsFile = "rugged-vps-user.sops.key";
+          filename = "vps_agentydragon_user_id_ed25519";
+        }
+      ]
+  );
 
-  # Wire z.ai API key into aiquota via config.toml (Python CLI reads this).
-  xdg.configFile."aiquota/config.toml" = {
-    text = ''
-      [zai]
-      api_key_path = "${config.sops.secrets.zai_api_key_file.path}"
-    '';
+  ducktape.aiquota = {
+    enable = true;
+    sopsFile = ../../../secrets/shared/zai.yaml;
   };
 
   # TODO: expose this through an authenticated in-cluster route if rugged's
@@ -101,7 +91,6 @@
   ducktape.opencode.ruggedLocalLlm.enable = true;
 
   home.packages = [
-    ducktapePackages.aiquota
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
     pkgs.inkscape
@@ -112,9 +101,6 @@
     pkgs.telegram-desktop
     pkgs.lightburn
     ducktapePackages.tana-outliner
-  ];
-  programs.gnome-shell.extensions = [
-    { package = ducktapePackages.aiquota; }
   ];
 
   # Enable GNOME fractional scaling (125/150/175%). GNOME gates these steps
