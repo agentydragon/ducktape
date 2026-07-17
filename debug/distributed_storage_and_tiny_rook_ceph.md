@@ -204,6 +204,28 @@ single-writer repo topology before any migration; the loop-backed OSD layout her
 measurement mechanism, not a production design, so this is a "worth building properly and
 re-measuring" result, not a drop-in migration decision.
 
+## Implication for production Forgejo
+
+Production Forgejo runs multiple replicas that all mount the git repo store `RWX`
+(`forgejo/forgejo-git-rwx-ssd` on `seaweedfs-ovh-ssd`) purely to share git state across
+instances — see <forgejo_git_write_latency.md>. This trial says that shared-RWX design is
+the core problem, from two directions: (1) SeaweedFS's FUSE→filer→volume round trips make
+every git metadata op slow regardless of disk class, and (2) even on the much faster
+CephFS, a two-mounter RWX share reintroduces a large git-push penalty via MDS cap
+coordination. The fix is not "pick a better shared filesystem" but **remove the shared
+mount**: give the git store a single active writer.
+
+Two shapes do that:
+
+- **Single-writer Forgejo** on RWO fast local storage, with replication moved to the
+  application layer (scheduled mirror/bundle) — recommendation #1 in the companion note.
+- **A forge whose storage layer is already single-writer-per-repo**: this is exactly what
+  GitLab's **Gitaly** (and GitHub's Spokes) do — stateless frontends talk to a git RPC
+  service that owns the repos on local disk, so frontends scale horizontally with no RWX
+  share. Worth benching Gitaly across `{rook, seaweedfs} x {hdd, ssd}` to see whether its
+  single-writer architecture keeps git-push fast on network-backed storage where the
+  Forgejo-RWX shape did not. (Tracked separately; see the Gitaly bench note.)
+
 ## Teardown contract
 
 Consumers and PVCs are removed first. After CephFS is gone, the CephCluster receives

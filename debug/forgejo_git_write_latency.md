@@ -6,6 +6,15 @@ Status: measured 2026-07-10, post the PVC move to `seaweedfs-ovh-ssd`. Companion
 This note extends the result to git workloads and to Forgejo end-to-end, answering
 "is it Forgejo being slow or SeaweedFS being slow?"
 
+**Follow-up (2026-07-17):** the CephFS/Rook trial in
+<distributed_storage_and_tiny_rook_ceph.md> tested the "better filesystem" fork and
+confirmed recommendation #1's premise. On media-controlled SSD, single-writer CephFS is
+4.6–36x faster than SeaweedFS on the direct git path and beats it on every Forgejo
+operation including push. But it also found the extra failure mode below: a two-replica
+`RWX` share (which is why prod Forgejo needs the shared PVC at all) reintroduces a 2.8x
+git-push penalty on CephFS via MDS cap coordination — so the durable fix is a **single
+active writer**, not just faster shared storage.
+
 ## Question
 
 haku-ui feedback writes (single small file via Forgejo contents API) take seconds and
@@ -74,11 +83,15 @@ Storage A/B, same node, same workload:
 
 ## Recommendations (ranked)
 
-1. **Move `forgejo-git-rwx-ssd` to `local-path-ovh-ssd`** (RWO; Forgejo is
-   single-replica anyway). Expected: contents-API writes drop from ~4.4s to ~1s
-   (floor + app). Replication story moves to the application layer: scheduled
-   `git bundle`/mirror to object storage or a second Forgejo, mirroring how the
-   SQLite forensics resolved (node-local hot + async replicated cold).
+1. **Give the git store a single active writer on fast local storage.** The 2026-07-17
+   CephFS trial confirms the direction: single-writer contents-API write dropped to ~0.8–1.0s
+   and push to ~0.9s, matching this recommendation's prediction. The wrinkle since this note
+   was written is that prod Forgejo is now **multi-replica on the RWX PVC**, and that shared
+   mount is itself a large part of the cost (2.8x push penalty even on CephFS). So the move
+   is not just "RWO local-path" but "**stop sharing the mount**": either run Forgejo
+   single-writer with app-layer replication (scheduled `git bundle`/mirror), or adopt a
+   single-writer-per-repo storage service (Gitaly/Spokes-style). Benching the latter is
+   tracked in <distributed_storage_and_tiny_rook_ceph.md> § Implication.
 2. **Independently of storage: take feedback writes off the synchronous path** —
    haku-ui write-behind (local clone + instant ack + async push + sync badge), and
    path-filter `responses/**` out of full CI. Designed in haku-state
