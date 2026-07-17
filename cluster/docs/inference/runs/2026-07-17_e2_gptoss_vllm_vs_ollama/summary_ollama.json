@@ -1,0 +1,54 @@
+{
+  "model": "gpt-oss:20b",
+  "base_url": "http://localhost:11434/v1",
+  "tool_calls": {
+    "single": {
+      "ok": true,
+      "n_calls": 1
+    },
+    "parallel": {
+      "ok": false,
+      "n_calls": 1,
+      "cities": ["paris"]
+    },
+    "multi_turn": {
+      "ok": true,
+      "reply": "The weather in Berlin is 18\u202f\u00b0C and sunny."
+    }
+  },
+  "latency": [
+    {
+      "target_ctx": 8192,
+      "prompt_tokens": 6708,
+      "ttft_p50": 1.562195767999583,
+      "ttft_p95": 1.562195767999583,
+      "ttfc_p50": 1.5621964889996889,
+      "decode_tps_median": 1154.4437331017248,
+      "reasoning_tokens_median": null,
+      "reps_ok": 2,
+      "reps": 2
+    },
+    {
+      "target_ctx": 32768,
+      "prompt_tokens": 26909,
+      "ttft_p50": 3.805482703999587,
+      "ttft_p95": 3.805482703999587,
+      "ttfc_p50": 3.805483275998995,
+      "decode_tps_median": 917.0573867283204,
+      "reasoning_tokens_median": null,
+      "reps_ok": 2,
+      "reps": 2
+    },
+    {
+      "target_ctx": 131072,
+      "prompt_tokens": 109277,
+      "ttft_p50": 23.010384896999312,
+      "ttft_p95": 23.010384896999312,
+      "ttfc_p50": 23.010385356999905,
+      "decode_tps_median": 636.4084318425407,
+      "reasoning_tokens_median": null,
+      "reps_ok": 2,
+      "reps": 2
+    }
+  ]
+}
