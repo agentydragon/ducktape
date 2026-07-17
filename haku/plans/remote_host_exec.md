@@ -116,8 +116,8 @@ What this genuinely buys (not theater):
 - **Time-boxed, attributed, centrally revocable.** Tokens expire; every exec is tied to the
   Authentik identity and logged; revoke the group in Authentik → every host refuses, touching
   no host config.
-- **Exact-command binding.** A compromised relay can't swap or replay commands (countersignature
-  - nonce).
+- **Exact-command binding.** A compromised relay can't swap or replay commands (the
+  countersignature plus its single-use nonce bind the exact argv).
 
 The one load-bearing component and the irreducible residual:
 
