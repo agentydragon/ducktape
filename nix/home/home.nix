@@ -391,6 +391,12 @@ in
 
       roboto
 
+      # Emoji fallback (✅ U+2705, etc.). Nerd Font patching only adds PUA icons,
+      # not Unicode emoji; NixOS+GNOME hosts get this implicitly via
+      # fonts.enableDefaultPackages, but standalone home-manager hosts (atlas)
+      # have no system emoji font, so declare it here for every GUI host.
+      noto-fonts-color-emoji
+
       # CLEANUP: return to pkgs.flameshot once nixos-25.11 ships v14.0.0 or
       # newer; it fixes GNOME Wayland portal requests with an empty parent.
       pkgsUnstable.flameshot
@@ -413,6 +419,9 @@ in
   targets.genericLinux.enable = !isNixOS;
 
   fonts.fontconfig.enable = enableGui;
+  # Pin emoji fallback so charset resolution is deterministic (otherwise
+  # fontconfig may land on a monochrome font, e.g. FreeSerif, for U+2705).
+  fonts.fontconfig.defaultFonts.emoji = lib.mkIf enableGui [ "Noto Color Emoji" ];
 
   home.activation.fixMimeApps = lib.mkIf enableGui (
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
