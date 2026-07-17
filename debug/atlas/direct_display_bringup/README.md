@@ -1091,3 +1091,98 @@ boot-menu generation).
    Decision section. Build task, not a reboot task.
 
 Remove the `SYSTEMD_LOG_LEVEL=debug` logind drop-in once the greeter is solved.
+
+## 2026-07-17 — PLM deployed on nixpkgs 26.05: varlink/tty0 blocker SOLVED; new blocker = greeter kwin can't get DRM master on the NVIDIA seat
+
+Shipped the plasma-login-manager migration (PR #3354): wyrm2-scoped nixpkgs 26.05
+bump, DM SDDM→PLM, plus 26.05 fallout fixed (gemini-cli disabled, claude-code
+`.plugins`→`.installPlugins`, `nodePackages.pnpm`→`pnpm`, display-scale-switcher
+version-gated, dropped local `ollama-cuda`). Independent dep fix landed on devel
+first (PR #3359: add `pygithub`, drop stale `email-reply-parser`). Deployed via a
+local wheel override, then a clean **reboot** — the switch hit `NVRM: API mismatch`
+(new NVIDIA userspace vs the still-loaded old kernel module; reboot mandatory for a
+kernel+driver bump).
+
+### Wins
+
+- **seat0 → sway via PLM works** cleanly post-reboot (waybar, keybindings,
+  swaylock). The "GNOME lock needs GDM → move seat0 to sway → SDDM → PLM" arc is done.
+- **Login keyring unlocks** at PLM login (`gkr-pam: unlocked login keyring`) via the
+  `plasmalogin` PAM service's `login` substack. (Signal still grumbles about
+  gnome-wallet — minor gap; the login keyring itself unlocks.)
+- **THE all-day blocker is solved.** PLM creates a greeter **session** on
+  `seatphysical` — `loginctl list-sessions` shows `c2 989 plasmalogin seatphysical
+greeter` with an **empty TTY** (no VC tty). The `CreateSession` that SDDM 0.21.0's
+  `tty0` bug made logind reject now **succeeds**. Root cause 1 is dead.
+
+### New blocker: seatphysical greeter's kwin_wayland can't get DRM master
+
+Greeter session exists, but its compositor crashes → physical monitor stays black.
+`journalctl _UID=989`:
+
+```text
+kwin_wayland: No backend specified, automatically choosing drm
+kwin_wayland: atomic commit failed: Permission denied
+kwin_wayland: Failed to open drm node: "/dev/dri/card2"
+plasma-login-kwin_wayland.service: Main process exited, code=exited, status=15
+```
+
+GPU / DRM-node → seat map (`udevadm info` on `/dev/dri/card*`):
+
+| node  | PCI     | GPU                   | ID_SEAT          |
+| ----- | ------- | --------------------- | ---------------- |
+| card0 | 01:00.0 | NVIDIA 5090 (display) | **seatphysical** |
+| card1 | 00:01.0 | virtio                | seat0            |
+| card2 | 02:00.0 | (third GPU)           | seat0            |
+
+Two distinct failures:
+
+1. **`atomic commit failed: Permission denied` on card0** — kwin holds the node
+   (logind `TakeDevice` on its seat's card0) but is **not DRM master**, so the modeset
+   commit is denied. Something else holds master (kernel fbdev/console?), or logind
+   isn't granting `TakeControl`/master to the secondary-seat greeter session.
+2. **kwin also probes `/dev/dri/card2` (02:00.0, `ID_SEAT=seat0`)** and is denied — it
+   shouldn't touch a seat0 device from the seatphysical session; its GPU
+   auto-enumeration isn't respecting the seat's device set.
+
+A **DRM-master / device-access problem on a secondary NVIDIA seat**, separate from
+(and downstream of) the varlink blocker. Leads to chase next:
+
+- Who holds DRM master on card0 (fbcon / simpledrm / nvidia-drm fbdev)? `drm_info`,
+  `/sys/kernel/debug/dri/*/clients`.
+- Does logind grant master to the `seatphysical` greeter session (the active session
+  on that seat)? Compare with how seat0 works.
+- Confirm `nvidia-drm.modeset=1` (module is loaded; the `modeset` sysfs param is
+  root-only to read — verify via modprobe.d / `hardware.nvidia.modesetting`).
+- Stop kwin probing card2: constrain the greeter to its seat's DRM node, and figure
+  out why a third GPU (02:00.0) sits on seat0 at all.
+
+### Minor: swaync fails on seat0
+
+`swaync` crashes: `radv/amdgpu: failed to initialize device` / `MESA:
+vdrm_device_connect failed` — trying a Vulkan device on the virtio GPU and failing.
+Separate seat0 issue (no notification center until fixed), likely GTK4/Vulkan-on-
+virtio. Doesn't affect the physical seat.
+
+### Applied fix (2026-07-17): park the spare NVIDIA (02:00.0) on an isolated `seatspare`
+
+Root cause of the black physical monitor, from the DRM client dump
+(`/sys/kernel/debug/dri/*/clients`): **seat0's sway grabbed the headless spare NVIDIA
+`card2` (02:00.0)** as a DRM-master output — wlroots claims every DRM card assigned to
+its seat, and `02:00.0` defaulted to seat0. The seatphysical greeter's kwin then could
+not cleanly own its own `card0` (`atomic commit failed: Permission denied`) and also
+probed `card2` (denied — seat0's device), then died.
+
+Fix in `72-seatphysical.rules`: reassign `02:00.0` to an isolated, non-graphical
+`seatspare` (`ENV{ID_SEAT}="seatspare"`, `ENV{ID_TAG_MASTER_OF_SEAT}="0"`,
+`TAG-="master-of-seat"`) so **neither** seat0 nor seatphysical enumerates it, leaving
+`card0` (01:00.0) as the physical seat's sole display. `seatspare` has no master-of-seat
+device, so it is non-graphical and PLM spawns no greeter there. Render nodes are not
+seat-gated, so Sunshine / game render-offload still reaches this GPU. Seat name is
+`seatspare` (no hyphen — passes logind's `seat_name_is_valid`). **Needs rebuild +
+reboot** (udev seat TAGs persist in the db). Untested as of writing.
+
+Open follow-ups if this doesn't fully fix it: pin the greeter's kwin to `/dev/dri/card0`
+(`KWIN_DRM_DEVICES`, per-seat — fiddly); and the real question of _why wyrm2 has a second
+NVIDIA GPU passed in at all_ (`cluster/terraform/main/proxmox-vms.tf`) — dropping it from
+the VM would remove this whole class of contention.

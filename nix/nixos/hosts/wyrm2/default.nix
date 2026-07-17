@@ -310,6 +310,18 @@ in
       destination = "/lib/udev/rules.d/72-seatphysical.rules";
       text = ''
         SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", ENV{ID_SEAT}="seatphysical"
+        # Spare NVIDIA (02:00.0) has no monitor connected. It defaults to seat0,
+        # where sway (wlroots) claims EVERY seat DRM card as a DRM-master output —
+        # so seat0's sway grabbed this headless GPU, and the seatphysical greeter's
+        # kwin then couldn't cleanly own its own card0 (atomic-commit permission
+        # denied; it also probed this node and was denied). Park it on an isolated
+        # seat (`seatspare`, no hyphen so it passes logind's seat_name_is_valid) so
+        # NEITHER seat0 nor seatphysical enumerates it, leaving card0 (01:00.0) as
+        # the physical seat's sole display. Strip master-of-seat so `seatspare` is
+        # non-graphical and PLM spawns no greeter there. Render nodes are not
+        # seat-gated, so Sunshine / game render-offload still reaches this GPU.
+        # See debug/atlas/direct_display_bringup/README.md (2026-07-17).
+        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", ENV{ID_SEAT}="seatspare", ENV{ID_TAG_MASTER_OF_SEAT}="0", TAG-="master-of-seat"
         # No KERNEL=="event*" filter: logind resolves an evdev node's seat via
         # its PARENT input-class device, so inputNN needs ID_SEAT too (event-
         # only assignment = libinput claims it but logind denies TakeDevice).
