@@ -5,6 +5,7 @@ type GmailThread = McpToolResultFor<"gmail", "threads_get">;
 type GmailLabels = McpToolResultFor<"gmail", "labels_list">;
 
 const zGmailThread = mcpToolResultSchema("gmail", "threads_get");
+const zGmailMessage = mcpToolResultSchema("gmail", "messages_get");
 const zGmailLabels = mcpToolResultSchema("gmail", "labels_list");
 
 export type GmailThreadPreview = {
@@ -72,4 +73,24 @@ export async function fetchGmailThreadPreviews(threadIds: string[]): Promise<Rec
     if (thread !== null) previews[threadId] = gmailThreadPreview(threadId, thread, labelNamesById);
   }
   return previews;
+}
+
+export type GmailMessagePreview = { subject: string | null; snippet: string; gmail_url: string };
+
+// A single message's subject/snippet, for a `messages_get` call's own pending-args identity
+// preview — the raw message id alone isn't user-readable. No label-name resolution (unlike
+// fetchGmailThreadPreviews): this is a lone identity line, not a list with label pills.
+export async function fetchGmailMessagePreview(messageId: string): Promise<GmailMessagePreview | null> {
+  try {
+    const payload = await callOperatorMcpTool("gmail_messages_get", { message_id: messageId, format: "metadata" });
+    const message = zGmailMessage.parse(payload);
+    return {
+      subject: messageSubject(message),
+      snippet: message.snippet ?? "",
+      gmail_url: `https://mail.google.com/mail/u/0/#all/${message.threadId ?? messageId}`,
+    };
+  } catch (error) {
+    console.warn(`Could not resolve Gmail message ${messageId}`, error);
+    return null;
+  }
 }

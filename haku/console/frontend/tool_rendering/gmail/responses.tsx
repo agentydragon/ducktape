@@ -8,14 +8,23 @@ import { Group, Loader, Stack } from "@mantine/core";
 import { type ReactNode, useEffect, useState } from "react";
 import type { z } from "zod";
 
+import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { fetchGmailLabelNames, messageSubject } from "../../gmail_client.ts";
 import { GmailIcon, MailIcon } from "../../icons.tsx";
 import { ExternalLink } from "../../link.tsx";
 import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { COMPACT_ITEM_LIMIT, firstLines, MoreLine, plural, PreviewBadge, PreviewText } from "../vocabulary.tsx";
-import { GMAIL_SERVER_ID, gmailThreadUrl } from "./requests.tsx";
+import {
+  COMPACT_ITEM_LIMIT,
+  firstLines,
+  MoreLine,
+  plural,
+  PreviewBadge,
+  PreviewText,
+  type PreviewVariant,
+} from "../vocabulary.tsx";
+import { CompactBody, GMAIL_SERVER_ID, gmailThreadUrl, type CreateGmailDraftArgs } from "./requests.tsx";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {
@@ -34,20 +43,39 @@ type GmailMessage = z.infer<typeof zMessage>;
 
 // Exported for calls.tsx's combined drafts_create widget (rendered once the tool has actually
 // executed). The draft's own subject is the identity, like every other Gmail link here — not
-// generic "Open draft in Gmail ↗" text. The raw draft id is provenance, so it rides along dimmed
-// only in detailed (the link's href carries it for anyone who needs it compact).
-export function CreateGmailDraftResultView({ result, variant }: ResultPreviewProps<Draft>) {
+// generic "Open draft in Gmail ↗" text. Recipients and body still matter once the draft exists
+// (the operator is verifying what actually got drafted), so unlike a calendar event's when/
+// location — a click away in Calendar either way — this keeps restating them from `args`, the
+// same content the pending preview showed. The raw draft id is provenance, so it rides along
+// dimmed only in detailed (the link's href carries it for anyone who needs it compact).
+export function CreateGmailDraftResultView({
+  args,
+  result,
+  variant,
+}: {
+  args: CreateGmailDraftArgs;
+  result: Draft;
+  variant: PreviewVariant;
+}) {
+  const detailed = variant === "detailed";
   return (
-    <Group gap={6}>
+    <Stack gap={6}>
       <GmailIconLink href={gmailDraftUrl(result.id)} fw={600}>
-        {messageSubject(result.message) ?? "(no subject)"}
+        {messageSubject(result.message) ?? args.subject}
       </GmailIconLink>
-      {variant === "detailed" && (
+      <Field icon={<MailIcon size={15} />} label="Recipients">
+        {args.to.join(", ")}
+        {detailed && args.cc && args.cc.length > 0 && (
+          <PreviewText span c="dimmed">{` · cc ${args.cc.join(", ")}`}</PreviewText>
+        )}
+      </Field>
+      {detailed ? <CodeBlock value={args.body} /> : <CompactBody body={args.body} />}
+      {detailed && (
         <PreviewText span size="xs" c="dimmed">
           draft {result.id}
         </PreviewText>
       )}
-    </Group>
+    </Stack>
   );
 }
 

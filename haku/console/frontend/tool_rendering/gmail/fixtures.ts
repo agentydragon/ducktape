@@ -1,6 +1,7 @@
 import type { McpToolResultFor } from "../../mcp_tool_result_schema.ts";
 
 type GmailThread = McpToolResultFor<"gmail", "threads_get">;
+type GmailMessage = McpToolResultFor<"gmail", "messages_get">;
 type GmailLabels = McpToolResultFor<"gmail", "labels_list">;
 
 const GMAIL_LABELS = {
@@ -48,12 +49,28 @@ const GMAIL_THREADS: Readonly<Record<string, GmailThread>> = {
   ]),
 };
 
+// Every thread fixture's own first message, keyed by its `m-<threadId>` id (the `thread()`
+// helper's convention) — so a `messages_get` fixture can reuse the same content a `threads_get`
+// fixture already carries, instead of a second hand-authored copy.
+const GMAIL_MESSAGES: Readonly<Record<string, GmailMessage>> = Object.fromEntries(
+  Object.values(GMAIL_THREADS)
+    .map((t) => t.messages?.[0])
+    .filter((m): m is NonNullable<typeof m> => m !== undefined)
+    .map((m) => [m.id, m])
+);
+
 export const GMAIL_MCP_FIXTURES = {
   gmail_labels_list: () => GMAIL_LABELS,
   gmail_threads_get: (args: Record<string, unknown>) => {
     const threadId = args.thread_id;
     const result = typeof threadId === "string" ? GMAIL_THREADS[threadId] : undefined;
     if (result === undefined) throw new Error(`No Gmail thread fixture for ${String(threadId)}`);
+    return result;
+  },
+  gmail_messages_get: (args: Record<string, unknown>) => {
+    const messageId = args.message_id;
+    const result = typeof messageId === "string" ? GMAIL_MESSAGES[messageId] : undefined;
+    if (result === undefined) throw new Error(`No Gmail message fixture for ${String(messageId)}`);
     return result;
   },
 };

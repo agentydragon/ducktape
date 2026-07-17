@@ -16,7 +16,12 @@ import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
-import { fetchGmailThreadPreviews, type GmailThreadPreview } from "../../gmail_client.ts";
+import {
+  fetchGmailMessagePreview,
+  fetchGmailThreadPreviews,
+  type GmailMessagePreview,
+  type GmailThreadPreview,
+} from "../../gmail_client.ts";
 import { MailIcon } from "../../icons.tsx";
 import { ExternalLink } from "../../link.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
@@ -149,7 +154,9 @@ function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGm
   );
 }
 
-function CompactBody({ body }: { body: string }) {
+// Exported for gmail/responses.tsx's drafts_create finished view — it re-shows the same clamped
+// body the pending preview did, since the operator still cares whether the sent text matches.
+export function CompactBody({ body }: { body: string }) {
   const { text, truncated } = firstLines(body, 2);
   return (
     <PreviewText c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
@@ -186,18 +193,84 @@ export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGm
   );
 }
 
-// Minimal identity previews for the three read tools worth a widget: the id/query is the whole
-// call, so it leads as the (unlabelled) title — same weight as google_calendar's `get_event`.
-function GetGmailThreadPreview({ args }: PreviewProps<GetGmailThreadArgs>) {
-  return <PreviewTitle>{args.thread_id}</PreviewTitle>;
+// threads_get's and messages_get's own thread/message id is opaque and not user-readable (unlike
+// google_calendar's `get_event`, whose id is at least a stable, glanceable identifier), so both
+// resolve the real subject the same way ModifyGmailThreadLabelsPreview does — fetched, not
+// derived from the args alone. The raw id still rides along dimmed in detailed for anyone who
+// needs it.
+function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArgs>) {
+  const [preview, setPreview] = useState<GmailThreadPreview | null | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    setPreview(undefined);
+    fetchGmailThreadPreviews([args.thread_id]).then((result) => {
+      if (alive) setPreview(result[args.thread_id] ?? null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [args.thread_id]);
+
+  if (preview === undefined) return <Loader size="xs" />;
+  if (preview === null) {
+    return <PreviewText c="dimmed">{args.thread_id} (couldn't load preview)</PreviewText>;
+  }
+  return (
+    <Stack gap={2}>
+      <ExternalLink href={preview.gmail_url} size="sm">
+        {preview.subject ?? "(no subject)"}
+      </ExternalLink>
+      {variant === "detailed" && (
+        <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
+          {args.thread_id}
+        </PreviewText>
+      )}
+    </Stack>
+  );
 }
 
-function GetGmailMessagePreview({ args }: PreviewProps<GetGmailMessageArgs>) {
-  return <PreviewTitle>{args.message_id}</PreviewTitle>;
+function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageArgs>) {
+  const [preview, setPreview] = useState<GmailMessagePreview | null | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    setPreview(undefined);
+    fetchGmailMessagePreview(args.message_id).then((result) => {
+      if (alive) setPreview(result);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [args.message_id]);
+
+  if (preview === undefined) return <Loader size="xs" />;
+  if (preview === null) {
+    return <PreviewText c="dimmed">{args.message_id} (couldn't load preview)</PreviewText>;
+  }
+  return (
+    <Stack gap={2}>
+      <ExternalLink href={preview.gmail_url} size="sm">
+        {preview.subject ?? "(no subject)"}
+      </ExternalLink>
+      {variant === "detailed" && (
+        <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
+          {args.message_id}
+        </PreviewText>
+      )}
+    </Stack>
+  );
 }
 
 function SearchGmailThreadsPreview({ args }: PreviewProps<SearchGmailThreadsArgs>) {
-  return <PreviewText>Search: {args.query}</PreviewText>;
+  return (
+    <PreviewText>
+      Search:{" "}
+      <PreviewText span className="haku-shell-mono">
+        {args.query}
+      </PreviewText>
+    </PreviewText>
+  );
 }
 
 /** Per-tool preview widgets for the `gmail` server. `drafts_create` has no entry here — its
