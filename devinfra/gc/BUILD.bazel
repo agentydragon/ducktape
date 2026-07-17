@@ -60,6 +60,6 @@ py_test(
 )
 
 skill_package(
-    name = "clean_workspaces",
+    name = "workspace-gc",
     srcs = ["SKILL.md"],
 )

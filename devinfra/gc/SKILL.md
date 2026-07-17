@@ -1,5 +1,5 @@
 ---
-name: clean-workspaces
+name: workspace-gc
 description: >
   Inspect and safely clean stale local development state: old or unused Git
   worktrees and orphaned Bazel output bases. Use when the user asks to clean up

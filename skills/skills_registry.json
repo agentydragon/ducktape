@@ -64,11 +64,11 @@
       "filename": "web_selfcheck.skill"
     },
     {
-      "name": "clean_workspaces",
-      "pkg": "skill-clean_workspaces",
-      "target": "//devinfra/gc:clean_workspaces_skill",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/clean_workspaces.skill",
-      "filename": "clean_workspaces.skill"
+      "name": "workspace-gc",
+      "pkg": "skill-workspace-gc",
+      "target": "//devinfra/gc:workspace-gc_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/workspace-gc.skill",
+      "filename": "workspace-gc.skill"
     },
     {
       "name": "debundle_architect",
