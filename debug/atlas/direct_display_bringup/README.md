@@ -1186,3 +1186,102 @@ Open follow-ups if this doesn't fully fix it: pin the greeter's kwin to `/dev/dr
 (`KWIN_DRM_DEVICES`, per-seat — fiddly); and the real question of _why wyrm2 has a second
 NVIDIA GPU passed in at all_ (`cluster/terraform/main/proxmox-vms.tf`) — dropping it from
 the VM would remove this whole class of contention.
+
+## 2026-07-17 (later) — `seatspare` pin WORKED; new blocker: PLM's greeter runtime is single-instance (axis 3)
+
+Post-reboot state with the `seatspare` pin applied — the GPU axis is **confirmed
+solved**:
+
+- `card2` (02:00.0): `ID_SEAT=seatspare`, `master-of-seat` stripped from
+  `CURRENT_TAGS`. No sway output on it, no kwin "Failed to open card2".
+- `card0` (01:00.0): `ID_SEAT=seatphysical`, `master-of-seat`, nvidia driver bound,
+  `card0-DP-1` status **connected** — monitor detected on the right card.
+- Greeter session `c2` live on `seatphysical`, `VT -1` (varlink axis still solved).
+
+Physical monitor still black. New root cause, from `journalctl _UID=989` + the PLM
+package's unit files:
+
+**PLM's greeter launch is structurally single-instance.** The daemon (inherited SDDM
+code) correctly starts one greeter display per seat — two `plasmalogin-helper`s, two
+`startplasma-login-wayland`s. But `startplasma-login-wayland` imports its display's
+context (`XDG_SESSION_ID`, seat, `PLASMALOGIN_SOCKET`) into the **shared** `plasmalogin`
+systemd user manager (last writer wins) and starts **fixed-name** user units:
+`plasma-login-wayland.target` → `plasma-login-kwin_wayland.service` +
+`plasma-login.service` (+ `plasma-wallpaper.service`), one `wayland-0` socket, one dbus.
+One user manager → at most **one kwin greeter ever**. This boot, seat0's display won the
+race; on sway login PLM stopped "the" greeter (kwin exit 15 at the moment of
+`atomic commit failed: Permission denied` — sway taking seat0's virtio card back);
+seatphysical's `startplasma` (still running, `session-c2.scope`) has no compositor.
+
+Classic SDDM spawns a greeter **process per display**, so concurrent greeters coexist;
+PLM's rewrite onto fixed-name user units **regressed** that. This is exactly the risk
+flagged as "Unverified: live multiseat on PLM" in <greeters.md> — the collision is real,
+just at the unit-name/env layer rather than the wayland-socket layer we guessed.
+
+### Probes in flight
+
+1. `~/seat-diag2.sh` (root): with seat0's greeter gone, the fixed-name units are free —
+   `systemctl --user start plasma-login-wayland.target` as `plasmalogin` may revive kwin
+   on seatphysical **now, without reboot**, since session `c2` is still active and its
+   `startplasma` was plausibly the last env writer. If the monitor lights up, the whole
+   NVIDIA render chain is validated and the problem reduces to greeter orchestration.
+2. Background research: has PLM master/6.7+ templated the greeter units (multi-instance),
+   and/or grown a per-seat management filter?
+
+### Solution space for axis 3 (if upstream hasn't fixed it)
+
+- **Serialize greeters**: only one greeter needed at a time in practice — e.g. re-trigger
+  the target for the still-waiting seat after the other seat logs in (what seat-diag2
+  tests manually).
+- **Autologin + immediate lock on seat0 (SPICE) only**: the no-autologin constraint is
+  for the physical seat; autologin on the virtio seat with `swaylock` at session start
+  would mean only seatphysical ever needs a greeter. Risk: SDDM-lineage `[Autologin]` is
+  global, not per-seat — must verify PLM doesn't autologin the physical seat too.
+- **Carry a nix patch templating PLM's units per seat** (`…@seatname.service`) + file
+  upstream.
+- **Different greeter on one of the seats** (mixing DMs; messy, last resort).
+
+### 2026-07-17 — BREAKTHROUGH: greeter rendered on the physical monitor (manual revival)
+
+`seat-diag3.sh` proved the entire render chain. Procedure: with seat0's greeter gone
+(user logged into sway there), inject session `c2`'s env into the `plasmalogin` user
+manager and restart the fixed-name units:
+
+```bash
+systemctl --user set-environment XDG_SEAT=seatphysical XDG_SESSION_ID=c2 \
+  XDG_SESSION_CLASS=greeter XDG_SESSION_TYPE=wayland SDDM_SOCKET=<c2's socket> ...
+systemctl --user unset-environment XDG_VTNR
+systemctl --user reset-failed && systemctl --user start plasma-login-wayland.target
+```
+
+Result: kwin attached to session `c2`, logind took DRM master on `card0` and delegated
+the fd (debugfs: `systemd-logind master=y` + kwin `a=y magic=1`), modeset succeeded —
+`card0-DP-1: enabled, dpms=On` — and **the PLM greeter visibly rendered on the
+physical 4K monitor**: login controls laid out; wallpaper missing (matches the null
+`BlurScreenBridge`/wallpaper QML singletons from the dirty revival). First render on
+this seat under the PLM/26.05 stack — the monitor had shown output under earlier,
+pre-PLM configurations (settings unrecorded). No card1 fallback, no permission
+errors.
+
+The exact procedure is captured as <seat-diag3.sh> in this directory (alongside
+<seat-drm-diag.sh> — the DRM-client/seat-assignment dump that found the card2
+contention — and <seat-diag2.sh>, which snapshots the user-manager env, proved the
+last-writer-wins env race, and showed `card0` masterless).
+
+Conclusions:
+
+- Axes 1/1b (varlink), 2 (GPU contention), and the hypothetical "axis 4"
+  (NVIDIA-seat kwin bring-up) are ALL cleared. `seatspare` pin + PLM + 26.05 stack
+  works end to end.
+- The **only** remaining defect is axis 3: PLM's single-instance greeter runtime
+  (fixed-name user units + last-writer-wins env). At boot, seat0's greeter wins and
+  the physical seat stays black.
+- Caveat of the manual revival: greeter came up with QML errors (placeholder screen,
+  null `Authenticator`/`UserModel` singletons) — resurrection into a half-torn-down
+  context; a cleanly sequenced start should not have these.
+
+Candidate durable fixes (pending upstream research on whether PLM ≥6.7 templated the
+units): PLM version bump; carried nix patch templating units per seat; boot-time
+serialization (automated equivalent of the env-retarget revival); autologin+lock on
+seat0 (SPICE) so only the physical seat ever needs a greeter — must first verify PLM
+autologin is seat0-only.
