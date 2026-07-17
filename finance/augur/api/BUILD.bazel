@@ -202,6 +202,7 @@ py_library(
     srcs = ["deployment.py"],
     deps = [
         ":schemas",
+        "//util:image_tag",
         "@pypi//pydantic",
     ],
 )

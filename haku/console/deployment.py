@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Mapping
 
 from pydantic import BaseModel, Field
 
-_DUCKTAPE_REPO_URL = "https://github.com/agentydragon/ducktape"
-_IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9_.-]+-\d{14}-(?P<commit>[0-9a-f]{7,40})$")
+from util.image_tag import image_provenance
 
 
 class DeploymentImageInfo(BaseModel):
@@ -29,13 +27,9 @@ class DeploymentInfo(BaseModel):
 
 
 def _image_info(image_tag: str | None) -> DeploymentImageInfo:
-    tag = image_tag.strip() if image_tag and image_tag.strip() else None
-    match = _IMAGE_TAG_RE.match(tag) if tag else None
-    commit = match.group("commit") if match else None
+    info = image_provenance(image_tag)
     return DeploymentImageInfo(
-        image_tag=tag,
-        source_commit=commit,
-        source_commit_url=f"{_DUCKTAPE_REPO_URL}/commit/{commit}" if commit else None,
+        image_tag=info.image_tag, source_commit=info.source_commit, source_commit_url=info.source_commit_url
     )
 
 

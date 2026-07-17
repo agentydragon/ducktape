@@ -72,7 +72,10 @@ py_library(
     name = "deployment",
     srcs = ["deployment.py"],
     visibility = ["//visibility:public"],
-    deps = [":state"],
+    deps = [
+        ":state",
+        "//util:image_tag",
+    ],
 )
 
 py_library(

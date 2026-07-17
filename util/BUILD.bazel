@@ -124,6 +124,21 @@ py_library(
 )
 
 py_library(
+    name = "image_tag",
+    srcs = ["image_tag.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_image_tag",
+    srcs = ["test_image_tag.py"],
+    deps = [
+        ":image_tag",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "playwright",
     testonly = True,
     srcs = ["playwright.py"],

@@ -41,7 +41,10 @@ py_library(
 py_library(
     name = "deployment",
     srcs = ["deployment.py"],
-    deps = [":models"],
+    deps = [
+        ":models",
+        "//util:image_tag",
+    ],
 )
 
 py_library(
