@@ -5,6 +5,18 @@
     # NixOS 25.11 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
+    # NixOS 26.05 — scoped to wyrm2 only (its `mkNixos` overrides `nixpkgs` +
+    # `home-manager` to these). wyrm2 needs 26.05 for the
+    # `services.displayManager.plasma-login-manager` module (SDDM's release is
+    # stalled and lacks the non-seat0 greeter fix; PLM ships it — see
+    # debug/atlas/direct_display_bringup/greeters.md). Every other host stays on
+    # 25.11 to keep the RBE/CI build images and servers off an unplanned bump.
+    # TODO(nixpkgs-bump): do the wholesale 25.11 -> 26.05 bump for ALL hosts +
+    #   home-manager, then delete these wyrm2-only inputs and the per-host
+    #   `nixpkgs`/`home-manager` overrides in `mkNixos`. Blocked on rebuilding +
+    #   testing every host and the RBE worker image against 26.05.
+    nixpkgs-2605.url = "github:NixOS/nixpkgs/nixos-26.05";
+
     # Unstable for packages that need frequent updates (e.g., claude-code)
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -17,6 +29,13 @@
     home-manager = {
       url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # Home Manager tracking 26.05 — paired with nixpkgs-2605 for wyrm2 only.
+    # See the TODO(nixpkgs-bump) above; folds away with the wholesale bump.
+    home-manager-2605 = {
+      url = "github:nix-community/home-manager/release-26.05";
+      inputs.nixpkgs.follows = "nixpkgs-2605";
     };
 
     # nix-colors for colorscheme support
@@ -55,9 +74,11 @@
     {
       self,
       nixpkgs,
+      nixpkgs-2605,
       nixpkgs-unstable,
       nixpkgs-master,
       home-manager,
+      home-manager-2605,
       nix-colors,
       nixGL,
       claude-plugins-official,
@@ -199,6 +220,15 @@
           username ? "agentydragon",
           homeManagerHost ? hostname,
           hardwareModule ? null,
+          # Per-host nixpkgs/home-manager override. Defaults to the shared 25.11
+          # inputs; wyrm2 passes the 26.05 pair for plasma-login-manager. The
+          # system's `pkgs` comes from `nixosSystem`'s own nixpkgs, so this
+          # genuinely moves that host to 26.05 (base.nix sets allowUnfree; no
+          # module pins `nixpkgs.pkgs`). Folds away with TODO(nixpkgs-bump).
+          # Defaults reference `inputs.*`, NOT the bare names — `nixpkgs ? nixpkgs`
+          # would self-reference the formal arg and infinitely recurse.
+          nixpkgs ? inputs.nixpkgs,
+          home-manager ? inputs.home-manager,
           extraModules ? [ ],
           # Inline home-manager config: if set, HM is activated during NixOS
           # activation (no hm-bootstrap.nix needed). Requires the HM host
@@ -549,6 +579,9 @@
           hostname = "wyrm2";
           username = "agentydragon";
           homeManagerHost = "wyrm2";
+          # wyrm2-only 26.05 bump for plasma-login-manager (TODO(nixpkgs-bump)).
+          nixpkgs = nixpkgs-2605;
+          home-manager = home-manager-2605;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = true;

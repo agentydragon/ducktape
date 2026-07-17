@@ -674,7 +674,7 @@ reading greetd source (`/code/github.com/kennylevinsen/greetd`):
 
 greetd is single-seat/seat0/VT-oriented. (Note: a later source review found SDDM and
 LightDM _do_ support per-logind-seat multi-seat and have no same-user veto — see
-<greeter_multiseat_research.md>. Only greetd is disqualified on the VT/seat0 axis.)
+<greeters.md>. Only greetd is disqualified on the VT/seat0 axis.)
 Options that remain, to run two simultaneous same-machine graphical sessions:
 
 1. **Separate user for the gaming seat** (e.g. `games`): zero patching. GDM's multi-seat
@@ -692,7 +692,7 @@ Options that remain, to run two simultaneous same-machine graphical sessions:
 
 ### 2026-07-12 — decision: swap GDM → SDDM (staged, switch pending)
 
-Chose SDDM over the alternatives. Rationale from <greeter_multiseat_research.md>: SDDM
+Chose SDDM over the alternatives. Rationale from <greeters.md>: SDDM
 does per-logind-seat multi-seat, sets `XDG_SEAT` per seat, gates VT usage on seat0 (so
 the VT-less seat-game is fine), supports a Wayland greeter, and — unlike GDM — has **no
 same-user conflict check**. So the same user can hold a live session on seat0 (SPICE)
@@ -815,7 +815,8 @@ logind's`seat_name_is_valid`, pure alnum). **Fixed by the rename.**
 
    Leading hypothesis: a non-empty VC tty (`/dev/tty0`) reaches the greeter's PAM
    session → logind rejects "VC tty on a non-seat0 seat" as `Seat`. Unproven; the
-   wire log confirms or refutes.
+   wire log confirms or refutes. **→ CONFIRMED 2026-07-16 by the live wire log — see
+   "Root cause 1 CONFIRMED" below. The hyphen was NOT the cause.**
 
    There is **no clean fallback** — GDM is out (see the constraints + DM landscape in
    "Next steps"); if SDDM 0.21's non-seat0 greeter is fundamentally incompatible with
@@ -891,6 +892,107 @@ black-screen cause — the output is up, just no compositor drawing.
 rejecting the `seat-game` name) or a distinct param defect that survives the
 `seatphysical` rename. Only the reboot (re-tags seat to `seatphysical` **and**
 brings logind debug live) resolves this — see Root cause 1 and the Reboot procedure.
+
+### Root cause 1 CONFIRMED (2026-07-16, live, no reboot) — SDDM sends a VC tty (`tty0`) for the non-seat0 greeter
+
+Tested **without a reboot**, keeping the tmux/SSH session alive:
+
+1. `systemctl service-log-level systemd-logind.service debug` — logind implements
+   `org.freedesktop.LogControl1` (LogLevel writable), so debug goes live **without
+   restarting logind**. This is the no-reboot substitute for the `SYSTEMD_LOG_LEVEL=debug`
+   drop-in.
+2. Live re-seat of the GPU: `udevadm control --reload-rules` then `udevadm trigger
+--action=remove` + `--action=add` on `/sys/.../0000:01:00.0/drm/card0`. **This
+   worked** — `loginctl list-seats` flipped `seat-game` → `seatphysical`, card0 now
+   MASTER of `seatphysical`. (Contradicts the earlier "reboot required to re-home the
+   seat TAG" assumption: an explicit per-device `remove`+`add` trigger _does_ re-seat
+   live; only a bare `switch`/rule-reload is insufficient.)
+3. `systemctl restart display-manager` → fresh greeters on both seats. Physical
+   monitor **still 4K-black** (rename did NOT fix it), seat0 greeter fine.
+
+The decisive logind wire log (both greeter `CreateSession` calls, same boot):
+
+```json
+// seatphysical — REJECTED
+Received: {"method":"io.systemd.Login.CreateSession","parameters":{"UID":175,
+  "Service":"sddm-greeter","Type":"wayland","Class":"greeter",
+  "Seat":"seatphysical","TTY":"tty0","Remote":false}}          // <-- TTY=tty0, NO VTNr
+Sending:  {"error":"org.varlink.service.InvalidParameter","parameters":{"parameter":"Seat"}}
+
+// seat0 — ACCEPTED
+Received: {"method":"io.systemd.Login.CreateSession","parameters":{"UID":175,
+  "Service":"sddm-greeter","Type":"wayland","Class":"greeter",
+  "Seat":"seat0","VTNr":1,"TTY":"tty1","Remote":false}}         // <-- TTY=tty1, VTNr=1
+Sending:  {"parameters":{"Id":"c6","Seat":"seat0","VTNr":1,"Class":"greeter",...}}
+```
+
+**Root cause (confirmed):** SDDM 0.21 hands the **non-seat0** Wayland greeter
+`TTY=tty0` with **no `VTNr`**. `tty0` is a **virtual console**, and VCs exist only on
+`seat0`. systemd-258 logind's `vl_method_create_session` rejects a VC tty on a
+non-seat0 seat, reporting `parameter: "Seat"`. The seat _name_ is fine (`seatphysical`
+is pure-alnum, passes `seat_name_is_valid`); the reported "Seat" field is misleading —
+the real defect is the **VC-tty / seat mismatch**. **The hyphen was a red herring for
+this blocker** (it only ever broke the cosmetic `SeatAdded` D-Bus signal).
+
+Chain unchanged: rejected `CreateSession` → no logind session → no `XDG_RUNTIME_DIR`
+→ greeter `weston` aborts → 4K-black.
+
+#### Where `tty0` comes from (fix surface — pinned to the line + the upstream fix)
+
+logind is behaving **correctly** — the bug is entirely on the SDDM side. Pinned to
+source (SDDM v0.21.0, `src/helper/backend/PamBackend.cpp:255-256`, `openSession()`):
+
+```cpp
+QString tty = VirtualTerminal::path(sessionEnv.value(QStringLiteral("XDG_VTNR")).toInt());
+m_pam->setItem(PAM_TTY, qPrintable(tty));   // UNCONDITIONAL
+```
+
+On a non-seat0 seat `XDG_VTNR` is unset (SDDM only sets it for seat0), so
+`.toInt()` → `0` and `VirtualTerminal::path(0)` → `/dev/tty0` — a VC. That
+`PAM_TTY=tty0` is what pam_systemd forwards to logind, which rejects it.
+
+**Upstream already fixed this**, commit
+`cda8d936c2c47a85fa95797431b51d1e39b5c022` — _"Allow non-root greeters and sessions
+to start on kernels without VTs"_ (nerdopolis, 2024-01-31, on `develop`). It:
+
+- guards the `PAM_TTY` set: `if (sessionEnv.contains("XDG_VTNR")) { … }` — so no VC
+  tty is sent off seat0;
+- `Greeter.cpp`: only sets `XDG_VTNR` when `seat0 && terminalId() > 0`;
+- adds `Seat::canTTY()` querying logind's `CanTTY` seat property.
+
+**But it is in NO tagged release** — `v0.21.0` (2024) is the newest tag and predates
+it. So **bumping SDDM to a release will not help**; the fix must be **backported as a
+nixpkgs overlay patch** on the 0.21.0 `sddm` derivation (apply commit `cda8d93`; the
+`PamBackend.cpp` guard alone is the minimal piece, but applying the whole commit is
+cleaner and coherent).
+
+#### Solution space (if we need to pivot — root cause is SDDM-side, not systemd-side)
+
+Hard requirement for any option: the physical-seat greeter **must** still obtain a
+logind session (for `XDG_RUNTIME_DIR`), so we cannot simply drop `pam_systemd` from
+the greeter PAM stack. And the user's constraints stand: **no autologin** on the
+physical seat, **no separate user**, **no GDM**.
+
+1. **Backport the SDDM fix (recommended).** nixpkgs overlay patch on the 0.21.0
+   `sddm` derivation applying commit `cda8d93` (the `PamBackend.cpp` `if contains
+XDG_VTNR` guard is the minimal piece). Small, upstream-authored, coherent; keeps
+   SDDM and the single-DM setup. Best candidate.
+2. **Bump SDDM — RULED OUT.** `v0.21.0` (2024) is the newest tag; the fix lives only
+   on `develop`, unreleased. A release bump gains nothing until SDDM cuts 0.22+.
+   (Building `sddm` from a `develop` snapshot is effectively option 1 with more
+   surface — prefer the targeted backport.)
+3. **Swap the physical-seat greeter** to something that never claims a VC tty:
+   bespoke `cage` + `greetd`/`gtkgreet` unit scoped to `seatphysical`, or LightDM.
+   (Earlier greetd note (2026-07-11) predates this root cause and assumed a seat-
+   targeting limit; revisit now that we know the exact defect is the VC tty, not seat
+   targeting.) Heaviest, but fully sidesteps SDDM's VT logic.
+4. **NOT viable:** autologin (user said no); dropping pam_systemd (kills
+   `XDG_RUNTIME_DIR`); renaming the seat further (name isn't the problem).
+
+State left after this test: logind at debug log level (runtime only; resets on
+reboot, and the nix drop-in re-applies debug anyway); seat live-renamed to
+`seatphysical` (also resets to whatever udev tags on next boot — the nix rule makes
+it permanent). seat0 sway session was killed by the DM restart; re-login on seat0.
 
 ### Constraints (user decisions, 2026-07-16)
 

@@ -65,7 +65,7 @@
   # Steam defaults "GPU accelerated rendering in web views" OFF on NVIDIA +
   # Wayland (Valve driver-detection bug, ValveSoftware/steam-for-linux#13151).
   # That forces the Big Picture web UI (CEF) to rasterize on the CPU — ~5 FPS
-  # scrolling at 4K on the gaming seat (debug/atlas/direct_display_bringup.md).
+  # scrolling at 4K on the gaming seat (debug/atlas/direct_display_bringup/README.md).
   # Enabling it (registry key GPUAccelWebViewsV3=1, via Steam → Settings →
   # Interface) renders on the 5090.
   #
@@ -76,7 +76,7 @@
   home.activation.steamGpuWebViews = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     reg="$HOME/.steam/registry.vdf"
     if [ -f "$reg" ] && ! grep -qE '"GPUAccelWebViewsV3"[[:space:]]*"1"' "$reg"; then
-      echo "warning: Steam 'GPU accelerated rendering in web views' is not enabled (registry.vdf GPUAccelWebViewsV3 != 1). Big Picture will render on CPU (~5 FPS at 4K on the seat). Enable it in Steam → Settings → Interface. See debug/atlas/direct_display_bringup.md." >&2
+      echo "warning: Steam 'GPU accelerated rendering in web views' is not enabled (registry.vdf GPUAccelWebViewsV3 != 1). Big Picture will render on CPU (~5 FPS at 4K on the seat). Enable it in Steam → Settings → Interface. See debug/atlas/direct_display_bringup/README.md." >&2
     fi
   '';
 
@@ -117,7 +117,7 @@
         # so no keyring daemon needs starting here.
       ];
       # Keybindings mirror the user's GNOME + pop-shell muscle memory (dconf survey
-      # in debug/atlas/direct_display_bringup.md). Focus stays on sway's default
+      # in debug/atlas/direct_display_bringup/README.md). Focus stays on sway's default
       # Super+hjkl, which is exactly pop-shell focus-{left,down,up,right}.
       keybindings = lib.mkOptionDefault {
         "XF86AudioRaiseVolume" = "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+";
@@ -244,7 +244,7 @@
   # only functions once seat0 is off GNOME: GNOME's own daemon otherwise holds
   # that name on the shared /run/user/1001/bus (the same shared-user-bus limit
   # that keeps GNOME from running twice — see
-  # debug/atlas/direct_display_bringup.md).
+  # debug/atlas/direct_display_bringup/README.md).
   services.swaync = {
     enable = true;
     settings = {

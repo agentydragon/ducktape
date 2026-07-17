@@ -419,7 +419,7 @@ let
       name = builtins.elemAt parts 0;
       marketplace = builtins.elemAt parts 1;
     }
-  ) cfg.plugins;
+  ) cfg.installPlugins;
 
   # Generate home.file entries for plugin cache directories
   pluginCacheFiles = lib.listToAttrs (
@@ -522,10 +522,22 @@ in
     description = "Plugin marketplace sources, keyed by marketplace name";
   };
 
-  options.programs.claude-code.plugins = lib.mkOption {
+  # Named `installPlugins`, not `plugins`, to avoid colliding with home-manager
+  # 26.05's built-in `programs.claude-code.plugins` (a different, HM-native plugin
+  # system). Ducktape installs these from `pluginSources` into
+  # ~/.claude/plugins/cache/ and writes installed_plugins.json itself; HM's
+  # `plugins`/`marketplaces` options are left unused. (wyrm2 is on 26.05, where
+  # the collision breaks eval — see TODO(nixpkgs-bump) in flake.nix.)
+  #
+  # TODO(claude-code-plugins): properly adopt home-manager's upstream
+  #   `programs.claude-code.plugins` + `.marketplaces` system and delete this
+  #   custom `installPlugins` / `pluginSources` / plugin-cache / installed_plugins.json
+  #   machinery. Deferred until the wholesale nixpkgs bump so all hosts share the
+  #   HM-native plugin flow at once.
+  options.programs.claude-code.installPlugins = lib.mkOption {
     type = lib.types.listOf lib.types.str;
     default = [ ];
-    description = "Plugins to install, in 'name@marketplace' format";
+    description = "Plugins to install from pluginSources, in 'name@marketplace' format";
     example = [ "frontend-design@claude-plugins-official" ];
   };
 
@@ -540,7 +552,7 @@ in
       inherit (claude-plugins-official) rev;
     };
 
-    plugins = [
+    installPlugins = [
       "frontend-design@claude-plugins-official"
       "pyright-lsp@claude-plugins-official"
       # Configured via repo-level rust-analyzer.toml (linkedProjects + no sccache).
@@ -631,12 +643,12 @@ in
       env.CLAUDE_CODE_OTEL_BEARER_TOKEN_FILE = config.sops.secrets.claude_code_otel_bearer_token.path;
       otelHeadersHelper = "${claudeOtelHeadersHelper}/bin/claude-otel-headers";
 
-      # Auto-generated from cfg.plugins
+      # Auto-generated from cfg.installPlugins
       enabledPlugins = lib.listToAttrs (
         map (spec: {
           name = spec;
           value = true;
-        }) cfg.plugins
+        }) cfg.installPlugins
       );
 
       permissions = {
@@ -683,7 +695,7 @@ in
   # updates mutable timestamps, which makes the old deterministic file conflict
   # on every Home Manager activation.
   # Re-enable by folding this back into config.home.file above:
-  # // lib.optionalAttrs (cfg.plugins != [ ]) {
+  # // lib.optionalAttrs (cfg.installPlugins != [ ]) {
   #   ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
   # };
 }

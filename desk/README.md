@@ -57,7 +57,7 @@ intended:
   audio via `01:00.1` passthrough (PipeWire → FV43U speakers).
   Sunshine/Moonlight streaming available but software-encode-only.
   Session-teardown hardening is the remaining open item. See
-  `debug/atlas/direct_display_bringup.md`.
+  `debug/atlas/direct_display_bringup/README.md`.
 
 ## Devices on hand
 

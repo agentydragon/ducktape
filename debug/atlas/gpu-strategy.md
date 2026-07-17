@@ -120,7 +120,7 @@ Goal is playing games on this machine; streaming was a workaround. Instead:
 Remaining work: plug 2 cables, OSD dual-KVM binding, `modeset` revert +
 rebuild + VM restart, `qm set` USB port passthrough, bench test.
 
-**Bring-up in progress** — running notes: <direct_display_bringup.md>.
+**Bring-up in progress** — running notes: <direct_display_bringup/README.md>.
 
 ## Prior State (Apr 2026)
 

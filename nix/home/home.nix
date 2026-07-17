@@ -70,8 +70,16 @@ in
     ./modules/solarized.nix
     ./terminals
     ./claude_code
-    ./programs/gemini-cli.nix
-    ./gemini_cli.nix
+    # TODO(gemini-cli): Gemini CLI integration disabled (unused). home-manager
+    # 26.05 renamed `programs.gemini-cli` → `programs.antigravity-cli` (Google
+    # rebrand) via mkRenamedOptionModule, and `antigravity-cli` is only in
+    # nixpkgs-unstable, not the nixos-26.05 release wyrm2 pins — so setting
+    # programs.gemini-cli forces `pkgs.antigravity-cli` and fails eval. Never used
+    # it. Later: either migrate the custom module + personal integration to
+    # programs.antigravity-cli (once the package is in a release) or delete them.
+    # The generic module + personal integration files stay in the tree meanwhile.
+    # ./programs/gemini-cli.nix
+    # ./gemini_cli.nix
     ./shell/oh-my-posh.nix
     ./modules/gnome-custom-keybindings.nix
     ./modules/attic.nix
@@ -526,10 +534,16 @@ in
       { package = pkgs.gnomeExtensions.cronomix; }
       { package = pkgs.gnomeExtensions.pop-shell; }
       { package = pkgs.gnomeExtensions.gsconnect; }
-      { package = pkgs.gnomeExtensions.display-scale-switcher; }
       { package = pkgsUnstable.gnomeExtensions.just-perfection; }
       { package = pkgs.gnomeExtensions.user-themes; }
-    ];
+    ]
+    # display-scale-switcher was removed from nixpkgs after 25.11 (absent in
+    # 26.05 and unstable). Keep it only where it still exists (25.11 hosts); it
+    # drops out on 26.05 — wyrm2, which is on sway now anyway, so GNOME
+    # extensions are moot there. TODO(nixpkgs-bump): revisit at the wholesale bump.
+    ++ lib.optional (pkgs.gnomeExtensions ? display-scale-switcher) {
+      package = pkgs.gnomeExtensions.display-scale-switcher;
+    };
   };
 
   home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" { };
