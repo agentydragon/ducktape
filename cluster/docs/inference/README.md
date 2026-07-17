@@ -30,9 +30,9 @@ with their dated run records.
 
 - <PLAN.md> — active program for mapping agent-capable models across context,
   quality, latency, conventional GPU serving, and exotic RAM/SSD/CPU-offload
-  runtimes on `wyrm2`.
-- <methodology.md> — normative protocol, metric definitions, comparability,
-  provenance, and run-acceptance rules.
+  runtimes on `wyrm2`. Owns the measurement conventions and the experiment order.
+- <results.md> — hand-maintained comparison table of current configurations,
+  with source/trust marks on every number.
 - <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama,
   vLLM, SGLang, TensorRT-LLM, and the rest. Includes current cluster state
   and migration path. Decision document for picking what to run on wyrm2.
@@ -40,8 +40,7 @@ with their dated run records.
   (Qwen3-Coder OOM saga, AWQ + FP8 KV cache + `--max-num-seqs 32` fix). Read
   before re-attempting vLLM in cluster.
 - <benchmarks.md> — legacy configuration and measurement register plus runner
-  notes. Existing tables remain historical evidence until generated
-  `results.md` replaces them; <methodology.md> owns the current protocol.
+  notes. Historical evidence, frozen; current numbers live in <results.md>.
 - <runs/2026-07-14_glm52_colibri/README.md> — reproducible wyrm2 host run of
   GLM-5.2 through Colibri's disk-streamed MoE runtime, including the pinned
   flake, checkpoint gate, run scripts, measurements, and experiment verdict.
@@ -70,8 +69,10 @@ incident or migration, write a focused doc and link it from this README.
 
 ## Next work
 
-Follow <PLAN.md> for the shared harness, normalized run records, documentation
-cleanup, and experiment order. Persistent individual tasks remain in <TODO.md>.
+Follow <PLAN.md> for the experiment order (E1–E5 first) and the measurement
+conventions. Each run is a `runs/<run-id>/` directory (manifests/scripts + a
+README with the numbers); current comparisons land in <results.md>. Persistent
+individual tasks remain in <TODO.md>.
 
 ## See also
 

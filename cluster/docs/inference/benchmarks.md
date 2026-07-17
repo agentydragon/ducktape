@@ -1,9 +1,9 @@
 # Benchmarks and known results
 
 Historical configurations, measurements, and operational notes from before the
-common harness. Preserve these tables as evidence, but do not append current
-campaign results by hand. <methodology.md> owns the protocol and generated
-`results.md` will own current comparisons.
+current program. Preserve these tables as evidence, but do not append current
+campaign results by hand. <PLAN.md> owns the measurement conventions and
+<results.md> owns current comparisons.
 
 ## Configurations
 
@@ -178,9 +178,9 @@ for actual model discrimination.
 ## Off-the-shelf eval runners
 
 The vast majority of useful evals are already packaged. This historical survey
-informed the initial campaign, but a runner becomes comparable only when
-<methodology.md> pins its revision, dataset, scorer, scaffold, and sample IDs.
-Prefer packaged evaluators over hand-rolled task implementations.
+informed the initial campaign. Prefer packaged evaluators over hand-rolled task
+implementations, and prefer published leaderboard numbers over re-running them
+locally (see <PLAN.md> § "Quality evidence policy").
 
 | Repo                                                                                                                                               | Use for                                                                                  | Why                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -197,10 +197,9 @@ measurements, not quality.
 
 ## Legacy proposed benchmark suite
 
-This predates `inference-bench/v1` and remains design history, not the active
-protocol. <PLAN.md> defines the campaign funnel and <methodology.md> defines
-measurement eligibility. The commands below are illustrative historical entry
-points, not supported repository workflows.
+This is design history, not the active plan. <PLAN.md> defines the current
+experiment order and measurement conventions. The commands below are
+illustrative historical entry points, not supported repository workflows.
 
 ### Suite 1: Smoke throughput (~10 min/config)
 
@@ -313,11 +312,9 @@ NVMe-vs-HDD-storage-class question.
 
 ## Where new results belong
 
-Follow <PLAN.md#deliverables-and-repository-structure> and <methodology.md>.
-Each accepted run gets an immutable directory with `README.md`, `manifest.json`,
-and `summary.json`; large raw artifacts live in the private artifact store.
-Regenerate `results.md` from validated summaries rather than editing these
-historical tables.
+Follow <PLAN.md> § "Repository structure". Each new run gets a `runs/<run-id>/`
+directory with the manifests/scripts that ran and a `README.md` recording the
+numbers; add a row to <results.md> rather than editing these historical tables.
 
 ## See also
 

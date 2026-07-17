@@ -4,6 +4,11 @@ Each item is phrased as "what we'd learn." Higher items deliver more
 signal toward the goal in <README.md#goal> per unit of effort. Re-rank
 freely as we run things and learn what surprises us.
 
+> **Note:** this is the older Ollama-era signal-ranked backlog. The active
+> sequence is now E1–E5 in <PLAN.md> § "First five experiments", which makes
+> k8s vLLM the starting point (folding in P2 #5 below). Items here that a PLAN
+> experiment subsumes get checked off against the corresponding run.
+
 ## P0 — high signal, low cost, hits the main use case
 
 ### 1. Standard coding benchmark on `gpt-oss:20b` — _HumanEval done; saturated_
@@ -159,7 +164,7 @@ some operational workflow.
 
 ## How to claim an item
 
-Follow <PLAN.md> and <methodology.md>. A new accepted run gets an immutable
-`runs/<run-id>/` record with a manifest and normalized summary; current
-comparisons are generated into `results.md`, not appended to <benchmarks.md>.
-Link the run here when the item is complete.
+Follow <PLAN.md>. A new run gets a `runs/<run-id>/` directory holding the
+manifests/scripts that ran and a `README.md` with the numbers; add a row to
+<results.md> (with a source/trust mark), not to <benchmarks.md>. Link the run
+here when the item is complete.
