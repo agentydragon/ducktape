@@ -13,11 +13,13 @@ Build a new remote MCP server `hostexec-mcp` modeled on
 it is approval-gated by construction. **Transport: SSH over the existing Nebula mesh** —
 it is the only option that covers every target uniformly (including `atlas`, which is not
 a k8s node) and reuses machinery that already exists (sshd + declarative `authorized_keys`
-on every host). **Do not** ship it with a standing root SSH key as the whole authorization
-story; make the SSH key a dumb transport and put the authorization in a **console-signed,
-single-use, short-TTL capability token** that a small verifier on each host checks before
-exec — the SSH analog of kubectl-passthrough's "the approval _is_ the credential." A
-privileged pod-on-node is rejected as the primary transport (below).
+on every host). **Authorization = Authentik, not a standing key:** make it
+"kubectl-passthrough for SSH" — the console forwards the approving operator's short-lived
+**Authentik** token, and a small host-side verifier authorizes the operator's real identity
+(the `hostexec-<run_as>-<host>` group claim) against Authentik's JWKS. The `hostexec-mcp` pod
+holds only an inert transport SSH key, never the authority. "May run root on `wyrm2`" is then
+an Authentik group you grant/revoke centrally, exactly like cluster-admin. A privileged
+pod-on-node is rejected as the primary transport (below).
 
 ## What is already decided for us
 
@@ -116,8 +118,8 @@ inadequate; it is not the base.
 A small HTTP/gRPC exec daemon (systemd unit) on each host, mTLS-pinned to the console's
 Nebula IP. Most control (host-side policy, structured local audit) but the most new code and
 a **new standing root-capable listener to secure on every host**. Not worth it over SSH
-(Option A) which already gives the transport; anything C would enforce, the L1 verifier below
-enforces with ~30 lines and no new daemon.
+(Option A) which already gives the transport; anything C would enforce, the host-side verifier
+below enforces with ~30 lines and no new daemon.
 
 ## The credential problem (the doctrine's real test)
 
@@ -128,36 +130,70 @@ RBAC to read it), so a _prompt-injected Haku_ still can't use it without an oper
 But **compromise of the `hostexec-mcp` pod or its Secret = silent root on every machine**, no
 approval needed. That is strictly weaker than kubectl-passthrough, which holds nothing.
 
-Three rungs, cheapest to purest:
+The right question is not "how do we protect a signing key" but **where the authority to
+authorize a command lives**. kubectl-passthrough's answer is: in the operator's own Authentik
+identity — the console forwards the operator's short-lived Authentik OAuth token, and
+kube-apiserver enforces the operator's Authentik-group RBAC. **We should do the same for
+hostexec: make Authentik the token issuer, so the host authorizes the operator's real
+identity, not a key the exec pod holds.** This is "kubectl-passthrough for SSH."
 
-- **L0 — standing SSH keys in the isolated pod.** Two keys (`agentydragon`, `root`) as k8s
-  Secrets in the `hostexec-mcp` namespace. Harden with `from="<pod/nebula ip>"` and a
-  forced-command wrapper that logs to journald. _Fastest to ship; residual = pod compromise
-  is root-everywhere. Acceptable only as a throwaway MVP to validate ergonomics._
+### Recommended — Authentik-minted operator tokens ("passthrough for SSH") ✅
 
-- **L1 — console-signed capability tokens.** ✅ **recommended target.** The SSH key becomes
-  a dumb transport; the **authorization** is a per-call token the **console** (the trust
-  boundary) signs at approval time, binding exactly `(host, run_as, argv-hash, cwd, nonce,
-exp)`. A tiny verifier on each host (an `authorized_keys` `command=` / `ForceCommand`
-  wrapper, ~30 lines, console public key deployed via nix) checks the signature and the bound
-  fields before exec. Now a fully compromised `hostexec-mcp` pod holds only the transport — it
-  **cannot produce a valid capability**, so every host refuses it; the console only signs
-  after the operator approves in trusted chrome. This is the SSH analog of "the approval is
-  the credential." Root is just a capability whose `run_as=root` the operator approved.
-  Crux placement decision: **the console signs, not the exec server** — a signer in the exec
-  server would let a compromised exec server mint its own capabilities, defeating the point.
-  So the signing key lives with the console-side trust boundary; `hostexec-mcp` relays the
-  signed capability + carries the SSH transport.
+The authority to run as `root`/`agentydragon` on a given host is an **Authentik group
+membership**, minted and revoked centrally in `tf/gitops/agent-machine-access` exactly like
+the `kubectl_passthrough_mcp` provider (<../../cluster/k8s/haku/console/config.yaml> lines
+32–44 describe that provider). Flow:
 
-- **L2 — SSH certificate authority / Authentik-federated SSH.** The purest "operator's own
-  identity per call" (short-lived, principal-scoped certs, or an `AuthorizedKeysCommand` that
-  validates an Authentik-issued token). Biggest change — introduces an SSH CA the repo
-  deliberately does **not** have today (<../../nix/ssh-keys.nix> is plain per-host keys, no
-  CA) — for marginal gain over L1 with a single operator. Long-horizon only.
+1. The operator links Authentik to the console once (`operator_oauth`, the existing
+   mechanism), scoped to a new `hostexec` Authentik application/provider whose scope mapping
+   emits the operator's `hostexec-*` group claims.
+2. On approval, the console forwards **that approving operator's** short-lived Authentik
+   access token (audience `hostexec`) to `hostexec-mcp` — the same per-operator token store
+   and forwarding kubectl-passthrough already uses.
+3. `hostexec-mcp` presents the token to the host over the SSH channel; a small host-side
+   **verifier** (an `AuthorizedKeysCommand` / `ForceCommand` shim, deployed by nix, with
+   Authentik's public JWKS cached locally) validates signature + audience + expiry and checks
+   the group claim authorizes the requested `run_as` on this host — then execs, logging to
+   journald/auditd.
 
-**Recommendation:** build straight to **L1**. L0 is the shortcut you'd regret for a root
-capability; L2's SSH CA is not justified for one operator. L1 gets kubectl-passthrough's
-"pod holds nothing that alone grants privilege" property with modest code and no CA.
+Why this is the right shape:
+
+- **No bespoke signing key and no SSH CA.** The signer is Authentik (which already issues the
+  JWTs kube-apiserver federates); the host is just another OIDC resource server. The
+  `hostexec-mcp` pod holds only an unprivileged **transport** SSH key that reaches the
+  forced-command shim and nothing else — the _authority_ is the forwarded operator token,
+  short-lived and per-approval.
+- **Authority is managed where all machine-access already is.** "May run root on `wyrm2`"
+  becomes an Authentik group you grant/revoke/audit centrally, with the same lifecycle as
+  cluster-admin. Different operator identities can carry different exec rights (e.g. only the
+  human operator's identity is in `hostexec-root-atlas`) — future-proof even though there's
+  one operator today.
+- **Trust level equals kubectl-passthrough's** — no better, no worse. A compromised
+  `hostexec-mcp` pod holding a live forwarded token could, in the window, run a _different_
+  command as the approved `run_as` (just as a compromised kubectl-passthrough pod holding a
+  forwarded cluster-admin token could make a different API call). The repo already accepts
+  that residual for the reviewed relay + short-TTL token; hostexec inherits the same bargain.
+
+**Honest limitation:** an Authentik OIDC token naturally encodes _who / run_as / host / TTL_,
+not the exact `argv` (OIDC claims come from user/group attributes, not per-request input). So
+it authorizes "this operator may run root on `wyrm2` for the next N seconds," not "…may run
+exactly _this_ command once." That is the same granularity kubectl-passthrough has.
+
+### Optional hardening — console-countersigned argv binding
+
+If you want hostexec **stronger** than kubectl-passthrough (defend against a compromised relay
+swapping the command), add a second, small per-approval assertion: the console signs
+`sha256(argv) + nonce + exp` at approval time and the host verifier checks it alongside the
+Authentik token. This is a tiny bespoke key on the console side (the trust boundary), binding
+the _exact command_ the operator approved. Additive — layer it only if the relay-swap residual
+matters to you.
+
+### L0 — standing keys (throwaway MVP only)
+
+Two standing SSH keys (`agentydragon`, `root`) as Secrets in the `hostexec-mcp` namespace,
+`from=`-pinned + forced-command-logged. Fastest to stand up to validate ergonomics; residual =
+pod compromise is root-everywhere. Only as a scaffold you replace with the Authentik-token
+path before this is trusted with root.
 
 ## Recommended architecture (end to end)
 
@@ -167,12 +203,14 @@ Haku (agent, prompt-injectable)
   ▼
 haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPROVAL)
   │  operator clicks Approve in trusted chrome (CSRF, Authentik-operator-only)
-  │  console signs capability = sig(host, run_as, sha256(argv), cwd, nonce, exp)   ← L1
+  │  console forwards the approving operator's short-lived Authentik token (aud=hostexec)
+  │  [optional] console countersigns sha256(argv)+nonce+exp
   ▼
-hostexec-mcp  (own namespace; SSH key = transport only, NOT the signing key)
-  │  ssh <run_as>@10.42.0.x  → ForceCommand verifier
+hostexec-mcp  (own namespace; unprivileged transport SSH key only — no authority of its own)
+  │  ssh <run_as>@10.42.0.x  → ForceCommand/AuthorizedKeysCommand verifier
   ▼
-target host: verifier checks console signature + bound fields → exec → journald/auditd log
+target host: verifier validates Authentik JWT (JWKS: sig/aud/exp) + group authorizes run_as
+  │            [optional] checks console argv countersignature → exec → journald/auditd log
   │  stdout/stderr/exit (capped) ──────────────────────────────────────────────┘
   ▼
 result returns through console → ledger row RUNNING→done ; agent gets result or a promise
@@ -191,17 +229,24 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
   (Deployment + Service + HTTPRoute + configmap + flux-kustomization), own namespace,
   unprivileged, `automountServiceAccountToken: false`. Hostname e.g. `hostexec-mcp.allegedly.works`.
 - **Register:** one entry in <../../cluster/k8s/haku/console/config.yaml> under `mcp.servers`
-  (`operator_oauth` or a static bearer for reflection). Approval-gated automatically.
+  with `operator_oauth` (matches kubectl-passthrough — the console forwards the approving
+  operator's Authentik token). Approval-gated automatically.
+- **Authentik provider:** add a `hostexec` OAuth2 application/provider in
+  `tf/gitops/agent-machine-access` (clone the `kubectl_passthrough_mcp` provider) with a scope
+  mapping that emits the operator's `hostexec-*` group claims; create the `hostexec-{user,root}-<host>`
+  groups and grant them to the operator identity per the root-scope decision below.
 - **Approval card:** add a renderer under `haku/console/frontend/tool_rendering/hostexec/`
   modeled on the existing `kubectl/` renderer — show `host`, `run_as` (render `root` in red /
   behind an extra confirm), full `argv`, `cwd`, and the agent's `rationale` prominently.
-- **Identity + host trust:** add a `hostexec` keypair to <../../ssh_keys/> +
-  <../../nix/ssh-keys.nix>; add it to each in-scope host's `openssh.authorizedKeys.keys` for
-  the `agentydragon` user and (per-host allowlist) `root`, each pinned to the L1
-  `ForceCommand` verifier. `atlas` is Debian/Ansible: its keys go through the home-manager
-  `home.file` path (`nix/home/hosts/atlas.nix`), and its root is the hypervisor — gate hardest.
-  Private key is SOPS-encrypted and deployed only into the `hostexec-mcp` namespace Secret
-  (Haku cannot read it).
+- **Host trust + transport key:** deploy the host-side verifier
+  (`AuthorizedKeysCommand`/`ForceCommand` shim + cached Authentik JWKS) declaratively via nix;
+  add one **unprivileged transport** `hostexec` keypair (<../../ssh_keys/> + <../../nix/ssh-keys.nix>)
+  to each in-scope host's `openssh.authorizedKeys.keys` for the `agentydragon` user and
+  (per-host allowlist) `root`, every entry pinned to `command="<verifier>"` so the key reaches
+  nothing but the shim. `atlas` is Debian/Ansible: keys go through the home-manager `home.file`
+  path (`nix/home/hosts/atlas.nix`), and its root is the hypervisor — gate hardest. The
+  transport private key is SOPS-encrypted and deployed only into the `hostexec-mcp` namespace
+  Secret (Haku cannot read it); it grants only "reach the verifier," never execution on its own.
 - **Audit (double-entry):** console ledger `McpToolCall` (args, rationale, operator, result) +
   host-side journald/auditd from the verifier wrapper.
 
@@ -212,32 +257,36 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
   operator click. (Optionally add an extra friction for `run_as=root`: a second top-layer
   confirm or a standing "root enabled" operator toggle, honoring invariant #4.)
 - **"As agentydragon or root, given approval":** the `run_as` tool field, surfaced loudly on
-  the approval card; under L1 it is bound into the signed capability so the host executes only
-  the exact user the operator approved.
+  the approval card; the host verifier executes it only if the forwarded operator token's
+  `hostexec-<run_as>-<host>` group authorizes exactly that user on that host.
 
 ## Open decisions for the operator
 
-1. **Credential rung:** L1 (recommended) vs L0-first-then-L1 vs L2. Determines whether we build
-   the console signer + host verifier now.
-2. **Root scope:** which hosts may run `run_as=root` at all (recommend: start with `wyrm2`
-   only; add `atlas` root behind an extra confirm; never roaming hosts initially).
-3. **Extra root friction:** plain approval card vs a second confirm / standing root toggle.
-4. **Host set for v1:** recommend `wyrm2` + `atlas` (always-on) first; add `rugged`/`iguana`
+1. **Credential model:** Authentik-minted operator tokens (recommended) vs L0 standing keys
+   first. Determines whether v1 stands up the `hostexec` Authentik provider + host JWKS
+   verifier now or after an ergonomics MVP.
+2. **argv binding:** ship at kubectl-passthrough parity (Authentik token only), or add the
+   console argv countersignature to defend against a compromised relay swapping the command.
+3. **Root scope:** which hosts may run `run_as=root` at all — i.e. which `hostexec-root-<host>`
+   groups exist and are granted (recommend: start with `wyrm2` only; add `atlas` root behind an
+   extra confirm; never roaming hosts initially).
+4. **Extra root friction:** plain approval card vs a second confirm / standing root toggle.
+5. **Host set for v1:** recommend `wyrm2` + `atlas` (always-on) first; add `rugged`/`iguana`
    once fail-fast reachability is proven.
-5. **Server identity to the console:** `operator_oauth` (per-operator link, matches
-   kubectl-passthrough) vs a static bearer.
 
 ## Risks / residuals
 
 - **L0 residual (if chosen):** `hostexec-mcp` pod/Secret compromise = silent root everywhere.
-  L1 removes it (pod holds transport, not authority).
-- **Console is the trust root under L1** — as it already is for every approval-gated tool. A
-  console compromise is game-over regardless; the signing key living with the console does not
-  widen that.
+  The Authentik-token path removes it (pod holds only an inert transport key; authority is the
+  short-lived forwarded operator token).
+- **Relay-swap residual (parity with kubectl-passthrough):** a compromised `hostexec-mcp` pod
+  holding a live forwarded token could, in its short window, run a different command as the
+  approved `run_as`. Accepted for kubectl-passthrough today; the optional argv countersignature
+  (decision 2) closes it for hostexec.
+- **Console + Authentik are the trust roots** — as they already are for every approval-gated
+  tool and all machine access. No new trust root is introduced.
 - **Roaming hosts** (`rugged`, `iguana`) are frequently offline; treat unreachability as a
   normal, fast-failing outcome, not an error to retry indefinitely.
-- **Fits the roadmap:** this is a concrete instance of PLAN.md → _"letting Haku take some
-  actions itself (permission-elevation tokens)"_ — the console-signed capability is exactly the
-  "scoped, expiring, per-action grant enforced by the perimeter" that section sketches.
-  </content>
-  </invoke>
+- **Fits the roadmap:** a concrete instance of PLAN.md → _"letting Haku take some actions
+  itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, per-approval grant
+  enforced by the perimeter is exactly what that section sketches.
