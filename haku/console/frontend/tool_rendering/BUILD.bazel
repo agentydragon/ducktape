@@ -46,17 +46,37 @@ js_library(
     ],
 )
 
+# A combined pending/finished registry entry (one widget over both the tool's args and, once
+# present, its result) plus the defineCallPreview/renderCallPreview/describeCallAction helpers.
+# Depends on :entry (the ToolAction type) and :result_entry (the CallToolResult unwrap shared
+# with the result-only path), so a pending call, an error result, and a schema mismatch all
+# resolve the same way a result-only widget's does.
 js_library(
-    name = "tool_rendering",
-    srcs = ["index.tsx"],
+    name = "call_entry",
+    srcs = ["call_entry.tsx"],
     deps = [
         ":entry",
         ":result_entry",
         ":variant",
         "//:node_modules/react",
         "//:node_modules/zod",
+    ],
+)
+
+js_library(
+    name = "tool_rendering",
+    srcs = ["index.tsx"],
+    deps = [
+        ":call_entry",
+        ":entry",
+        ":result_entry",
+        ":variant",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//haku/console/frontend/tool_rendering/gmail:calls",
         "//haku/console/frontend/tool_rendering/gmail:requests",
         "//haku/console/frontend/tool_rendering/gmail:responses",
+        "//haku/console/frontend/tool_rendering/google_calendar:calls",
         "//haku/console/frontend/tool_rendering/google_calendar:requests",
         "//haku/console/frontend/tool_rendering/google_calendar:responses",
         "//haku/console/frontend/tool_rendering/grocy:requests",
@@ -96,6 +116,16 @@ js_library(
     name = "result_entry_test",
     srcs = ["result_entry.test.ts"],
     deps = [":result_entry"],
+)
+
+js_library(
+    name = "call_entry_test",
+    srcs = ["call_entry.test.ts"],
+    deps = [
+        ":call_entry",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
 )
 
 js_library(

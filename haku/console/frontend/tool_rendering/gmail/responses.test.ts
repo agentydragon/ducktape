@@ -4,20 +4,8 @@ import { renderResultPreview } from "../result_entry.tsx";
 import { gmailResultPreviews } from "./responses.tsx";
 
 describe("gmailResultPreviews", () => {
-  it("renders drafts_create for a Draft resource, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      expect(
-        renderResultPreview(
-          gmailResultPreviews.drafts_create,
-          { id: "r-7364618394", message: { id: "18c2f0a", threadId: "t42" } },
-          variant
-        )
-      ).not.toBeNull();
-    }
-  });
-
-  it("returns null when the draft id is missing (→ raw JSON fallback)", () => {
-    expect(renderResultPreview(gmailResultPreviews.drafts_create, { message: { id: "m1" } }, "detailed")).toBeNull();
+  it("has no entry for drafts_create — it's a combined widget (calls.tsx) instead", () => {
+    expect("drafts_create" in gmailResultPreviews).toBe(false);
   });
 
   it("renders threads_get for a full thread, in both variants", () => {

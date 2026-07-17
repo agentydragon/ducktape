@@ -4,6 +4,18 @@ import { JsonPreview } from "./json_preview.tsx";
 import { toolPreview } from "./tool_rendering/index.tsx";
 import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 
+/** The exact raw-arguments JSON behind a collapsed disclosure, byte-exact (`JSON.stringify`) so
+ * reflow/truncation never costs the real, copyable payload. Shared by `ToolArgumentsField` and a
+ * combined call widget's own detailed body (tool_call_card.tsx). */
+export function RawArgumentsDisclosure({ argumentsJson }: { argumentsJson: string }) {
+  return (
+    <details className="haku-shell-disclosure">
+      <summary>Raw arguments</summary>
+      <CodeBlock language="json" value={argumentsJson} />
+    </details>
+  );
+}
+
 /** The arguments of a tool call: a per-tool-type widget (the tool_rendering/ per-server requests modules)
  * when one matches — rendered directly, since it's self-describing — else the generic
  * syntax-highlighted JSON view (compact-printed + truncated in brief mode, full in detailed),
@@ -34,14 +46,7 @@ export function ToolArgumentsField({
   return (
     <>
       {nice}
-      {variant === "detailed" && (
-        <details className="haku-shell-disclosure">
-          <summary>Raw arguments</summary>
-          {/* The disclosure stays byte-exact (JSON.stringify), so reflow/truncation never costs
-              the real, copyable payload. */}
-          <CodeBlock language="json" value={argumentsJson} />
-        </details>
-      )}
+      {variant === "detailed" && <RawArgumentsDisclosure argumentsJson={argumentsJson} />}
     </>
   );
 }

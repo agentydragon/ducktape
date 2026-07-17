@@ -1,70 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { describeAction, renderPreview } from "../entry.tsx";
+import { renderPreview } from "../entry.tsx";
 import { formatEventDateTimeRange, googleCalendarPreviews, humanizeRRule } from "./requests.tsx";
 
 describe("googleCalendarPreviews", () => {
-  it("renders create_event for a valid recurring all-day event, in both variants", () => {
-    for (const variant of ["compact", "detailed"] as const) {
-      const node = renderPreview(
-        googleCalendarPreviews.create_event,
-        {
-          summary: "Standup",
-          start: { date: "2026-09-15" },
-          end: { date: "2026-09-16" },
-          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
-        },
-        variant
-      );
-      expect(node).not.toBeNull();
-    }
+  it("has no entry for create_event — it's a combined widget (calls.tsx) instead", () => {
+    expect("create_event" in googleCalendarPreviews).toBe(false);
   });
 
-  it("returns null when args are missing required fields", () => {
-    expect(renderPreview(googleCalendarPreviews.create_event, { summary: "no start/end" }, "detailed")).toBeNull();
-  });
-
-  it("keeps the custom preview when nullable FastMCP arguments are explicitly null", () => {
-    expect(
-      renderPreview(
-        googleCalendarPreviews.create_event,
-        {
-          summary: "Standup",
-          start: { date: "2026-09-15" },
-          end: { date: "2026-09-16" },
-          reminders: null,
-          attendees: null,
-          recurrence: null,
-        },
-        "detailed"
-      )
-    ).not.toBeNull();
-  });
-
-  it("rejects unknown arguments instead of rendering a custom preview", () => {
-    expect(
-      renderPreview(
-        googleCalendarPreviews.create_event,
-        {
-          summary: "Standup",
-          start: { date: "2026-09-15" },
-          end: { date: "2026-09-16" },
-          unexpected: true,
-        },
-        "compact"
-      )
-    ).toBeNull();
-  });
-
-  it("describes recurring creation distinctly and uses the standard RRULE humanizer", () => {
-    const args = {
-      summary: "Standup",
-      start: { date: "2026-09-15" },
-      end: { date: "2026-09-16" },
-      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12"],
-    };
-    expect(describeAction(googleCalendarPreviews.create_event, args)?.text).toContain("recurring");
-    expect(humanizeRRule(args.recurrence[0])).toContain("Tuesday");
+  it("humanizes an RRULE", () => {
+    expect(humanizeRRule("RRULE:FREQ=WEEKLY;BYDAY=TU,TH;COUNT=12")).toContain("Tuesday");
   });
 
   it("renders every Calendar read tool", () => {

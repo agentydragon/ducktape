@@ -22,20 +22,21 @@ function gmailDraftUrl(draftId: string): string {
   return `https://mail.google.com/mail/u/0/#drafts?compose=${draftId}`;
 }
 
-const zDraft = mcpToolResultSchema(GMAIL_SERVER_ID, "drafts_create");
+export const zDraft = mcpToolResultSchema(GMAIL_SERVER_ID, "drafts_create");
 const zThread = mcpToolResultSchema(GMAIL_SERVER_ID, "threads_get");
 const zThreadsList = mcpToolResultSchema(GMAIL_SERVER_ID, "threads_list");
 const zMessage = mcpToolResultSchema(GMAIL_SERVER_ID, "messages_get");
 
-type Draft = z.infer<typeof zDraft>;
+export type Draft = z.infer<typeof zDraft>;
 type GmailThread = z.infer<typeof zThread>;
 type GmailThreadsList = z.infer<typeof zThreadsList>;
 type GmailMessage = z.infer<typeof zMessage>;
 
-// The draft's own subject is the identity, like every other Gmail link here — not generic "Open
-// draft in Gmail ↗" text. The raw draft id is provenance, so it rides along dimmed only in
-// detailed (the link's href carries it for anyone who needs it compact).
-function CreateGmailDraftResultView({ result, variant }: ResultPreviewProps<Draft>) {
+// Exported for calls.tsx's combined drafts_create widget (rendered once the tool has actually
+// executed). The draft's own subject is the identity, like every other Gmail link here — not
+// generic "Open draft in Gmail ↗" text. The raw draft id is provenance, so it rides along dimmed
+// only in detailed (the link's href carries it for anyone who needs it compact).
+export function CreateGmailDraftResultView({ result, variant }: ResultPreviewProps<Draft>) {
   return (
     <Group gap={6}>
       <GmailIconLink href={gmailDraftUrl(result.id)} fw={600}>
@@ -184,9 +185,9 @@ function GmailMessageResultView({ result, variant }: ResultPreviewProps<GmailMes
   );
 }
 
-/** Per-tool result widgets for the `gmail` server. */
+/** Per-tool result widgets for the `gmail` server. `drafts_create` has no entry here — its
+ * pending/finished states are one combined widget (calls.tsx), not a separate result-only one. */
 export const gmailResultPreviews = {
-  drafts_create: defineResultPreview(zDraft, CreateGmailDraftResultView),
   threads_get: defineResultPreview(zThread, GmailThreadResultView),
   threads_list: defineResultPreview(zThreadsList, GmailThreadsListResultView),
   messages_get: defineResultPreview(zMessage, GmailMessageResultView),

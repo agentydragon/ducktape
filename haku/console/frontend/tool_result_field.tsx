@@ -4,6 +4,19 @@ import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
 import { unwrapToolResult } from "./tool_rendering/result_entry.tsx";
 import { toolResultPreview } from "./tool_rendering/index.tsx";
 
+/** The exact stored result envelope behind a collapsed disclosure — byte-exact-ish (the stored
+ * envelope, not the unwrapped payload), so a widget's ranking never costs the real, copyable
+ * result. Shared by `ToolResultField` and a combined call widget's own detailed body
+ * (tool_call_card.tsx). */
+export function RawResultDisclosure({ result }: { result: unknown }) {
+  return (
+    <details className="haku-shell-disclosure">
+      <summary>Raw result</summary>
+      <CodeBlock language="json" value={JSON.stringify(result, null, 2)} />
+    </details>
+  );
+}
+
 /** The result of a finished tool call: a per-tool-type widget (the tool_rendering/ per-server responses
  * modules) over the unwrapped CallToolResult payload when one matches, else the raw-JSON
  * "Result" field — but only in detailed, so compact cards stay skimmable (a compact card shows
@@ -37,14 +50,7 @@ export function ToolResultField({
   return (
     <>
       {nice}
-      {variant === "detailed" && (
-        <details className="haku-shell-disclosure">
-          <summary>Raw result</summary>
-          {/* The disclosure stays byte-exact-ish (the stored envelope, not the unwrapped
-              payload), so the widget's ranking never costs the real, copyable result. */}
-          <CodeBlock language="json" value={JSON.stringify(result, null, 2)} />
-        </details>
-      )}
+      {variant === "detailed" && <RawResultDisclosure result={result} />}
     </>
   );
 }

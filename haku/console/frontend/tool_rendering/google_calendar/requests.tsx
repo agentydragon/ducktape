@@ -19,12 +19,12 @@ import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx"
 
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 
-const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+export const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
 const zGetCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
 const zListCalendarEventsArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
 const zListCalendarEventInstancesArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
 
-type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
+export type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
 type GetCalendarEventArgs = z.infer<typeof zGetCalendarEventArgs>;
 type ListCalendarEventsArgs = z.infer<typeof zListCalendarEventsArgs>;
 type ListCalendarEventInstancesArgs = z.infer<typeof zListCalendarEventInstancesArgs>;
@@ -206,7 +206,9 @@ function CalendarField({ calendarId }: { calendarId: string }) {
   );
 }
 
-function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>) {
+// Exported for google_calendar/calls.tsx's combined create_event widget (rendered pre-execution;
+// the finished view is CalendarEventResultView in responses.tsx, off the tool's actual result).
+export function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>) {
   // The summary is the event's own name, so it leads as a heading (no label); the rest use the
   // inline icon fields (🕐 time, 📍 location, …) — denser than a stacked uppercase label per row.
   const when = formatEventDateTimeRange(args.start, args.end);
@@ -286,11 +288,9 @@ function ListCalendarEventInstancesPreview({ args, variant }: PreviewProps<ListC
   );
 }
 
-/** Per-tool preview widgets for the `google_calendar` server. */
+/** Per-tool preview widgets for the `google_calendar` server. `create_event` has no entry here —
+ * its pending/finished states are one combined widget (calls.tsx), not a separate args-only one. */
 export const googleCalendarPreviews = {
-  create_event: definePreview(zCreateCalendarEventArgs, CreateCalendarEventPreview, (args) => ({
-    text: args.recurrence?.length ? "Google Calendar: Create recurring event" : "Google Calendar: Create event",
-  })),
   get_event: definePreview(zGetCalendarEventArgs, GetCalendarEventPreview, () => ({
     text: "Google Calendar: Get event",
   })),

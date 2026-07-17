@@ -13,12 +13,12 @@ import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } 
 import { COMPACT_ITEM_LIMIT, MoreLine, PreviewText, PreviewTitle } from "../vocabulary.tsx";
 import { formatEventDateTimeRange, GOOGLE_CALENDAR_SERVER_ID, RecurrenceField } from "./requests.tsx";
 
-const zCreateEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+export const zCreateEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
 const zGetEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
 const zListEventsResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
 const zListEventInstancesResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
 
-type CalendarEvent = z.infer<typeof zCreateEventResult>;
+export type CalendarEvent = z.infer<typeof zCreateEventResult>;
 type CalendarEventsPage = z.infer<typeof zListEventsResult>;
 
 // The event's own name is its identity, so — like every other card title — it leads unlabelled.
@@ -85,8 +85,9 @@ function CalendarEventResultView({ result, variant }: ResultPreviewProps<Calenda
 // `create_event`'s own argument preview already shows the event's when/recurrence (see
 // requests.tsx's CreateCalendarEventPreview), so the result doesn't restate those — but the
 // event's own name is still the identity, so it uses the same linked title every other event
-// view does (EventTitle), not generic "Open event in Google Calendar ↗" text.
-function CreateCalendarEventResultView({ result, variant }: ResultPreviewProps<CalendarEvent>) {
+// view does (EventTitle), not generic "Open event in Google Calendar ↗" text. Exported for
+// calls.tsx's combined create_event widget (rendered once the tool has actually executed).
+export function CreateCalendarEventResultView({ result, variant }: ResultPreviewProps<CalendarEvent>) {
   return (
     <Stack gap={6}>
       <EventTitle event={result} />
@@ -120,9 +121,10 @@ function CalendarEventsPageResultView({ result, variant }: ResultPreviewProps<Ca
   );
 }
 
-/** Per-tool result widgets for the `google_calendar` server. */
+/** Per-tool result widgets for the `google_calendar` server. `create_event` has no entry here —
+ * its pending/finished states are one combined widget (calls.tsx), not a separate result-only
+ * one. */
 export const googleCalendarResultPreviews = {
-  create_event: defineResultPreview(zCreateEventResult, CreateCalendarEventResultView),
   get_event: defineResultPreview(zGetEventResult, CalendarEventResultView),
   list_events: defineResultPreview(zListEventsResult, CalendarEventsPageResultView),
   list_event_instances: defineResultPreview(zListEventInstancesResult, CalendarEventsPageResultView),

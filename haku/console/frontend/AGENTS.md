@@ -54,6 +54,18 @@ flipped per item by its toggle. The argument body is drawn by a per-server **pre
 detailed-only, so compact shows a result only when a widget makes it self-describing).
 Hold all of it to these rules so the whole surface reads as one thing.
 
+A tool whose pending and finished states are naturally one evolving view — a creation tool
+whose result mostly restates its own arguments (`google_calendar/create_event`,
+`gmail/drafts_create`) — can instead register one **combined widget** in
+`tool_rendering/<server>/calls.tsx` (`defineCallPreview`, see `call_entry.tsx`), dispatched by
+`tool_call_card.tsx` via `toolCallPreview` in place of the separate args/result fields. The
+widget gets `{ args, result, variant }`, with `result` `undefined` while pending, on failure, or
+on a result-schema mismatch — the card's shared error line already shows a failed call's
+message, so the combined widget only needs a pending and a finished branch, not a third error
+branch. A tool lives in exactly one of the two systems, never both; default to the separate
+request/response split and reach for a combined widget only when the result is otherwise
+redundant with the arguments.
+
 **Compact is for skimming.** A compact rendering answers "what is this, and do I need to look
 closer?" at a glance — nothing more. Show the action, its primary target(s), and just enough
 payload to recognize the call: the first few list items then `… +N more`, the first lines of a

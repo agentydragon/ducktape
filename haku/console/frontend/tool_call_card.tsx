@@ -3,10 +3,11 @@ import type { ReactNode } from "react";
 
 import type { ApprovalDisplayFields } from "./approval_state.ts";
 import { ToolActionLine } from "./tool_action_line.tsx";
-import { ToolArgumentsField } from "./tool_arguments_field.tsx";
+import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { ToolCallMeta } from "./tool_call_meta.tsx";
+import { toolCallPreview } from "./tool_rendering/index.tsx";
 import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
-import { ToolResultField } from "./tool_result_field.tsx";
+import { RawResultDisclosure, ToolResultField } from "./tool_result_field.tsx";
 import { VariantControl } from "./variant_control.tsx";
 
 /** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and recent
@@ -15,7 +16,13 @@ import { VariantControl } from "./variant_control.tsx";
  * result body — a finished call's result, or its error when it failed — and the detailed
  * Metadata) so all of that reads one way and lives in one place. The bits that genuinely differ
  * per surface — the status badge's label/color and the footer actions (approve/deny, dismiss,
- * countdown) — come in as props. */
+ * countdown) — come in as props.
+ *
+ * Most tools split pending/finished rendering across two independent widgets (arguments, then a
+ * finished call's result). A tool whose result mostly restates its own arguments instead
+ * registers one combined widget (tool_rendering's call registry) that owns both states itself —
+ * `toolCallPreview` renders it in place of the separate fields when one matches; the raw-JSON
+ * disclosures stay available either way. */
 export function ToolCallCard({
   fields,
   args,
@@ -36,6 +43,7 @@ export function ToolCallCard({
   footer?: ReactNode;
 }) {
   const detailed = variant === "detailed";
+  const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
   return (
     <section className="haku-shell-card">
       <Stack gap="sm">
@@ -72,13 +80,20 @@ export function ToolCallCard({
             </Text>
           )}
         </div>
-        <ToolArgumentsField
-          serverId={fields.serverId}
-          toolName={fields.toolName}
-          args={args}
-          argumentsJson={fields.argumentsJson}
-          variant={variant}
-        />
+        {combined ? (
+          <>
+            {combined}
+            {detailed && <RawArgumentsDisclosure argumentsJson={fields.argumentsJson} />}
+          </>
+        ) : (
+          <ToolArgumentsField
+            serverId={fields.serverId}
+            toolName={fields.toolName}
+            args={args}
+            argumentsJson={fields.argumentsJson}
+            variant={variant}
+          />
+        )}
         {/* A failed call's error is its outcome — the failure counterpart of the result body
             below — so it renders under the arguments, not as a head subhead. Error and result
             are mutually exclusive (the ledger finishes a call with exactly one), so this never
@@ -89,8 +104,14 @@ export function ToolCallCard({
           </Text>
         )}
         {/* Rendered for both variants; it self-gates (compact shows a result only when a
-            per-tool widget makes it self-describing). */}
-        <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
+            per-tool widget makes it self-describing). A combined widget already rendered the
+            result above (it's the same node as the arguments in that case), so this only adds
+            the detailed-only Raw result disclosure. */}
+        {combined ? (
+          detailed && result != null && <RawResultDisclosure result={result} />
+        ) : (
+          <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
+        )}
         {detailed && (
           <ToolCallMeta
             serverId={fields.serverId}

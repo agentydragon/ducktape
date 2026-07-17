@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import { recentToolCallTtlMs } from "../approval_state.ts";
-import { toolPreview } from "../tool_rendering/index.tsx";
+import { toolCallPreview, toolPreview } from "../tool_rendering/index.tsx";
 import { SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCalls } from "./sample_data.ts";
 
 const CUSTOM_HISTORY_IDS = new Set(["tc_1", "tc_2", "tc_3"]);
 const CUSTOM_PENDING_IDS = new Set(["tc_p2"]);
 
+// A fixture is either an args-only widget (toolPreview) or a combined pending/finished one
+// (toolCallPreview) — mirrors ToolCallCard's own dispatch order.
 function expectCustomPreview(serverId: string, toolName: string, args: Record<string, unknown>): void {
   for (const variant of ["compact", "detailed"] as const) {
-    expect(toolPreview(serverId, toolName, args, variant), `${serverId}.${toolName} (${variant})`).not.toBeNull();
+    const node =
+      toolCallPreview(serverId, toolName, args, null, variant) ?? toolPreview(serverId, toolName, args, variant);
+    expect(node, `${serverId}.${toolName} (${variant})`).not.toBeNull();
   }
 }
 

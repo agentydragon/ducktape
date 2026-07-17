@@ -31,9 +31,25 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend:field",
+        "//haku/console/frontend:gmail_client",
+        "//haku/console/frontend:icons",
         "//haku/console/frontend:link",
         "//haku/console/frontend:mcp_tool_result_schema",
         "//haku/console/frontend/tool_rendering:result_entry",
+        "//haku/console/frontend/tool_rendering:variant",
+    ],
+)
+
+# `drafts_create`'s combined pending/finished widget (see ../BUILD.bazel's :call_entry).
+js_library(
+    name = "calls",
+    srcs = ["calls.tsx"],
+    deps = [
+        ":requests",
+        ":responses",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_rendering:call_entry",
     ],
 )
 
@@ -88,6 +104,15 @@ js_library(
     deps = [
         ":responses",
         "//haku/console/frontend/tool_rendering:result_entry",
+    ],
+)
+
+js_library(
+    name = "calls_test",
+    srcs = ["calls.test.ts"],
+    deps = [
+        ":calls",
+        "//haku/console/frontend/tool_rendering:call_entry",
     ],
 )
 

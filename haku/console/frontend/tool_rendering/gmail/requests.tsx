@@ -35,13 +35,13 @@ import {
 export const GMAIL_SERVER_ID = "gmail";
 
 const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
-const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
+export const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
 const zGetGmailThreadArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_get");
 const zSearchGmailThreadsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_list");
 const zGetGmailMessageArgs = mcpToolSchema(GMAIL_SERVER_ID, "messages_get");
 
 type ModifyGmailThreadLabelsArgs = z.infer<typeof zModifyGmailThreadLabelsArgs>;
-type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
+export type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
 type GetGmailThreadArgs = z.infer<typeof zGetGmailThreadArgs>;
 type SearchGmailThreadsArgs = z.infer<typeof zSearchGmailThreadsArgs>;
 type GetGmailMessageArgs = z.infer<typeof zGetGmailMessageArgs>;
@@ -159,7 +159,9 @@ function CompactBody({ body }: { body: string }) {
   );
 }
 
-function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>) {
+// Exported for gmail/calls.tsx's combined drafts_create widget (rendered pre-execution; the
+// finished view is CreateGmailDraftResultView in responses.tsx, off the tool's actual result).
+export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>) {
   // Subject leads as the draft's title; recipients ride one mail-icon line (cc folded in when
   // detailed); the body follows unlabelled — clamped compact, full detailed. A reply draft
   // links to the thread it lands in (useful in both variants) rather than printing the raw
@@ -198,14 +200,14 @@ function SearchGmailThreadsPreview({ args }: PreviewProps<SearchGmailThreadsArgs
   return <PreviewText>Search: {args.query}</PreviewText>;
 }
 
-/** Per-tool preview widgets for the `gmail` server. The remaining read tools (`labels_list`,
- * `filters_list`, `drafts_list`, …) have no entry — their args are empty or self-descriptive, so
- * the raw-JSON fallback serves. */
+/** Per-tool preview widgets for the `gmail` server. `drafts_create` has no entry here — its
+ * pending/finished states are one combined widget (calls.tsx), not a separate args-only one. The
+ * remaining read tools (`labels_list`, `filters_list`, `drafts_list`, …) have no entry either —
+ * their args are empty or self-descriptive, so the raw-JSON fallback serves. */
 export const gmailPreviews = {
   threads_modify_labels: definePreview(zModifyGmailThreadLabelsArgs, ModifyGmailThreadLabelsPreview, (a) => ({
     text: `Gmail: Relabel ${plural(a.thread_ids.length, "thread")}`,
   })),
-  drafts_create: definePreview(zCreateGmailDraftArgs, CreateGmailDraftPreview, () => ({ text: "Gmail: Draft email" })),
   threads_get: definePreview(zGetGmailThreadArgs, GetGmailThreadPreview, () => ({ text: "Gmail: Get thread" })),
   threads_list: definePreview(zSearchGmailThreadsArgs, SearchGmailThreadsPreview, () => ({
     text: "Gmail: Search threads",
