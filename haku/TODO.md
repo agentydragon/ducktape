@@ -72,8 +72,7 @@ slices over the deployed schema, not another identity migration:
   console mediates all Google access so the agent holds no standing Google token; high-risk ops are
   already approval-gated (invariant), and the open question is whether to also move read-only reads
   behind console MCP tools (cleaner/safer, but a larger tool surface) vs. keep the direct read-only
-  token. Rationale + tradeoff recorded in `plans/oauth_architecture.md` → _Haku Google connection
-  and Airlock decoupling_ → G3 / _Target_.
+  token. Full G-sequence, target, and tradeoff: `plans/google_access_mediation.md`.
 - **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
   whether every Operator should share one routine launcher. Specify whether the launcher is a
   global Haku capability or an Operator-owned downstream resource before relying on it in a
