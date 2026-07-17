@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen35
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: vllm-qwen35
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-qwen35
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-qwen35
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          # E4: current-gen generalist MoE, the "is there a free upgrade over the
+          # 2025 coding baseline (E1)" test. FP8 weights (auto-detected) + FP8 KV,
+          # TP2. Arch Qwen3_5MoeForConditionalGeneration is new; if vLLM 0.25.1
+          # doesn't support it that is itself the result.
+          args:
+            - --model=Qwen/Qwen3.5-35B-A3B-FP8
+            - --served-model-name=qwen35-35b
+            - --tensor-parallel-size=2
+            - --max-model-len=262144
+            - --kv-cache-dtype=fp8
+            # GPU0 permanently hosts wyrm2's desktop/display stack (~2.7 GB:
+            # sunshine + GDM on the 5090), so 0.90 util doesn't fit alongside it
+            # and vLLM fails the free-memory check. 0.85 leaves the display room.
+            - --gpu-memory-utilization=0.85
+            - --max-num-seqs=32
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              cpu: "4"
+              memory: 24Gi
+            limits:
+              nvidia.com/gpu: 2
+              memory: 48Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 160
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen35
+  namespace: llm-bench
+spec:
+  selector:
+    app.kubernetes.io/name: vllm-qwen35
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
