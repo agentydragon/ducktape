@@ -465,6 +465,11 @@ def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
     return totals
 
 
+def _preview_img(url: str) -> str:
+    """One before/after/diff table cell; 3 × 260px fits GitHub's comment width."""
+    return f'<img src="{url}" width="260">'
+
+
 def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> str:
     """Append up to two modified-asset before/after/diff tables, respecting the byte budget."""
     modified = [
@@ -483,7 +488,7 @@ def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> 
             # Dimension changes produce no diff overlay (the images can't be
             # compared pixel-for-pixel), so that cell degrades to text.
             diff_cell = (
-                f'<img src="{test_url}/diff/{asset.path}" width="260">'
+                _preview_img(f"{test_url}/diff/{asset.path}")
                 if not asset.dimension_changed
                 else "_(dimensions changed)_"
             )
@@ -493,8 +498,8 @@ def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> 
                 "",
                 "| Before | After | Diff |",
                 "| --- | --- | --- |",
-                f'| <img src="{test_url}/baseline/{asset.path}" width="260"> '
-                f'| <img src="{test_url}/{asset.path}" width="260"> '
+                f"| {_preview_img(f'{test_url}/baseline/{asset.path}')} "
+                f"| {_preview_img(f'{test_url}/{asset.path}')} "
                 f"| {diff_cell} |",
             ]
         body = base + "\n" + "\n".join(lines)
