@@ -59,7 +59,7 @@
   "releases": {
     "ducktape": {
       "primaryPin": "ducktape",
-      "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc:test_bazel_output_base_gc //devinfra/gc:test_worktree_gc",
+      "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc/...",
       "nixPackage": true
     },
     "bbr": {
