@@ -11,6 +11,33 @@ import pytest_bazel
 from devinfra.gc import output_base_gc as gc
 
 
+@pytest.fixture
+def proc(tmp_path: Path) -> Path:
+    """An empty /proc stand-in so no recorded server PID ever looks live."""
+    root = tmp_path / "proc"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
+def mountinfo(tmp_path: Path) -> Path:
+    """An empty mountinfo so no base ever looks like it contains a mount point."""
+    path = tmp_path / "mountinfo"
+    path.write_text("")
+    return path
+
+
+@pytest.fixture
+def output_root(tmp_path: Path) -> Path:
+    return tmp_path / "output"
+
+
+@pytest.fixture
+def prunable_base(tmp_path: Path, output_root: Path) -> Path:
+    """The canonical PRUNE candidate: a base whose recorded workspace is absent."""
+    return _make_base(output_root, tmp_path / "gone")
+
+
 def _base_name(workspace: Path) -> str:
     return hashlib.md5(os.fsencode(workspace), usedforsecurity=False).hexdigest()
 
@@ -34,9 +61,8 @@ def _inspect(base: Path, *, proc_root: Path = Path("/proc")) -> gc.Inspection:
     return gc.inspect_output_base(base, uid=os.getuid(), points=set(), proc_root=proc_root)
 
 
-def test_missing_workspace_is_immediately_prunable(tmp_path: Path) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    assert isinstance(_inspect(base), gc.PrunableBase)
+def test_missing_workspace_is_immediately_prunable(prunable_base: Path) -> None:
+    assert isinstance(_inspect(prunable_base), gc.PrunableBase)
 
 
 def test_existing_workspace_is_retained(tmp_path: Path) -> None:
@@ -56,47 +82,42 @@ def test_dangling_workspace_symlink_is_not_prunable(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("metadata", ["README", "DO_NOT_BUILD_HERE", "server/cmdline"])
-def test_single_missing_record_still_classifies(tmp_path: Path, metadata: str) -> None:
+def test_single_missing_record_still_classifies(prunable_base: Path, metadata: str) -> None:
     # Any one record may be gone — notably server/cmdline for a server that never
     # persisted it — and the surviving records still recover the workspace, so the
     # base is prunable rather than stuck in review.
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    (base / metadata).unlink()
-    assert isinstance(_inspect(base), gc.PrunableBase)
+    (prunable_base / metadata).unlink()
+    assert isinstance(_inspect(prunable_base), gc.PrunableBase)
 
 
-def test_single_surviving_record_is_enough(tmp_path: Path) -> None:
+def test_single_surviving_record_is_enough(prunable_base: Path) -> None:
     # Two records gone, one left: the base name == md5(workspace) still anchors it.
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    (base / "server" / "cmdline").unlink()
-    (base / "DO_NOT_BUILD_HERE").unlink()
-    assert isinstance(_inspect(base), gc.PrunableBase)
+    (prunable_base / "server" / "cmdline").unlink()
+    (prunable_base / "DO_NOT_BUILD_HERE").unlink()
+    assert isinstance(_inspect(prunable_base), gc.PrunableBase)
 
 
-def test_all_records_absent_requires_review(tmp_path: Path) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
+def test_all_records_absent_requires_review(prunable_base: Path) -> None:
     for metadata in ("README", "DO_NOT_BUILD_HERE", "server/cmdline"):
-        (base / metadata).unlink()
-    inspection = _inspect(base)
+        (prunable_base / metadata).unlink()
+    inspection = _inspect(prunable_base)
     assert isinstance(inspection, gc.ReviewBase)
     assert "no workspace record" in inspection.reason
 
 
-def test_fifo_metadata_requires_review_without_blocking(tmp_path: Path) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    (base / "README").unlink()
-    os.mkfifo(base / "README")
+def test_fifo_metadata_requires_review_without_blocking(prunable_base: Path) -> None:
+    (prunable_base / "README").unlink()
+    os.mkfifo(prunable_base / "README")
 
-    inspection = _inspect(base)
+    inspection = _inspect(prunable_base)
 
     assert isinstance(inspection, gc.ReviewBase)
     assert "not a regular file" in inspection.reason
 
 
-def test_disagreeing_records_require_review(tmp_path: Path) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    (base / "README").write_text("WORKSPACE: /different\n")
-    inspection = _inspect(base)
+def test_disagreeing_records_require_review(prunable_base: Path) -> None:
+    (prunable_base / "README").write_text("WORKSPACE: /different\n")
+    inspection = _inspect(prunable_base)
     assert isinstance(inspection, gc.ReviewBase)
     assert "workspace records disagree" in inspection.reason
 
@@ -148,16 +169,12 @@ def test_nested_mount_requires_review(tmp_path: Path) -> None:
     assert "mount point" in inspection.reason
 
 
-def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path) -> None:
+def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path, proc: Path, mountinfo: Path) -> None:
     root = tmp_path / "output"
     root.mkdir()
     (root / ("a" * 32)).symlink_to(tmp_path)
     quarantine = root / ".bazel-output-base-gc-dead"
     quarantine.mkdir()
-    mountinfo = tmp_path / "mountinfo"
-    mountinfo.write_text("")
-    proc = tmp_path / "proc"
-    proc.mkdir()
 
     inspections = gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo)
 
@@ -172,9 +189,8 @@ def test_mount_points_unescapes_kernel_path_encoding(tmp_path: Path) -> None:
     assert gc.mount_points(mountinfo_path=mountinfo) == {Path("/tmp/mounted path")}
 
 
-def test_report_tolerates_size_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    base = _make_base(tmp_path / "output", tmp_path / "gone")
-    inspection = _inspect(base)
+def test_report_tolerates_size_failure(prunable_base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    inspection = _inspect(prunable_base)
     assert isinstance(inspection, gc.PrunableBase)
     monkeypatch.setattr(gc, "allocated_bytes", lambda _path: None)
 
@@ -184,37 +200,27 @@ def test_report_tolerates_size_failure(tmp_path: Path, monkeypatch: pytest.Monke
     assert "prunable size unavailable" in report
 
 
-def test_delete_handles_read_only_directories(tmp_path: Path) -> None:
-    workspace = tmp_path / "gone"
-    base = _make_base(tmp_path / "output", workspace)
-    nested = base / "execroot" / "nested"
+def test_delete_handles_read_only_directories(prunable_base: Path, proc: Path, mountinfo: Path) -> None:
+    nested = prunable_base / "execroot" / "nested"
     nested.mkdir(parents=True)
     (nested / "artifact").write_text("data")
     nested.chmod(0o555)
     nested.parent.chmod(0o555)
-    candidate = _inspect(base)
+    candidate = _inspect(prunable_base)
     assert isinstance(candidate, gc.PrunableBase)
-    mountinfo = tmp_path / "mountinfo"
-    mountinfo.write_text("")
-    proc = tmp_path / "proc"
-    proc.mkdir()
 
     results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
-    assert results == [gc.DeletedBase(base)]
-    assert not base.exists()
+    assert results == [gc.DeletedBase(prunable_base)]
+    assert not prunable_base.exists()
 
 
-def test_delete_rechecks_workspace_absence(tmp_path: Path) -> None:
+def test_delete_rechecks_workspace_absence(tmp_path: Path, proc: Path, mountinfo: Path) -> None:
     workspace = tmp_path / "workspace"
     base = _make_base(tmp_path / "output", workspace)
     candidate = _inspect(base)
     assert isinstance(candidate, gc.PrunableBase)
     workspace.mkdir()
-    mountinfo = tmp_path / "mountinfo"
-    mountinfo.write_text("")
-    proc = tmp_path / "proc"
-    proc.mkdir()
 
     results = gc.delete_prunable_bases([candidate], proc_root=proc, mountinfo_path=mountinfo)
 
@@ -297,30 +303,29 @@ def test_bazel_lock_conflicts_with_another_process(tmp_path: Path) -> None:
         holder.communicate("x", timeout=5)
 
 
-def test_main_is_dry_run_by_default(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    root = tmp_path / "output"
-    base = _make_base(root, tmp_path / "gone")
+def test_scan_and_render_report_flag_a_prunable_base(
+    prunable_base: Path, output_root: Path, proc: Path, mountinfo: Path
+) -> None:
+    inspections = gc.scan_output_user_root(output_root, proc_root=proc, mountinfo_path=mountinfo)
 
-    result = gc.main(["--output-user-root", str(root)])
-
-    assert result == 0
-    assert base.exists()
-    stdout = capsys.readouterr().out
-    assert "PRUNE" in stdout
-    assert "Dry run only" in stdout
+    assert prunable_base.exists()
+    assert [type(item) for item in inspections] == [gc.PrunableBase]
+    assert "PRUNE" in gc.render_report(inspections, include_kept=False, include_sizes=False)
 
 
-def test_main_delete_removes_revalidated_candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    root = tmp_path / "output"
-    base = _make_base(root, tmp_path / "gone")
+def test_delete_removes_revalidated_candidate(
+    prunable_base: Path, output_root: Path, proc: Path, mountinfo: Path
+) -> None:
+    candidates = [
+        item
+        for item in gc.scan_output_user_root(output_root, proc_root=proc, mountinfo_path=mountinfo)
+        if isinstance(item, gc.PrunableBase)
+    ]
 
-    result = gc.main(["--output-user-root", str(root), "--delete"])
+    results = gc.delete_prunable_bases(candidates, proc_root=proc, mountinfo_path=mountinfo)
 
-    assert result == 0
-    assert not base.exists()
-    stdout = capsys.readouterr().out
-    assert f"DELETED {base}" in stdout
-    assert "1 deleted, 0 skipped, 0 failed" in stdout
+    assert results == [gc.DeletedBase(prunable_base)]
+    assert not prunable_base.exists()
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.gc import worktree_gc as wg
-from devinfra.gc.worktree_gc import PrInfo, PrState
+from devinfra.gc import git_repo, worktree_gc as wg
+from devinfra.gc.pull_request import PrInfo, PrState
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -45,8 +45,12 @@ def _add(repo: Path, name: str, branch: str, start: str = "main") -> Path:
 
 def _classify(repo: Path, path: Path, proc: Path, **kwargs: object) -> wg.Classification:
     kwargs.setdefault("pr_states", {})
-    items = wg.classify_worktrees(repo, main="main", proc_root=proc, **kwargs)  # type: ignore[arg-type]
-    return next(item for item in items if item.worktree.path == path)
+    kwargs.setdefault("active_path", None)
+    main_path = git_repo.main_worktree(repo)
+    linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
+    live = wg.processes_by_worktree((wt.path for wt in linked), proc_root=proc)
+    worktree = next(wt for wt in linked if wt.path == path)
+    return wg.classify_worktree(worktree, main="main", main_path=main_path, live_pids=live.get(path, []), **kwargs)  # type: ignore[arg-type]
 
 
 def test_ancestor_is_prunable(repo: Path, proc: Path) -> None:
@@ -162,20 +166,16 @@ def test_active_worktree_is_kept(repo: Path, proc: Path) -> None:
     assert result.reason == "the invoking worktree"
 
 
-def test_main_worktree_is_excluded(repo: Path, proc: Path) -> None:
-    _add(repo, "wt", "feature")
-    items = wg.classify_worktrees(repo, main="main", pr_states={}, proc_root=proc)
-    assert repo not in {item.worktree.path for item in items}
+def test_main_worktree_identified(repo: Path) -> None:
+    assert git_repo.main_worktree(repo) == repo
 
 
-def test_remove_prunable_deletes_and_leaves_branch(repo: Path, proc: Path) -> None:
+def test_remove_worktree_deletes_and_leaves_branch(repo: Path) -> None:
     path = _add(repo, "wt", "feature")
-    candidate = _classify(repo, path, proc)
-    assert isinstance(candidate, wg.PrunableWorktree)
 
-    results = wg.remove_prunable_worktrees(repo, [candidate], main="main", pr_states={}, proc_root=proc)
+    result = wg.remove_worktree(repo, path)
 
-    assert results == [wg.RemovedWorktree(path)]
+    assert result == wg.RemovedWorktree(path)
     assert not path.exists()
     # Branch survives — the work stays reachable through it.
     branches = subprocess.run(
@@ -184,15 +184,14 @@ def test_remove_prunable_deletes_and_leaves_branch(repo: Path, proc: Path) -> No
     assert "feature" in branches
 
 
-def test_remove_skips_a_now_dirty_candidate(repo: Path, proc: Path) -> None:
+def test_remove_worktree_fails_on_dirty_tree(repo: Path) -> None:
     path = _add(repo, "wt", "feature")
-    candidate = _classify(repo, path, proc)
-    assert isinstance(candidate, wg.PrunableWorktree)
     (path / "base").write_text("dirtied after scan\n")
 
-    results = wg.remove_prunable_worktrees(repo, [candidate], main="main", pr_states={}, proc_root=proc)
+    result = wg.remove_worktree(repo, path)
 
-    assert isinstance(results[0], wg.SkippedWorktree)
+    # `git worktree remove` without --force refuses a dirty tree, so nothing is lost.
+    assert isinstance(result, wg.FailedWorktree)
     assert path.exists()
 
 

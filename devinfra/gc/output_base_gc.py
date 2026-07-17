@@ -7,7 +7,6 @@ server does not block cleanup — and every present record must agree and hash t
 base name. Ambiguous state is reported for manual review and is never deleted.
 """
 
-import argparse
 import errno
 import fcntl
 import hashlib
@@ -17,7 +16,6 @@ import re
 import shutil
 import stat
 import subprocess
-import sys
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -510,58 +508,3 @@ def render_report(inspections: Sequence[Inspection], *, include_kept: bool, incl
         else:
             parts[-1] += "; prunable size unavailable"
     return "\n".join(parts)
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output-user-root",
-        type=Path,
-        default=default_output_user_root(),
-        metavar="PATH",
-        help="Bazel output user root (default: %(default)s)",
-    )
-    parser.add_argument("--all", action="store_true", help="also show retained output bases")
-    parser.add_argument("--sizes", action="store_true", help="calculate allocated size with du (potentially slow)")
-    parser.add_argument("--delete", action="store_true", help="revalidate and remove prunable output bases")
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
-    try:
-        inspections = scan_output_user_root(args.output_user_root)
-    except (OSError, RuntimeError) as error:
-        print(error, file=sys.stderr)
-        return 1
-
-    print(render_report(inspections, include_kept=args.all, include_sizes=args.sizes))
-    candidates = [item for item in inspections if isinstance(item, PrunableBase)]
-    if not args.delete:
-        if candidates:
-            print("Dry run only; pass --delete to remove the prunable bases.")
-        return 0
-
-    free_before = shutil.disk_usage(args.output_user_root).free
-    results = delete_prunable_bases(candidates)
-    free_space_change = shutil.disk_usage(args.output_user_root).free - free_before
-    for result in results:
-        if isinstance(result, DeletedBase):
-            print(f"DELETED {result.path}")
-        elif isinstance(result, SkippedBase):
-            print(f"SKIPPED {result.path}: {result.reason}", file=sys.stderr)
-        else:
-            quarantine = f"; quarantine={result.quarantine}" if result.quarantine is not None else ""
-            print(f"FAILED {result.path}: {result.error}{quarantine}", file=sys.stderr)
-    deleted = sum(isinstance(result, DeletedBase) for result in results)
-    skipped = sum(isinstance(result, SkippedBase) for result in results)
-    failed = sum(isinstance(result, FailedBase) for result in results)
-    print(
-        f"Deletion: {deleted} deleted, {skipped} skipped, {failed} failed; "
-        f"filesystem free-space change {humanize.naturalsize(free_space_change, binary=True)}"
-    )
-    return int(skipped > 0 or failed > 0)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

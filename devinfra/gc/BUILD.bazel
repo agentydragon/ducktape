@@ -12,10 +12,53 @@ py_library(
 )
 
 py_library(
+    name = "git_repo_lib",
+    srcs = ["git_repo.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "pull_request_lib",
+    srcs = ["pull_request.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "worktree_gc_lib",
     srcs = ["worktree_gc.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pygit2"],
+    deps = [
+        ":git_repo_lib",
+        ":pull_request_lib",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "branch_gc_lib",
+    srcs = ["branch_gc.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":git_repo_lib",
+        ":pull_request_lib",
+        ":worktree_gc_lib",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "workspace_scan_lib",
+    srcs = ["workspace_scan.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":branch_gc_lib",
+        ":git_repo_lib",
+        ":output_base_gc_lib",
+        ":pull_request_lib",
+        ":worktree_gc_lib",
+        "@pypi//pygit2",
+    ],
 )
 
 py_library(
@@ -23,15 +66,21 @@ py_library(
     srcs = ["workspace_gc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":branch_gc_lib",
+        ":git_repo_lib",
         ":output_base_gc_lib",
+        ":pull_request_lib",
+        ":workspace_scan_lib",
         ":worktree_gc_lib",
-        "@pypi//pygithub",
+        "@pypi//httpx",
+        "@pypi//humanize",
         "@pypi//tabulate",
+        "@pypi//typer",
     ],
 )
 
-# Single tool: `workspace-gc {bazel-bases,worktrees}` reclaims Bazel output bases and stale
-# git worktrees. (Supersedes the former standalone `bazel-output-base-gc`.)
+# Single tool: `workspace-gc {all,worktrees,bazel-bases}` reclaims stale git worktrees, merged
+# local branches, and orphaned Bazel output bases via one joint scan.
 py_binary(
     name = "workspace_gc",
     main_module = "devinfra.gc.workspace_gc",
@@ -53,7 +102,37 @@ py_test(
     name = "test_worktree_gc",
     srcs = ["test_worktree_gc.py"],
     deps = [
+        ":git_repo_lib",
+        ":pull_request_lib",
         ":worktree_gc_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_branch_gc",
+    srcs = ["test_branch_gc.py"],
+    deps = [
+        ":branch_gc_lib",
+        ":git_repo_lib",
+        ":pull_request_lib",
+        ":worktree_gc_lib",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_workspace_scan",
+    srcs = ["test_workspace_scan.py"],
+    deps = [
+        ":branch_gc_lib",
+        ":output_base_gc_lib",
+        ":workspace_scan_lib",
+        ":worktree_gc_lib",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
