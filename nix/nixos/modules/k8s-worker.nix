@@ -346,11 +346,13 @@ in
           timeout server 30s
           retries 3
 
+        # haproxy >= 3.3 rejects a frontend and backend sharing a name, so the
+        # backend is suffixed. Do not rename them to match.
         frontend kube-apiserver
           bind 127.0.0.1:7445
-          default_backend kube-apiserver
+          default_backend kube-apiserver-backend
 
-        backend kube-apiserver
+        backend kube-apiserver-backend
           option tcp-check
           balance roundrobin
           ${haproxyServerLines}
