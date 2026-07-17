@@ -61,15 +61,15 @@ async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | Non
 @pytest.mark.parametrize(
     ("tool_name", "arguments"),
     [
-        ("threads_list", {"query": "from:alice", "max_results": 50}),
-        ("threads_get", {"thread_id": "t1", "format": "full"}),
-        ("messages_get", {"message_id": "m1", "format": "raw"}),
+        ("threads_list", {"q": "from:alice", "maxResults": 50}),
+        ("threads_get", {"id": "t1", "format": "full"}),
+        ("messages_get", {"id": "m1", "format": "raw"}),
         ("labels_list", {}),
-        ("labels_get", {"label_id": "INBOX"}),
+        ("labels_get", {"id": "INBOX"}),
         ("filters_list", {}),
-        ("filters_get", {"filter_id": "F1"}),
+        ("filters_get", {"id": "F1"}),
         ("drafts_list", {}),
-        ("drafts_get", {"draft_id": "d1"}),
+        ("drafts_get", {"id": "d1"}),
     ],
 )
 async def test_all_gmail_reads_are_auto_approved(tool_name: str, arguments: dict) -> None:
@@ -126,7 +126,7 @@ async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
 
 
 async def test_read_with_unknown_argument_is_auto_denied() -> None:
-    denial = await _decision("threads_list", {"query": "", "unexpected": True})
+    denial = await _decision("threads_list", {"q": "", "unexpected": True})
     assert isinstance(denial, SchemaDenial)
     assert "unexpected" in denial.reason
 

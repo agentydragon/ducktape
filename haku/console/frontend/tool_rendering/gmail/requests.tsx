@@ -204,17 +204,17 @@ function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArg
   useEffect(() => {
     let alive = true;
     setPreview(undefined);
-    fetchGmailThreadPreviews([args.thread_id]).then((result) => {
-      if (alive) setPreview(result[args.thread_id] ?? null);
+    fetchGmailThreadPreviews([args.id]).then((result) => {
+      if (alive) setPreview(result[args.id] ?? null);
     });
     return () => {
       alive = false;
     };
-  }, [args.thread_id]);
+  }, [args.id]);
 
   if (preview === undefined) return <Loader size="xs" />;
   if (preview === null) {
-    return <PreviewText c="dimmed">{args.thread_id} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{args.id} (couldn't load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -223,7 +223,7 @@ function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArg
       </ExternalLink>
       {variant === "detailed" && (
         <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
-          {args.thread_id}
+          {args.id}
         </PreviewText>
       )}
     </Stack>
@@ -236,17 +236,17 @@ function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageA
   useEffect(() => {
     let alive = true;
     setPreview(undefined);
-    fetchGmailMessagePreview(args.message_id).then((result) => {
+    fetchGmailMessagePreview(args.id).then((result) => {
       if (alive) setPreview(result);
     });
     return () => {
       alive = false;
     };
-  }, [args.message_id]);
+  }, [args.id]);
 
   if (preview === undefined) return <Loader size="xs" />;
   if (preview === null) {
-    return <PreviewText c="dimmed">{args.message_id} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{args.id} (couldn't load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -255,7 +255,7 @@ function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageA
       </ExternalLink>
       {variant === "detailed" && (
         <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
-          {args.message_id}
+          {args.id}
         </PreviewText>
       )}
     </Stack>
@@ -267,7 +267,7 @@ function SearchGmailThreadsPreview({ args }: PreviewProps<SearchGmailThreadsArgs
     <PreviewText>
       Search:{" "}
       <PreviewText span className="haku-shell-mono">
-        {args.query}
+        {args.q}
       </PreviewText>
     </PreviewText>
   );

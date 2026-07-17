@@ -29,9 +29,9 @@ describe("gmailPreviews", () => {
   });
 
   it("renders every Gmail read tool with a widget", () => {
-    expect(renderPreview(gmailPreviews.threads_get, { thread_id: "t1" }, "compact")).not.toBeNull();
-    expect(renderPreview(gmailPreviews.threads_list, { query: "from:alice" }, "detailed")).not.toBeNull();
-    expect(renderPreview(gmailPreviews.messages_get, { message_id: "m1" }, "compact")).not.toBeNull();
+    expect(renderPreview(gmailPreviews.threads_get, { id: "t1" }, "compact")).not.toBeNull();
+    expect(renderPreview(gmailPreviews.threads_list, { q: "from:alice" }, "detailed")).not.toBeNull();
+    expect(renderPreview(gmailPreviews.messages_get, { id: "m1" }, "compact")).not.toBeNull();
   });
 
   it("has no entry for read tools with no useful preview (self-descriptive or empty args)", () => {

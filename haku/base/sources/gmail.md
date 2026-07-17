@@ -8,10 +8,11 @@ haku-console proxies an in-process `gmail` MCP server (the console's own per-Ope
 OAuth — refresh token in the console's Postgres, self-refreshed in-process — independent of the
 `google-access-token` secret and Airlock entirely, so it survives that outage class). All
 read tools are auto-approved for authenticated agents under the reviewed console policy:
-`threads_list` (Gmail search-box `query` + `max_results`/`page_token` paging), `threads_get`,
-`messages_get` (`format` passes through: `minimal`/`metadata`/`full`/`raw`), `labels_list`,
-`labels_get`, `filters_list`, `filters_get`, `drafts_list`, `drafts_get`. Responses mirror
-Gmail's REST resource shapes verbatim.
+`threads_list` (Gmail search-box `q` + `maxResults`/`pageToken` paging), `threads_get`,
+`messages_get` (`id` + `format`: `minimal`/`metadata`/`full`/`raw`), `labels_list`,
+`labels_get`, `filters_list`, `filters_get`, `drafts_list`, `drafts_get`. These are generated
+straight from Google's discovery doc, so params and responses are Gmail's REST API **verbatim** —
+native names (`id`, `q`, `maxResults`, `pageToken`, …), not friendly aliases.
 
 Reach it however your runtime wires it: managed sessions expose the tools directly as
 in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
@@ -21,7 +22,7 @@ in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
 fastmcp call https://haku.allegedly.works/mcp gmail_threads_list \
-  --input-json '{"query":"after:1784133277","max_results":100}' \
+  --input-json '{"q":"after:1784133277","maxResults":100}' \
   --auth "$TOKEN" --transport http
 ```
 

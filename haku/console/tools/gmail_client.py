@@ -1,12 +1,11 @@
 """Gmail operations behind haku-console's `gmail` MCP server.
 
-The read tools mirror Gmail's REST API: `labels_list`/`labels_get`/`threads_list`/
-`threads_get`/`messages_get`/`filters_list`/`filters_get`/`drafts_list`/`drafts_get` return
-Gmail's own resource shapes (`gmail_api.messages`, `gmail_api.labels`, `gmail_api.filters`)
-**verbatim** — no content-type prioritization, no body decoding, no field flattening. `format`
-passes straight through to Gmail. The write tools (draft create/update/delete, thread-label
-changes, label CRUD, filter create/delete) act on any resource and are mediated by
-haku-console's manual-or-policy approval pipeline. See `haku/docs/security.md`.
+The hand-authored **write** surface (draft create/update/delete, thread-label changes, label CRUD,
+filter create/delete) plus the `labels_get` id→name helper the approval carve-out needs
+(`auto_approval.py`). These take shaped inputs / do batching / resolve label names, so they stay
+hand-written. The **read** tools are generated from Google's discovery doc in `google_discovery.py`
+and are not here. All mediated by haku-console's manual-or-policy approval pipeline. See
+`haku/docs/security.md`.
 """
 
 from __future__ import annotations
@@ -18,17 +17,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from gmail_api.filters import FilterAction, FilterCriteria, FiltersListResponse, GmailFilter
-from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelsListResponse, LabelType, PatchLabelRequest
-from gmail_api.messages import (
-    Draft,
-    DraftsListResponse,
-    Message,
-    MessageFormat,
-    Thread,
-    ThreadFormat,
-    ThreadsListResponse,
-)
+from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
+from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelType, PatchLabelRequest
+from gmail_api.messages import Draft
 
 GMAIL_SERVER_ID = "gmail"
 # Gmail's batch-request guide recommends capping requests-per-batch at 100. Used for
@@ -82,26 +73,6 @@ class UpdateGmailDraftArgs(CreateGmailDraftArgs):
     draft_id: str = Field(description="ID of the existing draft to replace.")
 
 
-# --- read-tool input ---
-class SearchThreadsArgs(BaseModel):
-    query: str = Field(
-        description="Gmail search query, same syntax as the Gmail search box "
-        "(e.g. 'from:alice after:2026/01/01 is:unread')."
-    )
-    max_results: int = Field(default=25, ge=1, le=500, description="Maximum threads per page.")
-    page_token: str | None = Field(
-        default=None, description="`next_page_token` from a previous response; omit for the first page."
-    )
-
-
-class ListDraftsArgs(BaseModel):
-    query: str | None = Field(default=None, description="Optional Gmail search query to filter drafts.")
-    max_results: int = Field(default=25, ge=1, le=500, description="Maximum drafts per page.")
-    page_token: str | None = Field(
-        default=None, description="`next_page_token` from a previous response; omit for the first page."
-    )
-
-
 class GmailToolsClient:
     """The `gmail` server's Gmail tool operations over a raw Gmail service."""
 
@@ -113,36 +84,10 @@ class GmailToolsClient:
         labels = [GmailLabel.model_validate(label) for label in response.get("labels", [])]
         return [label for label in labels if label.type == LabelType.USER]
 
-    # --- reads: return Gmail's own resource shapes verbatim ---
-    def labels_list(self) -> LabelsListResponse:
-        return LabelsListResponse.model_validate(self.service.users().labels().list(userId="me").execute())
-
+    # labels_get resolves a label id -> name for the approval carve-out (auto_approval.py); the
+    # read *tools* are generated in google_discovery.py, not here.
     def labels_get(self, label_id: str) -> GmailLabel:
         return GmailLabel.model_validate(self.service.users().labels().get(userId="me", id=label_id).execute())
-
-    def threads_list(self, args: SearchThreadsArgs) -> ThreadsListResponse:
-        params: dict[str, Any] = {"userId": "me", "q": args.query, "maxResults": args.max_results}
-        if args.page_token is not None:
-            params["pageToken"] = args.page_token
-        return ThreadsListResponse.model_validate(self.service.users().threads().list(**params).execute())
-
-    def threads_get(self, thread_id: str, thread_format: ThreadFormat) -> Thread:
-        return Thread.model_validate(
-            self.service.users().threads().get(userId="me", id=thread_id, format=thread_format.value).execute()
-        )
-
-    def messages_get(self, message_id: str, message_format: MessageFormat) -> Message:
-        return Message.model_validate(
-            self.service.users().messages().get(userId="me", id=message_id, format=message_format.value).execute()
-        )
-
-    def filters_list(self) -> FiltersListResponse:
-        return FiltersListResponse.model_validate(self.service.users().settings().filters().list(userId="me").execute())
-
-    def filters_get(self, filter_id: str) -> GmailFilter:
-        return GmailFilter.model_validate(
-            self.service.users().settings().filters().get(userId="me", id=filter_id).execute()
-        )
 
     def filters_create(self, criteria: FilterCriteria, action: FilterAction) -> GmailFilter:
         body = {
@@ -155,19 +100,6 @@ class GmailToolsClient:
 
     def filters_delete(self, filter_id: str) -> None:
         self.service.users().settings().filters().delete(userId="me", id=filter_id).execute()
-
-    def drafts_list(self, args: ListDraftsArgs) -> DraftsListResponse:
-        params: dict[str, Any] = {"userId": "me", "maxResults": args.max_results}
-        if args.query is not None:
-            params["q"] = args.query
-        if args.page_token is not None:
-            params["pageToken"] = args.page_token
-        return DraftsListResponse.model_validate(self.service.users().drafts().list(**params).execute())
-
-    def drafts_get(self, draft_id: str, draft_format: MessageFormat) -> Draft:
-        return Draft.model_validate(
-            self.service.users().drafts().get(userId="me", id=draft_id, format=draft_format.value).execute()
-        )
 
     def drafts_delete(self, draft_id: str) -> None:
         self.service.users().drafts().delete(userId="me", id=draft_id).execute()

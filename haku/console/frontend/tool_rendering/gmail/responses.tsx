@@ -60,7 +60,7 @@ export function CreateGmailDraftResultView({
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>
-      <GmailIconLink href={gmailDraftUrl(result.id)} fw={600}>
+      <GmailIconLink href={gmailDraftUrl(result.id ?? "")} fw={600}>
         {messageSubject(result.message) ?? args.subject}
       </GmailIconLink>
       <Field icon={<MailIcon size={15} />} label="Recipients">
@@ -152,7 +152,7 @@ function GmailThreadResultView({ result, variant }: ResultPreviewProps<GmailThre
   const body = detailed ? snippet : firstLines(snippet, 2).text;
   return (
     <Stack gap={6}>
-      <GmailLink id={result.id} fw={600}>
+      <GmailLink id={result.id ?? ""} fw={600}>
         {messageSubject(firstMessage) ?? "(no subject)"}
       </GmailLink>
       {body && (
@@ -175,7 +175,7 @@ function GmailThreadsListResultView({ result, variant }: ResultPreviewProps<Gmai
       {shown.length > 0 ? (
         <Stack gap={4}>
           {shown.map((thread) => (
-            <GmailLink key={thread.id} id={thread.id}>
+            <GmailLink key={thread.id ?? ""} id={thread.id ?? ""}>
               {thread.snippet ? firstLines(thread.snippet, 1).text : thread.id}
             </GmailLink>
           ))}
@@ -200,7 +200,7 @@ function GmailMessageResultView({ result, variant }: ResultPreviewProps<GmailMes
   const body = detailed ? snippet : firstLines(snippet, 2).text;
   return (
     <Stack gap={6}>
-      <GmailLink id={result.threadId ?? result.id} fw={600}>
+      <GmailLink id={result.threadId ?? result.id ?? ""} fw={600}>
         {messageSubject(result) ?? "(no subject)"}
       </GmailLink>
       {body && (

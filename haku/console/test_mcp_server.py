@@ -23,7 +23,6 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import SecretStr, ValidationError
 
-from gmail_api.labels import GmailLabel, LabelsListResponse, LabelType
 from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
@@ -127,9 +126,10 @@ class _Harness:
 @pytest.fixture
 async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harness]:
     gmail_client = Mock()
-    gmail_client.labels_list.return_value = LabelsListResponse(
-        labels=[GmailLabel(id="Label_1", name="haku/triaged", type=LabelType.USER)]
-    )
+    # labels_list is a generated read: it dispatches through gmail_client.service, returning raw Gmail JSON.
+    gmail_client.service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
+        "labels": [{"id": "Label_1", "name": "haku/triaged", "type": "user"}]
+    }
     calendar_client = Mock()
     calendar_client.get_event.return_value = CalendarEvent(
         event_id="series1", summary="Standup", recurrence=["RRULE:FREQ=WEEKLY"]
