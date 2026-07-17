@@ -74,7 +74,9 @@ spec:
       resources:
         limits:
           cpu: 100m
-          memory: 128Mi
+          # cainjector caches every CA-injected Certificate/CRD/webhook/APIService
+          # cluster-wide; 128Mi OOMKilled it in a crash-loop on this cluster.
+          memory: 512Mi
         requests:
           cpu: 10m
-          memory: 32Mi
+          memory: 128Mi
