@@ -1,19 +1,20 @@
 # Plan: remote command execution on operator machines (Haku)
 
 **Status:** design proposal, not built (operator, 2026-07-17).
-**Ask:** let Haku run shell commands on the operator's machines (`rugged`, `wyrm2`,
-`atlas`, `iguana`, …) with **no auto-approval**, and the ability to run as `agentydragon`
+**Ask:** let Haku run shell commands on the operator's machines (`wyrm2`, `rugged`,
+`iguana`, …) with **no auto-approval**, and the ability to run as `agentydragon`
 **or `root`** once the operator approves. Which transport — SSH over Nebula, a privileged
-pod, something else?
+pod, something else? (Scope refined 07-17: `rugged` in, `atlas` out.)
 
 ## TL;DR recommendation
 
 Build a new remote MCP server `hostexec-mcp` modeled on
 <../../cluster/k8s/agents/kubectl-passthrough-mcp/>, registered in the console catalog so
 it is approval-gated by construction. **Transport: SSH over the existing Nebula mesh** —
-it is the only option that covers every target uniformly (including `atlas`, which is not
-a k8s node) and reuses machinery that already exists (sshd + declarative `authorized_keys`
-on every host). **Authorization = Authentik, not a standing key:** make it
+it reuses machinery that already exists (sshd + declarative `authorized_keys` on every host)
+and needs **no standing privileged pod**, unlike the pod-on-node alternative (which is why
+it wins even though every in-scope host — `wyrm2`, `rugged`, `iguana` — is now a k8s node).
+**Authorization = Authentik, not a standing key:** make it
 "kubectl-passthrough for SSH" — the console forwards the approving operator's short-lived
 **Authentik** token, and a small host-side verifier authorizes the operator's real identity
 (the `hostexec-<run_as>-<host>` group claim) against Authentik's JWKS. The `hostexec-mcp` pod
@@ -53,31 +54,36 @@ Two consequences make most of the work free:
    not an approval system.
 
 So the real design question is narrow: **what carries an approved command from the console
-to a shell on `wyrm2`/`atlas`/…, and under what credential.**
+to a shell on `wyrm2`/`rugged`/…, and under what credential.**
 
-Note: kubectl-passthrough can _already_ run commands on the three k8s-node hosts today via
-`pods_exec` into a pod scheduled on the node. We are not using that because (a) it only
-covers k8s nodes — not `atlas` (Proxmox host) or any non-node machine, (b) it gives no
-clean `run_as agentydragon | root` semantics, and (c) it would require a standing privileged
-pod on each host. A purpose-built server gives clean run-as, uniform host coverage, a proper
-approval card, and host-side audit.
+Note: with all in-scope hosts being k8s nodes, kubectl-passthrough can _already_ run commands
+on them today via `pods_exec` into a pod scheduled on the node — the lowest-effort path. We
+still don't, because it (a) gives no clean `run_as agentydragon | root` semantics (nsenter +
+setuid gymnastics), (b) needs a **standing privileged/`hostPID` pod on each node** — including
+the roaming personal tablet `rugged` — which is a larger always-resident root footprint than
+the sshd already there, and likely trips pod-security/Kyverno anyway, and (c) yields a weaker
+approval card and audit trail. A purpose-built SSH server gives clean run-as, no standing
+privileged pod, a proper approval card, and host-side audit.
 
 ## Target matrix
 
 Hosts come from the mesh roster (<../../nebula-mesh.json>); reachability from
 <../../cluster/README.md> node table.
 
-| Host     | Nebula IP    | Always on?   | k8s node? | Notes                                                  |
-| -------- | ------------ | ------------ | --------- | ------------------------------------------------------ |
-| `wyrm2`  | `10.42.0.20` | yes (home)   | yes       | GPU box; primary always-on target                      |
-| `atlas`  | `10.42.0.5`  | yes (home)   | **no**    | Proxmox hypervisor (Debian/Ansible); root = high value |
-| `rugged` | `10.42.0.30` | no (roaming) | yes       | fail-fast when offline; `destination_mtu` 1100         |
-| `iguana` | `10.42.0.31` | no (roaming) | yes       | fail-fast when offline                                 |
-| `pixel6` | `10.42.0.50` | —            | no        | **excluded** — no sshd                                 |
+| Host     | Nebula IP    | Always on?   | k8s node? | In scope?               | Notes                                                          |
+| -------- | ------------ | ------------ | --------- | ----------------------- | -------------------------------------------------------------- |
+| `wyrm2`  | `10.42.0.20` | yes (home)   | yes       | **yes**                 | GPU box; primary always-on target                              |
+| `rugged` | `10.42.0.30` | no (roaming) | yes       | **yes**                 | roaming tablet; fail-fast when offline; `destination_mtu` 1100 |
+| `iguana` | `10.42.0.31` | no (roaming) | yes       | same class as `rugged`  | other roaming laptop; include unless told otherwise            |
+| `atlas`  | `10.42.0.5`  | yes (home)   | no        | **no** (operator 07-17) | Proxmox hypervisor; dropped from scope                         |
+| `pixel6` | `10.42.0.50` | —            | no        | no                      | excluded — no sshd                                             |
 
-Run-as targets per host: `agentydragon` (unprivileged) and `root` (privileged). Root should
-be an explicit per-host allowlist, not implicitly everywhere — `atlas` root is the
-hypervisor and deserves the tightest gate.
+Run-as targets per host: `agentydragon` (unprivileged) and `root` (privileged). Root is an
+explicit per-host allowlist (a `hostexec-root-<host>` group), not implicitly everywhere.
+
+**Consequence of dropping `atlas`:** every in-scope host is now a k8s node. That removes the
+one host that _forced_ SSH over a privileged pod — so the transport choice is re-justified on
+its remaining merits below rather than on "only SSH reaches `atlas`."
 
 ## Transport options
 
@@ -88,9 +94,9 @@ The console/cluster already reaches every target host over the Nebula overlay
 `authorized_keys` (<../../nix/ssh-keys.nix> + each host's `openssh.authorizedKeys.keys`).
 The `hostexec-mcp` pod SSHes to `10.42.0.x` and runs the command.
 
-- **Pros:** least new machinery; **only option that covers `atlas`** and any future non-node
-  host uniformly; reuses the existing sshd + declarative-key mechanism; per-host reachability
-  and run-as are natural.
+- **Pros:** no standing privileged pod anywhere (the exec pod stays unprivileged); reuses the
+  existing sshd + declarative-key mechanism; clean per-host reachability and `run_as`; covers
+  any future non-node host uniformly if scope ever grows back.
 - **Cons:** naively implies a standing SSH key living in the pod (addressed by the credential
   ladder below); no SSH CA exists today, so a new key/identity must be added to each host.
 
@@ -103,12 +109,12 @@ kubectl-passthrough does.
 
 - **Pros:** reuses kubectl-passthrough's operator-identity story with **no standing SSH
   credential**; nothing new to authorize in `authorized_keys`.
-- **Cons:** **does not cover `atlas`** (not a node) or any non-node host; requires a
-  **standing privileged/`hostPID` root pod physically resident on each host** — a larger,
-  always-present blast radius than the sshd already there, and one Haku's own namespace RBAC
-  must be kept far away from; roaming nodes are `NotReady` when offline. A privileged
-  DaemonSet is a worse standing footprint than a signed-capability SSH path for the same
-  benefit.
+- **Cons:** requires a **standing privileged/`hostPID` root pod physically resident on each
+  node** — including the roaming personal tablet `rugged` — a larger, always-present blast
+  radius than the sshd already there, likely blocked by pod-security/Kyverno, and one Haku's
+  own namespace RBAC must be kept far away from; roaming nodes are `NotReady` when offline;
+  and it covers only k8s nodes, so scope could never grow to a non-node host. A worse standing
+  footprint than the SSH path for the same benefit.
 
 Keep this in mind only as a possible _add-on_ for k8s-node hosts if SSH ever proves
 inadequate; it is not the base.
@@ -166,7 +172,7 @@ Why this is the right shape:
 - **Authority is managed where all machine-access already is.** "May run root on `wyrm2`"
   becomes an Authentik group you grant/revoke/audit centrally, with the same lifecycle as
   cluster-admin. Different operator identities can carry different exec rights (e.g. only the
-  human operator's identity is in `hostexec-root-atlas`) — future-proof even though there's
+  human operator's identity is in `hostexec-root-wyrm2`) — future-proof even though there's
   one operator today.
 - **Trust level equals kubectl-passthrough's** — no better, no worse. A compromised
   `hostexec-mcp` pod holding a live forwarded token could, in the window, run a _different_
@@ -222,8 +228,9 @@ result returns through console → ledger row RUNNING→done ; agent gets result
   shell — wrap in `["bash","-lc", …]` for shell features (same decision as `direct.py`). The
   remote hop (asyncssh/ssh) is the one genuinely new primitive; `run_proc` in
   `mcp_infra/exec/subprocess.py` is local-only.
-- **Reachability:** fail fast on a Nebula connect timeout so a roaming/offline `rugged` returns
-  a clean "host unreachable," never a hang. `wyrm2`/`atlas` are the reliable always-on targets.
+- **Reachability:** fail fast on a Nebula connect timeout so a roaming/offline `rugged`/`iguana`
+  returns a clean "host unreachable," never a hang. `wyrm2` is the reliable always-on target;
+  `rugged`/`iguana` are in scope but frequently offline, so unreachability is a normal outcome.
 - **Packaging/deploy:** copy the grocy/postscanmail Bazel `py_binary → py_image_layer →
 oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` manifest set
   (Deployment + Service + HTTPRoute + configmap + flux-kustomization), own namespace,
@@ -243,8 +250,8 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
   add one **unprivileged transport** `hostexec` keypair (<../../ssh_keys/> + <../../nix/ssh-keys.nix>)
   to each in-scope host's `openssh.authorizedKeys.keys` for the `agentydragon` user and
   (per-host allowlist) `root`, every entry pinned to `command="<verifier>"` so the key reaches
-  nothing but the shim. `atlas` is Debian/Ansible: keys go through the home-manager `home.file`
-  path (`nix/home/hosts/atlas.nix`), and its root is the hypervisor — gate hardest. The
+  nothing but the shim. All in-scope hosts (`wyrm2`, `rugged`, `iguana`) are NixOS, so this is
+  uniform `nix/nixos/hosts/<host>/default.nix` config — no `atlas`/Debian special case. The
   transport private key is SOPS-encrypted and deployed only into the `hostexec-mcp` namespace
   Secret (Haku cannot read it); it grants only "reach the verifier," never execution on its own.
 - **Audit (double-entry):** console ledger `McpToolCall` (args, rationale, operator, result) +
@@ -267,12 +274,12 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
    verifier now or after an ergonomics MVP.
 2. **argv binding:** ship at kubectl-passthrough parity (Authentik token only), or add the
    console argv countersignature to defend against a compromised relay swapping the command.
-3. **Root scope:** which hosts may run `run_as=root` at all — i.e. which `hostexec-root-<host>`
-   groups exist and are granted (recommend: start with `wyrm2` only; add `atlas` root behind an
-   extra confirm; never roaming hosts initially).
+3. **Root scope:** which in-scope hosts get a `hostexec-root-<host>` group at all. Open
+   question: `rugged` (the operator's own tablet) is in scope for exec — is `run_as=root`
+   wanted there too, or `agentydragon`-only on `rugged` with root reserved to `wyrm2`?
 4. **Extra root friction:** plain approval card vs a second confirm / standing root toggle.
-5. **Host set for v1:** recommend `wyrm2` + `atlas` (always-on) first; add `rugged`/`iguana`
-   once fail-fast reachability is proven.
+5. **`iguana`:** in with `rugged` (same roaming-laptop class, uniform NixOS config) unless the
+   operator wants it left out.
 
 ## Risks / residuals
 
@@ -285,8 +292,9 @@ oci_image` template and the `cluster/k8s/agents/kubectl-passthrough-mcp/app/` ma
   (decision 2) closes it for hostexec.
 - **Console + Authentik are the trust roots** — as they already are for every approval-gated
   tool and all machine access. No new trust root is introduced.
-- **Roaming hosts** (`rugged`, `iguana`) are frequently offline; treat unreachability as a
-  normal, fast-failing outcome, not an error to retry indefinitely.
+- **Roaming hosts** (`rugged`, `iguana`) are frequently offline and roam on cellular
+  (`rugged` at `destination_mtu` 1100); treat unreachability as a normal, fast-failing
+  outcome, not an error to retry indefinitely.
 - **Fits the roadmap:** a concrete instance of PLAN.md → _"letting Haku take some actions
   itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, per-approval grant
   enforced by the perimeter is exactly what that section sketches.
