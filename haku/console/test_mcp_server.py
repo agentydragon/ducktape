@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import datetime
 import hashlib
 import html
 import re
@@ -29,7 +30,13 @@ from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
 from haku.console.mcp_approval import AliveServerMetadata, ToolMetadata
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
+from haku.console.mcp_operator_oauth import (
+    McpOperatorAuthConnected,
+    McpOperatorAuthStatusResponse,
+    McpOperatorAuthUnconnected,
+)
 from haku.console.operator_identity import VerifiedExternalIdentity
+from haku.console.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (
@@ -565,45 +572,85 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
                 assert "standin_echo" in {tool.name for tool in await client.list_tools()}
 
 
-async def test_list_mcp_servers_reports_alive_and_degraded_state(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+async def test_list_mcp_servers_passively_reports_persisted_connection_state(
+    migrated_db_url: str, tmp_path: Path
 ) -> None:
-    """`list_mcp_servers` reflects each configured server for the caller's Operator: alive with its
-    tools when reachable, degraded with a reason when that Operator has not linked its account."""
-    with _serve_upstream() as upstream_url:
-        config_file = write_config(
-            tmp_path / "reflection.yaml",
-            {
-                "static_agents": _STATIC_AGENTS,
-                "mcp": {
-                    "servers": [{"id": "standin", "server_url": upstream_url, "auth": {"kind": "remote_server_oauth"}}]
-                },
+    config_file = write_config(
+        tmp_path / "connection-status.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "expired-remote",
+                        "server_url": "https://must-not-be-contacted.invalid/mcp",
+                        "auth": {"kind": "remote_server_oauth"},
+                    },
+                    {
+                        "id": "unconnected-remote",
+                        "server_url": "https://also-must-not-be-contacted.invalid/mcp",
+                        "auth": {"kind": "remote_server_oauth"},
+                    },
+                    {"id": "gmail", "auth": {"kind": "provider_connection", "provider": "google"}},
+                    {"id": "routine", "auth": {"kind": "none"}},
+                ]
             },
+        },
+    )
+    settings = console_settings(migrated_db_url, config_file=config_file)
+    expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
+    oauth_statuses = Mock(
+        return_value=McpOperatorAuthStatusResponse(
+            associations=[
+                McpOperatorAuthConnected(
+                    server_id="expired-remote",
+                    username="operator",
+                    connected_at=expires_at - datetime.timedelta(days=1),
+                    token_expires_at=expires_at,
+                ),
+                McpOperatorAuthUnconnected(server_id="unconnected-remote", username="operator"),
+            ]
         )
-        app = create_app(console_settings(migrated_db_url, config_file=config_file))
-        connected_operator = app.state.operator_identity_store.resolve_configured_external_user_key("42")
+    )
+    provider_statuses = Mock(
+        return_value=ProviderConnectionStatusResponse(
+            connections=[
+                ProviderConnected(
+                    provider="google", connected_at=expires_at - datetime.timedelta(days=1), token_expires_at=None
+                )
+            ]
+        )
+    )
+    oauth_store = Mock(list_statuses=oauth_statuses)
+    provider_store = Mock(list_statuses=provider_statuses)
+    refresh_remote = AsyncMock(side_effect=AssertionError("list_mcp_servers must not refresh remote OAuth"))
+    refresh_provider = AsyncMock(side_effect=AssertionError("list_mcp_servers must not refresh provider OAuth"))
+    fetch_metadata = AsyncMock(side_effect=AssertionError("list_mcp_servers must not contact an MCP server"))
+    oauth_store.access_token_for = refresh_remote
+    provider_store.access_token_for = refresh_provider
+    metadata_provider = Mock(metadata=fetch_metadata)
+    context = mcp_server_module.ConsoleMcpContext(
+        settings=settings,
+        tool_calls=Mock(),
+        oauth_store=oauth_store,
+        provider_store=provider_store,
+        metadata_provider=metadata_provider,
+    )
+    actor = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
 
-        async def access_token_for(*, server: object, operator_id: UUID) -> str | None:
-            return "connected-token" if operator_id == connected_operator else None
+    response = mcp_server_module._passive_server_connection_statuses(context, actor)
 
-        monkeypatch.setattr(app.state.mcp_operator_oauth_store, "access_token_for", access_token_for)
-
-        with serve_app_sync(app) as base:
-            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                alive = (await client.call_tool("list_mcp_servers", {})).structured_content
-            # A different Operator has not linked the account, so the same server reflects as degraded.
-            async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-                degraded = (await client.call_tool("list_mcp_servers", {})).structured_content
-
-    assert alive is not None
-    assert degraded is not None
-    alive_standin = {s["server_id"]: s for s in alive["servers"]}["standin"]
-    assert alive_standin["status"] == "alive"
-    assert "echo" in {tool["name"] for tool in alive_standin["tools"]}
-
-    degraded_standin = {s["server_id"]: s for s in degraded["servers"]}["standin"]
-    assert degraded_standin["status"] == "degraded"
-    assert "Connect your standin MCP account" in degraded_standin["degraded_reason"]
+    statuses = {server.server_id: server for server in response.servers}
+    assert statuses["expired-remote"].status == "needs_refresh"
+    assert statuses["expired-remote"].token_expires_at == expires_at
+    assert statuses["unconnected-remote"].status == "unconnected"
+    assert statuses["gmail"].status == "connected"
+    assert statuses["routine"].status == "configured"
+    oauth_statuses.assert_called_once()
+    provider_statuses.assert_called_once()
+    refresh_remote.assert_not_awaited()
+    refresh_provider.assert_not_awaited()
+    fetch_metadata.assert_not_awaited()
 
 
 async def test_tool_discovery_is_concurrent_and_preserves_config_order(

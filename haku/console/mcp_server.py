@@ -30,7 +30,7 @@ import datetime
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
@@ -44,16 +44,19 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import (
-    DegradedServerMetadata,
-    McpMetadataProvider,
-    ToolCapabilitiesResponse,
-    metadata_for_operator,
-)
+from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
-from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, _load_servers, server_tool_prefix
-from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.provider_connection import PostgresProviderConnectionStore
+from haku.console.mcp_config import (
+    McpServerEntry,
+    McpServerNotFoundError,
+    ProviderConnectionAuth,
+    RemoteServerOAuthAuth,
+    _load_servers,
+    server_tool_prefix,
+)
+from haku.console.mcp_operator_oauth import McpOperatorAuthConnected, PostgresMcpOperatorOAuthStore
+from haku.console.oauth_token_support import token_is_fresh
+from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnected
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -86,7 +89,7 @@ INSTRUCTIONS = (
     "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
     "resolve a promise. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
     "by the console Operator's browser session execute directly and create no approval record. Call "
-    "`list_mcp_servers` to see which servers are connected and, for any that are unavailable, why."
+    "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials."
 )
 
 _REQUEST_PREAMBLE = (
@@ -125,6 +128,24 @@ class ToolCallView(BaseModel):
     url: str | None = None
 
 
+class McpServerConnectionStatus(BaseModel):
+    """Persisted connection state for one configured MCP server.
+
+    This deliberately says nothing about current reachability or upstream tools: answering either
+    question would require network I/O and, for OAuth-backed servers, could rotate credentials.
+    """
+
+    server_id: str
+    auth_kind: str
+    status: Literal["configured", "connected", "needs_refresh", "unconnected"]
+    token_expires_at: datetime.datetime | None = None
+    detail: str
+
+
+class McpServerConnectionStatusResponse(BaseModel):
+    servers: list[McpServerConnectionStatus] = Field(default_factory=list)
+
+
 class ApprovalRequestEnvelope(BaseModel):
     """The approval-request envelope. One model drives both the generated input schema
     (`_envelope_schema`) and parsing the incoming call (`ProxyTool.run`)."""
@@ -145,6 +166,87 @@ def _tool_call_url(settings: Settings, tool_call_id: str) -> str | None:
     if settings.ui_base_url is None:
         return None
     return f"{settings.ui_base_url.rstrip('/')}/tool-calls/{tool_call_id}"
+
+
+def _connection_status(
+    *, server: McpServerEntry, connected: bool, token_expires_at: datetime.datetime | None
+) -> McpServerConnectionStatus:
+    if not connected:
+        return McpServerConnectionStatus(
+            server_id=server.id,
+            auth_kind=server.auth.kind,
+            status="unconnected",
+            detail="No operator account is linked. Connect this server in the console before use.",
+        )
+    if not token_is_fresh(token_expires_at, datetime.datetime.now(datetime.UTC)):
+        return McpServerConnectionStatus(
+            server_id=server.id,
+            auth_kind=server.auth.kind,
+            status="needs_refresh",
+            token_expires_at=token_expires_at,
+            detail=(
+                "The stored access token is expired or within its refresh window. This passive status check "
+                "did not refresh it; "
+                "the next real use may refresh it or require reconnecting."
+            ),
+        )
+    return McpServerConnectionStatus(
+        server_id=server.id,
+        auth_kind=server.auth.kind,
+        status="connected",
+        token_expires_at=token_expires_at,
+        detail="An operator account is linked and its stored access token is outside the refresh window.",
+    )
+
+
+def _passive_server_connection_statuses(
+    context: ConsoleMcpContext, actor: ToolCallActor
+) -> McpServerConnectionStatusResponse:
+    """Read connection rows without refreshing tokens or contacting an MCP/provider endpoint."""
+    servers = _load_servers(context.settings)
+    oauth_statuses = {
+        status.server_id: status
+        for status in context.oauth_store.list_statuses(
+            servers=servers, operator_id=actor.operator_id, username="operator"
+        ).associations
+    }
+    provider_statuses = {
+        status.provider: status
+        for status in context.provider_store.list_statuses(operator_id=actor.operator_id).connections
+    }
+    result: list[McpServerConnectionStatus] = []
+    for server in servers:
+        match server.auth:
+            case RemoteServerOAuthAuth():
+                status = oauth_statuses.get(server.id)
+                result.append(
+                    _connection_status(
+                        server=server,
+                        connected=isinstance(status, McpOperatorAuthConnected),
+                        token_expires_at=status.token_expires_at
+                        if isinstance(status, McpOperatorAuthConnected)
+                        else None,
+                    )
+                )
+            case ProviderConnectionAuth(provider=provider):
+                status = provider_statuses.get(provider)
+                result.append(
+                    _connection_status(
+                        server=server,
+                        connected=isinstance(status, ProviderConnected),
+                        token_expires_at=status.token_expires_at if isinstance(status, ProviderConnected) else None,
+                    )
+                )
+            case _:
+                result.append(
+                    McpServerConnectionStatus(
+                        server_id=server.id,
+                        auth_kind=server.auth.kind,
+                        status="configured",
+                        detail="This server does not use an operator-linked connection.",
+                    )
+                )
+    return McpServerConnectionStatusResponse(servers=result)
 
 
 def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -382,27 +484,15 @@ def build_console_mcp(
     current_actor_dependency = Depends(actor_resolver.resolve)
 
     @mcp.tool
-    async def list_mcp_servers(actor: ToolCallActor = current_actor_dependency) -> ToolCapabilitiesResponse:
-        """Reflect the MCP servers connected for your Operator and their state: each server's
-        `alive`/`degraded` status, the `degraded_reason` when it is unavailable (e.g. an
-        operator-OAuth account you have not linked yet), and the tools an alive server exposes. Use
-        it to see which `<server>_<tool>` proxies are callable and why a server's tools are missing.
+    async def list_mcp_servers(actor: ToolCallActor = current_actor_dependency) -> McpServerConnectionStatusResponse:
+        """List configured MCP servers and their persisted connection state.
+
+        This is a passive status read: it never refreshes a token, contacts an authorization server,
+        or calls a downstream MCP server. `needs_refresh` means the stored access token is expired
+        or within its refresh window; only a real discovery or execution attempt may refresh it or
+        prove that reconnect is needed.
         """
-        servers = _load_servers(context.settings)
-        # gather so a slow (network) reflection of one server does not serialize the rest.
-        metadata = await asyncio.gather(
-            *(
-                metadata_for_operator(
-                    operator_id=actor.operator_id,
-                    server=server,
-                    metadata_provider=context.metadata_provider,
-                    oauth_store=context.oauth_store,
-                    provider_store=context.provider_store,
-                )
-                for server in servers
-            )
-        )
-        return ToolCapabilitiesResponse(servers=list(metadata))
+        return _passive_server_connection_statuses(context, actor)
 
     @mcp.tool
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
