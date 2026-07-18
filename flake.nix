@@ -2,22 +2,8 @@
   description = "agentydragon's NixOS, home-manager, and development configurations";
 
   inputs = {
-    # NixOS 25.11 stable release
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
-
-    # NixOS 26.05 — scoped to wyrm2 only (its `mkNixos` overrides `nixpkgs` +
-    # `home-manager` to these). wyrm2 needs 26.05 for GNOME 50: its
-    # gnome-remote-desktop headless "Remote Login" carries the handover fix
-    # (nixpkgs#504490, in gsd >= 50.0) that GNOME 49 on 25.11 lacks — see
-    # debug/atlas/direct_display_bringup/README.md. (The original reason was the
-    # plasma-login-manager multiseat attempt, now abandoned for single-seat0 +
-    # remote; the pin stays for GNOME 50.) Every other host stays on 25.11 to
-    # keep the RBE/CI build images and servers off an unplanned bump.
-    # TODO(nixpkgs-bump): do the wholesale 25.11 -> 26.05 bump for ALL hosts +
-    #   home-manager, then delete these wyrm2-only inputs and the per-host
-    #   `nixpkgs`/`home-manager` overrides in `mkNixos`. Blocked on rebuilding +
-    #   testing every host and the RBE worker image against 26.05.
-    nixpkgs-2605.url = "github:NixOS/nixpkgs/nixos-26.05";
+    # NixOS 26.05 stable release
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # Unstable for packages that need frequent updates (e.g., claude-code)
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -27,17 +13,10 @@
     # nixpkgs master.
     nixpkgs-master.url = "github:NixOS/nixpkgs/master";
 
-    # Home Manager tracking 25.11 release
+    # Home Manager tracking 26.05 release
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.11";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    # Home Manager tracking 26.05 — paired with nixpkgs-2605 for wyrm2 only.
-    # See the TODO(nixpkgs-bump) above; folds away with the wholesale bump.
-    home-manager-2605 = {
       url = "github:nix-community/home-manager/release-26.05";
-      inputs.nixpkgs.follows = "nixpkgs-2605";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     # nix-colors for colorscheme support
@@ -76,11 +55,9 @@
     {
       self,
       nixpkgs,
-      nixpkgs-2605,
       nixpkgs-unstable,
       nixpkgs-master,
       home-manager,
-      home-manager-2605,
       nix-colors,
       nixGL,
       claude-plugins-official,
@@ -222,11 +199,9 @@
           username ? "agentydragon",
           homeManagerHost ? hostname,
           hardwareModule ? null,
-          # Per-host nixpkgs/home-manager override. Defaults to the shared 25.11
-          # inputs; wyrm2 passes the 26.05 pair for plasma-login-manager. The
-          # system's `pkgs` comes from `nixosSystem`'s own nixpkgs, so this
-          # genuinely moves that host to 26.05 (base.nix sets allowUnfree; no
-          # module pins `nixpkgs.pkgs`). Folds away with TODO(nixpkgs-bump).
+          # Per-host nixpkgs/home-manager override; defaults to the shared inputs.
+          # The system's `pkgs` comes from `nixosSystem`'s own nixpkgs (base.nix
+          # sets allowUnfree; no module pins `nixpkgs.pkgs`).
           # Defaults reference `inputs.*`, NOT the bare names — `nixpkgs ? nixpkgs`
           # would self-reference the formal arg and infinitely recurse.
           nixpkgs ? inputs.nixpkgs,
@@ -468,7 +443,7 @@
               pkgs.tea
             ];
           };
-          # home-manager CLI, pinned to our flake input (release-25.11). Used by
+          # home-manager CLI, pinned to our flake input (release-26.05). Used by
           # web_setup.sh's home-manager install mode so activation does not pull
           # an unpinned home-manager from the registry:
           #   nix run .#home-manager -- switch --impure --flake .#claude-web
@@ -581,9 +556,6 @@
           hostname = "wyrm2";
           username = "agentydragon";
           homeManagerHost = "wyrm2";
-          # wyrm2-only 26.05 bump for plasma-login-manager (TODO(nixpkgs-bump)).
-          nixpkgs = nixpkgs-2605;
-          home-manager = home-manager-2605;
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = true;

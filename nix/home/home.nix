@@ -165,6 +165,13 @@ in
     experimental-features = [
       "nix-command"
       "flakes"
+      # fetch-closure: user-side eval of nix/packages/gaffer.nix
+      # (builtins.fetchClosure, reached via the google-drive HM module) needs
+      # this, or `nix build` of google-drive-enabled configs fails with
+      # "attribute 'fetchClosure' missing". Mirrors base.nix's system-level
+      # setting so /etc/nix/nix.conf and this HM-managed ~/.config/nix/nix.conf
+      # agree.
+      "fetch-closure"
     ];
     download-buffer-size = 268435456;
     connect-timeout = 5;

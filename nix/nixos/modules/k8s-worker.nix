@@ -257,28 +257,6 @@ in
     # See: https://github.com/NixOS/nixpkgs/issues/298165
     networking.firewall.checkReversePath = lib.mkForce false;
 
-    # Containerd
-    # CLEANUP(added 2026-05-15): Remove override once nixos-25.11 ships containerd ≥2.2.3.
-    #   containerd 2.2.1 (current in nixos-25.11) is built with Go 1.24, which
-    #   rejects absolute symlinks inside container image layers. NixOS-based images
-    #   (e.g., ghcr.io/zhaofengli/attic) use absolute symlinks for /etc/passwd and
-    #   /etc/group → /nix/store/..., causing "path escapes from parent". The fix
-    #   (PRs #12732 + /etc/group follow-up) shipped in 2.2.3, not 2.2.2 — v2.2.2
-    #   was tagged before the cherry-pick landed on release/2.2.
-    nixpkgs.overlays = [
-      (final: prev: {
-        containerd = prev.containerd.overrideAttrs (old: rec {
-          version = "2.2.3";
-          src = final.fetchFromGitHub {
-            owner = "containerd";
-            repo = "containerd";
-            rev = "v${version}";
-            hash = "sha256-jaOLZf246kmvBHHrwgvqrhxuh+n1HE6NDqckZK4tvnM=";
-          };
-        });
-      })
-    ];
-
     virtualisation.containerd = {
       enable = true;
       settings = {

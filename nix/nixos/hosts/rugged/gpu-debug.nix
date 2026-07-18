@@ -60,12 +60,12 @@ in
   environment.sessionVariables.MESA_DEBUG = "1";
 
   # Keep gnome-shell cores long enough to inspect (default rotates aggressively).
-  systemd.coredump.extraConfig = ''
-    MaxUse=4G
-    KeepFree=2G
-    ProcessSizeMax=8G
-    ExternalSizeMax=8G
-  '';
+  systemd.coredump.settings.Coredump = {
+    MaxUse = "4G";
+    KeepFree = "2G";
+    ProcessSizeMax = "8G";
+    ExternalSizeMax = "8G";
+  };
 
   # The xe kernel driver drops a devcoredump under /sys/class/devcoredump/ on a
   # GPU fault, but it self-deletes after ~5 minutes. On appearance, copy it to
