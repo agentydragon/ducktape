@@ -22,11 +22,11 @@ in
       mode = "0600";
     };
 
-    programs.ssh.matchBlocks."github.com" = {
-      hostname = "github.com";
-      user = "git";
-      identityFile = "~/.ssh/agentydragon_github_id_ed25519";
-      identitiesOnly = true;
+    programs.ssh.settings."github.com" = {
+      HostName = "github.com";
+      User = "git";
+      IdentityFile = "~/.ssh/agentydragon_github_id_ed25519";
+      IdentitiesOnly = true;
     };
   };
 }

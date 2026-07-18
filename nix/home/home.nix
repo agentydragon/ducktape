@@ -285,14 +285,14 @@ in
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
-    matchBlocks = {
+    settings = {
       # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
       # Distinct port because gecko owns :22 on the hil nodes (see
       # cluster/k8s/agent-box/app/ciliumenvoyconfig.yaml).
       "agent-box.allegedly.works" = {
-        hostname = "agent-box.allegedly.works";
-        user = "codex";
-        port = 2201;
+        HostName = "agent-box.allegedly.works";
+        User = "codex";
+        Port = 2201;
       };
       # codex-pod (k8s image pod): no exposed port — tunnel to its 127.0.0.1 sshd
       # through `kubectl exec` + a socat relay. kube RBAC gates the transport; the
@@ -300,13 +300,11 @@ in
       # Remote) work. Host key isn't verified (exec-gated, and the PVC host key can
       # be reprovisioned). Needs a cluster kubeconfig on PATH.
       "codex-pod" = {
-        user = "codex";
-        identityFile = "~/.ssh/id_ed25519";
-        proxyCommand = "kubectl exec -i -n codex-pod deploy/codex-pod -c codex -- socat - TCP:127.0.0.1:2222";
-        extraOptions = {
-          StrictHostKeyChecking = "no";
-          UserKnownHostsFile = "/dev/null";
-        };
+        User = "codex";
+        IdentityFile = "~/.ssh/id_ed25519";
+        ProxyCommand = "kubectl exec -i -n codex-pod deploy/codex-pod -c codex -- socat - TCP:127.0.0.1:2222";
+        StrictHostKeyChecking = "no";
+        UserKnownHostsFile = "/dev/null";
       };
     };
   };

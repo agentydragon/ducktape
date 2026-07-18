@@ -22,23 +22,23 @@ in
       mode = "0600";
     };
 
-    # home-manager only writes ~/.ssh/config (and thus the matchBlock below) when
+    # home-manager only writes ~/.ssh/config (and thus the settings block below) when
     # programs.ssh is enabled. Full home.nix hosts set this explicitly; the slim
     # agent-box codex config doesn't — so default it on here, or this module's
-    # matchBlock is silently dropped and git falls back to port 22 + the default
+    # settings block is silently dropped and git falls back to port 22 + the default
     # key (Permission denied). mkDefault lets home.nix's explicit value still win.
     programs.ssh.enable = lib.mkDefault true;
     # Silence the home-manager "default values will be removed" warning: the only ssh
-    # config these slim agent profiles need is the matchBlock below; the system
+    # config these slim agent profiles need is the settings block below; the system
     # /etc/ssh/ssh_config covers the rest.
     programs.ssh.enableDefaultConfig = lib.mkDefault false;
 
-    programs.ssh.matchBlocks."git.allegedly.works" = {
-      hostname = "git.allegedly.works";
-      user = "git";
-      port = 2222;
-      identityFile = "~/.ssh/agentydragon_forgejo_id_ed25519";
-      identitiesOnly = true;
+    programs.ssh.settings."git.allegedly.works" = {
+      HostName = "git.allegedly.works";
+      User = "git";
+      Port = 2222;
+      IdentityFile = "~/.ssh/agentydragon_forgejo_id_ed25519";
+      IdentitiesOnly = true;
     };
   };
 }
