@@ -1,0 +1,32 @@
+# Mirror the ducktape-ci Forgejo registry pull credential into this namespace so
+# the osm-mcp pod can pull its image from the private registry.
+#
+# Reflects the source secret's keys verbatim (it already ships a ready-made
+# .dockerconfigjson) and only stamps the dockerconfigjson type on top — no
+# reassembly, no hardcoded registry host. Sources the reflector-mirrored copy
+# already present in flux-system (the ESO ServiceAccount has cluster-wide secret
+# read), so this needs no change to registry-creds.sops.yaml's allowlist (which
+# would require the cluster SOPS age key — see cluster/k8s/ibkr's identical file
+# for the full rationale).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: osm-mcp
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-flux-system-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: forgejo-images-creds
+    template:
+      type: kubernetes.io/dockerconfigjson
+      # Merge (not the default Replace) so the fetched keys — including the
+      # source's ready-made .dockerconfigjson — survive and we only add the
+      # dockerconfigjson type. Replace keeps only templated data, which with no
+      # template.data would leave the secret empty (ESO templating guide).
+      mergePolicy: Merge
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds

@@ -20,6 +20,8 @@ spec:
       namespace: osm-mcp
   dependsOn:
     - name: osm-mcp-namespace
-    # Forgejo registry credential must be reflected into osm-mcp (imagePullSecret)
-    # and flux-system (image scan) before the pod can pull.
+    # ESO mirrors the forgejo-images-creds pull secret into this namespace (see
+    # forgejo-images-creds-eso.yaml): the ClusterSecretStore + the reflected
+    # source credential in flux-system must exist first.
+    - name: external-secrets-config
     - name: forgejo-images
