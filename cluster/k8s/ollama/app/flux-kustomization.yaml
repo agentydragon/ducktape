@@ -4,6 +4,12 @@ metadata:
   name: ollama
   namespace: flux-system
 spec:
+  # CLEANUP(added 2026-07-17): Un-suspend (remove this `suspend` line) once the
+  #   wyrm2 GPU inference experiments in cluster/docs/inference/ are done —
+  #   check by 2026-07-31. Suspended so Flux stops re-reconciling ollama back to
+  #   1 replica; it holds both RTX 5090s and preempts the vLLM bench pods during
+  #   their crash/restart gaps. While suspended, ollama runs 0 replicas.
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/ollama/app
   prune: true
