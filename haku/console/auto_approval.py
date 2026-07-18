@@ -40,7 +40,7 @@ class SchemaDenial:
 GROCY_SF_SERVER_ID = "grocy-sf"
 TANA_RW_SERVER_ID = "tana-rw"
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
-IBKR_SERVER_ID = "ibkr"
+IBKR_SERVER_ID = "interactive_brokers"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
 GMAIL_READ_TOOLS = frozenset(

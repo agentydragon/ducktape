@@ -100,7 +100,7 @@ def build_mcp(settings: ServerSettings, *, client: httpx.AsyncClient) -> FastMCP
     provider = OpenAPIProvider(
         openapi_spec=spec, client=client, route_maps=ROUTE_MAPS, mcp_component_fn=_customize_component
     )
-    return FastMCP(name="IBKR Market Data", instructions=_INSTRUCTIONS, providers=[provider])
+    return FastMCP(name="Interactive Brokers Market Data", instructions=_INSTRUCTIONS, providers=[provider])
 
 
 def build_server(settings: ServerSettings) -> FastMCP:

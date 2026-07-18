@@ -71,9 +71,11 @@ gateway **is** the identity. Front-door auth is the shared Authentik
 `build_authentik_auth` (`mcp_infra/authentik_auth`), an `OIDCProxy` restricted to
 the **agentydragon** user. **Haku reaches it through haku-console** (operator
 OAuth — the console registers via DCR as the approving operator), the same front
-door claude.ai uses; there is **no** machine token / `direct_jwt_trust`. Tools
-surface to Haku prefixed as `ibkr_secdef_search`, `ibkr_market_data_snapshot`,
-etc., through the console's approval queue.
+door claude.ai uses; there is **no** machine token / `direct_jwt_trust`. The
+console entry's `id` is `interactive_brokers`, so tools surface to Haku prefixed
+as `interactive_brokers_secdef_search`,
+`interactive_brokers_market_data_snapshot`, etc., through the console's approval
+queue. (The deployed host/namespace keep the shorter `ibkr-mcp` name.)
 
 ## Free-tier data + the weekly re-auth
 
@@ -112,7 +114,7 @@ and re-transcodes it.
 - **Terraform** — <../tf/gitops/agent-machine-access/ibkr-mcp.tf>: the Authentik
   OAuth2 provider/application restricted to agentydragon, and the `ibkr-mcp-oidc`
   Secret the pod reads.
-- **Haku** — the `ibkr` entry in <../cluster/k8s/haku/console/config.yaml>.
+- **Haku** — the `interactive_brokers` entry in <../cluster/k8s/haku/console/config.yaml>.
 
 ## Status
 

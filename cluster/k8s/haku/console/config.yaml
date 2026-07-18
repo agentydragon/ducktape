@@ -20,8 +20,10 @@ mcp:
     # Read-only IBKR market data. The ibkr-mcp OIDCProxy supports DCR, so the
     # console registers as the approving operator (agentydragon) — the same
     # front door claude.ai uses. No machine token / direct_jwt_trust. Tools
-    # surface as ibkr_<tool> and default to manual approval per call.
-    - id: ibkr
+    # surface as interactive_brokers_<tool> and default to manual approval per
+    # call. The id is the agent-facing tool prefix; the deployed host/namespace
+    # keep the shorter ibkr-mcp name.
+    - id: interactive_brokers
       server_url: https://ibkr-mcp.allegedly.works/mcp
       operator_oauth:
         client_name: Haku Console
