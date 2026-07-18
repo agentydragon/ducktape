@@ -5,12 +5,6 @@ grocy_url: https://grocy-sf.allegedly.works
 auth:
   oidc_issuer: https://auth.allegedly.works/application/o/grocy-mcp-sf/
   public_base_url: https://grocy-mcp-sf.allegedly.works
-  # Also accept haku's machine token from the dedicated grocy-mcp-haku-sf provider,
-  # which shares grocy-mcp-sf's signing key so the configured JWKS validates it.
-  direct_jwt_trusts:
-    - issuer: https://auth.allegedly.works/application/o/grocy-mcp-haku-sf/
-      audiences: [grocy-mcp-haku-sf]
-      required_scopes: [openid]
 persistence:
   kind: valkey
   host: grocy-sf-valkey-ovh-master.grocy-sf.svc.cluster.local

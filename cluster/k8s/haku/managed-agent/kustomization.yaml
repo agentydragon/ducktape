@@ -7,4 +7,3 @@ resources:
   - environment-key.sops.yaml
   - haku-forgejo-tea.sops.yaml
   - deployment.yaml
-  - grocy-token-eso.yaml

@@ -47,16 +47,10 @@ tools:
       enabled: true
       permission_policy:
         type: always_allow
-  # grocy-sf — read-only grocy facade.
-  - type: mcp_toolset
-    mcp_server_name: grocy-sf
-    default_config:
-      enabled: true
-      permission_policy:
-        type: always_allow
-  # haku-console — the console's aggregated MCP catalog (Tana reads to start). Auto-allow
-  # (the console's own approval queue is the trust boundary, not this policy); without it the
-  # mcp_toolset defaults to always_ask and parks an unattended scan.
+  # haku-console — the console's aggregated MCP catalog (Tana + Grocy reads to start,
+  # plus approval-gated writes). Auto-allow (the console's own approval queue is the
+  # trust boundary, not this policy); without it the mcp_toolset defaults to always_ask
+  # and parks an unattended scan.
   - type: mcp_toolset
     mcp_server_name: haku-console
     default_config:
@@ -67,9 +61,6 @@ mcp_servers:
   - type: url
     name: kubectl-machine
     url: https://kubectl-machine-mcp.allegedly.works/mcp
-  - type: url
-    name: grocy-sf
-    url: https://grocy-mcp-sf.allegedly.works/mcp
   - type: url
     name: haku-console
     url: https://haku.allegedly.works/mcp

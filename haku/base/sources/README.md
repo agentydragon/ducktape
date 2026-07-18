@@ -42,8 +42,8 @@ grows its own techniques and records them in its state `memory/`.
 - [`cpap`](cpap.md) — the operator's CPAP sleep therapy data (AHI, leak, compliance);
   a git clone of the private `cpap-data` repo using your existing Forgejo login.
 - [`grocy`](grocy.md) — the operator's household stock (expiring /
-  below-minimum items, shopping suggestions); reached via the grocy-sf MCP
-  (`fastmcp`), read-only because the `haku` Grocy user has empty permissions.
+  below-minimum items, shopping suggestions); reached via haku-console's `grocy-sf`
+  MCP tools (read subset auto-approved, proxied like Gmail/Calendar/osm/Tana).
 - [`activitywatch`](activitywatch.md) — the operator's device activity: presence
   (at which computer, right now), focus, and per-day time-use; read-only via an
   Authentik two-step token mint. The prioritization signal the other sources lack.

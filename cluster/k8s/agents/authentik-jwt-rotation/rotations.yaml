@@ -71,39 +71,12 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/agent-box-zai
     sops_file: secrets/agent-box-zai-k8s-jwt.yaml
     token_field: jwt
-  - name: haku-grocy
-    # Source JWT for haku's read-only access to the grocy-sf MCP. Issued by the
-    # dedicated grocy-mcp-haku-sf provider (30-day validity; shares grocy-mcp-sf's
-    # signing key so the MCP's JWKS validates it, and the MCP accepts its issuer via
-    # direct_jwt_trusts). No exchange_scopes — the MCP runs the
-    # jwt-bearer exchange into the grocy-sf proxy itself. The outpost then injects
-    # X-authentik-username=haku → the read-only `haku` Grocy user (empty perms).
-    provider_slug: grocy-mcp-haku-sf
-    scopes: openid profile email
-    credential_mode: user_password
-    expected_audiences:
-      - grocy-mcp-haku-sf
-    credentials_dir: /var/run/secrets/authentik/haku-grocy
-    sops_file: secrets/haku-grocy-jwt.yaml
-    token_field: jwt
-    # Also publish the JWT (+ exp) as an in-cluster Secret so tf/gitops/haku-cloud-agent
-    # can hand it to the Anthropic vault as the grocy-sf MCP bearer (read via a no-fail
-    # lookup — absent secret just disables the grocy credential). Mirrors haku-k8s. ESO
-    # mirrors this Secret into haku-sandbox for the self-hosted Haku home (a standalone
-    # ClusterExternalSecret, decoupled from the rotator — see cluster/k8s/haku/managed-agent).
-    k8s_secret:
-      path: cluster/k8s/haku/cloud-agent-tf/haku-grocy-sf-token.sops.yaml
-      name: haku-cloud-grocy-sf-token
-      namespace: flux-system
-    # The MCP validates the JWT via JWKS before anything else; a bare GET on
-    # /mcp answers 401 on a bad bearer and a non-auth status once past auth.
-    probe:
-      url: https://grocy-mcp-sf.allegedly.works/mcp
   - name: haku-mail
     # JWT for haku's mailbox (Stalwart, cluster/k8s/haku/mailbox). The server's
     # OIDC directory validates tokens against the dedicated stalwart-haku
     # provider and pins requireAudience to its client_id; haku presents this as
-    # an HTTP bearer on JMAP. Same `haku` SA/app-password as haku-grocy; the
+    # an HTTP bearer on JMAP. Same `haku` SA/app-password as the shared service
+    # account (tf/gitops/agent-machine-access/haku-service-account.tf); the
     # provider determines the audience.
     provider_slug: stalwart-haku
     scopes: openid profile email

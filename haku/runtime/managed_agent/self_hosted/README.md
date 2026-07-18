@@ -43,8 +43,8 @@ Only the **environment / agent / deployment** are imperative. The **vault + all 
 credentials are declarative and shared**: the cloud agent module
 (`tf/gitops/haku-cloud-agent`) owns one vault used by both agents, publishing its ID
 to the `haku-cloud-agent-ids` Secret; `provision.sh` reads that ID instead of creating
-its own vault, so haku-console/kubectl-machine/grocy-sf tokens get TF
-drift-detection + rotation for the self-hosted agent too. The agent's toolset is
+its own vault, so haku-console/kubectl-machine tokens get TF drift-detection +
+rotation for the self-hosted agent too. The agent's toolset is
 identical to the cloud agent's — kept in step by
 `//haku/base:test_agent_config_ssot`.
 
@@ -117,11 +117,11 @@ check it in a worker session with `tea whoami`.
 
 The fixed toolset is `agent_toolset_20260401` (`bash/read/write/edit/glob/grep`);
 Haku reaches Plaid (`psql`), Google (`curl`), and the cluster (`kubectl`,
-in-cluster `haku` SA) through `bash`. On top of that it has three native
+in-cluster `haku` SA) through `bash`. On top of that it has two native
 `mcp_toolset`s (Anthropic-side, shared-vault auth), identical to the cloud agent:
-`haku-console` (the console's aggregated MCP catalog — Tana reads to start), `grocy-sf`
-(read-only grocy), and `kubectl-machine` (a machine-JWT cluster path — redundant here
-with in-pod `kubectl`, kept for parity).
+`haku-console` (the console's aggregated MCP catalog — Tana + Grocy reads to
+start, plus approval-gated writes) and `kubectl-machine` (a machine-JWT cluster
+path — redundant here with in-pod `kubectl`, kept for parity).
 
 ## k8s wiring
 

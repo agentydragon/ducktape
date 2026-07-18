@@ -71,7 +71,7 @@ resource "authentik_provider_oauth2" "hostexec" {
 }
 
 # Each provider needs an application object (Authentik hygiene; matches the other
-# machine providers, e.g. grocy-mcp-haku-sf). No policy binding: access is the
+# machine providers, e.g. stalwart-haku). No policy binding: access is the
 # federation trust above plus the operator's group membership, not an interactive
 # application grant.
 resource "authentik_application" "hostexec" {

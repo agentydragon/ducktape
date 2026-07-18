@@ -13,18 +13,22 @@ history holds the original full design rationale. The **actionable build checkli
   server safe for Haku, cheapest first: (1) **console-side auto-approval** — when
   haku-console already reaches the upstream's full-tool server (`remote_server_oauth`/
   `static_bearer`), allowlist the specific safe tools in `console/auto_approval.py`
-  instead of standing up a second Deployment (Tana went this way: the standalone
-  `tana-mcp-ro` facade was retired in favor of allowlisting `tana-rw`'s read tools in
-  the console); (2) **credential-scoping** — no facade at all, when the upstream itself
-  enforces per-user permissions: **Grocy**'s read-only `haku` user (empty perms → API
-  serves reads, 403s writes) _is_ the boundary, and Haku calls the grocy-sf MCP directly
-  (`base/sources/grocy.md`); (3) **a dedicated read-only facade** — the generic
-  `mcp-oauth-facade` image (default-deny tool allowlist + a server-held upstream
-  credential callers never see) for an upstream with neither of the above: a Deployment +
-  a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new
-  boundary code, the generalization is mechanical. Still to wire this way: PostScanMail
-  (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only — they forward
-  the full tool set — so they don't substitute for this.)
+  instead of standing up a second Deployment or a dedicated credential. Both Tana and
+  Grocy went this way: Tana's standalone `tana-mcp-ro` facade was retired in favor of
+  allowlisting `tana-rw`'s read tools in the console, and Grocy's dedicated read-only
+  `haku` Authentik identity (`grocy-mcp-haku-sf`) was retired in favor of the console's
+  existing `grocy-sf` entry — which also newly lets every runtime reach approval-gated
+  Grocy _writes_, something the read-only credential structurally could never do; (2)
+  **credential-scoping** — no facade at all, when the upstream itself enforces per-user
+  permissions and Haku only ever needs read access with no path to writes-with-approval:
+  cheaper than (1), but a dead end if write access is ever wanted, since the credential's
+  identity has no write permission to begin with; (3) **a dedicated read-only facade** —
+  the generic `mcp-oauth-facade` image (default-deny tool allowlist + a server-held
+  upstream credential callers never see) for an upstream with neither of the above: a
+  Deployment + a `config.yaml` allowlist + the upstream secret + a bearer-gated route —
+  no new boundary code, the generalization is mechanical. Still to wire this way:
+  PostScanMail (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only —
+  they forward the full tool set — so they don't substitute for this.)
 - **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing**
   API, and **none is known to exist** for `claude_code` routines (only `/fire`), so the
   interim "review past runs" affordance is the deep-link to the routine's `claude.ai/code`

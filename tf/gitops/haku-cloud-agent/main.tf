@@ -41,7 +41,7 @@ resource "claude-managed-agents_environment" "haku_cloud" {
 # SYNC: `model` + full toolset are identical to the self-hosted agent
 # (<../../../haku/runtime/managed_agent/self_hosted/haku.agent.yaml>). SSOT
 # haku/base/agent_shared.yaml, parity enforced by //haku/base:test_agent_config_ssot
-# — a red run shows any drift. The vault + all four credentials below are shared:
+# — a red run shows any drift. The vault + both credentials below are shared:
 # self-hosted references this vault via the haku-cloud-agent-ids output Secret.
 resource "claude-managed-agents_agent" "haku_cloud" {
   name  = "haku-cloud"
@@ -58,18 +58,14 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     cluster-wide read for diagnostics. Spin ephemeral pods in `haku-sandbox` to
     do in-cluster work (Plaid, in-cluster MCPs, git), then clean them up.
 
-    You also have READ-ONLY access to the operator's grocy stock/pantry via the
-    `grocy-sf` MCP server. Use it to answer questions about what's in stock,
-    expiring, or shopping-list-worthy. Writes are rejected server-side (403) —
-    never try to mutate stock.
-
     You also have access to haku-console's MCP catalog via the `haku-console`
-    MCP server — most relevantly READ-ONLY Tana tools (`tana_rw_search_nodes`,
-    `tana_rw_read_node`, `tana_rw_get_children`, `tana_rw_list_tags`, …), which
-    auto-approve under the console's reviewed policy. Write tools on that server
-    (and any other non-auto-approved console tool) route through the console's
-    operator-approval queue instead of executing directly — never expect them to
-    complete without a human clicking approve.
+    MCP server — most relevantly READ-ONLY Tana and Grocy tools
+    (`tana_rw_search_nodes`, `tana_rw_read_node`, `grocy_sf_stock_get`,
+    `grocy_sf_products_list`, …), which auto-approve under the console's reviewed
+    policy. Write tools on those servers (grocy_sf stock mutations, tana_rw node
+    edits, and any other non-auto-approved console tool) route through the
+    console's operator-approval queue instead of executing directly — never
+    expect them to complete without a human clicking approve.
 
     IMPORTANT (v0 bring-up): your operating manual and run procedure are not wired
     yet. Do exactly what each user message asks, then stop.
@@ -81,21 +77,14 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       name = "kubectl-machine"
       url  = "https://kubectl-machine-mcp.allegedly.works/mcp"
     },
-    # Read-only grocy-sf (the operator's pantry/stock). Always declared; it only
-    # works when the grocy-sf vault credential exists (see haku_grocy below). If the
-    # rotator hasn't published the token Secret, the credential is absent and these
-    # tools just fail to authenticate — the accepted fallback, not a hard error.
-    {
-      type = "url"
-      name = "grocy-sf"
-      url  = "https://grocy-mcp-sf.allegedly.works/mcp"
-    },
-    # haku-console's aggregated MCP catalog (Tana read tools to start; also grants
-    # reach to whatever else console exposes — Gmail/Calendar reads, osm, and every
+    # haku-console's aggregated MCP catalog (Tana + Grocy read tools to start; also
+    # grants reach to whatever else console exposes — Gmail/Calendar reads, osm, and every
     # approval-gated tool — gated by the console's own auto-approval/approval-queue
-    # policy, not by anything here). Supersedes the standalone `tana-mcp-ro` facade:
-    # Tana reads are now `tana-rw` tools allowlisted in the console's auto-approval
-    # policy (haku/console/auto_approval.py) instead of a second Deployment.
+    # policy, not by anything here). Supersedes the standalone `tana-mcp-ro` facade
+    # (Tana reads are now `tana-rw` tools allowlisted in the console's auto-approval
+    # policy) and Haku's dedicated read-only grocy-sf credential (`grocy-mcp-haku-sf`):
+    # console's existing grocy-sf catalog entry already exposed the same read tools,
+    # plus approval-gated writes the direct credential could never reach.
     {
       type = "url"
       name = "haku-console"
@@ -121,20 +110,10 @@ resource "claude-managed-agents_agent" "haku_cloud" {
         permission_policy = { type = "always_allow" }
       }
     },
-    # grocy-sf toolset — read-only by construction: the `haku` Grocy user has empty
-    # permissions, so the Grocy API serves reads (200) and rejects every write
-    # (403). always_allow is therefore safe; the server-side ACL is the fence.
-    {
-      type            = "mcp_toolset"
-      mcp_server_name = "grocy-sf"
-      default_config = {
-        permission_policy = { type = "always_allow" }
-      }
-    },
     # haku-console toolset — always_allow is safe here for the same reason it is
-    # for kubectl-machine/grocy-sf: the execution sandbox is not the trust boundary
-    # for this server, the console's own approval queue is (auto-approved reads
-    # execute immediately, everything else becomes a pending approval).
+    # for kubectl-machine: the execution sandbox is not the trust boundary for this
+    # server, the console's own approval queue is (auto-approved reads execute
+    # immediately, everything else becomes a pending approval).
     {
       type            = "mcp_toolset"
       mcp_server_name = "haku-console"
@@ -174,33 +153,6 @@ resource "claude-managed-agents_vault_credential" "haku_kube" {
     mcp_server_url   = "https://kubectl-machine-mcp.allegedly.works/mcp"
     token            = data.kubernetes_secret_v1.kube_token.data["jwt"]
     token_wo_version = tonumber(data.kubernetes_secret_v1.kube_token.data["token-exp"])
-  }
-}
-
-# The grocy-sf token Secret, published by the rotator (haku-grocy entry) and applied
-# by THIS module's kustomization (haku-grocy-sf-token.sops.yaml) — so it is always
-# present when this applies, exactly like kube_token above. Same hard
-# kubernetes_secret_v1 read: a tolerant kubernetes_resources lookup would need
-# cluster-wide CRD read for GVK discovery (tf-runner-role grants only secrets +
-# leases), not worth a chart-level RBAC grant for an always-committed secret.
-data "kubernetes_secret_v1" "grocy_token" {
-  metadata {
-    name      = "haku-cloud-grocy-sf-token"
-    namespace = "flux-system"
-  }
-}
-
-# Read-only grocy-sf bearer, bound to the grocy-sf MCP URL. token write-only;
-# token_wo_version = the JWT exp epoch so each rotation re-sends (as haku_kube).
-resource "claude-managed-agents_vault_credential" "haku_grocy" {
-  vault_id     = claude-managed-agents_vault.haku_cloud.id
-  display_name = "haku grocy-sf bearer (read-only, grocy-sf MCP)"
-
-  auth = {
-    type             = "static_bearer"
-    mcp_server_url   = "https://grocy-mcp-sf.allegedly.works/mcp"
-    token            = data.kubernetes_secret_v1.grocy_token.data["jwt"]
-    token_wo_version = tonumber(data.kubernetes_secret_v1.grocy_token.data["token-exp"])
   }
 }
 

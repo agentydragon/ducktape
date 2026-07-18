@@ -18,11 +18,8 @@ resource "authentik_provider_proxy" "grocy_sf" {
   invalidation_flow     = data.authentik_flow.invalidation.id
   access_token_validity = "hours=24"
 
-  # grocy_mcp_haku_sf federates here too, so haku's machine token can be exchanged
-  # for a grocy-sf proxy token (the MCP performs that jwt-bearer exchange).
   jwt_federation_providers = [
     authentik_provider_oauth2.grocy_mcp_sf.id,
-    authentik_provider_oauth2.grocy_mcp_haku_sf.id,
   ]
 }
 
@@ -103,45 +100,4 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
     client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
   }
-}
-
-# Dedicated machine client_credentials provider for haku's read-only grocy-sf MCP
-# token, kept separate from the user-facing grocy-mcp-sf so its long access-token
-# validity doesn't lengthen claude.ai user tokens. It SHARES grocy-mcp-sf's
-# self_signed signing key, so the grocy-mcp-sf JWKS (which the MCP's JWTVerifier is
-# configured from) already validates tokens minted here — the MCP only has to also
-# accept this provider's issuer (GROCY_MCP_AUTH__EXTRA_JWT_ISSUERS on the grocy-sf
-# MCP deployment). The grocy-sf proxy federates this provider too (above), so the
-# MCP's jwt-bearer exchange into the proxy works; the haku SA carries username
-# `haku`, which the outpost forwards to Grocy.
-resource "authentik_provider_oauth2" "grocy_mcp_haku_sf" {
-  name        = "grocy-mcp-haku-sf"
-  client_id   = "grocy-mcp-haku-sf"
-  client_type = "confidential"
-
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-
-  # 30d access-token validity — comfortable margin over the rotation CronJob's 24h
-  # re-mint threshold (re-mints ~every 29 days). See cluster/k8s/agents/authentik-jwt-rotation/.
-  access_token_validity = "days=30"
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-  ]
-
-  # client_credentials doesn't redirect, so allowed_redirect_uris is omitted.
-}
-
-resource "authentik_application" "grocy_mcp_haku_sf" {
-  name              = "Grocy MCP Haku (SF)"
-  slug              = "grocy-mcp-haku-sf"
-  protocol_provider = authentik_provider_oauth2.grocy_mcp_haku_sf.id
-  meta_description  = "Machine client_credentials provider for haku's read-only grocy-sf MCP access"
 }

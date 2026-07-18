@@ -6,9 +6,10 @@
 # issuer and pins requireAudience to this client_id, so kubectl-sandbox JWTs
 # (or any other Authentik app's tokens) can never authenticate to the mailbox.
 # The authentik-jwt-rotation CronJob mints the JWT for the existing `haku`
-# service account (haku_grocy above; preferred_username=haku is what Stalwart's
-# claimUsername resolves to the pre-created `haku` principal) — see the
-# haku-mail entry in cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml.
+# service account (authentik_user.haku_grocy, haku-service-account.tf;
+# preferred_username=haku is what Stalwart's claimUsername resolves to the
+# pre-created `haku` principal) — see the haku-mail entry in
+# cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml.
 
 resource "authentik_provider_oauth2" "stalwart_haku" {
   name        = "stalwart-haku"

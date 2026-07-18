@@ -21,14 +21,15 @@ model: claude-sonnet-4-6
 toolset_policies:
   agent_toolset_20260401: always_allow
   kubectl-machine: always_allow
-  grocy-sf: always_allow
   haku-console: always_allow
 # MCP server name -> URL.
 mcp_urls:
   kubectl-machine: https://kubectl-machine-mcp.allegedly.works/mcp
-  grocy-sf: https://grocy-mcp-sf.allegedly.works/mcp
-  # haku-console's aggregated MCP catalog — Tana reads (tana_rw_*) to start; also
-  # grants reach to whatever else console exposes (Gmail/Calendar reads, osm, and
-  # every approval-gated tool), gated by the console's own auto-approval/approval
-  # queue, not by this always_allow. Supersedes the standalone tana-mcp-ro facade.
+  # haku-console's aggregated MCP catalog — Tana + Grocy reads to start (tana_rw_*,
+  # grocy_sf_*); also grants reach to whatever else console exposes (Gmail/Calendar
+  # reads, osm, and every approval-gated tool, including grocy-sf/tana-rw writes),
+  # gated by the console's own auto-approval/approval queue, not by this always_allow.
+  # Supersedes the standalone tana-mcp-ro facade and Haku's dedicated read-only
+  # grocy-sf credential (grocy-mcp-haku-sf) — console's existing grocy-sf catalog
+  # entry already exposed the same read tools plus approval-gated writes.
   haku-console: https://haku.allegedly.works/mcp

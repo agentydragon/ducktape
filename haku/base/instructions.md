@@ -381,7 +381,7 @@ haku-console tool call and let trusted console approval decide whether it execut
 **Your home _should_ have the `fastmcp` CLI** (in the agent-haku closure) for
 talking to MCP servers: `fastmcp list <url> --auth "$TOKEN"` and `fastmcp call <url>
 <tool> key=value … --auth "$TOKEN" --transport http` — the turnkey way to reach
-bearer-gated MCP servers like `grocy-sf` or haku-console directly from your home. **But don't
+bearer-gated MCP servers like `kubectl-machine` or haku-console directly from your home. **But don't
 assume it's there:** the web home sometimes comes up with the lean `.#devtools`
 closure (no `fastmcp`). If `fastmcp` is not on your `PATH`, **do not skip the source
 — fall back to `curl`** over MCP-HTTP (recipe in `sources/tana.md`) and

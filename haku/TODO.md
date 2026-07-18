@@ -132,10 +132,13 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
 - **PostScanMail** — unopened-mail → open/discard/shred suggestions. First filter
   facade to build; also proves the `client_credentials` facade-auth path.
 
-**Grocy is wired** (`base/sources/grocy.md`) — it didn't need a tool-filter facade:
-the `haku` Grocy user has empty permissions, so the Grocy API enforces read-only
-(200 reads / 403 writes) server-side. Haku reaches the grocy-sf MCP directly with a
-rotated JWT, mirrored into `haku-sandbox` by ESO as `haku-cloud-grocy-sf-token`.
+**Grocy is wired** (`base/sources/grocy.md`) — routed through haku-console's `grocy-sf`
+MCP entry (`GROCY_READ_TOOLS` in `console/auto_approval.py` auto-approve; every write
+tool stays approval-gated). Haku's dedicated read-only `haku` Grocy identity
+(`grocy-mcp-haku-sf` Authentik provider, its JWT rotation, and the ESO reflection into
+`haku-sandbox`) was retired — console-side allowlisting needed no separate credential,
+and unlike the direct read-only path it also lets every runtime reach approval-gated
+Grocy writes.
 
 **Tana is wired** (`base/sources/tana.md`) — routed through haku-console's `tana-rw`
 MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
