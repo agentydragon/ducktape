@@ -25,11 +25,11 @@ let
     pkgs.nspr
     pkgs.nss
     pkgs.pango
-    pkgs.xorg.libXcomposite
-    pkgs.xorg.libXdamage
+    pkgs.libxcomposite
+    pkgs.libxdamage
     pkgs.libxkbcommon
-    pkgs.xorg.libXrandr
-    pkgs.xorg.libXfixes
+    pkgs.libxrandr
+    pkgs.libxfixes
     pkgs.xorg.libxshmfence
   ];
 in

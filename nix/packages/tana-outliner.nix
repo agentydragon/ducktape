@@ -41,13 +41,13 @@ pkgs.stdenv.mkDerivation {
     nspr
     nss
     pango
-    xorg.libX11
-    xorg.libXcomposite
-    xorg.libXdamage
-    xorg.libXext
-    xorg.libXfixes
-    xorg.libXrandr
-    xorg.libxcb
+    libx11
+    libxcomposite
+    libxdamage
+    libxext
+    libxfixes
+    libxrandr
+    libxcb
   ];
 
   runtimeDependencies = with pkgs; [
@@ -81,8 +81,8 @@ pkgs.stdenv.mkDerivation {
             libGL
             libxkbcommon
             mesa
-            xorg.libX11
-            xorg.libxcb
+            libx11
+            libxcb
           ]
         )
       }"

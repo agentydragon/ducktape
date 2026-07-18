@@ -64,14 +64,14 @@ pkgs.stdenv.mkDerivation {
     nss
     pango
     util-linux # libuuid
-    xorg.libX11
-    xorg.libXcomposite
-    xorg.libXdamage
-    xorg.libXext
-    xorg.libXfixes
-    xorg.libXrandr
-    xorg.libXtst
-    xorg.libxcb
+    libx11
+    libxcomposite
+    libxdamage
+    libxext
+    libxfixes
+    libxrandr
+    libxtst
+    libxcb
   ];
 
   runtimeDependencies = [ (lib.getLib pkgs.systemd) ];
@@ -107,9 +107,9 @@ pkgs.stdenv.mkDerivation {
             libsecret
             libxkbcommon
             mesa
-            xorg.libX11
-            xorg.libXtst
-            xorg.libxcb
+            libx11
+            libxtst
+            libxcb
           ]
         )
       }" \

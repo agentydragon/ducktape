@@ -44,7 +44,10 @@ in
     vimAlias = true;
     withNodeJs = false;
     withPython3 = false;
-    extraLuaConfig = builtins.readFile ../config/nvim/init.lua;
+    # withRuby/initLua: pin the pre-26.05 behavior explicitly (stateVersion
+    # already implies it) to silence the HM 26.05 default-flip / rename warnings.
+    withRuby = true;
+    initLua = builtins.readFile ../config/nvim/init.lua;
     plugins = with pkgs.vimPlugins; [
       (nvim-treesitter.withPlugins (
         p: with p; [

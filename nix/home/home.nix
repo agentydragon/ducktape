@@ -139,6 +139,9 @@ in
   xdg.userDirs = {
     enable = true;
     createDirectories = false;
+    # Pin the pre-26.05 default (silence the HM 26.05 default-flip warning;
+    # stateVersion already implies true).
+    setSessionVariables = true;
     desktop = "$HOME";
     documents = "$HOME";
     download = "$HOME/downloads";
