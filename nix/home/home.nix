@@ -44,6 +44,10 @@ let
 
   tanaClaude = import ./claude_code/tana-claude.nix { inherit pkgs; };
 
+  # `gemini-claude`: Claude Code on Google Gemini via the cluster LiteLLM proxy, reading
+  # $GEMINI_LITELLM_KEY. See ./claude_code/gemini-claude.nix.
+  geminiClaude = import ./claude_code/gemini-claude.nix { inherit pkgs; };
+
   mkHomeGtkBookmark =
     { path, title }:
     "file://${config.home.homeDirectory}/${path} ${title}";
@@ -128,6 +132,12 @@ in
     CODEX_LITELLM_KEY = {
       sopsFile = ../../tf/gitops/litellm-keys/litellm-codex-clients-key.yaml;
       key = "litellm_codex_key";
+    };
+    # Gemini-scoped LiteLLM virtual key powering the `gemini-claude` alias below
+    # (LiteLLM → Google Gemini). The upstream GEMINI_API_KEY stays in-cluster only.
+    GEMINI_LITELLM_KEY = {
+      sopsFile = ../../tf/gitops/litellm-keys/litellm-gemini-clients-key.yaml;
+      key = "litellm_gemini_key";
     };
   };
 
@@ -350,6 +360,7 @@ in
       zClaude
       codexClaude
       tanaClaude
+      geminiClaude
 
       go
 

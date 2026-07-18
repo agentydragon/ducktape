@@ -710,6 +710,17 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
           - *agent-box-codex-user
+  # gemini-clients virtual key (laptop gemini-claude — laptop-only). Reuses the narrow
+  # litellm-zai-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
+  - path_regex: tf/gitops/litellm-keys/litellm-gemini-clients-key\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *litellm-zai-clients
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Haku read-only grocy-sf MCP bearer JWT (auto-rotated by the
   # authentik-jwt-rotation CronJob). Same readers as haku-k8s-jwt: the Haku
   # routine (haku) plus admin + user keys for break-glass.

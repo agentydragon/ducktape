@@ -77,6 +77,19 @@ locals {
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
   ]
+  # Google Gemini models (GEMINI_MODELS in generate_litellm.py) fronted through the
+  # `gemini/` provider. Consumed by the laptop gemini-claude alias.
+  gemini_client_models = [
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-pro-latest",
+    "gemini-flash-latest",
+  ]
 }
 
 # One static key per worker lane, held by that lane's llm-proxy (never by workers —
@@ -405,6 +418,42 @@ resource "kubernetes_secret" "codex_clients_key" {
 
   data = {
     CODEX_LITELLM_KEY = litellm_key.codex_clients.key
+  }
+}
+
+# ============================================================================
+# gemini-clients — scoped key for laptop gemini-claude (Google Gemini via `gemini/`)
+# ============================================================================
+# Same Pattern-B pinned key (like zai-clients / tana-clients): value in a git SOPS file
+# in this module dir, decrypted with the reused litellm-zai-clients narrow age key. The
+# laptop gemini-claude wrapper reads it via ducktape.sopsEnv (GEMINI_LITELLM_KEY). LiteLLM
+# reaches Google with the in-cluster GEMINI_API_KEY, so this scoped key never carries it.
+
+data "sops_file" "gemini_clients_key" {
+  source_file = "${path.module}/litellm-gemini-clients-key.yaml"
+}
+
+resource "litellm_team" "gemini_clients" {
+  team_alias = "gemini-clients"
+  router_settings = {
+    # A quota-throttled preview model (gemini-3-pro-preview) degrades to the cheap,
+    # high-quota flash tier instead of hard-failing Claude Code.
+    fallbacks = [
+      {
+        model           = "*"
+        fallback_models = ["gemini-3.5-flash"]
+      }
+    ]
+  }
+}
+
+resource "litellm_key" "gemini_clients" {
+  key_alias = "gemini-clients"
+  key       = data.sops_file.gemini_clients_key.data["litellm_gemini_key"]
+  models    = concat(["claude-*"], local.gemini_client_models)
+  team_id   = litellm_team.gemini_clients.id
+  metadata = {
+    consumer = "laptop-gemini-claude"
   }
 }
 
