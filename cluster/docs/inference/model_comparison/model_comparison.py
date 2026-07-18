@@ -27,6 +27,14 @@
 # ±several points as noise, and read the trend, not the decimal. Anchor numbers for
 # the very newest closed models had conflicting web reports; the shakier ones are
 # omitted or flagged rather than guessed.
+#
+# **Reasoning-effort caveat (the speed×quality plot isn't strictly apples-to-apples).**
+# Reasoning models spend a variable, usually large, number of thinking tokens per
+# answer. So (a) `decode tok/s` is *not* answers/s — a reasoner at 200 tok/s that
+# emits 2000 thinking tokens is far slower per task than a direct model at 200 tok/s;
+# and (b) most published eval scores are at *high* reasoning effort (more tokens →
+# higher score), a cost the speed axis doesn't show. A stricter version would use
+# tokens-per-task / answers-per-hour at a fixed effort. Left as future work.
 
 # %%
 from dataclasses import dataclass, field
@@ -47,6 +55,9 @@ SOURCES = {
     "gpt5": "https://openai.com/index/introducing-gpt-5/",
     "sonnet45": "https://www.anthropic.com/news/claude-sonnet-4-5",
     "runs": "cluster/docs/inference/runs/  (E1–E5, measured on 2×5090)",
+    "glm52": "https://venturebeat.com/technology/z-ais-open-weights-glm-5-2-beats-gpt-5-5-on-multiple-long-horizon-coding-benchmarks-for-1-6th-the-cost",
+    "glm52_colibri": "cluster/docs/inference/runs/2026-07-14_glm52_colibri/  (measured 0.28 tok/s)",
+    "oss120": "https://arxiv.org/abs/2508.10925",  # same gpt-oss card (120b rows)
 }
 
 
@@ -75,12 +86,16 @@ MEASURED = [
 
 # --- THIRD-PARTY EVALS (ext) ---------------------------------------------------
 # SWE-bench Verified — the one eval with coverage across all our models + anchors.
-# (score, source_key, kind)  kind: "local" = we can run it; "anchor" = closed frontier ref
+# (score, source_key, kind)  kind: "resident" = fits our 64 GB VRAM;
+# "offload" = we can run it but only via CPU/RAM/disk offload (slow);
+# "anchor" = closed frontier reference we cannot run.
 SWEBENCH = {
-    "Qwen3-Coder-30B": (51.9, "qwen3coder", "local"),
-    "gpt-oss-20b": (60.7, "gptoss", "local"),  # high reasoning effort
-    "Devstral-24B": (68.0, "devstral", "local"),
-    "Qwen3.5-35B-A3B": (69.2, "qwen35", "local"),
+    "Qwen3-Coder-30B": (51.9, "qwen3coder", "resident"),
+    "gpt-oss-20b": (60.7, "gptoss", "resident"),  # high reasoning effort
+    "Devstral-24B": (68.0, "devstral", "resident"),
+    "Qwen3.5-35B-A3B": (69.2, "qwen35", "resident"),
+    "gpt-oss-120b": (62.4, "oss120", "offload"),  # runs on Ollama CPU-offload
+    "GLM-5.2 (744B)": (77.8, "glm52", "offload"),  # ran on Colibri disk-streamed
     "Claude Sonnet 4.5": (77.2, "sonnet45", "anchor"),  # 82.0 w/ parallel compute
     "Gemini 3.5 Flash": (78.8, "valsai_swe", "anchor"),
     "GPT-5.5": (82.6, "valsai_swe", "anchor"),
@@ -88,17 +103,32 @@ SWEBENCH = {
     "Claude Fable 5": (95.0, "valsai_swe", "anchor"),
 }
 
+# Runnable models (resident + offload) placed in measured-speed × SWE-bench space.
+# decode tok/s is what WE measured; offload models are 100–5000× slower.
+# label: (measured decode tok/s, swe_bench %, kind)
+RUNNABLE_QUALITY = {
+    "gpt-oss-20b": (1300, 60.7, "resident"),
+    "Qwen3-Coder-30B": (199, 51.9, "resident"),
+    "Qwen3.5-35B-A3B": (211, 69.2, "resident"),
+    "Devstral-24B": (92, 68.0, "resident"),
+    "gpt-oss-120b": (1.5, 62.4, "offload"),  # Ollama CPU offload (~1.5 tok/s)
+    "GLM-5.2 (744B)": (0.28, 77.8, "offload"),  # Colibri disk-streamed experts
+}
+OFFLOAD_COLOR = "#16a085"
+
 # Reasoning-eval coverage (only models that report them; coding specialists mostly don't).
 # metric -> {model: value}
 REASONING = {
     "GPQA Diamond": {
         "gpt-oss-20b": 71.5,
+        "gpt-oss-120b": 80.9,
         "Qwen3.5-35B-A3B": 84.2,
         "Claude Sonnet 4.5": 83.4,
         "GPT-5": 88.4,
     },
     "AIME 2025": {  # gpt-oss & GPT-5/Sonnet without-tools where noted
         "gpt-oss-20b": 98.7,  # with tools
+        "gpt-oss-120b": 92.5,  # high, no tools
         "Qwen3.5-35B-A3B": 93.3,  # AIME'26 (card doesn't split; treat as recent-AIME)
         "Claude Sonnet 4.5": 87.0,  # without tools
         "GPT-5": 94.6,  # without tools
@@ -215,49 +245,61 @@ fig.savefig("fig2_context.png", bbox_inches="tight")
 
 # %%
 fig, ax = plt.subplots(figsize=(9, 5))
+kind_color = {"resident": LOCAL_COLOR, "offload": OFFLOAD_COLOR, "anchor": ANCHOR_COLOR}
 items = sorted(SWEBENCH.items(), key=lambda kv: kv[1][0])
 names = [k for k, _ in items]
 scores = [v[0] for _, v in items]
-kinds = [v[2] for _, v in items]
-colors = [LOCAL_COLOR if k == "local" else ANCHOR_COLOR for k in kinds]
+colors = [kind_color[v[2]] for _, v in items]
 bars = ax.barh(names, scores, color=colors)
 for b, s in zip(bars, scores):
     ax.text(s + 0.6, b.get_y() + b.get_height() / 2, f"{s:.1f}", va="center", fontsize=8)
 ax.set_xlabel("SWE-bench Verified (% resolved)")
-ax.set_title("SWE-bench Verified: local (blue) vs closed frontier (red)  ·  ext")
+ax.set_title("SWE-bench Verified: resident vs offload vs closed frontier  ·  ext")
 ax.set_xlim(0, 100)
-ax.legend(handles=[Patch(color=LOCAL_COLOR, label="runs on 2×5090"), Patch(color=ANCHOR_COLOR, label="closed frontier")], loc="lower right")
+ax.legend(
+    handles=[
+        Patch(color=LOCAL_COLOR, label="resident on 2×5090"),
+        Patch(color=OFFLOAD_COLOR, label="runs via offload (slow)"),
+        Patch(color=ANCHOR_COLOR, label="closed frontier"),
+    ],
+    loc="lower right",
+)
 fig.tight_layout()
 fig.savefig("fig3_swebench.png", bbox_inches="tight")
 
 # %% [markdown]
-# ## 4. The money plot — speed (measured) × coding skill (SWE-bench)
+# ## 4. The money plot — speed (measured, log) × coding skill (SWE-bench)
 #
-# Our runnable models placed in {decode tok/s we measured} × {SWE-bench}. Dashed
-# lines mark where the closed frontier sits — the vertical gap is "how far below
-# frontier coding skill our local options are," the x-axis is what we pay in speed.
+# Every runnable model in {decode tok/s we measured} × {SWE-bench}. Log x-axis,
+# because it spans **four orders of magnitude**: gpt-oss-20b at ~1300 tok/s down to
+# GLM-5.2 disk-streamed at 0.28 tok/s. The shape is the whole story — the resident
+# tier is fast but caps ~69 SWE-bench; the offload tier (GLM-5.2) reaches 77.8
+# (past every resident option, near the frontier) but ~5000× slower. Dashed lines =
+# closed frontier we can't run at all.
 
 # %%
-fig, ax = plt.subplots(figsize=(9, 5.5))
-pts = {
-    "Qwen3-Coder-30B": ("Qwen3-Coder-30B", 199),
-    "gpt-oss-20b (vLLM)": ("gpt-oss-20b", 1300),  # ~median measured
-    "Devstral-24B": ("Devstral-24B", 92),
-    "Qwen3.5-35B-A3B": ("Qwen3.5-35B-A3B", 211),
-}
-for lbl, (swe_key, tps) in pts.items():
-    y = SWEBENCH[swe_key][0]
-    ax.scatter(tps, y, s=90, color=LOCAL_COLOR, zorder=3)
-    ax.annotate(f"{lbl}\n({y:.0f} SWE-bench, {tps} tok/s)", (tps, y), textcoords="offset points", xytext=(8, 6), fontsize=8)
+fig, ax = plt.subplots(figsize=(9.5, 5.5))
+for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items():
+    color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
+    ax.scatter(tps, swe, s=100, color=color, zorder=3)
+    ax.annotate(f"{lbl}\n{swe:.0f} SWE / {tps:g} tok/s", (tps, swe), textcoords="offset points", xytext=(7, 5), fontsize=8)
 for name, (s, _, kind) in SWEBENCH.items():
     if kind == "anchor":
         ax.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.35)
-        ax.text(1500, s, f"{name} {s:.0f}", color=ANCHOR_COLOR, fontsize=7.5, va="center", ha="right")
-ax.set_xlabel("measured decode tokens/s (2×5090)  →  faster")
-ax.set_ylabel("SWE-bench Verified (%)  →  better coder")
-ax.set_title("Speed × coding skill: our runnable models vs the frontier line")
-ax.set_xlim(0, 1600)
+        ax.text(2600, s, f"{name} {s:.0f}", color=ANCHOR_COLOR, fontsize=7.5, va="center", ha="right")
+ax.set_xscale("log")
+ax.set_xlim(0.1, 3000)
 ax.set_ylim(45, 100)
+ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
+ax.set_ylabel("SWE-bench Verified (%)  →  better coder")
+ax.set_title("Speed × coding skill: resident (blue) vs offload (teal) vs frontier line (red)")
+ax.legend(
+    handles=[
+        Patch(color=LOCAL_COLOR, label="resident (fast, caps ~69)"),
+        Patch(color=OFFLOAD_COLOR, label="offload (near-frontier, ~5000× slower)"),
+    ],
+    loc="center left",
+)
 fig.tight_layout()
 fig.savefig("fig4_pareto.png", bbox_inches="tight")
 
