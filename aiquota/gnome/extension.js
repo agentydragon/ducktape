@@ -440,7 +440,7 @@ const QuotaIndicator = GObject.registerClass(
 
       const content = new St.BoxLayout({
         style_class: "quota-popup-bar-content",
-        vertical: true,
+        orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
       });
       item._summaryLabel = new St.Label({
@@ -450,7 +450,7 @@ const QuotaIndicator = GObject.registerClass(
       });
       item._bars = new St.BoxLayout({
         style_class: "quota-bars",
-        vertical: true,
+        orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
       });
 

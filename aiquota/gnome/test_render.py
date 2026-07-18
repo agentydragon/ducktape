@@ -64,6 +64,14 @@ _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 
 
+def test_extension_metadata_supports_gnome_50() -> None:
+    """Keep the distributed zip loadable by wyrm2's GNOME Shell generation."""
+    with zipfile.ZipFile(get_required_path(_EXTENSION_ZIP)) as extension_zip:
+        metadata = json.loads(extension_zip.read("metadata.json"))
+
+    assert "50" in metadata["shell-version"]
+
+
 @pytest.fixture(scope="module")
 def gnome_shell_test_image() -> str:
     return load_oci_image(_GNOME_SHELL_TEST)
