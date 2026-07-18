@@ -1,0 +1,63 @@
+{
+  "model": "qwen36-35b",
+  "base_url": "http://localhost:8005/v1",
+  "note": "latency from the first run (bench.log; process killed before it wrote summary), tool_calls + context from the re-run ctx ladder. ttft_p95/reasoning_tokens_median not captured in the killed run's log.",
+  "tool_calls": {
+    "single": { "ok": false, "n_calls": 0 },
+    "parallel": { "ok": false, "n_calls": 0, "cities": [] },
+    "multi_turn": { "ok": false, "error": "no tool call on first turn" }
+  },
+  "latency": [
+    {
+      "target_ctx": 8192,
+      "prompt_tokens": 7610,
+      "ttft_p50": 0.6799367359999451,
+      "ttft_p95": null,
+      "ttfc_p50": null,
+      "decode_tps_median": 219.9961247859341,
+      "reasoning_tokens_median": null,
+      "reps_ok": 3,
+      "reps": 3
+    },
+    {
+      "target_ctx": 32768,
+      "prompt_tokens": 31031,
+      "ttft_p50": 2.3802103499983787,
+      "ttft_p95": null,
+      "ttfc_p50": null,
+      "decode_tps_median": 227.5771820639821,
+      "reasoning_tokens_median": null,
+      "reps_ok": 3,
+      "reps": 3
+    },
+    {
+      "target_ctx": 131072,
+      "prompt_tokens": 128886,
+      "ttft_p50": 14.445942586004094,
+      "ttft_p95": null,
+      "ttfc_p50": null,
+      "decode_tps_median": 208.7040952758977,
+      "reasoning_tokens_median": null,
+      "reps_ok": 3,
+      "reps": 3
+    }
+  ],
+  "context": [
+    {
+      "target_ctx": 131072,
+      "allocated_ok": true,
+      "prompt_tokens": 124821,
+      "error": null,
+      "needle_depths_ok": [0.1, 0.5, 0.9],
+      "needle_depths_fail": []
+    },
+    {
+      "target_ctx": 262144,
+      "allocated_ok": true,
+      "prompt_tokens": 255671,
+      "error": null,
+      "needle_depths_ok": [0.1, 0.5, 0.9],
+      "needle_depths_fail": []
+    }
+  ]
+}

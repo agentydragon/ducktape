@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen36
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: vllm-qwen36
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-qwen36
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-qwen36
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          # Current-gen upgrade of E4's Qwen3.5-35B-A3B (same Qwen3_5Moe arch, GDN
+          # linear attention, FP8). Qwen3.6 reports 73.4 SWE-bench vs 3.5's 69.2.
+          # Add a reasoning parser so vLLM separates the verbose chain-of-thought
+          # from content — E4 (3.5) with only hermes emitted no parsed tool calls.
+          args:
+            - --model=Qwen/Qwen3.6-35B-A3B-FP8
+            - --served-model-name=qwen36-35b
+            - --tensor-parallel-size=2
+            - --max-model-len=262144
+            - --kv-cache-dtype=fp8
+            - --gpu-memory-utilization=0.85
+            - --max-num-seqs=32
+            - --enable-auto-tool-choice
+            - --tool-call-parser=hermes
+            - --reasoning-parser=qwen3
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              cpu: "4"
+              memory: 24Gi
+            limits:
+              nvidia.com/gpu: 2
+              memory: 48Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 160
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen36
+  namespace: llm-bench
+spec:
+  selector:
+    app.kubernetes.io/name: vllm-qwen36
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

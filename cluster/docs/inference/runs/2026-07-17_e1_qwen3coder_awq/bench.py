@@ -36,6 +36,10 @@ CHARS_PER_TOKEN = 3.8
 NEEDLE = "The vault access code is ZQ7-4413-XK."
 NEEDLE_ANSWER = "ZQ7-4413-XK"
 
+# Extra request-body fields (e.g. disabling a reasoning model's thinking so the
+# needle/tool probes get a direct answer in a normal budget). Set in main().
+EXTRA_BODY: dict = {}
+
 
 def build_filler(target_tokens: int) -> str:
     """A varied-but-cheap filler of about `target_tokens` tokens."""
@@ -68,6 +72,7 @@ class RequestResult:
     reasoning_tokens: int | None = None
     error: str | None = None
     text: str | None = None
+    reasoning_text: str | None = None
 
 
 def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int, timeout: float) -> RequestResult:
@@ -79,11 +84,13 @@ def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int
         "temperature": 0.0,
         "stream": True,
         "stream_options": {"include_usage": True},
+        **EXTRA_BODY,
     }
     dispatch = time.monotonic()
     first_tok: float | None = None
     first_content: float | None = None
     chunks: list[str] = []
+    reasoning_chunks: list[str] = []
     usage: dict | None = None
     try:
         with httpx.stream("POST", f"{base_url}/chat/completions", json=body, timeout=timeout) as r:
@@ -100,10 +107,14 @@ def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int
                     usage = event["usage"]
                 for choice in event.get("choices", []):
                     delta = choice.get("delta", {})
-                    reasoning = delta.get("reasoning_content")
+                    # vLLM reasoning parsers stream the CoT under either
+                    # `reasoning_content` (deepseek_r1 etc.) or `reasoning` (qwen3).
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                     content = delta.get("content")
                     if (reasoning or content) and first_tok is None:
                         first_tok = time.monotonic()
+                    if reasoning:
+                        reasoning_chunks.append(reasoning)
                     if content:
                         if first_content is None:
                             first_content = time.monotonic()
@@ -126,6 +137,7 @@ def stream_chat(base_url: str, model: str, messages: list[dict], max_tokens: int
         decode_tps=decode_tps,
         reasoning_tokens=(usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
         text="".join(chunks),
+        reasoning_text="".join(reasoning_chunks),
     )
 
 
@@ -177,8 +189,15 @@ class ContextRung:
     needle_depths_fail: list[float] = field(default_factory=list)
 
 
-def measure_context(base_url, model, target_ctx: int, depths: list[float], timeout: float) -> ContextRung:
-    """Allocated check (does a ~target_ctx request complete) + needle probe."""
+def measure_context(
+    base_url, model, target_ctx: int, depths: list[float], timeout: float, needle_max_tokens: int = 512
+) -> ContextRung:
+    """Allocated check (does a ~target_ctx request complete) + needle probe.
+
+    needle_max_tokens must be generous: a verbose reasoning model spends most of
+    its budget on chain-of-thought before emitting the answer (E4 lesson), so a
+    tight budget truncates the answer and falsely reports a needle miss.
+    """
     rung = ContextRung(target_ctx=target_ctx, allocated_ok=False)
     for depth in depths:
         body_tokens = target_ctx - 4096
@@ -192,12 +211,16 @@ def measure_context(base_url, model, target_ctx: int, depths: list[float], timeo
                 "Reply with only the code.",
             }
         ]
-        res = stream_chat(base_url, model, messages, 32, timeout)
+        res = stream_chat(base_url, model, messages, needle_max_tokens, timeout)
         if not res.ok:
             rung.error = res.error
             return rung
         rung.allocated_ok = True
         rung.prompt_tokens = res.prompt_tokens
+        # Retrieval hit only if the code is in the model's FINAL ANSWER (content),
+        # not its reasoning. A reasoning model must have a budget large enough to
+        # finish thinking AND answer; if it can't, that's a real limitation, not
+        # something to paper over by scanning the chain-of-thought.
         if NEEDLE_ANSWER in (res.text or ""):
             rung.needle_depths_ok.append(depth)
         else:
@@ -223,7 +246,8 @@ def tool_smoke(base_url, model, timeout: float) -> dict:
             "tools": tools,
             "tool_choice": tool_choice,
             "temperature": 0.0,
-            "max_tokens": 256,
+            "max_tokens": 1024,  # generous: reasoning models emit CoT before the tool call
+            **EXTRA_BODY,
         }
         r = httpx.post(f"{base_url}/chat/completions", json=body, timeout=timeout)
         r.raise_for_status()
@@ -278,6 +302,14 @@ def main() -> int:
     ap.add_argument("--out", default="summary.json")
     ap.add_argument("--latency-ctx", type=int, nargs="*", default=[8192, 32768, 131072])
     ap.add_argument("--context-rungs", type=int, nargs="*", default=[131072, 262144])
+    ap.add_argument(
+        "--needle-max-tokens", type=int, default=512, help="output budget for needle probe; raise for verbose reasoners"
+    )
+    ap.add_argument(
+        "--no-think",
+        action="store_true",
+        help="disable a Qwen reasoning model's thinking (enable_thinking=false) for direct answers",
+    )
     ap.add_argument("--reps", type=int, default=5)
     ap.add_argument("--timeout", type=float, default=600.0)
     ap.add_argument("--skip-context", action="store_true")
@@ -305,7 +337,9 @@ def main() -> int:
         print("== context ladder ==", file=sys.stderr)
         summary["context"] = []
         for ctx in args.context_rungs:
-            rung = measure_context(args.base_url, args.model, ctx, [0.1, 0.5, 0.9], args.timeout)
+            rung = measure_context(
+                args.base_url, args.model, ctx, [0.1, 0.5, 0.9], args.timeout, args.needle_max_tokens
+            )
             summary["context"].append(asdict(rung))
             print(
                 f"  ctx~{ctx}: allocated={rung.allocated_ok} ptok={rung.prompt_tokens} "
