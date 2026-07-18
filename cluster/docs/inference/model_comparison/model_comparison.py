@@ -257,7 +257,7 @@ fig.tight_layout()
 fig.savefig("fig2_context.svg", bbox_inches="tight")
 
 # %% [markdown]
-# ## 3. The money plot — measured speed × coding skill (SWE-bench)
+# ## 3. Speed × coding skill — measured tok/s vs SWE-bench
 #
 # The one combined view: every runnable model in {decode tok/s we measured} ×
 # {SWE-bench}, with each point labelled by the **setting its SWE number was measured
@@ -295,7 +295,7 @@ ax.legend(
     loc="center left",
 )
 fig.tight_layout()
-fig.savefig("fig3_money_plot.svg", bbox_inches="tight")
+fig.savefig("fig3_speed_vs_swe.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## 4. Reasoning evals — only source-verified, no-tools numbers
