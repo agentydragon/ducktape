@@ -178,9 +178,10 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
         "approval_mode": "approval_required",
     }
     # The read tools are present.
-    assert {"get_tool_call", "list_tool_calls"} <= tools.keys()
+    assert {"get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
+    assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
     # The promise preamble is in the envelope tool's description.
     assert "operator-approval queue" in tools["gmail_drafts_create"].description
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
@@ -551,6 +552,47 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
                 assert "standin_echo" not in {tool.name for tool in await client.list_tools()}
             async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
                 assert "standin_echo" in {tool.name for tool in await client.list_tools()}
+
+
+async def test_list_mcp_servers_reports_alive_and_degraded_state(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`list_mcp_servers` reflects each configured server for the caller's Operator: alive with its
+    tools when reachable, degraded with a reason when that Operator has not linked its account."""
+    with _serve_upstream() as upstream_url:
+        config_file = write_config(
+            tmp_path / "reflection.yaml",
+            {
+                "static_agents": _STATIC_AGENTS,
+                "mcp": {
+                    "servers": [{"id": "standin", "server_url": upstream_url, "operator_oauth": {"enabled": True}}]
+                },
+            },
+        )
+        app = create_app(console_settings(migrated_db_url, config_file=config_file))
+        connected_operator = app.state.operator_identity_store.resolve_configured_external_user_key("42")
+
+        async def access_token_for(*, server: object, operator_id: UUID) -> str | None:
+            return "connected-token" if operator_id == connected_operator else None
+
+        monkeypatch.setattr(app.state.mcp_operator_oauth_store, "access_token_for", access_token_for)
+
+        with serve_app_sync(app) as base:
+            async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+                alive = (await client.call_tool("list_mcp_servers", {})).structured_content
+            # A different Operator has not linked the account, so the same server reflects as degraded.
+            async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
+                degraded = (await client.call_tool("list_mcp_servers", {})).structured_content
+
+    assert alive is not None
+    assert degraded is not None
+    alive_standin = {s["server_id"]: s for s in alive["servers"]}["standin"]
+    assert alive_standin["status"] == "alive"
+    assert "echo" in {tool["name"] for tool in alive_standin["tools"]}
+
+    degraded_standin = {s["server_id"]: s for s in degraded["servers"]}["standin"]
+    assert degraded_standin["status"] == "degraded"
+    assert "Connect your standin MCP account" in degraded_standin["degraded_reason"]
 
 
 async def test_tool_discovery_is_concurrent_and_preserves_config_order(

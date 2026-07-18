@@ -44,7 +44,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
+from haku.console.mcp_approval import (
+    DegradedServerMetadata,
+    McpMetadataProvider,
+    ToolCapabilitiesResponse,
+    metadata_for_operator,
+)
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, _load_servers, server_tool_prefix
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
@@ -80,7 +85,8 @@ INSTRUCTIONS = (
     "operator's approval queue: they return the result if approved within a few seconds, otherwise "
     "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
     "resolve a promise. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
-    "by the console Operator's browser session execute directly and create no approval record."
+    "by the console Operator's browser session execute directly and create no approval record. Call "
+    "`list_mcp_servers` to see which servers are connected and, for any that are unavailable, why."
 )
 
 _REQUEST_PREAMBLE = (
@@ -374,6 +380,29 @@ def build_console_mcp(
     mcp.add_provider(OperatorToolProvider(context, actor_resolver))
 
     current_actor_dependency = Depends(actor_resolver.resolve)
+
+    @mcp.tool
+    async def list_mcp_servers(actor: ToolCallActor = current_actor_dependency) -> ToolCapabilitiesResponse:
+        """Reflect the MCP servers connected for your Operator and their state: each server's
+        `alive`/`degraded` status, the `degraded_reason` when it is unavailable (e.g. an
+        operator-OAuth account you have not linked yet), and the tools an alive server exposes. Use
+        it to see which `<server>_<tool>` proxies are callable and why a server's tools are missing.
+        """
+        servers = _load_servers(context.settings)
+        # gather so a slow (network) reflection of one server does not serialize the rest.
+        metadata = await asyncio.gather(
+            *(
+                metadata_for_operator(
+                    operator_id=actor.operator_id,
+                    server=server,
+                    metadata_provider=context.metadata_provider,
+                    oauth_store=context.oauth_store,
+                    provider_store=context.provider_store,
+                )
+                for server in servers
+            )
+        )
+        return ToolCapabilitiesResponse(servers=list(metadata))
 
     @mcp.tool
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
