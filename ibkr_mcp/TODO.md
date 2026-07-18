@@ -4,6 +4,15 @@ Items that can only be settled once the gateway is live (a paper login is
 active). Until then the server is built and tested but unexercised against real
 IBKR responses.
 
+## Reactivation check
+
+- [ ] **2026-07-31:** Check whether the IBKR paper-account application has
+      become active. If it has, unsuspend the `ibkr-mcp` Flux Kustomization and
+      `ibkr-mcp-server` ImageRepository, restore the `interactive_brokers` entry in
+      `cluster/k8s/haku/console/config.yaml`, complete one interactive paper login,
+      and verify `session_status` plus a delayed quote end to end before declaring
+      the service live. Then pin IBeam to the verified image digest.
+
 ## Once the gateway is running
 
 - **Free-tier data go/no-go**: confirm delayed quotes actually flow for the

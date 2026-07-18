@@ -4,6 +4,9 @@ metadata:
   name: ibkr-mcp
   namespace: flux-system
 spec:
+  # Suspended 2026-07-17 while the paper account application is still in
+  # progress. See ibkr_mcp/TODO.md for the dated reactivation check.
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m

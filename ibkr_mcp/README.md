@@ -118,13 +118,13 @@ and re-transcodes it.
 
 ## Status
 
-Built, tested, and wired: the MCP server package + read-only allowlist (`bbr test
-//ibkr_mcp/...`), the k8s/Flux deployment, image publishing + automation, the
-Terraform front door, and the haku-console entry.
+Built and tested, but operationally suspended as of 2026-07-17 because the paper
+account application is still in progress. The `ibkr-mcp` Flux Kustomization and
+image scan are suspended, the live workload/database resources were removed,
+and the server is not registered in Haku Console. The namespace and Authentik
+plumbing remain dormant so the shared Terraform stack can continue reconciling.
 
-Remaining before it serves traffic: the image publishes on merge (CI → Flux
-rollout); the paper login must activate and take its first IBKR Mobile 2FA tap;
-and the **live free-tier data verification** — confirm delayed quotes actually
-flow for the instruments in scope (the go/no-go gate that decides whether the Web
-API path holds or we fall back to the socket API). IBeam is pinned to `:latest`
-until that first successful run, then pinned to its digest.
+See <TODO.md> for the dated account-status check and reactivation checklist. The
+service must complete its first paper login and the **live free-tier data
+verification** before it is declared live. IBeam remains pinned to `:latest`
+until that first successful run, then should be pinned to its digest.

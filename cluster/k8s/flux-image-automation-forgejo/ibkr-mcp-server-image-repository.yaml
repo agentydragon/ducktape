@@ -4,6 +4,9 @@ metadata:
   name: ibkr-mcp-server
   namespace: flux-system
 spec:
+  # Keep image automation dormant with the suspended workload until the IBKR
+  # paper account is active. See ibkr_mcp/TODO.md.
+  suspend: true
   image: git.allegedly.works/ducktape-ci/ibkr-mcp
   interval: 5m
   # Private Forgejo package — authenticate the scan with the ducktape-ci
