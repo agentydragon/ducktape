@@ -10,18 +10,16 @@ Three parties share these shapes:
 
 from __future__ import annotations
 
-from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.exec.models import ExecArgsBase
 
-
-class RunAs(StrEnum):
-    """The POSIX user a command runs as on the target host."""
-
-    AGENTYDRAGON = "agentydragon"
-    ROOT = "root"
+# A POSIX username `hostexecd` may run as. Authorized by the `hostexec-<user>-<host>` Authentik
+# group and resolved via `getpwnam` on the host; the charset keeps it a safe group-name component
+# and a real account name.
+RunAsUser = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]*$", max_length=32)]
 
 
 class HostexecRunInput(ExecArgsBase):
@@ -33,9 +31,9 @@ class HostexecRunInput(ExecArgsBase):
     """
 
     host: str = Field(description="Target host to run on (e.g. 'wyrm2', 'rugged'). Must be in scope.")
-    run_as: RunAs = Field(
-        description="POSIX user to run as: 'agentydragon' (unprivileged) or 'root' (privileged). "
-        "Both require operator approval; 'root' is rendered loudly and requires a second confirm."
+    run_as: RunAsUser = Field(
+        description="POSIX username to run as (e.g. 'agentydragon', 'root'). Authorized by the "
+        "operator's `hostexec-<user>-<host>` group; 'root' is rendered loudly and needs a second confirm."
     )
 
 
@@ -49,7 +47,7 @@ class HostexecRequest(BaseModel):
     """
 
     token: str = Field(description="Operator's per-host Authentik token (aud=hostexec-<host>)")
-    run_as: RunAs
+    run_as: RunAsUser
     argv: list[str] = Field(min_length=1)
     cwd: str | None = None
     max_bytes: int = Field(ge=0, le=100_000)

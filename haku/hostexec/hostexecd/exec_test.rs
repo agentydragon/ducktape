@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use exec::{ExecRequest, ExitStatus, OutputStream, run_command};
+use users::Credentials;
 
 fn request(argv: &[&str], timeout_ms: u64, max_bytes: usize) -> ExecRequest {
     ExecRequest {
@@ -12,6 +13,7 @@ fn request(argv: &[&str], timeout_ms: u64, max_bytes: usize) -> ExecRequest {
         cwd: None,
         timeout: Duration::from_millis(timeout_ms),
         max_bytes,
+        credentials: None,
     }
 }
 
@@ -78,6 +80,21 @@ async fn reports_death_by_signal() {
         .await
         .unwrap();
     assert_eq!(r.exit, ExitStatus::Killed { signal: 15 });
+}
+
+#[tokio::test]
+async fn runs_with_credentials_set() {
+    // Exercise the uid/gid drop path with the *current* credentials (a no-op drop always permitted
+    // without privileges). Dropping to a different user needs root and is validated on a host.
+    let creds = Credentials {
+        uid: unsafe { libc::getuid() },
+        gid: unsafe { libc::getgid() },
+    };
+    let mut req = request(&["/bin/sh", "-c", "printf ok"], 5000, 1000);
+    req.credentials = Some(creds);
+    let r = run_command(&req).await.unwrap();
+    assert_eq!(r.exit, ExitStatus::Exited { exit_code: 0 });
+    assert_eq!(r.stdout, OutputStream::Full("ok".to_string()));
 }
 
 #[tokio::test]

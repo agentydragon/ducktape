@@ -18,6 +18,7 @@ use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::task::JoinHandle;
+use users::Credentials;
 
 /// How the process ended (mirrors the Python `ExitStatus` discriminated union).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -56,6 +57,11 @@ pub struct ExecRequest {
     pub cwd: Option<PathBuf>,
     pub timeout: Duration,
     pub max_bytes: usize,
+    /// Drop to these credentials for the child (`hostexecd` runs as root). `None` runs as the
+    /// current user. NOTE: this sets the primary uid/gid only; supplementary groups
+    /// (`initgroups`) are a known gap — a full drop needs a `pre_exec` hook, added with the
+    /// root-capable host test.
+    pub credentials: Option<Credentials>,
 }
 
 /// After the process is killed on timeout, how long to keep draining the pipes before giving up
@@ -74,6 +80,9 @@ pub async fn run_command(req: &ExecRequest) -> io::Result<ExecResult> {
         .kill_on_drop(true);
     if let Some(cwd) = &req.cwd {
         cmd.current_dir(cwd);
+    }
+    if let Some(creds) = req.credentials {
+        cmd.uid(creds.uid).gid(creds.gid);
     }
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().expect("stdout piped");

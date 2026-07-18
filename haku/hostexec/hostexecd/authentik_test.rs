@@ -5,7 +5,7 @@
 //! against its public key. In production the decoding key comes from Authentik's JWKS instead; the
 //! verification logic is identical.
 
-use authentik::{AuthError, RunAs, verify_operator_token};
+use authentik::{AuthError, verify_operator_token};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, encode};
 use serde::Serialize;
 
@@ -44,14 +44,14 @@ fn key() -> DecodingKey {
 #[test]
 fn accepts_authorized_operator() {
     let token = mint(ISSUER, "hostexec-wyrm2", &["hostexec-root-wyrm2"], FUTURE);
-    let op = verify_operator_token(&token, &key(), ISSUER, "wyrm2", RunAs::Root).unwrap();
+    let op = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "root").unwrap();
     assert_eq!(op.subject, SUBJECT);
 }
 
 #[test]
 fn rejects_missing_group() {
     let token = mint(ISSUER, "hostexec-wyrm2", &["hostexec-user-wyrm2"], FUTURE);
-    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", RunAs::Root);
+    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "root");
     assert!(matches!(r, Err(AuthError::NotAuthorized { .. })));
 }
 
@@ -59,7 +59,7 @@ fn rejects_missing_group() {
 fn rejects_wrong_run_as() {
     // Token authorizes root; a request to run as agentydragon needs the agentydragon group.
     let token = mint(ISSUER, "hostexec-wyrm2", &["hostexec-root-wyrm2"], FUTURE);
-    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", RunAs::Agentydragon);
+    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "agentydragon");
     assert!(matches!(r, Err(AuthError::NotAuthorized { .. })));
 }
 
@@ -67,7 +67,7 @@ fn rejects_wrong_run_as() {
 fn rejects_wrong_host_audience() {
     // A token minted for rugged must not be accepted by wyrm2's hostexecd.
     let token = mint(ISSUER, "hostexec-rugged", &["hostexec-root-wyrm2"], FUTURE);
-    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", RunAs::Root);
+    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "root");
     assert!(matches!(r, Err(AuthError::Token(_))));
 }
 
@@ -79,14 +79,14 @@ fn rejects_wrong_issuer() {
         &["hostexec-root-wyrm2"],
         FUTURE,
     );
-    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", RunAs::Root);
+    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "root");
     assert!(matches!(r, Err(AuthError::Token(_))));
 }
 
 #[test]
 fn rejects_expired() {
     let token = mint(ISSUER, "hostexec-wyrm2", &["hostexec-root-wyrm2"], PAST);
-    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", RunAs::Root);
+    let r = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "root");
     assert!(matches!(r, Err(AuthError::Token(_))));
 }
 
@@ -98,6 +98,6 @@ fn rejects_tampered_signature() {
         &token[..token.len() - 1],
         if token.ends_with('A') { "B" } else { "A" }
     );
-    let r = verify_operator_token(&tampered, &key(), ISSUER, "wyrm2", RunAs::Root);
+    let r = verify_operator_token(&tampered, &key(), ISSUER, "wyrm2", "root");
     assert!(matches!(r, Err(AuthError::Token(_))));
 }

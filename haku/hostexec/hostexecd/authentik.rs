@@ -17,22 +17,6 @@ use serde::Deserialize;
 /// Allowed clock skew when checking `exp` (matches `mcp_infra/authentik_auth`).
 const CLOCK_SKEW_SECONDS: u64 = 30;
 
-/// The POSIX user a command runs as. Selects which `hostexec-<run_as>-<host>` group authorizes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunAs {
-    Agentydragon,
-    Root,
-}
-
-impl RunAs {
-    fn as_str(self) -> &'static str {
-        match self {
-            RunAs::Agentydragon => "agentydragon",
-            RunAs::Root => "root",
-        }
-    }
-}
-
 /// The verified operator identity behind an accepted token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedOperator {
@@ -57,7 +41,8 @@ pub enum AuthError {
     NotAuthorized { required: String },
 }
 
-/// Verify that an operator's Authentik token authorizes running as `run_as` on `host`.
+/// Verify that an operator's Authentik token authorizes running as the POSIX user `run_as` on
+/// `host`.
 ///
 /// Checks, via `jsonwebtoken`: RS256 signature against `key`, `iss == issuer`, `aud` contains
 /// `hostexec-<host>`, and `exp` (30s skew). Then requires the `groups` claim to contain
@@ -68,7 +53,7 @@ pub fn verify_operator_token(
     key: &DecodingKey,
     issuer: &str,
     host: &str,
-    run_as: RunAs,
+    run_as: &str,
 ) -> Result<AuthenticatedOperator, AuthError> {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.leeway = CLOCK_SKEW_SECONDS;
@@ -77,7 +62,7 @@ pub fn verify_operator_token(
     validation.set_required_spec_claims(&["exp", "aud", "iss"]);
     let claims = decode::<Claims>(token, key, &validation)?.claims;
 
-    let required = format!("hostexec-{}-{}", run_as.as_str(), host);
+    let required = format!("hostexec-{run_as}-{host}");
     if !claims.groups.iter().any(|group| group == &required) {
         return Err(AuthError::NotAuthorized { required });
     }

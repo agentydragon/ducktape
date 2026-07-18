@@ -28,14 +28,52 @@ rust_test(
     ],
 )
 
+# Single-use replay store: reject a token hostexecd has already executed (the single-use rung).
+rust_library(
+    name = "replay",
+    srcs = ["replay.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:sha2",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "replay_test",
+    size = "small",
+    srcs = ["replay_test.rs"],
+    edition = "2024",
+    deps = [":replay"],
+)
+
+# Resolve a POSIX username to uid/gid via getpwnam (the privilege-drop target).
+rust_library(
+    name = "users",
+    srcs = ["users.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@crates//:libc"],
+)
+
+rust_test(
+    name = "users_test",
+    size = "small",
+    srcs = ["users_test.rs"],
+    edition = "2024",
+    deps = [":users"],
+)
+
 # Command execution: spawn argv (no shell), wall-clock timeout + kill, output caps with truncation
-# reporting. Result shape mirrors mcp_infra.exec.models.BaseExecResult.
+# reporting, and privilege-drop to run_as. Result shape mirrors mcp_infra.exec.models.BaseExecResult.
 rust_library(
     name = "exec",
     srcs = ["exec.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        ":users",
         "@crates//:serde",
         "@crates//:tokio",
     ],
@@ -48,6 +86,8 @@ rust_test(
     edition = "2024",
     deps = [
         ":exec",
+        ":users",
+        "@crates//:libc",
         "@crates//:serde_json",
         "@crates//:tokio",
     ],
