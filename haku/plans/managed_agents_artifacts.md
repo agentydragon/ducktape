@@ -38,7 +38,7 @@ ENV_ID=$(ant beta:environments create < haku.environment.yaml --transform id -r)
 
 Thin `system` (a pointer to the baked manual — behavior stays single-sourced in
 `haku/base/`); the full toolset auto-allowed (the Pod is the trust boundary); one
-`mcp_toolset` for `tana-mcp-ro` to start.
+`mcp_toolset` for haku-console's aggregated MCP catalog to start.
 
 ```yaml
 name: haku
@@ -59,11 +59,11 @@ tools:
       permission_policy:
         type: always_allow
   - type: mcp_toolset
-    mcp_server_name: tana-ro
+    mcp_server_name: haku-console
 mcp_servers:
   - type: url
-    name: tana-ro
-    url: https://tana-mcp-ro.allegedly.works/mcp
+    name: haku-console
+    url: https://haku.allegedly.works/mcp
 ```
 
 ```sh
@@ -71,32 +71,33 @@ AGENT_ID=$(ant beta:agents create < haku.agent.yaml --transform id -r)
 # Iterate later with: ant beta:agents update --agent-id "$AGENT_ID" --version N < haku.agent.yaml
 ```
 
-## 3. Vault + the `tana-mcp-ro` credential
+## 3. Vault + the haku-console credential
 
-One vault holds MCP creds; `tana-mcp-ro` is gated by the static bearer Haku
-already has reflected into `haku-sandbox` (`haku-tana-ro-token`). The token is
-piped via stdin (never on argv).
+One vault holds MCP creds; haku-console's aggregated `/mcp` is gated by the static
+bearer Haku already has reflected into `haku-sandbox` (`haku-console-agent-api`).
+The token is piped via stdin (never on argv).
 
 ```sh
 VAULT_ID=$(ant beta:vaults create --name haku-mcp --transform id -r)
 
-TANA_TOKEN=$(kubectl -n haku-sandbox get secret haku-tana-ro-token \
+CONSOLE_TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api \
   -o jsonpath='{.data.token}' | base64 -d)
 
 # static_bearer credential keyed by the MCP server URL. (verify: exact field
 # names — the skill documents mcp_oauth in full but only names static_bearer.)
 ant beta:vaults:credentials create --vault-id "$VAULT_ID" <<YAML
-display_name: tana-mcp-ro (read-only)
+display_name: haku-console
 auth:
   type: static_bearer
-  mcp_server_url: https://tana-mcp-ro.allegedly.works/mcp
-  token: ${TANA_TOKEN}
+  mcp_server_url: https://haku.allegedly.works/mcp
+  token: ${CONSOLE_TOKEN}
 YAML
 ```
 
-The vault is attached per session via `vault_ids` (see the supervisor). Upgrading
-`tana-mcp-ro` to its Authentik OIDC mode later swaps this for an `mcp_oauth`
-credential (auto-refresh), which is what the <../TODO.md> Tana entry wants.
+The vault is attached per session via `vault_ids` (see the supervisor). This
+superseded the original per-source `tana-mcp-ro` facade + `static_bearer` sketch
+this section described: routing through console's own approval-gated catalog
+needed no per-source facade or Authentik OIDC upgrade at all.
 
 ## 4. Worker image
 
@@ -330,7 +331,7 @@ spec:
 ## Wire-up order
 
 1. `ant beta:environments create` → `ENV_ID`; generate the environment key.
-2. `ant beta:vaults create` + the `tana-mcp-ro` credential → `VAULT_ID`.
+2. `ant beta:vaults create` + the haku-console credential → `VAULT_ID`.
 3. `ant beta:agents create` → `AGENT_ID`.
 4. Build + push the worker image; deploy `haku-managed-agent` (env key + `ENV_ID`).
 5. Deploy `haku-supervisor` (API key + the three IDs); point a Forgejo webhook at

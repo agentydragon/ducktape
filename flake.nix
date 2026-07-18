@@ -425,8 +425,8 @@
             paths = devToolPackages;
           };
           # Haku's agent closure: the single shared `.#devtools` plus agent
-          # CLIs: fastmcp (`call`/`list --auth <bearer>`) for in-cluster MCP
-          # facades (tana-mcp-ro), himalaya for Haku's own mailbox, and tea for
+          # CLIs: fastmcp (`call`/`list --auth <bearer>`) for haku-console and
+          # other MCP servers, himalaya for Haku's own mailbox, and tea for
           # Gitea/Forgejo issue/PR/release workflows. This is NOT a devtools
           # fork — it composes the one `.#devtools` and adds agent tools on
           # top. Installed by web_setup.sh when

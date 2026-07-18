@@ -57,15 +57,15 @@ class Deps:
     http: httpx.AsyncClient
 
 
-tana = MCPServerStreamableHTTP(
-    "https://tana-mcp-ro.allegedly.works/mcp",            # or the in-cluster Service
-    headers={"Authorization": f"Bearer {os.environ['TANA_RO_TOKEN']}"},
+haku_console = MCPServerStreamableHTTP(
+    "https://haku.allegedly.works/mcp",                    # haku-console's aggregated catalog
+    headers={"Authorization": f"Bearer {os.environ['HAKU_CONSOLE_TOKEN']}"},
 )
 
 haku = Agent(
     model,
     deps_type=Deps,
-    toolsets=[tana],            # (verify: toolsets= vs mcp_servers= for your version)
+    toolsets=[haku_console],    # (verify: toolsets= vs mcp_servers= for your version)
     instrument=True,            # native OTel → Langfuse (configure OTLP exporter via env)
     system_prompt=(
         "You are Haku, the operator's background executive assistant. Your manual "
@@ -214,8 +214,8 @@ spec:
             - { name: K8S_NAMESPACE, value: haku-sandbox }
             - name: LITELLM_API_KEY
               valueFrom: { secretKeyRef: { name: haku-litellm-key, key: key } }
-            - name: TANA_RO_TOKEN
-              valueFrom: { secretKeyRef: { name: haku-tana-ro-token, key: token } }
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom: { secretKeyRef: { name: haku-console-agent-api, key: token } }
             # OTEL_EXPORTER_OTLP_* → Langfuse; provider keys live in LiteLLM, not here.
 ```
 

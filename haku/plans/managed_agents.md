@@ -92,8 +92,9 @@ none is live)" — **not** `sessions.create()` per event:
 ## MCP servers + vaults (the "nicely handled auth" path)
 
 Haku's sources today are reached ad hoc: Plaid over `psql` (in-cluster pod),
-Gmail/Calendar over REST `curl`, Tana over the `fastmcp` CLI to the bearer-gated
-`tana-mcp-ro` facade. There is no `.mcp.json`. The PLAN north star (<../TODO.md>)
+Gmail/Calendar/Tana over haku-console's aggregated MCP catalog (`fastmcp` to
+`https://haku.allegedly.works/mcp`, since superseding their earlier dedicated
+facades — <../TODO.md>). There is no `.mcp.json`. The PLAN north star (<../TODO.md>)
 is to give Haku **native MCP tools**.
 
 Managed Agents does this cleanly, and its **vaults** are precisely the
@@ -109,10 +110,11 @@ headless-MCP-auth mechanism the PLAN's _MCP auth provisioning_ spike was for:
   "does the facade accept service-account JWTs" spike.
 
 Candidate servers to wire (each already has or could expose a gated public route):
-`tana-mcp-ro` (`static_bearer` from `haku-tana-ro-token`, or upgrade to its
-Authentik OIDC mode → `mcp_oauth`, which the TODO already wants), `grocy_mcp`,
-PostScanMail, the Google Workspace MCP, Manifold — the `cluster/k8s/agents/*-mcp`
-fleet, optionally fronted by the `mcp_infra` compositor as a single endpoint.
+`haku-console` (already wired this way for Tana + Grocy: a `static_bearer` bound to
+the console's aggregated `/mcp`, superseding a per-source `tana-mcp-ro`-style
+facade), PostScanMail, the Google Workspace MCP, Manifold — the
+`cluster/k8s/agents/*-mcp` fleet, optionally fronted by the `mcp_infra` compositor
+as a single endpoint.
 
 ### Two caveats that shape the source split
 
@@ -120,7 +122,8 @@ fleet, optionally fronted by the `mcp_infra` compositor as a single endpoint.
    self-hosted sandbox only `bash`/file/code execution moves to your container;
    `mcp_toolset` calls originate from Anthropic's side. So a vault-backed MCP
    server must be **reachable from Anthropic at a public, gated URL** (as
-   `tana-mcp-ro.allegedly.works` already is). Sources that stay loopback-only
+   `haku.allegedly.works` — haku-console's aggregated MCP endpoint — already is).
+   Sources that stay loopback-only
    in-cluster can't be vault-backed `mcp_toolset`s — the worker reaches them via
    `bash`/`fastmcp`/`psql` as today (no vault, manual auth). **Per source: public
    gated facade + vault (nice auth) vs. in-cluster + bash (worker-reached).**
@@ -176,7 +179,7 @@ beta:agents create|update`): `model: claude-opus-4-8`, thin pointer `system`,
    only) and an API-key secret (supervisor only — keep the org-scoped API key
    **off** the worker host so agent tool calls can't read it), and a Forgejo
    webhook → supervisor route.
-6. **Vault(s)**: one vault holding the MCP credentials (`tana-mcp-ro` bearer/OAuth,
+6. **Vault(s)**: one vault holding the MCP credentials (the haku-console bearer,
    then others as wired); referenced by `vault_ids` on session create.
 
 ## Effort
@@ -225,7 +228,7 @@ token/cost lives in Console → Logs and the Usage & Cost Admin API.
 - **MCP vaults on self-hosted**: confirm `mcp_oauth`/`static_bearer` vault creds
   work with `config.type: self_hosted` (strongly implied — MCP runs Anthropic-side
   and vaults are offered as the self-hosted workaround for env-var creds — but
-  verify on `tana-mcp-ro`).
+  verify on the haku-console `static_bearer` credential).
 - **Which facades to expose publicly** (gated) for vault-backed `mcp_toolset` vs.
   keep loopback-only and reach via worker `bash`/`fastmcp`. Per source.
 - **Attribution**: accept the loss of LiteLLM/Langfuse, or have the supervisor

@@ -51,7 +51,7 @@ let
     tea
     kubectl
     postgresql # psql (Plaid, reached cluster-internally)
-    fastmcp # in-cluster MCP facades (tana-mcp-ro, …)
+    fastmcp # haku-console and other MCP servers
     # sops + age (age provides `age` and `age-keygen`) for decrypting sops files.
     # Tooling only — the age key is NOT wired into the pod yet, so decryption
     # needs SOPS_AGE_KEY (or a key file) supplied separately before it works.
