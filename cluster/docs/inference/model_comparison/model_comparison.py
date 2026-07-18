@@ -67,6 +67,7 @@ SOURCES = {
     "glm52_colibri": "cluster/docs/inference/runs/2026-07-14_glm52_colibri/  (measured 0.28 tok/s)",
     "oss120": "https://arxiv.org/abs/2508.10925",  # same gpt-oss card (120b rows)
     "dsv4": "https://benchlm.ai/models/deepseek-v4-flash",  # DeepSeek-V4-Flash 79.0 SWE
+    "aa_gpqa": "https://artificialanalysis.ai/",  # AA GPQA Diamond leaderboard (via benchlm.ai/benchmarks/aaGpqaDiamond)
 }
 
 
@@ -128,6 +129,23 @@ RUNNABLE_QUALITY = {
     "DeepSeek-V4-Flash": (2.9, 79.0, "offload"),  # E9: mainline llama.cpp IQ2_XXS, Vulkan (attn on 2×5090, experts on CPU); 1.1 CPU-only floor
 }
 OFFLOAD_COLOR = "#16a085"
+
+# Non-coding capability: Artificial Analysis GPQA Diamond — ONE source so the models
+# are comparable (mixing card + aggregator numbers is the apples-to-oranges trap).
+# {model: (gpqa, setting)}. Caveat: AA runs each model at its own reasoning tier and
+# doesn't publish a single fixed effort — DeepSeek-V4-Flash is shown at "Max"
+# (its no-CoT GPQA is only 71.2, so effort dominates); read as indicative, not exact.
+# The two CODE-SPECIALISTS (Qwen3-Coder-30B, Devstral-24B) are absent from AA-GPQA
+# AND MMLU-Pro entirely — nobody measures them on general reasoning, which is itself
+# the answer to "are the coders overfit to code?": they don't even report it.
+GPQA_AA = {
+    "gpt-oss-20b": (68.8, "AA"),
+    "gpt-oss-120b": (78.2, "AA"),
+    "Qwen3.5-35B-A3B": (84.5, "AA"),
+    "GLM-5.2 (744B)": (89.5, "AA"),
+    "DeepSeek-V4-Flash": (89.4, "AA · Max effort"),
+}
+GPQA_MISSING = ["Qwen3-Coder-30B", "Devstral-24B"]  # code-specialists, no AA-GPQA
 
 # {metric: {model: (score, setting)}} — every number here is verified against its
 # source card at a stated NO-TOOLS setting, so the bars are actually comparable.
@@ -310,7 +328,7 @@ ax.legend(
         Line2D([0], [0], marker="s", color="#555", ls="", label="direct (no thinking)"),
         Line2D([0], [0], color="#555", ls="--", label="Pareto frontier"),
     ],
-    loc="center left",
+    loc="lower left",
     fontsize=8,
 )
 fig.tight_layout()
@@ -363,6 +381,46 @@ ax.set_title("Same model, same eval: effort × tools moves AIME by 40–60 point
 ax.legend(fontsize=8)
 fig.tight_layout()
 fig.savefig("fig5_gptoss_effort.svg", bbox_inches="tight")
+
+# %% [markdown]
+# ## 6. Speed × general reasoning (GPQA Diamond) — where the coders vanish
+#
+# Same axes as #3, but Y is a NON-coding eval (AA GPQA Diamond). Two things pop out:
+# (a) the code-specialists Qwen3-Coder and Devstral are **absent** — nobody publishes a
+# general-reasoning number for them, the clearest read on "are the coders overfit to
+# code?"; and (b) gpt-oss-120b, which looked bad on coding, is **still dominated here**
+# — Qwen3.5 beats it on GPQA *and* is ~17× faster. One AA source so the points are
+# comparable (AA runs each at its own reasoning tier though — DSV4-Flash shown at Max).
+
+# %%
+fig, ax = plt.subplots(figsize=(10, 6))
+for lbl, (gpqa, _setting) in GPQA_AA.items():
+    tps, _swe, kind = RUNNABLE_QUALITY[lbl]
+    color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
+    ax.scatter(tps, gpqa, s=120, color=color, marker=MARKER_FOR[REASONING_CLASS[lbl][0]], zorder=3)
+    ax.annotate(lbl, (tps, gpqa), textcoords="offset points", xytext=(8, 4), fontsize=8)
+_gp = [(RUNNABLE_QUALITY[lbl][0], gpqa) for lbl, (gpqa, _s) in GPQA_AA.items()]
+_gf = sorted(p for p in _gp if not any(q[0] >= p[0] and q[1] >= p[1] and q != p for q in _gp))
+ax.plot([p[0] for p in _gf], [p[1] for p in _gf], color="#555", ls="--", lw=1.6, zorder=1, label="Pareto frontier")
+ax.text(0.12, 53, "code-specialists (Qwen3-Coder, Devstral):\nno general-reasoning eval published", fontsize=7.5, color="#999", style="italic")
+ax.set_xscale("log")
+ax.set_xlim(0.1, 3000)
+ax.set_ylim(50, 95)
+ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
+ax.set_ylabel("GPQA Diamond (%, Artificial Analysis)  →  better general reasoning")
+ax.set_title("Speed × general reasoning")
+ax.legend(
+    handles=[
+        Patch(color=LOCAL_COLOR, label="resident (VRAM)"),
+        Patch(color=OFFLOAD_COLOR, label="offload (CPU/disk)"),
+        Line2D([0], [0], marker="o", color="#555", ls="", label="reasoning model"),
+        Line2D([0], [0], color="#555", ls="--", label="Pareto frontier"),
+    ],
+    loc="lower left",
+    fontsize=8,
+)
+fig.tight_layout()
+fig.savefig("fig6_speed_vs_gpqa.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## Sources
