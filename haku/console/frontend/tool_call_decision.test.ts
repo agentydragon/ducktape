@@ -53,14 +53,15 @@ function dependencies() {
 describe("tool-call decision controller", () => {
   it("approves and reports the canonical custom title", async () => {
     const deps = dependencies();
-    const record = toolCallRecord();
+    // Approving now returns the RUNNING record — execution finishes asynchronously.
+    const record = toolCallRecord({ status: "running", result: null });
     deps.approve.mockResolvedValue(record);
 
     await expect(executeToolCallDecision(pendingApproval(), "approve", undefined, deps)).resolves.toBe(record);
 
     expect(deps.approve).toHaveBeenCalledWith("tc_1");
     expect(deps.deny).not.toHaveBeenCalled();
-    expect(deps.success).toHaveBeenCalledWith("Tool call finished", "Remove bought items: OK");
+    expect(deps.success).toHaveBeenCalledWith("Tool call approved", "Remove bought items: Running");
     expect(deps.error).not.toHaveBeenCalled();
   });
 
@@ -77,9 +78,11 @@ describe("tool-call decision controller", () => {
   });
 
   it("uses approvalDisplayFields' fallback title", () => {
-    expect(toolCallDecisionFeedback("approve", toolCallRecord({ title: null }))).toEqual({
-      title: "Tool call finished",
-      message: "grocy-sf: shopping_list_items_remove: OK",
+    expect(
+      toolCallDecisionFeedback("approve", toolCallRecord({ title: null, status: "running", result: null }))
+    ).toEqual({
+      title: "Tool call approved",
+      message: "grocy-sf: shopping_list_items_remove: Running",
     });
   });
 

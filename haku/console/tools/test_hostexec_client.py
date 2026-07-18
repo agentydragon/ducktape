@@ -5,7 +5,7 @@ respx patches httpx's transport, so the async POST is intercepted without a netw
 """
 
 import json
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, call, patch
 
 import httpx
 import pytest
@@ -13,7 +13,7 @@ import pytest_bazel
 import respx
 from fastmcp.exceptions import ToolError
 
-from haku.console.tools.hostexec_client import HostexecClient
+from haku.console.tools.hostexec_client import _CONNECT_TIMEOUT_SECONDS, _DEFAULT_HTTP_TIMEOUT_SECONDS, HostexecClient
 from mcp_infra.exec.models import BaseExecResult, Exited
 
 EXEC_URLS = {"wyrm2": "http://wyrm2.mesh:8080", "rugged": "http://rugged.mesh:8080"}
@@ -71,6 +71,27 @@ async def test_run_reports_unreachable_host() -> None:
             await _client().run(
                 host="rugged", run_as="agentydragon", argv=["true"], cwd=None, max_bytes=0, timeout_ms=1000
             )
+
+
+async def test_run_splits_connect_and_read_timeouts() -> None:
+    """An offline (roaming) host must fail fast on connect, so the connect timeout is short while the
+    read timeout still outlasts a long-running command."""
+    captured: list[httpx.Timeout] = []
+    real_async_client = httpx.AsyncClient
+
+    # run() constructs the client only as AsyncClient(timeout=...), so a timeout-only stand-in suffices.
+    def capture(*, timeout: httpx.Timeout) -> httpx.AsyncClient:
+        captured.append(timeout)
+        return real_async_client(timeout=timeout)
+
+    with respx.mock, patch.object(httpx, "AsyncClient", capture):
+        respx.post("http://wyrm2.mesh:8080/exec").mock(return_value=httpx.Response(200, json=_ok_result().model_dump()))
+        await _client().run(host="wyrm2", run_as="root", argv=["true"], cwd=None, max_bytes=0, timeout_ms=5000)
+
+    [timeout] = captured
+    assert timeout.connect == _CONNECT_TIMEOUT_SECONDS
+    assert timeout.read == _DEFAULT_HTTP_TIMEOUT_SECONDS
+    assert timeout.connect < timeout.read
 
 
 if __name__ == "__main__":

@@ -114,6 +114,22 @@ class _CancellingExecutor(_RecordingExecutor):
         raise asyncio.CancelledError
 
 
+class _BlockingExecutor(_RecordingExecutor):
+    """Blocks in execute() until its task is cancelled, so a dispatched execution stays in flight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+
+    async def execute(
+        self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+    ) -> dict[str, Any]:
+        self.executions.append((server.id, tool_name, arguments, auth_token))
+        self.started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable: blocking executor is only released by cancellation")
+
+
 class _OperatorTokens:
     def __init__(self, tokens: dict[UUID, str]) -> None:
         self.tokens = tokens
@@ -425,13 +441,21 @@ async def test_two_operator_two_agent_authorization_matrix(
         decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="no"),
         actor=actors["oa"],
     )
+    # decide() now returns the RUNNING record and runs the tool in the background; deny stays terminal.
     assert [approved_a.status, approved_b.status, denied.status] == [
-        ToolCallStatus.OK,
-        ToolCallStatus.OK,
+        ToolCallStatus.RUNNING,
+        ToolCallStatus.RUNNING,
         ToolCallStatus.DENIED,
     ]
+    # Backend auth is resolved synchronously inside decide (before dispatch), so lookups are ordered
+    # even before the background executions run.
     assert tokens.lookups == [actors["oa"].operator_id, actors["ob"].operator_id]
+    await service.join_executions()
     assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
+    assert [
+        service.get(records["aa1"].tool_call_id, actor=actors["oa"]).status,
+        service.get(records["ab1"].tool_call_id, actor=actors["ob"]).status,
+    ] == [ToolCallStatus.OK, ToolCallStatus.OK]
 
 
 async def test_pending_wait_uses_actor_scoped_event_invalidation(
@@ -452,8 +476,11 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(
     )
     completed = await asyncio.wait_for(waiting, timeout=1)
 
-    assert decided.status is ToolCallStatus.OK
+    # decide returns the RUNNING record; the waiting agent observes the terminal OK the background
+    # execution publishes.
+    assert decided.status is ToolCallStatus.RUNNING
     assert completed.status is ToolCallStatus.OK
+    await service.join_executions()
     assert publisher._waiters == {}
 
 
@@ -477,14 +504,17 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
         tokens=tokens,
     )
 
+    # A deny is a synchronous terminal transition (unlike approve, which now dispatches execution to a
+    # background task), so it lands in the durable row within the subscribe window — exactly the
+    # race this test exercises: _wait_terminal must re-read after subscribing and observe it.
     async def transition_after_subscription_registration() -> None:
         [pending] = service.list_tool_calls(actor=agent)
-        completed = await service.decide(
+        decided = await service.decide(
             tool_call_id=pending.tool_call_id,
-            decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+            decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="reread race"),
             actor=operator,
         )
-        assert completed.status is ToolCallStatus.OK
+        assert decided.status is ToolCallStatus.DENIED
 
     publisher.transition = transition_after_subscription_registration
 
@@ -492,7 +522,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
         service.submit_and_wait(req=_request(owner="subscribe-reread", wait_for_ms=1000), actor=agent), timeout=1
     )
 
-    assert completed.status is ToolCallStatus.OK
+    assert completed.status is ToolCallStatus.DENIED
     assert publisher._waiters == {}
 
 
@@ -595,6 +625,43 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     assert terminal.error == "tool execution cancelled"
     assert ledger.finish_actors == [actor]
     assert publisher.publications == [(actor.operator_id, terminal.tool_call_id)]
+
+
+async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
+    migrated_db_url: str,
+    tmp_path: Path,
+    actors: dict[str, ToolCallActor],
+    ledger: _RecordingLedger,
+    publisher: _RecordingInvalidationPublisher,
+    tokens: _OperatorTokens,
+) -> None:
+    executor = _BlockingExecutor()
+    service = _service(
+        database_url=migrated_db_url,
+        tmp_path=tmp_path,
+        ledger=ledger,
+        publisher=publisher,
+        executor=executor,
+        tokens=tokens,
+    )
+    pending = await service.submit_and_wait(req=_request(owner="aa1"), actor=actors["aa1"])
+    assert pending.status is ToolCallStatus.PENDING_APPROVAL
+
+    # decide returns immediately with RUNNING while execution blocks in the background task.
+    decided = await service.decide(
+        tool_call_id=pending.tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+        actor=actors["oa"],
+    )
+    assert decided.status is ToolCallStatus.RUNNING
+    await asyncio.wait_for(executor.started.wait(), timeout=1)
+
+    # Shutdown cancels the in-flight execution, which terminalizes the row as cancelled.
+    await service.aclose()
+    assert service._execution_tasks == set()
+    terminal = service.get(pending.tool_call_id, actor=actors["oa"])
+    assert terminal.status is ToolCallStatus.ERROR
+    assert terminal.error == "tool execution cancelled"
 
 
 async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor], ledger: _RecordingLedger) -> None:

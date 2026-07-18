@@ -522,12 +522,19 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                     json={"decision": "approve"},
                 )
             assert decided.status_code == 200, decided.text
-            assert decided.json()["tool_call"]["status"] == "ok"
+            # decide records the approval and dispatches execution in the background — it returns RUNNING.
+            assert decided.json()["tool_call"]["status"] == "running"
 
-            # The agent resolves its promise and sees the real upstream result.
+            # The agent resolves its promise; execution runs in the background on the server loop, so
+            # poll get_tool_call until it terminalizes, then check the real upstream result.
+            terminal = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
-            assert got.structured_content is not None
+                for _ in range(100):
+                    got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+                    assert got.structured_content is not None
+                    if got.structured_content["call"]["status"] in terminal:
+                        break
+                    await asyncio.sleep(0.02)
             assert got.structured_content["call"]["status"] == ToolCallStatus.OK
             assert "echo:hi" in str(got.structured_content["call"]["result"])
 

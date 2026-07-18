@@ -28,8 +28,13 @@ logger = logging.getLogger(__name__)
 ExchangeToken = Callable[[str, str], Awaitable[str]]
 
 # hostexecd responds only once the command finishes or its own timeout_ms fires (capped at
-# MAX_EXEC_TIMEOUT_MS), so the default HTTP wait must outlast the longest command plus margin.
+# MAX_EXEC_TIMEOUT_MS), so the default HTTP *read* wait must outlast the longest command plus margin.
 _DEFAULT_HTTP_TIMEOUT_SECONDS = MAX_EXEC_TIMEOUT_MS / 1000 + 30
+# The *connect* phase must not inherit that long wait: a roaming host that is off-cluster silently
+# drops the SYN (no RST/ICMP), so without a short connect timeout an unreachable host would hang the
+# whole read timeout (~5.5 min) before failing. Fail the connect fast; the read timeout still covers a
+# reachable host's long-running command. Generous enough for a relayed Nebula path to establish.
+_CONNECT_TIMEOUT_SECONDS = 10.0
 
 
 class HostexecClient:
@@ -55,7 +60,8 @@ class HostexecClient:
         # Audit to stdout in the haku-console namespace (Haku can't read these logs); never the token.
         logger.info("hostexec run host=%s run_as=%s argv0=%s", host, run_as, argv[0])
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as http:
+            timeout = httpx.Timeout(self._timeout, connect=_CONNECT_TIMEOUT_SECONDS)
+            async with httpx.AsyncClient(timeout=timeout) as http:
                 response = await http.post(f"{exec_url.rstrip('/')}/exec", json=request.model_dump())
         except httpx.TransportError as error:
             # Roaming hosts are frequently offline; a fast, clear failure, not a crash.

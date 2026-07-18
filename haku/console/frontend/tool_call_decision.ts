@@ -29,8 +29,10 @@ export function toolCallDecisionFeedback(
   decision: ToolCallDecision,
   record: ToolCallRecord
 ): { title: string; message: string } {
+  // Approving no longer runs the tool inline — the backend dispatches execution and returns the
+  // RUNNING record, so the result arrives later via the live WS refetch, not this response.
   return {
-    title: decision === "approve" ? "Tool call finished" : "Tool call denied",
+    title: decision === "approve" ? "Tool call approved" : "Tool call denied",
     message: `${approvalDisplayFields(record).title}: ${terminalStatusLabel(record.status)}`,
   };
 }

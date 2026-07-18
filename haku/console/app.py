@@ -279,6 +279,9 @@ def create_app(
                 async with mcp_asgi.lifespan(app):
                     yield
             finally:
+                # Cancel in-flight approved-call executions (each marks its row cancelled) before the
+                # event hub they publish through is torn down.
+                await tool_calls.aclose()
                 await console_event_hub.aclose()
 
     # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even

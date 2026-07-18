@@ -56,7 +56,7 @@ from haku.console.mcp_config import McpServerEntry, NoBackendAuth, const_in_proc
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
-from haku.console.tool_call_service import backend_auth_for_operator
+from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
 from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, SubmitToolCallRequest, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
@@ -748,6 +748,20 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
     assert pending[0]["auto_approval_evaluation"] == record["auto_approval_evaluation"]
 
 
+async def _join_executions(service: ToolCallApplicationService) -> None:
+    await service.join_executions()
+
+
+def _drain_executions(client: TestClient) -> None:
+    """Run decide()'s dispatched background executions to completion on the app loop, so a sync
+    TestClient can observe the terminal row — approving now returns RUNNING and executes in the
+    background."""
+    portal = client.portal
+    assert portal is not None
+    service = cast(ToolCallApplicationService, cast(FastAPI, client.app).state.tool_call_service)
+    portal.call(_join_executions, service)
+
+
 def test_approval_executes_tool_and_records_terminal_result(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
@@ -755,14 +769,18 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
         headers={"X-CSRF-Token": csrf_token(operator_client)},
         json={"decision": "approve"},
     )
-    fetched = operator_client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
     assert resp.status_code == 200, resp.text
+    # decide records the approval and dispatches execution: the response is RUNNING, no result yet.
     decided = resp.json()["tool_call"]
-    assert decided["status"] == "ok"
+    assert decided["status"] == "running"
     assert decided["approved_at"] is not None
     assert decided["approval_policy_id"] is None
-    assert decided["result"]["content"][0]["text"] == "stock_add:123:1"
-    assert fetched == decided
+    assert decided["result"] is None
+
+    _drain_executions(operator_client)
+    finished = operator_client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
+    assert finished["status"] == "ok"
+    assert finished["result"]["content"][0]["text"] == "stock_add:123:1"
 
 
 def test_configured_credential_approval_passes_canonical_operator_id(
@@ -784,8 +802,11 @@ def test_configured_credential_approval_passes_canonical_operator_id(
             headers={"X-CSRF-Token": csrf_token(client)},
             json={"decision": "approve"},
         )
+        # Drain before the client (and its lifespan aclose) tears down, so execution runs to completion.
+        _drain_executions(client)
 
     assert approved.status_code == 200, approved.text
+    assert approved.json()["tool_call"]["status"] == "running"
     assert execution_operator_ids == [operator_id(migrated_db_url, "configured-credential-sub")]
     assert recording_executor.auth_tokens == ["test-token"]
 
@@ -840,9 +861,10 @@ def test_operator_oauth_association_drives_approved_tool_execution(
             headers={"X-CSRF-Token": csrf_token(client)},
             json={"decision": "approve"},
         )
+        _drain_executions(client)
 
     assert approved.status_code == 200, approved.text
-    assert approved.json()["tool_call"]["status"] == "ok"
+    assert approved.json()["tool_call"]["status"] == "running"
     assert execution_operator_ids == [operator_id(migrated_db_url, "operator-oauth-sub")]
     assert recording_executor.auth_tokens == ["operator-access-token"]
 
@@ -1055,7 +1077,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
             json={"decision": "deny", "reason": "no"},
         )
         assert approved.status_code == 200, approved.text
-        assert approved.json()["tool_call"]["status"] == "ok"
+        assert approved.json()["tool_call"]["status"] == "running"
         assert denied.status_code == 200, denied.text
         assert denied.json()["tool_call"]["status"] == "denied"
 
@@ -1128,7 +1150,7 @@ def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_
             json={"decision": "approve"},
         )
         assert approved.status_code == 200, approved.text
-        assert approved.json()["tool_call"]["status"] == "ok"
+        assert approved.json()["tool_call"]["status"] == "running"
 
 
 def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
@@ -1290,9 +1312,12 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         headers={"X-CSRF-Token": csrf_token(operator_client)},
         json={"decision": "approve"},
     ).json()["tool_call"]
+    assert approved["status"] == "running"
 
-    assert approved["status"] == "ok"
-    assert approved["result"]["content"][0]["text"] == "echo:world"
+    _drain_executions(operator_client)
+    finished = operator_client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
+    assert finished["status"] == "ok"
+    assert finished["result"]["content"][0]["text"] == "echo:world"
 
     engine = create_engine(db_url)
     try:

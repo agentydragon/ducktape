@@ -203,6 +203,9 @@ class ToolCallApplicationService:
         self._provider_store = provider_store
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
+        # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
+        # mid-run, and drained/cancelled at shutdown (`aclose`).
+        self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()
 
     async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
         return await backend_auth_for_operator(
@@ -335,7 +338,12 @@ class ToolCallApplicationService:
         server = _server_entry(self._settings, pending.server_id)
         auth_token = await self._backend_auth(server, operator.operator_id)
         running = self._repository.mark_running(tool_call_id, actor=operator)
-        return await self._execute_and_publish(record=running, server=server, auth_token=auth_token, actor=operator)
+        # Deciding is not executing. Dispatch the tool run as a tracked background task and return the
+        # RUNNING record immediately, so approving never blocks on a slow or unreachable backend (e.g.
+        # an offline roaming hostexec target). The terminal state reaches observers the same way an
+        # auto-approved call's does: _publish (WS invalidation) plus the durable row agents poll.
+        self._dispatch_execution(record=running, server=server, auth_token=auth_token, actor=operator)
+        return running
 
     async def _execute_and_publish(
         self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: ToolCallActor
@@ -368,6 +376,38 @@ class ToolCallApplicationService:
         if cancellation is not None:
             raise cancellation
         return updated
+
+    def _dispatch_execution(
+        self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: ToolCallActor
+    ) -> None:
+        """Run an approved call's execution as a tracked background task (see `decide`)."""
+        task = asyncio.create_task(
+            self._execute_and_publish(record=record, server=server, auth_token=auth_token, actor=actor)
+        )
+        self._execution_tasks.add(task)
+        task.add_done_callback(self._on_execution_done)
+
+    def _on_execution_done(self, task: asyncio.Task[ToolCallRecord]) -> None:
+        self._execution_tasks.discard(task)
+        # _execute_and_publish records failures on the row and only re-raises CancelledError, so a
+        # non-cancelled exception escaping here is a bug in the orchestration itself — surface it.
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.error("tool-call execution task crashed", exc_info=error)
+
+    async def join_executions(self) -> None:
+        """Await in-flight execution tasks to completion without cancelling — a graceful drain (as
+        opposed to `aclose`'s cancel). Lets a caller wait for approved calls to finish."""
+        while self._execution_tasks:
+            await asyncio.gather(*tuple(self._execution_tasks), return_exceptions=True)
+
+    async def aclose(self) -> None:
+        """Cancel in-flight execution tasks and wait for them to settle. Each terminalizes its row as
+        cancelled (see `_execute_and_publish`); with the console's Recreate rollout a bounded cancel is
+        the clean shutdown. Called from the app lifespan before the event hub closes."""
+        tasks = tuple(self._execution_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _publish(self, operator_id: UUID, tool_call_id: str) -> None:
         """Best-effort invalidation after durable changes; the repository remains authoritative."""

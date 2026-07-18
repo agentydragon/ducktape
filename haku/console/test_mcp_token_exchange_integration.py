@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -120,8 +121,17 @@ class _TokenChainHarness:
             json={"decision": "approve"},
         )
         assert decided.status_code == 200, decided.text
+        # decide records the approval and dispatches execution to a background task on the server, so
+        # the response is RUNNING; poll until the row terminalizes (ok, or error on a rejected exchange).
+        assert decided.json()["tool_call"]["status"] == "running"
+        for _ in range(200):
+            finished = await self.operator.get(f"/api/tool-calls/{submitted.tool_call_id}")
+            assert finished.status_code == 200, finished.text
+            if finished.json()["status"] in {"ok", "error", "denied"}:
+                break
+            await asyncio.sleep(0.02)
         return _TokenChainResult(
-            tool_call=decided.json()["tool_call"],
+            tool_call=finished.json(),
             stored_reference=self.stored_reference,
             exchanged_assertions=self.exchanged_assertions,
             backend_calls=self.backend_calls,
