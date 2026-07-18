@@ -66,14 +66,24 @@ image. The **practical effective-context ceiling remains ~256K** (E1 reached
 
 ## Follow-ups (to actually get 1M)
 
-- **Newer vLLM / nightly** — the FlashInfer `layer_idx` mismatch looks like a
-  fixable bug, and a build with flash-attn for sm_120 would unblock DCA. Single-
-  variable retry: bump the image tag.
-- **SGLang** — different long-context attention path; may support Blackwell 1M.
-- **Nemotron-H / other hybrid (Mamba)** — 256K cap today, but the arch's tiny KV
-  is the natural home for very long context if a 1M-position hybrid appears.
-- **A 1M model that doesn't use DCA** (pure long-RoPE) if one exists that
-  FlashInfer can serve.
+Feasibility checked 2026-07-17 (web research):
+
+- **Qwen2.5-1M on newer vLLM — low chance, don't bother.** Its DCA is "powered by
+  BladeLLM; optimizations _will be_ integrated into vLLM" — not there yet, and no
+  evidence anyone got its DCA path working on sm_120. Not worth a nightly
+  download+compile.
+- **DeepSeek-V4-Flash — the genuine 1M path.** Native 1M via **Compressed Sparse
+  Attention (not DCA)**, has vLLM **Day-0 support**, and is confirmed running on
+  **sm_120** (RTX Pro 6000). KV-frugal (≈10% of V3.2's KV at 1M). Catch: 284B-total
+  (13B active) ≈ 142 GB @ 4-bit → needs **offload** (won't fit 64 GB resident), so
+  it's an offload-lane experiment (large download, slow), not an image-swap.
+  Refs: <https://vllm.ai/blog/2026-04-24-deepseek-v4>,
+  <https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash>.
+- **SGLang** — iffy on Blackwell (trtllm_mha SM-detection ValueError, gptq_marlin
+  issues reported on RTX 5090); not obviously a better 1M path.
+- **Nemotron-H / hybrid (Mamba)** — 256K cap today, but the arch's tiny KV (cf. E4
+  GDN's 1.4M-token cache) is the natural home for long context if a 1M-position
+  hybrid lands.
 
 No `results.md` coding-agent row (nothing served). Recorded in the long-context
 table as a blocked attempt.
