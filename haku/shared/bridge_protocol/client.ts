@@ -31,6 +31,23 @@ export function createBridgeClient(shellOrigin: string): BridgeClient {
   // its replies — so the post, the origin check, and the listener lifecycle live here once
   // instead of being re-implemented per verb.
   const post = (message: Inbound): void => window.parent.postMessage(message, shellOrigin);
+  let mirroredTitle: string | undefined;
+  let titleObserver: MutationObserver | undefined;
+
+  // Start lazily with the first route notification: every framed app already emits one on
+  // mount, so existing callers gain continuous title mirroring without new integration code.
+  // Observe <head>, not the current <title> node, because frameworks may replace that node.
+  function startTitleMirroring(): void {
+    if (titleObserver) return;
+    const sendChangedTitle = (): void => {
+      if (document.title === mirroredTitle) return;
+      mirroredTitle = document.title;
+      post({ type: "titleChanged", title: mirroredTitle });
+    };
+    sendChangedTitle();
+    titleObserver = new MutationObserver(sendChangedTitle);
+    titleObserver.observe(document.head, { subtree: true, childList: true, characterData: true });
+  }
 
   // Post `request`, then hand every shell reply that `match` accepts to `onReply` until the
   // returned stop() removes the listener. Only messages from the trusted shell origin count.
@@ -103,10 +120,12 @@ export function createBridgeClient(shellOrigin: string): BridgeClient {
       };
     },
 
-    // Fire-and-forget: mirror the current hash route into the shell's own URL fragment so
-    // F5 / deep-links of the console restore this view. Unframed, the targetOrigin check drops
-    // the self-post.
-    notifyRouteChanged: (path) => post({ type: "routeChanged", path }),
+    // Fire-and-forget: mirror the current route into the shell's URL and start continuously
+    // mirroring document.title. Unframed, the targetOrigin check drops the self-post.
+    notifyRouteChanged: (path) => {
+      post({ type: "routeChanged", path });
+      startTitleMirroring();
+    },
 
     // Ask the shell for a screenshot of its own on-screen rect (a real capture, cropped to the
     // iframe — not a DOM serialization), gated by a shell-owned standing grant. Resolves

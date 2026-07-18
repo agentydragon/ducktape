@@ -112,6 +112,15 @@ shell's inbound validators and the open-link whitelist stay PR-gated in <../fron
 Haku's UI will link the same package as a Bazel module from haku-state (migration tracked in
 `haku/PLAN.md`).
 
+### `routeChanged` / `titleChanged` — mirror browser chrome
+
+haku-ui posts `{type: "routeChanged", path}` whenever its route changes. On the first such call,
+the shared bridge client also starts a `MutationObserver` over the iframe document's `<head>` and
+posts `{type: "titleChanged", title}` initially and whenever `document.title` changes. The shell
+validates and mirrors the path into its own URL for refresh/deep-link restoration and copies each
+bounded string title into its own `document.title`, since the cross-origin boundary prevents it
+from reading the iframe document directly.
+
 ### `requestLaunch` — fire the launch-routine capability
 
 haku-ui renders its own launch dialog and posts `{type: "requestLaunch", id, prompt}`; the

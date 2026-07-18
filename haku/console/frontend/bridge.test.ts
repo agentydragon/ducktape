@@ -29,6 +29,15 @@ describe("parseInbound", () => {
     });
   });
 
+  it("accepts a bounded titleChanged and rejects malformed titles", () => {
+    expect(parseInbound({ type: "titleChanged", title: "Garden · Haku" })).toEqual({
+      type: "titleChanged",
+      title: "Garden · Haku",
+    });
+    expect(parseInbound({ type: "titleChanged", title: 42 })).toBeNull();
+    expect(parseInbound({ type: "titleChanged", title: "x".repeat(513) })).toBeNull();
+  });
+
   it("rejects routeChanged payloads that aren't validated route paths", () => {
     expect(parseInbound({ type: "routeChanged" })).toBeNull(); // missing path
     expect(parseInbound({ type: "routeChanged", path: 42 })).toBeNull(); // wrong type

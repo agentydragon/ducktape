@@ -47,11 +47,18 @@ export interface GeolocationWatchStop {
   id: string;
 }
 
-// Mirror the iframe's hash route into the console's URL fragment. Strictly a validated path
+// Mirror the iframe's route into the console's own browser chrome. Strictly a validated path
 // (shell-side `isRoutePath`), never a URL.
 export interface RouteChanged {
   type: "routeChanged";
   path: string;
+}
+
+// Mirror the iframe's document title into the outer tab. The shared client emits this
+// automatically whenever its own <title> changes.
+export interface TitleChanged {
+  type: "titleChanged";
+  title: string;
 }
 
 // Capture a screenshot of the frame's own on-screen rect (mirrors a real tab/window capture,
@@ -71,6 +78,7 @@ export type Inbound =
   | GeolocationWatchStart
   | GeolocationWatchStop
   | RouteChanged
+  | TitleChanged
   | ScreenshotRequest;
 
 // ── Outbound (shell → iframe): the shell's reply, so Haku's UI can react to the outcome. ──

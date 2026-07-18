@@ -11,7 +11,8 @@ import type { GeoPosition } from "@haku/console-bridge/protocol";
 // origin. postMessage is spied, so nothing leaves jsdom — we reply by dispatching the event
 // the client listens for.
 const SHELL = "https://shell.example";
-const { openLink, requestLaunch, requestGeolocation, watchGeolocation, requestScreenshot } = createBridgeClient(SHELL);
+const { openLink, requestLaunch, requestGeolocation, watchGeolocation, notifyRouteChanged, requestScreenshot } =
+  createBridgeClient(SHELL);
 
 const POSITION: GeoPosition = {
   latitude: 37.7749,
@@ -120,6 +121,22 @@ describe("requestScreenshot", () => {
     shellReply({ type: "screenshotResult", id, ok: false, reason: "declined" });
     const result = await pending;
     expect(result).toEqual({ type: "screenshotResult", id, ok: false, imageDataUrl: undefined, reason: "declined" });
+  });
+});
+
+describe("notifyRouteChanged", () => {
+  it("starts automatic title mirroring and follows later title changes", async () => {
+    const post = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+    document.title = "Runs · Haku";
+
+    notifyRouteChanged("/runs");
+    expect(post.mock.calls[0]).toEqual([{ type: "routeChanged", path: "/runs" }, SHELL]);
+    expect(post.mock.calls[1]).toEqual([{ type: "titleChanged", title: "Runs · Haku" }, SHELL]);
+
+    document.title = "Garden · Haku";
+    await vi.waitFor(() => {
+      expect(post.mock.calls.at(-1)).toEqual([{ type: "titleChanged", title: "Garden · Haku" }, SHELL]);
+    });
   });
 });
 

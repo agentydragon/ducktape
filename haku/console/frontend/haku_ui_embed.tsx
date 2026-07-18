@@ -345,8 +345,8 @@ export function HakuUiEmbed({
         return;
       }
       if (msg.type === "routeChanged") {
-        // Mirror the iframe's route into the console's own pathname so refresh/deep-links
-        // restore the view (path-form URLs are the copyable ones — operator, 2026-07-13).
+        // Mirror the route into the console's own pathname so refresh/deep-links restore the
+        // view (path-form URLs are the copyable ones — operator, 2026-07-13).
         // replaceState, not pushState: the iframe's own history navigations already create
         // joint-session-history entries, so Back works via the frame. Skip while a
         // console-own view (e.g. /tool-calls) holds the pathname — just remember the
@@ -355,6 +355,12 @@ export function HakuUiEmbed({
         if (viewForPathname(window.location.pathname) === "embed") {
           history.replaceState(null, "", msg.path);
         }
+        return;
+      }
+      if (msg.type === "titleChanged") {
+        // The frame is cross-origin, so a validated bridge message is the only way for the
+        // outer tab to follow its document.title.
+        document.title = msg.title;
         return;
       }
       // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.

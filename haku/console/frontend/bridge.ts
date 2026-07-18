@@ -17,6 +17,7 @@ import type { GeolocationOptions, Inbound } from "@haku/console-bridge/protocol"
 // (malformed escapes get normalized inconsistently by URL serializers) — so a hostile
 // iframe can't put arbitrary content in the console's URL bar.
 export const ROUTE_PATH_MAX_LENGTH = 512;
+export const FRAME_TITLE_MAX_LENGTH = 512;
 const ROUTE_PATH_RE = /^\/(?:[A-Za-z0-9/._~!'()*-]|%[0-9A-Fa-f]{2})*$/;
 export function isRoutePath(path: string): boolean {
   return path.length <= ROUTE_PATH_MAX_LENGTH && !path.startsWith("//") && ROUTE_PATH_RE.test(path);
@@ -54,6 +55,9 @@ export function parseInbound(data: unknown): Inbound | null {
   }
   if (m.type === "routeChanged" && typeof m.path === "string" && isRoutePath(m.path)) {
     return { type: "routeChanged", path: m.path };
+  }
+  if (m.type === "titleChanged" && typeof m.title === "string" && m.title.length <= FRAME_TITLE_MAX_LENGTH) {
+    return { type: "titleChanged", title: m.title };
   }
   if (m.type === "requestScreenshot" && typeof m.id === "string") {
     return { type: "requestScreenshot", id: m.id };

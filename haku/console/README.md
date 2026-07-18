@@ -291,9 +291,10 @@ postMessage — opening a link (`openLink`), launching a run (`requestLaunch`), 
 operator's location, either one-shot (`requestGeolocation`) or as a continuous stream the
 shell holds (`startGeolocationWatch`); location is gated by a shell-owned standing consent
 grant since the iframe has no `allow="geolocation"`. The shell origin-checks,
-schema-validates, and decides/confirms before acting. It also mirrors the iframe's route
-(`routeChanged`, validated as a path) into the console's own **pathname** so refresh and deep
-links — path-form URLs included — restore the view (legacy `#/…` console URLs still restore).
+schema-validates, and decides/confirms before acting. It mirrors the iframe's validated route
+(`routeChanged`) into the console's pathname so refresh/deep links — path-form URLs included —
+restore the view (legacy `#/…` console URLs still restore). The shared bridge client also watches
+the iframe's `<title>` and posts `titleChanged` automatically, so the outer tab follows it.
 A persistent top-right floating toolbar (`shell_chrome.tsx`'s
 `ShellChrome`, each button `filled` while its panel is selected) opens the shell's own trusted
 chrome: a checklist button — badged with a callout light when a tool call is awaiting approval —
