@@ -125,7 +125,7 @@ RUNNABLE_QUALITY = {
     "Devstral-24B": (92, 68.0, "resident"),
     "gpt-oss-120b": (12.2, 62.4, "offload"),  # E7: vLLM TP2, 12GB/GPU CPU offload (measured)
     "GLM-5.2 (744B)": (0.28, 77.8, "offload"),  # Colibri disk-streamed experts
-    "DeepSeek-V4-Flash": (1.1, 79.0, "offload"),  # E9: mainline llama.cpp IQ2_XXS, CPU-only (Vulkan/GPU pending — this is the slow floor)
+    "DeepSeek-V4-Flash": (2.9, 79.0, "offload"),  # E9: mainline llama.cpp IQ2_XXS, Vulkan (attn on 2×5090, experts on CPU); 1.1 CPU-only floor
 }
 OFFLOAD_COLOR = "#16a085"
 

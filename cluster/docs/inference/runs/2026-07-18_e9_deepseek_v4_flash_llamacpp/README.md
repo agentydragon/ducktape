@@ -1,7 +1,7 @@
 # E9 — DeepSeek-V4-Flash on wyrm2 via llama.cpp (IQ2), the resident-ceiling breaker
 
-- **Status:** in progress — **validated end-to-end on CPU** (loads, coherent, 1.1
-  tok/s); GPU/Vulkan build pending for a faster number.
+- **Status:** running — **CPU 1.1 tok/s, Vulkan (2×5090) 2.9 tok/s**, coherent. The
+  reproducible wiring is in <build.sh> + <run.sh> (see "Repro").
 - **Date:** 2026-07-18
 - **Plan:** E8 follow-up — get DSV4-Flash (79 SWE, 13B active) _running_ on wyrm2,
   where vLLM couldn't fit it (E8) and KTransformers needs 256 GB RAM
@@ -42,22 +42,31 @@ Attention** head. **Fix: use mainline**, which merged DSV4 support (am17an PR
 GGUF and the runtime must be from the _same_ DSV4 implementation; unsloth GGUFs
 target mainline.
 
-## Next
+## Vulkan (GPU) — 2.9 tok/s, no CUDA toolchain
 
-- **Vulkan build** (`-DGGML_VULKAN=ON`) — GPU-accelerate on the 2×5090 without the
-  nix CUDA-toolchain fight (CUDA build blocked on nixpkgs split-package
-  `cuda_runtime.h`). Should push decode well up into the band.
-- Then: a proper coding-quality spot-check + tok/s at real context.
+`-DGGML_VULKAN=ON` GPU-accelerates on the 2×5090 while sidestepping the nix CUDA
+fight (the CUDA build was blocked on nixpkgs' split-package `cuda_runtime.h`).
+Config alone needed **every** Vulkan/SPIRV path passed explicitly (`Vulkan_LIBRARY`,
+`Vulkan_INCLUDE_DIR`, `Vulkan_GLSLC_EXECUTABLE`, `CMAKE_PREFIX_PATH` for
+spirv-headers/spirv-tools/glslang) and `CPATH` set to spirv-headers' include so the
+compile finds `spirv/unified1/spirv.hpp` — all captured in <build.sh>.
+
+Run (attention on GPU via `-ngl 999`, all experts on CPU via `--cpu-moe`, `-c 4096`
+because the native-1M default KV OOMs the GPU): **2.9 tok/s decode**, coherent —
+**~2.6× the CPU floor, ~10–19× Colibri**. Runtime wiring (NVIDIA ICD, loader
+`LD_LIBRARY_PATH`) in <run.sh>.
+
+## Next (optimization, not blocking)
+
+- Move hot experts to the spare VRAM (`--n-cpu-moe N`, N < all layers) — decode is
+  CPU-expert-bandwidth bound, so every expert layer moved to the 5090s should help.
+- A proper coding-quality spot-check + tok/s at real context.
 
 ## Repro
 
 ```bash
-# on wyrm2, model already at /var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/
-git clone --depth 1 https://github.com/ggml-org/llama.cpp.git ~/llama-cpp-main
-cd ~/llama-cpp-main
-nix shell --impure nixpkgs#cmake nixpkgs#gcc nixpkgs#gnumake --command bash -c \
-  'cmake -B build -DGGML_CUDA=OFF -DLLAMA_CURL=OFF -DGGML_NATIVE=ON -DCMAKE_BUILD_TYPE=Release &&
-   cmake --build build -j$(nproc) --target llama-cli'
-build/bin/llama-cli -m /var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf \
-  -p "Write a Python function is_prime(n) with a docstring." -n 24 -t 24 -no-cnv --temp 0
+# on wyrm2 (model at /var/lib/colibri/dsv4-iq2/):
+./build.sh download   # ~91 GB GGUF (if not present)
+./build.sh cpu        # or: ./build.sh vulkan
+./run.sh vulkan       # or: ./run.sh cpu
 ```
