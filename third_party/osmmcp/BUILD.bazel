@@ -14,9 +14,12 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
-# osmmcp has no cgo usage, so rules_go's default pure="auto" already builds it
-# fully static — it runs unmodified on the distroless/static base below, which
-# ships no libc at all.
+# Despite no direct cgo usage, rules_go's default pure="auto" produced a
+# dynamically-linked binary here (some transitive dep, likely Go's net
+# resolver, pulls in cgo) — confirmed in the cluster: distroless/static (no
+# libc at all) failed with "exec: no such file or directory", the classic
+# symptom of a missing ELF interpreter. Use distroless/cc (glibc +
+# libstdc++), the same base activitywatch's dynamically-linked binary uses.
 pkg_files(
     name = "osmmcp_bin_files",
     srcs = ["@com_github_nervsystems_osmmcp//cmd/osmmcp"],
@@ -33,7 +36,7 @@ pkg_tar(
 
 oci_image(
     name = "image",
-    base = "@distroless_static_debian12_linux_amd64",
+    base = "@distroless_cc_debian12_linux_amd64",
     entrypoint = [
         "/usr/local/bin/osmmcp",
         "--enable-http",
