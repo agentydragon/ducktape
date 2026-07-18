@@ -54,7 +54,6 @@ in
     plugins = with pkgs.tmuxPlugins; [
       resurrect
       continuum
-      yank
       prefix-highlight
     ];
 
