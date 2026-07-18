@@ -306,6 +306,47 @@ Kept as a record so the reasoning survives the code churn.
   shrinking a leaked-but-unused token's window from "TTL" to "one command" — sub-second given
   single-use, and worthless against real compromise.
 
+## Considered (not taken): daemon-initiated connections (agent phones home)
+
+Invert the transport: instead of the console POSTing inbound to a node listener, the node daemon
+dials **out** to the console and pulls work — "I'm `rugged`, any work for me?" → "yes, run this" →
+result back over the same channel. Secured with **mutual TLS** (each end authenticates the other).
+The tool-call ledger gains explicit stages to match the pull model: `approved → claimed/executing →
+executed` (a claimed-but-not-yet-run row becomes first-class, not an inline transition). Operator
+(2026-07-18): _"if I were doing this again I might build it this way."_ Recorded as the likely
+design-of-choice on a rewrite; not worth re-architecting the working inbound model now.
+
+**Would buy:**
+
+- **No inbound listener on the node** — just an outbound TLS dial. Removes a root-capable network
+  service (and the whole bind-to-Nebula-IP / trusted-interface-firewall dance).
+- **Roaming / off-mesh robustness** — outbound-only traverses NAT trivially, and the console can
+  **store-and-forward**: approve now, the daemon claims and runs it when it next reconnects.
+- **Natural online-awareness** — a live connection is the "host is up" signal.
+
+**Would cost (why not now):**
+
+- **Reintroduces a standing per-host credential.** The daemon must authenticate its connection so
+  the console routes the right host's work to it (each command carries the operator's per-host token
+  - argv; an anonymous "I'm `rugged`" would let an impostor intercept them). That standing secret on
+    the node is exactly what the current design eliminates ("no bespoke host key"). It can be scoped to
+    _connection routing_ while the per-command Authentik token still gates _command authority_ —
+    connection direction is orthogonal to the auth model, and the operator-identity token must be kept
+    and verified daemon-side either way — but it is still a secret to provision, rotate, and protect.
+- **Stateful console subsystem** — a registry of connected daemons, per-host routing, reconnect,
+  heartbeats, backpressure. The current model is a stateless POST-and-response.
+- **Deferred-execution semantics** — a command approved now but run when the host later reconnects
+  may be stale/surprising for an interactive "run this on my laptop" gesture. Fast-fail is often the
+  wanted behavior, not a queue.
+- **Nebula already covers most of it** — for the current 2-host mesh, Nebula hole-punches/relays so
+  the console _can_ reach an online roaming host inbound, and the connect-timeout split makes an
+  offline host fail in ~10s. The inversion's headline connectivity win is largely redundant here (it
+  becomes the clear choice only if hosts leave the mesh — public/NAT, Tailscale-runner style).
+
+If roaming reachability ever bites without a rewrite, the smaller doctrine-preserving step is a
+**console-side bounded queue + retry** (hold the approved command, retry reaching the host for a
+short window on reconnect) — no inversion, no new standing credential.
+
 ## Future expansion (TODO)
 
 - **`iguana`** — add: a `hostexec-iguana` provider + `hostexec-{user,root}-iguana` groups + the
