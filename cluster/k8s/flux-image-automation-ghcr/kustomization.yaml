@@ -17,8 +17,6 @@ resources:
   - cpap-sync-image-policy.yaml
   - airlock-image-repository.yaml
   - airlock-image-policy.yaml
-  - homeassistant-proxy-image-repository.yaml
-  - homeassistant-proxy-image-policy.yaml
   - budget-exporter-image-repository.yaml
   - budget-exporter-image-policy.yaml
   - tana-mcp-image-repository.yaml

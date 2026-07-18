@@ -1,0 +1,16 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-home-ssd
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+# Home automation is intentionally hardware- and LAN-pinned: integrations use
+# the OptiPlex's Bluetooth radio and the home multicast domain. VolSync copies
+# this node-local state to replicated SeaweedFS storage for disaster recovery.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/region
+        values: [home]
+      - key: storage.allegedly.works/tier
+        values: [ssd]

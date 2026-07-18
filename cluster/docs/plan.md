@@ -29,9 +29,6 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
   registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
   `region=hil` should it ever be revived.)
-- **HomeAssistant Proxy**: `homeassistant-proxy` — parked 2026-06-01 (15 Leroy household left
-  2026-06-27); workload objects removed from cluster, manifests kept suspended for possible
-  revival at a new place.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
 - **kagent**: `kagent-{crds,db,secrets}` — parked 2026-05-08; too fragile (sessions die on

@@ -30,7 +30,7 @@ spec:
     # The chart's default `local-path` StorageClass is retired 2026-06-03
     # in favor of the region-pinned `local-path-ovh` and `local-path-proxmox`
     # SCs (defined as separate manifests in this directory). The provisioner
-    # deployment + nodePathMap below are still used because both region-pinned
+    # deployment + nodePathMap below are still used because the region-pinned
     # SCs declare `provisioner: cluster.local/local-path-provisioner`.
     storageClass:
       create: false
@@ -62,6 +62,11 @@ spec:
       - node: ovh-ns104963
         paths:
           - /var/mnt/seaweedfs-data/local-path
+      # Home Assistant is deliberately tied to the physical home LAN and the
+      # OptiPlex's radios. Keep its local state on this machine's SSD.
+      - node: optiplex
+        paths:
+          - /var/local-path-provisioner
     # Configure helper pods to run in local-path-storage namespace (privileged)
     # This avoids PodSecurity restrictions in workload namespaces
     configmap:

@@ -1,0 +1,38 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: home-assistant
+  endpoints:
+    - port: http
+      path: /api/prometheus
+      interval: 30s
+      authorization:
+        type: Bearer
+        credentials:
+          name: home-assistant-metrics-token
+          key: password
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: home-assistant
+  namespace: home-assistant
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: home-assistant
+      rules:
+        - alert: HomeAssistantUnavailable
+          expr: up{namespace="home-assistant", service="home-assistant"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Home Assistant is unavailable
+            description: Prometheus has been unable to scrape Home Assistant for 10 minutes.

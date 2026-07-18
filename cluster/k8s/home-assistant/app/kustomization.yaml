@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - storage.yaml
+  - metrics-secret.yaml
+  - home-assistant.yaml
+  - httproute.yaml
+  - monitoring.yaml
+  - volsync-backup.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: home-assistant-configuration
+    namespace: home-assistant
+    files:
+      - configuration.yaml=configuration.yaml.conf
+  - name: home-assistant-bootstrap
+    namespace: home-assistant
+    files:
+      - install_oidc.py
+  - name: home-assistant-caddy
+    namespace: home-assistant
+    files:
+      - Caddyfile

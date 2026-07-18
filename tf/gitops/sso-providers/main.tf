@@ -109,6 +109,19 @@ resource "authentik_group" "forgejo_admins" {
   users = [tonumber(authentik_user.agentydragon.id)]
 }
 
+resource "authentik_group" "home_assistant_admins" {
+  name  = "home-assistant-admins"
+  users = [tonumber(authentik_user.agentydragon.id)]
+}
+
+resource "authentik_group" "home_assistant_users" {
+  name = "home-assistant-users"
+  users = [
+    tonumber(authentik_user.agentydragon.id),
+    tonumber(authentik_user.auragon.id),
+  ]
+}
+
 resource "authentik_group" "study_casino" {
   name = "study-casino"
   users = [

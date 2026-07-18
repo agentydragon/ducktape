@@ -3,17 +3,14 @@
 Instance: `https://home.e621.co.uk` (local: `10.0.0.3`) — location name: Howleroi (SF, America/Los_Angeles)
 Version: 2026.3.4
 
-> **Dormant (2026-06-27):** the 15 Leroy household was left. This config (`iaqi`,
-> `packages/rai`, `deploy.sh`) is kept for possible revival on a new HA host in the new
-> place, or later deletion. The proxy (`cluster/k8s/agents/homeassistant-proxy/`) is parked
-> — manifests kept, Flux Kustomization suspended, live objects deleted from cluster. The
+> **Legacy instance (2026-06-27):** the 15 Leroy household was left. This config (`iaqi`,
+> `packages/rai`, `deploy.sh`) is retained as migration reference for the Kubernetes Home
+> Assistant deployment under `cluster/k8s/home-assistant`. The
 > `~/.ssh/15leroy` key + `nix/home/modules/15leroy-ssh.nix` module were removed (see TODO.md).
 
 ## Access
 
 - **Web UI**: `https://home.e621.co.uk`
-- **API token**: SOPS secret `ha-token.sops.yaml` in `homeassistant-proxy` namespace
-  - `kubectl get secret homeassistant-proxy-ha-token -n homeassistant-proxy -o jsonpath='{.data.token}' | base64 -d`
 - **SSH**: `ssh homeassistant` → `root@10.0.0.3:22` (LAN only; dormant — see note above).
   The `~/.ssh/15leroy` key, `nix/home/modules/15leroy-ssh.nix` module, and `homeassistant`
   SSH host alias in `nix/home/home.nix` were removed when the household was left; re-add to revive.
@@ -91,7 +88,6 @@ SSH access is set up. See <config-as-code.md> for research notes on options.
 | Zigbee2MQTT Edge            | `45df7312_zigbee2mqtt_edge` | edge           | started (active)                          |
 | openWakeWord                | `core_openwakeword`         | 2.1.0          | started                                   |
 
-## Related
+## Current deployment
 
-- `cluster/k8s/agents/homeassistant-proxy/` — MCP agent proxy (parked: suspended, removed from cluster)
-- `homeassistant/proxy/` — proxy source code (parked)
+- `cluster/k8s/home-assistant/` — Kubernetes Home Assistant on `optiplex`

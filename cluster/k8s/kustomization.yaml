@@ -107,7 +107,8 @@ resources:
   - agents/postscanmail-mcp/namespace/flux-kustomization.yaml
   - agents/postscanmail-mcp/app/flux-kustomization.yaml
   - agents/postscanmail-mcp/servicemonitor/flux-kustomization.yaml
-  - agents/homeassistant-proxy/flux-kustomization.yaml
+  - home-assistant/namespace/flux-kustomization.yaml
+  - home-assistant/app/flux-kustomization.yaml
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml

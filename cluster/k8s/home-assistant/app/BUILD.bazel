@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_library(
+    name = "install_oidc",
+    srcs = ["install_oidc.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_install_oidc",
+    srcs = ["test_install_oidc.py"],
+    deps = [
+        ":install_oidc",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

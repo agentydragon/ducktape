@@ -1,0 +1,8 @@
+:8123 {
+	@unauthorizedMetrics {
+		path /api/prometheus
+		not header Authorization "Bearer {$METRICS_TOKEN}"
+	}
+	respond @unauthorizedMetrics 401
+	reverse_proxy 127.0.0.1:8124
+}

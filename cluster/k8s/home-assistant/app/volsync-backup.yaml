@@ -1,0 +1,66 @@
+# Crash-consistent copies of the OptiPlex-local state into replicated
+# SeaweedFS storage. Home Assistant's own backup integration remains the source
+# of application-consistent restore points inside home-assistant-config.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: home-assistant-config-backup
+  namespace: home-assistant
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 32Gi
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: home-assistant-config-backup
+  namespace: home-assistant
+spec:
+  rsyncTLS:
+    destinationPVC: home-assistant-config-backup
+    copyMethod: Direct
+    serviceType: ClusterIP
+    moverSecurityContext:
+      runAsUser: 0
+      runAsGroup: 0
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: [hil-ovh]
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: home-assistant-config-backup
+  namespace: home-assistant
+spec:
+  sourcePVC: home-assistant-config
+  trigger:
+    schedule: "17 */6 * * *"
+  rsyncTLS:
+    copyMethod: Direct
+    keySecret: volsync-rsync-tls-home-assistant-config-backup
+    address: volsync-rsync-tls-dst-home-assistant-config-backup.home-assistant.svc
+    port: 8000
+    moverSecurityContext:
+      runAsUser: 0
+      runAsGroup: 0
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: In
+                  values: [optiplex]

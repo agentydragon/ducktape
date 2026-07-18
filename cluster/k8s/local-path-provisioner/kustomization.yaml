@@ -7,3 +7,4 @@ resources:
   - sc-local-path-ovh-hdd.yaml
   - sc-local-path-ovh-ssd.yaml
   - sc-local-path-proxmox.yaml
+  - sc-local-path-home-ssd.yaml
