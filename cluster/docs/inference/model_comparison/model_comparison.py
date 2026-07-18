@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 plt.rcParams.update({"figure.dpi": 120, "font.size": 10, "axes.grid": True, "grid.alpha": 0.3})
@@ -170,7 +171,9 @@ REASONING_CLASS = {
     "Qwen3-Coder-30B": ("Direct", "local", "shipped without a thinking mode (Qwen)"),
     "Devstral-24B": ("Direct", "local", "answered directly, no CoT in E5"),
     "gpt-oss-20b": ("Reasoning", "local", "reasoning_effort low/med/high (E2)"),
+    "gpt-oss-120b": ("Reasoning", "local", "reasoning effort (E7)"),
     "Qwen3.5-35B-A3B": ("Reasoning", "local", "verbose CoT, effort dial (E4)"),
+    "GLM-5.2 (744B)": ("Reasoning", "local", "reasoning model (Colibri)"),
     "Claude Sonnet 4.5": ("Reasoning", "anchor", "reasoning effort / thinking budget"),
     "Claude Opus 4.8": ("Reasoning", "anchor", "reasoning effort"),
     "Gemini 3.5 Flash": ("Reasoning", "anchor", "thinking budget"),
@@ -270,29 +273,35 @@ fig.savefig("fig2_context.svg", bbox_inches="tight")
 # at the labelled effort, so read tiers, not decimals.
 
 # %%
+# Marker encodes reasoning vs direct; colour encodes tier (resident/offload). Axes
+# carry speed × SWE, so labels are just the model name (no repeated numbers).
+MARKER_FOR = {"Reasoning": "o", "Direct": "s"}
 fig, ax = plt.subplots(figsize=(10, 6))
 for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items():
     color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
-    setting = SWEBENCH[lbl][3] if lbl in SWEBENCH else "?"
-    ax.scatter(tps, swe, s=100, color=color, zorder=3)
-    ax.annotate(f"{lbl} — {swe:.0f} SWE / {tps:g} tok/s\n({setting})", (tps, swe), textcoords="offset points", xytext=(7, 5), fontsize=7.5)
-for name, (s, _, kind, setting) in SWEBENCH.items():
+    rclass = REASONING_CLASS.get(lbl, ("Reasoning",))[0]
+    ax.scatter(tps, swe, s=120, color=color, marker=MARKER_FOR[rclass], zorder=3)
+    ax.annotate(lbl, (tps, swe), textcoords="offset points", xytext=(8, 4), fontsize=8)
+for name, (s, _, kind, _) in SWEBENCH.items():
     if kind == "anchor":
-        ax.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.35)
-        ax.text(2600, s, f"{name} {s:.0f} ({setting})", color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
+        ax.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.3)
+        ax.text(2600, s, name, color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
 ax.set_xscale("log")
 ax.set_xlim(0.1, 3000)
 ax.set_ylim(45, 100)
 ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
 ax.set_ylabel("SWE-bench Verified (%)  →  better coder")
-ax.set_title("Speed × coding skill  ·  measured tok/s (local) × SWE-bench (setting-labelled)")
+ax.set_title("Speed × coding skill  ·  ○ reasoning / □ direct  ·  colour = tier")
 ax.legend(
     handles=[
-        Patch(color=LOCAL_COLOR, label="resident (fast, caps ~69)"),
-        Patch(color=OFFLOAD_COLOR, label="offload (near-frontier, ~5000× slower)"),
-        Patch(color=ANCHOR_COLOR, label="closed frontier (vals.ai harness)"),
+        Patch(color=LOCAL_COLOR, label="resident (VRAM)"),
+        Patch(color=OFFLOAD_COLOR, label="offload (CPU/disk)"),
+        Patch(color=ANCHOR_COLOR, label="closed frontier"),
+        Line2D([0], [0], marker="o", color="#555", ls="", label="reasoning model"),
+        Line2D([0], [0], marker="s", color="#555", ls="", label="direct (no thinking)"),
     ],
     loc="center left",
+    fontsize=8,
 )
 fig.tight_layout()
 fig.savefig("fig3_speed_vs_swe.svg", bbox_inches="tight")
