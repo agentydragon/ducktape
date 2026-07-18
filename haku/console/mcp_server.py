@@ -30,7 +30,7 @@ import datetime
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
@@ -54,9 +54,8 @@ from haku.console.mcp_config import (
     _load_servers,
     server_tool_prefix,
 )
-from haku.console.mcp_operator_oauth import McpOperatorAuthConnected, PostgresMcpOperatorOAuthStore
-from haku.console.oauth_token_support import token_is_fresh
-from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnected
+from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
+from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
@@ -137,9 +136,14 @@ class McpServerConnectionStatus(BaseModel):
 
     server_id: str
     auth_kind: str
-    status: Literal["configured", "connected", "needs_refresh", "unconnected"]
-    token_expires_at: datetime.datetime | None = None
-    detail: str
+    connection: McpOperatorAuthStatus | ProviderConnectionStatus | None = Field(
+        default=None,
+        description=(
+            "The persisted, non-secret operator connection status. This uses the same safe status "
+            "shape as the console's OAuth/provider APIs, including connection and token-expiry times. "
+            "It is null when this authentication kind has no separately linked operator connection."
+        ),
+    )
 
 
 class McpServerConnectionStatusResponse(BaseModel):
@@ -168,37 +172,6 @@ def _tool_call_url(settings: Settings, tool_call_id: str) -> str | None:
     return f"{settings.ui_base_url.rstrip('/')}/tool-calls/{tool_call_id}"
 
 
-def _connection_status(
-    *, server: McpServerEntry, connected: bool, token_expires_at: datetime.datetime | None
-) -> McpServerConnectionStatus:
-    if not connected:
-        return McpServerConnectionStatus(
-            server_id=server.id,
-            auth_kind=server.auth.kind,
-            status="unconnected",
-            detail="No operator account is linked. Connect this server in the console before use.",
-        )
-    if not token_is_fresh(token_expires_at, datetime.datetime.now(datetime.UTC)):
-        return McpServerConnectionStatus(
-            server_id=server.id,
-            auth_kind=server.auth.kind,
-            status="needs_refresh",
-            token_expires_at=token_expires_at,
-            detail=(
-                "The stored access token is expired or within its refresh window. This passive status check "
-                "did not refresh it; "
-                "the next real use may refresh it or require reconnecting."
-            ),
-        )
-    return McpServerConnectionStatus(
-        server_id=server.id,
-        auth_kind=server.auth.kind,
-        status="connected",
-        token_expires_at=token_expires_at,
-        detail="An operator account is linked and its stored access token is outside the refresh window.",
-    )
-
-
 def _passive_server_connection_statuses(
     context: ConsoleMcpContext, actor: ToolCallActor
 ) -> McpServerConnectionStatusResponse:
@@ -218,34 +191,19 @@ def _passive_server_connection_statuses(
     for server in servers:
         match server.auth:
             case RemoteServerOAuthAuth():
-                status = oauth_statuses.get(server.id)
+                oauth_status = oauth_statuses.get(server.id)
                 result.append(
-                    _connection_status(
-                        server=server,
-                        connected=isinstance(status, McpOperatorAuthConnected),
-                        token_expires_at=status.token_expires_at
-                        if isinstance(status, McpOperatorAuthConnected)
-                        else None,
-                    )
+                    McpServerConnectionStatus(server_id=server.id, auth_kind=server.auth.kind, connection=oauth_status)
                 )
             case ProviderConnectionAuth(provider=provider):
-                status = provider_statuses.get(provider)
+                provider_status = provider_statuses.get(provider)
                 result.append(
-                    _connection_status(
-                        server=server,
-                        connected=isinstance(status, ProviderConnected),
-                        token_expires_at=status.token_expires_at if isinstance(status, ProviderConnected) else None,
+                    McpServerConnectionStatus(
+                        server_id=server.id, auth_kind=server.auth.kind, connection=provider_status
                     )
                 )
             case _:
-                result.append(
-                    McpServerConnectionStatus(
-                        server_id=server.id,
-                        auth_kind=server.auth.kind,
-                        status="configured",
-                        detail="This server does not use an operator-linked connection.",
-                    )
-                )
+                result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=server.auth.kind))
     return McpServerConnectionStatusResponse(servers=result)
 
 
@@ -488,9 +446,9 @@ def build_console_mcp(
         """List configured MCP servers and their persisted connection state.
 
         This is a passive status read: it never refreshes a token, contacts an authorization server,
-        or calls a downstream MCP server. `needs_refresh` means the stored access token is expired
-        or within its refresh window; only a real discovery or execution attempt may refresh it or
-        prove that reconnect is needed.
+        or calls a downstream MCP server. OAuth/provider connection objects mirror the console's
+        persisted non-secret status structures, including connection and token-expiry times. A real
+        discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
         """
         return _passive_server_connection_statuses(context, actor)
 

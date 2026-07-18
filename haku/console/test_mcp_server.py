@@ -599,14 +599,16 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     )
     settings = console_settings(migrated_db_url, config_file=config_file)
     expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
+    connected_at = expires_at - datetime.timedelta(days=1)
     oauth_statuses = Mock(
         return_value=McpOperatorAuthStatusResponse(
             associations=[
                 McpOperatorAuthConnected(
                     server_id="expired-remote",
                     username="operator",
-                    connected_at=expires_at - datetime.timedelta(days=1),
+                    connected_at=connected_at,
                     token_expires_at=expires_at,
+                    scope="openid offline_access",
                 ),
                 McpOperatorAuthUnconnected(server_id="unconnected-remote", username="operator"),
             ]
@@ -616,7 +618,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         return_value=ProviderConnectionStatusResponse(
             connections=[
                 ProviderConnected(
-                    provider="google", connected_at=expires_at - datetime.timedelta(days=1), token_expires_at=None
+                    provider="google", connected_at=connected_at, token_expires_at=None, scope="openid email"
                 )
             ]
         )
@@ -641,11 +643,43 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     response = mcp_server_module._passive_server_connection_statuses(context, actor)
 
     statuses = {server.server_id: server for server in response.servers}
-    assert statuses["expired-remote"].status == "needs_refresh"
-    assert statuses["expired-remote"].token_expires_at == expires_at
-    assert statuses["unconnected-remote"].status == "unconnected"
-    assert statuses["gmail"].status == "connected"
-    assert statuses["routine"].status == "configured"
+    assert statuses["expired-remote"].model_dump(mode="json") == {
+        "server_id": "expired-remote",
+        "auth_kind": "remote_server_oauth",
+        "connection": {
+            "server_id": "expired-remote",
+            "username": "operator",
+            "status": "connected",
+            "connected_at": connected_at.isoformat().replace("+00:00", "Z"),
+            "token_expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+            "scope": "openid offline_access",
+        },
+    }
+    assert statuses["unconnected-remote"].model_dump(mode="json") == {
+        "server_id": "unconnected-remote",
+        "auth_kind": "remote_server_oauth",
+        "connection": {"server_id": "unconnected-remote", "username": "operator", "status": "unconnected"},
+    }
+    assert statuses["gmail"].model_dump(mode="json") == {
+        "server_id": "gmail",
+        "auth_kind": "provider_connection",
+        "connection": {
+            "provider": "google",
+            "status": "connected",
+            "connected_at": connected_at.isoformat().replace("+00:00", "Z"),
+            "token_expires_at": None,
+            "scope": "openid email",
+        },
+    }
+    assert statuses["routine"].model_dump(mode="json") == {
+        "server_id": "routine",
+        "auth_kind": "none",
+        "connection": None,
+    }
+    serialized = response.model_dump_json()
+    assert "access_token" not in serialized
+    assert "refresh_token" not in serialized
+    assert "client_secret" not in serialized
     oauth_statuses.assert_called_once()
     provider_statuses.assert_called_once()
     refresh_remote.assert_not_awaited()

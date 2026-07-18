@@ -130,9 +130,11 @@ transparent **pass-throughs** (original schema, real result); everything else ke
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
 an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
 read tools. `list_mcp_servers` is a third console-native read tool: it passively reports the
-configured catalog plus persisted per-Operator connection state (`configured`, `connected`,
-`needs_refresh`, or `unconnected`). It never refreshes credentials or contacts downstream servers;
-`needs_refresh` means the access token is expired or within the normal refresh window. Live tool
+configured catalog plus each persisted per-Operator OAuth/provider status object. These status objects
+match the console's existing non-secret status structures, including `status`, `connected_at`,
+`token_expires_at`, `scope`, and the safe display identity; access tokens, refresh tokens, and client
+secrets are never included. Authentication kinds without a separate operator-linked connection report
+`connection: null`. The tool never refreshes credentials or contacts downstream servers. Live tool
 discovery remains the normal MCP `tools/list` path. The promise-semantics preamble lives in each tool's
 **description** (many MCP clients, claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned
 `HakuAgentOAuthProxy` composed with the configured `static_agents` through
