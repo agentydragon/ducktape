@@ -1,12 +1,9 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-# The hostexec interface surface: RunAs, the agent-facing tool input, and the hostexecd HTTP body.
+# The hostexec wire surface: RunAsUser (shared with the console tool) and the hostexecd HTTP body.
 py_library(
     name = "wire",
     srcs = ["wire.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//mcp_infra/exec:models",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )

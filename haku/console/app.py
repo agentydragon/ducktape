@@ -44,10 +44,11 @@ from haku.console import (
 )
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
-from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_static_agents
 from haku.console.models import ConfigResponse
@@ -55,6 +56,7 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
+from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
@@ -146,6 +148,17 @@ def create_app(
     provider_connection_store = provider_connection.PostgresProviderConnectionStore(
         db_sessions, operator_identity_store=operator_identity_store, provider_clients=provider_clients
     )
+    # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
+    # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
+    # Authentik token endpoint lazily (on refresh), so a non-Authentik operator OIDC that never
+    # refreshes (e.g. a hermetic test IdP with hostexec off) constructs it fine.
+    authentik_operator_token_store = PostgresAuthentikOperatorTokenStore(
+        db_sessions,
+        operator_identity_store=operator_identity_store,
+        client_id=settings.operator_oidc.client_id,
+        client_secret=settings.operator_oidc.client_secret.get_secret_value(),
+        issuer=settings.operator_oidc.issuer,
+    )
     agent_authority = PostgresAgentAuthority(
         db_sessions, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
     )
@@ -190,7 +203,19 @@ def create_app(
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     if in_process_servers is None:
-        in_process_servers = build_in_process_servers(InProcessServerDependencies(routine_launcher=routine_launcher))
+        # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
+        # endpoint here (only in this branch) is safe.
+        hostexec_server = (
+            HostexecServerConfig(
+                config=settings.hostexec,
+                token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
+            )
+            if settings.hostexec is not None
+            else None
+        )
+        in_process_servers = build_in_process_servers(
+            InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
+        )
     if tool_call_executor is None:
         tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
     if tool_call_metadata_provider is None:
@@ -204,6 +229,7 @@ def create_app(
         in_process_servers=in_process_servers,
         gmail_client_provider=gmail_client_provider,
         provider_store=provider_connection_store,
+        authentik_token_store=authentik_operator_token_store,
     )
 
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
@@ -263,6 +289,7 @@ def create_app(
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.provider_connection_store = provider_connection_store
+    app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
@@ -325,7 +352,9 @@ def create_app(
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.
-    app.state.operator_oauth = operator_auth.build_oauth(settings.operator_oidc)
+    app.state.operator_oauth = operator_auth.build_oauth(
+        settings.operator_oidc, offline_access=settings.hostexec is not None
+    )
     app.include_router(operator_auth.router)
     app.add_middleware(
         SessionMiddleware,

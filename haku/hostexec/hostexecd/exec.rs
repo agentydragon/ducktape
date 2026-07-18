@@ -58,9 +58,8 @@ pub struct ExecRequest {
     pub timeout: Duration,
     pub max_bytes: usize,
     /// Drop to these credentials for the child (`hostexecd` runs as root). `None` runs as the
-    /// current user. NOTE: this sets the primary uid/gid only; supplementary groups
-    /// (`initgroups`) are a known gap — a full drop needs a `pre_exec` hook, added with the
-    /// root-capable host test.
+    /// current user. The drop is a full one — supplementary groups, then gid, then uid — via a
+    /// `pre_exec` hook. It requires root, so it is validated on a host, not the non-root unit tests.
     pub credentials: Option<Credentials>,
 }
 
@@ -81,8 +80,26 @@ pub async fn run_command(req: &ExecRequest) -> io::Result<ExecResult> {
     if let Some(cwd) = &req.cwd {
         cmd.current_dir(cwd);
     }
-    if let Some(creds) = req.credentials {
-        cmd.uid(creds.uid).gid(creds.gid);
+    if let Some(creds) = &req.credentials {
+        let (uid, gid, groups) = (creds.uid, creds.gid, creds.groups.clone());
+        // SAFETY: runs in the child after fork, before exec — only async-signal-safe syscalls.
+        // Full privilege drop: supplementary groups, then gid, then uid. Order matters — after
+        // setuid the process no longer has the privilege to set groups/gid. A failure returns an
+        // error, so a drop that cannot complete fails the spawn (never runs with the wrong uid).
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::setgroups(groups.len(), groups.as_ptr()) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setgid(gid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setuid(uid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().expect("stdout piped");

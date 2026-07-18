@@ -1,0 +1,60 @@
+"""haku-console's in-process `hostexec` MCP server.
+
+Runs a shell command on an operator machine (`wyrm2`, `rugged`, …) behind haku-console's
+approval queue. Every call is operator-approved by construction — `hostexec_run` is never in
+`UNCONDITIONAL_AUTO_APPROVE` — and executes under the operator's **own Authentik authority**: on
+approval the console mints a short-lived, single-use per-host token and POSTs it to `hostexecd`,
+which verifies it and drops privileges to `run_as`. There is no standing host credential.
+
+Built as a real `FastMCP` server attached via an in-memory transport (the gmail/google_calendar
+pattern), so the application service's approval/audit lifecycle runs unchanged. Registered as MCP
+server id `hostexec` in `cluster/k8s/haku/console/config.yaml` (no `server_url`). See
+`haku/docs/security.md` and `haku/hostexec/PLAN.md`.
+"""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastmcp import FastMCP
+from pydantic import Field
+
+from haku.console.tools.hostexec_client import HostexecClient
+from haku.hostexec.wire import RunAsUser
+from mcp_infra.exec.models import CMD_DESCRIPTION, BaseExecResult, TimeoutMs
+
+HOSTEXEC_SERVER_ID = "hostexec"
+
+
+def build_mcp(client: HostexecClient) -> FastMCP:
+    mcp: FastMCP = FastMCP(
+        name=HOSTEXEC_SERVER_ID,
+        instructions="Run a shell command on an operator machine (e.g. wyrm2, rugged). Every call is gated by "
+        "the operator-approval queue — there is no autonomous path — and runs as the requested POSIX user under "
+        "the operator's own Authentik authority.",
+    )
+
+    @mcp.tool
+    async def hostexec_run(
+        host: Annotated[str, Field(description="Target host to run on (e.g. 'wyrm2', 'rugged'). Must be in scope.")],
+        run_as: Annotated[
+            RunAsUser,
+            Field(
+                description="POSIX username to run as (e.g. 'agentydragon', 'root'). Authorized by the operator's "
+                "`hostexec-<user>-<host>` Authentik group."
+            ),
+        ],
+        cmd: Annotated[list[str], Field(min_length=1, description=CMD_DESCRIPTION)],
+        max_bytes: Annotated[
+            int,
+            Field(ge=0, le=100_000, description="Max bytes to capture from stdout and stderr. 0 means both are empty."),
+        ],
+        timeout_ms: TimeoutMs,
+        cwd: Annotated[
+            str | None, Field(description="Working directory for the command; omit to use hostexecd's default.")
+        ] = None,
+    ) -> BaseExecResult:
+        """Run `cmd` (an argv vector, execve — no shell) on `host` as `run_as`. Approval-gated; never auto-approved."""
+        return await client.run(host=host, run_as=run_as, argv=cmd, cwd=cwd, max_bytes=max_bytes, timeout_ms=timeout_ms)
+
+    return mcp

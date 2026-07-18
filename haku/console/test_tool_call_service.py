@@ -18,6 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.conftest import console_sessions, console_settings, operator_identity_store, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
@@ -264,6 +265,13 @@ def _service(
             console_sessions(database_url),
             operator_identity_store=operator_identity_store(database_url),
             provider_clients={},
+        ),
+        authentik_token_store=PostgresAuthentikOperatorTokenStore(
+            console_sessions(database_url),
+            operator_identity_store=operator_identity_store(database_url),
+            client_id="test-client",
+            client_secret="test-secret",
+            issuer="https://auth.test/application/o/haku-console/",
         ),
     )
 

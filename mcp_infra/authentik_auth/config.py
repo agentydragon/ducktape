@@ -5,6 +5,22 @@ from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, ConfigDict, Field
 
 
+def authentik_token_endpoint_for_issuer(issuer: str) -> str:
+    """Global Authentik `/application/o/token/` URL derived from a per-provider issuer.
+
+    Strips the trailing provider slug, preserving any reverse-proxy path prefix before
+    `/application/o/`. Shared so every Authentik client (JWT-bearer exchange, refresh) derives the
+    one global token endpoint the same way.
+    """
+    parsed = urlparse(issuer.rstrip("/"))
+    prefix, marker, provider_slug = parsed.path.rpartition("/application/o/")
+    if not marker or not provider_slug or "/" in provider_slug:
+        raise ValueError(
+            f"issuer must end in an Authentik per-provider issuer path like `.../application/o/<slug>/`; got {issuer!r}"
+        )
+    return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
+
+
 class DirectJwtTrust(BaseModel):
     """One explicitly trusted direct bearer-token issuer contract."""
 
@@ -48,16 +64,5 @@ class AuthentikAuthConfig(BaseModel):
         return self.oidc_issuer.rstrip("/")
 
     def authentik_token_endpoint(self) -> str:
-        """Global Authentik `/application/o/token/` URL derived from `oidc_issuer`.
-
-        Strips the trailing provider slug, preserving any reverse-proxy path
-        prefix before `/application/o/`.
-        """
-        parsed = urlparse(self.oidc_issuer.rstrip("/"))
-        prefix, marker, provider_slug = parsed.path.rpartition("/application/o/")
-        if not marker or not provider_slug or "/" in provider_slug:
-            raise ValueError(
-                "oidc_issuer must end in an Authentik per-provider issuer path "
-                f"like `.../application/o/<slug>/`; got {self.oidc_issuer!r}"
-            )
-        return urlunparse(parsed._replace(path=f"{prefix}{marker}token/"))
+        """Global Authentik `/application/o/token/` URL derived from `oidc_issuer`."""
+        return authentik_token_endpoint_for_issuer(self.oidc_issuer)

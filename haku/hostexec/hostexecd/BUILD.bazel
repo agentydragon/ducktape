@@ -74,6 +74,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":users",
+        "@crates//:libc",
         "@crates//:serde",
         "@crates//:tokio",
     ],
@@ -86,8 +87,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":exec",
-        ":users",
-        "@crates//:libc",
         "@crates//:serde_json",
         "@crates//:tokio",
     ],

@@ -629,4 +629,29 @@ class ProviderConnectionFlow(Base):
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class OperatorAuthentikToken(Base):
+    """The acting Operator's own Authentik OAuth token, captured at browser login (offline_access).
+
+    One row per Operator. The console self-refreshes ``access_token`` from ``refresh_token`` using
+    the operator-OIDC client (injected from Settings, never stored here); the ``hostexec`` server
+    then exchanges that access token for a short-lived per-host token, so the operator acts under
+    their own Authentik identity with no bespoke console key. ``token_revision`` guards a concurrent
+    refresh/re-login.
+    """
+
+    __tablename__ = "operator_authentik_tokens"
+
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
+    )
+    token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_type: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 metadata = Base.metadata

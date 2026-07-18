@@ -13,11 +13,12 @@ The static SPA (served by nginx) stays public; on a 401 the frontend redirects t
 
 from __future__ import annotations
 
+import datetime
 import logging
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
@@ -27,6 +28,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
+from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import OperatorOidcConfig, Settings
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -56,15 +58,20 @@ class OperatorSession:
     browser_session_id: str
 
 
-def build_oauth(config: OperatorOidcConfig) -> OAuth:
-    """Build an authlib OAuth registry with the Authentik provider registered."""
+def build_oauth(config: OperatorOidcConfig, *, offline_access: bool = False) -> OAuth:
+    """Build an authlib OAuth registry with the Authentik provider registered.
+
+    `offline_access` adds that scope so Authentik returns a refresh token — requested only when the
+    console persists the operator's token for hostexec (no needless credential otherwise).
+    """
+    scope = "openid email profile offline_access" if offline_access else "openid email profile"
     oauth = OAuth()
     oauth.register(
         name=AUTHENTIK_CLIENT_NAME,
         client_id=config.client_id,
         client_secret=config.client_secret.get_secret_value(),
         server_metadata_url=config.server_metadata_url,
-        client_kwargs={"scope": "openid email profile"},
+        client_kwargs={"scope": scope},
     )
     return oauth
 
@@ -189,10 +196,41 @@ async def callback(request: Request) -> RedirectResponse:
         # into a sliding authorization that outlives Authentik reauthentication indefinitely.
         "expires_at": int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS,
     }
+    # Persist the operator's own Authentik token for hostexec (offline_access grants a refresh
+    # token). Only when hostexec is configured — otherwise there is no reader for this credential.
+    if settings.hostexec is not None:
+        _persist_operator_authentik_token(request, identity.operator_id, token)
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
     raw_return_to = request.session.pop(SESSION_RETURN_TO_KEY, None)
     return_to = _validated_enrollment_return_to(raw_return_to) if isinstance(raw_return_to, str) else "/"
     return RedirectResponse(url=return_to, status_code=303)
+
+
+def _persist_operator_authentik_token(request: Request, operator_id: UUID, token: dict[str, Any]) -> None:
+    """Best-effort: store the operator's Authentik token for hostexec. A failure never breaks login
+    (hostexec just won't have a token); the exception is logged."""
+    store = cast(PostgresAuthentikOperatorTokenStore, request.app.state.authentik_operator_token_store)
+    access_token = token.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        logger.warning("operator login: Authentik token had no access_token; hostexec will be unavailable")
+        return
+    expires_at_ts = token.get("expires_at")
+    expires_at = (
+        datetime.datetime.fromtimestamp(expires_at_ts, tz=datetime.UTC)
+        if isinstance(expires_at_ts, (int, float)) and not isinstance(expires_at_ts, bool)
+        else None
+    )
+    try:
+        store.store_login_token(
+            operator_id=operator_id,
+            access_token=access_token,
+            refresh_token=token.get("refresh_token"),
+            token_type=token.get("token_type") or "Bearer",
+            scope=token.get("scope"),
+            expires_at=expires_at,
+        )
+    except Exception:
+        logger.warning("operator login: failed to persist Authentik token for hostexec", exc_info=True)
 
 
 @router.get("/logout")

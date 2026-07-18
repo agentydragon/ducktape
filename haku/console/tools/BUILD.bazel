@@ -72,6 +72,94 @@ py_library(
     ],
 )
 
+py_library(
+    name = "hostexec_client",
+    srcs = ["hostexec_client.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/hostexec:wire",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "hostexec_token",
+    srcs = ["hostexec_token.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_test(
+    name = "test_hostexec_token",
+    srcs = ["test_hostexec_token.py"],
+    deps = [
+        ":hostexec_token",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
+        # Gazelle drops it on regen since nothing imports it.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_library(
+    name = "hostexec",
+    srcs = ["hostexec.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":hostexec_client",
+        "//haku/hostexec:wire",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_hostexec_client",
+    srcs = ["test_hostexec_client.py"],
+    deps = [
+        ":hostexec_client",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
+        # Gazelle drops it on regen since nothing imports it.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_hostexec",
+    srcs = ["test_hostexec.py"],
+    deps = [
+        ":hostexec",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
+        # Gazelle drops it on regen since nothing imports it.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
 py_test(
     name = "test_gmail",
     srcs = ["test_gmail.py"],

@@ -99,6 +99,10 @@ class ProviderConnectionTokenStore(Protocol):
     async def access_token_for(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> str | None: ...
 
 
+class AuthentikOperatorTokenStore(Protocol):
+    async def access_token_for(self, *, operator_id: UUID) -> str | None: ...
+
+
 # Resolves the acting Operator's Gmail client for auto-approval label lookups (or None when the
 # Operator has no Google connection). Production builds it from the provider store; tests inject one.
 GmailClientProvider = Callable[[UUID], Awaitable[GmailToolsClient | None]]
@@ -135,10 +139,27 @@ async def _require_operator_linked_token(token: Awaitable[str | None], server_id
 
 
 class ServerAuthMode(Enum):
-    """How a connected MCP server resolves its backend auth for an operator."""
+    """How a server's backend credential for the acting operator is sourced.
+
+    The three operator-scoped modes all execute the call as the operator, differing only in *which*
+    credential and where it is linked:
+
+    - ``PROVIDER``: the operator's account at a well-known external provider (Google). The console is
+      a fixed pre-registered OAuth client of that provider, and one linked connection is shared
+      across servers (``provider_connection``).
+    - ``REMOTE_SERVER_OAUTH``: the operator's account at the connected MCP server *itself*, which is
+      its own OAuth authorization server. Linked per server through that server's DCR/PKCE flow
+      (``operator_oauth``, e.g. kubectl-passthrough).
+    - ``OPERATOR_IDENTITY``: the operator's *own* console-login identity — the Authentik token they
+      sign into the console with — captured at login and reused/exchanged downstream (hostexec). Not
+      a separately linked account; the operator acting as themselves.
+
+    ``STATIC`` is the non-operator mode: a fixed configured bearer the console holds.
+    """
 
     PROVIDER = auto()
-    OPERATOR_OAUTH = auto()
+    REMOTE_SERVER_OAUTH = auto()
+    OPERATOR_IDENTITY = auto()
     STATIC = auto()
 
 
@@ -147,7 +168,9 @@ def server_auth_mode(server: McpServerEntry) -> ServerAuthMode:
     if server.provider_connection is not None:
         return ServerAuthMode.PROVIDER
     if _operator_oauth_enabled(server):
-        return ServerAuthMode.OPERATOR_OAUTH
+        return ServerAuthMode.REMOTE_SERVER_OAUTH
+    if server.operator_identity_token:
+        return ServerAuthMode.OPERATOR_IDENTITY
     return ServerAuthMode.STATIC
 
 
@@ -157,6 +180,7 @@ async def backend_auth_for_operator(
     operator_id: UUID,
     oauth_store: OperatorOAuthTokenStore,
     provider_store: ProviderConnectionTokenStore,
+    authentik_store: AuthentikOperatorTokenStore,
 ) -> str | None:
     match server_auth_mode(server):
         case ServerAuthMode.PROVIDER:
@@ -164,9 +188,15 @@ async def backend_auth_for_operator(
             return await _require_operator_linked_token(
                 provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id), server.id
             )
-        case ServerAuthMode.OPERATOR_OAUTH:
+        case ServerAuthMode.REMOTE_SERVER_OAUTH:
             return await _require_operator_linked_token(
                 oauth_store.access_token_for(server=server, operator_id=operator_id), server.id
+            )
+        case ServerAuthMode.OPERATOR_IDENTITY:
+            # The Operator's own Authentik access token (captured at login); the server exchanges it
+            # for a per-host token. Missing ⇒ the operator has not logged in with offline_access yet.
+            return await _require_operator_linked_token(
+                authentik_store.access_token_for(operator_id=operator_id), server.id
             )
         case ServerAuthMode.STATIC:
             return _credential_token(server)
@@ -185,6 +215,7 @@ class ToolCallApplicationService:
         oauth_store: OperatorOAuthTokenStore,
         in_process_servers: InProcessServers,
         provider_store: ProviderConnectionTokenStore,
+        authentik_token_store: AuthentikOperatorTokenStore,
         gmail_client_provider: GmailClientProvider = _no_gmail_client,
     ) -> None:
         self._settings = settings
@@ -194,11 +225,16 @@ class ToolCallApplicationService:
         self._oauth_store = oauth_store
         self._in_process_servers = in_process_servers
         self._provider_store = provider_store
+        self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
 
     async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
         return await backend_auth_for_operator(
-            server=server, operator_id=operator_id, oauth_store=self._oauth_store, provider_store=self._provider_store
+            server=server,
+            operator_id=operator_id,
+            oauth_store=self._oauth_store,
+            provider_store=self._provider_store,
+            authentik_store=self._authentik_token_store,
         )
 
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:

@@ -12,7 +12,9 @@
 #     renews silently).
 #   - haku-console: the operator browser-login relying party (authorization-code
 #     -> the app's signed session cookie), replacing the outpost's forward-auth.
-#     No offline_access (session RP).
+#     offline_access so Authentik issues a refresh token the console persists and
+#     self-refreshes for hostexec (the operator's own token is exchanged for a
+#     per-host hostexec token; see hostexec.tf).
 
 resource "authentik_group" "haku_console_access" {
   name  = "haku-console-access"
@@ -79,10 +81,13 @@ resource "authentik_provider_oauth2" "haku_console_operator" {
   # the same canonical Operator UUID; username remains display-only.
   sub_mode = "user_id"
 
+  # offline_access so the operator login yields a refresh token the console persists + self-refreshes
+  # for hostexec; the resulting access token is the client assertion the per-host providers federate.
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   allowed_redirect_uris = [

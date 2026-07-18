@@ -68,9 +68,13 @@ py_library(
     name = "in_process_servers",
     srcs = ["in_process_servers.py"],
     deps = [
+        ":config",
         ":mcp_config",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
+        "//haku/console/tools:hostexec",
+        "//haku/console/tools:hostexec_client",
+        "//haku/console/tools:hostexec_token",
         "//haku/console/tools:routine",
     ],
 )
@@ -210,6 +214,43 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "authentik_operator_token",
+    srcs = ["authentik_operator_token.py"],
+    deps = [
+        ":database_schema",
+        ":oauth_token_support",
+        ":operator_identity_store",
+        "//mcp_infra/authentik_auth:config",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_authentik_operator_token",
+    size = "medium",
+    srcs = ["test_authentik_operator_token.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":authentik_operator_token",
+        ":conftest",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+        # pytest-asyncio auto-mode plugin autoload (see test_gmail); Gazelle drops it on regen.
+        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -375,6 +416,7 @@ py_library(
     name = "operator_auth",
     srcs = ["operator_auth.py"],
     deps = [
+        ":authentik_operator_token",
         ":config",
         ":operator_identity",
         ":operator_identity_store",
@@ -587,6 +629,7 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        ":authentik_operator_token",
         ":capabilities",
         ":config",
         ":console_events",
@@ -610,6 +653,7 @@ py_library(
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:routine",
+        "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastmcp_slim",

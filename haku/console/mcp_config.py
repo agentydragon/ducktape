@@ -55,16 +55,29 @@ class McpServerEntry(BaseModel):
     # (Google today): the tool call resolves that Operator's provider access token before
     # executing. It is the console's own replacement for the Airlock-brokered token.
     provider_connection: ProviderConnectionKind | None = None
+    # For an in-process server that executes under the acting Operator's own identity (hostexec): the
+    # tool call resolves the Operator's stored Authentik login token (captured via offline_access)
+    # before executing, which the server exchanges for a per-host token. See ServerAuthMode.
+    operator_identity_token: bool = False
 
     @model_validator(mode="after")
     def _reject_conflicting_operator_token_sources(self) -> McpServerEntry:
-        # Both claim the operator-linked token; a config setting both is meaningless because
-        # provider_connection wins and operator_oauth would be silently ignored. A static
-        # bearer_token_secret coexisting is intentional (reflection/fallback wiring).
-        if self.provider_connection is not None and self.operator_oauth is not None:
+        # Each names the operator-linked token source; setting more than one is meaningless because
+        # exactly one resolves the credential. A static bearer_token_secret coexisting is
+        # intentional (reflection/fallback wiring).
+        sources = [
+            name
+            for name, set_ in (
+                ("provider_connection", self.provider_connection is not None),
+                ("operator_oauth", self.operator_oauth is not None),
+                ("operator_identity_token", self.operator_identity_token),
+            )
+            if set_
+        ]
+        if len(sources) > 1:
             raise ValueError(
-                f"MCP server {self.id!r} sets both provider_connection and operator_oauth; "
-                "an operator-linked server uses exactly one token source"
+                f"MCP server {self.id!r} sets multiple operator token sources ({', '.join(sources)}); "
+                "an operator-linked server uses exactly one"
             )
         return self
 

@@ -437,9 +437,10 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
         operator_id: UUID,
         oauth_store: PostgresMcpOperatorOAuthStore,
         provider_store: Any = None,
+        authentik_store: Any = None,
     ) -> str | None:
         operator_ids.append(operator_id)
-        return await _execution_auth(server, operator_id, oauth_store, provider_store)
+        return await _execution_auth(server, operator_id, oauth_store, provider_store, authentik_store)
 
     async def recording_service_auth(
         *,
@@ -447,10 +448,15 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
         operator_id: UUID,
         oauth_store: PostgresMcpOperatorOAuthStore,
         provider_store: Any = None,
+        authentik_store: Any = None,
     ) -> str | None:
         operator_ids.append(operator_id)
         return await backend_auth_for_operator(
-            server=server, operator_id=operator_id, oauth_store=oauth_store, provider_store=provider_store
+            server=server,
+            operator_id=operator_id,
+            oauth_store=oauth_store,
+            provider_store=provider_store,
+            authentik_store=authentik_store,
         )
 
     monkeypatch.setattr("haku.console.mcp_approval._execution_auth", recording_execution_auth)

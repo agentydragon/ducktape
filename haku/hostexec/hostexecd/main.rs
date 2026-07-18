@@ -123,11 +123,12 @@ async fn handle_exec(
         authorize_status(error)
     })?;
 
+    // Audit to journald (hostexecd runs under systemd): who approved it, and — after the run — the
+    // outcome. argv0 is captured before `argv` moves into the request so both lines can name it.
+    let argv0 = request.argv.first().cloned();
     info!(
-        "exec approved by {} run_as={} argv0={:?}",
-        authorized.subject,
-        request.run_as,
-        request.argv.first()
+        "exec approved by {} host={} run_as={} argv0={:?}",
+        authorized.subject, app.host, request.run_as, argv0
     );
 
     let result = run_command(&ExecRequest {
@@ -145,6 +146,10 @@ async fn handle_exec(
         )
     })?;
 
+    info!(
+        "exec done host={} run_as={} argv0={:?} exit={:?} duration_ms={}",
+        app.host, request.run_as, argv0, result.exit, result.duration_ms
+    );
     Ok(Json(result))
 }
 
