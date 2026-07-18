@@ -87,9 +87,16 @@ running** and GPU1 **left hung** so this capture reflects the live scene.
    <../wyrm_gpu_lockup.md>).
 3. Confirm both GPUs enumerate (`nvidia-smi` lists 2×5090) before resuming E9.
 
-## How this compares to prior wyrm2 lockups (this one is the odd one out)
+## How this compares to prior wyrm2 lockups (single-GPU wedges are NOT new)
 
-Historically the wyrm2 lockups took down **both** GPUs together; today only GPU1 dropped:
+**Correction / caveat:** an earlier draft here called a single-GPU wedge "atypical." That
+was documentation bias. The display is permanently pinned to GPU0 (Zotac, `01:00`) and
+compute experiments run on GPU1, so a **GPU1 wedge that leaves the GUI alive is the
+_expected_ geometry**, and it has happened repeatedly during GPU experiments — those cases
+were just recovered (kill the process, reset/reboot that GPU, move on) without a full
+write-up. What actually got RCA'd were the _catastrophic_ events (host crashes, both-GPU
+FULLCHIP_RESET), so the documented sample skews toward "both GPUs" — that is not the true
+base rate. The table below is the **documented** incidents only, with that bias noted:
 
 | Incident                                      | GPUs                | Xid / signature                          | Trigger              |
 | --------------------------------------------- | ------------------- | ---------------------------------------- | -------------------- |
@@ -99,11 +106,13 @@ Historically the wyrm2 lockups took down **both** GPUs together; today only GPU1
 | incident 15 (`black_screen_lockup.md`)        | one (1-GPU config)  | ZFS/pcieport stalls, **survived**        | —                    |
 | **this one (Jul 18)**                         | **one (GPU1)**      | **Xid 79 (fell off the bus)** + Xid 154  | sustained compute    |
 
-So today is **atypical**: a single card falling off the bus under load, different Xid (79
-vs the historical 119/silent), and not tied to suspend/resume or a boot-time FLR reset.
-That suggests a possibly _different_ failure mode (one card dropping under sustained load)
-rather than a recurrence of the known both-GPU suspend/resume + FLR family — reinforcing
-the power/PCIe-link-on-that-card leads below over the host-power-management path.
+So the single-GPU outcome is **not** the surprising part (it's the norm for compute
+wedges). What is a genuine, narrower technical signal is the **Xid**: today was **Xid 79
+(fell off the bus)**, whereas the documented catastrophic events were **Xid 119 (GSP RPC
+timeout)** tied to suspend/resume or silent/FLR at boot. Xid 79 under sustained compute
+points at power/PCIe-link on that card (leads below); it does not tell us this is a
+brand-new failure mode, only that this particular wedge dropped the PCIe link rather than
+timing out the GSP.
 
 ## Open prevention question (the thing actually worth fixing)
 
