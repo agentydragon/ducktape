@@ -2,6 +2,6 @@
 # BIOS 2102 "Disabled" (BIOS-controlled ASPM) still enables L1 on many devices.
 # pcie_aspm=off is also insufficient. Belt-and-suspenders with setpci.
 # See debug/atlas/black_screen_lockup.md
-ACTION=="add", SUBSYSTEM=="pci", PROGRAM="/bin/sh -c 'ctrl=$(setpci -s %k CAP_EXP+10.w 2>/dev/null); [ -n \"$ctrl\" ] && [ $((0x$ctrl & 3)) -ne 0 ] && new=$(printf %%04x $((0x$ctrl & ~3))) && setpci -s %k CAP_EXP+10.w=$new && echo cleared || echo skip'"
+ACTION=="add", SUBSYSTEM=="pci", PROGRAM="/bin/sh -c 'ctrl=$$(setpci -s %k CAP_EXP+10.w 2>/dev/null); [ -n \"$$ctrl\" ] && [ $$((0x$$ctrl & 3)) -ne 0 ] && new=$$(printf %%04x $$((0x$$ctrl & ~3))) && setpci -s %k CAP_EXP+10.w=$$new && echo cleared || echo skip'"
 # Also disable runtime PM on all PCI bridges
 ACTION=="add", SUBSYSTEM=="pci", ATTR{class}=="0x0604*", ATTR{power/control}="on", ATTR{d3cold_allowed}="0"
