@@ -25,11 +25,16 @@ clone_or_pull() { # <url> <dest> [extra git clone flags...]
 # Behavior: ducktape's haku/base + haku/run.md, read at runtime (live-editable —
 # no image rebuild to change the manual). NOT --depth 1: the run procedure's
 # base-sync diffs HEAD against the last-reconciled commit (`git log <pin>..HEAD`),
-# which needs that commit present. A week of history covers the wake cadence.
+# which needs that commit present. A generous fixed depth covers the wake cadence
+# (~25 commits/day on devel, so 500 is weeks of headroom).
 # (A `git log` that reaches past the pin errors with empty output; the Python
 # worker turns empty tool output into "(no output)" rather than deadlocking on
 # it the way `ant` did — see worker.py / anthropic-sdk-go#377.)
-clone_or_pull "$HAKU_DUCKTAPE_REPO_URL" "$ducktape_dir" --shallow-since="1 week ago"
+# NOT --shallow-since: Forgejo 15.0.3 (gitea-1.22.0)'s git-http-backend can't
+# process a protocol v2 deepen-since request — clone/fetch fails every time with
+# `fatal: error processing shallow info: 4` (confirmed against the in-cluster
+# forgejo-http.forgejo instance 2026-07-18; --depth N is unaffected).
+clone_or_pull "$HAKU_DUCKTAPE_REPO_URL" "$ducktape_dir" --depth 500
 # Memory + the general durable write surface.
 clone_or_pull "$HAKU_STATE_REPO_URL" "$state_dir" --depth 1
 git -C "$state_dir" config user.name haku
