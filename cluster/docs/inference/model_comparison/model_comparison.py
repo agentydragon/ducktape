@@ -72,6 +72,7 @@ SOURCES = {
     "oss120": "https://arxiv.org/abs/2508.10925",  # same gpt-oss card (120b rows)
     "dsv4": "https://benchlm.ai/models/deepseek-v4-flash",  # DeepSeek-V4-Flash 79.0 SWE
     "aa_gpqa": "https://artificialanalysis.ai/",  # AA GPQA Diamond leaderboard (via benchlm.ai/benchmarks/aaGpqaDiamond)
+    "aa_hle": "https://artificialanalysis.ai/",  # AA Humanity's Last Exam (via benchlm.ai/benchmarks/hle)
 }
 
 
@@ -160,6 +161,25 @@ GPQA_MISSING = ["Qwen3-Coder-30B", "Devstral-24B"]  # code-specialists, no AA-GP
 # Diamond is near-saturated, so DSV4-Flash's 89.4 is only ~2–4 pts below the ceiling.
 GPQA_ANCHORS = {"Claude Sonnet 5": 91.1, "Gemini 3.5 Flash": 92.2, "Claude Opus 4.8": 92.0, "Claude Fable 5": 92.6, "GPT-5.5": 93.5}
 
+# Humanity's Last Exam — the UNSATURATED hard-reasoning axis (GPQA is maxed at ~91–94).
+# STRICT single protocol: Artificial Analysis closed-book, text-only, no-tools, pass@1
+# (artificialanalysis.ai/evaluations/humanitys-last-exam). This matters enormously — HLE
+# numbers in the wild splice WITH-TOOLS and CLOSED-BOOK, which differ ~13–15 pts: Z.AI's
+# card puts GLM-5.2 at 54.7 *with tools* but 40.5 no-tools (AA closed-book 40.1), and
+# aggregator leaderboards mix the two (they also showed Opus 4.8 at 57.9 vs AA's
+# closed-book 45.7). We take ONLY AA closed-book so the panel is apples-to-apples.
+HLE_AA = {  # all AA closed-book, no-tools, text-only, pass@1
+    "gpt-oss-20b": 9.8,
+    "gpt-oss-120b": 18.5,
+    "Qwen3.5-35B-A3B": 19.7,
+    "GLM-5.2 (744B)": 40.1,  # AA closed-book — NOT Z.AI's 54.7 with-tools card number
+}
+HLE_DSV4_SELFREPORT = 8.1  # DeepSeek's own no-CoT report; AA never ran DSV4 → drawn greyed, never mixed in
+# Anchors at the SAME AA closed-book protocol. Only Opus 4.8 (45.7) and Fable 5 (53.3)
+# have a verified AA closed-book number; Sonnet 5 / GPT-5.5 / Gemini 3.5 Flash publish
+# only with-tools or unstated HLE, so they're dropped rather than mixed in.
+HLE_ANCHORS = {"Claude Opus 4.8": 45.7, "Claude Fable 5": 53.3}
+
 # {metric: {model: (score, setting)}} — every number here is verified against its
 # source card at a stated NO-TOOLS setting, so the bars are actually comparable.
 # gpt-oss: arxiv 2508.10925 (high reasoning effort, no tools — GPQA 80.9→80.1 for
@@ -199,20 +219,17 @@ LOCAL_COLOR, ANCHOR_COLOR = "#2a7fff", "#c0392b"
 # it's a continuous control, not an on/off switch. The genuine exceptions are the
 # few models *shipped without* a thinking mode (e.g. Qwen3-Coder). What still
 # varies enormously is how many reasoning tokens a model spends by default
-# (Qwen3.5 was extremely verbose in E4). category: Reasoning | Direct.
-# model -> (category, kind, basis)
+# (Qwen3.5 was extremely verbose in E4). Marker shape in the speed×capability panels
+# reads this: Reasoning → ○, Direct → □. Only the two purpose-built coders ship without
+# a thinking mode; everything else has an effort dial.
 REASONING_CLASS = {
-    "Qwen3-Coder-30B": ("Direct", "local", "shipped without a thinking mode (Qwen)"),
-    "Devstral-24B": ("Direct", "local", "answered directly, no CoT in E5"),
-    "gpt-oss-20b": ("Reasoning", "local", "reasoning_effort low/med/high (E2)"),
-    "gpt-oss-120b": ("Reasoning", "local", "reasoning effort (E7)"),
-    "Qwen3.5-35B-A3B": ("Reasoning", "local", "verbose CoT, effort dial (E4)"),
-    "GLM-5.2 (744B)": ("Reasoning", "local", "reasoning model (Colibri)"),
-    "DeepSeek-V4-Flash": ("Reasoning", "local", "CoT [Start thinking], E9"),
-    "Claude Sonnet 4.5": ("Reasoning", "anchor", "reasoning effort / thinking budget"),
-    "Claude Opus 4.8": ("Reasoning", "anchor", "reasoning effort"),
-    "Gemini 3.5 Flash": ("Reasoning", "anchor", "thinking budget"),
-    "GPT-5": ("Reasoning", "anchor", "reasoning effort"),
+    "Qwen3-Coder-30B": "Direct",  # shipped without a thinking mode (Qwen)
+    "Devstral-24B": "Direct",  # answered directly, no CoT in E5
+    "gpt-oss-20b": "Reasoning",  # reasoning_effort low/med/high (E2)
+    "gpt-oss-120b": "Reasoning",  # reasoning effort (E7)
+    "Qwen3.5-35B-A3B": "Reasoning",  # verbose CoT, effort dial (E4)
+    "GLM-5.2 (744B)": "Reasoning",  # reasoning model (Colibri)
+    "DeepSeek-V4-Flash": "Reasoning",  # CoT [Start thinking], E9
 }
 
 
@@ -240,36 +257,6 @@ fig.tight_layout()
 fig.savefig("fig1_decode_tps.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
-# ## 1b. Reasoning vs direct models
-#
-# In 2026 **reasoning with a low→high effort dial is near-universal** — Claude,
-# Gemini, GPT-5, gpt-oss, and Qwen3.5 all have it; nobody trains it as a plain
-# on/off button. So the interesting split isn't "reasoning vs not" but the handful
-# of models **shipped without a thinking mode at all** (a couple of purpose-built
-# coding models). Orthogonal, and what actually bites latency: *how many* reasoning
-# tokens a model spends by default — Qwen3.5 was extremely verbose in E4.
-
-# %%
-fig, ax = plt.subplots(figsize=(8.5, 4))
-cat_x = {"Direct": 0, "Reasoning": 1}
-col_counts = {c: 0 for c in cat_x}
-for name, (cat, kind, basis) in REASONING_CLASS.items():
-    y = col_counts[cat]
-    col_counts[cat] += 1
-    color = LOCAL_COLOR if kind == "local" else ANCHOR_COLOR
-    ax.scatter(cat_x[cat], y, s=90, color=color, zorder=3)
-    ax.annotate(f"  {name}", (cat_x[cat], y), va="center", fontsize=8.5)
-ax.set_xticks(list(cat_x.values()))
-ax.set_xticklabels(["Direct\n(no thinking mode)", "Reasoning\n(low→high effort dial)"])
-ax.set_xlim(-0.4, 1.9)
-ax.set_ylim(-0.6, max(col_counts.values()))
-ax.set_yticks([])
-ax.set_title("Reasoning is the norm; direct models are the exception  ·  blue = local, red = frontier")
-ax.legend(handles=[Patch(color=LOCAL_COLOR, label="runs on 2×5090"), Patch(color=ANCHOR_COLOR, label="closed frontier")], loc="upper left")
-fig.tight_layout()
-fig.savefig("fig1b_reasoning_class.svg", bbox_inches="tight", metadata={"Date": None})
-
-# %% [markdown]
 # ## 2. Context window we can run (measured allocated context)
 #
 # Practical ceiling today is ~256K. The 1M attempt is **blocked by kernels, not
@@ -295,24 +282,40 @@ fig.tight_layout()
 fig.savefig("fig2_context.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
-# ## 3. Speed × capability — coding and general reasoning, one story
+# ## 3. Speed × capability — coding, general reasoning, hard reasoning: one story
 #
-# Two panels, same X (measured decode tok/s, log), the same Pareto/marker logic, and
-# **dashed closed-frontier anchors on both**, so the coding and general-reasoning
-# pictures sit side by side. **Left** = SWE-bench (local numbers card-reported at the
-# labelled effort). **Right** = GPQA Diamond (Artificial Analysis — one source; AA runs
-# each model at its own reasoning tier, DSV4-Flash shown at Max). The cross-panel story:
+# Three panels, same X (measured decode tok/s, log), the same Pareto/marker logic, and
+# **dashed closed-frontier anchors on each**. **Left** = SWE-bench (local numbers
+# card-reported at the labelled effort). **Middle** = GPQA Diamond (Artificial Analysis —
+# one source; AA runs each model at its own reasoning tier, DSV4-Flash shown at Max).
+# **Right** = Humanity's Last Exam (AA closed-book — see the protocol note below). The
+# cross-panel story:
 # the resident tier is fast but caps ~69 SWE; **DeepSeek-V4-Flash tops the runnable
 # frontier of BOTH** at offload speed; **gpt-oss-120b is dominated in both**; and the two
 # code-specialists (Qwen3-Coder, Devstral) have no published general-reasoning number, so
 # they **vanish from the right panel** — the overfitting tell, as an absence.
 #
-# But the anchors expose the other half: **GPQA Diamond is near-saturated.** The closed
-# frontier there is a ~3-pt smear (91–94) where on SWE it fans across 77–95, and
-# DSV4-Flash's 89.4 lands only ~2–4 pts under the ceiling — general reasoning barely
-# separates the frontier from a 13B-active model you can run at home, whereas coding
-# still does. Read the right panel as "who has run out of GPQA headroom" (everyone), not
-# as a live ranking.
+# But the anchors expose the other half: **GPQA Diamond is near-saturated.** Its closed
+# frontier is a ~3-pt smear (91–94) where on SWE it fans across 77–95, and DSV4-Flash's
+# 89.4 lands only ~2–4 pts under the ceiling — GPQA barely separates the frontier from a
+# home-runnable 13B-active model. So the **third panel adds Humanity's Last Exam**, which
+# is *not* saturated: a genuine hard-reasoning axis where the frontier still has headroom.
+#
+# HLE flips the story. The fast runnables **collapse** — gpt-oss-20b 9.8, gpt-oss-120b
+# 18.5, Qwen3.5-35B 19.7 — a ~30-pt gap to the frontier that GPQA's 78–85 hid entirely.
+# The best any runnable manages is **GLM-5.2 at 40.1**, and that's the 744B disk-streamed
+# model at 0.28 tok/s — still short of Opus 4.8 (45.7) and Fable 5 (53.3). **Nothing we
+# can run reaches the HLE frontier**, and the coding hero DSV4-Flash sits near the floor
+# (vendor self-reports 8.1, no-CoT). The coding win does not transfer to hard reasoning.
+#
+# **Protocol discipline is the whole point of this panel** (and the reason it looks
+# different from headline numbers you may have seen): HLE splices *with-tools* and
+# *closed-book* runs that differ ~13–15 pts. Z.AI's card advertises GLM-5.2 at **54.7
+# with tools** — which would put it a whisker under Fable — but its no-tools number is
+# 40.5 and AA's closed-book is 40.1. This panel is **AA closed-book only**; the one
+# non-AA point (DSV4-Flash's vendor no-CoT 8.1) is greyed and kept off the frontier, and
+# three frontier anchors (Sonnet 5, GPT-5.5, Gemini 3.5 Flash) are **dropped** because
+# only their with-tools HLE is published — better a sparse honest axis than a mixed one.
 
 # %%
 # Marker = reasoning (○) vs direct (□); colour = tier (resident/offload). Labels = name.
@@ -335,10 +338,10 @@ def _speed_panel(ax, items, ylabel, ylim):
     ax.set_ylabel(ylabel)
 
 
-fig, (axc, axg) = plt.subplots(1, 2, figsize=(15, 6))
+fig, (axc, axg, axh) = plt.subplots(1, 3, figsize=(21, 6))
 _speed_panel(
     axc,
-    [(tps, swe, lbl, kind, REASONING_CLASS.get(lbl, ("Reasoning",))[0]) for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items()],
+    [(tps, swe, lbl, kind, REASONING_CLASS.get(lbl, "Reasoning")) for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items()],
     "SWE-bench Verified (%)  →  better coder",
     (45, 100),
 )
@@ -349,7 +352,7 @@ for name, (s, _, kind, _) in SWEBENCH.items():
 axc.set_title("Coding (SWE-bench)")
 _speed_panel(
     axg,
-    [(RUNNABLE_QUALITY[lbl][0], g, lbl, RUNNABLE_QUALITY[lbl][2], REASONING_CLASS[lbl][0]) for lbl, (g, _s) in GPQA_AA.items()],
+    [(RUNNABLE_QUALITY[lbl][0], g, lbl, RUNNABLE_QUALITY[lbl][2], REASONING_CLASS[lbl]) for lbl, (g, _s) in GPQA_AA.items()],
     "GPQA Diamond (%, AA)  →  better reasoning",
     (50, 98),
 )
@@ -358,6 +361,20 @@ for g in GPQA_ANCHORS.values():  # closed frontier: too tight to label per line 
 axg.text(2600, max(GPQA_ANCHORS.values()) + 0.3, f"closed frontier ({min(GPQA_ANCHORS.values()):.0f}–{max(GPQA_ANCHORS.values()):.0f}) — GPQA near-saturated", color=ANCHOR_COLOR, fontsize=7, va="bottom", ha="right")
 axg.text(0.12, 52.5, "code-specialists (Qwen3-Coder, Devstral):\nno general-reasoning eval published", fontsize=7.5, color="#999", style="italic")
 axg.set_title("General reasoning (GPQA Diamond)")
+_speed_panel(
+    axh,
+    [(RUNNABLE_QUALITY[lbl][0], h, lbl, RUNNABLE_QUALITY[lbl][2], REASONING_CLASS[lbl]) for lbl, h in HLE_AA.items()],
+    "Humanity's Last Exam (%, AA closed-book)  →  better reasoning",
+    (0, 62),
+)
+# DSV4-Flash drawn OUTSIDE the AA set — greyed, vendor no-CoT number, never mixed into the frontier
+_dx = RUNNABLE_QUALITY["DeepSeek-V4-Flash"][0]
+axh.scatter(_dx, HLE_DSV4_SELFREPORT, s=110, facecolors="none", edgecolors="#999", marker="o", zorder=3)
+axh.annotate("DeepSeek-V4-Flash\n*vendor self-report, no-CoT (no AA run)", (_dx, HLE_DSV4_SELFREPORT), textcoords="offset points", xytext=(8, -3), fontsize=6.5, color="#999", style="italic")
+for name, h in HLE_ANCHORS.items():  # only 2 verified at AA closed-book; label each
+    axh.axhline(h, ls="--", color=ANCHOR_COLOR, alpha=0.3)
+    axh.text(2600, h, name, color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
+axh.set_title("Hard reasoning (HLE, AA closed-book)")
 axc.legend(
     handles=[
         Patch(color=LOCAL_COLOR, label="resident (VRAM)"),
@@ -370,7 +387,7 @@ axc.legend(
     loc="lower left",
     fontsize=8,
 )
-fig.suptitle("Speed × capability — same models, coding vs general reasoning")
+fig.suptitle("Speed × capability — same models: coding · general reasoning (GPQA) · hard reasoning (HLE)")
 fig.tight_layout()
 fig.savefig("fig3_speed_vs_capability.svg", bbox_inches="tight", metadata={"Date": None})
 
