@@ -282,57 +282,74 @@ fig.tight_layout()
 fig.savefig("fig2_context.svg", bbox_inches="tight")
 
 # %% [markdown]
-# ## 3. Speed × coding skill — measured tok/s vs SWE-bench
+# ## 3. Speed × capability — coding and general reasoning, one story
 #
-# The one combined view: every runnable model in {decode tok/s we measured} ×
-# {SWE-bench}, with each point labelled by the **setting its SWE number was measured
-# at** (so the comparison is honest), and the closed frontier as dashed reference
-# lines. Log x-axis — it spans four orders of magnitude (gpt-oss-20b ~1300 tok/s down
-# to GLM-5.2 disk-streamed at 0.28). The shape is the story: the resident tier is
-# fast but caps ~69 SWE-bench; the offload tier (GLM-5.2) reaches 77.8 — past every
-# resident option, near the frontier — but ~5000× slower. Frontier SWE runs on the
-# vals.ai harness (consistent across those anchors); local numbers are card-reported
-# at the labelled effort, so read tiers, not decimals.
+# Two panels, same X (measured decode tok/s, log) and the same Pareto/marker logic, so
+# the coding and general-reasoning pictures sit side by side. **Left** = SWE-bench
+# (closed frontier as dashed refs; local numbers card-reported at the labelled effort).
+# **Right** = GPQA Diamond (Artificial Analysis — one source; AA runs each model at its
+# own reasoning tier, DSV4-Flash shown at Max). The cross-panel story: the resident
+# tier is fast but caps ~69 SWE; **DeepSeek-V4-Flash tops the frontier of BOTH** at
+# offload speed; **gpt-oss-120b is dominated in both**; and the two code-specialists
+# (Qwen3-Coder, Devstral) have no published general-reasoning number, so they **vanish
+# from the right panel** — the overfitting tell, as an absence.
 
 # %%
-# Marker encodes reasoning vs direct; colour encodes tier (resident/offload). Axes
-# carry speed × SWE, so labels are just the model name (no repeated numbers).
+# Marker = reasoning (○) vs direct (□); colour = tier (resident/offload). Labels = name.
 MARKER_FOR = {"Reasoning": "o", "Direct": "s"}
-fig, ax = plt.subplots(figsize=(10, 6))
-for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items():
-    color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
-    rclass = REASONING_CLASS.get(lbl, ("Reasoning",))[0]
-    ax.scatter(tps, swe, s=120, color=color, marker=MARKER_FOR[rclass], zorder=3)
-    ax.annotate(lbl, (tps, swe), textcoords="offset points", xytext=(8, 4), fontsize=8)
-# Pareto frontier over {speed, SWE} — a point is dominated if another is >= on both
-# axes (and strictly better on one). The non-dominated set, drawn low→high speed.
-_pts = [(tps, swe) for (tps, swe, _) in RUNNABLE_QUALITY.values()]
-_front = sorted(p for p in _pts if not any(q[0] >= p[0] and q[1] >= p[1] and q != p for q in _pts))
-ax.plot([p[0] for p in _front], [p[1] for p in _front], color="#555", ls="--", lw=1.6, zorder=1, label="Pareto frontier")
+
+
+def _speed_panel(ax, items, ylabel, ylim):
+    """items: (tps, quality, label, kind, reasoning_class). Draws points + Pareto frontier."""
+    for tps, q, lbl, kind, rclass in items:
+        color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
+        ax.scatter(tps, q, s=110, color=color, marker=MARKER_FOR[rclass], zorder=3)
+        ax.annotate(lbl, (tps, q), textcoords="offset points", xytext=(7, 4), fontsize=7.5)
+    pts = [(tps, q) for tps, q, *_ in items]
+    front = sorted(p for p in pts if not any(o[0] >= p[0] and o[1] >= p[1] and o != p for o in pts))
+    ax.plot([p[0] for p in front], [p[1] for p in front], color="#555", ls="--", lw=1.5, zorder=1, label="Pareto frontier")
+    ax.set_xscale("log")
+    ax.set_xlim(0.1, 3000)
+    ax.set_ylim(*ylim)
+    ax.set_xlabel("decode tok/s on 2×5090 (log)  →  faster")
+    ax.set_ylabel(ylabel)
+
+
+fig, (axc, axg) = plt.subplots(1, 2, figsize=(15, 6))
+_speed_panel(
+    axc,
+    [(tps, swe, lbl, kind, REASONING_CLASS.get(lbl, ("Reasoning",))[0]) for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items()],
+    "SWE-bench Verified (%)  →  better coder",
+    (45, 100),
+)
 for name, (s, _, kind, _) in SWEBENCH.items():
     if kind == "anchor":
-        ax.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.3)
-        ax.text(2600, s, name, color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
-ax.set_xscale("log")
-ax.set_xlim(0.1, 3000)
-ax.set_ylim(45, 100)
-ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
-ax.set_ylabel("SWE-bench Verified (%)  →  better coder")
-ax.set_title("Speed × coding skill")
-ax.legend(
+        axc.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.3)
+        axc.text(2600, s, name, color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
+axc.set_title("Coding (SWE-bench)")
+_speed_panel(
+    axg,
+    [(RUNNABLE_QUALITY[lbl][0], g, lbl, RUNNABLE_QUALITY[lbl][2], REASONING_CLASS[lbl][0]) for lbl, (g, _s) in GPQA_AA.items()],
+    "GPQA Diamond (%, AA)  →  better reasoning",
+    (50, 95),
+)
+axg.text(0.12, 52.5, "code-specialists (Qwen3-Coder, Devstral):\nno general-reasoning eval published", fontsize=7.5, color="#999", style="italic")
+axg.set_title("General reasoning (GPQA Diamond)")
+axc.legend(
     handles=[
         Patch(color=LOCAL_COLOR, label="resident (VRAM)"),
         Patch(color=OFFLOAD_COLOR, label="offload (CPU/disk)"),
         Patch(color=ANCHOR_COLOR, label="closed frontier"),
-        Line2D([0], [0], marker="o", color="#555", ls="", label="reasoning model"),
-        Line2D([0], [0], marker="s", color="#555", ls="", label="direct (no thinking)"),
+        Line2D([0], [0], marker="o", color="#555", ls="", label="reasoning"),
+        Line2D([0], [0], marker="s", color="#555", ls="", label="direct"),
         Line2D([0], [0], color="#555", ls="--", label="Pareto frontier"),
     ],
     loc="lower left",
     fontsize=8,
 )
+fig.suptitle("Speed × capability — same models, coding vs general reasoning")
 fig.tight_layout()
-fig.savefig("fig3_speed_vs_swe.svg", bbox_inches="tight")
+fig.savefig("fig3_speed_vs_capability.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## 4. Reasoning evals — only source-verified, no-tools numbers
@@ -381,46 +398,6 @@ ax.set_title("Same model, same eval: effort × tools moves AIME by 40–60 point
 ax.legend(fontsize=8)
 fig.tight_layout()
 fig.savefig("fig5_gptoss_effort.svg", bbox_inches="tight")
-
-# %% [markdown]
-# ## 6. Speed × general reasoning (GPQA Diamond) — where the coders vanish
-#
-# Same axes as #3, but Y is a NON-coding eval (AA GPQA Diamond). Two things pop out:
-# (a) the code-specialists Qwen3-Coder and Devstral are **absent** — nobody publishes a
-# general-reasoning number for them, the clearest read on "are the coders overfit to
-# code?"; and (b) gpt-oss-120b, which looked bad on coding, is **still dominated here**
-# — Qwen3.5 beats it on GPQA *and* is ~17× faster. One AA source so the points are
-# comparable (AA runs each at its own reasoning tier though — DSV4-Flash shown at Max).
-
-# %%
-fig, ax = plt.subplots(figsize=(10, 6))
-for lbl, (gpqa, _setting) in GPQA_AA.items():
-    tps, _swe, kind = RUNNABLE_QUALITY[lbl]
-    color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
-    ax.scatter(tps, gpqa, s=120, color=color, marker=MARKER_FOR[REASONING_CLASS[lbl][0]], zorder=3)
-    ax.annotate(lbl, (tps, gpqa), textcoords="offset points", xytext=(8, 4), fontsize=8)
-_gp = [(RUNNABLE_QUALITY[lbl][0], gpqa) for lbl, (gpqa, _s) in GPQA_AA.items()]
-_gf = sorted(p for p in _gp if not any(q[0] >= p[0] and q[1] >= p[1] and q != p for q in _gp))
-ax.plot([p[0] for p in _gf], [p[1] for p in _gf], color="#555", ls="--", lw=1.6, zorder=1, label="Pareto frontier")
-ax.text(0.12, 53, "code-specialists (Qwen3-Coder, Devstral):\nno general-reasoning eval published", fontsize=7.5, color="#999", style="italic")
-ax.set_xscale("log")
-ax.set_xlim(0.1, 3000)
-ax.set_ylim(50, 95)
-ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
-ax.set_ylabel("GPQA Diamond (%, Artificial Analysis)  →  better general reasoning")
-ax.set_title("Speed × general reasoning")
-ax.legend(
-    handles=[
-        Patch(color=LOCAL_COLOR, label="resident (VRAM)"),
-        Patch(color=OFFLOAD_COLOR, label="offload (CPU/disk)"),
-        Line2D([0], [0], marker="o", color="#555", ls="", label="reasoning model"),
-        Line2D([0], [0], color="#555", ls="--", label="Pareto frontier"),
-    ],
-    loc="lower left",
-    fontsize=8,
-)
-fig.tight_layout()
-fig.savefig("fig6_speed_vs_gpqa.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## Sources
