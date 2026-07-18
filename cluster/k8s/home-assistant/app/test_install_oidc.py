@@ -3,10 +3,9 @@ import io
 import json
 import zipfile
 
+import install_oidc
 import pytest
 import pytest_bazel
-
-from cluster.k8s.home_assistant.app import install_oidc
 
 
 def _archive(files: dict[str, str]) -> bytes:
