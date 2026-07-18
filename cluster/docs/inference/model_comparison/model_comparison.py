@@ -291,7 +291,7 @@ ax.set_xlim(0.1, 3000)
 ax.set_ylim(45, 100)
 ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
 ax.set_ylabel("SWE-bench Verified (%)  →  better coder")
-ax.set_title("Speed × coding skill  ·  ○ reasoning / □ direct  ·  colour = tier")
+ax.set_title("Speed × coding skill")
 ax.legend(
     handles=[
         Patch(color=LOCAL_COLOR, label="resident (VRAM)"),
