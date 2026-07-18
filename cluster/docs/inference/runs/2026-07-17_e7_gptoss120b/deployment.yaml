@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gptoss120
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: vllm-gptoss120
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-gptoss120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-gptoss120
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          # gpt-oss-120b is native MXFP4 (~63 GB weights) — the "edge of runnable"
+          # case. At TP2 that's ~31.5 GB/GPU, but vLLM only gets ~27 GB/GPU at
+          # 0.85 util (wyrm2's display permanently holds ~3 GB on GPU0). So a few
+          # GB/GPU MUST spill to CPU (--cpu-offload-gb). Only ~5.1B params are
+          # active per token, so if the offloaded slice is small the decode speed
+          # should be far above Ollama's whole-model CPU offload (~1.5 tok/s).
+          args:
+            - --model=openai/gpt-oss-120b
+            - --served-model-name=gptoss-120b
+            - --tensor-parallel-size=2
+            # 62 GB MXFP4 (~31.5 GB/GPU at TP2) does not fit GPU0's display-reduced
+            # ~28.6 GB even at 6 GB offload (OOM on load). Push ~12 GB/GPU to CPU;
+            # only ~5.1B params are active/token so the offloaded expert slice
+            # gates decode speed — this is the true offload-tier number.
+            - --cpu-offload-gb=12
+            - --max-model-len=16384
+            - --gpu-memory-utilization=0.83
+            - --max-num-seqs=4
+            - --enable-auto-tool-choice
+            - --tool-call-parser=openai
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: expandable_segments:True
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              cpu: "4"
+              memory: 48Gi
+            limits:
+              nvidia.com/gpu: 2
+              memory: 80Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 200
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-gptoss120
+  namespace: llm-bench
+spec:
+  selector:
+    app.kubernetes.io/name: vllm-gptoss120
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

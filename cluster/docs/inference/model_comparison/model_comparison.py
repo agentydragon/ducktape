@@ -111,7 +111,7 @@ RUNNABLE_QUALITY = {
     "Qwen3-Coder-30B": (199, 51.9, "resident"),
     "Qwen3.5-35B-A3B": (211, 69.2, "resident"),
     "Devstral-24B": (92, 68.0, "resident"),
-    "gpt-oss-120b": (1.5, 62.4, "offload"),  # Ollama CPU offload (~1.5 tok/s)
+    "gpt-oss-120b": (12.2, 62.4, "offload"),  # E7: vLLM TP2, 12GB/GPU CPU offload (measured)
     "GLM-5.2 (744B)": (0.28, 77.8, "offload"),  # Colibri disk-streamed experts
 }
 OFFLOAD_COLOR = "#16a085"
