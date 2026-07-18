@@ -62,14 +62,8 @@ class CapabilityClaims(BaseModel):
 
     @classmethod
     def from_payload(cls, payload: dict[str, object]) -> CapabilityClaims:
-        return cls(
-            host=payload["host"],
-            run_as=RunAs(payload["run_as"]),
-            argv=payload["argv"],
-            cwd=payload.get("cwd"),
-            nonce=payload["nonce"],
-            exp=payload["exp"],
-        )
+        """Parse a decoded JWT payload into claims, ignoring registered claims like `aud`."""
+        return cls.model_validate(payload)
 
 
 class InvalidCapabilityError(Exception):
