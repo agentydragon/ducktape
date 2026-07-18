@@ -345,7 +345,6 @@ can do something, grep for your group and read the referenced role.
 | Console MCP (tool request/read) | `haku-console-agent-api`                | `token` (MCP calls only; does not approve calls)                                                                                              |
 | Plaid Postgres (read-only)      | `plaid-mcp-db-readonly`                 | `DATABASE_URL` (+ `username`/`password`/…)                                                                                                    |
 | Google read-only APIs           | `google-access-token`                   | `access_token` (Gmail, Calendar, Drive, Tasks, …)                                                                                             |
-| Tana (read-only MCP)            | `haku-tana-ro-token`                    | `token` (bearer for the `tana-mcp-ro` facade)                                                                                                 |
 | ActivityWatch (read-only)       | `activitywatch-haku-client-credentials` | `activitywatch_url`, `token_url`, `client_id`, `username`, `password`, `proxy_client_id`, scopes (two-step mint — `sources/activitywatch.md`) |
 | Haku mailbox (scoped write)     | `haku-mail-token`                       | `jwt` (mail-user access to `haku@allegedly.works`; no server administration or outbound submission)                                           |
 
@@ -382,7 +381,7 @@ haku-console tool call and let trusted console approval decide whether it execut
 **Your home _should_ have the `fastmcp` CLI** (in the agent-haku closure) for
 talking to MCP servers: `fastmcp list <url> --auth "$TOKEN"` and `fastmcp call <url>
 <tool> key=value … --auth "$TOKEN" --transport http` — the turnkey way to reach
-bearer-gated MCP facades like `tana-mcp-ro` directly from your home. **But don't
+bearer-gated MCP servers like `grocy-sf` or haku-console directly from your home. **But don't
 assume it's there:** the web home sometimes comes up with the lean `.#devtools`
 closure (no `fastmcp`). If `fastmcp` is not on your `PATH`, **do not skip the source
 — fall back to `curl`** over MCP-HTTP (recipe in `sources/tana.md`) and
@@ -432,7 +431,7 @@ reconcile them against this manual's promises:
   table above resolve, and Google scopes cover what you call (a 403 is a scope/enablement
   gap, **not** a network block; a timeout/refused is the network one). Persistent
   403s on a documented source → surface a finding to widen the scope or enable the API.
-- **Egress reachability** for the hosts you need (state repo, `tana-mcp-ro`, Google
+- **Egress reachability** for the hosts you need (state repo, haku-console, Google
   APIs, the cluster). A host that should work but is refused/blocked → surface a finding
   naming the FQDN so the operator can add it to the allowlist.
 - **Bootstrap completed** — your state checkout is fully materialized (has commits,
@@ -547,10 +546,12 @@ the shape of the loop. (Don't restate the sequence here — read it there.)
   tools auto-approve under the reviewed console policy while every mutation stays
   approval-gated (`sources/{gmail,calendar}.md`); the `google-access-token` REST path is
   the fallback. **Drive, Tasks** — the `google-access-token` secret, whose scopes are all
-  `.readonly`, used as a Bearer against Google's REST APIs (`sources/{drive,tasks}.md`). **Tana** — the read-only `tana-mcp-ro` MCP facade (writes hidden;
-  the PAT stays server-side), reached with `fastmcp` or a `curl` fallback; a must-scan
-  source — if `fastmcp` is missing, use curl **and** surface an env-breakage finding, never
-  silently skip it (`sources/tana.md`). Read-only sources can still motivate write proposals:
+  `.readonly`, used as a Bearer against Google's REST APIs (`sources/{drive,tasks}.md`). **Tana** —
+  haku-console's `tana-rw` MCP tools, whose read subset (`search_nodes`, `read_node`,
+  `get_children`, …) auto-approves under the reviewed console policy while every write tool stays
+  approval-gated, reached with `fastmcp` or a `curl` fallback; a must-scan source — if `fastmcp` is
+  missing, use curl **and** surface an env-breakage finding, never silently skip it
+  (`sources/tana.md`). Read-only sources can still motivate write proposals:
   when a connected haku-console MCP server can safely perform a useful mutation with approval,
   prepare that tool-call request instead of calling a write tool directly.
 - Never put secrets, full account numbers, or credentials in **anything you write** — what

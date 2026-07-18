@@ -211,6 +211,17 @@ async def test_tana_calendar_node_auto_approves() -> None:
     assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    ["search_nodes", "read_node", "get_children", "open_node", "list_tags", "list_workspaces", "get_tag_schema"],
+)
+async def test_tana_reads_auto_approve(tool_name: str) -> None:
+    policy_id, evaluation = await _remote_decision("tana-rw", tool_name, {})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
 async def test_tana_writes_stay_manual() -> None:
     policy_id, _ = await _remote_decision("tana-rw", "create_tag", {"name": "x"})
     assert policy_id is None

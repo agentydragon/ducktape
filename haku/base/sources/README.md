@@ -30,9 +30,10 @@ grows its own techniques and records them in its state `memory/`.
   then call the REST APIs with `Authorization: Bearer $TOK` (curl goes through the
   egress proxy transparently). Other Google products work the same way when the token
   carries their scope (a 403 = scope/enablement gap → note it and move on).
-- [`tana`](tana.md) — the operator's Tana, their primary brain; reached
-  via the `tana-mcp-ro` facade (`fastmcp`, or `curl` fallback). The richest seam of
-  intentions tracked nowhere else — a must-read source, not optional.
+- [`tana`](tana.md) — the operator's Tana, their primary brain; reached via
+  haku-console's `tana-rw` MCP tools (read subset auto-approved, proxied like
+  Gmail/Calendar/osm). The richest seam of intentions tracked nowhere else — a
+  must-read source, not optional.
 - [`plaid`](plaid.md) — financial transactions (read-only SQL via
   a `haku-sandbox` pod).
 - [`coinbase`](coinbase.md) — crypto balances & trade fills (read-only CDP key

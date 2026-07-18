@@ -63,10 +63,13 @@ resource "claude-managed-agents_agent" "haku_cloud" {
     expiring, or shopping-list-worthy. Writes are rejected server-side (403) —
     never try to mutate stock.
 
-    You have READ-ONLY access to the operator's Tana knowledge base via the
-    `tana-ro` MCP server (search_nodes, read_node, get_children, list_tags, …).
-    Use it to look things up in Tana. Write tools are not exposed; never attempt
-    to edit, move, or create Tana nodes.
+    You also have access to haku-console's MCP catalog via the `haku-console`
+    MCP server — most relevantly READ-ONLY Tana tools (`tana_rw_search_nodes`,
+    `tana_rw_read_node`, `tana_rw_get_children`, `tana_rw_list_tags`, …), which
+    auto-approve under the console's reviewed policy. Write tools on that server
+    (and any other non-auto-approved console tool) route through the console's
+    operator-approval queue instead of executing directly — never expect them to
+    complete without a human clicking approve.
 
     IMPORTANT (v0 bring-up): your operating manual and run procedure are not wired
     yet. Do exactly what each user message asks, then stop.
@@ -87,13 +90,16 @@ resource "claude-managed-agents_agent" "haku_cloud" {
       name = "grocy-sf"
       url  = "https://grocy-mcp-sf.allegedly.works/mcp"
     },
-    # Read-only Tana facade (mcp-oauth-facade, tana-mcp-ro): exposes only read
-    # tools (search_nodes/read_node/get_children/…); the Tana PAT is injected
-    # server-side and every write tool is hidden. Bearer-gated by haku_tana_ro.
+    # haku-console's aggregated MCP catalog (Tana read tools to start; also grants
+    # reach to whatever else console exposes — Gmail/Calendar reads, osm, and every
+    # approval-gated tool — gated by the console's own auto-approval/approval-queue
+    # policy, not by anything here). Supersedes the standalone `tana-mcp-ro` facade:
+    # Tana reads are now `tana-rw` tools allowlisted in the console's auto-approval
+    # policy (haku/console/auto_approval.py) instead of a second Deployment.
     {
       type = "url"
-      name = "tana-ro"
-      url  = "https://tana-mcp-ro.allegedly.works/mcp"
+      name = "haku-console"
+      url  = "https://haku.allegedly.works/mcp"
     },
   ]
 
@@ -125,11 +131,13 @@ resource "claude-managed-agents_agent" "haku_cloud" {
         permission_policy = { type = "always_allow" }
       }
     },
-    # tana-ro toolset — read-only by construction: the facade exposes only the
-    # read allowlist and rejects every write tool, so always_allow is safe.
+    # haku-console toolset — always_allow is safe here for the same reason it is
+    # for kubectl-machine/grocy-sf: the execution sandbox is not the trust boundary
+    # for this server, the console's own approval queue is (auto-approved reads
+    # execute immediately, everything else becomes a pending approval).
     {
       type            = "mcp_toolset"
-      mcp_server_name = "tana-ro"
+      mcp_server_name = "haku-console"
       default_config = {
         permission_policy = { type = "always_allow" }
       }
@@ -196,31 +204,30 @@ resource "claude-managed-agents_vault_credential" "haku_grocy" {
   }
 }
 
-# The tana-mcp-ro facade's static client bearer, read straight from its owning
-# namespace (tana-mcp/haku-tana-ro-token, key "token") — the tf-runner has
-# cluster-wide secret read, so no reflected copy is needed. This is the same
-# Secret the facade itself validates (MCP_FACADE_CLIENT_AUTH__STATIC_BEARER) and
-# that reflector mirrors to haku-sandbox for the self-hosted worker.
-data "kubernetes_secret_v1" "tana_ro_token" {
+# haku-console's Agent bearer for the static "Haku" Agent slot, read straight from
+# its haku-sandbox copy (tf/gitops/haku-state's kubernetes_secret.haku_console_agent_api
+# writes the same value into both haku-sandbox and haku-console) — the tf-runner has
+# cluster-wide secret read, so no separate reflected copy is needed here.
+data "kubernetes_secret_v1" "haku_console_agent_api" {
   metadata {
-    name      = "haku-tana-ro-token"
-    namespace = "tana-mcp"
+    name      = "haku-console-agent-api"
+    namespace = "haku-sandbox"
   }
 }
 
-# Read-only Tana bearer, bound to the tana-mcp-ro URL. The token is static (no
-# exp), so token_wo_version is derived from its content hash: a re-mint changes
-# the digest and re-sends, a no-op apply keeps it stable. (12 hex digits stays
-# within float64's safe-integer range.)
-resource "claude-managed-agents_vault_credential" "haku_tana_ro" {
+# Bearer for haku-console's aggregated MCP catalog. The token is static (no exp),
+# so token_wo_version is derived from its content hash: a re-mint changes the
+# digest and re-sends, a no-op apply keeps it stable. (12 hex digits stays within
+# float64's safe-integer range.)
+resource "claude-managed-agents_vault_credential" "haku_console" {
   vault_id     = claude-managed-agents_vault.haku_cloud.id
-  display_name = "haku tana bearer (read-only, tana-mcp-ro facade)"
+  display_name = "haku console bearer (haku-console MCP catalog)"
 
   auth = {
     type             = "static_bearer"
-    mcp_server_url   = "https://tana-mcp-ro.allegedly.works/mcp"
-    token            = data.kubernetes_secret_v1.tana_ro_token.data["token"]
-    token_wo_version = parseint(substr(sha256(data.kubernetes_secret_v1.tana_ro_token.data["token"]), 0, 12), 16)
+    mcp_server_url   = "https://haku.allegedly.works/mcp"
+    token            = data.kubernetes_secret_v1.haku_console_agent_api.data["token"]
+    token_wo_version = parseint(substr(sha256(data.kubernetes_secret_v1.haku_console_agent_api.data["token"]), 0, 12), 16)
   }
 }
 

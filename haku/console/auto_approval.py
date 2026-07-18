@@ -90,8 +90,22 @@ GROCY_READ_TOOLS = frozenset(
     }
 )
 # tana-rw tools auto-approved regardless of arguments. `get_or_create_calendar_node` is idempotent
-# (it just resolves/creates a date container), so it is safe to auto-allow.
-TANA_AUTO_APPROVE_TOOLS = frozenset({"get_or_create_calendar_node"})
+# (it just resolves/creates a date container), so it is safe to auto-allow. The rest are the
+# read-only subset formerly exposed by the standalone `tana-mcp-ro` facade (retired: the facade's
+# default-deny tool allowlist is now this allowlist, one entry in the existing tana-rw catalog
+# entry instead of a second Deployment/secret/route).
+TANA_AUTO_APPROVE_TOOLS = frozenset(
+    {
+        "get_or_create_calendar_node",
+        "search_nodes",
+        "read_node",
+        "get_children",
+        "open_node",
+        "list_tags",
+        "list_workspaces",
+        "get_tag_schema",
+    }
+)
 
 # ibkr's entire surface is read-only by construction — the server reflects no order/trade routes
 # (ibkr_mcp/route_policy.py), so every tool auto-approves. The market-data/secdef/scanner tools and

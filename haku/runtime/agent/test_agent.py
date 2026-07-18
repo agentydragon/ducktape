@@ -9,22 +9,22 @@ from haku.runtime.agent.agent import _run_command, aclose_history, build_history
 from haku.runtime.agent.config import Settings
 
 
-def _settings(*, tana_ro_token: str | None = None, redis_url: str | None = None) -> Settings:
+def _settings(*, console_token: str | None = None, redis_url: str | None = None) -> Settings:
     return Settings(
         model="prov/model",
         litellm_base_url="http://litellm/v1",
         litellm_api_key="k",
-        tana_ro_token=tana_ro_token,
+        console_token=console_token,
         redis_url=redis_url,
     )
 
 
-def test_build_mcp_tools_omits_tana_without_token() -> None:
+def test_build_mcp_tools_omits_console_without_token() -> None:
     assert build_mcp_tools(_settings()) == []
 
 
-def test_build_mcp_tools_includes_tana_with_token() -> None:
-    assert [tool.name for tool in build_mcp_tools(_settings(tana_ro_token="secret"))] == ["tana_ro"]
+def test_build_mcp_tools_includes_console_with_token() -> None:
+    assert [tool.name for tool in build_mcp_tools(_settings(console_token="secret"))] == ["haku_console"]
 
 
 def test_history_provider_in_memory_without_redis_url() -> None:

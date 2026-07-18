@@ -4,7 +4,8 @@ Runtime C (see <../../plans/runtime_options.md>): the agent loop runs here, in-p
 and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
 (OpenAI-compatible), so the provider (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
-is the trust boundary — see <../../PLAN.md>) plus remote MCP toolsets (Tana to start).
+is the trust boundary — see <../../PLAN.md>) plus haku-console's aggregated MCP
+catalog (Tana reads to start).
 Behavior is `haku/base/` + `haku/run.md` from the ducktape clone (bootstrap.py clones it
 at startup), read at runtime, so it stays single-sourced and live-editable. Session
 history persists in Valkey/Redis
@@ -79,16 +80,16 @@ def _instructions(settings: Settings) -> str:
 
 def build_mcp_tools(settings: Settings) -> list[MCPStreamableHTTPTool]:
     tools: list[MCPStreamableHTTPTool] = []
-    if settings.tana_ro_token:
+    if settings.console_token:
         # Bearer auth rides a pre-built http_client; the `headers=` kwarg is ignored in
         # later releases. Verify http_client against the pinned 1.0.0 before wiring Tana
         # for real — in-repo MCPStreamableHTTPTool usage so far is name+url only.
         tools.append(
             MCPStreamableHTTPTool(
-                name="tana_ro",
-                url="https://tana-mcp-ro.allegedly.works/mcp",
+                name="haku_console",
+                url="https://haku.allegedly.works/mcp",
                 http_client=httpx.AsyncClient(
-                    headers={"Authorization": f"Bearer {settings.tana_ro_token}"}, follow_redirects=True
+                    headers={"Authorization": f"Bearer {settings.console_token}"}, follow_redirects=True
                 ),
             )
         )

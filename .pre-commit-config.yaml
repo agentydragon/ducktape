@@ -277,7 +277,6 @@ repos:
             cluster/k8s/gatus/app/config\.yaml|
             cluster/k8s/evidence/market-roster/market-roster\.yaml|
             cluster/k8s/agents/airlock/config\.yaml|
-            cluster/k8s/agents/tana-mcp-ro/config\.yaml|
             cluster/k8s/grocy/sf/mcp/config\.yaml|
             cluster/k8s/grocy/vallejo/mcp/config\.yaml|
             cluster/k8s/ibkr/config\.yaml|

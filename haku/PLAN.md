@@ -9,19 +9,22 @@ history holds the original full design rationale. The **actionable build checkli
 
 ## Not yet built
 
-- **More sources behind read-only facades.** The read-only tool-filtering boundary
-  already exists — the generic `mcp-oauth-facade` image (default-deny tool allowlist +
-  a server-held upstream credential callers never see), live as `tana-mcp-ro`
-  (`cluster/k8s/agents/tana-mcp-ro/`). An upstream MCP server with no
-  read-only-credential trick gets fronted by **another instance** of it: a Deployment +
+- **More sources behind read-only facades.** Three proven ways to make an upstream MCP
+  server safe for Haku, cheapest first: (1) **console-side auto-approval** — when
+  haku-console already reaches the upstream's full-tool server (`remote_server_oauth`/
+  `static_bearer`), allowlist the specific safe tools in `console/auto_approval.py`
+  instead of standing up a second Deployment (Tana went this way: the standalone
+  `tana-mcp-ro` facade was retired in favor of allowlisting `tana-rw`'s read tools in
+  the console); (2) **credential-scoping** — no facade at all, when the upstream itself
+  enforces per-user permissions: **Grocy**'s read-only `haku` user (empty perms → API
+  serves reads, 403s writes) _is_ the boundary, and Haku calls the grocy-sf MCP directly
+  (`base/sources/grocy.md`); (3) **a dedicated read-only facade** — the generic
+  `mcp-oauth-facade` image (default-deny tool allowlist + a server-held upstream
+  credential callers never see) for an upstream with neither of the above: a Deployment +
   a `config.yaml` allowlist + the upstream secret + a bearer-gated route — no new
   boundary code, the generalization is mechanical. Still to wire this way: PostScanMail
   (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only — they forward
-  the full tool set — so they don't substitute for this.) **Grocy** went a different,
-  cheaper route — no facade: its upstream enforces per-user permissions, so the read-only
-  `haku` Grocy user (empty perms → API serves reads, 403s writes) _is_ the boundary, and
-  Haku calls the grocy-sf MCP directly (`base/sources/grocy.md`). Prefer that whenever an
-  upstream has its own read-only-credential model; the facade is for the ones that don't.
+  the full tool set — so they don't substitute for this.)
 - **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing**
   API, and **none is known to exist** for `claude_code` routines (only `/fire`), so the
   interim "review past runs" affordance is the deep-link to the routine's `claude.ai/code`

@@ -107,28 +107,6 @@ Each follows the same pattern: a read-only credential or filter facade reachable
 from `haku-sandbox`, plus a source guide in `base/sources/` (and any reusable
 technique as a pass in haku-state's `procedures/`).
 
-- **Tana workspace** — read-only Tana access. **Built + wired:** the `tana-mcp-ro`
-  facade (in `tana-mcp`) fronts the Tana MCP, exposes only read tools (default-deny
-  allowlist via `MCP_FACADE_TOOLS__ALLOW`), injects the Tana PAT server-side
-  (callers never see it), and is gated by the static bearer `haku-tana-ro-token`
-  (reflected into `haku-sandbox`). It's published at the bearer-gated route
-  `tana-mcp-ro.allegedly.works`, Haku's closure carries the `fastmcp` client, and
-  the `tana` playbook + the `haku-tana-ro-token` credentials row use it.
-  Remaining:
-  - Confirm the read-only allowlist against the live `tools/list`; settle the
-    `get_or_create_calendar_node` exclusion (it can create a daily node).
-  - **Consider stronger auth for the public route (if/when feasible):** it's gated
-    only by the long-lived static bearer today. The same facade image already
-    supports Authentik OIDC — the read-write `tana-mcp-facade` runs that way
-    (`MCP_FACADE_AUTH__OIDC_*`, group-enforced, Valkey OAuth state) — which buys
-    short-lived tokens, central revocation, and audit, with Haku using
-    `fastmcp --auth oauth` so no read token ever touches a command line. Read-only
-    tools + the server-side PAT keep the blast radius small, so this is hardening,
-    not a blocker.
-  - **Future (PLAN north star):** give Haku `mcp__tana_ro__*` tools natively via a
-    `.mcp.json` `http` entry to the route (bearer threaded from the reflected
-    secret), so `tana` can drop its connection section and the explicit
-    `fastmcp` step entirely.
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
   Forgejo user read, add a repo-activity playbook (open PRs/issues/review
@@ -158,6 +136,14 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
 the `haku` Grocy user has empty permissions, so the Grocy API enforces read-only
 (200 reads / 403 writes) server-side. Haku reaches the grocy-sf MCP directly with a
 rotated JWT, mirrored into `haku-sandbox` by ESO as `haku-cloud-grocy-sf-token`.
+
+**Tana is wired** (`base/sources/tana.md`) — routed through haku-console's `tana-rw`
+MCP entry instead of a dedicated facade: the read tools (`search_nodes`, `read_node`,
+`get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus the
+idempotent `get_or_create_calendar_node` auto-approve under the console's reviewed
+policy (`console/auto_approval.py`); every write tool stays approval-gated. The
+standalone `tana-mcp-ro` facade (`cluster/k8s/agents/tana-mcp-ro/`) was retired —
+console-side allowlisting needed no separate Deployment/secret/route.
 
 ## Autonomous write capabilities
 

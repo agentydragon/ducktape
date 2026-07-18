@@ -1,32 +1,32 @@
 # Tana
 
 The operator's Tana workspace — daily notes, captured tasks, project nodes — is
-full of things they meant to do and never closed out. You can read it (read-only)
-through the `tana-mcp-ro` facade, which exposes only Tana's read tools
-(`search_nodes`, `read_node`, `get_children`, `open_node`, `list_tags`,
-`list_workspaces`, `get_tag_schema`); every write tool is hidden and rejected, and
-the Tana PAT stays server-side, so you never see it.
+full of things they meant to do and never closed out. You can read it through
+haku-console's `tana-rw` MCP entry: the read tools (`search_nodes`, `read_node`,
+`get_children`, `open_node`, `list_tags`, `list_workspaces`, `get_tag_schema`) plus
+the idempotent `get_or_create_calendar_node` auto-approve under the console's
+reviewed policy; every other tool (node edits, moves, deletes, tag creation, …)
+routes through the console's operator-approval queue instead of executing directly.
 
 ## Reaching it
 
-`tana-mcp-ro` is exposed at `https://tana-mcp-ro.allegedly.works/mcp`, gated by a
-**static bearer** — the reflected `haku-tana-ro-token` secret, key `token`. The
-transport mechanics (`fastmcp`, the `curl` fallback, reading the bearer into
-`"$TOKEN"`) are shared across MCP sources; see [`mcp_over_http.md`](mcp_over_http.md).
-Tana is the operator's most important source — if `fastmcp` is missing, fall back to
-`curl`, never skip it.
+haku-console proxies the tana-rw MCP server (tools get a `tana_rw_` prefix). Reach
+it however your runtime wires it: managed sessions expose the tools directly as
+in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
+(<mcp_over_http.md>) with the `haku-console-agent-api` bearer from `haku-sandbox`,
+same as the Gmail/Calendar/osm console tools. Tana is the operator's most important
+source — if `fastmcp` is missing, fall back to `curl`, never skip it.
 
 ```bash
-TOKEN=$(kubectl -n haku-sandbox get secret haku-tana-ro-token \
-  -o jsonpath='{.data.token}' | base64 -d)
-fastmcp call https://tana-mcp-ro.allegedly.works/mcp \
-  search_nodes query="follow up" --auth "$TOKEN" --transport http --json
+TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
+fastmcp call https://haku.allegedly.works/mcp \
+  tana_rw_search_nodes query="follow up" --auth "$TOKEN" --transport http --json
 ```
 
-Read tools only — `search_nodes`, `read_node`, `get_children`, `open_node`,
-`list_tags`, `list_workspaces`, `get_tag_schema`; writes are hidden and rejected. If
-`list` is empty or a call 401s, note the gap in your log and move on (the facade
-flips NotReady on a bad upstream, and the bearer must be the reflected one).
+Read tools only auto-approve — `search_nodes`, `read_node`, `get_children`, `open_node`,
+`list_tags`, `list_workspaces`, `get_tag_schema`, `get_or_create_calendar_node`; every
+other tool becomes a pending approval instead of executing. If `list` is empty or a
+call 401s, note the gap in your log and move on.
 
 `search_nodes(query, workspaceIds=[…], limit=50)` — `limit` **max 100** (101 → `too_big`),
 **no offset/cursor** (it cannot paginate; a result of exactly 100 means truncated). The

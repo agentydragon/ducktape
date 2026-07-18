@@ -10,8 +10,9 @@ different image, dependencies, and git write identity.
   (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM config knob (`HAKU_MODEL`), not code.
   Only LiteLLM holds provider keys.
 - **Tools**: a `run_command` shell tool (the Pod is the trust boundary — see
-  <../../PLAN.md>) plus remote MCP toolsets (Tana to start). Bearer auth rides a
-  pre-built `http_client` because `MCPStreamableHTTPTool` ignores `headers=`.
+  <../../PLAN.md>) plus haku-console's aggregated MCP catalog (Tana reads to
+  start). Bearer auth rides a pre-built `http_client` because `MCPStreamableHTTPTool`
+  ignores `headers=`.
 - **Behavior** is `haku/base/` + `haku/run.md` from the **ducktape clone** (the agent
   clones ducktape + haku-state at startup via pygit2; see `bootstrap.py`), read at
   runtime — so it stays single-sourced and live-editable, no image rebuild to change it.
@@ -41,7 +42,7 @@ bbr build //haku/runtime/agent:scan
 Config is `HAKU_*` env (see `config.py`): `HAKU_MODEL`, `HAKU_LITELLM_BASE_URL`,
 `HAKU_LITELLM_API_KEY`, the clone config (`HAKU_DUCKTAPE_REPO_URL`,
 `HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST` / `HAKU_GIT_USERNAME` / `HAKU_GIT_PASSWORD`), and
-optional `HAKU_REDIS_URL`, `HAKU_TANA_RO_TOKEN`, `HAKU_SESSION_ID`,
+optional `HAKU_REDIS_URL`, `HAKU_CONSOLE_TOKEN`, `HAKU_SESSION_ID`,
 `HAKU_WAKE_INTERVAL_SECONDS`.
 
 Design + tradeoffs vs. the other runtimes: <../../plans/runtime_options.md>.

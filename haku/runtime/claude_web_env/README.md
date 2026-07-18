@@ -18,7 +18,7 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 - **Allowed domains:** the [default allowed domains](https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains)
   plus:
   - `*.anthropic.com`
-  - `*.allegedly.works` — the cluster (kube API, Forgejo, LiteLLM, `tana-mcp-ro`, …)
+  - `*.allegedly.works` — the cluster (kube API, Forgejo, LiteLLM, haku-console, …)
   - `*.googleapis.com` — Gmail/Calendar/Tasks read-only REST
   - `*.buildbuddy.io` — RBE/remote cache (only if Haku runs `bbr`)
   - `nixos.org`, `cache.nixos.org` — Nix channels + binary cache, so the

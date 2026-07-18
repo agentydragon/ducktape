@@ -54,10 +54,11 @@ tools:
       enabled: true
       permission_policy:
         type: always_allow
-  # tana-ro — read-only Tana facade. Auto-allow (read-only facade + trust boundary);
-  # without it the mcp_toolset defaults to always_ask and parks an unattended scan.
+  # haku-console — the console's aggregated MCP catalog (Tana reads to start). Auto-allow
+  # (the console's own approval queue is the trust boundary, not this policy); without it the
+  # mcp_toolset defaults to always_ask and parks an unattended scan.
   - type: mcp_toolset
-    mcp_server_name: tana-ro
+    mcp_server_name: haku-console
     default_config:
       enabled: true
       permission_policy:
@@ -70,5 +71,5 @@ mcp_servers:
     name: grocy-sf
     url: https://grocy-mcp-sf.allegedly.works/mcp
   - type: url
-    name: tana-ro
-    url: https://tana-mcp-ro.allegedly.works/mcp
+    name: haku-console
+    url: https://haku.allegedly.works/mcp

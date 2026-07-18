@@ -76,7 +76,6 @@ resources:
   - agents/tana-mcp/flux-kustomization.yaml
   - agents/tana-mcp-facade/flux-kustomization.yaml
   - agents/tana-mcp-facade/monitoring/flux-kustomization.yaml
-  - agents/tana-mcp-ro/flux-kustomization.yaml
   - agents/coinbase-read/flux-kustomization.yaml
   - agents/kagent/namespace/flux-kustomization.yaml
   - agents/kagent/secrets/flux-kustomization.yaml

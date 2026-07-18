@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     model: str = Field(description="LiteLLM model id, e.g. 'anthropic/claude-opus-4-8' or 'zai/glm-4.6'.")
     litellm_base_url: str = Field(description="In-cluster LiteLLM OpenAI-compatible base URL (ends in /v1).")
     litellm_api_key: str = Field(description="Haku's scoped LiteLLM virtual key.")
-    tana_ro_token: str | None = Field(default=None, description="Bearer for tana-mcp-ro; omit to run without Tana.")
+    console_token: str | None = Field(
+        default=None, description="Bearer for haku-console's /mcp (Tana + other console-mediated tools); omit to skip."
+    )
     # Repos cloned at startup so the agent has them as context. ducktape holds the
     # manual/run-procedure/sources + the codebase; haku-state is Haku's memory + write
     # surface. *_repo_url None skips the clone (the dir is assumed already present).
