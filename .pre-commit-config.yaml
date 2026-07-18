@@ -25,7 +25,11 @@ exclude: |
     llm/instruct_logseq/.*|
 
     # Specimens committed snapshot code
-    props/specimens/[^/]+/[^/]+/code/.*
+    props/specimens/[^/]+/[^/]+/code/.*|
+
+    # Skill-eval rollout artifacts (agent transcripts, agent-produced
+    # workspaces, run logs). Verbatim records of model behavior — not source.
+    skills/[^/]+/evals/runs/[^/]+/rollouts/.*
   )$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

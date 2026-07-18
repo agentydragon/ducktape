@@ -1,0 +1,7 @@
+{
+  "model": "claude-sonnet-4-6",
+  "skill_on": true,
+  "end_reason": "agent_returned",
+  "wall_seconds": 594.75,
+  "submit_summary": null
+}

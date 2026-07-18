@@ -1,0 +1,5 @@
+# Per-rollout reproducible inputs (target binary copied from Bazel runfiles,
+# skill tar extracted from runfiles). Don't commit; regenerate by re-running
+# the rollout binary.
+*/inputs_*/
+*/skill_extract_*/
