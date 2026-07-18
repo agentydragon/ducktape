@@ -232,19 +232,6 @@ spec:
             # issuers above (both providers are provisioned with sub_mode=user_id).
             - name: HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN
               value: auth.allegedly.works/authentik-user-id/v1
-            # The `hostexec` in-process server (config.yaml `operator_identity`): the in-scope
-            # operator machines and how to reach each host's `hostexecd`. `exec_url` is the node's
-            # cluster InternalIP — for these NixOS workers the Nebula mesh IP, which hostexecd binds
-            # to (nix/nixos/modules/hostexecd.nix) — so the console pod reaches it over the pod
-            # network. `audience_client_id` is the Authentik `hostexec-<host>` provider the operator's
-            # token is exchanged for (tf/gitops/agent-machine-access/hostexec.tf). Setting this makes
-            # the operator OIDC flow request offline_access so the login token is persisted for the
-            # exchange. Unset → the server is not offered.
-            - name: HAKU_CONSOLE_HOSTEXEC
-              value: >-
-                {"hosts":
-                {"wyrm2": {"exec_url": "http://10.42.0.20:8765", "audience_client_id": "hostexec-wyrm2"},
-                "rugged": {"exec_url": "http://10.42.0.30:8765", "audience_client_id": "hostexec-rugged"}}}
           resources:
             requests:
               cpu: 50m

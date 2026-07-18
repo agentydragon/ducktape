@@ -50,7 +50,7 @@ from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
-from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_static_agents
+from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_console_config, load_static_agents
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -125,6 +125,11 @@ def create_app(
     gmail_client: gmail_tools.GmailToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
+    # Deploy-time console config file (non-secret): the MCP server catalog, static agents, and the
+    # hostexec host map. `hostexec is not None` gates the hostexec in-process server, the login-time
+    # offline_access request, and operator-Authentik-token persistence — computed once here.
+    console_config = load_console_config(settings)
+    hostexec_config = console_config.hostexec
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
@@ -207,10 +212,10 @@ def create_app(
         # endpoint here (only in this branch) is safe.
         hostexec_server = (
             HostexecServerConfig(
-                config=settings.hostexec,
+                config=hostexec_config,
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
             )
-            if settings.hostexec is not None
+            if hostexec_config is not None
             else None
         )
         in_process_servers = build_in_process_servers(
@@ -284,6 +289,9 @@ def create_app(
     app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
+    # The operator-login callback persists the operator's Authentik token only when hostexec is
+    # configured (offline_access is requested for the same reason). Read at request time from here.
+    app.state.hostexec_enabled = hostexec_config is not None
     app.state.agent_enrollment_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
     app.state.tool_call_service = tool_calls
@@ -353,7 +361,7 @@ def create_app(
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.
     app.state.operator_oauth = operator_auth.build_oauth(
-        settings.operator_oidc, offline_access=settings.hostexec is not None
+        settings.operator_oidc, offline_access=hostexec_config is not None
     )
     app.include_router(operator_auth.router)
     app.add_middleware(

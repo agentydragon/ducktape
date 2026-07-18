@@ -198,7 +198,8 @@ async def callback(request: Request) -> RedirectResponse:
     }
     # Persist the operator's own Authentik token for hostexec (offline_access grants a refresh
     # token). Only when hostexec is configured — otherwise there is no reader for this credential.
-    if settings.hostexec is not None:
+    # hostexec lives in the console config file, resolved to this flag at create_app.
+    if request.app.state.hostexec_enabled:
         _persist_operator_authentik_token(request, identity.operator_id, token)
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
     raw_return_to = request.session.pop(SESSION_RETURN_TO_KEY, None)

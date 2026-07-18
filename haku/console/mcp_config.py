@@ -20,7 +20,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.config import Settings
+from haku.console.config import HostexecConfig, Settings
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -137,6 +137,11 @@ class LoadedStaticAgent(BaseModel):
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
+    # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
+    # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
+    # → the server is not offered, no offline_access is requested at operator login, and no operator
+    # Authentik token is persisted (nothing would read it).
+    hostexec: HostexecConfig | None = None
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
@@ -170,7 +175,7 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
     return MCPMountPrefix(sanitized)
 
 
-def _load_config(settings: Settings) -> ConsoleConfigFile:
+def load_console_config(settings: Settings) -> ConsoleConfigFile:
     path = settings.config_file
     if path is None or not path.exists():
         return ConsoleConfigFile()
@@ -179,7 +184,7 @@ def _load_config(settings: Settings) -> ConsoleConfigFile:
 
 
 def _load_servers(settings: Settings) -> list[McpServerEntry]:
-    return _load_config(settings).mcp.servers
+    return load_console_config(settings).mcp.servers
 
 
 def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
@@ -189,7 +194,7 @@ def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
     silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
     loaded: list[LoadedStaticAgent] = []
     seen_tokens: set[str] = set()
-    for entry in _load_config(settings).static_agents:
+    for entry in load_console_config(settings).static_agents:
         token = os.environ.get(entry.token_env_var)
         if not token:
             raise RuntimeError(f"missing token env var {entry.token_env_var} for Agent {entry.agent_id}")

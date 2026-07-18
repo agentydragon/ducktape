@@ -218,10 +218,10 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
   `aud=hostexec-<host>`) are done. Option A's storage is done: login gains `offline_access` (only
   when hostexec is configured), `PostgresAuthentikOperatorTokenStore` persists + self-refreshes the
   operator's Authentik token, which `backend_auth_for_operator` resolves for the `OperatorIdentityAuth`
-  variant; the in-process builder is wired from `settings.hostexec`. **Deploy config now written:** the
-  host map (`HAKU_CONSOLE_HOSTEXEC` JSON: `exec_url` + `audience_client_id` per host, `wyrm2`/`rugged`)
-  in <../../cluster/k8s/haku/console/deployment.yaml> and the catalog entry
-  (`{id: hostexec, auth: {kind: operator_identity}}`) in <../../cluster/k8s/haku/console/config.yaml>.
+  variant; the in-process builder is wired from the loaded console config's `hostexec`. **Deploy config
+  now written:** both the catalog entry (`{id: hostexec, auth: {kind: operator_identity}}`) and the
+  `hostexec:` host map (`exec_url` + `audience_client_id` per host, `wyrm2`/`rugged`) live in the one
+  <../../cluster/k8s/haku/console/config.yaml> ConfigMap — non-secret deploy topology, not an env var.
   Each `exec_url` is `http://<node-mesh-IP>:8765`; the `haku-console` pod reaches `hostexecd` over the
   **cluster pod network**. **Remaining: roll the console** so it picks up the new config.
 - **`hostexecd` daemon — done and packaged.** The Rust daemon (`hostexecd/`, `axum` + `jsonwebtoken`;

@@ -170,7 +170,8 @@ class HostexecConfig(BaseModel):
 
     The Authentik token endpoint is derived from the operator OIDC issuer at composition (the same
     Authentik that authenticated the operator mints the per-host token from their identity), so it
-    is not configured here. Unset on `Settings` → the server is not offered.
+    is not configured here. Lives in the console config file (`ConsoleConfigFile.hostexec`); unset
+    there → the server is not offered.
     """
 
     hosts: dict[str, HostexecHostConfig]
@@ -216,8 +217,9 @@ class Settings(BaseSettings):
 
     # Optional YAML file for deploy-time console configuration that does not belong
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file
-    # names the connected MCP servers, the env-backed credential slot each uses, and the
-    # static machine `agents` (each an agent id + env-referenced bearer + operator subject).
+    # names the connected MCP servers, the env-backed credential slot each uses, the
+    # static machine `agents` (each an agent id + env-referenced bearer + operator subject),
+    # and the `hostexec` host map (in-scope machines + their exec URLs / audiences).
     config_file: Path | None = None
 
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
@@ -239,12 +241,6 @@ class Settings(BaseSettings):
     # to a specific tool call in the SPA, returned in the MCP server's promise/read-tool results.
     # Unset → no link is included.
     ui_base_url: str | None = None
-
-    # The `hostexec` in-process server: run a shell command on an operator machine (wyrm2/rugged)
-    # under the operator's own Authentik authority. Set via `HAKU_CONSOLE_HOSTEXEC` as a JSON object
-    # (the host map + exchange scope). Unset → the server is not offered, no offline_access is
-    # requested, and no operator Authentik token is persisted (nothing would read it).
-    hostexec: HostexecConfig | None = None
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
