@@ -40,6 +40,7 @@ class SchemaDenial:
 GROCY_SF_SERVER_ID = "grocy-sf"
 TANA_RW_SERVER_ID = "tana-rw"
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
+IBKR_SERVER_ID = "ibkr"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
 GMAIL_READ_TOOLS = frozenset(
@@ -91,6 +92,25 @@ GROCY_READ_TOOLS = frozenset(
 # (it just resolves/creates a date container), so it is safe to auto-allow.
 TANA_AUTO_APPROVE_TOOLS = frozenset({"get_or_create_calendar_node"})
 
+# ibkr's entire surface is read-only by construction — the server reflects no order/trade routes
+# (ibkr_mcp/route_policy.py), so every tool auto-approves. The market-data/secdef/scanner tools and
+# `session_status` are pure reads; `request_reauth` only fires the IBKR Mobile 2FA push, which does
+# nothing without the operator's phone tap.
+IBKR_AUTO_APPROVE_TOOLS = frozenset(
+    {
+        "market_data_snapshot",
+        "market_data_history",
+        "secdef_search",
+        "secdef_info",
+        "secdef_strikes",
+        "contract_info",
+        "scanner_params",
+        "scanner_run",
+        "session_status",
+        "request_reauth",
+    }
+)
+
 # (server_id -> tools) auto-approved for any authenticated agent regardless of arguments. Drives the
 # MCP server's transparent pass-through bucket. Argument-conditional approvals
 # (GMAIL_CONDITIONAL_TOOLS) are deliberately excluded — those still route through the request_
@@ -100,6 +120,7 @@ UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     GOOGLE_CALENDAR_SERVER_ID: GOOGLE_CALENDAR_READ_TOOLS,
     GROCY_SF_SERVER_ID: GROCY_READ_TOOLS,
     TANA_RW_SERVER_ID: TANA_AUTO_APPROVE_TOOLS,
+    IBKR_SERVER_ID: IBKR_AUTO_APPROVE_TOOLS,
 }
 
 

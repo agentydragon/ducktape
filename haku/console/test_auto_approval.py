@@ -216,6 +216,20 @@ async def test_tana_writes_stay_manual() -> None:
     assert policy_id is None
 
 
+@pytest.mark.parametrize("tool_name", ["market_data_snapshot", "session_status", "request_reauth"])
+async def test_ibkr_reads_auto_approve(tool_name: str) -> None:
+    policy_id, evaluation = await _remote_decision("ibkr", tool_name, {})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+async def test_ibkr_unlisted_tool_stays_manual() -> None:
+    # The allowlist is explicit, not "everything under ibkr": a tool the server would never
+    # expose (it has no order routes) still would not auto-approve.
+    assert await _remote_decision("ibkr", "place_order", {}) == (None, "manual: ibkr/place_order is not auto-approved")
+
+
 async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:
     gmail = Mock()
     gmail.labels_get.side_effect = RuntimeError("gmail unavailable")
