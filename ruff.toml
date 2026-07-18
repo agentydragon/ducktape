@@ -21,6 +21,7 @@ exclude = [
     "x/sysrw/testdata",
     "tana/testdata",
     "props/specimens/*/*/code",
+    "cluster/docs/inference/model_comparison",
 ]
 
 [format]

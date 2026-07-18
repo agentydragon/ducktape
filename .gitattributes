@@ -111,3 +111,4 @@ x/k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
+cluster/docs/inference/model_comparison/** rules-lint-ignored=true
