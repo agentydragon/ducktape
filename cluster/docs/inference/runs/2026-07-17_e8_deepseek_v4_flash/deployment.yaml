@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-deepseekv4
+  namespace: llm-bench
+  labels:
+    app.kubernetes.io/name: vllm-deepseekv4
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-deepseekv4
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-deepseekv4
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        feature.node.kubernetes.io/pci-10de.present: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          # DeepSeek-V4-Flash: the genuine native-1M model via Compressed Sparse
+          # Attention (compress_ratios, NOT dual-chunk — so it dodges E3's
+          # flash-attn/sm_120 blocker). vLLM 0.25.1 ships deepseek_v4_attention.
+          # Intel W4A16 AutoRound (~80 GB) fits 2x5090 with modest CPU offload;
+          # the official NVFP4 (~170 GB) exceeds our 64+96 GB budget (see E3).
+          args:
+            - --model=Intel/DeepSeek-V4-Flash-W4A16-AutoRound
+            - --served-model-name=deepseek-v4-flash
+            - --tensor-parallel-size=2
+            # DeepSeek-V4 fp8_ds_mla KV layout requires fp8 kv-cache (asserts otherwise).
+            - --kv-cache-dtype=fp8
+            # Knife-edge fit: 32 GB offload -> GPU OOM (~2 GB short), >=38 GB ->
+            # host OOM (UVA pinned staging ~2x during load). Stay at the host-safe
+            # 32 GB and instead shrink the CSA Lightning-Indexer + fp8_ds_mla KV
+            # buffers via a smaller context to recover the ~2 GB on the GPU.
+            - --cpu-offload-gb=32
+            - --max-model-len=8192
+            - --gpu-memory-utilization=0.83
+            - --max-num-seqs=4
+            - --trust-remote-code
+            - --enable-auto-tool-choice
+            - --tool-call-parser=deepseek_v3
+            - --reasoning-parser=deepseek_r1
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /hf-cache
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: expandable_segments:True
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              cpu: "4"
+              memory: 56Gi
+            limits:
+              nvidia.com/gpu: 2
+              memory: 88Gi
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /hf-cache
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-deepseekv4
+  namespace: llm-bench
+spec:
+  selector:
+    app.kubernetes.io/name: vllm-deepseekv4
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

@@ -31,10 +31,11 @@ table; a known dead end is a result.
 
 ## Long-context attempts
 
-| Config                 | Runtime         | Advertised ctx | Allocated ctx | Effective ctx | Notes                                                                                                                                        | Run                                               |
-| ---------------------- | --------------- | -------------- | ------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Qwen2.5-7B-Instruct-1M | vLLM 0.25.1 TP2 | 1,010,000      | **blocked**   | —             | dual-chunk attention needs flash-attn (no sm_120 kernel; FlashInfer errors on `layer_idx`). Memory fits (~28 GB KV); kernel doesn't. `local` | [E3](runs/2026-07-17_e3_qwen25_7b_1m/README.md)   |
-| _ceiling today_        | vLLM 0.25.1     | —              | ~256K         | 262K (E1)     | standard attention tops out ~256K; true 1M awaits newer vLLM/flash-attn-sm120 or SGLang                                                      | [E1](runs/2026-07-17_e1_qwen3coder_awq/README.md) |
+| Config                  | Runtime         | Advertised ctx | Allocated ctx | Effective ctx | Notes                                                                                                                                                                                                                          | Run                                                  |
+| ----------------------- | --------------- | -------------- | ------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Qwen2.5-7B-Instruct-1M  | vLLM 0.25.1 TP2 | 1,010,000      | **blocked**   | —             | dual-chunk attention needs flash-attn (no sm_120 kernel; FlashInfer errors on `layer_idx`). Memory fits (~28 GB KV); kernel doesn't. `local`                                                                                   | [E3](runs/2026-07-17_e3_qwen25_7b_1m/README.md)      |
+| DeepSeek-V4-Flash W4A16 | vLLM 0.25.1 TP2 | 1,000,000      | **won't fit** | —             | CSA arch **runs** on sm_120 (Marlin W4A16 + fp8_ds_mla + Lightning Indexer init) — kernel not the blocker (cf. Qwen2.5-1M). But 80 GB caught between GPU OOM (needs more offload) and host OOM (load-time pinned ~2×). `local` | [E8](runs/2026-07-17_e8_deepseek_v4_flash/README.md) |
+| _ceiling today_         | vLLM 0.25.1     | —              | ~256K         | 262K (E1)     | standard attention tops out ~256K; true 1M awaits newer vLLM/flash-attn-sm120 or SGLang                                                                                                                                        | [E1](runs/2026-07-17_e1_qwen3coder_awq/README.md)    |
 
 ## Historical (pre-program)
 
