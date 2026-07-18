@@ -106,11 +106,16 @@ GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"
 GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
-# secret). Current chat lineup per generativelanguage.googleapis.com/v1beta/models
-# (2026-07): gemini-3.x previews + gemini-3.5-flash, the stable 2.5 pair, and the
-# -latest aliases that auto-point at the newest generation.
+# secret). Chat lineup verified against generativelanguage.googleapis.com/v1beta/models
+# (2026-07-18): the Gemini-3.x preview family (pro / flash / flash-lite) + gemini-3.5-flash,
+# the stable 2.5 pair, and the -latest aliases that auto-point at the newest generation.
+# Specialty SKUs (image, tts, live/bidi, customtools, embedding, imagen, veo) are
+# intentionally excluded — add on demand.
 GEMINI_MODELS: list[str] = [
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
     "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
     "gemini-3.5-flash",
     "gemini-2.5-pro",
     "gemini-2.5-flash",

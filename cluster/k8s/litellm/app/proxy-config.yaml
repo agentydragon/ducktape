@@ -326,9 +326,30 @@ model_list:
       api_key: os.environ/GROQ_API_KEY
     model_info:
       mode: audio_transcription
+  - model_name: gemini-3-pro-preview
+    litellm_params:
+      model: gemini/gemini-3-pro-preview
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: gemini-3-flash-preview
+    litellm_params:
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
   - model_name: gemini-3.1-pro-preview
     litellm_params:
       model: gemini/gemini-3.1-pro-preview
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: gemini-3.1-flash-lite
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: chat
