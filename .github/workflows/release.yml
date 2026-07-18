@@ -42,9 +42,8 @@ jobs:
           set -euo pipefail
           # One matrix row per release. Aggregate every pin whose
           # `.release == <name>`: join their targets for the Bazel build,
-          # take primaryPin's output as bazel_output (release-artifact
-          # needs a single hash source for the release tag), space-join
-          # the others as extra_outputs.
+          # take primaryPin's output as bazel_output and space-join the others
+          # as extra_outputs. release-artifact hashes the complete asset set.
           base=$(jq -c '
             . as $doc |
             [ $doc.releases | to_entries[] |

@@ -83,9 +83,14 @@ runs:
           fi
         done
 
-        # Content-addressed skip check: tag by hash of the primary artifact.
-        # If a release with this tag already exists, the content hasn't changed.
-        content_sha=$(sha256sum "$artifact" | awk '{print $1}')
+        # Content-addressed skip check: tag by the complete release asset set.
+        # Single-artifact hashes retain their historical value so this change
+        # does not cause every existing package to be republished.
+        artifacts=("$artifact")
+        for extra in ${{ inputs.extra_outputs }}; do
+          artifacts+=("$extra")
+        done
+        content_sha=$(python3 devinfra/ci/release_content_hash.py "${artifacts[@]}")
         tag="${PKG}-${content_sha:0:12}"
         echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
         echo "tag=${tag}" >> "$GITHUB_OUTPUT"
