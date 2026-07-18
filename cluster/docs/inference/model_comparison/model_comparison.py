@@ -51,7 +51,10 @@ import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-plt.rcParams.update({"figure.dpi": 120, "font.size": 10, "axes.grid": True, "grid.alpha": 0.3})
+# svg.hashsalt pins matplotlib's element-ID generation so re-renders are byte-identical
+# (default is random per run → every .svg shows 100% churn in git even with no visual
+# change, which made every figure edit a painful stash/commit dance).
+plt.rcParams.update({"figure.dpi": 120, "font.size": 10, "axes.grid": True, "grid.alpha": 0.3, "svg.hashsalt": "wyrm2-inference"})
 
 # --- source URLs (reproducible links) -----------------------------------------
 SOURCES = {
@@ -62,6 +65,7 @@ SOURCES = {
     "valsai_swe": "https://www.vals.ai/benchmarks/swebench",  # independent, dated 2026-07-17
     "gpt5": "https://openai.com/index/introducing-gpt-5/",
     "sonnet45": "https://www.anthropic.com/news/claude-sonnet-4-5",
+    "sonnet5": "https://benchlm.ai/models/claude-sonnet-5",  # SWE 85.2 + AA-GPQA 91.1
     "runs": "cluster/docs/inference/runs/  (E1–E5, measured on 2×5090)",
     "glm52": "https://venturebeat.com/technology/z-ais-open-weights-glm-5-2-beats-gpt-5-5-on-multiple-long-horizon-coding-benchmarks-for-1-6th-the-cost",
     "glm52_colibri": "cluster/docs/inference/runs/2026-07-14_glm52_colibri/  (measured 0.28 tok/s)",
@@ -110,6 +114,7 @@ SWEBENCH = {
     "GLM-5.2 (744B)": (77.8, "glm52", "offload", "press report, setting unstated"),
     "DeepSeek-V4-Flash": (79.0, "dsv4", "offload", "reported (benchlm)"),
     "Claude Sonnet 4.5": (77.2, "sonnet45", "anchor", "10-trial avg, 200K think, no TTC"),
+    "Claude Sonnet 5": (85.2, "sonnet5", "anchor", "benchlm profile"),
     "Gemini 3.5 Flash": (78.8, "valsai_swe", "anchor", "vals.ai harness"),
     "GPT-5.5": (82.6, "valsai_swe", "anchor", "vals.ai harness"),
     "Claude Opus 4.8": (88.6, "valsai_swe", "anchor", "vals.ai harness"),
@@ -146,6 +151,14 @@ GPQA_AA = {
     "DeepSeek-V4-Flash": (89.4, "AA · Max effort"),
 }
 GPQA_MISSING = ["Qwen3-Coder-30B", "Devstral-24B"]  # code-specialists, no AA-GPQA
+
+# Closed-frontier GPQA Diamond anchors — SAME AA source as GPQA_AA above, so the right
+# panel's reference lines are single-sourced too (benchlm.ai/benchmarks/aaGpqaDiamond,
+# AA leaderboard, 2026-07-18). Sonnet 4.5 stays coding-only: AA lists "Sonnet 5" (used
+# here), and Anthropic's own Sonnet-4.5 card GPQA (83.4) is a different source.
+# The frontier clusters in a ~3-pt band (91.1–93.5) vs. its 77–95 SWE spread — GPQA
+# Diamond is near-saturated, so DSV4-Flash's 89.4 is only ~2–4 pts below the ceiling.
+GPQA_ANCHORS = {"Claude Sonnet 5": 91.1, "Gemini 3.5 Flash": 92.2, "Claude Opus 4.8": 92.0, "Claude Fable 5": 92.6, "GPT-5.5": 93.5}
 
 # {metric: {model: (score, setting)}} — every number here is verified against its
 # source card at a stated NO-TOOLS setting, so the bars are actually comparable.
@@ -224,7 +237,7 @@ ax.set_ylabel("decode tokens/s (single request)")
 ax.set_title("Measured decode throughput on 2×5090 (higher = faster)  ·  local")
 ax.legend(title="input context")
 fig.tight_layout()
-fig.savefig("fig1_decode_tps.svg", bbox_inches="tight")
+fig.savefig("fig1_decode_tps.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
 # ## 1b. Reasoning vs direct models
@@ -254,7 +267,7 @@ ax.set_yticks([])
 ax.set_title("Reasoning is the norm; direct models are the exception  ·  blue = local, red = frontier")
 ax.legend(handles=[Patch(color=LOCAL_COLOR, label="runs on 2×5090"), Patch(color=ANCHOR_COLOR, label="closed frontier")], loc="upper left")
 fig.tight_layout()
-fig.savefig("fig1b_reasoning_class.svg", bbox_inches="tight")
+fig.savefig("fig1b_reasoning_class.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
 # ## 2. Context window we can run (measured allocated context)
@@ -279,20 +292,27 @@ blocked = [m for m in MEASURED if m.allocated_ctx_k == 0]
 if blocked:
     ax.text(70, -0.55, "blocked: " + ", ".join(m.label for m in blocked) + " (1M DCA/sm_120)", fontsize=8, color="#555")
 fig.tight_layout()
-fig.savefig("fig2_context.svg", bbox_inches="tight")
+fig.savefig("fig2_context.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
 # ## 3. Speed × capability — coding and general reasoning, one story
 #
-# Two panels, same X (measured decode tok/s, log) and the same Pareto/marker logic, so
-# the coding and general-reasoning pictures sit side by side. **Left** = SWE-bench
-# (closed frontier as dashed refs; local numbers card-reported at the labelled effort).
-# **Right** = GPQA Diamond (Artificial Analysis — one source; AA runs each model at its
-# own reasoning tier, DSV4-Flash shown at Max). The cross-panel story: the resident
-# tier is fast but caps ~69 SWE; **DeepSeek-V4-Flash tops the frontier of BOTH** at
-# offload speed; **gpt-oss-120b is dominated in both**; and the two code-specialists
-# (Qwen3-Coder, Devstral) have no published general-reasoning number, so they **vanish
-# from the right panel** — the overfitting tell, as an absence.
+# Two panels, same X (measured decode tok/s, log), the same Pareto/marker logic, and
+# **dashed closed-frontier anchors on both**, so the coding and general-reasoning
+# pictures sit side by side. **Left** = SWE-bench (local numbers card-reported at the
+# labelled effort). **Right** = GPQA Diamond (Artificial Analysis — one source; AA runs
+# each model at its own reasoning tier, DSV4-Flash shown at Max). The cross-panel story:
+# the resident tier is fast but caps ~69 SWE; **DeepSeek-V4-Flash tops the runnable
+# frontier of BOTH** at offload speed; **gpt-oss-120b is dominated in both**; and the two
+# code-specialists (Qwen3-Coder, Devstral) have no published general-reasoning number, so
+# they **vanish from the right panel** — the overfitting tell, as an absence.
+#
+# But the anchors expose the other half: **GPQA Diamond is near-saturated.** The closed
+# frontier there is a ~3-pt smear (91–94) where on SWE it fans across 77–95, and
+# DSV4-Flash's 89.4 lands only ~2–4 pts under the ceiling — general reasoning barely
+# separates the frontier from a 13B-active model you can run at home, whereas coding
+# still does. Read the right panel as "who has run out of GPQA headroom" (everyone), not
+# as a live ranking.
 
 # %%
 # Marker = reasoning (○) vs direct (□); colour = tier (resident/offload). Labels = name.
@@ -331,8 +351,11 @@ _speed_panel(
     axg,
     [(RUNNABLE_QUALITY[lbl][0], g, lbl, RUNNABLE_QUALITY[lbl][2], REASONING_CLASS[lbl][0]) for lbl, (g, _s) in GPQA_AA.items()],
     "GPQA Diamond (%, AA)  →  better reasoning",
-    (50, 95),
+    (50, 98),
 )
+for g in GPQA_ANCHORS.values():  # closed frontier: too tight to label per line (see coding panel for names)
+    axg.axhline(g, ls="--", color=ANCHOR_COLOR, alpha=0.3)
+axg.text(2600, max(GPQA_ANCHORS.values()) + 0.3, f"closed frontier ({min(GPQA_ANCHORS.values()):.0f}–{max(GPQA_ANCHORS.values()):.0f}) — GPQA near-saturated", color=ANCHOR_COLOR, fontsize=7, va="bottom", ha="right")
 axg.text(0.12, 52.5, "code-specialists (Qwen3-Coder, Devstral):\nno general-reasoning eval published", fontsize=7.5, color="#999", style="italic")
 axg.set_title("General reasoning (GPQA Diamond)")
 axc.legend(
@@ -349,7 +372,7 @@ axc.legend(
 )
 fig.suptitle("Speed × capability — same models, coding vs general reasoning")
 fig.tight_layout()
-fig.savefig("fig3_speed_vs_capability.svg", bbox_inches="tight")
+fig.savefig("fig3_speed_vs_capability.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
 # ## 4. Reasoning evals — only source-verified, no-tools numbers
@@ -373,7 +396,7 @@ for ax, (metric, d) in zip(axes, REASONING.items()):
     ax.set_xlim(0, 108)
 fig.suptitle("Reasoning evals — source-verified, no-tools, local models only  ·  ext")
 fig.tight_layout()
-fig.savefig("fig4_reasoning.svg", bbox_inches="tight")
+fig.savefig("fig4_reasoning.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
 # ## 5. Why the setting matters — gpt-oss AIME 2025 across the effort × tools dial
@@ -397,7 +420,7 @@ ax.set_ylim(30, 100)
 ax.set_title("Same model, same eval: effort × tools moves AIME by 40–60 points  ·  ext (gpt-oss card)")
 ax.legend(fontsize=8)
 fig.tight_layout()
-fig.savefig("fig5_gptoss_effort.svg", bbox_inches="tight")
+fig.savefig("fig5_gptoss_effort.svg", bbox_inches="tight", metadata={"Date": None})
 
 # %% [markdown]
 # ## Sources

@@ -40,7 +40,9 @@ repos:
 
       - id: trailing-whitespace
         # .dxf: FreeCAD TechDraw DXF output has trailing whitespace in geometry lines
-        exclude: "(__snapshots__/.*\\.ambr|\\.patch|\\.dxf)$"
+        # model_comparison/*.svg: matplotlib emits a trailing space after every path
+        #   coordinate; stripping it just churns against the next deterministic render
+        exclude: "(__snapshots__/.*\\.ambr|\\.patch|\\.dxf|cluster/docs/inference/model_comparison/.*\\.svg)$"
       - id: end-of-file-fixer
         # .dxf: FreeCAD TechDraw DXF output ends without a trailing newline
         exclude: "\\.dxf$"
