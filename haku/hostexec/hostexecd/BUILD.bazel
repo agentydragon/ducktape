@@ -1,10 +1,11 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
-# Security-critical: the console-signed capability verifier (Rust side of the cross-language JWT
-# contract). Keep in lockstep with haku/hostexec/capability.py (the signer + pinned vectors).
+# Security-critical: the Authentik access-token verifier — hostexecd's authorization check.
+# RS256 via Authentik's JWKS (per-host audience + hostexec-<run_as>-<host> group); mirrors
+# mcp_infra/authentik_auth.
 rust_library(
-    name = "capability",
-    srcs = ["capability.rs"],
+    name = "authentik",
+    srcs = ["authentik.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
@@ -15,11 +16,16 @@ rust_library(
 )
 
 rust_test(
-    name = "capability_test",
+    name = "authentik_test",
     size = "small",
-    srcs = ["capability_test.rs"],
+    srcs = ["authentik_test.rs"],
+    compile_data = glob(["testdata/*.pem"]),
     edition = "2024",
-    deps = [":capability"],
+    deps = [
+        ":authentik",
+        "@crates//:jsonwebtoken",
+        "@crates//:serde",
+    ],
 )
 
 # Command execution: spawn argv (no shell), wall-clock timeout + kill, output caps with truncation

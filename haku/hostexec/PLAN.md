@@ -15,7 +15,7 @@ per-host, single-use Authentik token** (the grocy token-exchange pattern) and PO
 command — **over Nebula** to a tiny host-side service (`hostexecd`). `hostexecd` is an **OIDC
 resource server** (the host analog of kube-apiserver in kubectl-passthrough): it verifies the
 token against Authentik's JWKS — audience `hostexec-<host>`, the `hostexec-<run_as>-<host>` group,
-`exp`, and `jti` not-already-used — then drops privileges to `run_as`, execs, and returns output.
+`exp`, and single-use (per token) — then drops privileges to `run_as`, execs, and returns output.
 
 **Authority is the operator's own Authentik identity — no bespoke keys.** No console signing key,
 no SSH key, no host-resident credential (hosts trust only Authentik's JWKS). "May run root on
@@ -94,13 +94,13 @@ where it comes from:
 | host              | …only `wyrm2`, not `rugged`    | Authentik: per-host provider, `aud=hostexec-<host>`                     |
 | run_as            | …only `root`, not any user     | Authentik: the `hostexec-<run_as>-<host>` group claim                   |
 | time              | …the next few seconds          | Authentik: short access-token TTL on the exchanged token                |
-| single-use        | …exactly once                  | `hostexecd`: a `jti` replay store (reject an already-seen token id)     |
+| single-use        | …exactly once                  | `hostexecd`: a per-token replay store (reject an already-seen token)    |
 | _(not done)_ argv | …only the one approved command | would need a bespoke console-signed capability — deliberately not built |
 
 The first four rungs are all Authentik-native (**token exchange** to a **per-host provider** —
 reuse `mcp_infra/authentik_auth/token_exchange.py`, the grocy pattern) plus a small host-side
 replay store. `hostexecd` verifies: signature against Authentik JWKS, `aud=hostexec-<host>`, `exp`,
-the `hostexec-<run_as>-<host>` group, and `jti` unseen — then execs.
+the `hostexec-<run_as>-<host>` group, and the token unseen (single-use) — then execs.
 
 What this buys (not theater):
 
@@ -108,7 +108,7 @@ What this buys (not theater):
   can drive token exchange _as the operator_ — bounded by the operator's Authentik grants and
   cut instantly by removing the group — but there is no root-capable skeleton key to steal.
 - **A stolen token is nearly worthless.** It is scoped to one host, one `run_as`, valid for
-  seconds, and **consumed on first use** (`jti` single-use) — so a leaked-but-not-yet-used token
+  seconds, and **consumed on first use** (single-use) — so a leaked-but-not-yet-used token
   is exploitable only in the millisecond window between mint and the legitimate call.
 - **Time-boxed, attributed, centrally revocable.** Every exec is tied to the operator's Authentik
   identity and logged; revoke the group → every host refuses.
@@ -124,7 +124,7 @@ token from "any root command on host X for the TTL" to "the one approved command
 The load-bearing component and the residual:
 
 - **`hostexecd`'s fail-closed validation is the single load-bearing component.** If it is sloppy
-  (accepts a missing/expired token, skips the group or `jti` check, mis-drops privileges) the
+  (accepts a missing/expired token, skips the group or single-use check, mis-drops privileges) the
   model collapses. Security-critical reviewed code; test the deny paths.
 - **The console is the trust root** (it holds the operator's linkage and drives token exchange) —
   as it already is for every approval-gated tool. A console compromise yields host access, but
@@ -158,12 +158,12 @@ Haku (agent, prompt-injectable)
 haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPROVAL)
   │  operator clicks Approve in trusted chrome (CSRF, Authentik-operator-only; root = 2nd confirm)
   │  in-process `hostexec` tool executes in the console:
-  │    · token-exchange the operator's identity → short-lived token (aud=hostexec-<host>, jti, groups)
+  │    · token-exchange the operator's identity → short-lived token (aud=hostexec-<host>, groups)
   │    · HTTPS POST over Nebula → https://<host>.nebula:PORT/exec   {token, run_as, argv, cwd, …}
   ▼
 hostexecd on target host (systemd, root, bound to nebula1, firewalled to console peer):
   │  verify token vs Authentik JWKS: sig, aud=hostexec-<host>, exp, group hostexec-<run_as>-<host>
-  │  AND jti not already used (single-use replay store)
+  │  AND token not already used (single-use replay store)
   │  → drop privileges to run_as → execve(argv) → journald/auditd log
   │  capped stdout/stderr/exit ────────────────────────────────────────────┘
   ▼
@@ -181,14 +181,13 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
   deployment. **Console→mesh egress** is the one plumbing item: the `haku-console` pod must reach
   a Nebula IP (`10.42.0.x`) — give it mesh reachability or a thin non-MCP relay.
 - **`hostexecd`** (host, **minimal Rust** — `axum` + `jsonwebtoken`): the OIDC-RS exec service.
-  The exec module (`hostexecd/exec.rs` — spawn/timeout/output-caps) exists and is tested. Remaining:
-  the axum `POST /exec` handler; Authentik-token verification against **cached JWKS** (sig, `aud`,
-  `exp`, `hostexec-<run_as>-<host>` group); the `jti` single-use replay store; privilege-drop to
-  `run_as`; journald/auditd logging. **Rework note:** `hostexecd/capability.rs` (the
-  bespoke-capability verifier) is repointed into this Authentik-token verifier — the JWT plumbing
-  survives, but the key source becomes Authentik JWKS (not a static console PEM), the checked
-  claims become `aud`/group/`jti` (not argv), and the argv cross-check is dropped. Deployed by nix
-  as a systemd unit on `wyrm2` + `rugged`, bound to `nebula1`, Nebula-firewalled, fail-closed.
+  The exec module (`hostexecd/exec.rs` — spawn/timeout/output-caps) and the Authentik-token
+  verifier (`hostexecd/authentik.rs` — RS256, `iss`/`aud=hostexec-<host>`/`exp`, and the
+  `hostexec-<run_as>-<host>` group) exist and are tested. Remaining: the axum `POST /exec`
+  handler; **JWKS fetch + cache** that resolves the decoding key (Authentik discovery, 30s skew);
+  the single-use replay store (keyed on the token); privilege-drop to `run_as`; journald/auditd
+  logging. Deployed by nix as a systemd unit on `wyrm2` + `rugged`, bound to `nebula1`,
+  Nebula-firewalled, fail-closed.
 - **Authentik providers + groups:** per-host `hostexec-<host>` OAuth2 providers in
   `tf/gitops/agent-machine-access` (clone `kubectl_passthrough_mcp`) with short token TTLs and a
   scope mapping emitting the `hostexec-*` group claims; the four
@@ -197,9 +196,6 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
 - **Approval-card renderer:** `haku/console/frontend/tool_rendering/hostexec/` modeled on the
   `kubectl/` renderer — show `host`, `run_as` (`root` loud + second confirm), full `argv`, `cwd`,
   `rationale`.
-- **Retire the bespoke capability code:** `capability.py` + `test_capability.py` (Python) become
-  dead once the console does token exchange; drop the `capability` field from `HostexecRequest`
-  (`wire.py`). Done as part of the `hostexecd`/console rework above.
 
 ## Decisions (operator, 2026-07-17)
 
@@ -210,7 +206,7 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
    privileged pod.
 3. **`hostexecd` language** — minimal **Rust** (smallest root TCB, no interpreter on the host).
 4. **Narrowing** — **Authentik-native**: per-host provider (`aud=hostexec-<host>`) + the
-   `hostexec-<run_as>-<host>` group + short token TTL + host-side `jti` single-use. **No
+   `hostexec-<run_as>-<host>` group + short token TTL + host-side per-token single-use. **No
    argv-level binding / no bespoke console-signed capability** — the marginal hardening over
    short-TTL + single-use doesn't justify a bespoke signing key (superseded the earlier "full
    argv" decision; see _Architecture pivots_).
@@ -232,12 +228,13 @@ Kept as a record so the reasoning survives the code churn.
   (worse) or need the console to inject it anyway (no gain).
 - **Bespoke console-signed capability (argv-bound) → Authentik-native narrowing.** Built the
   capability first (Python `capability.py` + Rust `capability.rs` + cross-language JWT vectors),
-  then dropped it: per-host provider + short TTL + `jti` single-use gets the token nearly as
-  narrow (host/run_as/time/one-shot) using the operator's real Authentik identity and existing
+  then dropped it: per-host provider + short TTL + single-use gets the token nearly as narrow
+  (host/run_as/time/one-shot) using the operator's real Authentik identity and existing
   token-exchange machinery, with **no bespoke standing key**. Argv-binding's only extra is
   shrinking a leaked-but-unused token's window from "TTL" to "one command" — sub-second given
-  single-use, and worthless against real compromise. The capability code is being repointed into
-  the Authentik-token verifier (`hostexecd`) and otherwise retired.
+  single-use, and worthless against real compromise. Realized: `capability.rs` → `authentik.rs`
+  (RS256/JWKS operator-token verifier), the Python `capability.py` retired, and the `capability`
+  field dropped from `HostexecRequest`.
 
 ## Future expansion (TODO)
 
