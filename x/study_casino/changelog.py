@@ -36,7 +36,17 @@ CHANGELOG: list[ChangelogEntry] = [
             "Prize costs and token balances doubled to match the boosted earning rates — "
             "your saved tokens kept their purchasing power.",
         ],
-    )
+    ),
+    ChangelogEntry(
+        id=2,
+        date="2026-07-18",
+        title="Reward prices recalibrated to real study habits",
+        items=[
+            "Prize costs and token balances were adjusted together from 2× to 1.2× legacy values.",
+            "Your existing progress toward prizes was preserved, aside from at most one token of rounding.",
+            "The Herman Miller Embody Chair is now 21,600 tokens.",
+        ],
+    ),
 ]
 
 LATEST_CHANGELOG_ID = CHANGELOG[-1].id

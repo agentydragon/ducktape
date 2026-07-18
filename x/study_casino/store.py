@@ -155,14 +155,14 @@ def locked_balance(s: Session, username: str) -> BalanceRow:
 
 # Default prize catalog seeded for a user on first contact. Kept in store.py
 # (not in a migration) since it is per-user, not per-database. Costs are
-# calibrated to the v2 credit economy (see migration 0003's rebalance).
+# Calibrated to the empirically adjusted v2 credit economy (migration 0005).
 _DEFAULT_PRIZES: list[tuple[str, str, int]] = [
-    ("p1", "Anime episode break", 60),
-    ("p2", "Nice coffee shop trip", 120),
-    ("p3", "Takeout night", 240),
-    ("p4", "Nice dinner out with Rai", 480),
-    ("p5", "Buy a new game", 1200),
-    ("p6", "Weekend getaway", 3600),
+    ("p1", "Anime episode break", 36),
+    ("p2", "Nice coffee shop trip", 72),
+    ("p3", "Takeout night", 144),
+    ("p4", "Nice dinner out with Rai", 288),
+    ("p5", "Buy a new game", 720),
+    ("p6", "Weekend getaway", 2160),
 ]
 
 

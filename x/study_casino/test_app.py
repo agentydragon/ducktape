@@ -389,7 +389,7 @@ def test_prize_redeem_writes_log_and_subtracts_tokens(client: TestClient) -> Non
     assert r.status_code == 200, r.text
 
     state = client.get("/state").json()
-    assert state["balance"]["tokens"] == 40  # p1 cost is 60
+    assert state["balance"]["tokens"] == 64  # p1 cost is 36
     assert len(state["prize_log"]) == 1
     assert state["prize_log"][0]["name"] == "Anime episode break"
 

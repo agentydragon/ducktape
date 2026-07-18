@@ -294,6 +294,7 @@ py_test(
         ":state",
         ":stats",
         ":store",
+        "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

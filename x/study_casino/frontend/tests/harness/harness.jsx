@@ -47,14 +47,14 @@ const BASE_STATE = {
     { id: "s3", subject: "Pharmacology", seconds: 2400, ended_at_ms: FROZEN_NOW_MS - 50 * 3600 * 1000 },
   ],
   prizes: [
-    { id: "p1", name: "Anime episode break", cost: 60 },
-    { id: "p2", name: "Nice coffee shop trip", cost: 120 },
-    { id: "p3", name: "Takeout night", cost: 240 },
-    { id: "p4", name: "Nice dinner out with Rai", cost: 480 },
-    { id: "p5", name: "Buy a new game", cost: 1200 },
-    { id: "p6", name: "Weekend getaway", cost: 3600 },
+    { id: "p1", name: "Anime episode break", cost: 36 },
+    { id: "p2", name: "Nice coffee shop trip", cost: 72 },
+    { id: "p3", name: "Takeout night", cost: 144 },
+    { id: "p4", name: "Nice dinner out with Rai", cost: 288 },
+    { id: "p5", name: "Buy a new game", cost: 720 },
+    { id: "p6", name: "Weekend getaway", cost: 2160 },
   ],
-  prize_log: [{ id: "log1", name: "Anime episode break", cost: 60, at_ms: FROZEN_NOW_MS - 24 * 3600 * 1000 }],
+  prize_log: [{ id: "log1", name: "Anime episode break", cost: 36, at_ms: FROZEN_NOW_MS - 24 * 3600 * 1000 }],
 };
 
 // A 25-minute session on streak day 7: (25 + 30 bonus) × 1.07. Same shape
@@ -78,6 +78,16 @@ const CHANGELOG_FIXTURE = [
       "Every 14 streak days banks a rest day that protects a single missed day.",
       "First 5 minutes each day award a +30 credit bonus (streak-multiplied).",
       "Prize costs and token balances doubled to match the boosted earning rates.",
+    ],
+  },
+  {
+    id: 2,
+    date: "2026-07-18",
+    title: "Reward prices recalibrated to real study habits",
+    items: [
+      "Prize costs and token balances were adjusted together from 2× to 1.2× legacy values.",
+      "Your existing progress toward prizes was preserved, aside from at most one token of rounding.",
+      "The Herman Miller Embody Chair is now 21,600 tokens.",
     ],
   },
 ];

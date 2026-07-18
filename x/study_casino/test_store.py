@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 import pytest_bazel
-from sqlalchemy import select
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 
 from x.study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
@@ -111,7 +114,41 @@ def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> Non
     assert state.balance == BalanceRead(credits_millis=0, tokens=0)
     assert state.sessions == []
     assert state.prize_log == []
-    assert len(state.prizes) == 6  # DEFAULT_PRIZES
+    assert [(prize.name, prize.cost) for prize in state.prizes] == [
+        ("Anime episode break", 36),
+        ("Nice coffee shop trip", 72),
+        ("Takeout night", 144),
+        ("Nice dinner out with Rai", 288),
+        ("Buy a new game", 720),
+        ("Weekend getaway", 2160),
+    ]
+
+
+def test_economy_rebalance_migration_preserves_progress(db_url: str) -> None:
+    engine = create_engine(db_url)
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        alembic_command.upgrade(cfg, "0004")
+        conn.execute(text("INSERT INTO balance (user_id, credits, tokens) VALUES ('auragon', 60000, 23114)"))
+        conn.execute(
+            text(
+                "INSERT INTO prizes (user_id, id, name, cost) "
+                "VALUES ('auragon', 'chair', 'Herman Miller Embody Chair', 36000), "
+                "('auragon', 'small', 'Small reward', 1)"
+            )
+        )
+
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        alembic_command.upgrade(cfg, "head")
+        assert conn.execute(text("SELECT tokens FROM balance WHERE user_id = 'auragon'")).scalar_one() == 13868
+        assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'chair'")).scalar_one() == 21600
+        assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'small'")).scalar_one() == 1
+
+    engine.dispose()
 
 
 def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -> None:
