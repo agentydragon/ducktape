@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ibkr-mcp
+  labels:
+    app.kubernetes.io/name: ibkr-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: ibkr-mcp
+  ports:
+    - name: http
+      port: 8765
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  type: ClusterIP

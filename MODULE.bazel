@@ -670,6 +670,18 @@ http_file(
     urls = ["https://raw.githubusercontent.com/grocy/grocy/v4.6.0/grocy.openapi.json"],
 )
 
+# IBKR Client Portal Web API spec (Swagger 2.0). `//ibkr_mcp:ibkr_openapi_fixed`
+# filters it to the read-only allowlist and transcodes it to OpenAPI 3.1 at build
+# time (see ibkr_mcp/spec_fixup.py). The authoritative spec is whatever the running
+# Client Portal Gateway serves; this pinned mirror is the starting point — refresh
+# it from the gateway's own spec dump (ibkr_mcp/README.md) and update the sha256.
+http_file(
+    name = "ibkr_cpapi_openapi_spec",
+    downloaded_file_path = "ibkr.openapi.json",
+    sha256 = "014258b6726d2623397064d5ed69823da987332799e74a4975ecdc41aa2fe494",
+    urls = ["https://gist.githubusercontent.com/theloniusmunch/9b14d320fd1c3aca550fc8d54c446ce0/raw/3845d725c5b86e72b88685707512ab3eff8d7256/IB-client-web-API-spec"],
+)
+
 # Gmail's and Google Calendar's official multicolor product icon SVGs — Google's own versioned
 # gstatic-hosted assets, the same ones Google itself serves for these apps' icons. haku-console's
 # tool-call preview widgets embed them (as build-time-generated data URIs; see

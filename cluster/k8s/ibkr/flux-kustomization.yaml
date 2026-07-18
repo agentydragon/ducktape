@@ -1,0 +1,38 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ibkr-mcp
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/ibkr
+  prune: true
+  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ibkr-mcp
+      namespace: ibkr
+  dependsOn:
+    - name: ibkr-namespace
+    - name: gateway
+    # CNPG operator + storage for the OAuth-state Postgres cluster.
+    - name: cnpg
+    - name: local-path-provisioner
+    # ESO mirrors the forgejo-images-creds pull secret into this namespace: the
+    # ClusterSecretStore + the reflected source credential must exist first.
+    - name: external-secrets-config
+    - name: forgejo-images
+    # TF mints the ibkr-mcp Authentik OAuth2 provider + the ibkr-mcp-oidc Secret;
+    # the pod's build_authentik_auth does a synchronous OIDC discovery fetch at
+    # startup, so the provider must exist first.
+    - name: agent-machine-access-tf

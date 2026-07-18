@@ -17,6 +17,14 @@ mcp:
       server_url: https://grocy-mcp-sf.allegedly.works/mcp
       operator_oauth:
         client_name: Haku Console
+    # Read-only IBKR market data. The ibkr-mcp OIDCProxy supports DCR, so the
+    # console registers as the approving operator (agentydragon) — the same
+    # front door claude.ai uses. No machine token / direct_jwt_trust. Tools
+    # surface as ibkr_<tool> and default to manual approval per call.
+    - id: ibkr
+      server_url: https://ibkr-mcp.allegedly.works/mcp
+      operator_oauth:
+        client_name: Haku Console
     - id: tana-rw
       server_url: https://tana-mcp-facade.allegedly.works/mcp
       operator_oauth:

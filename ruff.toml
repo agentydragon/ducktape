@@ -146,6 +146,7 @@ known-first-party = [
     "grocy_mcp",
     "habitify",
     "homeassistant",
+    "ibkr_mcp",
     "inop",
     "inventree_utils",
     "laser",

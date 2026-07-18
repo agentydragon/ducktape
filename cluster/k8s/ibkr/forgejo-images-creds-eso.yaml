@@ -1,0 +1,38 @@
+# Mirror the ducktape-ci Forgejo registry pull credential into this namespace so
+# the ibkr-mcp pod can pull its image from the private registry.
+#
+# Reflects the source secret's keys verbatim (it already ships a ready-made
+# .dockerconfigjson) and only stamps the dockerconfigjson type on top — no
+# reassembly, no hardcoded registry host. Sources the reflector-mirrored copy
+# already present in flux-system (the ESO ServiceAccount has cluster-wide secret
+# read).
+#
+# TODO(reflector-switch): the other Forgejo-image consumers (codex-pod, grocy-sf)
+# get this straight from the emberstack reflector by listing their namespace in
+# registry-creds.sops.yaml's allowlist. Adding `ibkr` there is one line, but the
+# document MAC covers those plaintext annotations (verified: a raw edit fails
+# `sops -d` with a MAC mismatch), so it needs the cluster age key. ESO avoids
+# that dependency; switch to the reflector for consistency once the allowlist can
+# be edited (then delete this file).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: ibkr
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-flux-system-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: forgejo-images-creds
+    template:
+      type: kubernetes.io/dockerconfigjson
+      # Merge (not the default Replace) so the fetched keys — including the
+      # source's ready-made .dockerconfigjson — survive and we only add the
+      # dockerconfigjson type. Replace keeps only templated data, which with no
+      # template.data would leave the secret empty (ESO templating guide).
+      mergePolicy: Merge
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds

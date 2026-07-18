@@ -113,6 +113,7 @@ jobs:
               test_target: "//x/authentik_mcp_poc/...",
             }
           - { image: "//grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//grocy_mcp/..." }
+          - { image: "//ibkr_mcp:server_image", image_name: ibkr-mcp, registry: forgejo, test_target: "//ibkr_mcp/..." }
           - { image: "//haku/console:server_image", image_name: haku-console, test_target: "//haku/console/..." }
           - { image: "//haku/console:static_image", image_name: haku-console-static, test_target: "//haku/console/..." }
           - {

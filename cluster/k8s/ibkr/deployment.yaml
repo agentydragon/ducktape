@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ibkr-mcp
+  labels:
+    app.kubernetes.io/name: ibkr-mcp
+  annotations:
+    description: >-
+      Read-only IBKR market-data MCP server, co-located with an IBeam Client
+      Portal Gateway holding a single paper session. The gateway socket is
+      pod-local only; the MCP server exposes just the read-only tool surface.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  # Single session: the gateway holds one authenticated login, so never run two.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ibkr-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ibkr-mcp
+    spec:
+      enableServiceLinks: false
+      # Private Forgejo registry (git.allegedly.works/ducktape-ci) — the pull
+      # credential is the forgejo-images-creds Secret, mirrored into this
+      # namespace by the reflector (see cluster/k8s/forgejo-images/).
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      containers:
+        # IBeam runs the Client Portal Web API gateway headless: it logs in with
+        # the paper credentials, waits for the weekly IBKR Mobile 2FA tap, and
+        # keeps the session alive. Reachable only over the pod's localhost:5000.
+        - name: gateway
+          image: voyz/ibeam:latest # CLEANUP(added 2026-07-17): pin to the running digest once the paper login is verified working end-to-end.
+          imagePullPolicy: Always
+          ports:
+            - name: gateway
+              containerPort: 5000
+              protocol: TCP
+          env:
+            - name: IBEAM_ACCOUNT
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-paper-trading-credentials
+                  key: username
+            - name: IBEAM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-paper-trading-credentials
+                  key: password
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+        - name: server
+          image: git.allegedly.works/ducktape-ci/ibkr-mcp:devel-20260717000000-0000000 # {"$imagepolicy": "flux-system:ibkr-mcp-server"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+            # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: IBKR_MCP_CONFIG_FILE
+              value: /etc/ibkr-mcp/config.yaml
+            - name: IBKR_MCP_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-mcp-oidc
+                  key: client_id
+            - name: IBKR_MCP_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-mcp-oidc
+                  key: client_secret
+            # OAuth-state store: Postgres, DSN from the CNPG-managed app Secret.
+            # CNPG's `uri` is the plain postgresql:// form asyncpg wants (not the
+            # +psycopg SQLAlchemy form).
+            - name: IBKR_MCP_PERSISTENCE__KIND
+              value: postgres
+            - name: IBKR_MCP_PERSISTENCE__URL
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-mcp-db-app
+                  key: uri
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ibkr-mcp
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: ibkr-mcp-config

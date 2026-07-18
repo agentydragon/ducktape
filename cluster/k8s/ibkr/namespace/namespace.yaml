@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ibkr
+  labels:
+    # No VPA tuning wanted for the gateway/server pair (single-replica, fixed sizes).
+    goldilocks.fairwinds.com/enabled: "false"

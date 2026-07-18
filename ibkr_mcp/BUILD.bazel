@@ -1,0 +1,174 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# ── Build-time spec filter + transcode (Swagger 2.0 → read-only OpenAPI 3.1) ──
+
+py_library(
+    name = "route_policy",
+    srcs = ["route_policy.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "spec_fixup_lib",
+    srcs = ["spec_fixup.py"],
+    deps = [":route_policy"],
+)
+
+py_binary(
+    name = "spec_fixup",
+    main_module = "ibkr_mcp.spec_fixup",
+    deps = [":spec_fixup_lib"],
+)
+
+genrule(
+    name = "ibkr_openapi_fixed",
+    srcs = ["@ibkr_cpapi_openapi_spec//file"],
+    outs = ["ibkr.openapi.fixed.json"],
+    cmd = "$(execpath :spec_fixup) $(SRCS) $@",
+    tools = [":spec_fixup"],
+)
+
+# ── Server ────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "mcp_types",
+    srcs = ["mcp_types.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:config",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    data = [":ibkr_openapi_fixed"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mcp_types",
+        ":route_policy",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:provider",
+        "//util/bazel:runfiles",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//prometheus_client",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server_cli",
+    main_module = "ibkr_mcp.server",
+    deps = [":server"],
+)
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
+    ],
+)
+
+py_test(
+    name = "test_route_policy",
+    srcs = ["test_route_policy.py"],
+    data = [":ibkr_openapi_fixed"],
+    deps = [
+        ":conftest",
+        ":route_policy",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_spec_fixup",
+    srcs = ["test_spec_fixup.py"],
+    data = [":ibkr_openapi_fixed"],
+    deps = [
+        ":conftest",
+        ":route_policy",
+        ":spec_fixup_lib",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":conftest",
+        ":mcp_types",
+        "//:conftest",
+        "//mcp_infra:persistence",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":conftest",
+        ":mcp_types",
+        ":route_policy",
+        ":server",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//prometheus_client",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+# ── OCI image ────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "server.py",
+    deps = [":server"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "server_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "server_load",
+    image = ":server_image",
+    repo_tags = ["ibkr-mcp:latest"],
+)

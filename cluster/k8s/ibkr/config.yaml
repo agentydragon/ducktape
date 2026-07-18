@@ -1,0 +1,14 @@
+# Non-secret config for the IBKR market-data MCP server, mounted at
+# IBKR_MCP_CONFIG_FILE. Secrets (OIDC client_id/secret) come from env
+# (ibkr-mcp-oidc k8s Secret, minted by agent-machine-access TF).
+#
+# gateway_base_url points at the co-located IBeam sidecar over the pod's
+# localhost (self-signed cert, so TLS verification is off for the in-pod hop).
+gateway_base_url: https://localhost:5000/v1/api
+gateway_verify_tls: false
+auth:
+  oidc_issuer: https://auth.allegedly.works/application/o/ibkr-mcp/
+  public_base_url: https://ibkr-mcp.allegedly.works
+# Persistence (kind + DSN) is supplied entirely via IBKR_MCP_PERSISTENCE__* env
+# from the CNPG ibkr-mcp-db-app Secret — see the deployment. Kept out of this
+# file so the discriminated-union field comes from a single source.

@@ -1,0 +1,18 @@
+# The `ibkr` namespace, created independently of agent-machine-access-tf so the
+# TF can create the ibkr-mcp-oidc Secret into it (the TF retries until the
+# namespace exists). Keeping the namespace in the main ibkr kustomization — which
+# dependsOn the TF — would deadlock: the TF needs the namespace, the namespace
+# waits on the TF.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ibkr-namespace
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/ibkr/namespace
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
