@@ -178,13 +178,13 @@ them answer a specific question this set does not.
 
 #### Exotic/offload lane
 
-| Initial order | Candidate or mechanism                                                            | First configuration                                                                        | Question                                                                                                    |
-| ------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| 1             | GLM-5.2                                                                           | Existing Colibri INT4-expert/INT8-MTP run, then lower activation/KV precision if supported | How do context, page cache, SSD throughput, and drafting interact in a disk-streamed expert model?          |
-| 2             | [MiniMax-M2.5](https://huggingface.co/MiniMaxAI/MiniMax-M2.5)                     | Quantized KTransformers expert offload                                                     | Can a much larger coding MoE produce enough quality at its 196,608-token window to justify RAM/SSD traffic? |
-| 3             | [Devstral 2 123B](https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512) | Q4 GGUF or another supported CPU/GPU split                                                 | What is the quality ceiling for a dense model spanning both VRAM and host RAM?                              |
-| 4             | Best large GGUF candidate from the resident screen                                | `llama.cpp` tensor/layer split with `mmap`                                                 | Where is the practical frontier between resident KV, offloaded weights, and page cache?                     |
-| Mechanism     | More `wyrm2` RAM                                                                  | 104 GiB controlled trial after in-allocation sensitivity tests                             | Does another 8 GiB cross a fit/cache boundary, or merely move an already poor result slightly?              |
+| Initial order | Candidate or mechanism                                                                  | First configuration                                                                        | Question                                                                                                                                                                                                     |
+| ------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1             | GLM-5.2                                                                                 | Existing Colibri INT4-expert/INT8-MTP run, then lower activation/KV precision if supported | How do context, page cache, SSD throughput, and drafting interact in a disk-streamed expert model?                                                                                                           |
+| 2 (E10)       | [MiniMax-M3](https://huggingface.co/MiniMaxAI/MiniMax-M3) (428B / ~23B active, MSA, 1M) | `llama.cpp` mainline IQ2 GGUF, `--cpu-moe` offload (E9 wiring)                             | Does its +1.5 SWE over DSV4-Flash (80.5 vs 79.0) survive ~2× active params (23B vs 13B → slower) and a larger footprint — i.e. does it _extend_ the offload coding frontier or just shift DSV4's point left? |
+| 3             | [Devstral 2 123B](https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512)       | Q4 GGUF or another supported CPU/GPU split                                                 | What is the quality ceiling for a dense model spanning both VRAM and host RAM?                                                                                                                               |
+| 4             | Best large GGUF candidate from the resident screen                                      | `llama.cpp` tensor/layer split with `mmap`                                                 | Where is the practical frontier between resident KV, offloaded weights, and page cache?                                                                                                                      |
+| Mechanism     | More `wyrm2` RAM                                                                        | 104 GiB controlled trial after in-allocation sensitivity tests                             | Does another 8 GiB cross a fit/cache boundary, or merely move an already poor result slightly?                                                                                                               |
 
 Add newly released runtimes and architectures when they plausibly change the
 frontier. Being unsupported by vLLM is not a reason to exclude a model; it is a
@@ -272,6 +272,30 @@ agentic numbers.
 
 The exotic lane continues in parallel (GLM-5.2 Colibri follow-ups per that run's
 TODO list); it is not gated on E1–E5.
+
+### E10 — MiniMax M3: can it extend the offload coding frontier over DSV4-Flash?
+
+The only recently-released open weight that is a genuine Pareto _candidate_ above
+DeepSeek-V4-Flash (E9) on coding: **MiniMax M3**, 428B total / ~23B active MoE, MSA
+sparse attention, native 1M context, open-weight. External evals: SWE-bench Verified
+80.5, GPQA Diamond 92.9 (HLE numbers are protocol-split — do not cite until pinned).
+
+- **Runtime:** reuse the E9 wiring verbatim — mainline `ggml-org/llama.cpp`, an IQ2 GGUF
+  (~107 GB at 2 bpw), `--cpu-moe` expert offload, Vulkan (`-ngl 999 -c 4096`), NVIDIA
+  ICD. First confirm an IQ2/IQ1 GGUF exists (unsloth) that targets mainline; the MSA
+  attention must be merged in llama.cpp (verify, as with DSV4's HCA tensors).
+- **Measure:** decode tok/s (CPU floor + Vulkan) — the key number, since ~23B active vs
+  DSV4's 13B predicts roughly half the decode rate; largest allocated context; coherence
+  - tool-call smoke; peak VRAM/RAM and how much of the 107 GB page-caches in 96 GB.
+- **Question:** does +1.5 SWE over DSV4-Flash (80.5 vs 79.0) survive being ~2× slower and
+  ~16 GB larger — i.e. does M3 add a new point _above_ DSV4 on the speed×SWE frontier, or
+  is it strictly dominated (slower for negligible quality)? A dominated result is still a
+  finding: it says DSV4-Flash is the offload coding sweet spot and bigger MoEs don't help
+  at this memory budget.
+- **Explicitly NOT queued: Inkling** (Thinking Machines, 975B / 41B active). At ~244 GB
+  IQ2 it exceeds 96 GB RAM + practical SSD streaming, and 41B active would crawl at
+  GLM-5.2 tier (~0.1–0.3 tok/s). Too big to run usefully on `wyrm2`; revisit only with a
+  much smaller quant or more RAM.
 
 ## Later work
 

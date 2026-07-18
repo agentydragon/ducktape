@@ -174,7 +174,11 @@ HLE_AA = {  # all AA closed-book, no-tools, text-only, pass@1
     "Qwen3.5-35B-A3B": 19.7,
     "GLM-5.2 (744B)": 40.1,  # AA closed-book — NOT Z.AI's 54.7 with-tools card number
 }
-HLE_DSV4_SELFREPORT = 8.1  # DeepSeek's own no-CoT report; AA never ran DSV4 → drawn greyed, never mixed in
+# DeepSeek-V4-Flash is DELIBERATELY absent from the HLE panel: its published HLE numbers
+# are hopelessly protocol-split and none is AA-closed-book-at-max like our other points —
+# 8.1 (DeepSeek report, no-CoT/no-tools), ~34–37 reasoning-on (cf. V4-Pro 37.7 in the same
+# report), and 45.1 with tools (llm-stats). Plotting any one would be the apples-to-oranges
+# trap. We run DSV4-Flash ourselves (E9), so a same-protocol HLE is a future local eval.
 # Anchors at the SAME AA closed-book protocol. Only Opus 4.8 (45.7) and Fable 5 (53.3)
 # have a verified AA closed-book number; Sonnet 5 / GPT-5.5 / Gemini 3.5 Flash publish
 # only with-tools or unstated HLE, so they're dropped rather than mixed in.
@@ -305,17 +309,19 @@ fig.savefig("fig2_context.svg", bbox_inches="tight", metadata={"Date": None})
 # 18.5, Qwen3.5-35B 19.7 — a ~30-pt gap to the frontier that GPQA's 78–85 hid entirely.
 # The best any runnable manages is **GLM-5.2 at 40.1**, and that's the 744B disk-streamed
 # model at 0.28 tok/s — still short of Opus 4.8 (45.7) and Fable 5 (53.3). **Nothing we
-# can run reaches the HLE frontier**, and the coding hero DSV4-Flash sits near the floor
-# (vendor self-reports 8.1, no-CoT). The coding win does not transfer to hard reasoning.
+# can run reaches the HLE frontier**: the coding win does not transfer to hard reasoning.
+# (Our coding hero DSV4-Flash is *omitted* from this panel, not floored — its HLE numbers
+# are protocol-split, 8.1 no-CoT → ~37 reasoning → 45 with-tools, and none is comparable
+# to the AA closed-book points here. We run it in E9, so a same-protocol HLE is future work.)
 #
 # **Protocol discipline is the whole point of this panel** (and the reason it looks
 # different from headline numbers you may have seen): HLE splices *with-tools* and
 # *closed-book* runs that differ ~13–15 pts. Z.AI's card advertises GLM-5.2 at **54.7
 # with tools** — which would put it a whisker under Fable — but its no-tools number is
-# 40.5 and AA's closed-book is 40.1. This panel is **AA closed-book only**; the one
-# non-AA point (DSV4-Flash's vendor no-CoT 8.1) is greyed and kept off the frontier, and
-# three frontier anchors (Sonnet 5, GPT-5.5, Gemini 3.5 Flash) are **dropped** because
-# only their with-tools HLE is published — better a sparse honest axis than a mixed one.
+# 40.5 and AA's closed-book is 40.1. This panel is **AA closed-book only**, so anything
+# without a comparable number is dropped rather than mixed: DSV4-Flash (numbers span
+# 8.1 no-CoT → ~37 reasoning → 45 with-tools) and three frontier anchors (Sonnet 5,
+# GPT-5.5, Gemini 3.5 Flash, only with-tools HLE published). Better a sparse honest axis.
 
 # %%
 # Marker = reasoning (○) vs direct (□); colour = tier (resident/offload). Labels = name.
@@ -367,10 +373,7 @@ _speed_panel(
     "Humanity's Last Exam (%, AA closed-book)  →  better reasoning",
     (0, 62),
 )
-# DSV4-Flash drawn OUTSIDE the AA set — greyed, vendor no-CoT number, never mixed into the frontier
-_dx = RUNNABLE_QUALITY["DeepSeek-V4-Flash"][0]
-axh.scatter(_dx, HLE_DSV4_SELFREPORT, s=110, facecolors="none", edgecolors="#999", marker="o", zorder=3)
-axh.annotate("DeepSeek-V4-Flash\n*vendor self-report, no-CoT (no AA run)", (_dx, HLE_DSV4_SELFREPORT), textcoords="offset points", xytext=(8, -3), fontsize=6.5, color="#999", style="italic")
+axh.text(0.12, 3, "DeepSeek-V4-Flash omitted: HLE numbers span 8.1 (no-CoT) →\n~37 (reasoning) → 45 (with tools) — none at AA closed-book. Run it (E9).", fontsize=6.8, color="#999", style="italic")
 for name, h in HLE_ANCHORS.items():  # only 2 verified at AA closed-book; label each
     axh.axhline(h, ls="--", color=ANCHOR_COLOR, alpha=0.3)
     axh.text(2600, h, name, color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
