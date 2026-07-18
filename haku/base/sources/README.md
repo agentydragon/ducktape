@@ -46,6 +46,10 @@ grows its own techniques and records them in its state `memory/`.
 - [`activitywatch`](activitywatch.md) — the operator's device activity: presence
   (at which computer, right now), focus, and per-day time-use; read-only via an
   Authentik two-step token mint. The prioritization signal the other sources lack.
+- [`osm`](osm.md) — geocoding, routing, and place lookup via public OpenStreetMap
+  APIs (Nominatim/OSRM/Overpass, wrapped by the `osmmcp` MCP server, proxied through
+  haku-console like Gmail/Calendar). Reference, not an operator-owned channel — every
+  tool auto-approves.
 - [`mailbox`](mailbox.md) — **your own mailbox** (`haku@allegedly.works`): mail the
   operator sends directly to you (requests, context, forwards). Delivery is DMARC-gated
   to whitelisted senders at the server; access over JMAP with your Authentik mail JWT.
@@ -53,7 +57,7 @@ grows its own techniques and records them in its state `memory/`.
   (always reachable; you have the checkout). The **cluster** is likewise a standing
   source — see `../instructions.md` → _How you reason_ (read-only diagnostics).
 
-The MCP-server sources (`tana`, `grocy`) share one transport how-to —
+The MCP-server sources (`tana`, `grocy`, `osm`) share one transport how-to —
 [`mcp_over_http.md`](mcp_over_http.md) (`fastmcp`, `curl` fallback, reading the
 bearer); their own files carry only the URL, secret, tools, and gotchas. It's a
 shared mechanic, not a channel.

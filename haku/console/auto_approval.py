@@ -41,6 +41,7 @@ GROCY_SF_SERVER_ID = "grocy-sf"
 TANA_RW_SERVER_ID = "tana-rw"
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
 IBKR_SERVER_ID = "interactive_brokers"
+OSM_SERVER_ID = "osm"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
 GMAIL_READ_TOOLS = frozenset(
@@ -111,6 +112,39 @@ IBKR_AUTO_APPROVE_TOOLS = frozenset(
     }
 )
 
+# osmmcp's entire surface is read-only queries over public OSM data (geocoding, routing, place
+# lookup, coordinate/polyline utilities) — no create/update/delete tool exists, so every tool
+# auto-approves. `tile_cache`'s only actions are list/get/stats (no invalidate/clear).
+OSM_AUTO_APPROVE_TOOLS = frozenset(
+    {
+        "get_version",
+        "geocode_address",
+        "reverse_geocode",
+        "get_map_image",
+        "route_fetch",
+        "get_route_directions",
+        "suggest_meeting_point",
+        "route_sample",
+        "analyze_commute",
+        "find_nearby_places",
+        "explore_area",
+        "find_parking_facilities",
+        "find_charging_stations",
+        "find_schools_nearby",
+        "analyze_neighborhood",
+        "geo_distance",
+        "bbox_from_points",
+        "centroid_points",
+        "polyline_decode",
+        "polyline_encode",
+        "enrich_emissions",
+        "osm_query_bbox",
+        "filter_tags",
+        "sort_by_distance",
+        "tile_cache",
+    }
+)
+
 # (server_id -> tools) auto-approved for any authenticated agent regardless of arguments. Drives the
 # MCP server's transparent pass-through bucket. Argument-conditional approvals
 # (GMAIL_CONDITIONAL_TOOLS) are deliberately excluded — those still route through the request_
@@ -121,6 +155,7 @@ UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     GROCY_SF_SERVER_ID: GROCY_READ_TOOLS,
     TANA_RW_SERVER_ID: TANA_AUTO_APPROVE_TOOLS,
     IBKR_SERVER_ID: IBKR_AUTO_APPROVE_TOOLS,
+    OSM_SERVER_ID: OSM_AUTO_APPROVE_TOOLS,
 }
 
 

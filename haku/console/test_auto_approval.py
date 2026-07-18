@@ -233,6 +233,21 @@ async def test_ibkr_unlisted_tool_stays_manual() -> None:
     )
 
 
+@pytest.mark.parametrize("tool_name", ["geocode_address", "route_fetch", "find_nearby_places", "tile_cache"])
+async def test_osm_reads_auto_approve(tool_name: str) -> None:
+    policy_id, evaluation = await _remote_decision("osm", tool_name, {})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+async def test_osm_unlisted_tool_stays_manual() -> None:
+    assert await _remote_decision("osm", "not_a_real_tool", {}) == (
+        None,
+        "manual: osm/not_a_real_tool is not auto-approved",
+    )
+
+
 async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:
     gmail = Mock()
     gmail.labels_get.side_effect = RuntimeError("gmail unavailable")

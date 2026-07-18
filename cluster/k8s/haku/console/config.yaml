@@ -23,6 +23,15 @@ mcp:
       auth:
         kind: remote_server_oauth
         client_name: Haku Console
+    # osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM,
+    # place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no
+    # per-operator identity, so unlike every other remote server here it isn't
+    # OAuth-fronted: reachable only from haku-console's own namespace via
+    # CiliumNetworkPolicy (cluster/k8s/agents/osm-mcp/), not a public HTTPRoute.
+    - id: osm
+      server_url: http://osm-mcp.osm-mcp.svc.cluster.local:7082/mcp
+      auth:
+        kind: none
     # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight
     # to kube-apiserver (cluster_auth_mode=passthrough) — no group override, no scoped
     # credential of its own. RBAC is agentydragon's real cluster-admin binding

@@ -98,6 +98,8 @@ resources:
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
   - agents/manifold-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/servicemonitor/flux-kustomization.yaml
+  - agents/osm-mcp/namespace/flux-kustomization.yaml
+  - agents/osm-mcp/app/flux-kustomization.yaml
   - agents/plaid-mcp/namespace/flux-kustomization.yaml
   - agents/plaid-mcp/db/flux-kustomization.yaml
   - agents/plaid-mcp/app/flux-kustomization.yaml
