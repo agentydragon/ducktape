@@ -1,4 +1,8 @@
-"""Request-scoped Authentik backend token exchange."""
+"""Request-scoped backend token exchange (RFC 7523 JWT-bearer client assertion) against Authentik.
+
+The exchange mechanism is the vendor-neutral JWT-bearer grant; this module binds it to Authentik
+(``AuthentikAuthConfig``, the ``ak_proxy`` scope, the outpost identity headers).
+"""
 
 from __future__ import annotations
 
