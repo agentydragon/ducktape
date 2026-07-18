@@ -205,12 +205,13 @@ let
       src,
       binaryName ? pname,
       description,
+      extraBuildInputs ? [ ],
     }:
     pkgs.stdenvNoCC.mkDerivation {
       inherit pname src;
       version = "latest";
       nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ] ++ extraBuildInputs;
       dontUnpack = true;
       installPhase = ''
         install -Dm755 $src $out/bin/${binaryName}
@@ -234,6 +235,8 @@ let
     pname = "hostexecd";
     src = artifacts.hostexecd;
     description = "Host-side exec daemon for haku-console (Rust)";
+    # reqwest (jwks.rs) uses native-tls, so the prebuilt binary links libssl/libcrypto.
+    extraBuildInputs = [ pkgs.openssl ];
   };
 
 in
