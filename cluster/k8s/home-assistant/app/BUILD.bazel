@@ -2,6 +2,21 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_test")
 
 py_library(
+    name = "bootstrap_onboarding",
+    srcs = ["bootstrap_onboarding.py"],
+    imports = ["."],
+)
+
+py_test(
+    name = "test_bootstrap_onboarding",
+    srcs = ["test_bootstrap_onboarding.py"],
+    deps = [
+        ":bootstrap_onboarding",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "install_oidc",
     srcs = ["install_oidc.py"],
     imports = ["."],

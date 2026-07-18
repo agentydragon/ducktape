@@ -2,6 +2,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: home-assistant
+  annotations:
+    # Home Assistant stores root-owned 0600 files that require a privileged
+    # VolSync mover to copy without silently omitting state.
+    volsync.backube/privileged-movers: "true"
   labels:
     # Home Assistant and Matter need the host network for mDNS, Bluetooth and
     # Matter fabric traffic on the physical home LAN.

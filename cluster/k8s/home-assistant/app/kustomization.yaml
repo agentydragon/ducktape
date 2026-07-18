@@ -3,7 +3,9 @@ kind: Kustomization
 resources:
   - storage.yaml
   - metrics-secret.yaml
+  - break-glass-credentials.sops.yaml
   - home-assistant.yaml
+  - onboarding-job.yaml
   - httproute.yaml
   - monitoring.yaml
   - volsync-backup.yaml
@@ -17,6 +19,7 @@ configMapGenerator:
   - name: home-assistant-bootstrap
     namespace: home-assistant
     files:
+      - bootstrap_onboarding.py
       - install_oidc.py
   - name: home-assistant-caddy
     namespace: home-assistant

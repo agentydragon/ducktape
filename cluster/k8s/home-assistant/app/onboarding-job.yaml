@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: home-assistant-onboarding
+  namespace: home-assistant
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: home-assistant-onboarding
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      containers:
+        - name: onboarding
+          image: ghcr.io/home-assistant/home-assistant:2026.7.2
+          command:
+            - python
+            - /bootstrap/bootstrap_onboarding.py
+          env:
+            - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: home-assistant-break-glass
+                  key: password
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+      volumes:
+        - name: bootstrap
+          configMap:
+            name: home-assistant-bootstrap
