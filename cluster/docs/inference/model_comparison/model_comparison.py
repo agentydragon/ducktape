@@ -21,20 +21,27 @@
 #   pulled from vendor cards and independent leaderboards (July 2026). Every number
 #   carries a source URL in `SOURCES` below.
 #
-# **Big caveat on eval comparability.** SWE-bench Verified numbers mix vendor
-# self-reports (which vary by agent scaffold, e.g. OpenHands N-turns) with
-# independent leaderboards (vals.ai). They are **not** strictly comparable — treat
-# ±several points as noise, and read the trend, not the decimal. Anchor numbers for
-# the very newest closed models had conflicting web reports; the shakier ones are
-# omitted or flagged rather than guessed.
+# **Reasoning effort / tools is the dominant hidden variable — so every eval number
+# here is pinned to the setting its source states.** On these evals the score depends
+# heavily on the reasoning effort (low→high thinking budget) and on whether the model
+# had external tools: gpt-oss drops ~20 SWE-bench points high→low, and its AIME swings
+# 40–60 points across the effort×tools dial (figure 5). So each bar carries its
+# setting, and numbers are only compared at a *matched* setting:
 #
-# **Reasoning-effort caveat (the speed×quality plot isn't strictly apples-to-apples).**
-# Reasoning models spend a variable, usually large, number of thinking tokens per
-# answer. So (a) `decode tok/s` is *not* answers/s — a reasoner at 200 tok/s that
-# emits 2000 thinking tokens is far slower per task than a direct model at 200 tok/s;
-# and (b) most published eval scores are at *high* reasoning effort (more tokens →
-# higher score), a cost the speed axis doesn't show. A stricter version would use
-# tokens-per-task / answers-per-hour at a fixed effort. Left as future work.
+# - **GPQA / AIME** are held at **no tools, high effort** — verified from the gpt-oss
+#   card (arxiv 2508.10925; this is where GPQA-120b corrects 80.9→80.1 and AIME-20b
+#   corrects 98.7→91.7, since 80.9/98.7 were the *with-tools* rows) and the Qwen3.5
+#   card (thinking on). Frontier anchors (Sonnet 4.5, GPT-5) are **omitted** from
+#   these two: their linked pages don't state a no-tools number (Anthropic's AIME used
+#   a Python/tools config; the OpenAI page 403'd), so nothing comparable can be sourced.
+# - **SWE-bench** can't be held to one setting across sources — gpt-oss is a high-effort
+#   card ceiling, Sonnet is Anthropic's 10-trial/200K-thinking number, the other
+#   frontier anchors are the vals.ai harness, and the small coders are card-reported.
+#   The setting is labelled on every point in the money plot; read tiers, not decimals.
+#
+# **Also:** `decode tok/s` is *not* answers/s — a reasoner emitting 2000 thinking
+# tokens is far slower per task than the raw rate suggests. A stricter comparison
+# would fix effort and measure tokens-per-task / answers-per-hour. Left as future work.
 
 # %%
 from dataclasses import dataclass, field
@@ -89,18 +96,20 @@ MEASURED = [
 # (score, source_key, kind)  kind: "resident" = fits our 64 GB VRAM;
 # "offload" = we can run it but only via CPU/RAM/disk offload (slow);
 # "anchor" = closed frontier reference we cannot run.
+# (score, source, kind, setting) — `setting` = the reasoning effort / agent scaffold
+# the number was measured at. `?` = the card didn't state it (do not read as pinned).
 SWEBENCH = {
-    "Qwen3-Coder-30B": (51.9, "qwen3coder", "resident"),
-    "gpt-oss-20b": (60.7, "gptoss", "resident"),  # high reasoning effort
-    "Devstral-24B": (68.0, "devstral", "resident"),
-    "Qwen3.5-35B-A3B": (69.2, "qwen35", "resident"),
-    "gpt-oss-120b": (62.4, "oss120", "offload"),  # runs on Ollama CPU-offload
-    "GLM-5.2 (744B)": (77.8, "glm52", "offload"),  # ran on Colibri disk-streamed
-    "Claude Sonnet 4.5": (77.2, "sonnet45", "anchor"),  # 82.0 w/ parallel compute
-    "Gemini 3.5 Flash": (78.8, "valsai_swe", "anchor"),
-    "GPT-5.5": (82.6, "valsai_swe", "anchor"),
-    "Claude Opus 4.8": (88.6, "valsai_swe", "anchor"),
-    "Claude Fable 5": (95.0, "valsai_swe", "anchor"),
+    "Qwen3-Coder-30B": (51.9, "qwen3coder", "resident", "non-reasoning coder"),
+    "gpt-oss-20b": (60.7, "gptoss", "resident", "high effort (ceiling)"),
+    "Devstral-24B": (68.0, "devstral", "resident", "agent scaffold, direct coder"),
+    "Qwen3.5-35B-A3B": (69.2, "qwen35", "resident", "max thinking?"),
+    "gpt-oss-120b": (62.4, "oss120", "offload", "high effort (ceiling)"),
+    "GLM-5.2 (744B)": (77.8, "glm52", "offload", "press report, setting unstated"),
+    "Claude Sonnet 4.5": (77.2, "sonnet45", "anchor", "10-trial avg, 200K think, no TTC"),
+    "Gemini 3.5 Flash": (78.8, "valsai_swe", "anchor", "vals.ai harness"),
+    "GPT-5.5": (82.6, "valsai_swe", "anchor", "vals.ai harness"),
+    "Claude Opus 4.8": (88.6, "valsai_swe", "anchor", "vals.ai harness"),
+    "Claude Fable 5": (95.0, "valsai_swe", "anchor", "vals.ai harness"),
 }
 
 # Runnable models (resident + offload) placed in measured-speed × SWE-bench space.
@@ -116,26 +125,36 @@ RUNNABLE_QUALITY = {
 }
 OFFLOAD_COLOR = "#16a085"
 
-# Reasoning-eval coverage (only models that report them; coding specialists mostly don't).
-# metric -> {model: value}
+# {metric: {model: (score, setting)}} — every number here is verified against its
+# source card at a stated NO-TOOLS setting, so the bars are actually comparable.
+# gpt-oss: arxiv 2508.10925 (high reasoning effort, no tools — GPQA 80.9→80.1 for
+# 120b once tools are removed; AIME-20b 98.7→91.7 without tools). Qwen3.5: HF card
+# (thinking on; card doesn't split tools, Qwen convention is no-tools).
+# Frontier anchors (Sonnet 4.5, GPT-5) are DROPPED from GPQA/AIME: their linked pages
+# don't state a no-tools setting (Anthropic's AIME used a "Python configuration" =
+# tools; the OpenAI page 403'd), so a comparable number can't be sourced.
 REASONING = {
-    "GPQA Diamond": {
-        "gpt-oss-20b": 71.5,
-        "gpt-oss-120b": 80.9,
-        "Qwen3.5-35B-A3B": 84.2,
-        "Claude Sonnet 4.5": 83.4,
-        "GPT-5": 88.4,
+    "GPQA Diamond (no tools, high)": {
+        "gpt-oss-20b": (71.5, "high"),
+        "gpt-oss-120b": (80.1, "high"),
+        "Qwen3.5-35B-A3B": (85.4, "thinking on"),
     },
-    "AIME 2025": {  # gpt-oss & GPT-5/Sonnet without-tools where noted
-        "gpt-oss-20b": 98.7,  # with tools
-        "gpt-oss-120b": 92.5,  # high, no tools
-        "Qwen3.5-35B-A3B": 93.3,  # AIME'26 (card doesn't split; treat as recent-AIME)
-        "Claude Sonnet 4.5": 87.0,  # without tools
-        "GPT-5": 94.6,  # without tools
+    "AIME (no tools, high)": {
+        "gpt-oss-20b": (91.7, "high"),
+        "gpt-oss-120b": (92.5, "high"),
+        "Qwen3.5-35B-A3B": (93.3, "thinking on"),  # AIME 2026 on the card
     },
-    "LiveCodeBench": {  # v6 for Qwen3.5; others report varying versions — sparse
-        "Qwen3.5-35B-A3B": 74.6,
+    "LiveCodeBench v6": {
+        "Qwen3.5-35B-A3B": (74.6, "thinking on"),
     },
+}
+
+# gpt-oss AIME 2025 by reasoning effort × tools — the sourced illustration of WHY the
+# setting matters (arxiv 2508.10925). Same model swings 37→92 (no tools) or 58→98
+# (tools) across the effort dial; a single "AIME score" is meaningless without it.
+GPTOSS_AIME = {
+    "gpt-oss-20b": {"no tools": {"low": 37.1, "med": 72.1, "high": 91.7}, "with tools": {"low": 57.5, "med": 90.4, "high": 98.7}},
+    "gpt-oss-120b": {"no tools": {"low": 50.4, "med": 80.0, "high": 92.5}, "with tools": {"low": 72.9, "med": 91.6, "high": 97.9}},
 }
 
 LOCAL_COLOR, ANCHOR_COLOR = "#2a7fff", "#c0392b"
@@ -180,7 +199,7 @@ ax.set_ylabel("decode tokens/s (single request)")
 ax.set_title("Measured decode throughput on 2×5090 (higher = faster)  ·  local")
 ax.legend(title="input context")
 fig.tight_layout()
-fig.savefig("fig1_decode_tps.png", bbox_inches="tight")
+fig.savefig("fig1_decode_tps.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## 1b. Reasoning vs direct models
@@ -210,7 +229,7 @@ ax.set_yticks([])
 ax.set_title("Reasoning is the norm; direct models are the exception  ·  blue = local, red = frontier")
 ax.legend(handles=[Patch(color=LOCAL_COLOR, label="runs on 2×5090"), Patch(color=ANCHOR_COLOR, label="closed frontier")], loc="upper left")
 fig.tight_layout()
-fig.savefig("fig1b_reasoning_class.png", bbox_inches="tight")
+fig.savefig("fig1b_reasoning_class.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## 2. Context window we can run (measured allocated context)
@@ -235,94 +254,96 @@ blocked = [m for m in MEASURED if m.allocated_ctx_k == 0]
 if blocked:
     ax.text(70, -0.55, "blocked: " + ", ".join(m.label for m in blocked) + " (1M DCA/sm_120)", fontsize=8, color="#555")
 fig.tight_layout()
-fig.savefig("fig2_context.png", bbox_inches="tight")
+fig.savefig("fig2_context.svg", bbox_inches="tight")
 
 # %% [markdown]
-# ## 3. SWE-bench Verified — local models vs the frontier
+# ## 3. The money plot — measured speed × coding skill (SWE-bench)
 #
-# The one eval everyone reports. Blue = we can run it locally; red = closed
-# frontier reference. Mind the comparability caveat (self-report vs leaderboard).
+# The one combined view: every runnable model in {decode tok/s we measured} ×
+# {SWE-bench}, with each point labelled by the **setting its SWE number was measured
+# at** (so the comparison is honest), and the closed frontier as dashed reference
+# lines. Log x-axis — it spans four orders of magnitude (gpt-oss-20b ~1300 tok/s down
+# to GLM-5.2 disk-streamed at 0.28). The shape is the story: the resident tier is
+# fast but caps ~69 SWE-bench; the offload tier (GLM-5.2) reaches 77.8 — past every
+# resident option, near the frontier — but ~5000× slower. Frontier SWE runs on the
+# vals.ai harness (consistent across those anchors); local numbers are card-reported
+# at the labelled effort, so read tiers, not decimals.
 
 # %%
-fig, ax = plt.subplots(figsize=(9, 5))
-kind_color = {"resident": LOCAL_COLOR, "offload": OFFLOAD_COLOR, "anchor": ANCHOR_COLOR}
-items = sorted(SWEBENCH.items(), key=lambda kv: kv[1][0])
-names = [k for k, _ in items]
-scores = [v[0] for _, v in items]
-colors = [kind_color[v[2]] for _, v in items]
-bars = ax.barh(names, scores, color=colors)
-for b, s in zip(bars, scores):
-    ax.text(s + 0.6, b.get_y() + b.get_height() / 2, f"{s:.1f}", va="center", fontsize=8)
-ax.set_xlabel("SWE-bench Verified (% resolved)")
-ax.set_title("SWE-bench Verified: resident vs offload vs closed frontier  ·  ext")
-ax.set_xlim(0, 100)
-ax.legend(
-    handles=[
-        Patch(color=LOCAL_COLOR, label="resident on 2×5090"),
-        Patch(color=OFFLOAD_COLOR, label="runs via offload (slow)"),
-        Patch(color=ANCHOR_COLOR, label="closed frontier"),
-    ],
-    loc="lower right",
-)
-fig.tight_layout()
-fig.savefig("fig3_swebench.png", bbox_inches="tight")
-
-# %% [markdown]
-# ## 4. The money plot — speed (measured, log) × coding skill (SWE-bench)
-#
-# Every runnable model in {decode tok/s we measured} × {SWE-bench}. Log x-axis,
-# because it spans **four orders of magnitude**: gpt-oss-20b at ~1300 tok/s down to
-# GLM-5.2 disk-streamed at 0.28 tok/s. The shape is the whole story — the resident
-# tier is fast but caps ~69 SWE-bench; the offload tier (GLM-5.2) reaches 77.8
-# (past every resident option, near the frontier) but ~5000× slower. Dashed lines =
-# closed frontier we can't run at all.
-
-# %%
-fig, ax = plt.subplots(figsize=(9.5, 5.5))
+fig, ax = plt.subplots(figsize=(10, 6))
 for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items():
     color = OFFLOAD_COLOR if kind == "offload" else LOCAL_COLOR
+    setting = SWEBENCH[lbl][3] if lbl in SWEBENCH else "?"
     ax.scatter(tps, swe, s=100, color=color, zorder=3)
-    ax.annotate(f"{lbl}\n{swe:.0f} SWE / {tps:g} tok/s", (tps, swe), textcoords="offset points", xytext=(7, 5), fontsize=8)
-for name, (s, _, kind) in SWEBENCH.items():
+    ax.annotate(f"{lbl} — {swe:.0f} SWE / {tps:g} tok/s\n({setting})", (tps, swe), textcoords="offset points", xytext=(7, 5), fontsize=7.5)
+for name, (s, _, kind, setting) in SWEBENCH.items():
     if kind == "anchor":
         ax.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.35)
-        ax.text(2600, s, f"{name} {s:.0f}", color=ANCHOR_COLOR, fontsize=7.5, va="center", ha="right")
+        ax.text(2600, s, f"{name} {s:.0f} ({setting})", color=ANCHOR_COLOR, fontsize=7, va="center", ha="right")
 ax.set_xscale("log")
 ax.set_xlim(0.1, 3000)
 ax.set_ylim(45, 100)
 ax.set_xlabel("measured decode tokens/s on 2×5090 (log)  →  faster")
 ax.set_ylabel("SWE-bench Verified (%)  →  better coder")
-ax.set_title("Speed × coding skill: resident (blue) vs offload (teal) vs frontier line (red)")
+ax.set_title("Speed × coding skill  ·  measured tok/s (local) × SWE-bench (setting-labelled)")
 ax.legend(
     handles=[
         Patch(color=LOCAL_COLOR, label="resident (fast, caps ~69)"),
         Patch(color=OFFLOAD_COLOR, label="offload (near-frontier, ~5000× slower)"),
+        Patch(color=ANCHOR_COLOR, label="closed frontier (vals.ai harness)"),
     ],
     loc="center left",
 )
 fig.tight_layout()
-fig.savefig("fig4_pareto.png", bbox_inches="tight")
+fig.savefig("fig3_money_plot.svg", bbox_inches="tight")
 
 # %% [markdown]
-# ## 5. Reasoning evals (where models report them)
+# ## 4. Reasoning evals — only source-verified, no-tools numbers
 #
-# Coding specialists (Qwen3-Coder, Devstral) mostly don't publish GPQA/AIME, so
-# coverage is sparse — only the reasoning-capable models appear.
+# Every bar here is checked against its source card at a stated no-tools setting, so
+# they're comparable. Coding specialists (Qwen3-Coder, Devstral) don't publish these.
+# Frontier anchors are absent on purpose: their linked pages don't state a no-tools
+# setting (Anthropic's AIME used a Python/tools config; the OpenAI page 403'd), so a
+# comparable number can't be sourced — better to omit than to plot a mismatched one.
 
 # %%
-fig, axes = plt.subplots(1, len(REASONING), figsize=(12, 4), sharey=False)
+fig, axes = plt.subplots(1, len(REASONING), figsize=(12, 3.6), sharey=False)
 for ax, (metric, d) in zip(axes, REASONING.items()):
     names = list(d.keys())
-    vals = list(d.values())
-    cols = [LOCAL_COLOR if n in {"gpt-oss-20b", "Qwen3.5-35B-A3B"} else ANCHOR_COLOR for n in names]
-    ax.barh(names, vals, color=cols)
-    for i, v in enumerate(vals):
-        ax.text(v + 0.5, i, f"{v:.1f}", va="center", fontsize=7.5)
+    vals = [v[0] for v in d.values()]
+    setts = [v[1] for v in d.values()]
+    ax.barh(names, vals, color=LOCAL_COLOR)
+    for i, (v, st) in enumerate(zip(vals, setts)):
+        ax.text(v + 0.5, i, f"{v:.0f} ({st})", va="center", fontsize=7)
     ax.set_title(metric, fontsize=10)
-    ax.set_xlim(0, 100)
-fig.suptitle("Reasoning evals — blue = local, red = frontier  ·  ext (sparse coverage)")
+    ax.set_xlim(0, 108)
+fig.suptitle("Reasoning evals — source-verified, no-tools, local models only  ·  ext")
 fig.tight_layout()
-fig.savefig("fig5_reasoning.png", bbox_inches="tight")
+fig.savefig("fig4_reasoning.svg", bbox_inches="tight")
+
+# %% [markdown]
+# ## 5. Why the setting matters — gpt-oss AIME 2025 across the effort × tools dial
+#
+# The same model, one benchmark, from its own card (arxiv 2508.10925): AIME swings
+# from **37 → 92** (no tools) or **58 → 98** (with a code interpreter) across the
+# low→high effort dial. Quoting a single "AIME score" without the setting is
+# meaningless — this is exactly the axis the earlier version of this notebook flattened.
+
+# %%
+fig, ax = plt.subplots(figsize=(8, 4.5))
+xs = ["low", "med", "high"]
+styles = {"no tools": "-", "with tools": "--"}
+mcol = {"gpt-oss-20b": LOCAL_COLOR, "gpt-oss-120b": OFFLOAD_COLOR}
+for model, tool_curves in GPTOSS_AIME.items():
+    for tools, curve in tool_curves.items():
+        ax.plot(xs, [curve[x] for x in xs], styles[tools], color=mcol[model], marker="o", label=f"{model} · {tools}")
+ax.set_xlabel("reasoning effort")
+ax.set_ylabel("AIME 2025 (% solved)")
+ax.set_ylim(30, 100)
+ax.set_title("Same model, same eval: effort × tools moves AIME by 40–60 points  ·  ext (gpt-oss card)")
+ax.legend(fontsize=8)
+fig.tight_layout()
+fig.savefig("fig5_gptoss_effort.svg", bbox_inches="tight")
 
 # %% [markdown]
 # ## Sources
