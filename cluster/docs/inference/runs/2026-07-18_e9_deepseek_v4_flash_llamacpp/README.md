@@ -56,11 +56,53 @@ because the native-1M default KV OOMs the GPU): **2.9 tok/s decode**, coherent �
 **~2.6× the CPU floor, ~10–19× Colibri**. Runtime wiring (NVIDIA ICD, loader
 `LD_LIBRARY_PATH`) in <run.sh>.
 
-## Next (optimization, not blocking)
+## Next — how to run it faster (ranked; not started, see blocker)
 
-- Move hot experts to the spare VRAM (`--n-cpu-moe N`, N < all layers) — decode is
-  CPU-expert-bandwidth bound, so every expert layer moved to the 5090s should help.
-- A proper coding-quality spot-check + tok/s at real context.
+**Why there's headroom:** at IQ2 (2.06 bpw) with ~13B active/token, decode reads
+**~3.35 GB of expert weight per token**. wyrm2 RAM (dual-channel DDR5 ≈ ~90 GB/s) caps
+that at **~25–28 tok/s**; a 5090's VRAM (~1.8 TB/s) is ~20× faster per byte. We measured
+**2.9 tok/s — ~10× under even the RAM ceiling** — so we are _not_ bandwidth-bound. Two
+things are eating the gap: (a) the 91 GB model does not fully fit 96 GB RAM, so part
+faults from SSD every token (this is the 1.1 CPU-only floor), and (b) Vulkan/CPU MoE
+kernels are slow. The wins below attack both and stack.
+
+1. **Fill VRAM with experts — `--n-cpu-moe N` (biggest, one flag).** E9 keeps _all_
+   experts on CPU (`--cpu-moe`). ~55 GB of VRAM is free across the two 5090s after
+   attention/KV at `-c 4096`; push that much expert weight onto the GPUs (`--n-cpu-moe`
+   = layers kept on CPU; sweep it _down_ from all-on-CPU until VRAM is full). Double win:
+   those experts now stream at 1.8 TB/s, **and** the CPU remainder shrinks to ~36 GB so
+   it fits RAM comfortably — killing the SSD-faulting floor. Expect a multiple, not a few %.
+2. **Runtime bake-off: `ik_llama.cpp` and a CUDA build.** ikawrakow's fork has much
+   faster CPU/hybrid-MoE kernels for DeepSeek-class offload (commonly 2–3× decode), same
+   GGUF — verify it has `deepseek4` (CSA/HCA) support merged. And build the **CUDA**
+   backend instead of Vulkan (E9 only used Vulkan because the nix CUDA build was blocked
+   on the split-package `cuda_runtime.h`; fix that or use a CUDA container) — CUDA's
+   Blackwell MoE kernels beat Vulkan and compose with #1.
+3. **Speculative decoding via DSV4 MTP — UNVERIFIED, check first.** DeepSeek-V4 ships
+   MTP (multi-token-prediction) heads and the GLM-5.2 Colibri run already used INT8-MTP
+   drafting, so self-speculation could give ~1.5–2.5× on this memory-bound decode.
+   **Drafting-support check is not yet done:** the GGUF confirms `general.architecture =
+deepseek4` with `deepseek4.{block_count,expert_count,expert_used_count}`, but a
+   `strings` scan for MTP was inconclusive (matched vocab words). Do it properly: dump
+   GGUF metadata (`llama-gguf` / `gguf_dump.py`) and look for `deepseek4.nextn*` /
+   MTP-layer keys, and confirm mainline or ik_llama exposes DSV4 self-speculation (or pair
+   a tiny `--model-draft`).
+
+Then: a proper coding-quality spot-check + tok/s at real (non-4K) context.
+
+## BLOCKER (2026-07-18): wyrm2 GPU lockup
+
+Attempting the `--n-cpu-moe` sweep this session hit a **GPU lockup**: an E9 Vulkan
+`llama-cli` wedged (spinning 103% CPU for ~1h45m on a 32-token generation), **GPU1 went to
+NVML "Unknown Error"** while still present on the PCI bus — the FULLCHIP_RESET hang. Full
+forensics from this session (kernel log signature, timeline, recovery) are in
+<../../../../../debug/atlas/gpu_lockup_20260718/README.md>; background investigation in
+<../../../../../debug/atlas/wyrm_gpu_lockup.md> and
+<../../../../../debug/atlas/gpu_lockup_20260417/README.md>. These intermittent VFIO-
+passthrough 5090 lockups block the whole optimization thread. **Before resuming: recover
+the GPUs (kill the wedged process; GPU reset or VM reboot per those notes), and ideally
+land a fix for the lockups themselves** — that stability work is the real prerequisite,
+tracked in the debug notes above.
 
 ## Repro
 

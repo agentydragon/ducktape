@@ -1,0 +1,225 @@
+uptime: invalid option -- 'p'
+Try 'uptime --help' for more information.
+uptime: invalid option -- 's'
+Try 'uptime --help' for more information.
+###### CAPTURE 2026-07-18T10:58:58Z  host=wyrm2  uptime=  boot=
+###### kernel: 6.18.38   driver/nvidia-smi:
+Unable to determine the device handle for GPU1: 0000:02:00.0: Unknown Error
+Sat Jul 18 03:58:58 2026
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 595.71.05              Driver Version: 595.71.05      CUDA Version: 13.2     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5090        Off |   00000000:01:00.0  On |                  N/A |
+| 40%   31C    P5             38W /  575W |   10007MiB /  32607MiB |      0%      Default |
+|                                         |                        |                  N/A |
+
+###### wedged process 310568
+    PID    PPID STAT     ELAPSED %CPU %MEM   RSS WCHAN                    CMD
+ 310568  310567 RNl     01:48:05  103 23.5 23259432 -                     /home/agentydragon/llama-cpp-main/build-vk/bin/llama-cli -m /var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf -ngl 999 --cpu-moe -c 4096 -p Write a Python function is_prime(n) with a docstring. -n 32 -t 24 -no-cnv --temp 0
+--- /proc/310568/status (key lines) ---
+State:	R (running)
+VmRSS:	23259432 kB
+Threads:	62
+Cpus_allowed_list:	0-31
+voluntary_ctxt_switches:	13345
+nonvoluntary_ctxt_switches:	85271
+--- /proc/310568/wchan ---
+0
+--- /proc/310568/stack (kernel) ---
+sudo: a terminal is required to read the password; either use ssh's -t option or configure an askpass helper
+sudo: a password is required
+--- task states (any D/uninterruptible?) ---
+tid 310568 state R wchan 0
+tid 310578 state S wchan futex_do_wait
+tid 310580 state S wchan futex_do_wait
+tid 310581 state S wchan inet_csk_accept
+tid 310582 state S wchan futex_do_wait
+tid 310583 state S wchan futex_do_wait
+tid 310584 state S wchan futex_do_wait
+tid 310585 state S wchan futex_do_wait
+tid 310586 state S wchan futex_do_wait
+tid 310587 state S wchan futex_do_wait
+
+###### GPU1 PCI 02:00.0
+	Kernel driver in use: nvidia
+--- sysfs ---
+power/runtime_status = active
+enable = 1
+current_link_speed = Unknown
+current_link_width = 63
+
+###### dmesg / journalctl NVRM+Xid+reset (last 40)
+Jul 18 02:10:14.276175 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00288; hObject=0x00000072; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.276206 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8991!
+Jul 18 02:10:14.276212 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00288; hObject=0xbeee9960; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.276221 wyrm2 kernel: NVRM: GPU1 nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_client.c:844
+Jul 18 02:10:14.276226 wyrm2 kernel: NVRM: nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_server.c:259
+Jul 18 02:10:14.276233 wyrm2 kernel: NVRM: nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_server.c:1375
+Jul 18 02:10:14.276238 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8992!
+Jul 18 02:10:14.276242 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00288; hObject=0xbeee0004; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.276273 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8993!
+Jul 18 02:10:14.276298 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00288; hObject=0xbeee0073; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.276306 wyrm2 kernel: NVRM: GPU1 nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_client.c:844
+Jul 18 02:10:14.276309 wyrm2 kernel: NVRM: nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_server.c:259
+Jul 18 02:10:14.276313 wyrm2 kernel: NVRM: nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_server.c:1375
+Jul 18 02:10:14.278981 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8994!
+Jul 18 02:10:14.279014 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00288; hObject=0xbeee0003; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.280007 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8995!
+Jul 18 02:10:14.280027 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00287; hObject=0xbfee0073; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.280044 wyrm2 kernel: NVRM: GPU1 nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_client.c:844
+Jul 18 02:10:14.280050 wyrm2 kernel: NVRM: nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ rs_server.c:259
+Jul 18 02:10:14.280055 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8996!
+Jul 18 02:10:14.280063 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00287; hObject=0xbeee0202; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.280068 wyrm2 kernel: NVRM: GPU1 nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ mem.c:178
+Jul 18 02:10:14.280075 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8997!
+Jul 18 02:10:14.280082 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00287; hObject=0xbfee0001; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.280091 wyrm2 kernel: NVRM: GPU1 nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ vaspace_api.c:573
+Jul 18 02:10:14.280095 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8998!
+Jul 18 02:10:14.280103 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00287; hObject=0xbfee0301; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.280112 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 8999!
+Jul 18 02:10:14.280118 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00287; hObject=0xbfee0300; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.282009 wyrm2 kernel: WARNING: CPU: 14 PID: 309398 at nvidia/nv.c:5384 nvidia_dev_put+0xbe/0xd0 [nvidia]
+Jul 18 02:10:14.282033 wyrm2 kernel: Modules linked in: vxlan ip6_udp_tunnel udp_tunnel cls_bpf sch_ingress xt_TPROXY nf_tproxy_ipv6 nf_tproxy_ipv4 xt_mark xt_CT xt_socket nf_socket_ipv4 nf_socket_ipv6 xt_MASQUERADE xfrm_user xfrm_algo xt_set ip_set nft_chain_nat xt_addrtype xt_comment snd_seq_dummy snd_hrtimer snd_seq snd_seq_device qrtr tun cmac ccm af_packet nls_iso8859_1 nls_cp437 vfat fat xt_tcpudp xt_conntrack xt_pkttype nft_compat nf_tables nfnetlink sch_fq_codel nvidia_uvm(O) nvidia_drm(O) nvidia_modeset(O) mt7921u mt792x_usb mt7921_common mt792x_lib mt76_connac_lib mt76_usb mt76 mac80211 edac_core nvidia(O) iTCO_wdt intel_rapl_msr snd_hda_codec_nvhdmi intel_pmc_bxt cfg80211 intel_rapl_common snd_hda_codec_generic snd_hda_codec_hdmi watchdog joydev polyval_clmulni ghash_clmulni_intel uas usb_storage snd_hda_intel rfkill evdev aesni_intel libarc4 snd_hda_codec mousedev snd_hda_core snd_intel_dspcfg rtc_cmos i2c_i801 snd_intel_sdw_acpi snd_hwdep tiny_power_button i2c_smbus psmouse snd_pcm input_leds i2c_mux lpc_ich led_class snd_timer
+Jul 18 02:10:14.282143 wyrm2 kernel: RIP: 0010:nvidia_dev_put+0xbe/0xd0 [nvidia]
+Jul 18 02:10:14.282232 wyrm2 kernel:  nvidia_close+0x1f3/0x2e0 [nvidia]
+Jul 18 02:10:14.282467 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 9000!
+Jul 18 02:10:14.282479 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00285; hObject=0xfade0006; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.282486 wyrm2 kernel: NVRM: GPU1 nvAssertFailedNoLog: Assertion failed: (status == NV_OK) || (status == NV_ERR_GPU_IN_FULLCHIP_RESET) @ vaspace_api.c:573
+Jul 18 02:10:14.282494 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 9001!
+Jul 18 02:10:14.282500 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00285; hObject=0xfade0005; paramsStatus=0x00000000; status=0x0000000f
+Jul 18 02:10:14.282541 wyrm2 kernel: NVRM: GPU1 _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 10 sequence 9002!
+Jul 18 02:10:14.282552 wyrm2 kernel: NVRM: GPU1 rpcRmApiFree_GSP: GspRmFree failed: hClient=0xc1d00285; hObject=0xfade0004; paramsStatus=0x00000000; status=0x0000000f
+
+###### nvidia-smi -q GPU1 errors
+Unable to determine the device handle for GPU1: 0000:02:00.0: Unknown Error
+No devices were found
+###### any other llama/vllm/ollama procs
+310567 bash -c    export LD_LIBRARY_PATH=/nix/store/y5a34h6vgvsc1pmfmvcqfcvxy2grg3hx-vulkan-loader-1.4.341.0/lib:/run/opengl-driver/lib   export VK_ICD_FILENAMES=/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json   ~/llama-cpp-main/build-vk/bin/llama-cli -m /var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf -ngl 999 --cpu-moe -c 4096     -p "Write a Python function is_prime(n) with a docstring."     -n 32 -t 24 -no-cnv --temp 0 > ~/dsv4_vulkan.log 2>&1
+310568 /home/agentydragon/llama-cpp-main/build-vk/bin/llama-cli -m /var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf -ngl 999 --cpu-moe -c 4096 -p Write a Python function is_prime(n) with a docstring. -n 32 -t 24 -no-cnv --temp 0
+680831 /run/current-system/sw/bin/zsh -c source /home/agentydragon/.claude/shell-snapshots/snapshot-zsh-1784360756088-9sjlja.sh 2>/dev/null || true && # Environment configured by session start hook  # Extra env script from profile export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0 export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1 # Ansible tmp dir: Claude Code sandbox makes /tmp read-only; redirect to $TMPDIR. export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp" # Source direnv so .envrc exports propagate into Claude Code Bash tool calls. # This works with CWD tracking because Claude Code sources the session env file # before every command, after cd'ing to the tracked working directory. So when # the agent cd's between directories, direnv picks up the correct .envrc on the # next command. The `which` guard avoids errors when direnv isn't installed. if command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi  export PATH="/home/agentydragon/.claude/session-env/713843ab-b9d6-491e-bc84-b93ca4cfffd8/bin:$PATH" : && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'SC=/tmp/claude-1001/-home-agentydragon-code-ducktape/713843ab-b9d6-491e-bc84-b93ca4cfffd8/scratchpad timeout 60 ssh -o ConnectTimeout=8 wyrm2 '"'"'bash -s'"'"' <<'"'"'EOF'"'"' > "$SC/wyrm2_gpu_lockup_20260718.txt" 2>&1 echo "###### CAPTURE $(date -u +%FT%TZ)  host=$(hostname)  uptime=$(uptime -p)  boot=$(uptime -s)" echo "###### kernel: $(uname -r)   driver/nvidia-smi:"; nvidia-smi 2>&1 | head -12 echo; echo "###### wedged process 310568" ps -o pid,ppid,stat,etime,pcpu,pmem,rss,wchan:24,cmd -p 310568 2>&1 echo "--- /proc/310568/status (key lines) ---"; grep -iE "State|VmRSS|Threads|voluntary|nonvol|Cpus_allowed_list" /proc/310568/status 2>&1 echo "--- /proc/310568/wchan ---"; cat /proc/310568/wchan 2>&1; echo echo "--- /proc/310568/stack (kernel) ---"; sudo cat /proc/310568/stack 2>&1 | head -20 echo "--- task states (any D/uninterruptible?) ---"; ls /proc/310568/task 2>/dev/null | while read t; do printf "tid %s state %s wchan %s\n" "$t" "$(cut -d'"'"' '"'"' -f3 /proc/$t/stat 2>/dev/null)" "$(cat /proc/310568/task/$t/wchan 2>/dev/null)"; done | head echo; echo "###### GPU1 PCI 02:00.0" lspci -vvs 02:00.0 2>&1 | grep -iE "LnkSta|LnkCap|FLReset|DevSta|Fatal|Unsupported|CorrErr|UncorrErr|GPU|Kernel driver" | head -20 echo "--- sysfs ---"; for f in power/runtime_status enable current_link_speed current_link_width; do printf "%s = %s\n" "$f" "$(cat /sys/bus/pci/devices/0000:02:00.0/$f 2>&1)"; done echo; echo "###### dmesg / journalctl NVRM+Xid+reset (last 40)" ( sudo dmesg -T 2>/dev/null || journalctl -k -o short-precise --no-pager 2>/dev/null ) | grep -iE "NVRM|Xid|FULLCHIP|locked|watchdog|rc_watchdog|Assertion|nvidia|nvrm|GPU is probably" | tail -40 echo; echo "###### nvidia-smi -q GPU1 errors"; nvidia-smi -q -i 1 2>&1 | head -5 echo "###### any other llama/vllm/ollama procs"; pgrep -af "llama|vllm|ollama|python" 2>&1 | grep -iE "llama|vllm|ollama" | head EOF echo "EXIT=$?"; echo "=== bytes captured ==="; wc -l "$SC/wyrm2_gpu_lockup_20260718.txt"; echo "=== preview ==="; head -40 "$SC/wyrm2_gpu_lockup_20260718.txt"' && pwd -P >| /tmp/claude-f23d-cwd
+681021 grep -iE llama|vllm|ollama
+
+======================================================================
+
+###### ~/dsv4_vulkan.log  (head: load/devices)
+
+
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\| 
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b1-86a9c79
+model      : /var/lib/colibri/dsv4-iq2/UD-IQ2_XXS/DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf
+ftype      : IQ2_XXS - 2.0625 bpw
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> Write a Python function is_prime(n) with a docstring.
+
+[Start thinking]
+
+We need to write a Python function is_prime(n) with a docstring. The function should check if a number n is prime. We need to include a
+
+[ Prompt: 0.9 t/s | Generation: 2.9 t/s ]
+
+>
+>
+>
+>
+>
+>
+...### tail (did it decode or hang?) ###...
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+###### journalctl -k context window 02:09:30 - 02:11:10 (the TRIGGER, first errors + anything preceding)
+Jul 18 02:09:53.351035 wyrm2 kernel: NVRM: GPU at PCI:0000:02:00: GPU-6154a49f-2cad-6b72-1e85-09b8006d08b5
+Jul 18 02:09:53.351414 wyrm2 kernel: NVRM: GPU Board Serial Number: 0
+Jul 18 02:09:53.351496 wyrm2 kernel: NVRM: Xid (PCI:0000:02:00): 79, GPU has fallen off the bus.
+Jul 18 02:09:53.351540 wyrm2 kernel: NVRM: GPU 0000:02:00.0: GPU has fallen off the bus.
+Jul 18 02:09:53.351553 wyrm2 kernel: NVRM: GPU 0000:02:00.0: GPU serial number is 0.
+Jul 18 02:09:53.351571 wyrm2 kernel: NVRM: krcRcAndNotifyAllChannels_IMPL: RC all channels for critical error 79.
+Jul 18 02:09:53.351600 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351623 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351661 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351679 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351689 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351700 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351717 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351726 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351737 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351754 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351772 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351785 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351801 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351807 wyrm2 kernel: NVRM: _threadNodeCheckTimeout: API_GPU_ATTACHED_SANITY_CHECK failed!
+Jul 18 02:09:53.351816 wyrm2 kernel: NVRM: prbEncStartAlloc: Can't allocate memory for protocol buffers.
+Jul 18 02:09:53.351839 wyrm2 kernel: NVRM: A GPU crash dump has been created. If possible, please run
+                                     NVRM: nvidia-bug-report.sh as root to collect this data before
+                                     NVRM: the NVIDIA kernel module is unloaded.
+Jul 18 02:09:53.351863 wyrm2 kernel: NVRM: GPU at PCI:0000:01:00: GPU-690929fc-97bf-9d39-d2f5-0322f1715b16
+Jul 18 02:09:53.351874 wyrm2 kernel: NVRM: GPU Board Serial Number: 0
+Jul 18 02:09:53.351881 wyrm2 kernel: NVRM: Xid (PCI:0000:01:00): 154, GPU recovery action changed from 0x0 (None) to 0x2 (Node Reboot Required)
+Jul 18 02:09:53.351889 wyrm2 kernel: NVRM: Xid (PCI:0000:02:00): 154, GPU recovery action changed from 0x0 (None) to 0x2 (Node Reboot Required)
+Jul 18 02:09:53.353062 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8930!
+Jul 18 02:09:53.353380 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353556 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8931!
+Jul 18 02:09:53.353637 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353666 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8932!
+Jul 18 02:09:53.353711 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353727 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8933!
+Jul 18 02:09:53.353756 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353797 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8934!
+Jul 18 02:09:53.353814 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353841 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8935!
+Jul 18 02:09:53.353871 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353883 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8936!
+Jul 18 02:09:53.353902 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.353912 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8937!
+Jul 18 02:09:53.353950 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.354089 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8938!
+Jul 18 02:09:53.354307 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.354351 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8939!
+Jul 18 02:09:53.354658 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273
+Jul 18 02:09:53.354697 wyrm2 kernel: NVRM: _issueRpcAndWait: rpcSendMessage failed with status 0x0000000f for fn 78 sequence 8940!
+Jul 18 02:09:53.354716 wyrm2 kernel: NVRM: nvCheckOkFailedNoLog: Check failed: GPU lost from the bus [NV_ERR_GPU_IS_LOST] (0x0000000F) returned from nvdEngineDumpCallbackHelper(pGpu, pPrbEnc, pNvDumpState, pEngineCallback) @ nv_debug_dump.c:273

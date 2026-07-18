@@ -299,6 +299,14 @@ sparse attention, native 1M context, open-weight. External evals: SWE-bench Veri
 
 ## Later work
 
+- **Resume point (2026-07-18): make DeepSeek-V4-Flash faster (E9 follow-up).** E9 runs at
+  2.9 tok/s but that is ~10× under the RAM-bandwidth ceiling, so there is large headroom.
+  Ranked next steps (physics + how-to in <runs/2026-07-18_e9_deepseek_v4_flash_llamacpp/README.md>):
+  (1) `--n-cpu-moe N` sweep to fill VRAM with experts; (2) `ik_llama.cpp` / CUDA-backend
+  runtime bake-off; (3) MTP speculative decoding (support unverified — check the GGUF).
+  **Blocked on wyrm2 GPU stability:** the sweep session hit the intermittent VFIO 5090
+  FULLCHIP_RESET lockup (<../../../debug/atlas/wyrm_gpu_lockup.md>). Recovering the GPUs
+  and preventing the lockups is the real prerequisite for this whole thread.
 - **RAM sensitivity and `atlas` safety.** Test offload configurations inside the
   current 96 GiB first, via systemd memory caps (80/88/96 GiB). A 104 GiB
   host-allocation trial is a separate declarative Terraform change, made only if
