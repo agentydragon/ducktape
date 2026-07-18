@@ -25,6 +25,15 @@ let
     inherit lib pkgs pkgsUnstable;
     artifacts = ducktape-artifacts;
   };
+  # The nixos-26.05 channel still packages the October 2025 Pop Shell snapshot,
+  # which only declares support through GNOME 49. The already-pinned unstable
+  # package carries upstream's GNOME 50 support; keep release packages on older
+  # GNOME hosts so this compatibility override is no broader than necessary.
+  popShellPackage =
+    if lib.versionAtLeast pkgs.gnome-shell.version "50" then
+      pkgsUnstable.gnomeExtensions.pop-shell
+    else
+      pkgs.gnomeExtensions.pop-shell;
   inherit (ducktapePackages)
     ducktape
     claude-hook-rs
@@ -532,15 +541,14 @@ in
       { package = pkgs.gnomeExtensions.appindicator; }
       { package = pkgs.gnomeExtensions.panel-date-format; }
       { package = pkgs.gnomeExtensions.cronomix; }
-      { package = pkgs.gnomeExtensions.pop-shell; }
+      { package = popShellPackage; }
       { package = pkgs.gnomeExtensions.gsconnect; }
       { package = pkgsUnstable.gnomeExtensions.just-perfection; }
       { package = pkgs.gnomeExtensions.user-themes; }
     ]
     # display-scale-switcher was removed from nixpkgs after 25.11 (absent in
     # 26.05 and unstable). Keep it only where it still exists (25.11 hosts); it
-    # drops out on 26.05 — wyrm2, which is on sway now anyway, so GNOME
-    # extensions are moot there. TODO(nixpkgs-bump): revisit at the wholesale bump.
+    # drops out on 26.05. TODO(nixpkgs-bump): revisit at the wholesale bump.
     ++ lib.optional (pkgs.gnomeExtensions ? display-scale-switcher) {
       package = pkgs.gnomeExtensions.display-scale-switcher;
     };
