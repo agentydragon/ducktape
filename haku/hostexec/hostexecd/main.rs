@@ -1,8 +1,8 @@
 //! `hostexecd`: the host-side daemon Haku's console calls to run an approved command.
 //!
-//! It runs as root, bound to the host's Nebula address (and Nebula-firewalled), and executes only
-//! what a verified, single-use, per-host Authentik token authorizes — dropping to the token's
-//! `run_as` user. Authority is the operator's own Authentik identity; there is no standing
+//! It runs as root, bound to a cluster-reachable address on the node and firewalled to the
+//! haku-console pod, and executes only what a verified, single-use, per-host Authentik token
+//! authorizes — dropping to the token's `run_as` user. Authority is the operator's own Authentik identity; there is no standing
 //! credential and no bespoke host key. The whole authorization decision lives in `authorize`; this
 //! file is the transport: resolve the token's signing key via JWKS, authorize, exec, return the
 //! result. Fail-closed — any error is a rejection, never a run.
@@ -32,7 +32,8 @@ struct Config {
     issuer: String,
     /// The Authentik JWKS endpoint that publishes the signing keys.
     jwks_url: String,
-    /// Address to bind — the host's Nebula address (e.g. `10.42.x.y:PORT`).
+    /// Address to bind — a node address reachable from the cluster pod network (the systemd unit
+    /// sets it; ingress to the port is firewalled to the haku-console pod).
     bind: SocketAddr,
 }
 
