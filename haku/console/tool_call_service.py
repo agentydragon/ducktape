@@ -13,7 +13,6 @@ import contextlib
 import datetime
 import logging
 from collections.abc import Awaitable, Callable
-from enum import Enum, auto
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -22,8 +21,12 @@ from haku.console.config import Settings
 from haku.console.mcp_config import (
     InProcessServers,
     McpServerEntry,
+    NoBackendAuth,
+    OperatorIdentityAuth,
+    ProviderConnectionAuth,
+    RemoteServerOAuthAuth,
+    StaticBearerAuth,
     _credential_token,
-    _operator_oauth_enabled,
     _server_entry,
 )
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -138,42 +141,6 @@ async def _require_operator_linked_token(token: Awaitable[str | None], server_id
     return resolved
 
 
-class ServerAuthMode(Enum):
-    """How a server's backend credential for the acting operator is sourced.
-
-    The three operator-scoped modes all execute the call as the operator, differing only in *which*
-    credential and where it is linked:
-
-    - ``PROVIDER``: the operator's account at a well-known external provider (Google). The console is
-      a fixed pre-registered OAuth client of that provider, and one linked connection is shared
-      across servers (``provider_connection``).
-    - ``REMOTE_SERVER_OAUTH``: the operator's account at the connected MCP server *itself*, which is
-      its own OAuth authorization server. Linked per server through that server's DCR/PKCE flow
-      (``operator_oauth``, e.g. kubectl-passthrough).
-    - ``OPERATOR_IDENTITY``: the operator's *own* console-login identity — the Authentik token they
-      sign into the console with — captured at login and reused/exchanged downstream (hostexec). Not
-      a separately linked account; the operator acting as themselves.
-
-    ``STATIC`` is the non-operator mode: a fixed configured bearer the console holds.
-    """
-
-    PROVIDER = auto()
-    REMOTE_SERVER_OAUTH = auto()
-    OPERATOR_IDENTITY = auto()
-    STATIC = auto()
-
-
-def server_auth_mode(server: McpServerEntry) -> ServerAuthMode:
-    """Select a server's backend-auth mode. The per-mode failure behavior is the caller's."""
-    if server.provider_connection is not None:
-        return ServerAuthMode.PROVIDER
-    if _operator_oauth_enabled(server):
-        return ServerAuthMode.REMOTE_SERVER_OAUTH
-    if server.operator_identity_token:
-        return ServerAuthMode.OPERATOR_IDENTITY
-    return ServerAuthMode.STATIC
-
-
 async def backend_auth_for_operator(
     *,
     server: McpServerEntry,
@@ -182,24 +149,33 @@ async def backend_auth_for_operator(
     provider_store: ProviderConnectionTokenStore,
     authentik_store: AuthentikOperatorTokenStore,
 ) -> str | None:
-    match server_auth_mode(server):
-        case ServerAuthMode.PROVIDER:
-            assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
+    """Resolve the server's backend credential for the acting operator, per its ``auth`` variant.
+
+    - ``ProviderConnectionAuth``: the operator's linked provider account token (Google).
+    - ``RemoteServerOAuthAuth``: the operator's OAuth token at the remote MCP server itself.
+    - ``OperatorIdentityAuth``: the operator's own Authentik login token (captured via
+      offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
+      operator has not logged in with offline_access yet.
+    - ``StaticBearerAuth``: the console's fixed configured bearer, not operator-scoped.
+    - ``NoBackendAuth``: none — the server carries its own credential.
+    """
+    match server.auth:
+        case ProviderConnectionAuth(provider=provider):
             return await _require_operator_linked_token(
-                provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id), server.id
+                provider_store.access_token_for(provider=provider, operator_id=operator_id), server.id
             )
-        case ServerAuthMode.REMOTE_SERVER_OAUTH:
+        case RemoteServerOAuthAuth():
             return await _require_operator_linked_token(
                 oauth_store.access_token_for(server=server, operator_id=operator_id), server.id
             )
-        case ServerAuthMode.OPERATOR_IDENTITY:
-            # The Operator's own Authentik access token (captured at login); the server exchanges it
-            # for a per-host token. Missing ⇒ the operator has not logged in with offline_access yet.
+        case OperatorIdentityAuth():
             return await _require_operator_linked_token(
                 authentik_store.access_token_for(operator_id=operator_id), server.id
             )
-        case ServerAuthMode.STATIC:
-            return _credential_token(server)
+        case StaticBearerAuth(bearer_token_secret=secret):
+            return _credential_token(server.id, secret)
+        case NoBackendAuth():
+            return None
 
 
 class ToolCallApplicationService:

@@ -136,7 +136,15 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     )
     config_file = write_config(
         tmp_path / "console.yaml",
-        {"static_agents": _STATIC_AGENTS, "mcp": {"servers": [{"id": "gmail"}, {"id": "google_calendar"}]}},
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [
+                    {"id": "gmail", "auth": {"kind": "none"}},
+                    {"id": "google_calendar", "auth": {"kind": "none"}},
+                ]
+            },
+        },
     )
     settings = console_settings(migrated_db_url, config_file=config_file, ui_base_url="https://haku.test")
     in_process = {
@@ -390,7 +398,10 @@ def _serve_upstream() -> Generator[str]:
 def _console_config(tmp_path: Path, upstream_url: str) -> Path:
     return write_config(
         tmp_path / "console.yaml",
-        {"static_agents": _STATIC_AGENTS, "mcp": {"servers": [{"id": "standin", "server_url": upstream_url}]}},
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {"servers": [{"id": "standin", "server_url": upstream_url, "auth": {"kind": "none"}}]},
+        },
     )
 
 
@@ -523,7 +534,7 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
             {
                 "static_agents": _STATIC_AGENTS,
                 "mcp": {
-                    "servers": [{"id": "standin", "server_url": upstream_url, "operator_oauth": {"enabled": True}}]
+                    "servers": [{"id": "standin", "server_url": upstream_url, "auth": {"kind": "remote_server_oauth"}}]
                 },
             },
         )
@@ -565,7 +576,7 @@ async def test_list_mcp_servers_reports_alive_and_degraded_state(
             {
                 "static_agents": _STATIC_AGENTS,
                 "mcp": {
-                    "servers": [{"id": "standin", "server_url": upstream_url, "operator_oauth": {"enabled": True}}]
+                    "servers": [{"id": "standin", "server_url": upstream_url, "auth": {"kind": "remote_server_oauth"}}]
                 },
             },
         )
@@ -604,8 +615,8 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
             "static_agents": _STATIC_AGENTS,
             "mcp": {
                 "servers": [
-                    {"id": "beta", "server_url": "https://beta.invalid/mcp"},
-                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp"},
+                    {"id": "beta", "server_url": "https://beta.invalid/mcp", "auth": {"kind": "none"}},
+                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp", "auth": {"kind": "none"}},
                 ]
             },
         },
@@ -644,8 +655,8 @@ async def test_tool_dispatch_reflects_only_target_server(
             "static_agents": _STATIC_AGENTS,
             "mcp": {
                 "servers": [
-                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp"},
-                    {"id": "beta", "server_url": "https://beta.invalid/mcp"},
+                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp", "auth": {"kind": "none"}},
+                    {"id": "beta", "server_url": "https://beta.invalid/mcp", "auth": {"kind": "none"}},
                 ]
             },
         },
@@ -942,12 +953,23 @@ def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path:
 
 def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
     with pytest.raises(ValidationError, match="duplicate MCP server id 'grocy'"):
-        ConsoleConfigFile.model_validate({"mcp": {"servers": [{"id": "grocy"}, {"id": "grocy"}]}})
+        ConsoleConfigFile.model_validate(
+            {"mcp": {"servers": [{"id": "grocy", "auth": {"kind": "none"}}, {"id": "grocy", "auth": {"kind": "none"}}]}}
+        )
 
 
 def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> None:
     with pytest.raises(ValidationError, match="duplicate MCP server tool prefix 'grocy_sf'"):
-        ConsoleConfigFile.model_validate({"mcp": {"servers": [{"id": "grocy-sf"}, {"id": "grocy_sf"}]}})
+        ConsoleConfigFile.model_validate(
+            {
+                "mcp": {
+                    "servers": [
+                        {"id": "grocy-sf", "auth": {"kind": "none"}},
+                        {"id": "grocy_sf", "auth": {"kind": "none"}},
+                    ]
+                }
+            }
+        )
 
 
 def test_duplicate_static_agent_tokens_fail_startup(

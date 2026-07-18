@@ -207,10 +207,10 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
   `HostexecJwtBearerExchanger` (RFC-7523 jwt-bearer exchange of the operator's Authentik token → per-host
   `aud=hostexec-<host>`) are done. Option A's storage is done: login gains `offline_access` (only
   when hostexec is configured), `PostgresAuthentikOperatorTokenStore` persists + self-refreshes the
-  operator's Authentik token, and `ServerAuthMode.OPERATOR_IDENTITY` resolves it in `backend_auth_for_operator`;
-  the in-process builder is wired from `settings.hostexec`. **Remaining is deploy-only:** the host
-  map (`HAKU_CONSOLE_HOSTEXEC` JSON: `exec_url` + `audience_client_id` per host) and the catalog
-  entry (`{id: hostexec, operator_identity_token: true}`) in
+  operator's Authentik token, which `backend_auth_for_operator` resolves for the `OperatorIdentityAuth`
+  variant; the in-process builder is wired from `settings.hostexec`. **Remaining is deploy-only:** the
+  host map (`HAKU_CONSOLE_HOSTEXEC` JSON: `exec_url` + `audience_client_id` per host) and the catalog
+  entry (`{id: hostexec, auth: {kind: operator_identity}}`) in
   <../../cluster/k8s/haku/console/config.yaml> — both coupled to the Authentik providers below, so
   they land together at deploy. The `haku-console` pod reaches `hostexecd` over the **cluster pod
   network** by node hostname (no mesh egress); a `CiliumNetworkPolicy` restricts hostexecd's ingress.

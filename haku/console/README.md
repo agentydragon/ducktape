@@ -78,8 +78,8 @@ Core endpoints:
   names reachable servers, and each live MCP server remains the tool schema source.
 - `GET /api/mcp/operator-auth`, `POST /api/mcp/operator-auth/{server_id}/connect`,
   `DELETE /api/mcp/operator-auth/{server_id}`, and `GET /api/mcp/operator-auth/callback` —
-  operator account association for MCP servers whose config enables `operator_oauth` (this flow
-  lives in `mcp_operator_oauth.py`, not the approval router). The catalog stays in the console
+  operator account association for MCP servers whose config sets `auth: {kind: remote_server_oauth}`
+  (this flow lives in `mcp_operator_oauth.py`, not the approval router). The catalog stays in the console
   YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
   associations.
   Connecting is available only while unconnected; disconnect first to replace an account link.
@@ -100,12 +100,12 @@ The browser REST API requires the operator's Authentik session, and decisions ad
 CSRF. `/mcp` accepts either an Agent bearer or that same DB-revalidated Operator session; browser
 MCP requests additionally require the console's exact `Origin` and the CSRF header/cookie pair. The
 approvals panel renders in trusted
-console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server enables
-`operator_oauth`, approval execution
+console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server's `auth`
+is `remote_server_oauth`, approval execution
 uses the approving operator's linked OAuth token and refuses to move the call out of
-`pending_approval` until that association exists. Static bearer credentials can remain configured
-for reflection or fallback wiring, but they are not silently substituted for operator-approved
-execution on an `operator_oauth` server.
+`pending_approval` until that association exists. A `static_bearer` credential can be configured on a
+different server for reflection or fallback wiring, but it is not silently substituted for
+operator-approved execution on a `remote_server_oauth` server.
 
 ### MCP server (`/mcp`)
 
@@ -264,8 +264,8 @@ HTTP:
 
 The `gmail` and `google_calendar` servers execute as the **acting Operator's own Google
 account**: each call resolves that Operator's per-Operator Google access token from the
-console's own connection store (`provider_connection.py`, `provider_connection: google` in
-config), then builds the client for that one call — no shared/startup credential. The console
+console's own connection store (`provider_connection.py`, `auth: {kind: provider_connection, provider: google}`
+in config), then builds the client for that one call — no shared/startup credential. The console
 holds the Google OAuth client and each Operator's refresh token itself (Postgres, self-refreshed
 in-process), replacing Airlock's brokered `haku_console_google` token. Scopes (`calendar.events`,
 `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, and the `google` provider's read-only

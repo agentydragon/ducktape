@@ -39,6 +39,11 @@ from haku.console.mcp_config import (
     InProcessServers,
     McpServerEntry,
     McpServerNotFoundError,
+    NoBackendAuth,
+    OperatorIdentityAuth,
+    ProviderConnectionAuth,
+    RemoteServerOAuthAuth,
+    StaticBearerAuth,
     _credential_token,
     _load_servers,
     _transport,
@@ -52,12 +57,10 @@ from haku.console.tool_call_service import (
     AuthentikOperatorTokenStore,
     BackendAccountNotConnectedError,
     ProviderConnectionTokenStore,
-    ServerAuthMode,
     ToolCallApplicationService,
     ToolCallNotFoundError,
     ToolCallStateConflictError,
     backend_auth_for_operator,
-    server_auth_mode,
 )
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -616,40 +619,38 @@ async def _resolve_operator_metadata_auth(
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> _ResolvedAuth | _DegradedAuth:
-    """Resolve the operator-linked reflection token per the server's auth mode, or a degraded reason.
+    """Resolve the operator-linked reflection token per the server's `auth` variant, or a degraded
+    reason.
 
-    Deviation from `backend_auth_for_operator` (which shares the mode selection via `server_auth_mode`):
-    a missing operator-linked token or a missing static credential degrades reflection here rather
-    than raising.
+    Deviation from `backend_auth_for_operator` (which dispatches on the same `auth` variants): a
+    missing operator-linked token or a missing static credential degrades reflection here rather than
+    raising.
     """
-    match server_auth_mode(server):
-        case ServerAuthMode.PROVIDER:
-            assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
-            auth_token = await provider_store.access_token_for(
-                provider=server.provider_connection, operator_id=operator_id
-            )
+    match server.auth:
+        case ProviderConnectionAuth(provider=provider):
+            auth_token = await provider_store.access_token_for(provider=provider, operator_id=operator_id)
             if not auth_token:
-                return _DegradedAuth(
-                    f"Connect your {server.provider_connection} account in the console to use this server."
-                )
+                return _DegradedAuth(f"Connect your {provider} account in the console to use this server.")
             return _ResolvedAuth(auth_token)
-        case ServerAuthMode.REMOTE_SERVER_OAUTH:
+        case RemoteServerOAuthAuth():
             auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
             if not auth_token:
                 return _DegradedAuth(
                     f"Connect your {server.id} MCP account in the console to reflect this server's tools."
                 )
             return _ResolvedAuth(auth_token)
-        case ServerAuthMode.OPERATOR_IDENTITY:
+        case OperatorIdentityAuth():
             # Reflection (tools/list) doesn't need the per-host token — the in-process hostexec
             # server lists its tools regardless — so reflect with no token and never degrade here.
             # The operator's identity token is required only at execution (backend_auth_for_operator).
             return _ResolvedAuth(None)
-        case ServerAuthMode.STATIC:
+        case StaticBearerAuth(bearer_token_secret=secret):
             try:
-                return _ResolvedAuth(_credential_token(server))
+                return _ResolvedAuth(_credential_token(server.id, secret))
             except Exception as e:
                 return _DegradedAuth(str(e))
+        case NoBackendAuth():
+            return _ResolvedAuth(None)
 
 
 async def metadata_for_operator(

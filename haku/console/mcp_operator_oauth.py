@@ -56,6 +56,7 @@ from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     McpServerEntry,
     McpServerNotFoundError,
+    RemoteServerOAuthAuth,
     _load_servers,
     _operator_oauth_enabled,
     _server_entry,
@@ -478,29 +479,31 @@ async def _resolve_operator_oauth_client(
     """Probe the MCP server, discover its authorization-server metadata, and obtain a client
     registration — a configured `static_client_id`, or Dynamic Client Registration. All the
     network I/O of starting an operator OAuth flow lives here."""
-    assert server.operator_oauth is not None
+    assert isinstance(server.auth, RemoteServerOAuthAuth)
+    # Bind to a local so the RemoteServerOAuthAuth narrowing survives the awaits below.
+    oauth = server.auth
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=10.0) as client:
             auth_probe = await client.get(server_url, headers=_metadata_request_headers())
             resource_metadata = await _discover_protected_resource(client, server_url, auth_probe)
             oauth_metadata = await _discover_oauth_metadata(client, server_url, resource_metadata)
             scope = (
-                " ".join(server.operator_oauth.scopes)
-                if server.operator_oauth.scopes is not None
+                " ".join(oauth.scopes)
+                if oauth.scopes is not None
                 else get_client_metadata_scopes(
                     extract_scope_from_www_auth(auth_probe), resource_metadata, oauth_metadata
                 )
             )
             client_metadata = OAuthClientMetadata(
-                client_name=server.operator_oauth.client_name,
+                client_name=oauth.client_name,
                 redirect_uris=[redirect_uri],
                 grant_types=["authorization_code", "refresh_token"],
                 response_types=["code"],
                 scope=scope,
             )
-            if server.operator_oauth.static_client_id:
+            if oauth.static_client_id:
                 client_info = OAuthClientInformationFull(
-                    client_id=server.operator_oauth.static_client_id,
+                    client_id=oauth.static_client_id,
                     redirect_uris=client_metadata.redirect_uris,
                     grant_types=client_metadata.grant_types,
                     response_types=client_metadata.response_types,
@@ -519,8 +522,8 @@ async def _resolve_operator_oauth_client(
 
 
 async def _build_operator_oauth_flow(server: McpServerEntry, public_base_url: str) -> _BuiltOperatorOAuthFlow:
-    assert server.operator_oauth is not None
-    # operator_oauth is meaningless for an in-process server (there's no remote authorization
+    assert isinstance(server.auth, RemoteServerOAuthAuth)
+    # remote_server_oauth is meaningless for an in-process server (there's no remote authorization
     # server to run DCR/metadata discovery against); bind server_url to a local for stable
     # mypy narrowing across the awaits.
     assert server.server_url is not None

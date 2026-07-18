@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Callable
+from typing import Annotated, Literal
 from uuid import UUID
 
 import yaml
@@ -28,58 +29,71 @@ class McpServerNotFoundError(LookupError):
     """The configured connected-server catalog has no entry for the requested id."""
 
 
-class McpOperatorOAuthConfig(BaseModel):
-    enabled: bool = True
+class ProviderConnectionAuth(BaseModel):
+    """Execute as the acting Operator's linked account at a well-known external provider (Google):
+    the tool call resolves that Operator's provider access token (the console's replacement for the
+    Airlock-brokered token) before executing."""
+
+    kind: Literal["provider_connection"] = "provider_connection"
+    provider: ProviderConnectionKind
+
+
+class RemoteServerOAuthAuth(BaseModel):
+    """Execute as the acting Operator's account at the connected MCP server's own OAuth authorization
+    server, linked per server via that server's DCR/PKCE flow (e.g. kubectl-passthrough)."""
+
+    kind: Literal["remote_server_oauth"] = "remote_server_oauth"
     client_name: str = "Haku Console"
     scopes: list[str] | None = None
-    # For an authorization server with no open Dynamic Client Registration (RFC 7591) —
-    # e.g. Authentik, which has no /register endpoint, so the server-metadata-declared
-    # registration_endpoint is absent and DCR would otherwise 401 against a guessed
-    # {server}/register fallback. A pre-registered public/PKCE client_id shared across
-    # every OAuth caller of that authorization server, skipping registration entirely.
-    # Safe to share: PKCE plus per-request redirect_uri validation secure each caller's
-    # auth code exchange independently even though the client_id is the same for all.
+    # For an authorization server with no open Dynamic Client Registration (RFC 7591) — e.g.
+    # Authentik, which has no /register endpoint, so the server-metadata-declared
+    # registration_endpoint is absent and DCR would otherwise 401 against a guessed {server}/register
+    # fallback. A pre-registered public/PKCE client_id shared across every OAuth caller of that
+    # authorization server, skipping registration entirely. Safe to share: PKCE plus per-request
+    # redirect_uri validation secure each caller's auth code exchange independently even though the
+    # client_id is the same for all.
     static_client_id: str | None = None
+
+
+class OperatorIdentityAuth(BaseModel):
+    """Execute under the acting Operator's own console-login (Authentik) identity: the tool call
+    resolves the Operator's stored Authentik login token (captured at login via offline_access),
+    which the server exchanges for a per-host token (hostexec)."""
+
+    kind: Literal["operator_identity"] = "operator_identity"
+
+
+class StaticBearerAuth(BaseModel):
+    """Execute with a fixed, non-operator bearer the console holds — the env-referenced secret
+    resolved by `_credential_token`."""
+
+    kind: Literal["static_bearer"] = "static_bearer"
+    bearer_token_secret: str
+
+
+class NoBackendAuth(BaseModel):
+    """No backend credential: an in-process server that carries its own (e.g. `haku_routine`, which
+    holds the launch-routine secret) or otherwise needs none."""
+
+    kind: Literal["none"] = "none"
+
+
+# How a server resolves its backend credential for the acting Operator — exactly one variant per
+# server. The discriminated union replaces flag+optional fields that could set several at once;
+# dispatch by `isinstance` (mypy narrows), never a `kind`-string compare.
+type BackendAuth = Annotated[
+    ProviderConnectionAuth | RemoteServerOAuthAuth | OperatorIdentityAuth | StaticBearerAuth | NoBackendAuth,
+    Field(discriminator="kind"),
+]
 
 
 class McpServerEntry(BaseModel):
     id: str
-    # None for a server reached via an in-process FastMCP instance instead of a remote
-    # URL (see McpToolExecutor/McpMetadataProvider's `in_process_servers` registry,
-    # e.g. haku.console.tools.gmail's `gmail` server) — resolved at runtime by id,
-    # not by anything in this config model.
+    # None for a server reached via an in-process FastMCP instance instead of a remote URL (see
+    # McpToolExecutor/McpMetadataProvider's `in_process_servers` registry, e.g. haku.console.tools.gmail's
+    # `gmail` server) — resolved at runtime by id, not by anything in this config model.
     server_url: str | None = None
-    bearer_token_secret: str | None = None
-    operator_oauth: McpOperatorOAuthConfig | None = None
-    # For an in-process server that executes as the acting Operator's linked external account
-    # (Google today): the tool call resolves that Operator's provider access token before
-    # executing. It is the console's own replacement for the Airlock-brokered token.
-    provider_connection: ProviderConnectionKind | None = None
-    # For an in-process server that executes under the acting Operator's own identity (hostexec): the
-    # tool call resolves the Operator's stored Authentik login token (captured via offline_access)
-    # before executing, which the server exchanges for a per-host token. See ServerAuthMode.
-    operator_identity_token: bool = False
-
-    @model_validator(mode="after")
-    def _reject_conflicting_operator_token_sources(self) -> McpServerEntry:
-        # Each names the operator-linked token source; setting more than one is meaningless because
-        # exactly one resolves the credential. A static bearer_token_secret coexisting is
-        # intentional (reflection/fallback wiring).
-        sources = [
-            name
-            for name, set_ in (
-                ("provider_connection", self.provider_connection is not None),
-                ("operator_oauth", self.operator_oauth is not None),
-                ("operator_identity_token", self.operator_identity_token),
-            )
-            if set_
-        ]
-        if len(sources) > 1:
-            raise ValueError(
-                f"MCP server {self.id!r} sets multiple operator token sources ({', '.join(sources)}); "
-                "an operator-linked server uses exactly one"
-            )
-        return self
+    auth: BackendAuth
 
 
 class ConsoleMcpConfig(BaseModel):
@@ -207,7 +221,7 @@ def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:
 
 
 def _operator_oauth_enabled(server: McpServerEntry) -> bool:
-    return bool(server.operator_oauth and server.operator_oauth.enabled)
+    return isinstance(server.auth, RemoteServerOAuthAuth)
 
 
 def _credential_env_name(bearer_token_secret: str) -> str:
@@ -215,13 +229,11 @@ def _credential_env_name(bearer_token_secret: str) -> str:
     return f"HAKU_CONSOLE_MCP_CREDENTIAL_{suffix}"
 
 
-def _credential_token(server: McpServerEntry) -> str | None:
-    if server.bearer_token_secret is None:
-        return None
-    env_name = _credential_env_name(server.bearer_token_secret)
+def _credential_token(server_id: str, bearer_token_secret: str) -> str:
+    env_name = _credential_env_name(bearer_token_secret)
     token = os.environ.get(env_name)
     if not token:
-        raise RuntimeError(f"missing MCP bearer token env var {env_name} for MCP server {server.id}")
+        raise RuntimeError(f"missing MCP bearer token env var {env_name} for MCP server {server_id}")
     return token
 
 

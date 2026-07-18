@@ -29,7 +29,7 @@ from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import console_settings, write_config
-from haku.console.mcp_config import McpOperatorOAuthConfig, McpServerEntry
+from haku.console.mcp_config import McpServerEntry, RemoteServerOAuthAuth
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_call_service import ToolCallApplicationService
 from haku.console.tool_calls import SubmitToolCallRequest
@@ -179,7 +179,7 @@ def _console_config(path: Path, downstream_url: str) -> Path:
                     {
                         "id": "grocy-test",
                         "server_url": f"{downstream_url}/mcp",
-                        "operator_oauth": {"client_name": "Haku Console"},
+                        "auth": {"kind": "remote_server_oauth", "client_name": "Haku Console"},
                     }
                 ]
             },
@@ -290,9 +290,7 @@ async def token_chain_harness(
         assert "Connected grocy-test" in callback.text
 
         server_entry = McpServerEntry(
-            id="grocy-test",
-            server_url=f"{downstream_url}/mcp",
-            operator_oauth=McpOperatorOAuthConfig(client_name="Haku Console"),
+            id="grocy-test", server_url=f"{downstream_url}/mcp", auth=RemoteServerOAuthAuth(client_name="Haku Console")
         )
         operator_id = console.state.operator_identity_store.resolve_configured_external_user_key(_OPERATOR_SUBJECT)
         stored_reference = await console.state.mcp_operator_oauth_store.access_token_for(

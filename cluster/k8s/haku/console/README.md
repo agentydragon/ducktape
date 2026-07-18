@@ -91,7 +91,7 @@ entry.
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
 
 The `kubectl-passthrough-mcp` MCP server entry (config.yaml — `pods_*`, `resources_*`,
-`nodes_*`, `events_list`, `configuration_view`) uses `operator_oauth`, the same
+`nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
 per-operator browser-linked mechanism as `grocy-sf`/`tana-rw`: the operator connects once
 from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
 which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2

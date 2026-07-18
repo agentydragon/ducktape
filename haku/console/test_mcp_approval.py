@@ -52,7 +52,7 @@ from haku.console.mcp_approval import (
     _execution_auth,
     _mcp_result_to_json,
 )
-from haku.console.mcp_config import McpServerEntry, const_in_process_server
+from haku.console.mcp_config import McpServerEntry, NoBackendAuth, const_in_process_server
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -321,8 +321,12 @@ def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     servers = [
-        {"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"},
-        {"id": "smoke", "server_url": mcp_server_url},
+        {
+            "id": "grocy-sf",
+            "server_url": mcp_server_url,
+            "auth": {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"},
+        },
+        {"id": "smoke", "server_url": mcp_server_url, "auth": {"kind": "none"}},
     ]
     return write_config(tmp_path / "haku_console.yaml", _config(servers))
 
@@ -344,13 +348,13 @@ def operator_client(make_operator_client: Callable[..., Any], console_config: Pa
 
 @pytest.fixture
 def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
-    servers = [{"id": "grocy-sf", "server_url": f"{remote_oauth_url}/mcp", "operator_oauth": {}}]
+    servers = [{"id": "grocy-sf", "server_url": f"{remote_oauth_url}/mcp", "auth": {"kind": "remote_server_oauth"}}]
     return write_config(tmp_path / "haku_console_operator_oauth.yaml", _config(servers))
 
 
 @pytest.fixture
 def gmail_config_file(tmp_path: Path) -> Path:
-    return write_config(tmp_path / "haku_console_gmail.yaml", _config([{"id": "gmail"}]))
+    return write_config(tmp_path / "haku_console_gmail.yaml", _config([{"id": "gmail", "auth": {"kind": "none"}}]))
 
 
 @pytest.fixture
@@ -359,7 +363,7 @@ def preregistered_operator_oauth_config_file(tmp_path: Path, preregistered_remot
         {
             "id": "grocy-sf",
             "server_url": f"{preregistered_remote_oauth_url}/mcp",
-            "operator_oauth": {"static_client_id": "preregistered-client"},
+            "auth": {"kind": "remote_server_oauth", "static_client_id": "preregistered-client"},
         }
     ]
     return write_config(tmp_path / "haku_console_operator_oauth_static.yaml", _config(servers))
@@ -899,7 +903,9 @@ def test_routing_executes_each_agent_as_its_own_operator(
     _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
     _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
-    config = _config([{"id": "grocy-sf", "server_url": "http://unused.test/mcp", "operator_oauth": {}}])
+    config = _config(
+        [{"id": "grocy-sf", "server_url": "http://unused.test/mcp", "auth": {"kind": "remote_server_oauth"}}]
+    )
     config["static_agents"] = [
         *_STATIC_AGENTS,
         {
@@ -958,7 +964,13 @@ def test_two_operator_two_agent_http_authorization_matrix(
         monkeypatch.setenv(token_env, token)
         monkeypatch.setenv(operator_env, operator_key)
     config = _config(
-        [{"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"}]
+        [
+            {
+                "id": "grocy-sf",
+                "server_url": mcp_server_url,
+                "auth": {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"},
+            }
+        ]
     )
     config["static_agents"] = [
         {
@@ -1397,26 +1409,28 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
 
 
 def test_server_entry_allows_missing_server_url() -> None:
-    McpServerEntry(id="google")  # ok: resolved via the in-process registry at runtime, not this model
+    McpServerEntry(
+        id="google", auth=NoBackendAuth()
+    )  # ok: resolved via the in-process registry at runtime, not this model
 
 
 async def test_executor_dispatches_to_registered_in_process_server() -> None:
     executor = McpToolExecutor({"google": const_in_process_server(_test_mcp_server())})
-    server = McpServerEntry(id="google")
+    server = McpServerEntry(id="google", auth=NoBackendAuth())
     result = await executor.execute(server, "echo", {"text": "hi"}, auth_token=None)
     assert result["content"][0]["text"] == "echo:hi"
 
 
 async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
     executor = McpToolExecutor({})
-    server = McpServerEntry(id="google")
+    server = McpServerEntry(id="google", auth=NoBackendAuth())
     with pytest.raises(RuntimeError, match="no server_url and no in-process registration"):
         await executor.execute(server, "echo", {}, auth_token=None)
 
 
 async def test_metadata_provider_reflects_in_process_server_tools() -> None:
     metadata_provider = McpMetadataProvider({"google": const_in_process_server(_test_mcp_server())})
-    server = McpServerEntry(id="google")
+    server = McpServerEntry(id="google", auth=NoBackendAuth())
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert isinstance(metadata, AliveServerMetadata)
     assert {tool.name for tool in metadata.tools} == {
@@ -1433,7 +1447,7 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
 
 async def test_metadata_provider_degrades_when_no_server_url_and_not_registered() -> None:
     metadata_provider = McpMetadataProvider({})
-    server = McpServerEntry(id="google")
+    server = McpServerEntry(id="google", auth=NoBackendAuth())
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert metadata.status == "degraded"
 

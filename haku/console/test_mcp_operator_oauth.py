@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
-from haku.console.mcp_config import McpServerEntry
+from haku.console.mcp_config import McpServerEntry, RemoteServerOAuthAuth
 from haku.console.mcp_operator_oauth import (
     PostgresMcpOperatorOAuthStore,
     _BuiltOperatorOAuthFlow,
@@ -139,7 +139,7 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = oauth_store_for("connect-race-operator")
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", operator_oauth={})
+    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
     now = datetime.datetime.now(datetime.UTC)
 
     async def build_flow_after_disable(_server: McpServerEntry, _public_base_url: str) -> _BuiltOperatorOAuthFlow:
@@ -171,7 +171,7 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = oauth_store_for("refresh-race-operator")
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", operator_oauth={})
+    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
     now = datetime.datetime.now(datetime.UTC)
     with sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -213,7 +213,7 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = oauth_store_for("refresh-reconnect-race")
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", operator_oauth={})
+    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
     now = datetime.datetime.now(datetime.UTC)
     replacement_association_id = uuid4()
     with sessionmaker(migrated_engine)() as session, session.begin():

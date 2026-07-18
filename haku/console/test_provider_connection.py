@@ -19,7 +19,7 @@ from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import ProviderConnection
-from haku.console.mcp_config import McpServerEntry
+from haku.console.mcp_config import McpServerEntry, ProviderConnectionAuth
 from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
@@ -172,7 +172,7 @@ def _unconsulted_store() -> Any:
 
 
 async def test_backend_auth_resolves_provider_connection() -> None:
-    server = McpServerEntry(id="gmail", provider_connection=GOOGLE)
+    server = McpServerEntry(id="gmail", auth=ProviderConnectionAuth(provider=GOOGLE))
     token = await backend_auth_for_operator(
         server=server,
         operator_id=uuid4(),
@@ -184,7 +184,7 @@ async def test_backend_auth_resolves_provider_connection() -> None:
 
 
 async def test_backend_auth_raises_when_provider_unconnected() -> None:
-    server = McpServerEntry(id="gmail", provider_connection=GOOGLE)
+    server = McpServerEntry(id="gmail", auth=ProviderConnectionAuth(provider=GOOGLE))
     with pytest.raises(BackendAccountNotConnectedError):
         await backend_auth_for_operator(
             server=server,

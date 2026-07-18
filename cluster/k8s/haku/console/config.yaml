@@ -15,11 +15,13 @@ mcp:
   servers:
     - id: grocy-sf
       server_url: https://grocy-mcp-sf.allegedly.works/mcp
-      operator_oauth:
+      auth:
+        kind: remote_server_oauth
         client_name: Haku Console
     - id: tana-rw
       server_url: https://tana-mcp-facade.allegedly.works/mcp
-      operator_oauth:
+      auth:
+        kind: remote_server_oauth
         client_name: Haku Console
     # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight
     # to kube-apiserver (cluster_auth_mode=passthrough) — no group override, no scoped
@@ -31,7 +33,8 @@ mcp:
     # only gate, by design — see haku/docs/security.md.
     - id: kubectl-passthrough-mcp
       server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-      operator_oauth:
+      auth:
+        kind: remote_server_oauth
         client_name: Haku Console
         # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
         # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
@@ -59,11 +62,18 @@ mcp:
     # drafts_create, threads_modify_labels, and label CRUD (labels_create, labels_patch,
     # labels_delete).
     - id: gmail
-      provider_connection: google
+      auth:
+        kind: provider_connection
+        provider: google
     # `google_calendar`: recurrence-aware get/list/instances reads + approval-gated create_event.
     - id: google_calendar
-      provider_connection: google
+      auth:
+        kind: provider_connection
+        provider: google
     # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
     # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the
-    # Google grant. Superseding the bespoke launch-routine capability tier.
+    # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
+    # credential, so it needs no operator-resolved backend auth.
     - id: haku_routine
+      auth:
+        kind: none
