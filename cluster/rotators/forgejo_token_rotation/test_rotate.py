@@ -78,7 +78,7 @@ def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: 
 
 def test_write_tea_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     out = TeaSecretOutput(
-        path=tmp_path / "cluster/k8s/haku/agent-worker/haku-forgejo-tea.sops.yaml", name="tea", namespace="haku"
+        path=tmp_path / "cluster/k8s/haku/managed-agent/haku-forgejo-tea.sops.yaml", name="tea", namespace="haku"
     )
     rotation = Rotation(
         name="haku", credentials_dir=Path("/creds"), sops_file=tmp_path / "secrets/haku.yaml", tea_secret=out
@@ -195,7 +195,7 @@ def test_tea_config_yaml_matches_upstream_config_shape():
 
 def test_secret_manifest_carries_config_and_raw_token():
     out = TeaSecretOutput(
-        path=Path("cluster/k8s/haku/agent-worker/haku-forgejo-tea.sops.yaml"),
+        path=Path("cluster/k8s/haku/managed-agent/haku-forgejo-tea.sops.yaml"),
         name="haku-forgejo-tea",
         namespace="haku-sandbox",
     )

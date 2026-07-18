@@ -171,7 +171,7 @@ beta:agents create|update`): `model: claude-opus-4-8`, thin pointer `system`,
    dedupe; break only on terminated / idle-with-terminal-stop_reason), recreates
    the session on death, and exposes the wake endpoint (HTTP for the webhook +
    internal timer for the schedule).
-5. **k8s** in `cluster/k8s/haku/`: a `haku-worker` Deployment and a
+5. **k8s** in `cluster/k8s/haku/`: a `haku-managed-agent` Deployment and a
    `haku-supervisor` Deployment, an `ANTHROPIC_ENVIRONMENT_KEY` secret (worker
    only) and an API-key secret (supervisor only — keep the org-scoped API key
    **off** the worker host so agent tool calls can't read it), and a Forgejo

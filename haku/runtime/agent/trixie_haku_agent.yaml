@@ -10,7 +10,7 @@
 # binary (cf. loom/gym's docker CLI), not here.
 #
 # TODO: decide whether this Runtime C image should also carry `tea`. The Nix-built
-# agent surfaces (`.#agent-haku`, agent-box, codex-pod, and haku-worker) include it
+# agent surfaces (`.#agent-haku`, agent-box, codex-pod, and haku-managed-agent) include it
 # for Forgejo/Gitea issue/PR/release workflows, but this apt-locked Debian image
 # intentionally diverges until we regenerate and validate the apt lock.
 #

@@ -10,17 +10,17 @@
 # to 0.80.0, while the worker lib needs ≥0.111), so it's pinned independently in
 # the override below — see <debug/self_hosted_worker_bringup.md>.
 #
-# Runs UNPRIVILEGED and as NON-ROOT: k8s execs `/sw/bin/haku-worker-run` (the
-# wrapper below, on the stable system-path) as uid 1000 (`haku`) with all caps
-# dropped. There is no systemd, no `/init`, no NixOS activation — booting systemd
-# PID 1 in an unprivileged container fails to mount the API filesystems
+# Runs UNPRIVILEGED and as NON-ROOT: k8s execs `/sw/bin/haku-managed-agent-run`
+# (the wrapper below, on the stable system-path) as uid 1000 (`haku`) with all
+# caps dropped. There is no systemd, no `/init`, no NixOS activation — booting
+# systemd PID 1 in an unprivileged container fails to mount the API filesystems
 # (/proc, /dev, /run …), and we don't need it: the closure runs fine on its own,
 # and k8s already supplies supervision (restartPolicy) and log capture. The real
 # fence is the haku-sandbox perimeter (haku SA + RBAC, mitmproxy egress).
 #
-# Build: nix build .#haku-worker-image   (flake emits an uncompressed rootfs tar)
-# Load:  docker import result/tarball/*.tar haku-worker
-# Run:   docker run --rm --user 1000 haku-worker /sw/bin/haku-worker-run
+# Build: nix build .#haku-managed-agent-image   (flake emits an uncompressed rootfs tar)
+# Load:  docker import result/tarball/*.tar haku-managed-agent
+# Run:   docker run --rm --user 1000 haku-managed-agent /sw/bin/haku-managed-agent-run
 {
   modulesPath,
   pkgs,
@@ -84,10 +84,10 @@ let
     python.withPackages (ps: [ ps.anthropic ]);
 
   # worker.py is the single source of truth (self-contained + runnable on the
-  # SDK). The `haku-worker` command runs it under the pinned interpreter; the
-  # entrypoint execs it like it used to exec `ant beta:worker poll`.
-  haku-worker = pkgs.writeShellApplication {
-    name = "haku-worker";
+  # SDK). The `haku-managed-agent` command runs it under the pinned interpreter;
+  # the entrypoint execs it like it used to exec `ant beta:worker poll`.
+  haku-managed-agent = pkgs.writeShellApplication {
+    name = "haku-managed-agent";
     runtimeInputs = [ pythonWithAnthropic ];
     text = ''exec python ${./worker.py} "$@"'';
   };
@@ -100,21 +100,22 @@ let
   '';
 
   # The pod's entry process. A thin wrapper that puts the worker tool closure
-  # AND the `haku-worker` poll command on PATH (so the image doesn't depend on
-  # the container PATH — there's no login shell, so `/sw/bin` is NOT on PATH and
-  # the entrypoint's `exec haku-worker` would fail), then execs the entrypoint.
-  # Added to systemPackages below, so it lands at the stable path
-  # `/sw/bin/haku-worker-run` — what the Deployment's `command` invokes.
-  haku-worker-run = pkgs.writeShellApplication {
-    name = "haku-worker-run";
-    runtimeInputs = workerTools ++ [ haku-worker ];
+  # AND the `haku-managed-agent` poll command on PATH (so the image doesn't
+  # depend on the container PATH — there's no login shell, so `/sw/bin` is NOT
+  # on PATH and the entrypoint's `exec haku-managed-agent` would fail), then
+  # execs the entrypoint. Added to systemPackages below, so it lands at the
+  # stable path `/sw/bin/haku-managed-agent-run` — what the Deployment's
+  # `command` invokes.
+  haku-managed-agent-run = pkgs.writeShellApplication {
+    name = "haku-managed-agent-run";
+    runtimeInputs = workerTools ++ [ haku-managed-agent ];
     text = ''exec ${entrypoint}/bin/haku-entrypoint "$@"'';
   };
 in
 {
   imports = [ (modulesPath + "/virtualisation/docker-image.nix") ];
 
-  networking.hostName = "haku-worker";
+  networking.hostName = "haku-managed-agent";
   networking.nftables.enable = false;
 
   # Non-root agent user (uid 1000). The pod runs the worker as this uid via
@@ -136,8 +137,8 @@ in
 
   security.pki.certificateFiles = [ "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
   environment.systemPackages = workerTools ++ [
-    haku-worker-run
-    haku-worker
+    haku-managed-agent-run
+    haku-managed-agent
   ];
 
   system.stateVersion = "25.11";

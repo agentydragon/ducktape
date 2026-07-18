@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: haku-worker
+  name: haku-managed-agent
   namespace: haku-sandbox
   labels:
-    app.kubernetes.io/name: haku-worker
+    app.kubernetes.io/name: haku-managed-agent
   annotations:
     description: "Anthropic Managed Agents self-hosted worker (Runtime B; ducktape haku/runtime/managed_agent/self_hosted). Long-polls Anthropic's work queue (worker.py on the anthropic Python SDK) and runs tool calls in-sandbox. The haku-sandbox perimeter (haku-egress-proxy egress, RBAC, ResourceQuota) is the fence; the worker holds only the environment key, never the org API key."
 spec:
@@ -13,20 +13,20 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: haku-worker
+      app.kubernetes.io/name: haku-managed-agent
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: haku-worker
+        app.kubernetes.io/name: haku-managed-agent
     spec:
-      serviceAccountName: haku-worker
+      serviceAccountName: haku-managed-agent
       # The worker's `bash` tool runs `kubectl` with this SA's in-cluster token.
       automountServiceAccountToken: true
       enableServiceLinks: false
       # The image is a full-NixOS closure but we do NOT boot it: the pod runs the
-      # worker process directly (`/sw/bin/haku-worker-run`, see nixos.nix) as the
-      # non-root `haku` uid with all caps dropped. Booting systemd PID 1 in an
-      # unprivileged container can't mount the API filesystems (/proc, /dev,
+      # worker process directly (`/sw/bin/haku-managed-agent-run`, see nixos.nix)
+      # as the non-root `haku` uid with all caps dropped. Booting systemd PID 1 in
+      # an unprivileged container can't mount the API filesystems (/proc, /dev,
       # /run) and we don't need it — k8s supplies supervision + log capture.
       securityContext:
         runAsNonRoot: true
@@ -39,9 +39,9 @@ spec:
         fsGroup: 100
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-worker:devel-20260718184652-62ddc5c # {"$imagepolicy": "flux-system:haku-worker"}
+          image: ghcr.io/agentydragon/haku-managed-agent:devel-20260718184652-62ddc5c # {"$imagepolicy": "flux-system:haku-managed-agent"}
           imagePullPolicy: Always
-          command: ["/sw/bin/haku-worker-run"] # run the worker closure directly (no systemd)
+          command: ["/sw/bin/haku-managed-agent-run"] # run the worker closure directly (no systemd)
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

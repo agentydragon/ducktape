@@ -90,7 +90,7 @@ rotations:
     # can hand it to the Anthropic vault as the grocy-sf MCP bearer (read via a no-fail
     # lookup — absent secret just disables the grocy credential). Mirrors haku-k8s. ESO
     # mirrors this Secret into haku-sandbox for the self-hosted Haku home (a standalone
-    # ClusterExternalSecret, decoupled from the rotator — see cluster/k8s/haku/agent-worker).
+    # ClusterExternalSecret, decoupled from the rotator — see cluster/k8s/haku/managed-agent).
     k8s_secret:
       path: cluster/k8s/haku/cloud-agent-tf/haku-grocy-sf-token.sops.yaml
       name: haku-cloud-grocy-sf-token

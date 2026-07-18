@@ -53,8 +53,8 @@ resources:
   - haku-console-static-image-policy.yaml
   - haku-dispatcher-image-repository.yaml
   - haku-dispatcher-image-policy.yaml
-  - haku-worker-image-repository.yaml
-  - haku-worker-image-policy.yaml
+  - haku-managed-agent-image-repository.yaml
+  - haku-managed-agent-image-policy.yaml
   - haku-zone-worker-image-repository.yaml
   - haku-zone-worker-image-policy.yaml
   - rtl-tcp-image-repository.yaml

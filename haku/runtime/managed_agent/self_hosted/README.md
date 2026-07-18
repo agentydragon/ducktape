@@ -29,7 +29,7 @@ anthropic api: status=400 type=invalid_request_error
 message=config.networking: Extra inputs are not permitted
 ```
 
-For self-hosted, egress is _ours_ (the haku-worker pod's `haku-egress-proxy` + CCNP),
+For self-hosted, egress is _ours_ (the haku-managed-agent pod's `haku-egress-proxy` + CCNP),
 so `{type: self_hosted}` is the entire config — no `networking`. The `ant` CLI
 sends exactly that, so the imperative path works (it created the live env,
 `env_015uqL9WAMSDytQEWWmLG9zF`); the provider cannot express it. We briefly
@@ -77,15 +77,15 @@ durable memory, so a cold session just re-orients.
 
 ## Pieces
 
-| File                    | Role                                                                                 | Runs on       |
-| ----------------------- | ------------------------------------------------------------------------------------ | ------------- |
-| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                             | control plane |
-| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 4 MCP `mcp_toolset`s (= cloud agent)   | control plane |
-| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                    | control plane |
-| `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (vault is the shared TF one) | operator / CI |
-| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-worker`                                 | `haku-worker` |
-| `worker.py`             | the poll loop (anthropic Python SDK `EnvironmentWorker`)                             | `haku-worker` |
-| `nixos.nix`             | full-NixOS worker image (`nix build .#haku-worker-image`)                            | CI / build    |
+| File                    | Role                                                                                 | Runs on              |
+| ----------------------- | ------------------------------------------------------------------------------------ | -------------------- |
+| `haku.environment.yaml` | self-hosted environment (`ant beta:environments create`)                             | control plane        |
+| `haku.agent.yaml`       | agent: thin `system` pointer, fixed toolset + 4 MCP `mcp_toolset`s (= cloud agent)   | control plane        |
+| `haku.deployment.yaml`  | scheduled-deployment wake trigger                                                    | control plane        |
+| `provision.sh`          | one-shot: create environment/agent/deployment via `ant` (vault is the shared TF one) | operator / CI        |
+| `entrypoint.sh`         | clone ducktape + haku-state, then exec `haku-managed-agent`                          | `haku-managed-agent` |
+| `worker.py`             | the poll loop (anthropic Python SDK `EnvironmentWorker`)                             | `haku-managed-agent` |
+| `nixos.nix`             | full-NixOS worker image (`nix build .#haku-managed-agent-image`)                     | CI / build           |
 
 ## Trust split — keep the org key off the worker
 
@@ -97,17 +97,17 @@ durable memory, so a cold session just re-orients.
   org-scoped `ANTHROPIC_API_KEY`, run from CI / the operator laptop — **never**
   on the worker host.
 
-## Worker image (`nix build .#haku-worker-image`)
+## Worker image (`nix build .#haku-managed-agent-image`)
 
 A full-NixOS rootfs (`nixos.nix`, declaratively consistent with the fleet)
 carrying `bash`, `git`, `kubectl`, `postgresql` (`psql`), `curl`, `jq`, `cacert`,
-`fastmcp`, `tea`, and `haku-worker` (the pinned `python3` + `anthropic` 0.111 running
+`fastmcp`, `tea`, and `haku-managed-agent` (the pinned `python3` + `anthropic` 0.111 running
 `worker.py`). We do **not** boot it: booting systemd PID 1 in an unprivileged
 container can't mount the API filesystems, so the pod runs the closure
-**directly** — k8s execs `/sw/bin/haku-worker-run` (a wrapper that puts the tool
+**directly** — k8s execs `/sw/bin/haku-managed-agent-run` (a wrapper that puts the tool
 closure on PATH and execs `entrypoint.sh`) as the non-root `haku` uid with all
 caps dropped. Build the uncompressed rootfs tarball with `nix build
-.#haku-worker-image`; CI imports it (`podman import`) and pushes to GHCR, pinned
+.#haku-managed-agent-image`; CI imports it (`podman import`) and pushes to GHCR, pinned
 by Flux — see <../../../../cluster/docs/container-images.md>.
 
 `tea` is available in the image and logged in via the `haku-forgejo-tea` Secret
@@ -124,10 +124,10 @@ in-cluster `haku` SA) through `bash`. On top of that it has three native
 
 ## k8s wiring
 
-The `haku-worker` Deployment, its `haku-worker` ServiceAccount (bound to
+The `haku-managed-agent` Deployment, its `haku-managed-agent` ServiceAccount (bound to
 `haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret stub, and the
-clone/git env live in <../../../../cluster/k8s/haku/agent-worker/README.md> (that
-dir's README is the activation runbook). The worker reuses Haku's `haku-sandbox`
+clone/git env live in <../../../../cluster/k8s/haku/managed-agent/README.md> (that
+dir's README is the bring-up runbook). The worker reuses Haku's `haku-sandbox`
 perimeter (`haku-sandbox-admin` RBAC, `haku-egress-proxy` egress + CA injection,
 ResourceQuota); none of it relies on agent restraint.
 
@@ -136,7 +136,7 @@ ResourceQuota); none of it relies on agent restraint.
 ```sh
 ./provision.sh                                   # org ANTHROPIC_API_KEY, outside the worker
 # generate the environment key in the Console -> ANTHROPIC_ENVIRONMENT_KEY secret
-# deploy haku-worker (env key + the HAKU_* clone/git env) in haku-sandbox
+# deploy haku-managed-agent (env key + the HAKU_* clone/git env) in haku-sandbox
 ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in Console
 ```
 
@@ -221,7 +221,7 @@ Distinguish from the old empty-output **deadlock** (now fixed): that showed a
 `tool_use` whose result never posted because the worker 400'd on empty text —
 here results post fine (`200 OK` in the pod logs); the agent is just **waiting**.
 
-The worker-side view is the pod logs (`kubectl logs deploy/haku-worker
+The worker-side view is the pod logs (`kubectl logs deploy/haku-managed-agent
 -n haku-sandbox`): `executing tool tool=… tool_use_id=…` then `POST …/events
 200` per result, `work/…/heartbeat` keeping the lease, and `session terminated`
 → `work/…/stop` when a session ends.

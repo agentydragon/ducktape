@@ -3,11 +3,11 @@
 #
 # Unlike the Dockerfile images in container-images.yml (docker/build-push-action
 # via the ghcr-build-push composite), this is a Nix flake output: an
-# uncompressed full-NixOS rootfs tar (`.#haku-worker-image`), so it is `podman
-# import`-ed (which compresses the layer once) and pushed rather than
+# uncompressed full-NixOS rootfs tar (`.#haku-managed-agent-image`), so it is
+# `podman import`-ed (which compresses the layer once) and pushed rather than
 # buildx-built. Flux picks up the pushed `devel-<ts>-<sha7>` tag via
-# the haku-worker ImagePolicy (cluster/k8s/flux-image-automation-ghcr/).
-name: haku-worker image
+# the haku-managed-agent ImagePolicy (cluster/k8s/flux-image-automation-ghcr/).
+name: haku-managed-agent image
 
 on:
   push:
@@ -17,7 +17,7 @@ on:
       - "flake.nix"
       - "nix/packages/anthropic-cli.nix"
       - "nix/packages/fastmcp.nix"
-      - ".github/workflows/haku-worker-image.yml"
+      - ".github/workflows/haku-managed-agent-image.yml"
   workflow_dispatch:
 
 permissions:
@@ -26,11 +26,11 @@ permissions:
 
 jobs:
   build-push:
-    name: Build & push haku-worker
+    name: Build & push haku-managed-agent
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/haku-worker
+      IMAGE: ghcr.io/${{ github.repository_owner }}/haku-managed-agent
     steps:
       - uses: actions/checkout@v6
 
@@ -63,7 +63,7 @@ jobs:
             > /home/runner/.config/nix/netrc
 
       - name: Build image
-        run: nix build .#haku-worker-image --print-build-logs
+        run: nix build .#haku-managed-agent-image --print-build-logs
 
       - name: Compute tag
         id: meta

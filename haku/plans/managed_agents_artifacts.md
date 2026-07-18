@@ -289,7 +289,7 @@ on a true terminal so the next wake recreates and re-orients from `haku-state`.
 
 Two Deployments in `haku-sandbox`, secrets split by trust:
 
-- **`haku-worker`** — the worker image; mounts only `ANTHROPIC_ENVIRONMENT_KEY`
+- **`haku-managed-agent`** — the worker image; mounts only `ANTHROPIC_ENVIRONMENT_KEY`
   (+ `ANTHROPIC_ENVIRONMENT_ID`) and the `K8S_*` env the existing profile uses to
   materialize the haku JWT kubeconfig. Non-root, behind `haku-egress-proxy`, scoped
   RBAC + quota — unchanged perimeter.
@@ -304,19 +304,19 @@ Worker Deployment, abbreviated:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: haku-worker
+  name: haku-managed-agent
   namespace: haku-sandbox
 spec:
   replicas: 1
-  selector: { matchLabels: { app: haku-worker } }
+  selector: { matchLabels: { app: haku-managed-agent } }
   template:
-    metadata: { labels: { app: haku-worker } }
+    metadata: { labels: { app: haku-managed-agent } }
     spec:
       serviceAccountName: haku
       securityContext: { runAsNonRoot: true, runAsUser: 1000 }
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-worker # Flux image automation pins the tag
+          image: ghcr.io/agentydragon/haku-managed-agent # Flux image automation pins the tag
           env:
             - { name: K8S_JWT_SOPS_PATH, value: secrets/haku-k8s-jwt.yaml }
             - { name: K8S_USER, value: haku }
@@ -332,7 +332,7 @@ spec:
 1. `ant beta:environments create` → `ENV_ID`; generate the environment key.
 2. `ant beta:vaults create` + the `tana-mcp-ro` credential → `VAULT_ID`.
 3. `ant beta:agents create` → `AGENT_ID`.
-4. Build + push the worker image; deploy `haku-worker` (env key + `ENV_ID`).
+4. Build + push the worker image; deploy `haku-managed-agent` (env key + `ENV_ID`).
 5. Deploy `haku-supervisor` (API key + the three IDs); point a Forgejo webhook at
    `/wake`.
 6. `POST /wake` once by hand → watch the session live in Console

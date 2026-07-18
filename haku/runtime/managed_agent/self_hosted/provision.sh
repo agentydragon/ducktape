@@ -17,7 +17,7 @@ ENV_ID=$(ant beta:environments create --transform id -r <"$here/haku.environment
 echo "environment: $ENV_ID"
 echo "  -> generate its environment key in the Console (Environments -> haku-selfhosted"
 echo "     -> 'Generate environment key') and store it as the ANTHROPIC_ENVIRONMENT_KEY"
-echo "     secret on the haku-worker Deployment (it is never created via the API)."
+echo "     secret on the haku-managed-agent Deployment (it is never created via the API)."
 
 AGENT_ID=$(ant beta:agents create --transform id -r <"$here/haku.agent.yaml")
 echo "agent: $AGENT_ID"

@@ -1,8 +1,8 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: haku-worker
+  name: haku-managed-agent
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/haku-worker
+  image: ghcr.io/agentydragon/haku-managed-agent
   interval: 5m

@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: haku-worker-sandbox-admin
+  name: haku-managed-agent-sandbox-admin
   namespace: haku-sandbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -9,5 +9,5 @@ roleRef:
   name: haku-sandbox-admin # defined in cluster/k8s/haku/rbac/role.yaml
 subjects:
   - kind: ServiceAccount
-    name: haku-worker
+    name: haku-managed-agent
     namespace: haku-sandbox

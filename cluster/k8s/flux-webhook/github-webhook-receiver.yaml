@@ -57,7 +57,7 @@ spec:
       name: haku-console-static
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-worker
+      name: haku-managed-agent
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: haku-dispatcher

@@ -3,7 +3,7 @@
 # the pull credential is provisioned in code (tf/gitops/forgejo-images +
 # forgejo-images-creds) rather than a manual "make public" GHCR click.
 #
-# Like haku-worker-image.yml this is a Nix flake output rather than a Dockerfile
+# Like haku-managed-agent-image.yml this is a Nix flake output rather than a Dockerfile
 # build, but `.#codex-pod-image` is a dockerTools.buildLayeredImage docker
 # archive (not a NixOS rootfs tar), so it is `skopeo copy`-ed to the registry.
 # Flux picks up the pushed `devel-<ts>-<sha7>` tag via the codex-pod ImagePolicy

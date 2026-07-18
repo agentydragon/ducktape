@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# haku-worker entrypoint (runs in haku-sandbox): clone Haku's home into the agent
+# haku-managed-agent entrypoint (runs in haku-sandbox): clone Haku's home into the agent
 # workdir, then long-poll Anthropic's self-hosted work queue with the fixed `ant`
 # toolset. The pod holds ONLY the environment key (sk-ant-oat01-...), never the
 # org-scoped API key — so a prompt-injected tool call can't reach the control plane.
@@ -44,7 +44,7 @@ git -C "$state_dir" config user.email haku@allegedly.works
 # no kubeconfig to materialize, unlike the Claude Code web home.
 #
 # Long-poll the self-hosted work queue (worker.py on the anthropic Python SDK,
-# baked into the image as `haku-worker`). ANTHROPIC_ENVIRONMENT_ID/_KEY come from
+# baked into the image as `haku-managed-agent`). ANTHROPIC_ENVIRONMENT_ID/_KEY come from
 # the Deployment env; the workdir holds the git clones above.
 export ANTHROPIC_WORKDIR="$workspace"
-exec haku-worker
+exec haku-managed-agent

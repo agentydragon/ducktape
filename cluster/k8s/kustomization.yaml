@@ -233,7 +233,7 @@ resources:
   - haku/mailbox-namespace/flux-kustomization.yaml # the mailbox's own trusted namespace
   - haku/mailbox/db/flux-kustomization.yaml # CNPG store for the Stalwart mailserver
   - haku/mailbox/app/flux-kustomization.yaml # Stalwart: haku's mailbox (haku@allegedly.works)
-  - haku/agent-worker/flux-kustomization.yaml # suspended; see the dir README to activate
+  - haku/managed-agent/flux-kustomization.yaml # self-hosted Managed Agents worker (Runtime B)
   - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
   # (self-hosted agent is provisioned imperatively via `ant`, not TF — the provider has no
   #  self_hosted support; see haku/runtime/managed_agent/self_hosted/README.md)

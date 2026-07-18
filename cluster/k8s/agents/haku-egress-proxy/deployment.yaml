@@ -63,7 +63,7 @@ spec:
             - --set
             - stream_large_bodies=1m
             # Passthrough (raw TCP, no TLS interception) for Anthropic's control
-            # plane. The haku-worker drives Managed Agents sessions over a
+            # plane. The haku-managed-agent worker drives Managed Agents sessions over a
             # long-lived HTTP/2 stream to api.anthropic.com; mitmproxy's
             # interception buffers/breaks that stream, so the worker claims work
             # but tool results never post and sessions deadlock at "idle". This

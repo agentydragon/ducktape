@@ -7,7 +7,7 @@ rotations:
     sops_file: secrets/haku-forgejo-tea-token.yaml
     token_prefix: forgejo-tea-haku
     tea_secret:
-      path: cluster/k8s/haku/agent-worker/haku-forgejo-tea.sops.yaml
+      path: cluster/k8s/haku/managed-agent/haku-forgejo-tea.sops.yaml
       name: haku-forgejo-tea
       namespace: haku-sandbox
   - name: claude
