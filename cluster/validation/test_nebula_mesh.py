@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
@@ -184,6 +185,33 @@ def test_etcd_metrics_static_endpoints_match_control_plane_rosters(mesh: nebula_
 
     assert terraform_control_planes == mesh_control_planes
     assert static_etcd_endpoints == mesh_control_planes
+
+
+def _hostexec_exec_url_nebula_ips(path: Path) -> dict[str, str]:
+    """{host: exec_url host-component} from haku-console's `hostexec` host map (config.yaml)."""
+    config = yaml.safe_load(path.read_text())
+    hostexec = config.get("hostexec")
+    assert hostexec is not None, f"{path}: expected a `hostexec` host map to cross-check against the mesh"
+    ips: dict[str, str] = {}
+    for name, entry in hostexec["hosts"].items():
+        host = urlsplit(entry["exec_url"]).hostname
+        assert host, f"{name}: exec_url {entry['exec_url']!r} has no host component"
+        ips[name] = host
+    return ips
+
+
+def test_hostexec_exec_urls_match_mesh_nebula_ips(mesh: nebula_mesh.Mesh) -> None:
+    """haku-console's `hostexec` host map addresses each in-scope machine by its Nebula IP — the same
+    IP hostexecd binds to (nix/nixos/modules/hostexecd.nix derives it from this roster). So the
+    exec_url host components must track nebula-mesh.json; a silent re-IP would strand the console.
+    """
+    hostexec_ips = _hostexec_exec_url_nebula_ips(get_required_path("_main/cluster/k8s/haku/console/config.yaml"))
+    assert hostexec_ips, "hostexec host map must not be empty"
+    for name, ip in hostexec_ips.items():
+        assert name in mesh.hosts, f"hostexec host {name!r} is not in the mesh roster"
+        assert ip == mesh.hosts[name].nebula_ip, (
+            f"hostexec exec_url IP for {name!r} ({ip}) != mesh nebula_ip ({mesh.hosts[name].nebula_ip})"
+        )
 
 
 def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:
