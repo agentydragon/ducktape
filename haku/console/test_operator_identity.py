@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from haku.console.config import OperatorIdentityConfig
+from haku.console.conftest import console_sessions
 from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator
 from haku.console.operator_identity import (
     InactiveOperatorError,
@@ -27,7 +28,7 @@ _MCP_ISSUER = "https://auth.test/application/o/haku-console-mcp/"
 
 def _store(database_url: str) -> PostgresOperatorIdentityStore:
     return PostgresOperatorIdentityStore(
-        database_url,
+        console_sessions(database_url),
         OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})),
     )
 
@@ -97,7 +98,8 @@ def test_existing_authority_fails_closed_when_current_trust_changes(migrated_db_
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="trust-rotation-user")
     )
     changed_issuer_store = PostgresOperatorIdentityStore(
-        migrated_db_url, OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_MCP_ISSUER}))
+        console_sessions(migrated_db_url),
+        OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_MCP_ISSUER})),
     )
     assert (
         changed_issuer_store.resolve_active_session(operator_id=identity.operator_id, identity_id=identity.identity_id)
@@ -108,7 +110,7 @@ def test_existing_authority_fails_closed_when_current_trust_changes(migrated_db_
     assert changed_issuer_store.is_active(identity.operator_id)
 
     changed_domain_store = PostgresOperatorIdentityStore(
-        migrated_db_url,
+        console_sessions(migrated_db_url),
         OperatorIdentityTrust(
             trust_domain="auth.test/authentik-user-id/v2", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
         ),

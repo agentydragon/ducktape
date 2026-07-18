@@ -6,7 +6,7 @@ import datetime
 import json
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator
@@ -34,9 +34,10 @@ class PostgresOperatorIdentityStore:
     correctness still comes from the unique database constraints and the locked re-read.
     """
 
-    def __init__(self, database_url: str, trust: OperatorIdentityTrust) -> None:
-        self._engine = create_engine(database_url)
-        self._session_factory = sessionmaker(self._engine, expire_on_commit=False)
+    def __init__(self, sessions: sessionmaker[Session], trust: OperatorIdentityTrust) -> None:
+        # One shared engine/sessionmaker is created in create_app and injected into every store, so
+        # the console opens a single connection pool rather than one per store.
+        self._session_factory = sessions
         self.trust = trust
 
     def resolve_verified_identity(self, external_identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:

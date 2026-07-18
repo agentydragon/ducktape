@@ -17,7 +17,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -34,6 +34,7 @@ from haku.console.agents.enrollment import (
     ReconnectAgentDecision,
 )
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, EnrollmentPhase
+from haku.console.conftest import console_sessions
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
@@ -146,13 +147,9 @@ class SecretSequence:
 
 
 class DisableAfterPrincipalResolutionIdentityStore(PostgresOperatorIdentityStore):
-    def __init__(self, database_url: str, trust: OperatorIdentityTrust) -> None:
-        super().__init__(database_url, trust)
-        self._test_database_url = database_url
-
     def resolve_verified_identity(self, identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
         resolved = super().resolve_verified_identity(identity)
-        with _orm_session(self._test_database_url) as session, session.begin():
+        with self._session_factory.begin() as session:
             operator = session.get(Operator, resolved.operator_id)
             assert operator is not None
             operator.status = OperatorStatus.DISABLED
@@ -195,8 +192,9 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
 
 
 def _harness(db_url: str, *, subject: str = "operator-user") -> Harness:
+    sessions = console_sessions(db_url)
     identities = PostgresOperatorIdentityStore(
-        db_url,
+        sessions,
         OperatorIdentityTrust(
             trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
         ),
@@ -211,7 +209,7 @@ def _harness(db_url: str, *, subject: str = "operator-user") -> Harness:
     assert isinstance(database_now, datetime.datetime)
     clock = MutableClock(database_now)
     authority = PostgresAgentAuthority(
-        db_url,
+        sessions,
         public_base_url="https://haku.test",
         operator_identity_store=identities,
         clock=clock,
@@ -787,8 +785,12 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
 async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: str) -> None:
     harness = _harness(db_url)
     grant = await _create_grant(harness, label="lock-order", display_name="Lock Ordered Agent")
+    authority_engine = create_engine(db_url, pool_pre_ping=True)
     authority = PostgresAgentAuthority(
-        db_url, public_base_url="https://haku.test", operator_identity_store=harness.identities, clock=harness.clock
+        sessionmaker(authority_engine, expire_on_commit=False),
+        public_base_url="https://haku.test",
+        operator_identity_store=harness.identities,
+        clock=harness.clock,
     )
     interaction_lock_attempted = threading.Event()
 
@@ -799,7 +801,7 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
         if "enrollment_interactions" in normalized and "for update" in normalized:
             interaction_lock_attempted.set()
 
-    event.listen(authority._engine, "before_cursor_execute", observe_interaction_lock)
+    event.listen(authority_engine, "before_cursor_execute", observe_interaction_lock)
     engine = create_engine(db_url)
     owner = Session(engine)
     transaction = owner.begin()
@@ -828,17 +830,19 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
         owner.close()
         if task is not None and not task.done():
             await task
-        event.remove(authority._engine, "before_cursor_execute", observe_interaction_lock)
+        event.remove(authority_engine, "before_cursor_execute", observe_interaction_lock)
         engine.dispose()
+        authority_engine.dispose()
 
 
 async def test_database_outage_maps_to_authority_unavailable() -> None:
     database_url = "postgresql+psycopg://postgres:postgres@127.0.0.1:1/unavailable"
+    sessions = console_sessions(database_url)
     identities = PostgresOperatorIdentityStore(
-        database_url, OperatorIdentityTrust(trust_domain="test", trusted_issuers=frozenset({_BROWSER_ISSUER}))
+        sessions, OperatorIdentityTrust(trust_domain="test", trusted_issuers=frozenset({_BROWSER_ISSUER}))
     )
     authority = PostgresAgentAuthority(
-        database_url, public_base_url="https://haku.test", operator_identity_store=identities
+        sessions, public_base_url="https://haku.test", operator_identity_store=identities
     )
     with pytest.raises(AgentGrantAuthorityUnavailableError):
         await authority.reserve_authorization(
@@ -870,9 +874,9 @@ async def test_exchange_revalidates_operator_after_principal_resolution(db_url: 
         trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
     )
     authority = PostgresAgentAuthority(
-        db_url,
+        console_sessions(db_url),
         public_base_url="https://haku.test",
-        operator_identity_store=DisableAfterPrincipalResolutionIdentityStore(db_url, trust),
+        operator_identity_store=DisableAfterPrincipalResolutionIdentityStore(console_sessions(db_url), trust),
         clock=harness.clock,
     )
 

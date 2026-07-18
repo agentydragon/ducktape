@@ -15,10 +15,10 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.conftest import console_settings, operator_identity_store, write_config
+from haku.console.conftest import console_sessions, console_settings, operator_identity_store, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError
@@ -124,8 +124,8 @@ class _OperatorTokens:
 
 
 class _RecordingLedger(PostgresToolCallLedger):
-    def __init__(self, database_url: str) -> None:
-        super().__init__(database_url)
+    def __init__(self, sessions: sessionmaker[Session]) -> None:
+        super().__init__(sessions)
         self.finish_actors: list[ToolCallActor] = []
 
     def finish(
@@ -216,7 +216,7 @@ def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
 
 @pytest.fixture
 def ledger(migrated_db_url: str) -> _RecordingLedger:
-    return _RecordingLedger(migrated_db_url)
+    return _RecordingLedger(console_sessions(migrated_db_url))
 
 
 @pytest.fixture
@@ -261,7 +261,9 @@ def _service(
         oauth_store=tokens,
         in_process_servers={},
         provider_store=PostgresProviderConnectionStore(
-            database_url, operator_identity_store=operator_identity_store(database_url), provider_clients={}
+            console_sessions(database_url),
+            operator_identity_store=operator_identity_store(database_url),
+            provider_clients={},
         ),
     )
 

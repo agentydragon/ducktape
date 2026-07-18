@@ -46,8 +46,8 @@ from mcp.shared.auth import (
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from mcp.types import LATEST_PROTOCOL_VERSION
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, delete, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console import operator_auth
 from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
@@ -200,11 +200,13 @@ class _BuiltOperatorOAuthFlow(BaseModel):
 class PostgresMcpOperatorOAuthStore:
     """Postgres-backed operator OAuth association store for connected MCP servers."""
 
-    def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
+    def __init__(
+        self, sessions: sessionmaker[Session], *, operator_identity_store: PostgresOperatorIdentityStore
+    ) -> None:
         # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
-        # here — constructing the store neither connects nor mutates schema.
-        self._engine = create_engine(database_url, pool_pre_ping=True)
-        self._sessions = sessionmaker(self._engine, expire_on_commit=False)
+        # here — constructing the store neither connects nor mutates schema. The engine/sessionmaker is
+        # created once in create_app and shared across every store.
+        self._sessions = sessions
         self._operator_identity_store = operator_identity_store
 
     def list_statuses(

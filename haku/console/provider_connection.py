@@ -29,8 +29,8 @@ from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, delete, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.console_events import ConsoleEventHubDep, ProviderConnectionChangedEvent
@@ -182,14 +182,14 @@ class PostgresProviderConnectionStore:
 
     def __init__(
         self,
-        database_url: str,
+        sessions: sessionmaker[Session],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
         provider_clients: dict[ProviderConnectionKind, ProviderOAuthClientConfig],
     ) -> None:
-        # Migrations are applied once at startup (database_migrate.apply_migrations), not here.
-        self._engine = create_engine(database_url, pool_pre_ping=True)
-        self._sessions = sessionmaker(self._engine, expire_on_commit=False)
+        # Migrations are applied once at startup (database_migrate.apply_migrations), not here. The
+        # engine/sessionmaker is created once in create_app and shared across every store.
+        self._sessions = sessions
         self._operator_identity_store = operator_identity_store
         self._provider_clients = provider_clients
 

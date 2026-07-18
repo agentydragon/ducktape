@@ -67,6 +67,7 @@ py_test(
         ":authorization",
         ":enrollment",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console:database_migrate",
         "//haku/console:database_schema",
         "//haku/console:operator_identity",

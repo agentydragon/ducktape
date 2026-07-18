@@ -25,6 +25,7 @@ import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
@@ -116,10 +117,16 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     )
 
 
+def console_sessions(db_url: str) -> sessionmaker[Session]:
+    """The shared sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
+    (production builds a single engine/sessionmaker and passes it to every store)."""
+    return sessionmaker(create_engine(db_url, pool_pre_ping=True), expire_on_commit=False)
+
+
 def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
     """The `PostgresOperatorIdentityStore` tests need, trusting the app-owned test OIDC issuer."""
     return PostgresOperatorIdentityStore(
-        db_url,
+        console_sessions(db_url),
         OperatorIdentityTrust(
             trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
         ),

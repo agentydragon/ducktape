@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
-from haku.console.conftest import operator_identity_store
+from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import ProviderConnection
 from haku.console.mcp_config import McpServerEntry
 from haku.console.provider_connection import PostgresProviderConnectionStore
@@ -33,7 +33,7 @@ def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, U
     identity_store = operator_identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("op-provider")
     store = PostgresProviderConnectionStore(
-        migrated_db_url,
+        console_sessions(migrated_db_url),
         operator_identity_store=identity_store,
         provider_clients={GOOGLE: ProviderOAuthClientConfig(client_id="client-123", client_secret=SecretStr("s3cret"))},
     )

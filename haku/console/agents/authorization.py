@@ -16,7 +16,7 @@ from typing import TypeVar
 from urllib.parse import urlencode, urlsplit
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, delete, func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -166,7 +166,7 @@ class PostgresAgentAuthority:
 
     def __init__(
         self,
-        database_url: str,
+        sessions: sessionmaker[Session],
         *,
         public_base_url: str,
         operator_identity_store: PostgresOperatorIdentityStore,
@@ -186,8 +186,8 @@ class PostgresAgentAuthority:
             raise ValueError("public_base_url must be an absolute HTTP(S) URL without query or fragment")
         if min(interaction_lifetime, correlation_retention, activation_lifetime) <= datetime.timedelta():
             raise ValueError("Agent authority lifetimes must be positive")
-        self._engine = create_engine(database_url, pool_pre_ping=True)
-        self._sessions = sessionmaker(self._engine, expire_on_commit=False)
+        # The engine/sessionmaker is created once in create_app and shared across every store.
+        self._sessions = sessions
         self._operator_identities = operator_identity_store
         self._public_base_url = public_base_url.rstrip("/")
         self._clock = clock

@@ -26,6 +26,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
@@ -126,11 +128,15 @@ def create_app(
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
     # lifespan below, since the listen loop needs a running event loop.
     database_url = settings.database_url.get_secret_value()
-    operator_identity_store = PostgresOperatorIdentityStore(database_url, _operator_identity_trust(settings))
+    # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
+    # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
+    # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
+    db_sessions = sessionmaker(create_engine(database_url, pool_pre_ping=True), expire_on_commit=False)
+    operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    tool_call_ledger = mcp_approval.PostgresToolCallLedger(database_url)
+    tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
-        database_url, operator_identity_store=operator_identity_store
+        db_sessions, operator_identity_store=operator_identity_store
     )
     # Per-Operator external provider connections (Google today), replacing Airlock's brokered
     # token. Only providers with a configured OAuth client are offered.
@@ -138,10 +144,10 @@ def create_app(
         {ProviderConnectionKind.GOOGLE: settings.google_client} if settings.google_client is not None else {}
     )
     provider_connection_store = provider_connection.PostgresProviderConnectionStore(
-        database_url, operator_identity_store=operator_identity_store, provider_clients=provider_clients
+        db_sessions, operator_identity_store=operator_identity_store, provider_clients=provider_clients
     )
     agent_authority = PostgresAgentAuthority(
-        database_url, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
+        db_sessions, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
     )
     # Tests/new databases may let create_app read env-backed static credentials here. Schema
     # generation may inject already-canonical definitions because it deliberately has no database;

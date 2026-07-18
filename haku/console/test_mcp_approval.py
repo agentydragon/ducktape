@@ -1144,7 +1144,8 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
-    ledger = PostgresToolCallLedger(migrated_db_url)
+    ledger_engine = create_engine(migrated_db_url, pool_pre_ping=True)
+    ledger = PostgresToolCallLedger(sessionmaker(ledger_engine, expire_on_commit=False))
     actor = OperatorActor(operator_id=operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
 
@@ -1154,7 +1155,7 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         if "mcp_tool_call" in statement.casefold():
             statements.append(statement)
 
-    event.listen(ledger._engine, "before_cursor_execute", record_tool_call_query)
+    event.listen(ledger_engine, "before_cursor_execute", record_tool_call_query)
     try:
         listed = ledger.list_tool_calls(actor=actor)
         assert len(statements) == 1, statements
@@ -1171,8 +1172,8 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert len(statements) == 1, statements
         assert fetched == by_id[agent_call_id]
     finally:
-        event.remove(ledger._engine, "before_cursor_execute", record_tool_call_query)
-        ledger._engine.dispose()
+        event.remove(ledger_engine, "before_cursor_execute", record_tool_call_query)
+        ledger_engine.dispose()
 
 
 def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:

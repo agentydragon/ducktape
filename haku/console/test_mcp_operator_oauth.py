@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
-from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC
+from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
 from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import (
@@ -40,14 +40,15 @@ def oauth_store_for(migrated_db_url: str) -> Callable[[str], tuple[PostgresMcpOp
     into the same migrated database the store reads and writes."""
 
     def build(external_user_key: str) -> tuple[PostgresMcpOperatorOAuthStore, UUID]:
+        sessions = console_sessions(migrated_db_url)
         identity_store = PostgresOperatorIdentityStore(
-            migrated_db_url,
+            sessions,
             OperatorIdentityTrust(
                 trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
             ),
         )
         operator_id = identity_store.resolve_configured_external_user_key(external_user_key)
-        store = PostgresMcpOperatorOAuthStore(migrated_db_url, operator_identity_store=identity_store)
+        store = PostgresMcpOperatorOAuthStore(sessions, operator_identity_store=identity_store)
         return store, operator_id
 
     return build

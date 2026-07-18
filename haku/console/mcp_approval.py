@@ -21,7 +21,7 @@ from fastapi_csrf_protect import CsrfProtect
 from fastmcp.client import Client
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, create_engine, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import Select
 
@@ -135,11 +135,11 @@ _SelectRow = TypeVar("_SelectRow", bound=tuple[Any, ...])
 class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, sessions: sessionmaker[Session]) -> None:
         # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
-        # here — constructing a ledger neither connects nor mutates schema.
-        self._engine = create_engine(database_url, pool_pre_ping=True)
-        self._sessions = sessionmaker(self._engine, expire_on_commit=False)
+        # here — constructing a ledger neither connects nor mutates schema. The engine/sessionmaker is
+        # created once in create_app and shared across every store.
+        self._sessions = sessions
 
     def submit(
         self,
