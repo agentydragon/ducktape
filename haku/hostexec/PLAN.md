@@ -3,8 +3,8 @@
 **Ask (operator, 2026-07-17):** let Haku run shell commands on the operator's machines
 (`wyrm2`, `rugged`, …) with **no auto-approval**, and the ability to run as `agentydragon`
 **or `root`** once the operator approves. Core decisions are locked (see _Decisions_) and the
-architecture has pivoted a few times (see _Architecture pivots_); the host daemon (`hostexecd`)
-is code-complete and tested — what remains is its deploy and the console-side wiring below.
+architecture has pivoted a few times (see _Architecture pivots_). The host daemon (`hostexecd/`)
+is built; what's left — its deploy and the console-side wiring — is in _Remaining work_.
 
 ## TL;DR
 
@@ -180,19 +180,12 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
   <../../cluster/k8s/haku/console/config.yaml> **without** `server_url` (in-process). No separate
   deployment. **Console→mesh egress** is the one plumbing item: the `haku-console` pod must reach
   a Nebula IP (`10.42.0.x`) — give it mesh reachability or a thin non-MCP relay.
-- **`hostexecd`** (host, **minimal Rust** — `axum` + `jsonwebtoken`): the OIDC-RS exec service —
-  **code-complete and tested.** `hostexecd/authentik.rs` verifies the operator's Authentik token
-  (RS256/JWKS, `iss` / `aud=hostexec-<host>` / `exp` / the `hostexec-<run_as>-<host>` group,
-  surfacing the token's `exp`); `hostexecd/replay.rs` is the single-use store (token SHA-256,
-  TTL-evicted); `hostexecd/users.rs` resolves `run_as` → uid/gid via `getpwnam`;
-  `hostexecd/authorize.rs` composes verify → resolve → single-use claim — the whole security
-  decision in one place, unit-tested on every deny path; `hostexecd/jwks.rs` fetches + caches
-  Authentik's JWKS and refetches once on a `kid` miss (rotation); `hostexecd/exec.rs` spawns `argv`
-  (`execve`, no shell) with timeout+kill, output caps, and the uid/gid drop; `hostexecd/main.rs`
-  is the `axum` `POST /exec` binding it together, fail-closed. Remaining: **supplementary-groups
-  drop** (`initgroups` via a `pre_exec` hook — a known gap noted in `exec.rs`, validated on a
-  root-capable host), journald/auditd audit logging, and the **nix systemd unit** (deploy on
-  `wyrm2` + `rugged`, bound to `nebula1`, Nebula-firewalled).
+- **`hostexecd` deploy + hardening** — the Rust daemon (`hostexecd/`, `axum` + `jsonwebtoken`;
+  verify → resolve `run_as` → single-use claim → `execve`) is built and tested. Three things remain
+  before it can run on a host: the **supplementary-groups drop** (`initgroups` via a `pre_exec`
+  hook — a known gap noted in `exec.rs`, needs a root-capable host to validate), **journald/auditd
+  audit logging**, and the **nix systemd unit** (deploy on `wyrm2` + `rugged`, bound to `nebula1`,
+  Nebula-firewalled, fail-closed).
 - **Authentik providers + groups:** per-host `hostexec-<host>` OAuth2 providers in
   `tf/gitops/agent-machine-access` (clone `kubectl_passthrough_mcp`) with short token TTLs and a
   scope mapping emitting the `hostexec-*` group claims; the four
@@ -237,9 +230,7 @@ Kept as a record so the reasoning survives the code churn.
   (host/run_as/time/one-shot) using the operator's real Authentik identity and existing
   token-exchange machinery, with **no bespoke standing key**. Argv-binding's only extra is
   shrinking a leaked-but-unused token's window from "TTL" to "one command" — sub-second given
-  single-use, and worthless against real compromise. Realized: `capability.rs` → `authentik.rs`
-  (RS256/JWKS operator-token verifier), the Python `capability.py` retired, and the `capability`
-  field dropped from `HostexecRequest`.
+  single-use, and worthless against real compromise.
 
 ## Future expansion (TODO)
 
