@@ -46,6 +46,7 @@ fn accepts_authorized_operator() {
     let token = mint(ISSUER, "hostexec-wyrm2", &["hostexec-root-wyrm2"], FUTURE);
     let op = verify_operator_token(&token, &key(), ISSUER, "wyrm2", "root").unwrap();
     assert_eq!(op.subject, SUBJECT);
+    assert_eq!(op.expires_at, FUTURE);
 }
 
 #[test]

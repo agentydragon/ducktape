@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "alg": "RS256",
+      "kid": "hostexec-test",
+      "n": "vPmYn5zcGkwQwG9MI5JARzUOzWxr9xH5fIXXjuT7wT_BFq6KvZ3Q9p5UU1PcbQgGaMMczncxBlX-5DhdLYrecC9AL66vI4dQN4MPX1LiBGo0dEEZTUARLFoMvBIs9NIlCxVgnIMyURvNxcrTupX7_JsRdIoEo15hqmq0AxTeXUR9NTHn-X2oEfSZ3LEOZdXC0xTkY47jeTnlltto63jyCflyB46P3vBe4f07zZs_EXPEDsZ7ZowOlbtf9rXKlRm5xZYP1TILjurSq6PQ5GlTfkAxC-UWIBduagAy2hj4s6niymshcQE7tM-skZOiCuvhQEGb5Re0Q63VSWG8jyrTpQ",
+      "e": "AQAB"
+    }
+  ]
+}

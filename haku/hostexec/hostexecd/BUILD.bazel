@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 # Security-critical: the Authentik access-token verifier — hostexecd's authorization check.
 # RS256 via Authentik's JWKS (per-host audience + hostexec-<run_as>-<host> group); mirrors
@@ -89,6 +89,88 @@ rust_test(
         ":users",
         "@crates//:libc",
         "@crates//:serde_json",
+        "@crates//:tokio",
+    ],
+)
+
+# The authorization composition: verify the token, resolve run_as, then claim single-use. The whole
+# security decision, so the axum handler carries no policy.
+rust_library(
+    name = "authorize",
+    srcs = ["authorize.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":authentik",
+        ":replay",
+        ":users",
+        "@crates//:jsonwebtoken",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "authorize_test",
+    size = "small",
+    srcs = ["authorize_test.rs"],
+    compile_data = glob(["testdata/*.pem"]),
+    edition = "2024",
+    deps = [
+        ":authorize",
+        ":replay",
+        "@crates//:jsonwebtoken",
+        "@crates//:serde",
+    ],
+)
+
+# JWKS resolution: fetch Authentik's signing keys and hand back a DecodingKey for a token's kid.
+rust_library(
+    name = "jwks",
+    srcs = ["jwks.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:jsonwebtoken",
+        "@crates//:reqwest",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "jwks_test",
+    size = "small",
+    srcs = ["jwks_test.rs"],
+    compile_data = glob([
+        "testdata/*.pem",
+        "testdata/*.json",
+    ]),
+    edition = "2024",
+    deps = [
+        ":authentik",
+        ":jwks",
+        "@crates//:jsonwebtoken",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+# The daemon: bind the host's Nebula address, resolve the token's key via JWKS, authorize, exec.
+rust_binary(
+    name = "hostexecd",
+    srcs = ["main.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":authorize",
+        ":exec",
+        ":jwks",
+        ":replay",
+        "@crates//:anyhow",
+        "@crates//:axum",
+        "@crates//:env_logger",
+        "@crates//:jsonwebtoken",
+        "@crates//:log",
+        "@crates//:serde",
         "@crates//:tokio",
     ],
 )

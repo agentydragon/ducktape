@@ -21,6 +21,8 @@ const CLOCK_SKEW_SECONDS: u64 = 30;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedOperator {
     pub subject: String,
+    /// The token's own `exp` (unix seconds). Used to bound the single-use replay entry.
+    pub expires_at: u64,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +30,7 @@ struct Claims {
     sub: String,
     #[serde(default)]
     groups: Vec<String>,
+    exp: u64,
 }
 
 /// Why a token was rejected. Distinct variants so `hostexecd` can log the exact failure.
@@ -68,5 +71,6 @@ pub fn verify_operator_token(
     }
     Ok(AuthenticatedOperator {
         subject: claims.sub,
+        expires_at: claims.exp,
     })
 }
