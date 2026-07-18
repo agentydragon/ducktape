@@ -1,11 +1,11 @@
 """HTTP client from the in-process `hostexec` console tool to a host's `hostexecd`.
 
-On each approved call it mints the operator's short-lived, single-use per-host Authentik token
-(via the injected `mint` callable), POSTs a `HostexecRequest` to that host's `hostexecd` over the
-pod network, and returns the `BaseExecResult`. Host scope is the configured exec-URL map — a host
-not in it is refused. A roaming host (e.g. `rugged`) being offline is a normal, fast `ToolError`,
-not a crash. The token never leaves this process except in the request body to the host that will
-verify it; it is never logged.
+On each approved call it exchanges the operator's identity for a short-lived, single-use per-host
+Authentik token (via the injected `exchange` callable), POSTs a `HostexecRequest` to that host's
+`hostexecd` over the pod network, and returns the `BaseExecResult`. Host scope is the configured
+exec-URL map — a host not in it is refused. A roaming host (e.g. `rugged`) being offline is a normal,
+fast `ToolError`, not a crash. The token never leaves this process except in the request body to the
+host that will verify it; it is never logged.
 """
 
 from __future__ import annotations
@@ -17,22 +17,29 @@ import httpx
 from fastmcp.exceptions import ToolError
 
 from haku.hostexec.wire import HostexecRequest
-from mcp_infra.exec.models import BaseExecResult
+from mcp_infra.exec.models import MAX_EXEC_TIMEOUT_MS, BaseExecResult
 
 logger = logging.getLogger(__name__)
 
-# Mints the operator's short-lived, single-use per-host token for one approved call: (host, run_as)
-# -> token (`aud=hostexec-<host>`, carrying the operator's `hostexec-*` group claims). Raises on
-# failure — never returns an empty token. `HostexecJwtBearerExchanger.mint` is the production impl.
-MintToken = Callable[[str, str], Awaitable[str]]
+# Exchanges the operator's identity for a short-lived, single-use per-host token for one approved
+# call: (host, run_as) -> token (`aud=hostexec-<host>`, carrying the operator's `hostexec-*` group
+# claims). Raises on failure — never returns an empty token. `HostexecJwtBearerExchanger.exchange`
+# is the production impl.
+ExchangeToken = Callable[[str, str], Awaitable[str]]
+
+# hostexecd responds only once the command finishes or its own timeout_ms fires (capped at
+# MAX_EXEC_TIMEOUT_MS), so the default HTTP wait must outlast the longest command plus margin.
+_DEFAULT_HTTP_TIMEOUT_SECONDS = MAX_EXEC_TIMEOUT_MS / 1000 + 30
 
 
 class HostexecClient:
-    """POSTs an approved command to a host's `hostexecd`, minting the per-host token per call."""
+    """POSTs an approved command to a host's `hostexecd`, exchanging for the per-host token per call."""
 
-    def __init__(self, *, exec_urls: Mapping[str, str], mint: MintToken, timeout: float = 60.0) -> None:
+    def __init__(
+        self, *, exec_urls: Mapping[str, str], exchange: ExchangeToken, timeout: float = _DEFAULT_HTTP_TIMEOUT_SECONDS
+    ) -> None:
         self._exec_urls = dict(exec_urls)
-        self._mint = mint
+        self._exchange = exchange
         self._timeout = timeout
 
     async def run(
@@ -41,7 +48,7 @@ class HostexecClient:
         exec_url = self._exec_urls.get(host)
         if exec_url is None:
             raise ToolError(f"host {host!r} is not in hostexec scope (configured: {sorted(self._exec_urls)})")
-        token = await self._mint(host, run_as)
+        token = await self._exchange(host, run_as)
         request = HostexecRequest(
             token=token, run_as=run_as, argv=argv, cwd=cwd, max_bytes=max_bytes, timeout_ms=timeout_ms
         )

@@ -12,6 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
+from mcp_infra.exec.models import MAX_EXEC_TIMEOUT_MS
 from mcp_infra.persistence import PostgresPersistence
 
 # Both URLs are built from the routine (trigger) id, so only the id + token are
@@ -178,7 +179,10 @@ class HostexecConfig(BaseModel):
     # `hostexec-<run_as>-<host>`; `openid` carries `sub` for the audit log. Configurable in case the
     # Authentik scope mapping is named differently.
     exchange_scope: str = "openid groups"
-    request_timeout: float = 60.0
+    # hostexecd responds only once the command finishes or its own timeout_ms fires (capped at
+    # MAX_EXEC_TIMEOUT_MS), so the HTTP wait must outlast the longest command plus margin — otherwise
+    # a slow-but-legitimate command is cut off by an HTTP timeout instead of returning its result.
+    request_timeout: float = MAX_EXEC_TIMEOUT_MS / 1000 + 30
 
 
 class Settings(BaseSettings):

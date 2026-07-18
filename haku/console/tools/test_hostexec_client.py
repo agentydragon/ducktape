@@ -1,10 +1,11 @@
 """Tests for HostexecClient — the in-process hostexec tool → hostexecd POST, over a respx mock.
 
-respx patches httpx's transport, so the async POST is intercepted without a network hop. A fake
-`mint` callable stands in for the per-host Authentik exchange.
+respx patches httpx's transport, so the async POST is intercepted without a network hop. An
+`AsyncMock` stands in for the per-host Authentik exchange.
 """
 
 import json
+from unittest.mock import AsyncMock, call
 
 import httpx
 import pytest
@@ -18,35 +19,30 @@ from mcp_infra.exec.models import BaseExecResult, Exited
 EXEC_URLS = {"wyrm2": "http://wyrm2.mesh:8080", "rugged": "http://rugged.mesh:8080"}
 
 
-class _RecordingMint:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
-
-    async def __call__(self, host: str, run_as: str) -> str:
-        self.calls.append((host, run_as))
-        return f"token-{host}-{run_as}"
+def _exchange() -> AsyncMock:
+    return AsyncMock(side_effect=lambda host, run_as: f"token-{host}-{run_as}")
 
 
-def _client(mint: _RecordingMint | None = None) -> HostexecClient:
-    return HostexecClient(exec_urls=EXEC_URLS, mint=mint or _RecordingMint())
+def _client(exchange: AsyncMock | None = None) -> HostexecClient:
+    return HostexecClient(exec_urls=EXEC_URLS, exchange=exchange or _exchange())
 
 
 def _ok_result() -> BaseExecResult:
     return BaseExecResult(exit=Exited(exit_code=0), stdout="hello", stderr="", duration_ms=12)
 
 
-async def test_run_posts_minted_token_and_returns_result() -> None:
-    source = _RecordingMint()
+async def test_run_posts_exchanged_token_and_returns_result() -> None:
+    exchange = _exchange()
     with respx.mock:
         route = respx.post("http://wyrm2.mesh:8080/exec").mock(
             return_value=httpx.Response(200, json=_ok_result().model_dump())
         )
-        result = await _client(source).run(
+        result = await _client(exchange).run(
             host="wyrm2", run_as="root", argv=["echo", "hi"], cwd=None, max_bytes=1000, timeout_ms=5000
         )
     assert result == _ok_result()
-    # The token was minted for exactly this (host, run_as) and posted in the body — never elsewhere.
-    assert source.calls == [("wyrm2", "root")]
+    # The token was exchanged for exactly this (host, run_as) and posted in the body — never elsewhere.
+    assert exchange.await_args_list == [call("wyrm2", "root")]
     body = json.loads(route.calls.last.request.content)
     assert body["token"] == "token-wyrm2-root"
     assert body["run_as"] == "root"
@@ -54,11 +50,11 @@ async def test_run_posts_minted_token_and_returns_result() -> None:
 
 
 async def test_run_rejects_host_out_of_scope() -> None:
-    source = _RecordingMint()
+    exchange = _exchange()
     with pytest.raises(ToolError, match="not in hostexec scope"):
-        await _client(source).run(host="atlas", run_as="root", argv=["true"], cwd=None, max_bytes=0, timeout_ms=1000)
-    # An out-of-scope host must be refused before any token is minted.
-    assert source.calls == []
+        await _client(exchange).run(host="atlas", run_as="root", argv=["true"], cwd=None, max_bytes=0, timeout_ms=1000)
+    # An out-of-scope host must be refused before any token is exchanged.
+    exchange.assert_not_awaited()
 
 
 async def test_run_surfaces_hostexecd_refusal() -> None:

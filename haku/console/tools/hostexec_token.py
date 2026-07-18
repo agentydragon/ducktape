@@ -1,6 +1,6 @@
-"""Mint a per-host `hostexec` token from the operator's Authentik token (the production `MintToken`).
+"""Exchange the operator's Authentik token for a per-host `hostexec` token (the production `ExchangeToken`).
 
-Built per approved call with the acting operator's own Authentik access token. `mint(host, run_as)`
+Built per approved call with the acting operator's own Authentik access token. `exchange(host, run_as)`
 runs the RFC-7523 jwt-bearer exchange (the same mechanism as
 `mcp_infra.authentik_auth.token_exchange`) against the host's `hostexec-<host>` Authentik provider,
 yielding a token with `aud=hostexec-<host>` and the operator's `hostexec-*` group claims. `hostexecd`
@@ -38,7 +38,7 @@ class HostexecJwtBearerExchanger:
         scope: str,
         timeout: float = 10.0,
     ) -> None:
-        # None only when the server is built for tool-schema reflection (tools/list never mints);
+        # None only when the server is built for tool-schema reflection (tools/list never exchanges);
         # a real execution always resolves the operator's Authentik token first.
         self._operator_token = operator_token
         self._token_endpoint = token_endpoint
@@ -46,7 +46,7 @@ class HostexecJwtBearerExchanger:
         self._scope = scope
         self._timeout = timeout
 
-    async def mint(self, host: str, run_as: str) -> str:
+    async def exchange(self, host: str, run_as: str) -> str:
         if not self._operator_token:
             raise ToolError("no operator Authentik token available; log in to the console with offline_access")
         client_id = self._audience_client_ids.get(host)
@@ -55,8 +55,8 @@ class HostexecJwtBearerExchanger:
         # A fresh client per exchange: fetch_token mutates client-local token state (see
         # token_exchange.py). run_as is not sent — the operator's token carries the group claims.
         try:
-            async with AsyncOAuth2Client(client_id=client_id, timeout=self._timeout) as exchange:
-                token = await exchange.fetch_token(
+            async with AsyncOAuth2Client(client_id=client_id, timeout=self._timeout) as client:
+                token = await client.fetch_token(
                     url=self._token_endpoint,
                     grant_type="client_credentials",
                     client_assertion_type=_JWT_BEARER,
@@ -64,7 +64,7 @@ class HostexecJwtBearerExchanger:
                     scope=self._scope,
                 )
         except OAuthError as error:
-            raise ToolError(f"minting hostexec token for {host!r} failed: {error}") from error
+            raise ToolError(f"exchanging hostexec token for {host!r} failed: {error}") from error
         access_token = token.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise ToolError(f"Authentik returned no access_token for host {host!r}")

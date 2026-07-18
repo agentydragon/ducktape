@@ -62,12 +62,12 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         servers[hostexec_tools.HOSTEXEC_SERVER_ID] = lambda token: hostexec_tools.build_mcp(
             HostexecClient(
                 exec_urls=exec_urls,
-                mint=HostexecJwtBearerExchanger(
+                exchange=HostexecJwtBearerExchanger(
                     operator_token=token,
                     token_endpoint=hostexec.token_endpoint,
                     audience_client_ids=audience_client_ids,
                     scope=hostexec.config.exchange_scope,
-                ).mint,
+                ).exchange,
                 timeout=hostexec.config.request_timeout,
             )
         )

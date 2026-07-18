@@ -20,6 +20,7 @@ py_library(
     deps = [
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
+        "//mcp_infra/exec:models",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
