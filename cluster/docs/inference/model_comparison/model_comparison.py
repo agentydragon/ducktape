@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Patch
 
 plt.rcParams.update({"figure.dpi": 120, "font.size": 10, "axes.grid": True, "grid.alpha": 0.3})
 
@@ -109,6 +110,24 @@ REASONING = {
 
 LOCAL_COLOR, ANCHOR_COLOR = "#2a7fff", "#c0392b"
 
+# Reasoning behaviour. In 2026 reasoning-with-an-effort-dial (low→high / thinking
+# budget) is near-universal — Claude, Gemini, GPT-5, gpt-oss, Qwen3.5 all have it;
+# it's a continuous control, not an on/off switch. The genuine exceptions are the
+# few models *shipped without* a thinking mode (e.g. Qwen3-Coder). What still
+# varies enormously is how many reasoning tokens a model spends by default
+# (Qwen3.5 was extremely verbose in E4). category: Reasoning | Direct.
+# model -> (category, kind, basis)
+REASONING_CLASS = {
+    "Qwen3-Coder-30B": ("Direct", "local", "shipped without a thinking mode (Qwen)"),
+    "Devstral-24B": ("Direct", "local", "answered directly, no CoT in E5"),
+    "gpt-oss-20b": ("Reasoning", "local", "reasoning_effort low/med/high (E2)"),
+    "Qwen3.5-35B-A3B": ("Reasoning", "local", "verbose CoT, effort dial (E4)"),
+    "Claude Sonnet 4.5": ("Reasoning", "anchor", "reasoning effort / thinking budget"),
+    "Claude Opus 4.8": ("Reasoning", "anchor", "reasoning effort"),
+    "Gemini 3.5 Flash": ("Reasoning", "anchor", "thinking budget"),
+    "GPT-5": ("Reasoning", "anchor", "reasoning effort"),
+}
+
 
 # %% [markdown]
 # ## 1. Decode throughput we can actually get (measured)
@@ -134,24 +153,57 @@ fig.tight_layout()
 fig.savefig("fig1_decode_tps.png", bbox_inches="tight")
 
 # %% [markdown]
+# ## 1b. Reasoning vs direct models
+#
+# In 2026 **reasoning with a low→high effort dial is near-universal** — Claude,
+# Gemini, GPT-5, gpt-oss, and Qwen3.5 all have it; nobody trains it as a plain
+# on/off button. So the interesting split isn't "reasoning vs not" but the handful
+# of models **shipped without a thinking mode at all** (a couple of purpose-built
+# coding models). Orthogonal, and what actually bites latency: *how many* reasoning
+# tokens a model spends by default — Qwen3.5 was extremely verbose in E4.
+
+# %%
+fig, ax = plt.subplots(figsize=(8.5, 4))
+cat_x = {"Direct": 0, "Reasoning": 1}
+col_counts = {c: 0 for c in cat_x}
+for name, (cat, kind, basis) in REASONING_CLASS.items():
+    y = col_counts[cat]
+    col_counts[cat] += 1
+    color = LOCAL_COLOR if kind == "local" else ANCHOR_COLOR
+    ax.scatter(cat_x[cat], y, s=90, color=color, zorder=3)
+    ax.annotate(f"  {name}", (cat_x[cat], y), va="center", fontsize=8.5)
+ax.set_xticks(list(cat_x.values()))
+ax.set_xticklabels(["Direct\n(no thinking mode)", "Reasoning\n(low→high effort dial)"])
+ax.set_xlim(-0.4, 1.9)
+ax.set_ylim(-0.6, max(col_counts.values()))
+ax.set_yticks([])
+ax.set_title("Reasoning is the norm; direct models are the exception  ·  blue = local, red = frontier")
+ax.legend(handles=[Patch(color=LOCAL_COLOR, label="runs on 2×5090"), Patch(color=ANCHOR_COLOR, label="closed frontier")], loc="upper left")
+fig.tight_layout()
+fig.savefig("fig1b_reasoning_class.png", bbox_inches="tight")
+
+# %% [markdown]
 # ## 2. Context window we can run (measured allocated context)
 #
 # Practical ceiling today is ~256K. The 1M attempt is **blocked by kernels, not
 # memory** (dual-chunk attention has no Blackwell/sm_120 build in vLLM 0.25.1).
+# Log x-axis so the 128K/262K models and the 1M target sit on a comparable scale.
 
 # %%
 fig, ax = plt.subplots(figsize=(9, 4))
-cm = [m for m in MEASURED]
-ctx_vals = [m.allocated_ctx_k for m in cm]
-colors = ["#888" if v == 0 else LOCAL_COLOR for v in ctx_vals]
-bars = ax.barh([m.label for m in cm], ctx_vals, color=colors)
-ax.set_xlabel("allocated context (K tokens)")
+runnable_ctx = [m for m in MEASURED if m.allocated_ctx_k > 0]
+ax.barh([m.label for m in runnable_ctx], [m.allocated_ctx_k for m in runnable_ctx], color=LOCAL_COLOR)
+ax.set_xscale("log")
+ax.set_xlim(64, 1500)
+ax.set_xticks([64, 128, 256, 512, 1000])
+ax.get_xaxis().set_major_formatter(plt.matplotlib.ticker.ScalarFormatter())
+ax.set_xlabel("allocated context (K tokens, log scale)")
 ax.set_title("Largest context we can serve  ·  local")
-ax.axvline(1000, ls="--", color="#c0392b", alpha=0.6)
-ax.text(1000, -0.4, "1M target\n(kernel-blocked)", color="#c0392b", fontsize=8, ha="center")
-for m, b in zip(cm, bars):
-    if m.allocated_ctx_k == 0:
-        ax.text(8, b.get_y() + b.get_height() / 2, "blocked (DCA/sm_120)", va="center", fontsize=8, color="#555")
+ax.axvline(1000, ls="--", color=ANCHOR_COLOR, alpha=0.7)
+ax.text(1000, len(runnable_ctx) - 0.5, "1M target\n(kernel-blocked)", color=ANCHOR_COLOR, fontsize=8, ha="center", va="top")
+blocked = [m for m in MEASURED if m.allocated_ctx_k == 0]
+if blocked:
+    ax.text(70, -0.55, "blocked: " + ", ".join(m.label for m in blocked) + " (1M DCA/sm_120)", fontsize=8, color="#555")
 fig.tight_layout()
 fig.savefig("fig2_context.png", bbox_inches="tight")
 
@@ -174,8 +226,6 @@ for b, s in zip(bars, scores):
 ax.set_xlabel("SWE-bench Verified (% resolved)")
 ax.set_title("SWE-bench Verified: local (blue) vs closed frontier (red)  ·  ext")
 ax.set_xlim(0, 100)
-from matplotlib.patches import Patch
-
 ax.legend(handles=[Patch(color=LOCAL_COLOR, label="runs on 2×5090"), Patch(color=ANCHOR_COLOR, label="closed frontier")], loc="lower right")
 fig.tight_layout()
 fig.savefig("fig3_swebench.png", bbox_inches="tight")
