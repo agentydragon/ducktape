@@ -87,6 +87,24 @@ running** and GPU1 **left hung** so this capture reflects the live scene.
    <../wyrm_gpu_lockup.md>).
 3. Confirm both GPUs enumerate (`nvidia-smi` lists 2×5090) before resuming E9.
 
+## How this compares to prior wyrm2 lockups (this one is the odd one out)
+
+Historically the wyrm2 lockups took down **both** GPUs together; today only GPU1 dropped:
+
+| Incident                                      | GPUs                | Xid / signature                          | Trigger              |
+| --------------------------------------------- | ------------------- | ---------------------------------------- | -------------------- |
+| Apr 16 (<../gpu_lockup_20260417/README.md>)   | both                | none (silent, no Xid, no watchdog)       | external/unknown     |
+| suspend/resume (<../wyrm_gpu_lockup.md>)      | both → FULLCHIP_RST | regs `0xBADF4100`, **Xid 119** (GSP RPC) | host suspend/resume  |
+| VFIO instant-crash (`black_screen_lockup.md`) | both (2-GPU config) | crash 30–120 s after VFIO FLR reset      | Blackwell FLR @ boot |
+| incident 15 (`black_screen_lockup.md`)        | one (1-GPU config)  | ZFS/pcieport stalls, **survived**        | —                    |
+| **this one (Jul 18)**                         | **one (GPU1)**      | **Xid 79 (fell off the bus)** + Xid 154  | sustained compute    |
+
+So today is **atypical**: a single card falling off the bus under load, different Xid (79
+vs the historical 119/silent), and not tied to suspend/resume or a boot-time FLR reset.
+That suggests a possibly _different_ failure mode (one card dropping under sustained load)
+rather than a recurrence of the known both-GPU suspend/resume + FLR family — reinforcing
+the power/PCIe-link-on-that-card leads below over the host-power-management path.
+
 ## Open prevention question (the thing actually worth fixing)
 
 These intermittent 5090 "fell off the bus" (Xid 79) faults under load are the standing
