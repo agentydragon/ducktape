@@ -218,12 +218,14 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
   resolve `run_as` → single-use claim → full setgroups/setgid/setuid drop → `execve`) is built and
   tested, including the supplementary-groups drop (was the `initgroups` gap) and the approval + exit
   audit lines (journald under systemd). **Remaining is deploy-only** (systemd path, see _Transport_):
-  (1) a **CI publish** step that releases the Bazel-built `hostexecd` binary; (2) a
-  **`nix/artifact-pins.json`** pin (url + sha256) once published; (3) a **NixOS module** that fetches
-  the pinned binary + runs it as a root systemd service (env: `HOSTEXEC_{HOST,ISSUER,JWKS_URL,BIND}`)
-  with an **nftables** rule restricting the port to `haku-console`; (4) **enable it on `wyrm2` +
-  `rugged`**. All four are untestable in this environment (needs a real release + the actual hosts)
-  and land as one operator deploy together with the console host-map + catalog entry above.
+  (1) a **CI publish** step — **added** (`hostexecd` in `devinfra/ci/artifact_targets.json`); on
+  merge, `release.yml` publishes the Bazel-built binary and `sync-pins.yml` auto-updates the
+  **`nix/artifact-pins.json`** pin (url + sha256) within ~30 min. Remaining: (2) a **NixOS module**
+  that fetches the pinned binary + runs it as a root systemd service (env:
+  `HOSTEXEC_{HOST,ISSUER,JWKS_URL,BIND}`) with an **nftables** rule restricting the port to
+  `haku-console`; (3) **enable it on `wyrm2` + `rugged`**. Both remain untestable in this environment
+  (needs the actual hosts) and land as one operator deploy together with the console host-map +
+  catalog entry above.
 - **Authentik providers + groups — written** (`tf/gitops/agent-machine-access/hostexec.tf`): per-host
   `hostexec-<host>` confidential OAuth2 providers (aud = client_id, 1-min TTL, RS256 self-signed key),
   a `groups` scope mapping emitting the operator's `hostexec-*` groups, the four

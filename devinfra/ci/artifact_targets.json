@@ -50,6 +50,11 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook",
       "release": "claude-hook-rs"
     },
+    "hostexecd": {
+      "target": "//haku/hostexec/hostexecd:hostexecd",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/hostexec/hostexecd/hostexecd",
+      "release": "hostexecd"
+    },
     "debundle": {
       "target": "//devinfra/js/debundle:debundle",
       "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle",
@@ -91,6 +96,10 @@
     },
     "claude-hook-rs": {
       "tests": "//devinfra/claude/claude_hook/...",
+      "nixPackage": false
+    },
+    "hostexecd": {
+      "tests": "//haku/hostexec/hostexecd/...",
       "nixPackage": false
     },
     "debundle": {
