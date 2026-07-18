@@ -17,6 +17,17 @@ def _archive(files: dict[str, str]) -> bytes:
     return output.getvalue()
 
 
+def test_initialize_config_creates_only_missing_files(tmp_path):
+    existing = tmp_path / "automations.yaml"
+    existing.write_text("- id: keep-me\n")
+
+    install_oidc.initialize_config(tmp_path)
+
+    assert existing.read_text() == "- id: keep-me\n"
+    assert (tmp_path / "scripts.yaml").read_text() == "[]\n"
+    assert (tmp_path / "scenes.yaml").read_text() == "[]\n"
+
+
 def test_install_rejects_wrong_checksum(tmp_path, monkeypatch):
     monkeypatch.setattr(install_oidc, "SHA256", "0" * 64)
     with pytest.raises(ValueError, match="SHA256 mismatch"):

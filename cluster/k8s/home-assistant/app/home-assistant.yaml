@@ -24,13 +24,8 @@ spec:
       initContainers:
         - name: initialize-config
           image: ghcr.io/home-assistant/home-assistant:2026.7.2
-          command: ["/bin/sh", "-euc"]
-          args:
-            - |
-              for file in automations.yaml scripts.yaml scenes.yaml; do
-                test -e "/config/$file" || printf '[]\n' > "/config/$file"
-              done
-              python /bootstrap/install_oidc.py --config-dir /config
+          command: ["python", "/bootstrap/install_oidc.py"]
+          args: ["--config-dir", "/config"]
           volumeMounts:
             - name: config
               mountPath: /config
