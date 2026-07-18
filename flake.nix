@@ -237,6 +237,10 @@
               username
               homeManagerHost
               ;
+            # hostexecd is a fetched release artifact, passed to the module that
+            # needs it (only wyrm2/rugged import nix/nixos/modules/hostexecd.nix).
+            # Lazy: hosts that don't import the module never force the fetch.
+            inherit (ducktapePkgs) hostexecd;
           };
           modules = [
             ./nix/nixos/modules/base.nix

@@ -230,6 +230,12 @@ let
     description = "JavaScript debundling CLI";
   };
 
+  hostexecd = mkBinaryArtifact {
+    pname = "hostexecd";
+    src = artifacts.hostexecd;
+    description = "Host-side exec daemon for haku-console (Rust)";
+  };
+
 in
 rec {
   inherit ducktape-util;
@@ -432,4 +438,7 @@ rec {
 }
 // lib.optionalAttrs (artifacts ? debundle) {
   inherit debundle;
+}
+// lib.optionalAttrs (artifacts ? hostexecd) {
+  inherit hostexecd;
 }

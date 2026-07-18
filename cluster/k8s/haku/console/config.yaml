@@ -77,3 +77,14 @@ mcp:
     - id: haku_routine
       auth:
         kind: none
+    # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
+    # operator machine (wyrm2/rugged) under the operator's OWN Authentik identity. There
+    # is no standing credential: `operator_identity` makes each call resolve the acting
+    # Operator's stored console-login token (captured via offline_access) and exchange it
+    # (jwt-bearer) for a short-lived, single-use, per-host token that hostexecd verifies
+    # against Authentik's JWKS. The in-scope hosts + their exec URLs / audiences come from
+    # HAKU_CONSOLE_HOSTEXEC (deployment.yaml); this catalog entry only selects the auth
+    # mode. Every call is manual-approval (no auto-approve policy). See haku/hostexec/PLAN.md.
+    - id: hostexec
+      auth:
+        kind: operator_identity

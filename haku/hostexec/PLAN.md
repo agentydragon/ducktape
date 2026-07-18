@@ -4,8 +4,10 @@
 (`wyrm2`, `rugged`, …) with **no auto-approval**, and the ability to run as `agentydragon`
 **or `root`** once the operator approves. Core decisions are locked (see _Decisions_) and the
 architecture has pivoted a few times (see _Architecture pivots_). The host daemon (`hostexecd/`)
-and the console-side tool + Authentik token exchange + storage are built and tested; what's left is
-deploy (Authentik providers, the host-map config, the on-node `hostexecd` unit) — see _Remaining work_.
+and the console-side tool + Authentik token exchange + storage are built and tested; the Authentik
+providers, the NixOS `hostexecd` module (enabled on `wyrm2` + `rugged`), and the console host-map +
+catalog entry are all now written. What's left is the operator's deploy: reconcile the Terraform,
+`nixos-rebuild` the two hosts, and roll the console — see _Remaining work_.
 
 ## TL;DR
 
@@ -73,11 +75,17 @@ no shell), and returns a capped `BaseExecResult`.
 - **Natural payload + clean `run_as`.** Structured JSON, and privilege-drop happens once,
   centrally, inside `hostexecd` (root → `setuid`/`runuser` to the approved user) instead of via
   sshd login-user + `sudo` gymnastics.
-- **Channel security from a network policy, not Nebula.** The machines are already k8s nodes, so
-  the console reaches `hostexecd` on the pod network — no mesh egress to plumb. A
-  `CiliumNetworkPolicy` restricts ingress to the `haku-console` pod (namespace + pod-label), and the
-  fail-closed token check backstops it — the two are defense-in-depth.
-  (`egress-proxy-rugged`'s `networkpolicy.yaml` is the precedent.)
+- **Channel security from the token check + a Nebula-IP bind, not a network policy.** The machines
+  are already k8s nodes, so the console reaches `hostexecd` on the pod network — no mesh egress to
+  plumb. But `hostexecd` is a **host systemd daemon** (host netns, Cilium identity `reserved:host`),
+  **not** a Cilium pod endpoint, so a `CiliumNetworkPolicy` cannot select it, and Cilium's
+  host-firewall is off on these Talos/Nebula nodes; node nftables can only match a coarse source IP
+  (pod IPs are ephemeral/shared from the pod CIDR, or SNAT'd), so a precise "only the `haku-console`
+  pod" rule is **not achievable** for a host daemon. The achievable restriction is to **bind to the
+  node's Nebula mesh IP** (which for these workers is also the kubelet InternalIP): reachable
+  in-cluster over the k8s-worker firewall's already-trusted `nebula1`/`cilium_host`/`lxc+`
+  interfaces, but with no listener on the physical/roaming NIC. So the **fail-closed token
+  verification is the load-bearing per-caller gate**; the Nebula-IP bind is coarse defense-in-depth.
 
 **Decided (operator, 2026-07-18): a systemd unit on the host** (not the DaemonSet), on **both
 `wyrm2` and `rugged`**. It runs natively on the host, so `exec.rs`/`users.rs` work as-is (`getpwnam`
@@ -90,8 +98,9 @@ Packaging follows the repo's **prebuilt-artifact** pattern, not a nix Cargo rebu
 `//haku/hostexec/hostexecd:hostexecd`, CI publishes it as a GitHub release, `nix/artifact-pins.json`
 pins it (url + sha256), and a NixOS module fetches + runs it — exactly how `bbapi`/`bbr` reach the
 hosts today. So there is **no** second (Cargo) build definition to maintain; nix consumes the Bazel
-binary. `hostexecd` listens on a node-reachable port; a host firewall (nftables) restricts ingress
-to `haku-console`. exec_url = the node's cluster IP (the mesh IP for these roaming workers) : port.
+binary. `hostexecd` binds to the node's Nebula mesh IP (its kubelet InternalIP) on a fixed port, so
+the console reaches it in-cluster while the physical/roaming NIC has no listener (see _Transport_ on
+why a per-pod firewall isn't achievable for a host daemon). exec_url = `http://<node-mesh-IP>:<port>`.
 
 The rejected DaemonSet alternative was **admissible** — the choice was TCB-minimization, not whether
 the cluster allows it
@@ -161,9 +170,10 @@ The load-bearing component and the residual:
 
 ## Target matrix
 
-Hosts are **k8s nodes**, addressed by `kubernetes.io/hostname` and reached over the **cluster pod
-network** (the Nebula IPs from the mesh roster <../../nebula-mesh.json> are shown for reference only
-— the console no longer addresses hosts by them). Reachability: <../../cluster/README.md>.
+Hosts are **k8s nodes** reached over the **cluster pod network**. For these NixOS workers the Nebula
+IP (from the mesh roster <../../nebula-mesh.json>) is also the kubelet InternalIP, so `hostexecd`
+binds it and the console's `exec_url` addresses the host by it (`http://<Nebula-IP>:8765`).
+Reachability: <../../cluster/README.md>.
 
 | Host     | k8s node (`hostname`) | Nebula IP    | In scope?                       | Notes                                            |
 | -------- | --------------------- | ------------ | ------------------------------- | ------------------------------------------------ |
@@ -190,7 +200,7 @@ haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPR
   │    · token-exchange the operator's identity → short-lived token (aud=hostexec-<host>, groups)
   │    · POST over the cluster pod network → hostexecd on node <host> (Service/hostPort) /exec
   ▼
-hostexecd on target node (root, host namespaces; on the pod network, CiliumNetworkPolicy → only haku-console):
+hostexecd on target node (root, host namespaces; bound to the node's Nebula/InternalIP — in-cluster reach only; token check is the gate):
   │  verify token vs Authentik JWKS: sig, aud=hostexec-<host>, exp, group hostexec-<run_as>-<host>
   │  AND token not already used (single-use replay store)
   │  → drop privileges to run_as → execve(argv) → journald/auditd log
@@ -201,31 +211,33 @@ result returns through the console → ledger row RUNNING→done ; agent gets re
 
 ## Remaining work
 
-- **In-process `hostexec` console MCP server — built and tested.** The `hostexec_run` tool
+- **In-process `hostexec` console MCP server — built, tested, and wired.** The `hostexec_run` tool
   (`haku/console/tools/hostexec.py`, flat `host` + `run_as` + exec args), its `HostexecClient`
   (POST `HostexecRequest` to `hostexecd`, return `BaseExecResult`), and the concrete
   `HostexecJwtBearerExchanger` (RFC-7523 jwt-bearer exchange of the operator's Authentik token → per-host
   `aud=hostexec-<host>`) are done. Option A's storage is done: login gains `offline_access` (only
   when hostexec is configured), `PostgresAuthentikOperatorTokenStore` persists + self-refreshes the
   operator's Authentik token, which `backend_auth_for_operator` resolves for the `OperatorIdentityAuth`
-  variant; the in-process builder is wired from `settings.hostexec`. **Remaining is deploy-only:** the
-  host map (`HAKU_CONSOLE_HOSTEXEC` JSON: `exec_url` + `audience_client_id` per host) and the catalog
-  entry (`{id: hostexec, auth: {kind: operator_identity}}`) in
-  <../../cluster/k8s/haku/console/config.yaml> — both coupled to the Authentik providers below, so
-  they land together at deploy. The `haku-console` pod reaches `hostexecd` over the **cluster pod
-  network** by node hostname (no mesh egress); a `CiliumNetworkPolicy` restricts hostexecd's ingress.
-- **`hostexecd` daemon — done.** The Rust daemon (`hostexecd/`, `axum` + `jsonwebtoken`; verify →
-  resolve `run_as` → single-use claim → full setgroups/setgid/setuid drop → `execve`) is built and
-  tested, including the supplementary-groups drop (was the `initgroups` gap) and the approval + exit
-  audit lines (journald under systemd). **Remaining is deploy-only** (systemd path, see _Transport_):
-  (1) a **CI publish** step — **added** (`hostexecd` in `devinfra/ci/artifact_targets.json`); on
-  merge, `release.yml` publishes the Bazel-built binary and `sync-pins.yml` auto-updates the
-  **`nix/artifact-pins.json`** pin (url + sha256) within ~30 min. Remaining: (2) a **NixOS module**
-  that fetches the pinned binary + runs it as a root systemd service (env:
-  `HOSTEXEC_{HOST,ISSUER,JWKS_URL,BIND}`) with an **nftables** rule restricting the port to
-  `haku-console`; (3) **enable it on `wyrm2` + `rugged`**. Both remain untestable in this environment
-  (needs the actual hosts) and land as one operator deploy together with the console host-map +
-  catalog entry above.
+  variant; the in-process builder is wired from `settings.hostexec`. **Deploy config now written:** the
+  host map (`HAKU_CONSOLE_HOSTEXEC` JSON: `exec_url` + `audience_client_id` per host, `wyrm2`/`rugged`)
+  in <../../cluster/k8s/haku/console/deployment.yaml> and the catalog entry
+  (`{id: hostexec, auth: {kind: operator_identity}}`) in <../../cluster/k8s/haku/console/config.yaml>.
+  Each `exec_url` is `http://<node-mesh-IP>:8765`; the `haku-console` pod reaches `hostexecd` over the
+  **cluster pod network**. **Remaining: roll the console** so it picks up the new config.
+- **`hostexecd` daemon — done and packaged.** The Rust daemon (`hostexecd/`, `axum` + `jsonwebtoken`;
+  verify → resolve `run_as` → single-use claim → full setgroups/setgid/setuid drop → `execve`) is built
+  and tested, including the supplementary-groups drop (was the `initgroups` gap) and the approval + exit
+  audit lines (journald under systemd). Deploy (systemd path, see _Transport_) is now written:
+  (1) the **CI publish** step (`hostexecd` in `devinfra/ci/artifact_targets.json`) merged, the GitHub
+  release exists, and its **`nix/artifact-pins.json`** pin (url + sha256) is committed; (2) the **NixOS
+  module** <../../nix/nixos/modules/hostexecd.nix> fetches the pinned binary (`mkBinaryArtifact` in
+  `nix/packages/default.nix`, threaded through `flake.nix` `mkNixos` specialArgs) and runs it as a root
+  systemd service (env `HOSTEXEC_{HOST,ISSUER,JWKS_URL,BIND}`, `RUST_LOG=info`), binding to the node's
+  Nebula mesh IP (derived from `nebula-mesh.json`) — no per-pod firewall rule, since a host daemon
+  can't be gated by a `CiliumNetworkPolicy` and the k8s-worker firewall already trusts only
+  `nebula1`/`cilium_host`/`lxc+` (see _Transport_); (3) it is **enabled on `wyrm2` + `rugged`**
+  (`ducktape.hostexec.enable = true`). **Remaining: `nixos-rebuild switch` both hosts** (untestable in
+  this environment — needs the actual hosts).
 - **Authentik providers + groups — written** (`tf/gitops/agent-machine-access/hostexec.tf`): per-host
   `hostexec-<host>` confidential OAuth2 providers (aud = client_id, 1-min TTL, RS256 self-signed key),
   a `groups` scope mapping emitting the operator's `hostexec-*` groups, the four
@@ -247,9 +259,11 @@ maybe — see \_Future expansion*.
    variant was rejected.
 2. **Transport** — a **host-side OIDC exec service (`hostexecd`)** reached over the cluster network
    (the machines are k8s nodes); not SSH, not over Nebula addressing. **Runs as a NixOS systemd unit
-   on the host** (operator, 07-18) on both `wyrm2` + `rugged`, ingress restricted by an nftables
-   rule to `haku-console`; the privileged-DaemonSet alternative was rejected to avoid a
-   chroot/nsenter host-breakout and keep the smallest root TCB.
+   on the host** (operator, 07-18) on both `wyrm2` + `rugged`, **bound to the node's Nebula/InternalIP**
+   so it is reachable in-cluster but not on the physical/roaming NIC (a host daemon can't be gated by a
+   `CiliumNetworkPolicy`; the token check is the load-bearing gate — see _Transport_); the
+   privileged-DaemonSet alternative was rejected to avoid a chroot/nsenter host-breakout and keep the
+   smallest root TCB.
 3. **`hostexecd` language** — minimal **Rust** (smallest root TCB, no interpreter on the host).
 4. **Narrowing** — **Authentik-native**: per-host provider (`aud=hostexec-<host>`) + the
    `hostexec-<run_as>-<host>` group + short token TTL + host-side per-token single-use. **No
@@ -273,12 +287,17 @@ Kept as a record so the reasoning survives the code churn.
 - **Separate remote `hostexec-mcp` pod → in-process console tool.** The minting/exchange is custom
   code that belongs at the console (the trust boundary); a separate pod would hold the credential
   (worse) or need the console to inject it anyway (no gain).
-- **Nebula transport → cluster pod network + network policy.** The target machines are already k8s
-  nodes (`kubernetes.io/hostname`), so the console reaches `hostexecd` over the pod network and a
-  `CiliumNetworkPolicy` restricts ingress to `haku-console` — dropping the console→mesh egress
-  plumbing and the `nebula1` bind. `hostexecd` still `execve`s in the host's namespaces (systemd
-  unit or privileged DaemonSet — deploy-time). Nebula IPs remain the mesh roster's identity, just
-  not how the console addresses hosts.
+- **Nebula transport → cluster pod network (console addressing) → but hostexecd binds the Nebula
+  IP after all.** The target machines are already k8s nodes (`kubernetes.io/hostname`), so the
+  console reaches `hostexecd` over the pod network rather than plumbing console→mesh egress. The
+  first cut of this pivot claimed a `CiliumNetworkPolicy` would restrict ingress to `haku-console`;
+  **that is infeasible** — `hostexecd` is a host systemd daemon (host netns, `reserved:host`), not a
+  Cilium pod endpoint, so no CNP can select it, Cilium's host-firewall is off here, and node nftables
+  can only match a coarse source IP. So the daemon does bind to the node's **Nebula/InternalIP** (the
+  `nebula1` bind returns, now as the reach restriction) — reachable in-cluster over the k8s-worker's
+  trusted `nebula1`/`cilium_host`/`lxc+` interfaces, off the physical NIC — and the fail-closed token
+  check is the load-bearing per-caller gate. `hostexecd` still `execve`s in the host's namespaces
+  (systemd unit). Nebula IPs are both the mesh roster's identity and the daemon's bind address.
 - **Bespoke console-signed capability (argv-bound) → Authentik-native narrowing.** Built the
   capability first (Python `capability.py` + Rust `capability.rs` + cross-language JWT vectors),
   then dropped it: per-host provider + short TTL + single-use gets the token nearly as narrow
@@ -308,8 +327,10 @@ Kept as a record so the reasoning survives the code churn.
   already is for every approval-gated tool. A console compromise yields host access bounded by the
   operator's Authentik grants and revocation; there is no root-capable standing key to steal.
 - **`hostexecd` is the single load-bearing component** and a root-capable network service. Keep it
-  minimal, network-policy-restricted to `haku-console`, fail-closed, privilege-dropping,
-  argv-`execve` (no shell); test the deny paths as security-critical.
+  minimal, fail-closed, privilege-dropping, argv-`execve` (no shell); test the deny paths as
+  security-critical. Its network exposure is limited only by the Nebula-IP bind (a host daemon can't
+  be gated by a `CiliumNetworkPolicy`), so the fail-closed token verification carries the per-caller
+  authorization — it is not backstopped by a precise network ACL.
 - **Roaming hosts** (`rugged`) are frequently offline; treat unreachability as a normal,
   fast-failing outcome, not an error to retry indefinitely.
 - **Fits the roadmap:** a concrete instance of <../PLAN.md> → _"letting Haku take some actions
