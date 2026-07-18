@@ -286,6 +286,11 @@ for lbl, (tps, swe, kind) in RUNNABLE_QUALITY.items():
     rclass = REASONING_CLASS.get(lbl, ("Reasoning",))[0]
     ax.scatter(tps, swe, s=120, color=color, marker=MARKER_FOR[rclass], zorder=3)
     ax.annotate(lbl, (tps, swe), textcoords="offset points", xytext=(8, 4), fontsize=8)
+# Pareto frontier over {speed, SWE} — a point is dominated if another is >= on both
+# axes (and strictly better on one). The non-dominated set, drawn low→high speed.
+_pts = [(tps, swe) for (tps, swe, _) in RUNNABLE_QUALITY.values()]
+_front = sorted(p for p in _pts if not any(q[0] >= p[0] and q[1] >= p[1] and q != p for q in _pts))
+ax.plot([p[0] for p in _front], [p[1] for p in _front], color="#555", ls="--", lw=1.6, zorder=1, label="Pareto frontier")
 for name, (s, _, kind, _) in SWEBENCH.items():
     if kind == "anchor":
         ax.axhline(s, ls="--", color=ANCHOR_COLOR, alpha=0.3)
@@ -303,6 +308,7 @@ ax.legend(
         Patch(color=ANCHOR_COLOR, label="closed frontier"),
         Line2D([0], [0], marker="o", color="#555", ls="", label="reasoning model"),
         Line2D([0], [0], marker="s", color="#555", ls="", label="direct (no thinking)"),
+        Line2D([0], [0], color="#555", ls="--", label="Pareto frontier"),
     ],
     loc="center left",
     fontsize=8,
