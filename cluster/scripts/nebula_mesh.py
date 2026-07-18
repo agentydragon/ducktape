@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Role = Literal["control-plane", "worker", "laptop", "non-k8s"]
-ManagedBy = Literal["tofu-ovh", "tofu-proxmox", "nixos", "ansible", "mobile"]
+ManagedBy = Literal["tofu-ovh", "tofu-proxmox", "tofu-home", "nixos", "ansible", "mobile"]
 
 # Cilium depends on the mesh-wide Nebula TUN MTU staying at 1420. A host with a
 # smaller path can instead advertise a conservative destination-specific route

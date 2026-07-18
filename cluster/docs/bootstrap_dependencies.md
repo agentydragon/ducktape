@@ -106,7 +106,7 @@ backend. Resources have `lifecycle { prevent_destroy = true }`.
 | `proxmox_virtual_environment_user.persistent`                     | L2: roles                                     | Proxmox users (terraform@pve)            | L2: tokens                              |
 | `proxmox_virtual_environment_user_token.persistent`               | L2: users                                     | API tokens for CSI + terraform           | L3: Proxmox VM creation; L6: CSI driver |
 | `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula/ca.{crt,sops.key}`        | CA cert/key on disk                      | L2: node cert signing                   |
-| `null_resource.nebula_node_cert` (6 Talos nodes incl. kimsufi)    | L2: CA on disk                                | Per-node cert+key at `nebula-certs/`     | L3: Talos machine config (embedded)     |
+| `null_resource.nebula_node_cert` (Tofu-managed Talos nodes)       | L2: CA on disk                                | Per-node cert+key at `nebula-certs/`     | L3: Talos machine config (embedded)     |
 | `talos_machine_secrets.cluster`                                   | `var.talos_version`                           | CA keypairs, bootstrap token, etcd certs | L3: all Talos machine configs           |
 | `kubernetes_namespace.flux_system`                                | L3: kubeconfig                                | `flux-system` namespace                  | L2: SOPS age secret; L5: Flux           |
 | `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/shared/cluster-secrets-age.yaml` | k8s secret in flux-system                | L5: Flux SOPS decryption                |
@@ -127,6 +127,7 @@ Created by `tofu apply` Phase 2.
 | -------------------------------------------------- | ------------------------------------------------- | ----------------------------------- |
 | `ovh_dedicated_server.*`                           | L0: OVH credentials, Talos image                  | OVH Kimsufi Talos nodes             |
 | `proxmox_virtual_environment_vm.talos`             | L0: Proxmox token, Talos disk                     | Proxmox Talos VMs, if configured    |
+| `data.talos_machine_configuration.home_worker`     | L2: machine secrets, Nebula cert, config patches  | Home bare-metal worker config       |
 | `talos_machine_configuration_apply.*`              | L2: machine secrets, nebula certs, config patches | Talos config pushed to nodes        |
 | `talos_machine_bootstrap.cluster`                  | Machine config applied                            | etcd initialized, k8s API available |
 | `local_file.kubeconfig` / `local_file.talosconfig` | Bootstrap output                                  | Cluster access files                |

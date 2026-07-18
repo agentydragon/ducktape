@@ -46,6 +46,11 @@
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
+    "optiplex": {
+      "nebula_ip": "10.42.0.18",
+      "role": "worker",
+      "managed_by": "tofu-home"
+    },
     "atlas": {
       "nebula_ip": "10.42.0.5",
       "role": "non-k8s",

@@ -108,6 +108,7 @@ In `terraform/main/`:
 | File                       | Purpose                                        |
 | -------------------------- | ---------------------------------------------- |
 | `ovh-nodes.tf`             | OVH Kimsufi bare-metal definitions             |
+| `home-nodes.tf`            | Home bare-metal Talos worker definitions       |
 | `proxmox-nodes.tf`         | Proxmox VM definitions                         |
 | `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
 | `cilium.tf`                | CNI configuration                              |

@@ -27,7 +27,7 @@ Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
   "role":         "control-plane" | "worker" | "laptop" | "non-k8s",
   "lighthouse":   true | false,         // default false
   "relay":        true | false,         // default false
-  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "nixos" | "ansible" | "mobile",
+  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "tofu-home" | "nixos" | "ansible" | "mobile",
   "cert_groups":  [...],                // optional; embedded in the Nebula cert
   "destination_mtu": 1100               // optional; MTU all peers use when sending to this host
 }
@@ -86,6 +86,20 @@ For nodes not provisioned by TF: `wyrm2`/`rugged`/`iguana` (`nixos`), `atlas`
    configuration; mobile uses the smallest declared constraint as its global
    TUN MTU because the platform does not expose per-route MTUs.
 
+### Home bare-metal Talos worker
+
+Home bare-metal Talos workers are defined in
+`cluster/terraform/main/home-nodes.tf`. They have no public Nebula endpoint and
+are neither lighthouses nor relays.
+
+1. Add the host to `local.home_nodes` with a stable install-disk path, Nebula
+   IP, and home topology labels.
+2. Add the matching roster entry with `role: "worker"` and
+   `managed_by: "tofu-home"`.
+3. Apply the targeted cert/config dependencies, then deliver the generated
+   machine configuration to the node's LAN maintenance address. See
+   <optiplex_provisioning.md> for the first home bare-metal example.
+
 ## Remove a host
 
 ### Talos node
@@ -112,6 +126,7 @@ restart -n <ip>`). Without this, the lighthouses sit in silent
    configuration, rebuild the remaining NixOS peers, and run the Nebula role
    on Atlas so every reciprocal route is removed. Regenerate and re-import
    Mobile Nebula configurations so their global fallback is recalculated.
+
 3. Otherwise, rebuild only hosts that consumed an endpoint or lighthouse
    setting from the removed entry.
 4. Optionally delete `secrets/nebula/<host>.crt` and the SOPS key.

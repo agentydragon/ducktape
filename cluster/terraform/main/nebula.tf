@@ -17,11 +17,14 @@ locals {
   nebula_mesh  = jsondecode(file("${path.module}/../../../nebula-mesh.json"))
   nebula_hosts = local.nebula_mesh.hosts
 
-  # The TF-managed Nebula nodes: the OVH bare-metal hosts, identified by hostname (the cert
-  # subject is "<host>.nebula.allegedly.works"). Derived from the OVH node inventory so there
-  # is a single source of truth for which hosts exist — those resources' for_each keys are the
-  # same hostnames.
-  nebula_managed_hosts = keys(merge(local.kimsufi_servers, local.kimsufi_cp_servers))
+  # The TF-managed Nebula nodes, identified by hostname (the cert subject is
+  # "<host>.nebula.allegedly.works"). Derived from provider-specific node
+  # inventories so those resources and Nebula use the same for_each keys.
+  nebula_managed_hosts = keys(merge(
+    local.kimsufi_servers,
+    local.kimsufi_cp_servers,
+    local.home_nodes,
+  ))
 
   # Derived: list of all lighthouse IPs (for non-lighthouse nodes' `lighthouse.hosts`).
   nebula_lighthouse_ips = [

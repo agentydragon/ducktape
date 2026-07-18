@@ -27,6 +27,17 @@ output "talos_config" {
   sensitive   = true
 }
 
+output "home_bare_metal_iso_url" {
+  description = "Talos metal ISO shared by home bare-metal workers and OVH nodes"
+  value       = data.talos_image_factory_urls.kimsufi.urls.iso
+}
+
+output "optiplex_worker_machine_configuration" {
+  description = "Generated Talos worker configuration for the home OptiPlex"
+  value       = data.talos_machine_configuration.home_worker["optiplex"].machine_configuration
+  sensitive   = true
+}
+
 # CLUSTER INFORMATION
 
 output "cluster_endpoint" {
