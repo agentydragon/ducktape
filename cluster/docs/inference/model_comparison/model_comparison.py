@@ -66,6 +66,7 @@ SOURCES = {
     "glm52": "https://venturebeat.com/technology/z-ais-open-weights-glm-5-2-beats-gpt-5-5-on-multiple-long-horizon-coding-benchmarks-for-1-6th-the-cost",
     "glm52_colibri": "cluster/docs/inference/runs/2026-07-14_glm52_colibri/  (measured 0.28 tok/s)",
     "oss120": "https://arxiv.org/abs/2508.10925",  # same gpt-oss card (120b rows)
+    "dsv4": "https://benchlm.ai/models/deepseek-v4-flash",  # DeepSeek-V4-Flash 79.0 SWE
 }
 
 
@@ -106,6 +107,7 @@ SWEBENCH = {
     "Qwen3.5-35B-A3B": (69.2, "qwen35", "resident", "max thinking?"),
     "gpt-oss-120b": (62.4, "oss120", "offload", "high effort (ceiling)"),
     "GLM-5.2 (744B)": (77.8, "glm52", "offload", "press report, setting unstated"),
+    "DeepSeek-V4-Flash": (79.0, "dsv4", "offload", "reported (benchlm)"),
     "Claude Sonnet 4.5": (77.2, "sonnet45", "anchor", "10-trial avg, 200K think, no TTC"),
     "Gemini 3.5 Flash": (78.8, "valsai_swe", "anchor", "vals.ai harness"),
     "GPT-5.5": (82.6, "valsai_swe", "anchor", "vals.ai harness"),
@@ -123,6 +125,7 @@ RUNNABLE_QUALITY = {
     "Devstral-24B": (92, 68.0, "resident"),
     "gpt-oss-120b": (12.2, 62.4, "offload"),  # E7: vLLM TP2, 12GB/GPU CPU offload (measured)
     "GLM-5.2 (744B)": (0.28, 77.8, "offload"),  # Colibri disk-streamed experts
+    "DeepSeek-V4-Flash": (1.1, 79.0, "offload"),  # E9: mainline llama.cpp IQ2_XXS, CPU-only (Vulkan/GPU pending — this is the slow floor)
 }
 OFFLOAD_COLOR = "#16a085"
 
@@ -174,6 +177,7 @@ REASONING_CLASS = {
     "gpt-oss-120b": ("Reasoning", "local", "reasoning effort (E7)"),
     "Qwen3.5-35B-A3B": ("Reasoning", "local", "verbose CoT, effort dial (E4)"),
     "GLM-5.2 (744B)": ("Reasoning", "local", "reasoning model (Colibri)"),
+    "DeepSeek-V4-Flash": ("Reasoning", "local", "CoT [Start thinking], E9"),
     "Claude Sonnet 4.5": ("Reasoning", "anchor", "reasoning effort / thinking budget"),
     "Claude Opus 4.8": ("Reasoning", "anchor", "reasoning effort"),
     "Gemini 3.5 Flash": ("Reasoning", "anchor", "thinking budget"),
