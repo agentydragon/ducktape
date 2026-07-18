@@ -36,7 +36,6 @@ Every pin corresponds 1:1 to a same-named entry in `nix/artifact-pins.json`.
 ```text
 releases:
   <release_name>:
-    primaryPin:        pin whose sha256 drives the release tag suffix (see below)
     tests:             (optional) Bazel test targets to run before publishing
     nixPackage:        (optional, default false) has a `.#packages.x86_64-linux.<release_name>`
                        flake output the PR gate builds + imports-checks
@@ -45,10 +44,10 @@ releases:
     metadataPlatform:  (optional) `platforms` string in that release.json
 ```
 
-`primaryPin` is required because `release-artifact` (the composite action)
-hashes a single file to build the release tag suffix — from nix's point of
-view every pin in the release is equally real, but release-artifact needs
-one nominated hash source. Pick the pin most likely to change.
+Every pin assigned to a release has equal standing. `release-artifact` hashes
+the complete, filename-addressed asset set to build the release tag suffix and
+uploads every output. For backward compatibility, a one-asset release retains
+the SHA-256 of that asset as its release identity.
 
 `nixPackage: false` means release.yml still publishes it but the PR gate
 skips it — typical for binary drops (bbapi, claude-hook-rs, debundle,
@@ -70,5 +69,4 @@ Two pins ship on one release tag: the Python wheel and the GNOME Shell
 extension zip come out of one `bazel build //aiquota:aiquota_wheel
 //aiquota/gnome:aiquota_zip` invocation, and `nix/packages/gnome-shell-aiquota.nix`
 consumes both via `artifacts.aiquota` and `artifacts.aiquota-extension`.
-`aiquota.primaryPin: "aiquota"` — the wheel drives the tag hash — but from
-nix's POV both pins are equal.
+Changing either output changes the release identity and publishes both assets.

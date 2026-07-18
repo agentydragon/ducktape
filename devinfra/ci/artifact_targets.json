@@ -58,52 +58,42 @@
   },
   "releases": {
     "ducktape": {
-      "primaryPin": "ducktape",
       "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc/...",
       "nixPackage": true
     },
     "bbr": {
-      "primaryPin": "bbr",
       "tests": "//devinfra:test_bbr",
       "nixPackage": true
     },
     "claude-hooks": {
-      "primaryPin": "claude-hooks",
       "tests": "//devinfra/claude/...",
       "nixPackage": true
     },
     "ducktape-git-hooks": {
-      "primaryPin": "ducktape-git-hooks",
       "tests": "//devinfra/precommit/... //cluster/validation/...",
       "nixPackage": true
     },
     "ducktape-util": {
-      "primaryPin": "ducktape-util",
       "tests": "//util/...",
       "nixPackage": true
     },
     "gterm-theme": {
-      "primaryPin": "gterm-theme",
       "tests": "",
       "nixPackage": true
     },
     "aiquota": {
-      "primaryPin": "aiquota",
       "tests": "//aiquota/...",
       "nixPackage": true
     },
     "bbapi": {
-      "primaryPin": "bbapi",
       "tests": "//devinfra/buildbuddy_cli/...",
       "nixPackage": false
     },
     "claude-hook-rs": {
-      "primaryPin": "claude-hook-rs",
       "tests": "//devinfra/claude/claude_hook/...",
       "nixPackage": false
     },
     "debundle": {
-      "primaryPin": "debundle",
       "tests": "//devinfra/js/debundle/...",
       "bazelFlags": "-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1",
       "releaseMetadata": true,

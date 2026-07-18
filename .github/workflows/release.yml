@@ -1,10 +1,10 @@
 # Release artifacts to GitHub via per-artifact build + gh release.
-# Each matrix entry builds its artifact on RBE, computes SHA, and creates
+# Each matrix entry builds its artifacts on RBE, computes their identity, and creates
 # a GitHub Release if the content changed.
 #
 # The matrix is derived from devinfra/ci/artifact_targets.json — the same SSOT
 # .github/workflows/nix-wheel-check.yml reads. See the schema note at the top
-# of that file for field semantics (pins ↔ releases, primaryPin, etc.).
+# of that file for field semantics (pins ↔ releases, etc.).
 # Per-skill rows are appended from skills/skills_registry.json (one release per
 # skill, `skill-<name>`); see skills/README.md.
 name: Release
@@ -40,22 +40,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # One matrix row per release. Aggregate every pin whose
-          # `.release == <name>`: join their targets for the Bazel build,
-          # take primaryPin's output as bazel_output and space-join the others
-          # as extra_outputs. release-artifact hashes the complete asset set.
+          # One matrix row per release. Every pin whose `.release == <name>`
+          # contributes an equal-standing Bazel target and output asset.
           base=$(jq -c '
             . as $doc |
             [ $doc.releases | to_entries[] |
               .key as $rname |
-              .value.primaryPin as $primary |
               ([$doc.pins | to_entries[] | select(.value.release == $rname)]) as $ps |
               {
                 pkg: $rname,
-                target: ([$ps[] | .value.target] | join(" ")),
-                bazel_output: ([$ps[] | select(.key == $primary) | .value.output][0]),
+                targets: ([$ps[] | .value.target] | join(" ")),
+                outputs: ([$ps[] | .value.output] | join(" ")),
                 tests: (.value.tests // ""),
-                extra_outputs: ([$ps[] | select(.key != $primary) | .value.output] | join(" ")),
                 bazel_flags: (.value.bazelFlags // ""),
                 release_metadata: ((.value.releaseMetadata // false) | tostring),
                 metadata_platform: (.value.metadataPlatform // "")
@@ -68,10 +64,9 @@ jobs:
           skills=$(jq -c '
             [ .skills[] | {
                 pkg: .pkg,
-                target: .target,
-                bazel_output: .output,
+                targets: .target,
+                outputs: .output,
                 tests: "",
-                extra_outputs: "",
                 bazel_flags: "",
                 release_metadata: "false",
                 metadata_platform: ""
@@ -110,10 +105,9 @@ jobs:
       - uses: ./.github/actions/release-artifact
         with:
           pkg: ${{ matrix.pkg }}
-          bazel_target: ${{ matrix.target }}
-          bazel_output: ${{ matrix.bazel_output }}
+          bazel_targets: ${{ matrix.targets }}
+          outputs: ${{ matrix.outputs }}
           bazel_flags: ${{ matrix.bazel_flags }}
-          extra_outputs: ${{ matrix.extra_outputs }}
           release_metadata: ${{ matrix.release_metadata }}
           metadata_platform: ${{ matrix.metadata_platform }}
           rbe_image: ${{ inputs.rbe_image }}

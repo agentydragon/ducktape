@@ -5,18 +5,14 @@ inputs:
   pkg:
     description: "Package name (e.g. claude-hooks)"
     required: true
-  bazel_target:
-    description: "Bazel target to build (e.g. //:claude_hooks_wheel)"
+  bazel_targets:
+    description: "Space-separated Bazel targets that produce the release assets"
     required: true
-  bazel_output:
-    description: "Path to artifact under bb-out/ (e.g. bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl)"
+  outputs:
+    description: "Space-separated release asset paths under bb-out/"
     required: true
-  extra_outputs:
-    description: "Space-separated additional artifact paths to include in the release"
-    required: false
-    default: ""
   release_metadata:
-    description: "Upload <pkg>.release.json with source commit and primary artifact digest"
+    description: "Upload <pkg>.release.json for a single-asset release"
     required: false
     default: "false"
   metadata_platform:
@@ -48,7 +44,7 @@ runs:
     - name: Build artifact (unstamped)
       uses: ./.github/actions/bb-remote
       with:
-        args: build ${{ inputs.bazel_target }} ${{ inputs.bazel_flags }}
+        args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }}
         rbe_image: ${{ inputs.rbe_image }}
 
     - name: Check content hash
@@ -68,28 +64,19 @@ runs:
           exit 0
         fi
 
-        artifact="${{ inputs.bazel_output }}"
-        if [[ ! -f "$artifact" ]]; then
-          echo "::error::Artifact not found at $artifact"
-          ls -R bb-out/ 2>/dev/null || echo "bb-out/ does not exist"
-          exit 1
-        fi
-
-        # Verify extra outputs exist
-        for extra in ${{ inputs.extra_outputs }}; do
-          if [[ ! -f "$extra" ]]; then
-            echo "::error::Extra output not found at $extra"
+        artifacts=()
+        for artifact in ${{ inputs.outputs }}; do
+          if [[ ! -f "$artifact" ]]; then
+            echo "::error::Artifact not found at $artifact"
+            ls -R bb-out/ 2>/dev/null || echo "bb-out/ does not exist"
             exit 1
           fi
+          artifacts+=("$artifact")
         done
 
         # Content-addressed skip check: tag by the complete release asset set.
         # Single-artifact hashes retain their historical value so this change
         # does not cause every existing package to be republished.
-        artifacts=("$artifact")
-        for extra in ${{ inputs.extra_outputs }}; do
-          artifacts+=("$extra")
-        done
         content_sha=$(python3 devinfra/ci/release_content_hash.py "${artifacts[@]}")
         tag="${PKG}-${content_sha:0:12}"
         echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
@@ -109,7 +96,7 @@ runs:
       if: steps.check.outputs.should_release == 'true'
       uses: ./.github/actions/bb-remote
       with:
-        args: build ${{ inputs.bazel_target }} ${{ inputs.bazel_flags }} --stamp
+        args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }} --stamp
         rbe_image: ${{ inputs.rbe_image }}
 
     - name: Upload release
@@ -123,15 +110,17 @@ runs:
         set -euo pipefail
 
         tag="${{ steps.check.outputs.tag }}"
-        artifact="${{ inputs.bazel_output }}"
-        files=("$artifact")
-
-        # Collect extra outputs
-        for extra in ${{ inputs.extra_outputs }}; do
-          files+=("$extra")
+        files=()
+        for artifact in ${{ inputs.outputs }}; do
+          files+=("$artifact")
         done
 
         if [[ "${{ inputs.release_metadata }}" == "true" ]]; then
+          if [[ "${#files[@]}" -ne 1 ]]; then
+            echo "::error::Release metadata requires exactly one release asset"
+            exit 1
+          fi
+          artifact="${files[0]}"
           metadata="$RUNNER_TEMP/${PKG}.release.json"
           metadata_platform="${{ inputs.metadata_platform }}"
           metadata_platform_args=()
