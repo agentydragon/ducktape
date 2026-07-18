@@ -21,3 +21,28 @@ rust_test(
     edition = "2024",
     deps = [":capability"],
 )
+
+# Command execution: spawn argv (no shell), wall-clock timeout + kill, output caps with truncation
+# reporting. Result shape mirrors mcp_infra.exec.models.BaseExecResult.
+rust_library(
+    name = "exec",
+    srcs = ["exec.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:tokio",
+    ],
+)
+
+rust_test(
+    name = "exec_test",
+    size = "small",
+    srcs = ["exec_test.rs"],
+    edition = "2024",
+    deps = [
+        ":exec",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+    ],
+)
