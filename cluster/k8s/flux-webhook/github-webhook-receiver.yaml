@@ -81,9 +81,6 @@ spec:
       name: manifold-mcp-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: osm-mcp
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: budget-exporter
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

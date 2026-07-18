@@ -21,9 +21,11 @@ spec:
       # No Kubernetes API access; don't mount a SA token.
       automountServiceAccountToken: false
       enableServiceLinks: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
       containers:
         - name: osm-mcp
-          image: ghcr.io/agentydragon/osm-mcp:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:osm-mcp"}
+          image: git.allegedly.works/ducktape-ci/osm-mcp:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:osm-mcp"}
           imagePullPolicy: Always
           ports:
             - name: http
