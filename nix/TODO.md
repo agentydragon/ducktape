@@ -1,5 +1,20 @@
 # Nix Configuration TODOs
 
+## Roll gnome-remote-desktop RDP (over the Nebula SSH tunnel) to all hosts
+
+wyrm2 now serves a headless GNOME session over gnome-remote-desktop system RDP
+("Remote Login"), reached via an SSH-key tunnel on Nebula
+(`ssh -L 3390:localhost:3389 <host>` + an RDP client). See
+`nix/nixos/hosts/wyrm2/default.nix` (`grdConf` + the `rdp_tls_*` SOPS pair). RDP
+is enabled declaratively via a `grd.conf` tmpfiles symlink — not `grdctl`, whose
+`rdp enable` can't write to read-only `/etc` on NixOS.
+
+Once proven on wyrm2 — especially the NVIDIA-headless render path tracked by the
+`CLEANUP(added 2026-07-17)` tombstone there — roll the same pattern to the other
+NixOS hosts (rugged, iguana, atlas, …). Each host needs its own per-host RDP TLS
+SOPS pair (admin + `<host>-host`, like the Nebula host keys) and the `grd.conf`
+tmpfiles symlink.
+
 ## Design the cluster-based Syncthing topology
 
 ActivityWatch participants (`wyrm2`, `iguana`, `rugged`, and `atlas`) now own
