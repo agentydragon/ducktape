@@ -71,7 +71,6 @@ py_library(
     deps = [
         ":config",
         ":mcp_config",
-        ":node_daemons",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:hostexec",
@@ -920,6 +919,7 @@ py_test(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":node_daemon_models",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",

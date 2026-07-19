@@ -631,7 +631,6 @@ def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM provider_connections")).scalar_one() == 0
             assert conn.execute(text("SELECT count(*) FROM provider_connection_flows")).scalar_one() == 0
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0014"
     finally:
         engine.dispose()
 

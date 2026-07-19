@@ -64,6 +64,7 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
@@ -1466,6 +1467,7 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
         "credential_kind": tuple(kind.value for kind in CredentialKind),
         "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
         "operator_status": tuple(status.value for status in OperatorStatus),
+        "node_daemon_execution_status": tuple(status.value for status in NodeDaemonExecutionStatus),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
     }
     assert baseline_values == current_values

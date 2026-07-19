@@ -21,8 +21,7 @@ from haku.console.mcp_config import (
     InProcessServers,
     const_in_process_server,
 )
-from haku.console.node_daemons import NodeDaemonService
-from haku.console.tools.hostexec_client import HostexecClient
+from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 
 
@@ -33,6 +32,7 @@ class HostexecServerConfig:
 
     config: HostexecConfig
     token_endpoint: str
+    broker: NodeDaemonBroker
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +45,6 @@ class InProcessServerDependencies:
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
     hostexec: HostexecServerConfig | None = None
-    node_daemons: NodeDaemonService | None = None
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
@@ -68,8 +67,6 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             routine_tools.build_mcp(dependencies.routine_launcher)
         )
     if (hostexec := dependencies.hostexec) is not None:
-        if dependencies.node_daemons is None:
-            raise ValueError("hostexec requires the node-daemon broker")
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}
         audience_client_ids = {host: entry.audience_client_id for host, entry in hostexec.config.hosts.items()}
         servers[hostexec_tools.HOSTEXEC_SERVER_ID] = InProcessServerRegistration(
@@ -82,7 +79,7 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
                         audience_client_ids=audience_client_ids,
                         scope=hostexec.config.exchange_scope,
                     ).exchange,
-                    broker=dependencies.node_daemons,
+                    broker=hostexec.broker,
                 )
             ),
             credential_kind=InProcessCredentialKind.OPERATOR_LOGIN_IDENTITY,

@@ -231,18 +231,16 @@ def create_app(
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
-        hostexec_server = (
-            HostexecServerConfig(
+        hostexec_server = None
+        if hostexec_config is not None:
+            assert node_daemon_service is not None
+            hostexec_server = HostexecServerConfig(
                 config=hostexec_config,
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
+                broker=node_daemon_service,
             )
-            if hostexec_config is not None
-            else None
-        )
         in_process_servers = build_in_process_servers(
-            InProcessServerDependencies(
-                routine_launcher=routine_launcher, hostexec=hostexec_server, node_daemons=node_daemon_service
-            )
+            InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
     if tool_call_executor is None:
