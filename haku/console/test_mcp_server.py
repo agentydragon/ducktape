@@ -801,6 +801,41 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     assert proxy_names == ["beta__echo", "alpha__echo"]
 
 
+async def test_tool_discovery_isolates_unexpected_server_failure(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    config_file = write_config(
+        tmp_path / "isolated-tools.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [
+                    {"id": "broken", "backend": _remote_backend("https://broken.invalid/mcp", {"kind": "none"})},
+                    {"id": "healthy", "backend": _remote_backend("https://healthy.invalid/mcp", {"kind": "none"})},
+                ]
+            },
+        },
+    )
+    app = create_app(console_settings(migrated_db_url, config_file=config_file))
+
+    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
+        server_id = str(kwargs["server"].id)
+        if server_id == "broken":
+            raise RuntimeError("unexpected reflection failure")
+        return AliveServerMetadata(
+            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
+        )
+
+    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    with serve_app_sync(app) as base:
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            proxy_names = [tool.name for tool in await client.list_tools() if tool.name.endswith("__echo")]
+
+    assert proxy_names == ["healthy__echo"]
+    assert "failed to reflect server broken" in caplog.text
+    assert "unexpected reflection failure" in caplog.text
+
+
 async def test_tool_dispatch_reflects_only_target_server(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

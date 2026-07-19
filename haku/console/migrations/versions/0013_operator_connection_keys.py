@@ -29,25 +29,9 @@ def upgrade() -> None:
 
     op.drop_constraint("provider_connections_pkey", "provider_connections", type_="primary")
     op.add_column("provider_connections", sa.Column("connection_name", sa.Text(), nullable=False))
-    op.add_column("provider_connections", sa.Column("provider_name", sa.Text(), nullable=False))
-    op.create_check_constraint(
-        "ck_provider_connections_connection_name_nonempty", "provider_connections", "btrim(connection_name) <> ''"
-    )
-    op.create_check_constraint(
-        "ck_provider_connections_provider_name_nonempty", "provider_connections", "btrim(provider_name) <> ''"
-    )
     op.create_primary_key("provider_connections_pkey", "provider_connections", ["operator_id", "connection_name"])
 
     op.add_column("provider_connection_flows", sa.Column("connection_name", sa.Text(), nullable=False))
-    op.add_column("provider_connection_flows", sa.Column("provider_name", sa.Text(), nullable=False))
-    op.create_check_constraint(
-        "ck_provider_connection_flows_connection_name_nonempty",
-        "provider_connection_flows",
-        "btrim(connection_name) <> ''",
-    )
-    op.create_check_constraint(
-        "ck_provider_connection_flows_provider_name_nonempty", "provider_connection_flows", "btrim(provider_name) <> ''"
-    )
 
 
 def downgrade() -> None:
@@ -55,17 +39,7 @@ def downgrade() -> None:
     op.execute("DELETE FROM provider_connection_flows")
     op.execute("DELETE FROM provider_connections")
 
-    op.drop_constraint(
-        "ck_provider_connection_flows_provider_name_nonempty", "provider_connection_flows", type_="check"
-    )
-    op.drop_constraint(
-        "ck_provider_connection_flows_connection_name_nonempty", "provider_connection_flows", type_="check"
-    )
-    op.drop_column("provider_connection_flows", "provider_name")
     op.drop_column("provider_connection_flows", "connection_name")
     op.drop_constraint("provider_connections_pkey", "provider_connections", type_="primary")
-    op.drop_constraint("ck_provider_connections_provider_name_nonempty", "provider_connections", type_="check")
-    op.drop_constraint("ck_provider_connections_connection_name_nonempty", "provider_connections", type_="check")
-    op.drop_column("provider_connections", "provider_name")
     op.drop_column("provider_connections", "connection_name")
     op.create_primary_key("provider_connections_pkey", "provider_connections", ["operator_id", "provider"])

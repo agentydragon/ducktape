@@ -7,7 +7,7 @@ from typing import Any
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 
 from haku.console.database_schema import metadata
 
@@ -27,6 +27,13 @@ def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
     cfg.attributes["connection"] = conn
     cfg.attributes["target_metadata"] = metadata
     alembic_command.upgrade(cfg, revision)
+    if revision == "head":
+        # Alembic revisions are immutable once deployed. If a revision is accidentally edited after
+        # a database has already recorded it, upgrade-to-head is a no-op even though the ORM may now
+        # require columns that are absent. Compile and execute a zero-row read for every owned table
+        # so that schema-incompatible processes fail during startup instead of serving as Ready.
+        for table in metadata.sorted_tables:
+            conn.execute(select(table).limit(0))
 
 
 def apply_migrations(database_url: str, revision: str = "head") -> None:

@@ -432,7 +432,13 @@ class OperatorToolProvider(Provider):
         self._catalog = catalog or OperatorServerCatalog(context)
 
     async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
-        meta = await self._catalog.metadata(server, actor)
+        try:
+            meta = await self._catalog.metadata(server, actor)
+        except Exception:
+            # Discovery is an aggregate availability surface: an unexpected failure in one server
+            # must remain visible in logs without erasing every unrelated server's tools.
+            logger.exception("mcp_server: failed to reflect server %s for Operator %s", server.id, actor.operator_id)
+            return []
         if isinstance(meta, DegradedServerMetadata):
             logger.info(
                 "mcp_server: hiding unavailable server %s from Operator %s: %s",

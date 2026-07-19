@@ -17,7 +17,7 @@ import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import metadata
@@ -609,12 +609,42 @@ def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db
                 {"operator_id": operator_id, "now": now},
             )
 
+        apply_migrations(db_url, "0013")
+
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
+            assert "provider_name" not in {
+                row.column_name
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'provider_connections'
+                        """
+                    )
+                )
+            }
+
         apply_migrations(db_url)
 
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM provider_connections")).scalar_one() == 0
             assert conn.execute(text("SELECT count(*) FROM provider_connection_flows")).scalar_one() == 0
-            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0014"
+    finally:
+        engine.dispose()
+
+
+def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) -> None:
+    apply_migrations(db_url)
+    engine = create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE provider_connections DROP COLUMN provider_name CASCADE"))
+
+        with pytest.raises(ProgrammingError, match=r"provider_connections\.provider_name"):
+            apply_migrations(db_url)
     finally:
         engine.dispose()
 
