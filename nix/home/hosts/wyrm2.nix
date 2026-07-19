@@ -22,7 +22,7 @@
 
   ducktape.attic = {
     enable = true;
-    sopsFile = ../../../secrets/home/wyrm2/attic.yaml;
+    sopsFile = ../../../secrets/hosts/wyrm2-attic.yaml;
   };
 
   # Shared Bazel disk cache across local worktrees

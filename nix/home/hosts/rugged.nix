@@ -21,7 +21,7 @@
 
   ducktape.attic = {
     enable = true;
-    sopsFile = ../../../secrets/home/rugged/attic.yaml;
+    sopsFile = ../../../secrets/hosts/rugged-attic.yaml;
   };
 
   # Shared Bazel disk cache across local worktrees

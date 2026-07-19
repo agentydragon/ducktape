@@ -21,6 +21,11 @@
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/gecko-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/gecko-github.sops.key;
 
+  ducktape.attic = {
+    enable = true;
+    sopsFile = ../../../secrets/hosts/gecko-attic.yaml;
+  };
+
   home.packages = [
     pkgs.psmisc
   ];

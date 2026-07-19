@@ -36,6 +36,7 @@ in
     ../../modules/claude-desktop.nix
     ../../modules/home-wifi.nix
     ../../modules/k8s-worker.nix
+    ../../modules/attic-substituter.nix
   ];
 
   # Passwordless sudo for system inspection commands
@@ -47,15 +48,10 @@ in
 
   ducktape.homeWifi.enable = true;
 
-  # TODO: enable Attic substituter for cache.allegedly.works/{main,gaffer}.
-  # Reader JWT is already auto-rotated into secrets/hosts/iguana-attic.yaml
-  # by the attic-jwt-rotation CronJob (rotators.json entry exists). Wiring
-  # mirrors wyrm2 (nix/nixos/hosts/wyrm2/default.nix:48–55) — import
-  # ../../modules/attic-substituter.nix and:
-  #   ducktape.attic-substituter = {
-  #     enable = true;
-  #     sopsFile = ../../../../secrets/hosts/iguana-attic.yaml;
-  #   };
+  ducktape.attic-substituter = {
+    enable = true;
+    sopsFile = ../../../../secrets/hosts/iguana-attic.yaml;
+  };
 
   ducktape.k8sWorker = {
     enable = true;

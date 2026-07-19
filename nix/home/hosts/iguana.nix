@@ -20,6 +20,11 @@
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
 
+  ducktape.attic = {
+    enable = true;
+    sopsFile = ../../../secrets/hosts/iguana-attic.yaml;
+  };
+
   ducktape.activitywatch.sync = {
     enable = true;
     syncthing = {

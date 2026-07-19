@@ -24,6 +24,11 @@ in
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/atlas-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/atlas-github.sops.key;
 
+  ducktape.attic = {
+    enable = true;
+    sopsFile = ../../../secrets/hosts/atlas-attic.yaml;
+  };
+
   ducktape.activitywatch.sync = {
     enable = true;
     syncthing = {
@@ -49,13 +54,4 @@ in
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";
 
-  # TODO: HM-level Attic substituter wiring for cache.allegedly.works/{main,gaffer}.
-  # Atlas isn't NixOS, so the NixOS-level ducktape.attic-substituter module
-  # at nix/nixos/modules/attic-substituter.nix doesn't apply. Reader JWT is
-  # already auto-rotated into secrets/hosts/atlas-attic.yaml by the
-  # attic-jwt-rotation CronJob (rotators.json entry exists). HM-level
-  # wiring would need: nix.settings.{substituters,trusted-public-keys},
-  # plus a netrc file rendered into the user's nix config dir, decrypted
-  # via home-manager sops. Different shape from the NixOS module because
-  # nix.settings on HM only affects the user's nix client, not the daemon.
 }
