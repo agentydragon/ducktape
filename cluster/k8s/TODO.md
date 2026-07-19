@@ -232,15 +232,74 @@ detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
 - [x] **NixOS nodes** (wyrm2, rugged, iguana): journal → Loki via the journal-only
       `promtail-journal` HelmRelease (`monitoring/loki/promtail-journal-helmrelease.yaml`),
       scoped by the `node-vendor=nixos` kubelet label.
-- [x] **Talos nodes** (optiplex, ovh-\*): service logs → Loki via `machine.logging`
-      (`terraform/main/logging.tf`) → the `vector-talos-logs` DaemonSet.
-- [ ] **atlas host journal** — the remaining gap. atlas is the Proxmox/PVE hypervisor,
+- [ ] **Talos nodes** (optiplex, ovh-\*): service logs → Loki via `machine.logging`.
+      **Manifests + Terraform are committed and the sink is live** — the `vector-talos-logs`
+      DaemonSet is deployed (0 pods, waiting for the `node-vendor=talos` label) and the shared
+      `machine.logging` destination + label patch is in `terraform/main/logging.tf`. **Not yet
+      rolled out**: the per-node `tofu apply` is blocked (see the nebula-cert item below).
+      Roll out one node at a time (`tofu apply -target='talos_machine_configuration_apply.kimsufi["<node>"]'`),
+      starting with a worker (`ovh-ns103711`/`ovh-ns102453`), then the 3 control-plane nodes,
+      with a Ready/etcd-quorum/Loki-arrival health gate between each. **Skip
+      `proxmox["pve_cp0"]`** — it's stale state for a retired VM, not a live node. **optiplex**
+      has no `talos_machine_configuration_apply` resource in state (only the data source), so
+      applying it is a first-time create — handle separately after the OVH nodes.
+- [ ] **Fix: persist tofu-managed nebula node keys (blocks the Talos rollout above).**
+      Root cause of the blocked apply: for tofu-managed Talos nodes (optiplex + OVH), the
+      nebula cert **and private key** are generated on the fly by `nebula-cert sign`
+      (`persistent-auth.tf` `null_resource.nebula_node_cert`) into the local
+      `terraform/main/nebula-certs/` dir and read back via `data.local_file` /
+      `data.local_sensitive_file` — **not stored in SOPS** (unlike the non-tofu nodes
+      wyrm2/rugged/iguana/atlas, whose keys live in `secrets/nebula/`). Consequences:
+      the key is a single machine-local copy (only on whichever machine last ran the apply),
+      re-running `nebula-cert sign` (no `-in-pub`) mints a **new** keypair (rotation, not
+      reproduction), and any machine missing a node's local file can't even `tofu plan`
+      (the data source errors — currently `optiplex.nebula.allegedly.works.{crt,key}` is
+      absent locally, which is exactly what's blocking the rollout). Fix: persist each
+      generated node key the same way as the non-tofu nodes — store in SOPS (or sign a
+      persisted key via `-in-pub`) so any machine can apply without rotation and there's no
+      single-copy-on-one-laptop risk. Until then, the Talos rollout must run from the machine
+      that holds the current `nebula-certs/`.
+- [ ] **atlas host journal** — the remaining log gap. atlas is the Proxmox/PVE hypervisor,
       **not a k8s node**, so no in-cluster DaemonSet can reach its journal. Ship it with a
       host-level promtail/alloy systemd unit on atlas pushing to Loki over the Nebula mesh
       (needs a mesh-reachable `loki-write` endpoint — `*.svc.cluster.local` doesn't resolve
       off-cluster). This is host config (Ansible), not the k8s GitOps tree. Lower value than
       the guest since the authoritative Xid source is the wyrm2 **guest** journal, not the
       host.
+
+### Operational note: NixOS `node-vendor` label needs a manual apply after a switch
+
+`node-vendor=nixos` is set via `nix/nixos/hosts/*/default.nix` (`k8sWorker.nodeLabels`), but
+kubelet only applies `--node-labels` at **first registration**. On an already-registered node
+a `nixos-rebuild switch` restarts kubelet **without** adding the new label, so the
+`promtail-journal` DaemonSet won't schedule. After switching, verify with
+`kubectl get node <n> --show-labels` and, if missing, apply once by hand:
+`kubectl label node <n> node-vendor=nixos` (the nix config keeps it correct for future
+re-registration). Done for wyrm2 + rugged; iguana needs it whenever it's next online.
+
+## GPU metrics (DCGM) — follow-ups
+
+DCGM exporter is live on wyrm2 (`cluster/k8s/dcgm-exporter/`) and feeding Mimir:
+power/temp/clocks, **PCIe replay counters** (`DCGM_FI_DEV_PCIE_REPLAY_COUNTER` — gpu1
+already shows replays, the marginal-link canary), ECC, thermal/power violations. Remaining:
+
+- [ ] **`DCGM_FI_DEV_XID_ERRORS` is not exported** on these consumer GeForce RTX 5090s.
+      It's in the custom `counters.csv`, but DCGM silently drops field 230 on these cards
+      (no value / unsupported). So there is **no XID-as-a-metric** despite the plan's intent.
+      Mitigation already in place: the authoritative Xid-79 signal is captured via the
+      **journal → Loki** path (`{job="systemd-journal"} |~ "Xid|fallen off the bus"` on
+      wyrm2). Optional improvement: try DCGM 4.x's experimental
+      `DCGM_EXP_XID_ERRORS_COUNT` collector (separate from field 230) — needs the
+      experimental-collectors flag/config on the exporter; verify it actually populates on
+      GeForce before relying on it.
+- [ ] **Retire `nix/nixos/modules/gpu-monitor.nix`** (the local-CSV poller on wyrm2) once
+      the DCGM metrics in Mimir are confirmed to cover the run-up telemetry over a full
+      fall-off cycle. Don't remove it before then — it's the only "before" archive.
+- [ ] **Per-GPU PCIe AER correctable-error scrape** (followups doc #4). AER counters are
+      present inside the wyrm2 guest (`/sys/bus/pci/devices/0000:0{1,2}:00.0/aer_dev_correctable`).
+      DCGM's PCIe replay counter already covers the marginal-link canary, so this is
+      optional; a small textfile/exporter DaemonSet reading `aer_dev_*` would add the raw
+      AER counts.
 
 ## agent-box follow-ups
 
