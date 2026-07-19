@@ -518,7 +518,14 @@ class PostgresToolCallLedger:
                 raise TypeError(f"operator actor required, got {type(actor).__name__}")
 
 
-class McpToolExecutor:
+# TODO(naming): client-side dispatcher over fastmcp.client.Client, not a FastMCP Proxy/Provider
+#   (those are server-side concepts). Revisit the name against FastMCP terminology.
+class McpServerClient:
+    """Reaches a configured MCP server (in-process or remote) for tool execution and metadata
+    reflection, sharing one in-process registry and transport/Client lifecycle. The two operations
+    differ only in call and error policy — `execute` raises on tool error; `metadata` degrades on
+    transport error so one unreachable server can't break the capabilities listing."""
+
     def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
         self._in_process = in_process_servers or {}
 
@@ -531,11 +538,6 @@ class McpToolExecutor:
         if result.isError:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
-
-
-class McpMetadataProvider:
-    def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
-        self._in_process = in_process_servers or {}
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
         try:
@@ -557,11 +559,11 @@ class McpMetadataProvider:
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
 
 
-def _metadata_provider(request: Request) -> McpMetadataProvider:
-    return cast(McpMetadataProvider, request.app.state.tool_call_metadata_provider)
+def _metadata_provider(request: Request) -> McpServerClient:
+    return cast(McpServerClient, request.app.state.tool_call_metadata_provider)
 
 
-MetadataProviderDep = Annotated[McpMetadataProvider, Depends(_metadata_provider)]
+MetadataProviderDep = Annotated[McpServerClient, Depends(_metadata_provider)]
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -666,7 +668,7 @@ async def metadata_for_operator(
     *,
     operator_id: UUID,
     server: McpServerEntry,
-    metadata_provider: McpMetadataProvider,
+    metadata_provider: McpServerClient,
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> ServerMetadata:

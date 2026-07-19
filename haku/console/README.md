@@ -237,7 +237,7 @@ models.
 An `mcp.servers` entry explicitly selects either a `remote_mcp` backend with an HTTP URL and
 transport `auth`, or an `in_process` backend with an implementation `credential`. The latter is a
 registered **in-process `FastMCP` instance**: `fastmcp.client.Client` accepts a `FastMCP` object
-directly (an in-memory `FastMCPTransport`), so `McpToolExecutor`/`McpMetadataProvider` run the exact
+directly (an in-memory `FastMCPTransport`), so `McpServerClient` runs the exact
 same `Client(...)` calls either way. The application service still owns approval/audit and the HTTP
 adapter still owns CSRF, with the same live `tools/list` reflection.
 

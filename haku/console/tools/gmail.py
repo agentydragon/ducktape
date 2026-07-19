@@ -7,7 +7,7 @@ policy): create drafts, change thread labels, and manage labels/filters. Every c
 the console's approval and audit pipeline; reviewed policy may auto-approve reads + `haku/`-label
 mutations.
 
-Built as a real `FastMCP` server and attached to `McpToolExecutor`/`McpMetadataProvider`
+Built as a real `FastMCP` server and attached to `McpServerClient`
 as an **in-process** transport (`fastmcp.client.Client` accepts a `FastMCP` instance
 directly), so the application service's approval/audit lifecycle and the HTTP adapter's
 CSRF/reflection behavior run unchanged; only the transport differs from a remote server's. Registered

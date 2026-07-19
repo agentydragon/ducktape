@@ -129,8 +129,8 @@ def create_app(
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
     static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
-    tool_call_executor: mcp_approval.McpToolExecutor | None = None,
-    tool_call_metadata_provider: mcp_approval.McpMetadataProvider | None = None,
+    tool_call_executor: mcp_approval.McpServerClient | None = None,
+    tool_call_metadata_provider: mcp_approval.McpServerClient | None = None,
     gmail_client: gmail_tools.GmailToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
@@ -240,9 +240,9 @@ def create_app(
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
     if tool_call_executor is None:
-        tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
+        tool_call_executor = mcp_approval.McpServerClient(in_process_servers)
     if tool_call_metadata_provider is None:
-        tool_call_metadata_provider = mcp_approval.McpMetadataProvider(in_process_servers)
+        tool_call_metadata_provider = mcp_approval.McpServerClient(in_process_servers)
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,

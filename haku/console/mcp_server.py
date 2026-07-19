@@ -45,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, ServerMetadata, metadata_for_operator
+from haku.console.mcp_approval import DegradedServerMetadata, McpServerClient, ServerMetadata, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -117,7 +117,7 @@ class ConsoleMcpContext:
     tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
     provider_store: PostgresProviderConnectionStore
-    metadata_provider: McpMetadataProvider
+    metadata_provider: McpServerClient
 
 
 class ToolCallPromise(BaseModel):

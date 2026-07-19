@@ -47,8 +47,7 @@ from haku.console.database_schema import (
 )
 from haku.console.mcp_approval import (
     AliveServerMetadata,
-    McpMetadataProvider,
-    McpToolExecutor,
+    McpServerClient,
     PostgresToolCallLedger,
     _execution_auth,
     _mcp_result_to_json,
@@ -1459,8 +1458,8 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     assert baseline_values == current_values
 
 
-# --- In-process MCP servers (McpToolExecutor/McpMetadataProvider in-process registration) ---
-# Unit tests only: no postgres/network fixtures, exercising McpToolExecutor/McpMetadataProvider
+# --- In-process MCP servers (McpServerClient in-process registration) ---
+# Unit tests only: no postgres/network fixtures, exercising McpServerClient
 # directly (over a fresh `_build_test_mcp_server()` instance, in-memory — no HTTP)
 # rather than through the FastAPI app.
 
@@ -1536,7 +1535,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    executor = McpToolExecutor({"google": registration})
+    executor = McpServerClient({"google": registration})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1546,7 +1545,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
 
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
-    executor = McpToolExecutor({})
+    executor = McpServerClient({})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1559,7 +1558,7 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    metadata_provider = McpMetadataProvider({"google": registration})
+    metadata_provider = McpServerClient({"google": registration})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1582,7 +1581,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     provider_store = Mock()
     provider_store.is_connected.return_value = True
     builder = Mock(return_value=_build_test_mcp_server())
-    metadata_provider = McpMetadataProvider(
+    metadata_provider = McpServerClient(
         {
             "google": InProcessServerRegistration(
                 builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
@@ -1609,7 +1608,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
 
 
 async def test_metadata_provider_degrades_when_in_process_backend_is_not_registered() -> None:
-    metadata_provider = McpMetadataProvider({})
+    metadata_provider = McpServerClient({})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
