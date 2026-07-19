@@ -138,6 +138,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_workspace_gc",
+    srcs = ["test_workspace_gc.py"],
+    deps = [
+        ":workspace_gc_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 skill_package(
     name = "workspace-gc",
     srcs = ["SKILL.md"],

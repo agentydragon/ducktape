@@ -421,5 +421,10 @@ def _with_default_command(argv: list[str]) -> list[str]:
     return ["all", *argv]
 
 
+def main(argv: list[str] | None = None) -> None:
+    """Run the CLI through its importable wheel entry point."""
+    app(args=_with_default_command(sys.argv[1:] if argv is None else argv))
+
+
 if __name__ == "__main__":
-    app(args=_with_default_command(sys.argv[1:]))
+    main()
