@@ -125,7 +125,8 @@ buckets:
 tools the policy **unconditionally**
 auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read tools —
 `search_nodes`, `read_node`, `get_children`, `open_node`, `list_tags`, `list_workspaces`,
-`get_tag_schema`, plus the idempotent `get_or_create_calendar_node`) appear as
+`get_tag_schema`, plus the idempotent `get_or_create_calendar_node`, and postscanmail-mcp
+reads) appear as
 transparent **pass-throughs** (original schema, real result); everything else keeps the same
 `<server>_<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +

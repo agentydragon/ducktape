@@ -123,14 +123,13 @@ technique as a pass in haku-state's `procedures/`).
   Google account — so `keep_notes` stays an illustrative example only. Further
   read-only Google scopes light up the same way as added.
 
-## Read-only filter facades (sources designed, not yet wired)
+## Mutating-tool sources behind haku-console
 
-These MCP servers expose mutating tools, so each needs a **read-only filter
-facade** in front (the Authentik OAuth facade is auth, not tool filtering — see
-`PLAN.md` → _Access model_) before Haku may use it:
-
-- **PostScanMail** — unopened-mail → open/discard/shred suggestions. First filter
-  facade to build; also proves the `client_credentials` facade-auth path.
+A source whose MCP server exposes mutating tools doesn't need a separate read-only filter
+facade: wire the full server behind haku-console (`cluster/k8s/haku/console/config.yaml`) and
+let the console's approval gate filter it — reads auto-approve, every mutating/paid/destructive
+call queues for operator approval (`haku/console/auto_approval.py`). The Authentik OAuth facades
+are auth, not tool filtering, but the approval gate is. PostScanMail is wired this way.
 
 **Grocy is wired** (`base/sources/grocy.md`) — routed through haku-console's `grocy-sf`
 MCP entry (`GROCY_READ_TOOLS` in `console/auto_approval.py` auto-approve; every write

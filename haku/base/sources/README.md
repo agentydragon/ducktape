@@ -71,6 +71,9 @@ scans, opportunistic synthesis, quiet-run recon, … — are **not** here; they'
 grow), applied situationally across whatever sources fit (illustrations, not a checklist;
 invent your own). This directory is just the channels and how to read them.
 
-Designed but **not yet wired** (don't attempt; note the gap if one appears):
-PostScanMail (unopened mail) — blocked until it sits behind a read-only filter
-facade; see `../../PLAN.md`.
+**PostScanMail** (unopened mail) is wired behind haku-console as `postscanmail-mcp`:
+Haku reaches it through the console's `/mcp` proxy tools (`postscanmail-mcp_list_items`,
+`postscanmail-mcp_list_automation_rules`). Reads auto-approve; every mutating/paid/destructive
+action (`request_open`/`request_rescan` are paid; `request_discard`/`request_shred` destroy
+mail) queues for operator approval. Config in `cluster/k8s/haku/console/config.yaml`; policy
+in `haku/console/auto_approval.py`. No direct facade or bearer for Haku to hold.

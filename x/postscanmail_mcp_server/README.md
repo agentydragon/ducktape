@@ -30,6 +30,28 @@ the Authentik provider/group/policy block in
 
 Base URL: `https://api.postscanmail.com/api/account-docs/v2/`.
 
+## Tool annotations
+
+Each tool declares [`ToolAnnotations`](../../mcp_infra/docs/tool_annotations.md) so MCP
+clients (claude.ai / Claude Code) group it and relax approval prompts. The hints are
+advisory; haku-console enforces its own approval policy server-side regardless.
+
+| Tool(s)                               | Annotations                                                    |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `list_items`, `list_automation_rules` | `readOnlyHint=true` (pure GET reads)                           |
+| `set_automation_rule`                 | `idempotentHint=true, destructiveHint=false` (PUT toggle)      |
+| `cancel_open/discard/rescan/shred`    | `idempotentHint=true, destructiveHint=false` (abort a pending) |
+| `request_open`, `request_rescan`      | `destructiveHint=false` (paid, additive scan)                  |
+| `request_discard`, `request_shred`    | `destructiveHint=true` (remove/destroy mail)                   |
+
+## Wired behind haku-console
+
+The server is wired into haku-console as `postscanmail-mcp`
+(<../../cluster/k8s/haku/console/config.yaml>): reads (`list_items`, `list_automation_rules`)
+auto-approve for the agent; every mutating/paid/destructive action queues for operator
+approval (<../../haku/console/auto_approval.py>). haku-console reflects and propagates these
+annotations to its clients unchanged.
+
 ## Running locally
 
 ```bash

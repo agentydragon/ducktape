@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 import respx
 from fastmcp.client import Client
+from mcp.types import ToolAnnotations
 
 from x.postscanmail_mcp_server.conftest import TEST_API_KEY
 
@@ -33,6 +34,37 @@ EXPECTED_TOOLS = {
 async def test_all_tools_registered(mcp_client: Client) -> None:
     tools = await mcp_client.list_tools()
     assert {t.name for t in tools} == EXPECTED_TOOLS
+
+
+async def test_tools_carry_correct_annotations(mcp_client: Client) -> None:
+    tools = {t.name: t for t in await mcp_client.list_tools()}
+
+    def ann(name: str) -> ToolAnnotations:
+        annotations = tools[name].annotations
+        assert annotations is not None, f"{name} missing annotations"
+        return annotations
+
+    # Reads: read-only (openWorldHint stays default true — external mailbox, not the tool's
+    # own state), so clients auto-run them without a per-call approval prompt.
+    for name in ("list_items", "list_automation_rules"):
+        assert ann(name).readOnlyHint is True
+    # Account-wide automation toggle: idempotent PUT of a boolean, reversible — non-destructive.
+    toggle = ann("set_automation_rule")
+    assert toggle.idempotentHint is True
+    assert toggle.destructiveHint is False
+    # Cancels: a repeat with nothing pending is a no-op (idempotent); cancelling prevents,
+    # never causes, an effect — non-destructive.
+    for name in ("cancel_open", "cancel_discard", "cancel_rescan", "cancel_shred"):
+        cancel = ann(name)
+        assert cancel.idempotentHint is True
+        assert cancel.destructiveHint is False
+    # Paid scans (open/rescan): state-changing and irreversible once done, but additive —
+    # non-destructive.
+    for name in ("request_open", "request_rescan"):
+        assert ann(name).destructiveHint is False
+    # Mail removal/destruction: discard trashes, shred destroys securely — destructive.
+    for name in ("request_discard", "request_shred"):
+        assert ann(name).destructiveHint is True
 
 
 async def test_list_items_forwards_query_params_and_api_key(mcp_client: Client, respx_router: respx.Router) -> None:
