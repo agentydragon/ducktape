@@ -262,9 +262,17 @@ def const_in_process_server(mcp: FastMCP) -> InProcessServerBuilder:
     return lambda _token: mcp
 
 
-def _transport(server: McpServerEntry, in_process: InProcessServers, auth_token: str | None) -> FastMCP | str:
+def _transport(
+    server: McpServerEntry, in_process: InProcessServers, auth_token: str | None
+) -> tuple[FastMCP | str, str | None]:
+    """Resolve the MCP transport and any transport-level authentication.
+
+    In-process builders consume the backend credential while constructing their server, so the
+    resulting in-memory transport must not receive it again as client authentication. Remote HTTP
+    transports instead carry the credential as their bearer authentication.
+    """
     if builder := in_process.get(server.id):
-        return builder(auth_token)
+        return builder(auth_token), None
     if server.server_url is not None:
-        return server.server_url
+        return server.server_url, auth_token
     raise RuntimeError(f"MCP server {server.id!r} has no server_url and no in-process registration")

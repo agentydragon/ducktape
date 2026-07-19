@@ -1440,10 +1440,12 @@ def test_server_entry_allows_missing_server_url() -> None:
 
 
 async def test_executor_dispatches_to_registered_in_process_server() -> None:
-    executor = McpToolExecutor({"google": const_in_process_server(_test_mcp_server())})
+    builder = Mock(return_value=_test_mcp_server())
+    executor = McpToolExecutor({"google": builder})
     server = McpServerEntry(id="google", auth=NoBackendAuth())
-    result = await executor.execute(server, "echo", {"text": "hi"}, auth_token=None)
+    result = await executor.execute(server, "echo", {"text": "hi"}, auth_token="operator-token")
     assert result["content"][0]["text"] == "echo:hi"
+    builder.assert_called_once_with("operator-token")
 
 
 async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
@@ -1454,9 +1456,10 @@ async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
 
 
 async def test_metadata_provider_reflects_in_process_server_tools() -> None:
-    metadata_provider = McpMetadataProvider({"google": const_in_process_server(_test_mcp_server())})
+    builder = Mock(return_value=_test_mcp_server())
+    metadata_provider = McpMetadataProvider({"google": builder})
     server = McpServerEntry(id="google", auth=NoBackendAuth())
-    metadata = await metadata_provider.metadata(server, auth_token=None)
+    metadata = await metadata_provider.metadata(server, auth_token="operator-token")
     assert isinstance(metadata, AliveServerMetadata)
     assert {tool.name for tool in metadata.tools} == {
         "stock_add",
@@ -1468,6 +1471,7 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
         "shopping_lists_list",
         "shopping_list_get",
     }
+    builder.assert_called_once_with("operator-token")
 
 
 async def test_metadata_provider_degrades_when_no_server_url_and_not_registered() -> None:

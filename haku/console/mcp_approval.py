@@ -524,7 +524,8 @@ class McpToolExecutor:
     async def execute(
         self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
     ) -> dict[str, Any]:
-        async with Client(_transport(server, self._in_process, auth_token), auth=auth_token) as client:
+        transport, transport_auth = _transport(server, self._in_process, auth_token)
+        async with Client(transport, auth=transport_auth) as client:
             result = await client.call_tool_mcp(tool_name, arguments)
         if result.isError:
             raise RuntimeError(_mcp_error_message(result))
@@ -537,7 +538,8 @@ class McpMetadataProvider:
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
         try:
-            async with Client(_transport(server, self._in_process, auth_token), auth=auth_token) as client:
+            transport, transport_auth = _transport(server, self._in_process, auth_token)
+            async with Client(transport, auth=transport_auth) as client:
                 tools = await client.list_tools()
         except Exception as e:
             return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
