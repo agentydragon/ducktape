@@ -31,6 +31,15 @@ let
     rdp-server-key-path=/var/lib/gnome-remote-desktop/rdp-tls.key
     rdp-port=3389
   '';
+  # xrdp launches the window manager in a session env that, on NixOS, does NOT set
+  # HOME (xrdp-sesman's pam line is `pam_env … readenv=0`), so a full desktop like
+  # Xfce fails to start and you get a black screen. This wrapper sets HOME, launches
+  # Xfce, and tees its output to /tmp/xrdp-wm.log so any remaining failure is visible
+  # (nixpkgs's xrdp test sidesteps this with bare WMs that don't need HOME).
+  rdpSession = pkgs.writeShellScript "xrdp-xfce-session" ''
+    export HOME="''${HOME:-/home/agentydragon}"
+    exec ${pkgs.xfce.xfce4-session}/bin/startxfce4 > /tmp/xrdp-wm.log 2>&1
+  '';
 in
 {
   imports = [
@@ -228,7 +237,7 @@ in
   # logged in).
   services.xrdp = {
     enable = true;
-    defaultWindowManager = "startxfce4";
+    defaultWindowManager = "${rdpSession}";
   };
   services.xserver.desktopManager.xfce.enable = true;
 
