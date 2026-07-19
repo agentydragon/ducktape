@@ -278,6 +278,16 @@ creation_rules:
           - *agent-box-codex-user
           - *agent-box-zai-user
 
+  # wyrm2 gnome-remote-desktop system-RDP TLS pair (admin + host). The system
+  # daemon decrypts via the host key; the cert is public but encrypted alongside
+  # the key for an atomic pair (no plain secret committed).
+  - path_regex: secrets/hosts/wyrm2-rdp-tls\.sops\.(crt|key)$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-host
+
   # --- Per-host secrets (admin + host) ---
   - path_regex: secrets/hosts/wyrm2-.*\.yaml$
     key_groups:

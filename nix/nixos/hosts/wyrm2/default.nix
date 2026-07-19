@@ -22,7 +22,8 @@ let
   # the [RDP] group (keys rdp-enabled / rdp-server-cert-path / rdp-server-key-path).
   # Declaring RDP enabled here is what makes the daemon bind 3389 at startup — and it
   # sidesteps `grdctl --system rdp enable`, whose built-in systemd-enable step can't
-  # write to read-only /etc on NixOS (see the grd-system-rdp-config oneshot below).
+  # write to read-only /etc on NixOS. Symlinked into place by tmpfiles (below); the
+  # TLS pair is a SOPS secret.
   grdConf = pkgs.writeText "grd-system-rdp.conf" ''
     [RDP]
     rdp-enabled=true
@@ -209,14 +210,35 @@ in
   # Reach it over an SSH-key tunnel on nebula (`ssh -L 3389:localhost:3389
   # <wyrm2-nebula>`, then RDP to localhost:3389): RDP is NOT firewalled open, so the
   # only path in is the key-only SSH already configured — nebula cert + SSH key are
-  # the gates, the RDP password is just the login step. RDP is enabled declaratively
-  # via grd.conf (grdConf above + the grd-system-rdp-config oneshot below), not grdctl.
-  # See the GRD bring-up notes in debug/atlas/direct_display_bringup/README.md.
+  # the gates, the RDP password is just the login step. RDP is enabled declaratively:
+  # the TLS pair is a SOPS secret (below) and grd.conf (grdConf above) is symlinked
+  # into place by tmpfiles — no grdctl, no runtime bootstrap. See the GRD bring-up
+  # notes in debug/atlas/direct_display_bringup/README.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
-  # The GRD system-RDP config one-shot (grd-system-rdp-config) is defined in the
-  # `systemd.services = lib.mkMerge [ … ]` block below — this module can't also use a
-  # dotted `systemd.services.<x> =` (whole-attr constraint; see the note there).
+  # The self-signed TLS pair RDP mandates. Host-only secret (admin + wyrm2-host), like
+  # the Nebula host keys — the daemon decrypts at activation via the host key. Rendered
+  # straight to the daemon's paths, owned by the gnome-remote-desktop user so it can
+  # read the key.
+  sops.secrets.rdp_tls_cert = {
+    sopsFile = ../../../../secrets/hosts/wyrm2-rdp-tls.sops.crt;
+    format = "binary";
+    path = "/var/lib/gnome-remote-desktop/rdp-tls.crt";
+    owner = "gnome-remote-desktop";
+    group = "gnome-remote-desktop";
+    mode = "0644";
+  };
+  sops.secrets.rdp_tls_key = {
+    sopsFile = ../../../../secrets/hosts/wyrm2-rdp-tls.sops.key;
+    format = "binary";
+    path = "/var/lib/gnome-remote-desktop/rdp-tls.key";
+    owner = "gnome-remote-desktop";
+    group = "gnome-remote-desktop";
+    mode = "0640";
+  };
+
+  # grd.conf (grdConf above) is symlinked into the daemon's XDG_DATA_HOME by the
+  # systemd.tmpfiles.rules block below — fully declarative, no oneshot.
 
   # TODO(kvm-no-blank): the pre-SDDM GDM config set login-screen idle-delay=0 to
   # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
@@ -423,49 +445,6 @@ in
   # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
-    # gnome-remote-desktop system RDP (remote login) — configured declaratively, no
-    # grdctl. `grdctl --system rdp enable` would normally flip RDP on, but it also runs
-    # a built-in systemd-enable that symlinks into
-    # /etc/systemd/system/graphical.target.wants/ — read-only on NixOS, so it hard-fails
-    # with EROFS and RDP never comes up (silent on every boot). Instead this oneshot
-    # writes the self-signed TLS pair (a mandatory RDP protocol artifact, not a secret —
-    # RDP is localhost-only behind the SSH-key tunnel) and installs grd.conf (grdConf
-    # above) with RDP enabled, before the daemon starts. The daemon reads grd.conf at
-    # startup and binds 3389. Remote Login authenticates via PAM through GDM's handover
-    # (no stored credentials); the NVIDIA-headless render path is the open risk.
-    {
-      grd-system-rdp-config = {
-        description = "Provision gnome-remote-desktop system RDP config (declarative)";
-        wantedBy = [ "multi-user.target" ];
-        before = [ "gnome-remote-desktop.service" ];
-        after = [ "systemd-sysusers.service" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-        };
-        path = [ pkgs.openssl ];
-        script = ''
-          dir=/var/lib/gnome-remote-desktop
-          cert=$dir/rdp-tls.crt
-          key=$dir/rdp-tls.key
-          confdir=$dir/.local/share/gnome-remote-desktop
-          mkdir -p "$confdir"
-          chown gnome-remote-desktop:gnome-remote-desktop "$confdir"
-          # Self-signed TLS pair: mandatory RDP handshake artifact, not a secret
-          # (the SSH-key tunnel is the real transport/auth gate). Generate once.
-          if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
-            openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
-              -subj "/CN=wyrm2" -keyout "$key" -out "$cert"
-          fi
-          # Daemon runs as user gnome-remote-desktop; it must read the key.
-          chown gnome-remote-desktop:gnome-remote-desktop "$cert" "$key"
-          chmod 0644 "$cert"
-          chmod 0640 "$key"
-          install -m 0644 -o gnome-remote-desktop -g gnome-remote-desktop \
-            "${grdConf}" "$confdir/grd.conf"
-        '';
-      };
-    }
     # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
     #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
     #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
@@ -528,6 +507,12 @@ in
     # The Colibri host experiment runs as agentydragon and stores only
     # reproducible model artifacts on this dedicated SSD.
     "d /var/lib/colibri 0755 agentydragon users -"
+    # gnome-remote-desktop system daemon reads $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
+    # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf); symlink
+    # grdConf there so it enables RDP at startup. tmpfiles runs before graphical.target,
+    # so the link is in place before the daemon starts.
+    "d /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop 0755 gnome-remote-desktop gnome-remote-desktop -"
+    "L+ /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf - - - - ${grdConf}"
   ];
 
   # virtiofs shared from Proxmox host (atlas)
