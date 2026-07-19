@@ -3,6 +3,8 @@ kind: Namespace
 metadata:
   name: dcgm-exporter
   labels:
+    # Fixed-resource DaemonSet — opt out of Goldilocks/VPA recommendations.
+    goldilocks.fairwinds.com/enabled: "false"
     # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: privileged
