@@ -63,7 +63,6 @@ from haku.console.mcp_config import (
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -155,13 +154,12 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     # Per-Operator external provider connections (Google today), replacing Airlock's brokered
-    # token. Only providers with a configured OAuth client are offered.
-    provider_clients = (
-        {ProviderConnectionKind.GOOGLE: settings.google_client} if settings.google_client is not None else {}
-    )
+    # token. Only deploy-named providers whose client env vars are present are offered.
+    provider_clients = provider_connection.load_provider_clients(console_config)
     provider_connection_store = provider_connection.PostgresProviderConnectionStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
+        provider_definitions=console_config.operator_connection_providers,
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
     )

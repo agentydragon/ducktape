@@ -145,22 +145,32 @@ spec:
             # Operator's per-Operator Google token from the console's own connection store
             # (haku/console/provider_connection.py), self-refreshed in-process.
             #
-            # The console holds the shared Google OAuth client (client_id/secret) and runs the
-            # per-Operator authorization-code flow itself, replacing Airlock's brokered
-            # haku_console_google token. optional: true so the pod starts before the secret exists;
-            # until it does (and an Operator connects from the Access tab) both servers are degraded.
-            # The secret is authored by the operator (see cluster/k8s/haku/console/README.md), and
-            # the console callback URI must also be registered on the Google OAuth client.
-            - name: HAKU_CONSOLE_GOOGLE_CLIENT__CLIENT_ID
+            # Each integration has its own Google OAuth application/client so Calendar can complete
+            # sensitive-scope verification independently of restricted Gmail. The console runs both
+            # per-Operator authorization-code flows itself. optional: true keeps only the integration
+            # whose secret is absent degraded. Register the same console callback URI on each client.
+            - name: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: haku-console-google-client-credentials
                   key: client_id
                   optional: true
-            - name: HAKU_CONSOLE_GOOGLE_CLIENT__CLIENT_SECRET
+            - name: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-google-client-credentials
+                  key: client_secret
+                  optional: true
+            - name: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-google-calendar-client-credentials
+                  key: client_id
+                  optional: true
+            - name: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-google-calendar-client-credentials
                   key: client_secret
                   optional: true
             # Operator-facing origin, used to build the deep-link `url` the /mcp promise +

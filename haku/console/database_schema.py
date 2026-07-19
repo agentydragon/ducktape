@@ -577,15 +577,17 @@ class McpOperatorOAuthFlow(Base):
 class ProviderConnection(Base):
     """One Operator's linked account for a well-known OAuth provider (Google today).
 
-    One row per deploy-named ``(operator_id, connection_name)``. Multiple logical connections may
-    use the same provider and fixed OAuth client while requesting independent scope sets. The
-    console self-refreshes ``access_token`` from ``refresh_token`` using that provider client;
-    ``token_revision`` guards a concurrent refresh/reconnect.
+    One row per deploy-named ``(operator_id, connection_name)``. ``provider_name`` records the
+    configured OAuth application that issued the grant, while ``provider`` records its protocol
+    kind. The console self-refreshes ``access_token`` with that same client; ``token_revision``
+    guards a concurrent refresh/reconnect.
     """
 
     __tablename__ = "provider_connections"
     __table_args__ = (
         UniqueConstraint("connection_id", name="uq_provider_connections_connection_id"),
+        CheckConstraint("btrim(connection_name) <> ''", name="ck_provider_connections_connection_name_nonempty"),
+        CheckConstraint("btrim(provider_name) <> ''", name="ck_provider_connections_provider_name_nonempty"),
         Index("idx_provider_connections_operator", "operator_id"),
     )
 
@@ -593,6 +595,7 @@ class ProviderConnection(Base):
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
     )
     connection_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider_name: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[ProviderConnectionKind] = mapped_column(
         StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
     )
@@ -612,6 +615,8 @@ class ProviderConnectionFlow(Base):
 
     __tablename__ = "provider_connection_flows"
     __table_args__ = (
+        CheckConstraint("btrim(connection_name) <> ''", name="ck_provider_connection_flows_connection_name_nonempty"),
+        CheckConstraint("btrim(provider_name) <> ''", name="ck_provider_connection_flows_provider_name_nonempty"),
         Index("idx_provider_connection_flows_operator", "operator_id"),
         Index("idx_provider_connection_flows_expires_at", "expires_at"),
     )
@@ -621,6 +626,7 @@ class ProviderConnectionFlow(Base):
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
     connection_name: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_name: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[ProviderConnectionKind] = mapped_column(
         StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
     )

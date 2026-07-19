@@ -43,7 +43,7 @@ creation), both behind the ordinary operator-approval queue — execute as the *
 Operator's own Google account**: each call resolves that Operator's per-Operator Google access
 token from the console's own connection store (`haku/console/provider_connection.py`),
 self-refreshed in-process. This replaces Airlock's brokered `haku_console_google` token — the
-console holds the Google OAuth client and each Operator's refresh token itself. The console pod
+console holds the Google OAuth clients and each Operator's refresh token itself. The console pod
 starts fine before anything is connected; until an Operator connects, both servers are
 `degraded` (hidden from that Operator) and their tools return a "connect your Google account"
 error.
@@ -53,33 +53,30 @@ reviewed transparent auto-approved tools; `create_event` always remains operator
 
 **Deploy prerequisites (operator, one time):**
 
-1. **Google OAuth client secret.** Author the `haku-console-google-client-credentials` Secret
-   (keys `client_id`, `client_secret`) in the `haku-console` namespace with the shared Google
-   OAuth client's credentials, `sops -e -i` it, and add it to `kustomization.yaml`. The
-   deployment reads it via `HAKU_CONSOLE_GOOGLE_CLIENT__CLIENT_ID/SECRET` (`optional: true`, so
-   the pod starts without it — both servers just stay degraded). Deliberately a console-owned
-   Secret, independent of Airlock's `google-client-credentials` (no ESO/reflector coupling to
-   the `airlock` namespace).
-2. **Redirect URI.** Register `https://haku.allegedly.works/api/provider-connections/callback`
-   as an authorized redirect URI on that Google OAuth client, or the callback fails with
+1. **Gmail OAuth client secret.** The existing `haku-console-google-client-credentials` Secret
+   (keys `client_id`, `client_secret`) supplies `HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_{ID,SECRET}`.
+   It is the restricted-scope Gmail project's client, independent of Airlock's
+   `google-client-credentials`.
+2. **Calendar OAuth client secret.** Create a separate Google Cloud project/client requesting only
+   `calendar.events`, author `haku-console-google-calendar-client-credentials` with the same two
+   keys, encrypt it in place with `sops -e -i`, and add it to `kustomization.yaml`. The deployment's
+   references are optional, so Calendar alone stays degraded until this Secret exists.
+3. **Redirect URI.** Register `https://haku.allegedly.works/api/provider-connections/callback`
+   as an authorized redirect URI on both Google OAuth clients, or that client's callback fails with
    `redirect_uri_mismatch`.
 
 **Connect (operator, per linkage):** open the console's Settings → Connected accounts and connect
 Google Mail and Google Calendar separately, then complete consent (`access_type=offline`,
 `prompt=consent`). Each callback stores its own refresh token in Postgres; disconnecting one linkage
-deletes only that local grant. Both linkages currently use the same Google OAuth client/project, so
-revoking project access at Google invalidates both.
+deletes only that local grant. Separate projects/clients isolate their verification and credential
+lifecycles.
 
-**Gotcha — Testing publishing status expires the refresh token every 7 days.** The OAuth app
-(project `rai-personal`) is in **Testing**, not **In production**, because the requested Gmail/Drive
-scopes are _restricted_ and production verification would need a CASA security assessment. Google
-expires **Testing-mode refresh tokens 7 days after issue**, so the connection breaks roughly weekly
-and the Operator must re-**Connect** — the in-process self-refresh cannot save a refresh token Google
-has already invalidated. Because the app requests _restricted_ Gmail/Drive scopes, Google's **Publish
-app** flow requires submitting for verification (a CASA security assessment); there is **no** durable
-published-but-unverified state for restricted scopes (unlike merely _sensitive_ scopes, where an
-unverified production app just shows a warning). So the options are: stay in **Testing** and re-Connect
-roughly weekly, or complete verification. Testing is accepted for now.
+**Gotcha — Testing publishing status expires the refresh token every 7 days.** The Gmail OAuth app
+(project `rai-personal`) remains in **Testing** because its restricted scopes make publication require
+the expensive verification/security-assessment path. Its connection therefore needs reauthorization
+roughly weekly. Calendar uses a separate project/client so its narrower sensitive-scope verification
+can proceed without Gmail's restricted scopes; once that project is published, Calendar tokens no
+longer inherit Gmail's Testing-mode churn.
 
 Scopes are explicit per deploy-named connection in `config.yaml`: Google Mail requests
 `gmail.modify`, `gmail.compose`, and `gmail.settings.basic`; Google Calendar requests

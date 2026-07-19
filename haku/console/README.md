@@ -89,8 +89,9 @@ Core endpoints:
   `DELETE /api/operator-connections/{connection}`, and `GET /api/provider-connections/callback` —
   deploy-named per-Operator connections to well-known external OAuth providers for in-process
   servers (this flow lives in `provider_connection.py`). Each connection owns its display name and
-  scopes; provider metadata and the fixed pre-registered client remain shared. Postgres stores and
-  self-refreshes one grant per `(operator_id, connection_name)`.
+  scopes and selects a deploy-named provider instance. Provider instances of the same protocol may
+  use different fixed pre-registered clients. Postgres stores and self-refreshes one grant per
+  `(operator_id, connection_name)` and records which provider instance issued it.
 - `GET /api/approvals/pending` and `WebSocket /api/events/ws` — canonical-Operator-routed
   frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
   wakes the shell to refresh.
@@ -282,11 +283,12 @@ account**: each call resolves that Operator's per-Operator Google access token f
 console's own connection store (`provider_connection.py`) through separate config-bound
 `google_mail` and `google_calendar` connections, then builds the client for that one call — no
 shared/startup credential. The console
-holds the Google OAuth client and each Operator's refresh token itself (Postgres, self-refreshed
+holds each Google OAuth client and each Operator's refresh token itself (Postgres, self-refreshed
 in-process), replacing Airlock's brokered `haku_console_google` token. Gmail requests
 `gmail.modify`, `gmail.compose`, and `gmail.settings.basic`; Calendar requests `calendar.events`.
 Until the corresponding connection is linked, that server is `degraded`. Both connections currently
-reuse one Google OAuth client, but their tokens and local lifecycle are independent. Persisted
+use separate Google OAuth clients so their verification and credential lifecycles are independent.
+Persisted
 `connection_id` is the UUID of an actual association; it is distinct from the deploy name and
 provider kind.
 

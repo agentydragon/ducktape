@@ -382,10 +382,17 @@ def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
 @pytest.fixture
 def gmail_config_file(tmp_path: Path) -> Path:
     config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_mail"})])
+    config["operator_connection_providers"] = {
+        "google_mail": {
+            "kind": "google",
+            "client_id_env_var": "GOOGLE_MAIL_CLIENT_ID",
+            "client_secret_env_var": "GOOGLE_MAIL_CLIENT_SECRET",
+        }
+    }
     config["operator_connections"] = {
         "google_mail": {
             "display_name": "Google Mail",
-            "provider": "google",
+            "provider": "google_mail",
             "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
         }
     }
@@ -1487,13 +1494,29 @@ def test_config_rejects_unknown_operator_connection() -> None:
         )
 
 
-def test_config_allows_two_logical_connections_for_one_provider() -> None:
+def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            "operator_connection_providers": {
+                "google_mail": {
+                    "kind": "google",
+                    "client_id_env_var": "GOOGLE_MAIL_CLIENT_ID",
+                    "client_secret_env_var": "GOOGLE_MAIL_CLIENT_SECRET",
+                },
+                "google_calendar": {
+                    "kind": "google",
+                    "client_id_env_var": "GOOGLE_CALENDAR_CLIENT_ID",
+                    "client_secret_env_var": "GOOGLE_CALENDAR_CLIENT_SECRET",
+                },
+            },
             "operator_connections": {
-                "google_mail": {"display_name": "Google Mail", "provider": "google", "scopes": ["gmail"]},
-                "google_calendar": {"display_name": "Google Calendar", "provider": "google", "scopes": ["calendar"]},
-            }
+                "google_mail": {"display_name": "Google Mail", "provider": "google_mail", "scopes": ["gmail"]},
+                "google_calendar": {
+                    "display_name": "Google Calendar",
+                    "provider": "google_calendar",
+                    "scopes": ["calendar"],
+                },
+            },
         }
     )
     assert list(config.operator_connections) == ["google_mail", "google_calendar"]
@@ -1502,6 +1525,13 @@ def test_config_allows_two_logical_connections_for_one_provider() -> None:
 def test_config_rejects_incompatible_registered_credential_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            "operator_connection_providers": {
+                "google": {
+                    "kind": "google",
+                    "client_id_env_var": "GOOGLE_CLIENT_ID",
+                    "client_secret_env_var": "GOOGLE_CLIENT_SECRET",
+                }
+            },
             "operator_connections": {
                 "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
             },

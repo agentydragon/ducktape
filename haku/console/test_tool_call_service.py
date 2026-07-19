@@ -290,6 +290,7 @@ def _service(
         provider_store=PostgresProviderConnectionStore(
             console_sessions(database_url),
             operator_identity_store=operator_identity_store(database_url),
+            provider_definitions={},
             provider_clients={},
             operator_connections={},
         ),

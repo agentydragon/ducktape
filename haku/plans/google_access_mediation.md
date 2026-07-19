@@ -12,10 +12,11 @@ Sequenced later than the common Agent lifecycle (H1–H3 there).
    `haku/console/provider_connection.py` (Postgres per-Operator refresh storage + in-process
    self-refresh), the `/api/operator-connections/*` connect/status/disconnect flow, deploy-named
    connection bindings with execution-time Operator selection, and the Settings → Connected
-   accounts UI. Gmail and Calendar have separate least-privilege grants while currently sharing
-   one provider client. The console holds its own dedicated Google OAuth client
-   (`haku-console-google-client-credentials`, project `rai-personal`, independent of Airlock's). A
-   downstream-provider relationship, not Agent enrollment or an Agent-held credential.
+   accounts UI. Gmail and Calendar have separate least-privilege grants and separate provider
+   clients so Calendar can complete sensitive-scope verification independently of restricted Gmail.
+   The existing `haku-console-google-client-credentials` Secret remains Gmail's client; Calendar has
+   its own optional credential slot. These are downstream-provider relationships, not Agent
+   enrollment or Agent-held credentials.
 2. **G2 (done):** removed `haku_console_google`, its Secret publication/External Secrets mirror, and
    its airlock-side producer (#3364). The console-owned token never reaches an Agent — it lives only
    in the `haku-console` Postgres, and Agents reach Gmail/Calendar solely through the console's

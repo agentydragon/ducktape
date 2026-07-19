@@ -31,13 +31,23 @@ class McpServerNotFoundError(LookupError):
     """The configured connected-server catalog has no entry for the requested id."""
 
 
+class OperatorConnectionProviderDefinition(BaseModel):
+    """A deploy-named OAuth application whose secret values come from environment variables."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: ProviderConnectionKind
+    client_id_env_var: str = Field(min_length=1, pattern=r"^[A-Z][A-Z0-9_]*$")
+    client_secret_env_var: str = Field(min_length=1, pattern=r"^[A-Z][A-Z0-9_]*$")
+
+
 class OperatorConnectionDefinition(BaseModel):
-    """A deploy-named external-account linkage backed by one provider's OAuth client."""
+    """A deploy-named external-account linkage backed by one configured OAuth application."""
 
     model_config = ConfigDict(extra="forbid")
 
     display_name: str = Field(min_length=1)
-    provider: ProviderConnectionKind
+    provider: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
     scopes: tuple[str, ...] = Field(min_length=1)
 
     @field_validator("display_name")
@@ -194,6 +204,7 @@ class LoadedStaticAgent(BaseModel):
 
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
+    operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
@@ -224,9 +235,20 @@ class ConsoleConfigFile(BaseModel):
                         f"MCP server {server.id!r} references unknown operator connection {credential.connection!r}"
                     )
 
-        for name in self.operator_connections:
+        provider_env_vars: set[str] = set()
+        for name, provider in self.operator_connection_providers.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+                raise ValueError(f"invalid operator connection provider name {name!r}")
+            for env_var in (provider.client_id_env_var, provider.client_secret_env_var):
+                if env_var in provider_env_vars:
+                    raise ValueError(f"duplicate operator connection provider env var {env_var!r}")
+                provider_env_vars.add(env_var)
+
+        for name, connection in self.operator_connections.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
                 raise ValueError(f"invalid operator connection name {name!r}")
+            if connection.provider not in self.operator_connection_providers:
+                raise ValueError(f"operator connection {name!r} references unknown provider {connection.provider!r}")
 
         agent_ids: set[UUID] = set()
         name_keys: set[str] = set()

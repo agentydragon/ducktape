@@ -629,6 +629,13 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         tmp_path / "connection-status.yaml",
         {
             "static_agents": _STATIC_AGENTS,
+            "operator_connection_providers": {
+                "google": {
+                    "kind": "google",
+                    "client_id_env_var": "GOOGLE_CLIENT_ID",
+                    "client_secret_env_var": "GOOGLE_CLIENT_SECRET",
+                }
+            },
             "operator_connections": {
                 "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
             },

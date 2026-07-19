@@ -227,12 +227,6 @@ class Settings(BaseSettings):
     # stores are always constructed; migrations are applied once at startup (see app.main).
     database_url: SecretStr
 
-    # Pre-registered Google OAuth client backing per-Operator Google connections (the `gmail`
-    # and `google_calendar` in-process servers). Reads HAKU_CONSOLE_GOOGLE_CLIENT__{CLIENT_ID,
-    # CLIENT_SECRET}. Unset → no Google connection is offered (both servers stay degraded). This
-    # replaces Airlock's brokered `haku_console_google` token: the console now holds the client and
-    # each Operator's refresh token itself. See haku/console/provider_connection.py.
-    google_client: ProviderOAuthClientConfig | None = None
     # Namespace whose Gmail label mutations Haku may auto-approve. labels_list is
     # wholesale because Haku already has standing Gmail read authority.
     gmail_auto_approve_label_prefix: str = "haku/"

@@ -11,17 +11,26 @@ static_agents:
     display_name: Haku
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
+operator_connection_providers:
+  google_mail:
+    kind: google
+    client_id_env_var: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_ID
+    client_secret_env_var: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_SECRET
+  google_calendar:
+    kind: google
+    client_id_env_var: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_ID
+    client_secret_env_var: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_SECRET
 operator_connections:
   google_mail:
     display_name: Google Mail
-    provider: google
+    provider: google_mail
     scopes:
       - https://www.googleapis.com/auth/gmail.modify
       - https://www.googleapis.com/auth/gmail.compose
       - https://www.googleapis.com/auth/gmail.settings.basic
   google_calendar:
     display_name: Google Calendar
-    provider: google
+    provider: google_calendar
     scopes:
       - https://www.googleapis.com/auth/calendar.events
 mcp:
@@ -103,9 +112,9 @@ mcp:
     # reviewed policies may auto-approve exact calls (currently Gmail label operations).
     #
     # `gmail` + `google_calendar` execute as the acting Operator's own Google account. Each resolves
-    # its own logical connection and least-privilege grant from the console's connection store,
-    # self-refreshed in-process. Both currently reuse the same deploy-provided Google OAuth client,
-    # but are connected, stored, and disconnected separately in the console's Access tab.
+    # its own logical connection, Google OAuth application, and least-privilege grant from the
+    # console's connection store, self-refreshed in-process. They are connected, stored, and
+    # disconnected separately in the console's Access tab.
     #
     # `gmail`: reads mirror Gmail's REST API and return its resource shapes verbatim
     # (threads_list, threads_get, messages_get, labels_list, labels_get); writes are

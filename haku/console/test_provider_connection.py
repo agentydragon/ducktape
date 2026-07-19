@@ -20,18 +20,22 @@ from haku.console.config import ProviderOAuthClientConfig
 from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import ProviderConnection
 from haku.console.mcp_config import (
+    ConsoleConfigFile,
     InProcessBackend,
     McpServerEntry,
     OperatorConnectionCredential,
     OperatorConnectionDefinition,
+    OperatorConnectionProviderDefinition,
 )
-from haku.console.provider_connection import PostgresProviderConnectionStore
+from haku.console.provider_connection import PostgresProviderConnectionStore, load_provider_clients
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
 
 GOOGLE = ProviderConnectionKind.GOOGLE
 GOOGLE_MAIL = "google_mail"
 GOOGLE_CALENDAR = "google_calendar"
+MAIL_CLIENT_ID = "mail-client"
+CALENDAR_CLIENT_ID = "calendar-client"
 GMAIL_SCOPES = ("https://www.googleapis.com/auth/gmail.modify",)
 CALENDAR_SCOPES = ("https://www.googleapis.com/auth/calendar.events",)
 _CALLBACK = "https://haku.test/api/provider-connections/callback"
@@ -44,11 +48,26 @@ def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, U
     store = PostgresProviderConnectionStore(
         console_sessions(migrated_db_url),
         operator_identity_store=identity_store,
-        provider_clients={GOOGLE: ProviderOAuthClientConfig(client_id="client-123", client_secret=SecretStr("s3cret"))},
+        provider_definitions={
+            GOOGLE_MAIL: OperatorConnectionProviderDefinition(
+                kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"
+            ),
+            GOOGLE_CALENDAR: OperatorConnectionProviderDefinition(
+                kind=GOOGLE, client_id_env_var="CALENDAR_CLIENT_ID", client_secret_env_var="CALENDAR_CLIENT_SECRET"
+            ),
+        },
+        provider_clients={
+            GOOGLE_MAIL: ProviderOAuthClientConfig(client_id=MAIL_CLIENT_ID, client_secret=SecretStr("mail-secret")),
+            GOOGLE_CALENDAR: ProviderOAuthClientConfig(
+                client_id=CALENDAR_CLIENT_ID, client_secret=SecretStr("calendar-secret")
+            ),
+        },
         operator_connections={
-            GOOGLE_MAIL: OperatorConnectionDefinition(display_name="Google Mail", provider=GOOGLE, scopes=GMAIL_SCOPES),
+            GOOGLE_MAIL: OperatorConnectionDefinition(
+                display_name="Google Mail", provider=GOOGLE_MAIL, scopes=GMAIL_SCOPES
+            ),
             GOOGLE_CALENDAR: OperatorConnectionDefinition(
-                display_name="Google Calendar", provider=GOOGLE, scopes=CALENDAR_SCOPES
+                display_name="Google Calendar", provider=GOOGLE_CALENDAR, scopes=CALENDAR_SCOPES
             ),
         },
     )
@@ -108,6 +127,20 @@ async def test_connect_flow_builds_google_consent_url(
     assert query["code_challenge_method"] == ["S256"]
     assert query["redirect_uri"] == [_CALLBACK]
     assert query["scope"] == ["https://www.googleapis.com/auth/gmail.modify"]
+    assert query["client_id"] == [MAIL_CLIENT_ID]
+
+
+async def test_connections_use_distinct_provider_clients(
+    store: PostgresProviderConnectionStore, operator_id: UUID
+) -> None:
+    mail = await store.connect_flow(
+        connection=GOOGLE_MAIL, operator_id=operator_id, public_base_url="https://haku.test"
+    )
+    calendar = await store.connect_flow(
+        connection=GOOGLE_CALENDAR, operator_id=operator_id, public_base_url="https://haku.test"
+    )
+    assert parse_qs(urlsplit(mail.authorization_url).query)["client_id"] == [MAIL_CLIENT_ID]
+    assert parse_qs(urlsplit(calendar.authorization_url).query)["client_id"] == [CALENDAR_CLIENT_ID]
 
 
 async def test_callback_persists_connection(
@@ -182,6 +215,41 @@ async def test_connect_when_already_connected_conflicts(
 
 async def test_access_token_for_unconnected_is_none(store: PostgresProviderConnectionStore, operator_id: UUID) -> None:
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
+
+
+def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            "operator_connection_providers": {
+                GOOGLE_MAIL: {
+                    "kind": "google",
+                    "client_id_env_var": "MAIL_CLIENT_ID",
+                    "client_secret_env_var": "MAIL_CLIENT_SECRET",
+                }
+            }
+        }
+    )
+    monkeypatch.delenv("MAIL_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MAIL_CLIENT_SECRET", raising=False)
+    assert load_provider_clients(config) == {}
+
+
+def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            "operator_connection_providers": {
+                GOOGLE_MAIL: {
+                    "kind": "google",
+                    "client_id_env_var": "MAIL_CLIENT_ID",
+                    "client_secret_env_var": "MAIL_CLIENT_SECRET",
+                }
+            }
+        }
+    )
+    monkeypatch.setenv("MAIL_CLIENT_ID", MAIL_CLIENT_ID)
+    monkeypatch.delenv("MAIL_CLIENT_SECRET", raising=False)
+    with pytest.raises(RuntimeError, match="MAIL_CLIENT_SECRET"):
+        load_provider_clients(config)
 
 
 def _provider_store(token: str | None) -> Any:
