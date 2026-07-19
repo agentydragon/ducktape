@@ -96,6 +96,11 @@ in
           "HOSTEXEC_JWKS_URL=${issuer}jwks/"
           "HOSTEXEC_BIND=${nebulaIp}:${toString cfg.port}"
           "RUST_LOG=info"
+          # systemd's DefaultEnvironment PATH is a NixOS-minimal set (coreutils,
+          # findutils, grep, sed, systemd) with no /run/current-system/sw/bin, so a bare
+          # argv[0] like `hostname` (net-tools) can't be resolved at exec. Exec with the
+          # system PATH so operator commands resolve as they would in a login shell.
+          "PATH=/run/wrappers/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin"
         ];
       };
     };
