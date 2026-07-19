@@ -30,6 +30,10 @@ spec:
       containers:
         - name: dcgm-exporter
           image: nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-ubuntu22.04@sha256:17e9d49093f2d86d90260eec3c07b18b3f78fc5eadef3c8ab26a24fa5a9c1b2c
+          # Custom counter set — the stock default omits DCGM_FI_DEV_XID_ERRORS.
+          args:
+            - -f
+            - /etc/dcgm-exporter-config/counters.csv
           env:
             # Inject all GPUs via the runtime. Do NOT request nvidia.com/gpu — a countable
             # GPU request would reserve a device and starve real workloads; the exporter
@@ -48,6 +52,10 @@ spec:
               port: metrics
             initialDelaySeconds: 10
             periodSeconds: 10
+          volumeMounts:
+            - name: counters
+              mountPath: /etc/dcgm-exporter-config
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -55,3 +63,7 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      volumes:
+        - name: counters
+          configMap:
+            name: dcgm-counters
