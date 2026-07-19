@@ -44,6 +44,10 @@ py_library(
 py_library(
     name = "artifacts",
     srcs = ["artifacts.py"],
+    data = [
+        "artifact_targets.json",
+        "//skills:skills_registry.json",
+    ],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
@@ -129,6 +133,15 @@ py_binary(
     name = "emit_bb_remote_linkage_bin",
     main_module = "devinfra.ci.emit_bb_remote_linkage",
     deps = [":emit_bb_remote_linkage"],
+)
+
+py_test(
+    name = "test_artifacts",
+    srcs = ["test_artifacts.py"],
+    deps = [
+        ":artifacts",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

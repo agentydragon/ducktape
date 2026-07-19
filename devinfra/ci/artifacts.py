@@ -17,6 +17,10 @@ def sources_path() -> Path:
     return get_build_workspace_directory() / "nix" / "artifact-pins.json"
 
 
+def artifact_targets_path() -> Path:
+    return get_build_workspace_directory() / "devinfra" / "ci" / "artifact_targets.json"
+
+
 def skills_registry_path() -> Path:
     return get_build_workspace_directory() / "skills" / "skills_registry.json"
 
@@ -28,6 +32,15 @@ class Pin(BaseModel):
 
 class Sources(BaseModel):
     pins: dict[str, Pin]
+
+
+class ArtifactTarget(BaseModel):
+    output: str
+    release: str
+
+
+class ArtifactTargets(BaseModel):
+    pins: dict[str, ArtifactTarget]
 
 
 _HEX_SUFFIX_RE = re.compile(r"^[0-9a-f]{7}$|^[0-9a-f]{12}$")
@@ -68,20 +81,15 @@ def _skill_artifacts() -> list["Artifact"]:
     return [Artifact(pkg=s["pkg"], filename=s["filename"]) for s in registry["skills"]]
 
 
-ARTIFACTS = [
-    Artifact(pkg="bbr", filename="bbr-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="claude-hooks", filename="claude_hooks-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="claude-hook-rs", filename="claude_hook"),
-    Artifact(pkg="ducktape-git-hooks", filename="ducktape_git_hooks-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="ducktape-util", filename="ducktape_util-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="ducktape", filename="ducktape-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="aiquota", filename="aiquota-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="aiquota-extension", tag_pkg="aiquota", filename="aiquota.zip"),
-    Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
-    Artifact(pkg="bbapi", filename="bbapi"),
-    Artifact(pkg="debundle", filename="debundle"),
-    *_skill_artifacts(),
-]
+def _release_artifacts() -> list["Artifact"]:
+    targets = ArtifactTargets.model_validate_json(artifact_targets_path().read_text())
+    return [
+        Artifact(pkg=pkg, filename=Path(target.output).name, tag_pkg=target.release if target.release != pkg else None)
+        for pkg, target in targets.pins.items()
+    ]
+
+
+ARTIFACTS = [*_release_artifacts(), *_skill_artifacts()]
 
 
 def _sha256_of_chunks(chunks: Iterable[bytes]) -> str:

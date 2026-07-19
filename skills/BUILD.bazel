@@ -1,5 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+exports_files(
+    ["skills_registry.json"],
+    visibility = ["//devinfra/ci:__pkg__"],
+)
+
 py_library(
     name = "skill_spec",
     srcs = ["skill_spec.py"],
