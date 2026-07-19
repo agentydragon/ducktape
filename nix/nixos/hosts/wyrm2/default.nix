@@ -16,6 +16,20 @@ let
     rugged
     rugged_wyrm
   ];
+  # gnome-remote-desktop's system daemon reads its config from
+  # $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
+  # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf) under
+  # the [RDP] group (keys rdp-enabled / rdp-server-cert-path / rdp-server-key-path).
+  # Declaring RDP enabled here is what makes the daemon bind 3389 at startup — and it
+  # sidesteps `grdctl --system rdp enable`, whose built-in systemd-enable step can't
+  # write to read-only /etc on NixOS (see the grd-system-rdp-config oneshot below).
+  grdConf = pkgs.writeText "grd-system-rdp.conf" ''
+    [RDP]
+    rdp-enabled=true
+    rdp-server-cert-path=/var/lib/gnome-remote-desktop/rdp-tls.crt
+    rdp-server-key-path=/var/lib/gnome-remote-desktop/rdp-tls.key
+    rdp-port=3389
+  '';
 in
 {
   imports = [
@@ -195,12 +209,12 @@ in
   # Reach it over an SSH-key tunnel on nebula (`ssh -L 3389:localhost:3389
   # <wyrm2-nebula>`, then RDP to localhost:3389): RDP is NOT firewalled open, so the
   # only path in is the key-only SSH already configured — nebula cert + SSH key are
-  # the gates, the RDP password is just the login step. The grd-system-rdp-setup
-  # service below runs the imperative grdctl config once. VERIFY on first boot; see
-  # the GRD bring-up notes in debug/atlas/direct_display_bringup/README.md.
+  # the gates, the RDP password is just the login step. RDP is enabled declaratively
+  # via grd.conf (grdConf above + the grd-system-rdp-config oneshot below), not grdctl.
+  # See the GRD bring-up notes in debug/atlas/direct_display_bringup/README.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
-  # The GRD system-RDP setup one-shot (grd-system-rdp-setup) is defined in the
+  # The GRD system-RDP config one-shot (grd-system-rdp-config) is defined in the
   # `systemd.services = lib.mkMerge [ … ]` block below — this module can't also use a
   # dotted `systemd.services.<x> =` (whole-attr constraint; see the note there).
 
@@ -409,35 +423,36 @@ in
   # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
-    # gnome-remote-desktop system RDP (remote login) — configure the system daemon
-    # imperatively via grdctl once at boot (no declarative NixOS surface). Self-signed
-    # TLS (RDP is tunnel/localhost-only); no set-credentials (GDM does the auth on the
-    # handover login).
-    # Two gotchas learned live (2026-07-17): `grdctl --system` shells out to `pkexec`,
-    # which is the setuid wrapper under /run/wrappers/bin (not on the unit's default
-    # PATH); and the daemon runs as user `gnome-remote-desktop`, so it must own/read
-    # the TLS key (openssl writes it root:root). VERIFY on first boot: the system
-    # daemon accepts a tunnelled RDP connection (the NVIDIA-headless path is untested).
+    # gnome-remote-desktop system RDP (remote login) — configured declaratively, no
+    # grdctl. `grdctl --system rdp enable` would normally flip RDP on, but it also runs
+    # a built-in systemd-enable that symlinks into
+    # /etc/systemd/system/graphical.target.wants/ — read-only on NixOS, so it hard-fails
+    # with EROFS and RDP never comes up (silent on every boot). Instead this oneshot
+    # writes the self-signed TLS pair (a mandatory RDP protocol artifact, not a secret —
+    # RDP is localhost-only behind the SSH-key tunnel) and installs grd.conf (grdConf
+    # above) with RDP enabled, before the daemon starts. The daemon reads grd.conf at
+    # startup and binds 3389. Remote Login authenticates via PAM through GDM's handover
+    # (no stored credentials); the NVIDIA-headless render path is the open risk.
     {
-      grd-system-rdp-setup = {
-        description = "Configure gnome-remote-desktop system RDP (remote login)";
+      grd-system-rdp-config = {
+        description = "Provision gnome-remote-desktop system RDP config (declarative)";
         wantedBy = [ "multi-user.target" ];
+        before = [ "gnome-remote-desktop.service" ];
         after = [ "systemd-sysusers.service" ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
         };
-        path = [
-          pkgs.gnome-remote-desktop
-          pkgs.openssl
-        ];
+        path = [ pkgs.openssl ];
         script = ''
-          # grdctl --system elevates via the setuid pkexec wrapper.
-          export PATH="/run/wrappers/bin:$PATH"
           dir=/var/lib/gnome-remote-desktop
           cert=$dir/rdp-tls.crt
           key=$dir/rdp-tls.key
-          install -d -m 0755 "$dir"
+          confdir=$dir/.local/share/gnome-remote-desktop
+          mkdir -p "$confdir"
+          chown gnome-remote-desktop:gnome-remote-desktop "$confdir"
+          # Self-signed TLS pair: mandatory RDP handshake artifact, not a secret
+          # (the SSH-key tunnel is the real transport/auth gate). Generate once.
           if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
             openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
               -subj "/CN=wyrm2" -keyout "$key" -out "$cert"
@@ -446,9 +461,8 @@ in
           chown gnome-remote-desktop:gnome-remote-desktop "$cert" "$key"
           chmod 0644 "$cert"
           chmod 0640 "$key"
-          grdctl --system rdp set-tls-cert "$cert"
-          grdctl --system rdp set-tls-key "$key"
-          grdctl --system rdp enable
+          install -m 0644 -o gnome-remote-desktop -g gnome-remote-desktop \
+            "${grdConf}" "$confdir/grd.conf"
         '';
       };
     }

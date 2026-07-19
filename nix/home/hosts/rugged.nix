@@ -93,6 +93,7 @@
   home.packages = [
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
+    pkgs.freerdp3 # RDP client for wyrm2's gnome-remote-desktop over the SSH tunnel
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
