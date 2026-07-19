@@ -59,6 +59,11 @@ in
     expected = true;
   };
 
+  test_has_gh_run_view_permission = {
+    expr = builtins.elem "Bash(gh run view:*)" bashPerms;
+    expected = true;
+  };
+
   test_has_nix_eval_permission = {
     expr = builtins.elem "Bash(nix eval:*)" bashPerms;
     expected = true;

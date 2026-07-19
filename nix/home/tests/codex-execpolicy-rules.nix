@@ -65,6 +65,11 @@ in
     expected = true;
   };
 
+  test_has_gh_run_view_rule = {
+    expr = builtins.elem "prefix_rule(pattern=[\"gh\",\"run\",\"view\"], decision=\"allow\")" generated.rules;
+    expected = true;
+  };
+
   test_has_bazel_rules = {
     expr = builtins.all (rule: builtins.elem rule generated.rules) expectedBazelRules;
     expected = true;

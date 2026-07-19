@@ -46,6 +46,7 @@ let
       [
         "pr checks"
         "pr view"
+        "run view"
       ];
 
   bazelExecutables = [
