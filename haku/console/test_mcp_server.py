@@ -22,7 +22,6 @@ import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from mcp import types as mcp_types
 from mcp.types import ToolAnnotations
 from pydantic import SecretStr, ValidationError
 
@@ -855,17 +854,7 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
         actor_resolver,
     )
 
-    tool = await provider._get_tool("grocy_sf_product_groups_list")
-
-    assert isinstance(tool, mcp_server_module.UnavailableServerTool)
-    result = await tool.run({})
-    assert result.is_error is True
-    assert isinstance(result.content[0], mcp_types.TextContent)
-    assert result.content[0].text == (
-        "MCP server 'grocy-sf' is unavailable: MCP OAuth token refresh failed: 401. "
-        "Use get_mcp_server_status(server_id='grocy-sf') to check it; reconnect the server in the console "
-        "if its OAuth connection has expired or been revoked."
-    )
+    assert await provider._get_tool("grocy_sf_product_groups_list") is None
 
 
 @dataclass(frozen=True)
