@@ -57,10 +57,10 @@ reviewed transparent auto-approved tools; `create_event` always remains operator
    (keys `client_id`, `client_secret`) supplies `HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_{ID,SECRET}`.
    It is the restricted-scope Gmail project's client, independent of Airlock's
    `google-client-credentials`.
-2. **Calendar OAuth client secret.** Create a separate Google Cloud project/client requesting only
-   `calendar.events`, author `haku-console-google-calendar-client-credentials` with the same two
-   keys, encrypt it in place with `sops -e -i`, and add it to `kustomization.yaml`. The deployment's
-   references are optional, so Calendar alone stays degraded until this Secret exists.
+2. **Calendar OAuth client secret.** The separate `haku-console` Google Cloud project/client requests
+   only `calendar.events`. Its client is stored in the SOPS-encrypted
+   `haku-console-google-calendar-client-credentials` Secret with the same two keys. The deployment's
+   references remain optional so a missing or temporarily unreconciled Secret degrades only Calendar.
 3. **Redirect URI.** Register `https://haku.allegedly.works/api/provider-connections/callback`
    as an authorized redirect URI on both Google OAuth clients, or that client's callback fails with
    `redirect_uri_mismatch`.

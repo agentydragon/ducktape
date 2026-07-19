@@ -440,6 +440,7 @@ py_library(
     deps = [
         ":authentik_operator_token",
         ":config",
+        ":oauth_callback_page",
         ":operator_identity",
         ":operator_identity_store",
         ":tool_call_actor",
@@ -744,6 +745,7 @@ py_library(
         "//grocy_mcp:mcp_types",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
     ],
 )
 

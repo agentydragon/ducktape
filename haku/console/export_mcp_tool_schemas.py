@@ -32,6 +32,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from fastmcp import Client, FastMCP
+from pydantic import BaseModel
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
@@ -43,7 +44,7 @@ from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 GROCY_SF_SERVER_ID = "grocy-sf"
 
-_CONSOLE_NATIVE_RESULT_MODELS = {
+_CONSOLE_NATIVE_RESULT_MODELS: dict[str, type[BaseModel]] = {
     "get_mcp_server_status": McpServerProbeResponse,
     "list_mcp_servers": McpServerConnectionStatusResponse,
     "list_node_daemons": DaemonStatusResponse,
