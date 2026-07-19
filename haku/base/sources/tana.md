@@ -96,9 +96,10 @@ daily notes, company/person nodes, and free notes carry context that implies new
 problems worth solving, status updates on things you already track, and patterns worth
 suggesting. Missing edits = missing the operator's current reality.
 
-Keep an **exact millisecond bookmark** in `memory/` (e.g. `tana: through
-2026-06-25T20:30:00Z` → `1750883400000`); `edited.since` takes ms. Each sweep, pull
-everything edited since it and **advance the bookmark to now** when done.
+Keep an **exact millisecond bookmark**; `edited.since` takes ms. In haku-state it lives
+as the typed `epoch_millis` entry in `memory/bookmarks.md`'s frontmatter ledger — advance
+it **after triaging the sweep** via `tools/bookmark.py advance tana --to <ms>`
+(tool-written, monotonic), never by hand-editing the ledger.
 
 **`edited.since` alone is not enough — you also need `created.since`.** Typing a _new_
 bullet **creates** a node; it does not "edit" an existing one. So `{edited:{since}}` **misses

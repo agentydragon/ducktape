@@ -48,7 +48,12 @@ it). Useful `q=` filters: `is:unread`, `is:important`, `category:primary`.
 - **Never hand-compute the `after:` epoch.** A bookmark accidentally set a few days in the
   **future** makes `after:` return 0 on every run — a silent blind spot, not an empty inbox.
   Derive the bookmark from data (the newest processed message's `internalDate`, which is ms —
-  divide by 1000 for `after:` seconds) or `date -u -d '<iso>' +%s`; and **guard on read**: a
-  stored epoch `> now` (`date -u +%s`) is corrupt — reset to `now - 1d` and rescan.
+  divide by 1000 for `after:` seconds). In haku-state this whole class is tool-enforced:
+  scan with `tools/gmail_scan.py --from-bookmark` (reads the typed ledger in
+  `memory/bookmarks.md`'s frontmatter and refuses a future cursor) and advance the ledger
+  **only after triaging the results** via `tools/bookmark.py advance gmail --to <epoch>` —
+  never by hand-editing it.
 - A `0`/empty `messages` result is only trustworthy once the bookmark is sane — when in doubt,
-  cross-check with a relative window (`newer_than:1d`).
+  cross-check with a relative window (`newer_than:1d`). `--from-bookmark` runs that
+  cross-check automatically for a >24h-old bookmark and fails loud on the contradiction
+  (0 results while `newer_than:1d` is non-empty is logically impossible).
