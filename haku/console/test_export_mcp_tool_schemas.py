@@ -57,17 +57,18 @@ _EXPECTED_TOOLS = {
     "haku_routine": ("launch_routine",),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
+_RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
 _RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine")
 
 
-def _assert_catalog_shape(schema: dict[str, object], title: str) -> None:
+def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert schema["title"] == title
     assert schema["additionalProperties"] is False
     properties = schema["properties"]
     assert isinstance(properties, dict)
-    assert list(properties) == _SERVER_IDS
-    assert schema["required"] == _SERVER_IDS
+    assert list(properties) == server_ids
+    assert schema["required"] == server_ids
     for server in properties.values():
         assert server["additionalProperties"] is False
 
@@ -146,7 +147,7 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
 async def test_exports_result_catalog() -> None:
     schema = await build_mcp_tool_results_schema()
 
-    _assert_catalog_shape(schema, "McpToolResults")
+    _assert_catalog_shape(schema, "McpToolResults", _RESULT_SERVER_IDS)
     # grocy-sf's batch tools are reflected (typed ducktape result models), limited to the same
     # preview allowlist as its argument schemas. get_system_info is an OpenAPI tool with no batch
     # counterpart, so it is absent and its widget stays hand-authored.
@@ -164,6 +165,33 @@ async def test_exports_result_catalog() -> None:
     assert gmail["drafts_create"].get("required") == ["id"]
 
     Draft202012Validator.check_schema(schema)
+
+
+async def test_exports_console_native_status_result_schemas() -> None:
+    schema = await build_mcp_tool_results_schema()
+    tools = schema["properties"]["haku-console"]["properties"]
+
+    assert list(tools) == ["get_mcp_server_status", "list_mcp_servers", "list_node_daemons"]
+    Draft202012Validator(tools["list_mcp_servers"]).validate(
+        {
+            "servers": [
+                {
+                    "server_id": "google_calendar",
+                    "backend": {
+                        "kind": "in_process",
+                        "credential": {"kind": "operator_connection", "connection": "google_calendar"},
+                    },
+                    "connection": {
+                        "connection": "google_calendar",
+                        "display_name": "Google Calendar",
+                        "provider": "google",
+                        "status": "unprovisioned",
+                        "detail": "OAuth client not provisioned on this console; see the console deployment README.",
+                    },
+                }
+            ]
+        }
+    )
 
 
 async def test_grocy_result_schemas_validate() -> None:

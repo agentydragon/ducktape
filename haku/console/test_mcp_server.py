@@ -676,6 +676,13 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                         ),
                     },
                     {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
+                    {
+                        "id": "static-remote",
+                        "backend": _remote_backend(
+                            "https://static.invalid/mcp",
+                            {"kind": "static_bearer", "bearer_token_secret": "STATIC_REMOTE_TOKEN"},
+                        ),
+                    },
                 ]
             },
         },
@@ -733,7 +740,15 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     statuses = {server.server_id: server for server in response.servers}
     assert statuses["expired-remote"].model_dump(mode="json") == {
         "server_id": "expired-remote",
-        "auth_kind": "remote_server_oauth",
+        "backend": {
+            "kind": "remote_mcp",
+            "url": "https://must-not-be-contacted.invalid/mcp",
+            "auth": {
+                "kind": "remote_server_oauth",
+                "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
+                "scopes": None,
+            },
+        },
         "connection": {
             "server_id": "expired-remote",
             "username": "operator",
@@ -745,12 +760,23 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     }
     assert statuses["unconnected-remote"].model_dump(mode="json") == {
         "server_id": "unconnected-remote",
-        "auth_kind": "remote_server_oauth",
+        "backend": {
+            "kind": "remote_mcp",
+            "url": "https://also-must-not-be-contacted.invalid/mcp",
+            "auth": {
+                "kind": "remote_server_oauth",
+                "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
+                "scopes": None,
+            },
+        },
         "connection": {"server_id": "unconnected-remote", "username": "operator", "status": "unconnected"},
     }
     assert statuses["gmail"].model_dump(mode="json") == {
         "server_id": "gmail",
-        "auth_kind": "operator_connection",
+        "backend": {
+            "kind": "in_process",
+            "credential": {"kind": "operator_connection", "connection": "google_workspace"},
+        },
         "connection": {
             "connection": "google_workspace",
             "display_name": "Google Workspace",
@@ -763,13 +789,20 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     }
     assert statuses["routine"].model_dump(mode="json") == {
         "server_id": "routine",
-        "auth_kind": "none",
+        "backend": {"kind": "in_process", "credential": {"kind": "none"}},
+        "connection": None,
+    }
+    assert statuses["static-remote"].model_dump(mode="json") == {
+        "server_id": "static-remote",
+        "backend": {"kind": "remote_mcp", "url": "https://static.invalid/mcp", "auth": {"kind": "static_bearer"}},
         "connection": None,
     }
     serialized = response.model_dump_json()
     assert "access_token" not in serialized
     assert "refresh_token" not in serialized
     assert "client_secret" not in serialized
+    assert "bearer_token_secret" not in serialized
+    assert "STATIC_REMOTE_TOKEN" not in serialized
     oauth_statuses.assert_called_once()
     provider_statuses.assert_called_once()
     refresh_remote.assert_not_awaited()
@@ -815,6 +848,59 @@ async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
         "degraded_reason": "MCP OAuth token refresh failed: 401",
     }
     assert result.structured_content["connection"]["server_id"] == "standin"
+
+
+async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisioned(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MISSING_GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MISSING_GOOGLE_CLIENT_SECRET", raising=False)
+    config_file = write_config(
+        tmp_path / "unprovisioned-provider.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "operator_connection_providers": {
+                "google_calendar": {
+                    "kind": "google",
+                    "client_id_env_var": "MISSING_GOOGLE_CLIENT_ID",
+                    "client_secret_env_var": "MISSING_GOOGLE_CLIENT_SECRET",
+                }
+            },
+            "operator_connections": {
+                "google_calendar": {
+                    "display_name": "Google Calendar",
+                    "provider": "google_calendar",
+                    "scopes": ["https://www.googleapis.com/auth/calendar.events"],
+                }
+            },
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "google_calendar",
+                        "backend": _in_process_backend(
+                            {"kind": "operator_connection", "connection": "google_calendar"}
+                        ),
+                    }
+                ]
+            },
+        },
+    )
+    app = create_app(console_settings(migrated_db_url, config_file=config_file))
+
+    with serve_app_sync(app) as base:
+        async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
+            listed = await client.call_tool("list_mcp_servers", {})
+            probed = await client.call_tool("get_mcp_server_status", {"server_id": "google_calendar"})
+
+    assert listed.structured_content is not None
+    connection = listed.structured_content["servers"][0]["connection"]
+    assert connection["status"] == "unprovisioned"
+    assert connection["display_name"] == "Google Calendar"
+    assert probed.structured_content is not None
+    assert probed.structured_content["connection"]["connection"] == connection
+    assert probed.structured_content["server"]["status"] == "degraded"
+    assert probed.structured_content["server"]["failure_stage"] == "credential_resolution"
+    assert "not provisioned" in probed.structured_content["server"]["degraded_reason"]
 
 
 async def test_get_mcp_server_status_includes_schemas_only_when_requested(

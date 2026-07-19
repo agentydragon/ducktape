@@ -82,18 +82,24 @@ type McpServerView = {
 };
 
 function connectionSummary(server: McpServerConnection): string {
+  const backend = server.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process";
   const connection = server.connection;
-  if (connection === null) return `No operator-linked credential (${server.auth_kind})`;
+  if (connection === null) return `${backend} · no operator-linked account`;
+  if (connection.status === "unprovisioned") {
+    return `${backend} · ${connection.display_name} OAuth client is not provisioned`;
+  }
   if (connection.status === "unconnected") {
-    return "server_id" in connection
-      ? `Not linked for ${connection.username}`
-      : `${connection.display_name} is not connected`;
+    const account =
+      "server_id" in connection
+        ? `Not linked for ${connection.username}`
+        : `${connection.display_name} is not connected`;
+    return `${backend} · ${account}`;
   }
-  const until = shortDate(connection.token_expires_at);
+  const until = shortDate(typeof connection.token_expires_at === "string" ? connection.token_expires_at : null);
   if ("server_id" in connection) {
-    return `Linked for ${connection.username}${until ? ` until ${until}` : ""}`;
+    return `${backend} · linked for ${connection.username}${until ? ` until ${until}` : ""}`;
   }
-  return `${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
+  return `${backend} · ${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
 }
 
 function McpServerCard({
@@ -110,27 +116,37 @@ function McpServerCard({
   onDisconnectProvider: (connection: OperatorConnectionName) => void;
 }) {
   const linkage = view.connection.connection;
+  const linkedMcpServerId =
+    linkage && "server_id" in linkage && typeof linkage.server_id === "string" ? linkage.server_id : null;
+  const providerConnection =
+    linkage && "connection" in linkage && typeof linkage.connection === "string"
+      ? (linkage.connection as OperatorConnectionName)
+      : null;
   const unconnected = linkage?.status === "unconnected";
-  const state = unconnected
-    ? { label: "Unconnected", color: "gray" }
-    : view.error || view.probe?.server.status === "degraded"
-      ? { label: "Unavailable", color: "red" }
-      : view.probe?.server.status === "alive"
-        ? { label: "Available", color: "teal" }
-        : { label: "Checking", color: "blue" };
-  const reason = view.error ?? (view.probe?.server.status === "degraded" ? view.probe.server.degraded_reason : null);
-  const connect =
-    linkage && "server_id" in linkage
-      ? () => onConnectMcp(linkage.server_id)
-      : linkage
-        ? () => onConnectProvider(linkage.connection)
-        : null;
-  const disconnect =
-    linkage && "server_id" in linkage
-      ? () => onDisconnectMcp(linkage.server_id)
-      : linkage
-        ? () => onDisconnectProvider(linkage.connection)
-        : null;
+  const unprovisioned = linkage?.status === "unprovisioned";
+  const state = unprovisioned
+    ? { label: "Unprovisioned", color: "orange" }
+    : unconnected
+      ? { label: "Unconnected", color: "gray" }
+      : view.error || view.probe?.server.status === "degraded"
+        ? { label: "Unavailable", color: "red" }
+        : view.probe?.server.status === "alive"
+          ? { label: "Available", color: "teal" }
+          : { label: "Checking", color: "blue" };
+  const reason =
+    (unprovisioned ? linkage.detail : null) ??
+    view.error ??
+    (view.probe?.server.status === "degraded" ? view.probe.server.degraded_reason : null);
+  const connect = linkedMcpServerId
+    ? () => onConnectMcp(linkedMcpServerId)
+    : providerConnection
+      ? () => onConnectProvider(providerConnection)
+      : null;
+  const disconnect = linkedMcpServerId
+    ? () => onDisconnectMcp(linkedMcpServerId)
+    : providerConnection
+      ? () => onDisconnectProvider(providerConnection)
+      : null;
 
   return (
     <section className="haku-shell-card">
@@ -153,7 +169,7 @@ function McpServerCard({
           </Badge>
         </Group>
       </Group>
-      {linkage && (
+      {linkage && !unprovisioned && (
         <Group justify="flex-end" gap="xs" mt="sm">
           {linkage.status === "connected" ? (
             <Button size="compact-sm" variant="subtle" color="red" onClick={disconnect ?? undefined}>

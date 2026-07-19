@@ -59,6 +59,7 @@ _FLOW_TTL = datetime.timedelta(minutes=10)
 _TOKEN_ENDPOINT_TIMEOUT_SECONDS = 10.0
 
 router = APIRouter(tags=["operator-connections"])
+UNPROVISIONED_DETAIL = "OAuth client not provisioned on this console; see the console deployment README."
 
 
 class ProviderConnectionStatusBase(BaseModel):
@@ -79,8 +80,15 @@ class ProviderUnconnected(ProviderConnectionStatusBase):
     status: Literal["unconnected"] = "unconnected"
 
 
+class ProviderUnprovisioned(ProviderConnectionStatusBase):
+    status: Literal["unprovisioned"] = "unprovisioned"
+    detail: str
+
+
 # Discriminated on `status`, so the connected-only fields exist exactly when connected.
-type ProviderConnectionStatus = Annotated[ProviderConnected | ProviderUnconnected, Field(discriminator="status")]
+type ProviderConnectionStatus = Annotated[
+    ProviderConnected | ProviderUnconnected | ProviderUnprovisioned, Field(discriminator="status")
+]
 
 
 class ProviderConnectionStatusResponse(BaseModel):
@@ -135,7 +143,16 @@ def _status_from_row(
     definition: OperatorConnectionDefinition,
     provider: OperatorConnectionProviderDefinition,
     row: ProviderConnection | None,
+    *,
+    provisioned: bool,
 ) -> ProviderConnectionStatus:
+    if not provisioned:
+        return ProviderUnprovisioned(
+            connection=connection,
+            display_name=definition.display_name,
+            provider=provider.kind,
+            detail=UNPROVISIONED_DETAIL,
+        )
     if row is None:
         return ProviderUnconnected(connection=connection, display_name=definition.display_name, provider=provider.kind)
     if row.provider_name != definition.provider or row.provider != provider.kind:
@@ -257,14 +274,14 @@ class PostgresProviderConnectionStore:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
             return session.get(ProviderConnection, (operator_id, connection)) is not None
 
+    def is_provisioned(self, *, connection: str) -> bool:
+        """Whether the cataloged connection's provider OAuth client is installed."""
+        return self._require_definition(connection).provider in self._provider_clients
+
     @property
-    def configured_connections(self) -> list[tuple[str, OperatorConnectionDefinition]]:
-        """Logical connections whose provider has an installed OAuth client, in config order."""
-        return [
-            (name, definition)
-            for name, definition in self._operator_connections.items()
-            if definition.provider in self._provider_clients
-        ]
+    def cataloged_connections(self) -> list[tuple[str, OperatorConnectionDefinition]]:
+        """All cataloged logical connections, in config order, including unprovisioned ones."""
+        return list(self._operator_connections.items())
 
     def _require_client(self, provider: str) -> ProviderOAuthClientConfig:
         client = self._provider_clients.get(provider)
@@ -273,7 +290,7 @@ class PostgresProviderConnectionStore:
         return client
 
     def list_statuses(self, *, operator_id: UUID) -> ProviderConnectionStatusResponse:
-        connections = self.configured_connections
+        connections = self.cataloged_connections
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
             if not connections:
@@ -287,7 +304,11 @@ class PostgresProviderConnectionStore:
         return ProviderConnectionStatusResponse(
             connections=[
                 _status_from_row(
-                    name, definition, self._require_provider_definition(definition.provider), by_connection.get(name)
+                    name,
+                    definition,
+                    self._require_provider_definition(definition.provider),
+                    by_connection.get(name),
+                    provisioned=definition.provider in self._provider_clients,
                 )
                 for name, definition in connections
             ]
@@ -404,7 +425,7 @@ class PostgresProviderConnectionStore:
                 token_expires_at=expires_at,
             )
             session.add(connection)
-            return _status_from_row(flow.connection_name, definition, provider, connection)
+            return _status_from_row(flow.connection_name, definition, provider, connection, provisioned=True)
 
     def disconnect(self, *, connection: str, operator_id: UUID) -> ProviderUnconnected:
         definition = self._require_definition(connection)

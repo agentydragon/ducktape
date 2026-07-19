@@ -155,6 +155,24 @@ async def test_callback_persists_connection(
     ]
 
 
+def test_cataloged_connection_without_oauth_client_is_unprovisioned(
+    store: PostgresProviderConnectionStore, operator_id: UUID
+) -> None:
+    store._provider_clients.pop(GOOGLE_CALENDAR)
+
+    statuses = {status.connection: status for status in store.list_statuses(operator_id=operator_id).connections}
+
+    assert statuses[GOOGLE_MAIL].status == "unconnected"
+    assert statuses[GOOGLE_CALENDAR].model_dump(mode="json") == {
+        "connection": GOOGLE_CALENDAR,
+        "display_name": "Google Calendar",
+        "provider": "google",
+        "status": "unprovisioned",
+        "detail": "OAuth client not provisioned on this console; see the console deployment README.",
+    }
+    assert store.is_provisioned(connection=GOOGLE_CALENDAR) is False
+
+
 async def test_same_provider_connections_have_independent_grants(
     store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:

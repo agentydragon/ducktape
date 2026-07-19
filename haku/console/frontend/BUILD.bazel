@@ -95,7 +95,7 @@ js_library(
     srcs = ["mcp_status_client.ts"],
     deps = [
         ":mcp_client",
-        "//:node_modules/zod",
+        ":mcp_tool_result_schema",
     ],
 )
 

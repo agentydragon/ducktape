@@ -24,7 +24,8 @@ components + **Tailwind v4** utilities — modeled on
   while the screenshot standing grant is held. The approvals panel (queue + a Past-tool-calls
   link) follows its content until it reaches the available height, then scrolls its list.
 - `settings_panel.tsx` — `SettingsPanel`, the operator settings panel; reads MCP/account and node-daemon
-  reflection through the console's Operator-authenticated MCP transport
+  reflection through the console's Operator-authenticated MCP transport and validates it with the
+  Python-generated MCP result schema catalog
   toggled from the toolbar's gear: MCP operator account connect/reconnect/disconnect plus linked
   server/web deployment commits. It is shell chrome, not a route.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener

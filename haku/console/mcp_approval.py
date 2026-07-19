@@ -632,6 +632,11 @@ async def _resolve_operator_metadata_auth(
     credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
     match credential:
         case OperatorConnectionCredential(connection=connection):
+            if not provider_store.is_provisioned(connection=connection):
+                return _DegradedAuth(
+                    f"OAuth client for {connection} is not provisioned on this console; "
+                    "see the console deployment README."
+                )
             if not provider_store.is_connected(connection=connection, operator_id=operator_id):
                 return _DegradedAuth(f"Connect your {connection} account in the console to use this server.")
             # The implementation owns its schemas and tools/list invokes no backend operation.

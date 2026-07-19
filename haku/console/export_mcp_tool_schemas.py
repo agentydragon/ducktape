@@ -8,7 +8,10 @@ Python validators can impose stricter cross-field rules. Two catalogs are emitte
 by ``main()``'s ``--results`` flag: the argument schemas (``McpToolArguments``) and the
 result schemas (``McpToolResults``).
 
-Beyond the console's own in-process servers (gmail, google_calendar, haku_routine) this
+Beyond the console's own in-process servers (gmail, google_calendar, haku_routine), the result
+catalog includes the console-native reflection tools directly from their Python response models.
+This keeps the trusted frontend's runtime validators identical to the MCP output contract without
+building a database-backed console application or adding an HTTP status endpoint. The exporter
 also reflects the **remote** ``grocy-sf`` server's custom batch tools. grocy-sf runs
 elsewhere, but its batch tools are ordinary Python (``grocy_mcp.batch_tools``): building a
 batch-tools-only FastMCP registers them without an OpenAPI spec or a Grocy connection, so
@@ -34,9 +37,17 @@ from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from haku.console.mcp_server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
+from haku.console.node_daemons import DaemonStatusResponse
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 GROCY_SF_SERVER_ID = "grocy-sf"
+
+_CONSOLE_NATIVE_RESULT_MODELS = {
+    "get_mcp_server_status": McpServerProbeResponse,
+    "list_mcp_servers": McpServerConnectionStatusResponse,
+    "list_node_daemons": DaemonStatusResponse,
+}
 
 # grocy-sf is reflected only for the batch tools the console renders previews for; the rest of
 # its surface isn't used by the frontend and shouldn't gate schema generation.
@@ -164,7 +175,15 @@ def _dereference(schema: Any, defs: Mapping[str, Any], seen: frozenset[str] = fr
             target = _dereference(defs[name], defs, seen | {name})
             siblings = {k: _dereference(v, defs, seen) for k, v in schema.items() if k != "$ref"}
             return {**target, **siblings} if siblings else target
-        return {k: _dereference(v, defs, seen) for k, v in schema.items() if k not in ("$defs", "definitions")}
+        # Pydantic adds OpenAPI's `discriminator` optimization alongside an `anyOf` whose branches
+        # already carry the discriminating `const`. z.fromJSONSchema does not consume the OpenAPI
+        # keyword; dropping it preserves the exact accepted values while keeping the validator's
+        # input pure JSON Schema.
+        return {
+            k: _dereference(v, defs, seen)
+            for k, v in schema.items()
+            if k not in ("$defs", "definitions", "discriminator")
+        }
     if isinstance(schema, list):
         return [_dereference(item, defs, seen) for item in schema]
     return schema
@@ -339,6 +358,17 @@ async def build_mcp_tool_results_schema() -> dict[str, Any]:
             "properties": tool_properties,
             "required": list(tool_properties),
         }
+
+    console_tool_properties = {
+        tool_name: _frontend_schema(model.model_json_schema(), f"$.properties.{SERVER_NAME}.properties.{tool_name}")
+        for tool_name, model in _CONSOLE_NATIVE_RESULT_MODELS.items()
+    }
+    server_properties[SERVER_NAME] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": console_tool_properties,
+        "required": list(console_tool_properties),
+    }
 
     return {
         "$schema": _DRAFT_2020_12,

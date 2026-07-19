@@ -141,10 +141,14 @@ transparent **pass-throughs** (original schema, real result); everything else ke
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
 an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
 read tools. `list_mcp_servers` passively reports the
-configured catalog plus each persisted per-Operator OAuth/provider status object. These status objects
+configured catalog plus each persisted per-Operator OAuth/provider status object. Each server's
+discriminated `backend` object mirrors the safe configuration shape (`remote_mcp` with URL/auth or
+`in_process` with credential kind); static-bearer secret references are deliberately omitted. These status objects
 match the console's existing non-secret status structures, including `status`, `connected_at`,
 `token_expires_at`, `scope`, and the safe display identity; access tokens, refresh tokens, and client
-secrets are never included. Authentication kinds without a separate operator-linked connection report
+secrets are never included. A cataloged provider connection whose deploy-time OAuth client is absent
+reports `status: unprovisioned` instead of disappearing; the Settings panel renders that state with no
+Connect action. Authentication kinds without a separate operator-linked connection report
 `connection: null`. The tool never refreshes credentials or contacts downstream servers. Live tool
 discovery remains the normal MCP `tools/list` path. `get_mcp_server_status(server_id)` is the active
 counterpart: it reflects one configured server now, so it may refresh the operator's credentials and
@@ -166,6 +170,11 @@ in trusted console chrome. Approved calls execute against the console's stored O
 so an incoming token's blast radius is "call the console's submit/read tools" and nothing else.
 OAuth state is required to use the console's Postgres; Haku never falls back to FastMCP's
 process-local store or Valkey.
+
+The trusted frontend validates the console-native reflection results with the same generated MCP
+result-schema catalog used by Gmail, Google Calendar, Grocy, and routine renderers. The catalog is
+generated from the Python response models at build time; the frontend does not restate those wire
+models in handwritten Zod.
 
 ### Canonical Agent authority and enrollment
 

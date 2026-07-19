@@ -23,6 +23,32 @@ describe("generated MCP tool result schemas", () => {
     expect(keys).toContain("grocy-sf.locations_list");
     expect(keys).toContain("grocy-sf.product_groups_list");
     expect(keys).toContain("grocy-sf.shopping_lists_list");
+    expect(keys).toContain("haku-console.list_mcp_servers");
+    expect(keys).toContain("haku-console.get_mcp_server_status");
+    expect(keys).toContain("haku-console.list_node_daemons");
+  });
+
+  it("parses an unprovisioned connected-account status", () => {
+    const result: McpToolResultFor<"haku-console", "list_mcp_servers"> = {
+      servers: [
+        {
+          server_id: "google_calendar",
+          backend: {
+            kind: "in_process",
+            credential: { kind: "operator_connection", connection: "google_calendar" },
+          },
+          connection: {
+            connection: "google_calendar",
+            display_name: "Google Calendar",
+            provider: "google",
+            status: "unprovisioned",
+            detail: "OAuth client not provisioned on this console; see the console deployment README.",
+          },
+        },
+      ],
+    };
+    expect(mcpToolResultSchema("haku-console", "list_mcp_servers").safeParse(result).success).toBe(true);
+    expect(mcpToolResultSchema("haku-console", "list_mcp_servers").safeParse({}).success).toBe(false);
   });
 
   it("parses a Draft resource and rejects one missing its id", () => {

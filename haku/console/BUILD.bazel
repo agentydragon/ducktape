@@ -737,6 +737,8 @@ py_library(
     srcs = ["export_mcp_tool_schemas.py"],
     deps = [
         ":in_process_servers",
+        ":mcp_server",
+        ":node_daemons",
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
