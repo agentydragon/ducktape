@@ -51,13 +51,33 @@ resource "forgejo_repository" "state" {
 
 # Block force-pushes (and branch deletion) on main. Forgejo rejects force-push
 # on any protected branch by default — there is no separate "force push" toggle
-# — so protecting `main` is what disallows it. enable_push keeps Haku's ordinary
-# commits working; without it, protecting the branch would require PRs, which v0
-# doesn't want.
+# — so protecting `main` is what disallows it. enable_push keeps the write plane
+# direct-push: operator click-commits (haku-ui WAL → commit_and_push), scan-run
+# content commits, anki srs/ reconciles, and Flux's k8s/ image-tag pushes.
+#
+# CODE trees are the exception (operator, 2026-07-19): direct pushes touching
+# them are rejected, so they land only through PRs with green required checks.
+# Rationale: Forgejo cancels an in-flight main run when a new push arrives, so
+# with concurrent Haku sessions pushing, code could merge with its tests never
+# executed (incident: anki srs-checkout commit landed red under a cancelled
+# run). PR branches get their own runs; required contexts make "merged" imply
+# "tested". Deliberately NOT k8s/** (Flux image automation direct-pushes the
+# image tag there) and not content trees (new garden views/docs must stay
+# one-commit cheap). Agents: keep code and content in separate pushes; land
+# code via PR + auto-merge-on-green (see haku-state procedures).
 resource "forgejo_branch_protection" "state_main" {
   repository_id = forgejo_repository.state.id
   branch_name   = "main"
   enable_push   = true
+  # Semicolon-separated globs, mirroring the Forgejo API field.
+  protected_file_patterns = "ui/**;tools/**;anki_service/**;.forgejo/**;MODULE.bazel;MODULE.bazel.lock;BUILD.bazel;.bazelrc"
+  enable_status_check     = true
+  # Context format observed live: "<workflow> / <job> (<event>)".
+  status_check_contexts = [
+    "bazel-ci / bazel (pull_request)",
+    "validate-state / validate (pull_request)",
+    "linkcheck / linkcheck (pull_request)",
+  ]
 }
 
 # Read-only access for the claude agent account (user provisioned by
