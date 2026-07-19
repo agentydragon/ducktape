@@ -1,19 +1,18 @@
 # Nix Configuration TODOs
 
-## Roll gnome-remote-desktop RDP (over the Nebula SSH tunnel) to all hosts
+## Remote desktop to wyrm2 — xrdp-over-Nebula for now; Sunshine/Guac later
 
-wyrm2 now serves a headless GNOME session over gnome-remote-desktop system RDP
-("Remote Login"), reached via an SSH-key tunnel on Nebula
-(`ssh -L 3390:localhost:3389 <host>` + an RDP client). See
-`nix/nixos/hosts/wyrm2/default.nix` (`grdConf` + the `rdp_tls_*` SOPS pair). RDP
-is enabled declaratively via a `grd.conf` tmpfiles symlink — not `grdctl`, whose
-`rdp enable` can't write to read-only `/etc` on NixOS.
+GRD system Remote Login (PR #3424) is NixOS-blocked (dormant). The chosen-for-now
+path is **xrdp + Xfce over Nebula** (PR #3431, live on wyrm2): headless, pre-login,
+no auto-login, firewall-restricted to the `nebula1` trusted interface. Connect with
+`xfreerdp3 /v:10.42.0.20 /u:agentydragon /cert:tofu`, or the "wyrm2 (RDP)" desktop
+entry on rugged (PR #3435). Full RCA + security model + connection steps in
+`debug/atlas/remote-desktop-wyrm2.md`.
 
-Once proven on wyrm2 — especially the NVIDIA-headless render path tracked by the
-`CLEANUP(added 2026-07-17)` tombstone there — roll the same pattern to the other
-NixOS hosts (rugged, iguana, atlas, …). Each host needs its own per-host RDP TLS
-SOPS pair (admin + `<host>-host`, like the Nebula host keys) and the `grd.conf`
-tmpfiles symlink.
+Later options (not now): Sunshine/Moonlight (passwordless after one-time pairing,
+GPU/gaming, but needs a logged-in seat0 session); Guacamole via Authentik RAC
+(`x/linux_rac/` — passwordless browser desktop via a sealed SSH key + SSO; greenfield,
+not deployed). Roll the chosen approach to the other NixOS hosts once settled.
 
 ## Design the cluster-based Syncthing topology
 
