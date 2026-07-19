@@ -1,88 +1,73 @@
 # gnome-remote-desktop listener — why it never binds on wyrm2 (NixOS)
 
-Forensic investigation (2026-07-19), **source- + empirically-confirmed**. Corrects
-the earlier "EROFS blocks the listener" claim in `../remote-desktop-wyrm2.md`
-Path A, which was **wrong** — the EROFS is a red herring for the _bind_.
+Live forensic investigation (2026-07-19), `root@wyrm2`. This file has been
+**rewritten** after several wrong claims below were refuted by direct checks —
+see **"Errors made during this investigation"**. Treat only the *Verified* lines
+as fact; anything under *Open* is not yet confirmed.
 
-## TL;DR
+## Verified facts (directly checked on wyrm2 / source)
 
-The RDP listener binds only when `grd_daemon_system_is_ready()` is true, which
-requires GDM's `RemoteDisplayFactory` — exposed by a GRD handover daemon that must
-autostart **inside the GDM greeter session**. On NixOS that greeter-session
-handover never starts (nixpkgs [#504490](https://github.com/NixOS/nixpkgs/issues/504490)),
-so the factory is never on the bus, `is_daemon_ready` is always false, and the RDP
-server never starts. The `grdctl --system rdp enable` `EROFS` is a **separate,
-secondary** issue (boot-persistence of the wants-symlink), **not** the bind
-blocker. xrdp (its own X session, no handover) is the working path.
-
-## Black-box findings (wyrm2, root, 2026-07-19)
-
-- The daemon is **inactive at boot**: the unit is `linked` but not `enabled` (the
-  `graphical.target.wants` symlink is missing), and #3424 removed the oneshot that
-  used to start it. (Earlier "active" observations were from a prior boot where the
-  oneshot had started it.)
-- Started manually, the daemon runs with `Enabled = false`, nothing on 3389.
+- The RDP listener binds via `grd_daemon_maybe_enable_services →
+  maybe_start_rdp_server → start_rdp_server → grd_rdp_server_start` (binds the
+  port). `src/grd-daemon.c`. `maybe_start_rdp_server` returns early unless
+  `is_daemon_ready()` is true, then unless `rdp-enabled`.
+- `grd_daemon_system_is_ready` (`grd-daemon-system.c:125`) returns FALSE unless
+  `remote_display_factory_proxy` + `display_objects` + `handover_manager_server` +
+  `dispatcher_skeleton` are all set and their bus names are owned.
+- **GDM *does* expose `RemoteDisplayFactory`.** Introspecting
+  `org.gnome.DisplayManager` shows child nodes `LocalDisplayFactory`, `Displays`,
+  and **`RemoteDisplayFactory`**; `/org/gnome/DisplayManager/RemoteDisplayFactory`
+  is introspectable. (GDM creates it unconditionally — `gdm-manager.c:2438`,
+  no meson gate.)
+- The greeter runs as a **separate `gdm-greeter` user (UID 60578)**, not `gdm`
+  (UID 132). Its user manager `user@60578.service` is reachable via
+  `systemctl --user --machine=gdm-greeter@.host`.
+- The handover daemon (`gnome-remote-desktop-handover.service`, a systemd **user**
+  unit, `WantedBy=gnome-session.target`) **starts fine as `gdm-greeter`** when
+  invoked via `--machine=gdm-greeter@.host` (confirmed: process running).
+- Even with the handover running + the factory exposed, `grdctl --system status`
+  still reports RDP **`Status: disabled`** → the system daemon's
+  `is_daemon_ready` is still false.
 - The `Enabled` D-Bus property is **read-only** (`Property "Enabled" is not
-writable`) — cannot `busctl set-property` it to bypass `grdctl`.
-- `grdctl --system rdp enable` → `EROFS` on the wants-symlink; `Enabled` stays
-  false.
-- **Confound:** in the live test **xrdp held 3389**, so a GRD bind would have been
-  `EADDRINUSE` — a real confound (the "port grabbed" suspicion was valid there).
-- GDM login itself works: `org.gnome.DisplayManager` is owned, the gdm-greeter
-  session is running. But there is **no `RemoteDisplayFactory` on the bus** and
-  **no GRD handover process in the greeter session** (the greeter autostart has no
-  handover/remote-desktop entry).
-- Side-finding: **sunshine runs in the gdm-greeter session** (`.sunshine-wrapp`) —
-  relevant to the separate "does Sunshine need a logged-in seat?" question.
+  writable`) — cannot be set directly.
+- `grdctl --system rdp enable` fails `EROFS` on
+  `/etc/systemd/system/graphical.target.wants/…` (read-only on NixOS) — but the
+  source shows this is the **boot-persistence** step (the wants-symlink), separate
+  from the bind path.
 
-## Source (gnome-remote-desktop 50.1) — the actual mechanism
+## Open (NOT yet verified — don't treat as fact)
 
-The listener is **not** bound by `grdctl enable`. It is bound by:
-`grd_daemon_maybe_enable_services` → `maybe_start_rdp_server` → `start_rdp_server`
-→ `grd_rdp_server_start` (binds the port). `src/grd-daemon.c`.
+- **Which `is_daemon_ready` component is actually missing** when the handover is
+  running + factory exposed. The system daemon's journal at default log level only
+  shows "Started GNOME Remote Desktop"; the "Daemon not ready" message is `g_debug`.
+  Needs the system daemon run with `G_MESSAGES_DEBUG=all` (or its debug flag) to see
+  which of `handover_manager_server` / `dispatcher_skeleton` / proxy setup is
+  failing. **This is the real next step — not yet done.**
+- Whether enabling the handover persistently for `gdm-greeter` + a GDM restart would
+  change anything (not tested — would disrupt any seat0 session).
 
-`maybe_start_rdp_server` (`grd-daemon.c:435`) gates on two things, in order:
+## Why xrdp works where GRD doesn't (still true)
 
-1. `is_daemon_ready()` — else logs `"Daemon not ready, not starting RDP server"`
-   and returns (no bind).
-2. `rdp-enabled` (from settings/`grd.conf`).
+xrdp spawns its own X server and runs Xfce in it — no `is_daemon_ready` gate, no
+GDM handover, no read-only-`/etc` enable dance. That is why it's the working
+remote-desktop path on wyrm2.
 
-For the **system** daemon, `is_daemon_ready` = `grd_daemon_system_is_ready`
-(`grd-daemon-system.c:125`), which returns **FALSE** unless **all** of
-`remote_display_factory_proxy` (`GrdDBusGdmRemoteDisplayFactory`) +
-`display_objects` + `handover_manager_server` + `dispatcher_skeleton` are present
-and their bus names are **owned** (lines 139–155). Those come from GDM's
-`RemoteDisplayFactory` — GDM's "create a new session for an incoming remote
-connection" interface — which is exposed by GRD's handover daemon running **inside
-the GDM greeter session**. That greeter-session handover never starts on NixOS
-(#504490), so the factory is never on the bus → `is_daemon_ready` always false →
-no RDP server → no listener.
+## Errors made during this investigation (corrected above)
 
-`grdctl --system rdp enable` does **two separate** things:
+I asserted several checkable claims before verifying them. Each was wrong:
 
-- sets `rdp-enabled` in settings (would trigger `maybe_enable_services` → bind,
-  **if the daemon were ready**), and
-- a systemd-enable (the wants-symlink → `EROFS`) that is purely
-  **boot-persistence**.
+1. **"`EROFS` blocks the listener"** — wrong. Source shows the bind is gated by
+   `is_daemon_ready`; the `EROFS` is `grdctl`'s boot-persistence step, separate
+   from binding.
+2. **"Set `Enabled=true` over D-Bus to bypass `grdctl`"** — wrong. `Enabled` is
+   read-only (`Property not writable`).
+3. **"The gdm user's systemd user manager is not reachable"** — wrong. I targeted
+   `gdm` (UID 132, no session); the greeter runs as `gdm-greeter` (UID 60578),
+   whose user manager IS reachable. Wrong user, not a NixOS transport bug.
+4. **"GDM doesn't expose `RemoteDisplayFactory`"** — wrong. I checked `busctl list`
+   (which lists bus *names*, not objects); introspecting the object shows GDM does
+   expose it.
 
-So the `EROFS` does **not** prevent binding — it prevents boot-persistence. The
-bind is gated by `is_daemon_ready` (the GDM handover), which is the real NixOS
-blocker.
-
-## Correction to the prior diagnosis
-
-- "EROFS blocks the listener": **wrong**. The bind is gated by `is_daemon_ready`
-  (GDM handover, #504490); the EROFS is secondary (boot-persistence only).
-- The `Enabled` property is read-only — the "set Enabled=true over D-Bus to bypass
-  grdctl" idea does not work.
-- The daemon doesn't even run at boot on current config (unit not enabled + oneshot
-  removed), so it never gets the chance.
-- This is distinct from GDM login working — the handover needs the greeter-session
-  GRD component, which is a separate autostart that NixOS doesn't wire.
-
-## Why xrdp works where GRD doesn't
-
-xrdp spawns its **own** X server and runs Xfce in it — no GDM handover, no
-`is_daemon_ready` gate, no read-only-`/etc` enable dance. That is why it is the
-working remote-desktop path on wyrm2; GRD Remote Login is blocked upstream on NixOS
-until the GDM greeter-session handover (#504490) is wired.
+Lesson: verify each link (read the source for the exact gate; introspect the actual
+object; check the actual user) before asserting. The pattern of error was assuming
+the next layer's behavior from the previous layer's symptom.
