@@ -489,7 +489,9 @@ class OperatorToolAvailabilityMiddleware(Middleware):
         self._actor_resolver = actor_resolver
 
     async def on_call_tool(
-        self, context: MiddlewareContext[mcp_types.CallToolRequestParams], call_next: CallNext
+        self,
+        context: MiddlewareContext[mcp_types.CallToolRequestParams],
+        call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         try:
             return await call_next(context)
