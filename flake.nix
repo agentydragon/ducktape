@@ -395,6 +395,13 @@
         LD_LIBRARY_PATH = systemLibs.libraryPath;
       };
 
+      checks.${system}.codex-execpolicy-evaluation =
+        import ./nix/home/tests/codex-execpolicy-evaluation.nix
+          {
+            inherit pkgs;
+            inherit (pkgsMaster) codex;
+          };
+
       packages.${system} =
         ducktapePkgs
         // gafferPkgs
