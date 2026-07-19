@@ -22,7 +22,8 @@ func RetryOperation(ctx interface{ Value(any) any }, msg string, operation func(
 			backoffMs := backoff.Milliseconds()
 
 			attrs := make([]any, 0, len(extraAttrs)+4)
-			attrs = append(attrs,
+			attrs = append(
+				attrs,
 				slog.Int("attempt", attempt+1),
 				slog.Int64("delay_ms", backoffMs),
 			)
@@ -43,7 +44,8 @@ func RetryOperation(ctx interface{ Value(any) any }, msg string, operation func(
 
 		if shouldRetry != nil && !shouldRetry(err) {
 			attrs := make([]any, 0, len(extraAttrs)+6)
-			attrs = append(attrs,
+			attrs = append(
+				attrs,
 				slog.Int("attempt", attempt+1),
 				slog.Any("error", err),
 				slog.String("reason", "non-retryable"),
@@ -56,7 +58,8 @@ func RetryOperation(ctx interface{ Value(any) any }, msg string, operation func(
 		}
 
 		attrs := make([]any, 0, len(extraAttrs)+4)
-		attrs = append(attrs,
+		attrs = append(
+			attrs,
 			slog.Int("attempt", attempt+1),
 			slog.Any("error", err),
 		)
@@ -69,7 +72,8 @@ func RetryOperation(ctx interface{ Value(any) any }, msg string, operation func(
 	}
 
 	attrs := make([]any, 0, len(extraAttrs)+4)
-	attrs = append(attrs,
+	attrs = append(
+		attrs,
 		slog.Int("attempts", maxRetries),
 		slog.Any("error", lastErr),
 	)

@@ -109,7 +109,8 @@ func NewGitHandler(
 	postCloneHookPath := os.Getenv("POST_CLONE_HOOK_PATH")
 	if postCloneHookPath != "" {
 		// Binary 0xaea516-0xaea549: slog.Logger.log with context.Background()
-		logger.Info("Using post-clone hook from environment",
+		logger.Info(
+			"Using post-clone hook from environment",
 			"path", postCloneHookPath,
 		)
 	}
@@ -191,7 +192,8 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 	// Binary 0xaeaa65: logger.Info with repo, provider, has_custom_url, type attrs
 	// Note: "provider" is source.GitInfo.Type, "has_custom_url" checks Ref!=nil,
 	// "type" is h.processMode
-	logger.Info(activityMsg,
+	logger.Info(
+		activityMsg,
 		"repo", gitSource.GitInfo.Repo,
 		"provider", gitSource.GitInfo.Type,
 		"has_custom_url", gitSource.GitInfo.Ref != nil,
@@ -218,7 +220,8 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 	if gitSource.GitInfo.URL != nil && *gitSource.GitInfo.URL != "" {
 		// Binary 0xaeac49-0xaead5c: custom URL path
 		repoURL = *gitSource.GitInfo.URL
-		logger.Info("Using custom git URL",
+		logger.Info(
+			"Using custom git URL",
 			"repo", gitSource.GitInfo.Repo,
 			"url", repoURL,
 		)
@@ -304,7 +307,8 @@ func (h *GitHandler) Process(ctx context.Context, logger *slog.Logger, source co
 	h.runPostCloneHook(ctx, logger, repoDir, gitSource.GitInfo.Repo)
 
 	// Binary: final success log
-	logger.Info("Git repository cloned successfully",
+	logger.Info(
+		"Git repository cloned successfully",
 		"repo", gitSource.GitInfo.Repo,
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
@@ -340,7 +344,8 @@ func (h *GitHandler) ValidateRepositoryAccess(
 ) error {
 	startTime := time.Now()
 
-	logger.Info(fmt.Sprintf("Validating %s repository access", processMode),
+	logger.Info(
+		fmt.Sprintf("Validating %s repository access", processMode),
 		"repo", repoDir,
 		"process_mode", processMode,
 	)
@@ -350,7 +355,8 @@ func (h *GitHandler) ValidateRepositoryAccess(
 		if attempt > 0 {
 			// Exponential backoff
 			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
-			logger.Info("Retrying git proxy validation",
+			logger.Info(
+				"Retrying git proxy validation",
 				"attempt", attempt+1,
 				"backoff_seconds", backoff.Seconds(),
 			)
@@ -384,14 +390,16 @@ func (h *GitHandler) ValidateRepositoryAccess(
 
 		lastErr = err
 		if attempt < 2 {
-			logger.Warn("Git proxy validation failed, will retry",
+			logger.Warn(
+				"Git proxy validation failed, will retry",
 				"error", err,
 				"attempt", attempt+1,
 			)
 		}
 	}
 
-	logger.Error("Git proxy validation failed after all retries",
+	logger.Error(
+		"Git proxy validation failed after all retries",
 		"error", lastErr,
 		"attempts", 3,
 	)
@@ -451,7 +459,8 @@ func (h *GitHandler) cloneRepository(
 
 	// Binary 0xaef268-0xaef286: slog.Logger.log "Cloning repository"
 	// with attrs: repo, url, is_custom_url, + more context attrs
-	logger.Info("Cloning repository",
+	logger.Info(
+		"Cloning repository",
 		"repo", source.GitInfo.Repo,
 		"url", repoURL,
 		"is_custom_url", isCustomURL,
@@ -474,7 +483,8 @@ func (h *GitHandler) cloneRepository(
 				branch := *source.GitInfo.Ref
 
 				// Binary 0xaf01de: log "BYOC resume: checking if task branch exists on remote"
-				logger.Info("BYOC resume: checking if task branch exists on remote",
+				logger.Info(
+					"BYOC resume: checking if task branch exists on remote",
 					"branch", branch,
 					"repo", source.GitInfo.Repo,
 					"url", repoURL,
@@ -482,7 +492,8 @@ func (h *GitHandler) cloneRepository(
 
 				if h.branchExistsOnRemote(ctx, logger, repoDir, authenticatedURL, branch) {
 					// Binary 0xaf02e3: log "BYOC resume: task branch exists on remote, fetching it"
-					logger.Info("BYOC resume: task branch exists on remote, fetching it",
+					logger.Info(
+						"BYOC resume: task branch exists on remote, fetching it",
 						"branch", branch,
 					)
 
@@ -494,7 +505,8 @@ func (h *GitHandler) cloneRepository(
 
 					// Binary 0xaf0526: log "Repository resumed successfully with task branch"
 					// with 6 attrs: repo, url, branch, + more
-					logger.Info("Repository resumed successfully with task branch",
+					logger.Info(
+						"Repository resumed successfully with task branch",
 						"repo", source.GitInfo.Repo,
 						"url", repoURL,
 						"branch", branch,
@@ -503,7 +515,8 @@ func (h *GitHandler) cloneRepository(
 				}
 
 				// Binary 0xaf065f: log "BYOC resume: task branch not found on remote, falling back to original ref"
-				logger.Info("BYOC resume: task branch not found on remote, falling back to original ref",
+				logger.Info(
+					"BYOC resume: task branch not found on remote, falling back to original ref",
 					"branch", branch,
 					"repo", source.GitInfo.Repo,
 					"url", repoURL,
@@ -511,7 +524,8 @@ func (h *GitHandler) cloneRepository(
 			}
 
 			// Binary: log "Fetching specific ref" then do fetch
-			logger.Info("Fetching specific ref",
+			logger.Info(
+				"Fetching specific ref",
 				"repo", source.GitInfo.Repo,
 			)
 
@@ -535,7 +549,8 @@ func (h *GitHandler) cloneRepository(
 	// Binary 0xaef700-0xaef7f7: runGitCommand(ctx, logger, repoDir, "remote", "add", "origin", authenticatedURL)
 	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "add", "origin", authenticatedURL)
 	if err != nil {
-		logger.Warn("Failed to add remote origin",
+		logger.Warn(
+			"Failed to add remote origin",
 			"error", err,
 		)
 	}
@@ -557,7 +572,8 @@ func (h *GitHandler) cloneRepository(
 
 	_, fetchErr := h.runGitCommand(ctx, logger, repoDir, fetchArgs[0], fetchArgs[1:]...)
 	if fetchErr != nil {
-		logger.Error("Failed to fetch repository",
+		logger.Error(
+			"Failed to fetch repository",
 			"error", fetchErr,
 		)
 		return fmt.Errorf("failed to fetch repository: %w", fetchErr)
@@ -575,14 +591,16 @@ func (h *GitHandler) cloneRepository(
 				if branchList, ok := h.outcomes[source.GitInfo.Repo]; ok && len(branchList) > 0 {
 					targetBranch := branchList[0]
 
-					logger.Info("BYOC resume: checking if task branch exists on remote",
+					logger.Info(
+						"BYOC resume: checking if task branch exists on remote",
 						"branch", targetBranch,
 						"repo", source.GitInfo.Repo,
 						"url", repoURL,
 					)
 
 					if h.branchExistsOnRemote(ctx, logger, repoDir, authenticatedURL, targetBranch) {
-						logger.Info("BYOC resume: task branch exists on remote, fetching it",
+						logger.Info(
+							"BYOC resume: task branch exists on remote, fetching it",
 							"branch", targetBranch,
 						)
 
@@ -591,7 +609,8 @@ func (h *GitHandler) cloneRepository(
 							return fmt.Errorf("failed to fetch/checkout task branch: %w", err)
 						}
 
-						logger.Info("Repository resumed successfully with task branch",
+						logger.Info(
+							"Repository resumed successfully with task branch",
 							"repo", source.GitInfo.Repo,
 							"url", repoURL,
 							"branch", targetBranch,
@@ -599,7 +618,8 @@ func (h *GitHandler) cloneRepository(
 						return nil
 					}
 
-					logger.Info("BYOC resume: task branch not found on remote, falling back to original ref",
+					logger.Info(
+						"BYOC resume: task branch not found on remote, falling back to original ref",
 						"branch", targetBranch,
 						"repo", source.GitInfo.Repo,
 						"url", repoURL,
@@ -609,7 +629,8 @@ func (h *GitHandler) cloneRepository(
 		}
 
 		// Standard ref checkout: "Fetching specific ref"
-		logger.Info("Fetching specific ref",
+		logger.Info(
+			"Fetching specific ref",
 			"repo", source.GitInfo.Repo,
 		)
 	}
@@ -619,13 +640,15 @@ func (h *GitHandler) cloneRepository(
 	repoSize, packErr := packSize(repoDir)
 	packDuration := time.Since(packSizeStart)
 	if packErr != nil {
-		logger.Warn("Failed to calculate repo size",
+		logger.Warn(
+			"Failed to calculate repo size",
 			"error", packErr,
 		)
 	}
 
 	elapsed := time.Since(startTime)
-	logger.Info("Repository cloned successfully",
+	logger.Info(
+		"Repository cloned successfully",
 		"duration_ms", elapsed.Milliseconds(),
 		"repo_size_bytes", repoSize,
 		"pack_size_duration_ms", packDuration.Milliseconds(),
@@ -674,7 +697,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 			// Exponential backoff
 			backoff := time.Duration(1<<uint(attempt-1)) * 5 * time.Second
 
-			logger.Warn("Retrying git fetch after failure",
+			logger.Warn(
+				"Retrying git fetch after failure",
 				"error", lastErr,
 				"attempt", attempt,
 				"backoff_seconds", backoff.Seconds(),
@@ -702,7 +726,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 		output, err := h.runGitCommand(ctx, logger, repoDir, args[0], args[1:]...)
 		if err == nil {
 			if attempt > 0 {
-				logger.Info("Git fetch succeeded after retry",
+				logger.Info(
+					"Git fetch succeeded after retry",
 					"attempts", attempt+1,
 				)
 			}
@@ -713,7 +738,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 
 		lastErr = err
 		if attempt < 4 {
-			logger.Warn("Git fetch failed, will retry",
+			logger.Warn(
+				"Git fetch failed, will retry",
 				"error", err,
 				"attempt", attempt+1,
 			)
@@ -723,7 +749,8 @@ func (h *GitHandler) runGitFetchWithRetry(
 	elapsed := time.Since(startTime)
 	o11y.RecordDuration("env_manager.git_fetch.duration_ms", nil, nil, float64(elapsed.Milliseconds()))
 
-	logger.Error("Git fetch failed after all retries",
+	logger.Error(
+		"Git fetch failed after all retries",
 		"error", lastErr,
 		"attempts", 5,
 	)
@@ -777,7 +804,8 @@ func (h *GitHandler) runGitCommand(
 	env = append(env, "GIT_ASKPASS=")
 	cmd.Env = env
 
-	logger.Info("Executing git command",
+	logger.Info(
+		"Executing git command",
 		"command", fmt.Sprintf("git %s", command),
 	)
 
@@ -789,7 +817,8 @@ func (h *GitHandler) runGitCommand(
 		outputStr := string(output)
 		sanitized := h.sanitizeURL(outputStr)
 
-		logger.Error("Git command failed",
+		logger.Error(
+			"Git command failed",
 			"command", fmt.Sprintf("git %s", command),
 			"error", err,
 			"duration_ms", elapsed.Milliseconds(),
@@ -799,7 +828,8 @@ func (h *GitHandler) runGitCommand(
 		return "", fmt.Errorf("git %s failed: %w\nOutput: %s", command, err, sanitized)
 	}
 
-	logger.Info("Git command succeeded",
+	logger.Info(
+		"Git command succeeded",
 		"command", fmt.Sprintf("git %s", command),
 		"duration_ms", elapsed.Milliseconds(),
 	)
@@ -952,7 +982,8 @@ func (h *GitHandler) branchExistsOnRemote(
 	authenticatedURL string,
 	branch string,
 ) bool {
-	logger.Debug("Checking if branch exists on remote",
+	logger.Debug(
+		"Checking if branch exists on remote",
 		"branch", branch,
 	)
 
@@ -1015,14 +1046,16 @@ func (h *GitHandler) fetchAndCheckoutRemoteBranch(
 	authenticatedURL string,
 	branch string,
 ) error {
-	logger.Info("Branch exists on remote, fetching and checking out",
+	logger.Info(
+		"Branch exists on remote, fetching and checking out",
 		"branch", branch,
 	)
 
 	// Set authenticated URL for fetch
 	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "set-url", "origin", authenticatedURL)
 	if err != nil {
-		logger.Warn("Failed to set authenticated URL for fetch",
+		logger.Warn(
+			"Failed to set authenticated URL for fetch",
 			"error", err,
 		)
 	}
@@ -1065,7 +1098,8 @@ func (h *GitHandler) createLocalBranch(
 
 	_, err := h.runGitCommand(ctx, logger, repoDir, "checkout", "-b", branch)
 	if err != nil {
-		logger.Error("Failed to create new branch",
+		logger.Error(
+			"Failed to create new branch",
 			"branch", branch,
 			"error", err,
 		)
@@ -1075,7 +1109,8 @@ func (h *GitHandler) createLocalBranch(
 	// Set upstream tracking
 	h.runGitCommand(ctx, logger, repoDir, "branch", "--set-upstream-to", "origin", branch)
 
-	logger.Info("Successfully created new branch locally",
+	logger.Info(
+		"Successfully created new branch locally",
 		"branch", branch,
 	)
 
@@ -1099,7 +1134,8 @@ func (h *GitHandler) isEmptyRepository(
 	repoDir string,
 	authenticatedURL string,
 ) (bool, error) {
-	logger.Info("Checking if repository is empty",
+	logger.Info(
+		"Checking if repository is empty",
 		"repo", repoDir,
 	)
 
@@ -1141,7 +1177,8 @@ func (h *GitHandler) runPostCloneHook(
 		return
 	}
 
-	logger.Info("Running post-clone hook",
+	logger.Info(
+		"Running post-clone hook",
 		"hook_path", h.postCloneHookPath,
 		"repo", repo,
 	)
@@ -1156,13 +1193,15 @@ func (h *GitHandler) runPostCloneHook(
 	outputPath := filepath.Join(repoDir, ".post-clone-hook-output")
 	writeErr := os.WriteFile(outputPath, output, 0o644)
 	if writeErr != nil {
-		logger.Error("Failed to write post-clone hook output to file",
+		logger.Error(
+			"Failed to write post-clone hook output to file",
 			"error", writeErr,
 		)
 	}
 
 	if err != nil {
-		logger.Warn("Post-clone hook failed, continuing anyway",
+		logger.Warn(
+			"Post-clone hook failed, continuing anyway",
 			"error", err,
 		)
 		return
@@ -1220,7 +1259,8 @@ func (h *GitHandler) setupBranchFromOutcomes(
 
 	// Binary 0xaf4942-0xaf4962: log "Processing branch from outcomes" with 6 attrs
 	// Attrs: repo, branch, process_mode (and 3 more from slog internals)
-	logger.Info("Processing branch from outcomes",
+	logger.Info(
+		"Processing branch from outcomes",
 		"repo", repoName,
 		"branch", targetBranch,
 		"process_mode", h.processMode,
@@ -1238,7 +1278,8 @@ func (h *GitHandler) setupBranchFromOutcomes(
 		currentBranch := strings.TrimSpace(string(currentBranchOutput))
 		if currentBranch == targetBranch {
 			// Binary 0xaf4e10-0xaf4eb7: log "Already on target branch, skipping checkout"
-			logger.Info("Already on target branch, skipping checkout",
+			logger.Info(
+				"Already on target branch, skipping checkout",
 				"branch", targetBranch,
 			)
 			return nil
@@ -1248,7 +1289,8 @@ func (h *GitHandler) setupBranchFromOutcomes(
 	// Binary 0xaf4a7f-0xaf4aa0: check h.processMode == "resume" (6 chars, 0x75736572 + 0x656d)
 	if h.processMode == "resume" {
 		// Binary 0xaf4b29: log "Resume mode: creating local branch directly"
-		logger.Info("Resume mode: creating local branch directly",
+		logger.Info(
+			"Resume mode: creating local branch directly",
 			"branch", targetBranch,
 		)
 
@@ -1268,7 +1310,8 @@ func (h *GitHandler) setupBranchFromOutcomes(
 	}
 
 	// Binary 0xaf4d37: log "Successfully processed branch"
-	logger.Info("Successfully processed branch",
+	logger.Info(
+		"Successfully processed branch",
 		"branch", targetBranch,
 	)
 
@@ -1287,7 +1330,8 @@ func (h *GitHandler) resetOriginURL(
 	logger.Info("Resetting origin URL to non-authenticated URL")
 	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "set-url", "origin", repoURL)
 	if err != nil {
-		logger.Warn("Failed to reset origin URL",
+		logger.Warn(
+			"Failed to reset origin URL",
 			"error", err,
 		)
 	}
@@ -1330,7 +1374,8 @@ func (h *GitHandler) UpdateRemoteURL(
 	}
 
 	if _, err := os.Stat(repoDir); err != nil {
-		logger.Info("Repository directory does not exist, skipping remote URL update",
+		logger.Info(
+			"Repository directory does not exist, skipping remote URL update",
 			"repo", gitSource.GitInfo.Repo,
 			"directory", repoDir,
 		)
@@ -1338,21 +1383,24 @@ func (h *GitHandler) UpdateRemoteURL(
 	}
 
 	customURL := *gitSource.GitInfo.URL
-	logger.Info("Updating to custom git URL",
+	logger.Info(
+		"Updating to custom git URL",
 		"repo", gitSource.GitInfo.Repo,
 		"url", customURL,
 	)
 
 	_, err := h.runGitCommand(ctx, logger, repoDir, "remote", "set-url", "origin", customURL)
 	if err != nil {
-		logger.Error("Failed to update remote URL",
+		logger.Error(
+			"Failed to update remote URL",
 			"repo", gitSource.GitInfo.Repo,
 			"error", err,
 		)
 		return fmt.Errorf("failed to update remote URL for %s: %w", gitSource.GitInfo.Repo, err)
 	}
 
-	logger.Info("Successfully updated git remote URL",
+	logger.Info(
+		"Successfully updated git remote URL",
 		"repo", gitSource.GitInfo.Repo,
 	)
 
@@ -1404,7 +1452,8 @@ func (h *GitHandler) SetupGitProxyAfterSourcesProcessed(
 
 		repoDir := gitSource.GetDirectory(h.baseDir)
 		if repoDir == "" {
-			logger.Warn("Could not determine repo path for proxy setup",
+			logger.Warn(
+				"Could not determine repo path for proxy setup",
 				"repo", gitSource.GitInfo.Repo,
 			)
 			continue
@@ -1412,7 +1461,8 @@ func (h *GitHandler) SetupGitProxyAfterSourcesProcessed(
 
 		err := h.setupLocalGitProxy(ctx, logger, repoDir, gitSource.GitInfo.Repo)
 		if err != nil {
-			logger.Error("Failed to setup local git proxy for repo",
+			logger.Error(
+				"Failed to setup local git proxy for repo",
 				"repo", gitSource.GitInfo.Repo,
 				"error", err,
 			)
@@ -1465,7 +1515,8 @@ func (h *GitHandler) setupLocalGitProxy(
 		return fmt.Errorf("failed to update git remote to use proxy: %w, output: %s", err, string(output))
 	}
 
-	logger.Info("Git remote updated to use local proxy",
+	logger.Info(
+		"Git remote updated to use local proxy",
 		"repo", repo,
 	)
 

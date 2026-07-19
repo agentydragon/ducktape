@@ -68,7 +68,8 @@ func RunInit(
 
 	// 0xae0c40: slog.Info "Running init script with claude and working directory"
 	// Log message length 0x32 = 50 chars
-	logger.InfoContext(ctx,
+	logger.InfoContext(
+		ctx,
 		"Running init script with claude and working directory",
 		"claudePath", claudePath,
 		"workingDir", workingDir,
@@ -126,7 +127,8 @@ func RunInit(
 
 		// 0xae0fc9: slog.Warn "claude init failed" (level 8 = WARN)
 		// Log message length 0x19 = 25 chars
-		logger.WarnContext(ctx,
+		logger.WarnContext(
+			ctx,
 			"claude init failed",
 			"error", err,
 			"exitCode", exitCode,
@@ -153,7 +155,8 @@ func RunInit(
 
 	// 0xae1218: slog.Info "claude init completed successfully"
 	// Log message length 0x29 = 41 chars
-	logger.InfoContext(ctx,
+	logger.InfoContext(
+		ctx,
 		"claude init completed successfully",
 		"elapsedMs", elapsedMs,
 	)

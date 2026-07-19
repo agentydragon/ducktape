@@ -90,7 +90,8 @@ func (c *SessionsClient) GetSessionContext(
 
 	// Log at Debug level: "getting session context"
 	// slog attrs: endpoint (string), session_id (string)
-	c.Logger.Debug("getting session context",
+	c.Logger.Debug(
+		"getting session context",
 		"endpoint", endpoint,
 		"session_id", sessionID,
 	)
@@ -122,7 +123,8 @@ func (c *SessionsClient) GetSessionContext(
 		// Log at Debug level: "got session context"
 		// slog attrs: endpoint (string), session_id (string),
 		//             session_id (string, from response), has_field1 (bool), has_field2 (bool)
-		c.Logger.Debug("got session context",
+		c.Logger.Debug(
+			"got session context",
 			"endpoint", endpoint,
 			"session_id", sessionID,
 			"response_id", sessionCtx.ID,

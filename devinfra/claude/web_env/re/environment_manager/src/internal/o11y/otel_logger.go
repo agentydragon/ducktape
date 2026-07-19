@@ -72,7 +72,8 @@ func initOTelLogger(ctx context.Context, cfg *O11yConfig, res *resource.Resource
 		return nil, nil, err
 	}
 
-	processor := sdklog.NewBatchProcessor(exporter,
+	processor := sdklog.NewBatchProcessor(
+		exporter,
 		sdklog.WithMaxQueueSize(2048),
 		sdklog.WithExportTimeout(30*time.Second),
 		sdklog.WithExportMaxBatchSize(512),
@@ -84,7 +85,8 @@ func initOTelLogger(ctx context.Context, cfg *O11yConfig, res *resource.Resource
 		sdklog.WithResource(res),
 	)
 
-	handler := otelslog.NewHandler("environment-runner",
+	handler := otelslog.NewHandler(
+		"environment-runner",
 		otelslog.WithLoggerProvider(provider),
 	)
 

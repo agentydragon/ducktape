@@ -53,7 +53,8 @@ func NewGitHubSourceAuthProvider(
 	token string,
 ) SourceAuthProvider {
 	if strings.HasPrefix(token, "sk-ant-ccsr-") {
-		logger.Log(context.Background(), slog.LevelInfo,
+		logger.Log(
+			context.Background(), slog.LevelInfo,
 			"GitHub source auth provider initialized with git proxy JWT",
 		)
 		return &GitHubSourceAuthProvider{
@@ -81,7 +82,8 @@ func (g *GitHubSourceAuthProvider) AuthenticateURL(
 ) (string, bool) {
 	isSSH := strings.HasPrefix(sourceURL, "git@") || strings.HasPrefix(sourceURL, "ssh://")
 	if isSSH {
-		g.logger.Log(ctx, slog.LevelDebug,
+		g.logger.Log(
+			ctx, slog.LevelDebug,
 			"SSH URL detected, cannot use token authentication",
 			"url", sourceURL,
 		)
@@ -91,7 +93,8 @@ func (g *GitHubSourceAuthProvider) AuthenticateURL(
 	u, err := url.Parse(sourceURL)
 	if err != nil {
 		diag.LogEnvManagerNoPII(ctx, "github_url_parse_failed", nil)
-		g.logger.Log(ctx, slog.LevelWarn,
+		g.logger.Log(
+			ctx, slog.LevelWarn,
 			"Failed to parse GitHub URL",
 			"url", sourceURL,
 			"error", err,
@@ -109,13 +112,15 @@ func (g *GitHubSourceAuthProvider) AuthenticateURL(
 	case GitHubAuthTypeGitProxy:
 		if g.token == "" {
 			diag.LogEnvManagerNoPII(ctx, "git_proxy_jwt_unavailable", nil)
-			g.logger.Log(ctx, slog.LevelWarn,
+			g.logger.Log(
+				ctx, slog.LevelWarn,
 				"No git proxy JWT available",
 			)
 			return sourceURL, false
 		}
 		authToken = fmt.Sprintf("unused:%s", g.token)
-		g.logger.Log(ctx, slog.LevelInfo,
+		g.logger.Log(
+			ctx, slog.LevelInfo,
 			"Using git proxy authentication",
 			"url", sourceURL,
 		)
@@ -142,7 +147,8 @@ func (g *GitHubSourceAuthProvider) AuthenticateURL(
 
 	authenticatedURL := u.String()
 
-	g.logger.Log(ctx, slog.LevelDebug,
+	g.logger.Log(
+		ctx, slog.LevelDebug,
 		"GitHub authentication applied",
 		"original_url", sourceURL,
 		"auth_type", g.authType,

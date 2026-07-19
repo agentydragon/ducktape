@@ -30,7 +30,8 @@ func CreateScratchContainer(ctx context.Context, image string) (*ScratchContaine
 		return nil, fmt.Errorf("creating docker client: %w", err)
 	}
 
-	resp, err := cli.ContainerCreate(ctx,
+	resp, err := cli.ContainerCreate(
+		ctx,
 		&container.Config{
 			Image: image,
 			Cmd:   []string{"sleep", "infinity"},

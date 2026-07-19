@@ -132,7 +132,8 @@ func runGameLoop(
 		lastAction = nil
 		lastToolCalls = nil
 
-		simResp, err := genkit.Generate(ctx, g,
+		simResp, err := genkit.Generate(
+			ctx, g,
 			ai.WithModelName(modelName),
 			ai.WithMessages(state.simHistory...),
 			ai.WithTools(simAnswerTool, simCorrectAnswerTool, simInvalidInputTool),

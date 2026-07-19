@@ -137,7 +137,8 @@ func (m *SourceHandlerManager) ProcessSources(
 	defer deferredMetric(nil, nil)
 
 	// Log start
-	logger.Info("Starting to process sources",
+	logger.Info(
+		"Starting to process sources",
 		"count", len(sources),
 	)
 
@@ -155,7 +156,8 @@ func (m *SourceHandlerManager) ProcessSources(
 
 		sourceType := source.GetType()
 
-		logger.Info("Processing source",
+		logger.Info(
+			"Processing source",
 			"source_index", sourceIdx,
 			"source_type", sourceType,
 			"total_sources", len(sources),
@@ -182,7 +184,8 @@ func (m *SourceHandlerManager) ProcessSources(
 		err := handler.Process(ctx, logger, source)
 		if err != nil {
 			elapsed := time.Since(sourceStartTime)
-			logger.Error("Failed to process source",
+			logger.Error(
+				"Failed to process source",
 				"source_type", sourceType,
 				"error", err,
 				"duration_ms", elapsed.Milliseconds(),
@@ -191,7 +194,8 @@ func (m *SourceHandlerManager) ProcessSources(
 			return result, fmt.Errorf("failed to process source type %s: %w", sourceType, err)
 		}
 
-		logger.Info("Source processed successfully",
+		logger.Info(
+			"Source processed successfully",
 			"source_type", sourceType,
 			"duration_ms", time.Since(sourceStartTime).Milliseconds(),
 		)
@@ -200,7 +204,8 @@ func (m *SourceHandlerManager) ProcessSources(
 	}
 
 	elapsed := time.Since(startTime)
-	logger.Info("Completed processing all sources",
+	logger.Info(
+		"Completed processing all sources",
 		"source_count", len(sources),
 		"success_count", successCount,
 		"duration_ms", elapsed.Milliseconds(),
@@ -229,7 +234,8 @@ func (m *SourceHandlerManager) UpdateRemoteURLs(
 		return nil, nil
 	}
 
-	logger.Info("Updating git remote URLs for existing repositories",
+	logger.Info(
+		"Updating git remote URLs for existing repositories",
 		"count", len(sources),
 	)
 
@@ -252,7 +258,8 @@ func (m *SourceHandlerManager) UpdateRemoteURLs(
 
 		// Check if handler supports this source type
 		if !gitHandler.CanHandle(source) {
-			logger.Info("Handler does not support remote URL updates",
+			logger.Info(
+				"Handler does not support remote URL updates",
 				"source_index", i,
 				"source_type", sourceType,
 			)
@@ -261,7 +268,8 @@ func (m *SourceHandlerManager) UpdateRemoteURLs(
 
 		err := gitHandler.UpdateRemoteURL(ctx, logger, source)
 		if err != nil {
-			logger.Error("Failed to update remote URL, continuing",
+			logger.Error(
+				"Failed to update remote URL, continuing",
 				"source_index", i,
 				"source_type", sourceType,
 				"error", err,
@@ -270,7 +278,8 @@ func (m *SourceHandlerManager) UpdateRemoteURLs(
 			continue
 		}
 
-		logger.Info("Remote URL updated successfully",
+		logger.Info(
+			"Remote URL updated successfully",
 			"source_index", i,
 			"source_type", sourceType,
 		)

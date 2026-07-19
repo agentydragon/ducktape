@@ -74,7 +74,8 @@ func (m *Manager) registerMCPServers(
 			// Log the error with diag.LogEnvManagerNoPII
 			// "failed to register MCP server" (len 0x20=32)
 			// Log with slog at ERROR level (0x08) with server name, error, error string, duration
-			m.Logger.Error("failed to register MCP server",
+			m.Logger.Error(
+				"failed to register MCP server",
 				"server", reg.Name(),
 				"error", err,
 			)
@@ -92,7 +93,8 @@ func (m *Manager) registerMCPServers(
 
 	// Log completion summary.
 	// Binary: 0xb70666+ slog call with 6 attrs: count, duration, registered, errors, total
-	m.Logger.Info("MCP server registration finished",
+	m.Logger.Info(
+		"MCP server registration finished",
 		"duration_ms", elapsed.Milliseconds(),
 		"registered", len(results),
 		"errors", len(errors),
@@ -132,7 +134,8 @@ func (m *Manager) setupMCPServerWithRegistration(
 
 	// Log with 4 slog attrs: "name", <name>, "command", <command>
 	// Binary: 0xb709e0 slog.(*Logger).log call
-	m.Logger.Info("setting up MCP server",
+	m.Logger.Info(
+		"setting up MCP server",
 		"name", reg.Name(),
 		"command", reg.Command(),
 	)
@@ -149,7 +152,8 @@ func (m *Manager) setupMCPServerWithRegistration(
 		// Error path at 0xb70a83:
 		// Logs error with 6 slog attrs at ERROR level (0x08):
 		// "name", "error", "error_string", "duration_ms"
-		m.Logger.Error("MCP server setup failed",
+		m.Logger.Error(
+			"MCP server setup failed",
 			"name", reg.Name(),
 			"command", reg.Command(),
 			"duration_ms", elapsed.Milliseconds(),
@@ -161,7 +165,8 @@ func (m *Manager) setupMCPServerWithRegistration(
 
 	// Success path at 0xb70c82:
 	// Logs with 6 slog attrs: "name", "command", "duration_ms"
-	m.Logger.Info("MCP server setup complete",
+	m.Logger.Info(
+		"MCP server setup complete",
 		"name", reg.Name(),
 		"command", reg.Command(),
 		"duration_ms", elapsed.Milliseconds(),

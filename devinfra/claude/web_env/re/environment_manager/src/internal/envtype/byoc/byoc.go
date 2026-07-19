@@ -332,7 +332,8 @@ func (e *byocEnvironmentType) Initialize(ctx context.Context) error {
 	hasScript := len(e.config.TaskSetupScript) > 0
 
 	// 0xb048a6: Log initialization start
-	e.logger.Info("Initializing BYOC environment",
+	e.logger.Info(
+		"Initializing BYOC environment",
 		"session_mode", string(e.sessionMode),
 		"has_script", hasScript,
 		"cwd", e.config.CWD,
@@ -340,7 +341,8 @@ func (e *byocEnvironmentType) Initialize(ctx context.Context) error {
 
 	// 0xb04956-0xb04b93: Set working directory if configured
 	if e.config.CWD != "" {
-		e.logger.Info("Setting working directory",
+		e.logger.Info(
+			"Setting working directory",
 			"cwd", e.config.CWD,
 		)
 
@@ -355,14 +357,16 @@ func (e *byocEnvironmentType) Initialize(ctx context.Context) error {
 		}
 
 		// 0xb04b93: Success log
-		e.logger.Info("Working directory set successfully",
+		e.logger.Info(
+			"Working directory set successfully",
 			"cwd", e.config.CWD,
 		)
 	}
 
 	// 0xb04c46: Bootstrap Claude settings
 	if err := e.bootstrapClaudeSettings(ctx); err != nil {
-		e.logger.Warn("Failed to bootstrap Claude settings",
+		e.logger.Warn(
+			"Failed to bootstrap Claude settings",
 			"error", err,
 		)
 	}
@@ -384,7 +388,8 @@ func (e *byocEnvironmentType) Initialize(ctx context.Context) error {
 			}
 		} else {
 			// 0xb04ebc: Fast resume log
-			e.logger.Info("Fast resume: Skipping task setup script for non-new session mode",
+			e.logger.Info(
+				"Fast resume: Skipping task setup script for non-new session mode",
 				"session_mode", string(e.sessionMode),
 			)
 		}
@@ -397,7 +402,8 @@ func (e *byocEnvironmentType) Initialize(ctx context.Context) error {
 				e.logger.Info("Attempting to checkout target branches for BYOC environment")
 
 				if err := e.handleBranchCheckout(ctx); err != nil {
-					e.logger.Error("Failed to checkout branches",
+					e.logger.Error(
+						"Failed to checkout branches",
 						"error", err,
 					)
 					// 0xb04fe6: Wrap branch checkout error
@@ -445,7 +451,8 @@ func (e *byocEnvironmentType) CreateLeaseManager(ctx context.Context, sessionID 
 	}
 
 	// 0xb07edb: Log creation
-	e.logger.Info("Creating LeaseManager for BYOC environment",
+	e.logger.Info(
+		"Creating LeaseManager for BYOC environment",
 		"session_id", sessionID,
 		"work_id", workID,
 	)
@@ -521,7 +528,8 @@ func (e *byocEnvironmentType) extractRepoBranchMapping(ctx context.Context) (map
 			branchMap[repo] = branches[0]
 
 			// 0xb052fe: Log debug
-			e.logger.Debug("Mapped repository to branch for checkout",
+			e.logger.Debug(
+				"Mapped repository to branch for checkout",
 				"repo", repo,
 				"branch", branches[0],
 			)
@@ -583,7 +591,8 @@ func (e *byocEnvironmentType) handleBranchCheckout(ctx context.Context) error {
 	}
 
 	// 0xb05577: Log branch count
-	e.logger.Info("Found branches to checkout",
+	e.logger.Info(
+		"Found branches to checkout",
 		"count", len(branchMap),
 	)
 
@@ -624,14 +633,16 @@ func (e *byocEnvironmentType) handleBranchCheckout(ctx context.Context) error {
 	}
 
 	// 0xb05876: Log success with count
-	e.logger.Info("Branches checked out successfully",
+	e.logger.Info(
+		"Branches checked out successfully",
 		"count", len(branchMap),
 	)
 
 	// 0xb05989: Setup git proxy after sources processed
 	if result, err := mgr.SetupGitProxyAfterSourcesProcessed(ctx, e.logger, e.startupContext.Sources); err != nil {
 		// 0xb05a01: Log proxy error at Warn
-		e.logger.Warn("Failed to setup git proxy",
+		e.logger.Warn(
+			"Failed to setup git proxy",
 			"error", err,
 			"result", result,
 		)
@@ -666,7 +677,8 @@ func (e *byocEnvironmentType) runScript(ctx context.Context) error {
 	scriptSize := len(e.config.TaskSetupScript)
 
 	// 0xb05eda: Log execution start
-	e.logger.Info("Executing script",
+	e.logger.Info(
+		"Executing script",
 		"script_name", scriptName,
 		"script_size_bytes", scriptSize,
 	)
@@ -693,7 +705,8 @@ func (e *byocEnvironmentType) runScript(ctx context.Context) error {
 		}
 
 		// 0xb064e4: Log "Script output" with stream, content, script_name
-		e.logger.Info("Script output",
+		e.logger.Info(
+			"Script output",
 			"stream", streamLabel,
 			"content", string(data),
 			"script_name", scriptName,
@@ -717,7 +730,8 @@ func (e *byocEnvironmentType) runScript(ctx context.Context) error {
 	}
 
 	// 0xb0621c: Log success
-	e.logger.Info("Script completed successfully",
+	e.logger.Info(
+		"Script completed successfully",
 		"script_name", scriptName,
 		"exit_code", result.ExitCode,
 		"duration", result.Duration,
@@ -801,7 +815,8 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			// 0xb070ea: Log error at Warn
-			e.logger.Warn("Failed to set git config",
+			e.logger.Warn(
+				"Failed to set git config",
 				"key", cfg.key,
 				"value", cfg.value,
 				"error", err,
@@ -809,7 +824,8 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 			)
 		} else {
 			// 0xb071f0: Log success at Debug
-			e.logger.Debug("Set git config",
+			e.logger.Debug(
+				"Set git config",
 				"key", cfg.key,
 				"value", cfg.value,
 			)
@@ -823,7 +839,8 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 	sshDir := filepath.Join(home, ".ssh")
 	// 0xb07305: MkdirAll with mode 0700 (0x1c0)
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
-		e.logger.Warn("Failed to create .ssh directory",
+		e.logger.Warn(
+			"Failed to create .ssh directory",
 			"error", err,
 		)
 		return nil
@@ -835,13 +852,15 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 	// 0xb07459: Create empty signing key file (O_WRONLY|O_CREATE|O_TRUNC = 0x242, perm 0x1b6 = 0666)
 	f, err := os.OpenFile(signingKeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 	if err != nil {
-		e.logger.Warn("Failed to create signing key file",
+		e.logger.Warn(
+			"Failed to create signing key file",
 			"error", err,
 		)
 	} else {
 		f.Close()
 		// 0xb0751f: Log success
-		e.logger.Debug("Created empty signing key file",
+		e.logger.Debug(
+			"Created empty signing key file",
 			"path", signingKeyPath,
 		)
 	}
@@ -851,7 +870,8 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// 0xb07739: Log error
-		e.logger.Warn("Failed to set git signing key config",
+		e.logger.Warn(
+			"Failed to set git signing key config",
 			"key", "user.signingkey",
 			"value", signingKeyPath,
 			"error", err,
@@ -859,7 +879,8 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 		)
 	} else {
 		// 0xb077f1: Log success
-		e.logger.Debug("Set git signing key",
+		e.logger.Debug(
+			"Set git signing key",
 			"key", "user.signingkey",
 			"value", signingKeyPath,
 		)
@@ -913,7 +934,8 @@ func (e *byocEnvironmentType) bootstrapClaudeSettings(ctx context.Context) error
 	settingsExists := false
 	if _, err := os.Stat(settingsPath); err == nil {
 		settingsExists = true
-		e.logger.Info("Claude settings file already exists",
+		e.logger.Info(
+			"Claude settings file already exists",
 			"path", settingsPath,
 		)
 	}
@@ -922,7 +944,8 @@ func (e *byocEnvironmentType) bootstrapClaudeSettings(ctx context.Context) error
 	stopHookExists := false
 	if _, err := os.Stat(stopHookPath); err == nil {
 		stopHookExists = true
-		e.logger.Info("Stop hook script already exists",
+		e.logger.Info(
+			"Stop hook script already exists",
 			"path", stopHookPath,
 		)
 	}
@@ -933,7 +956,8 @@ func (e *byocEnvironmentType) bootstrapClaudeSettings(ctx context.Context) error
 			return fmt.Errorf("failed to write settings file: %w", err)
 		}
 		// 0xb06a21: Log success
-		e.logger.Info("Successfully created Claude settings file",
+		e.logger.Info(
+			"Successfully created Claude settings file",
 			"path", settingsPath,
 		)
 	}
@@ -944,7 +968,8 @@ func (e *byocEnvironmentType) bootstrapClaudeSettings(ctx context.Context) error
 			return fmt.Errorf("failed to write stop hook script: %w", err)
 		}
 		// 0xb06b56: Log success
-		e.logger.Info("Successfully created stop hook script",
+		e.logger.Info(
+			"Successfully created stop hook script",
 			"path", stopHookPath,
 		)
 	}

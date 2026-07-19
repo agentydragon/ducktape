@@ -138,7 +138,8 @@ func (a *DeployAction) deployFilestore(
 		return nil, fmt.Errorf("filestore config is required for deploy action")
 	}
 
-	slog.Info("deploy_filestore_starting",
+	slog.Info(
+		"deploy_filestore_starting",
 		"filestore_url", a.FilesystemConfig.FilestoreURL,
 		"filesystem_id", a.FilesystemConfig.FilesystemID,
 		"project_dir", projectDir,
@@ -245,7 +246,8 @@ func (a *DeployAction) deployFilestore(
 		return nil, fmt.Errorf("failed to marshal deploy result: %w", err)
 	}
 
-	slog.Info("deploy_filestore_complete",
+	slog.Info(
+		"deploy_filestore_complete",
 		"deploy_url", result.DeployURL,
 	)
 

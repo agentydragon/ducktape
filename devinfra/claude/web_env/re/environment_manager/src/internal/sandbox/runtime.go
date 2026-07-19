@@ -62,7 +62,8 @@ func NewSandboxRuntimeWithConfig(
 	// If MkdirAll failed, log a warning and continue.
 	if err != nil {
 		if logger != nil {
-			logger.Log(context.Background(), slog.LevelWarn,
+			logger.Log(
+				context.Background(), slog.LevelWarn,
 				"failed to create claude tmp directory",
 				"path", "/tmp/claude",
 				"error", err,
@@ -77,7 +78,8 @@ func NewSandboxRuntimeWithConfig(
 		config = buildDefaultConfig(nil)
 	} else {
 		if logger != nil {
-			logger.Log(context.Background(), slog.LevelDebug,
+			logger.Log(
+				context.Background(), slog.LevelDebug,
 				"using custom sandbox config",
 				"allowed_domains", config.AllowedDomains,
 			)
@@ -92,7 +94,8 @@ func NewSandboxRuntimeWithConfig(
 
 	// Log the final sandbox runtime state.
 	if logger != nil {
-		logger.Log(context.Background(), slog.LevelDebug,
+		logger.Log(
+			context.Background(), slog.LevelDebug,
 			"sandbox runtime initialized",
 			"srt_binary", srtBinary,
 			"config_path", configFile,
@@ -190,7 +193,8 @@ func (s *SandboxRuntime) WrapCommand(command string, args []string) (string, []s
 
 	// Log the wrapping if a logger is configured (0x7dc8a6: CMP s.Logger != nil).
 	if s.Logger != nil {
-		s.Logger.Log(context.Background(), slog.LevelDebug,
+		s.Logger.Log(
+			context.Background(), slog.LevelDebug,
 			"wrapped command for sandbox",
 			"original_command", command, // slog attr at 0xd0(SP)
 			"sandbox_binary", s.RuntimePath, // slog attr at 0x80(SP)
@@ -217,7 +221,8 @@ func (s *SandboxRuntime) Cleanup() error {
 	if !s.HasConfig {
 		// Custom config: we did not create this file, so skip cleanup.
 		if s.Logger != nil {
-			s.Logger.Log(context.Background(), slog.LevelDebug,
+			s.Logger.Log(
+				context.Background(), slog.LevelDebug,
 				"skipping cleanup of custom config",
 				"config_path", s.ConfigFile,
 			)
@@ -227,7 +232,8 @@ func (s *SandboxRuntime) Cleanup() error {
 
 	// Config was installed by us; clean it up (0x7dcc98: CALL CleanupConfigFile).
 	if s.Logger != nil {
-		s.Logger.Log(context.Background(), slog.LevelDebug,
+		s.Logger.Log(
+			context.Background(), slog.LevelDebug,
 			"cleaning up sandbox config",
 			"config_path", s.ConfigFile,
 		)
@@ -236,7 +242,8 @@ func (s *SandboxRuntime) Cleanup() error {
 	err := CleanupConfigFile(s.RuntimePath, s.ConfigFile)
 	if err != nil {
 		if s.Logger != nil {
-			s.Logger.Log(context.Background(), slog.LevelWarn,
+			s.Logger.Log(
+				context.Background(), slog.LevelWarn,
 				"failed to cleanup sandbox config",
 				"config_path", s.ConfigFile,
 				"error", err,

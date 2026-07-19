@@ -108,7 +108,8 @@ func (c *HttpClient) RetryableHTTPDo(ctx context.Context, req *http.Request, ret
 
 		// Log at Debug level: "retrying request"
 		// slog attrs: attempt (int), max_retries (int), method (string), url (string)
-		c.Logger.(*slog.Logger).Debug("retrying request",
+		c.Logger.(*slog.Logger).Debug(
+			"retrying request",
 			"attempt", attempt,
 			"max_retries", retryConfig.MaxRetries,
 			"method", clonedReq.Method,
@@ -142,7 +143,8 @@ func (c *HttpClient) RetryableHTTPDo(ctx context.Context, req *http.Request, ret
 
 		// Log at Warn level: "retrying after backoff"
 		// slog attrs: attempt, backoff_seconds, max_retries, error (string), method, url
-		c.Logger.(*slog.Logger).Warn("retrying after backoff",
+		c.Logger.(*slog.Logger).Warn(
+			"retrying after backoff",
 			"attempt", attempt+1,
 			"backoff_seconds", backoffMs,
 			"max_retries", retryConfig.MaxRetries,

@@ -153,7 +153,8 @@ to validate them against the token's identity.`,
 			// Binary: 0xb766c5-0xb76780 - slog.Info with 4 attrs:
 			//   "environment_id", "organization_id" at slog level 4 (Info)
 			//   Message: "Starting poll with identity and session details" (0x29=41 chars)
-			log.Info("Starting poll with identity and session details",
+			log.Info(
+				"Starting poll with identity and session details",
 				"environment_id", environmentID,
 				"organization_id", organizationID,
 			)

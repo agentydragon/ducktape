@@ -165,7 +165,8 @@ func (p *Poller) Poll(ctx context.Context) (*SessionResponse, error) {
 	durationMs := duration.Milliseconds()
 
 	if err != nil {
-		p.Logger.Error("Poll request failed",
+		p.Logger.Error(
+			"Poll request failed",
 			"duration_ms", durationMs,
 			"error", err,
 		)
@@ -184,7 +185,8 @@ func (p *Poller) Poll(ctx context.Context) (*SessionResponse, error) {
 	// Step 10: Check response status code.
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		p.Logger.Error("Poll request returned non-200 status",
+		p.Logger.Error(
+			"Poll request returned non-200 status",
 			"status_code", resp.StatusCode,
 			"duration_ms", durationMs,
 			"retry_after", retryAfter,
@@ -202,7 +204,8 @@ func (p *Poller) Poll(ctx context.Context) (*SessionResponse, error) {
 
 	if len(body) == 0 {
 		// No session available.
-		p.Logger.Debug("Poll returned empty response",
+		p.Logger.Debug(
+			"Poll returned empty response",
 			"duration_ms", durationMs,
 			"request_id", requestID,
 		)
@@ -215,7 +218,8 @@ func (p *Poller) Poll(ctx context.Context) (*SessionResponse, error) {
 		return nil, fmt.Errorf("failed to parse poll response: %w", err)
 	}
 
-	p.Logger.Info("Poll returned session",
+	p.Logger.Info(
+		"Poll returned session",
 		"duration_ms", durationMs,
 		"request_id", requestID,
 	)
@@ -233,7 +237,8 @@ func (p *Poller) SleepWithJitter(ctx context.Context) error {
 	jitter := time.Duration(rand.Int63n(int64(defaultPollInterval / 5)))
 	sleepDuration := defaultPollInterval + jitter
 
-	p.Logger.Debug("Sleeping with jitter",
+	p.Logger.Debug(
+		"Sleeping with jitter",
 		"sleep_duration", sleepDuration,
 	)
 

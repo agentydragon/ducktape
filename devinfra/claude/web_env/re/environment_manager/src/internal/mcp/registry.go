@@ -268,7 +268,8 @@ func RegisterWithClaude(
 	cmd := exec.CommandContext(ctx, "claude", "mcp", "add", "--transport", "http", serverName, serverEndpoint)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Warn("failed to register MCP server with claude",
+		logger.Warn(
+			"failed to register MCP server with claude",
 			"error", err,
 			"output", string(output),
 			"server", name,
@@ -278,7 +279,8 @@ func RegisterWithClaude(
 
 	outputStr := string(output)
 	if strings.Index(outputStr, serverURL) >= 0 {
-		logger.Info("registered MCP server with Claude Code and it recognized our URL",
+		logger.Info(
+			"registered MCP server with Claude Code and it recognized our URL",
 			"server", name,
 		)
 	}

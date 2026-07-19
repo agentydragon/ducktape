@@ -107,7 +107,8 @@ func (s *CodeSignMCPServer) Start(logger *slog.Logger, name string) (int, error)
 	os.Setenv("SIGNING_SERVER_URL", portStr)
 	os.Setenv("SIGNING_SERVER_KEY_PATH", s.name)
 
-	s.logger.Info("MCP server started",
+	s.logger.Info(
+		"MCP server started",
 		"server", s.name,
 		"port", port,
 	)
@@ -279,14 +280,16 @@ func (s *CodeSignMCPServer) handleSignFile(ctx context.Context, request mcplib.C
 //  8. If no match, return "unknown", nil
 func (s *CodeSignMCPServer) identifySource(ctx context.Context, filePath string, sourceIdentifier string) (string, interface{}) {
 	if sourceIdentifier == "" {
-		s.logger.Warn("No source identifier provided, unable to identify source for signing",
+		s.logger.Warn(
+			"No source identifier provided, unable to identify source for signing",
 			"file_path", filePath,
 		)
 		return "unknown", nil
 	}
 
 	if s.sources == nil || len(s.sources) == 0 {
-		s.logger.Warn("No sources configured, unable to identify source for signing",
+		s.logger.Warn(
+			"No sources configured, unable to identify source for signing",
 			"file_path", filePath,
 		)
 		return "unknown", nil
@@ -310,7 +313,8 @@ func (s *CodeSignMCPServer) identifySource(ctx context.Context, filePath string,
 
 		// Check if resolvedPath is under srcDir
 		if len(resolvedPath) >= len(srcDir) {
-			s.logger.Info("Identified source (subdirectory)",
+			s.logger.Info(
+				"Identified source (subdirectory)",
 				"source", src.GetType(),
 				"file_path", filePath,
 			)

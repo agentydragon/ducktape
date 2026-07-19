@@ -171,12 +171,14 @@ func runGame(modelName, api string, v Variant, outputDir string, scratchEnabled 
 	var g *genkit.Genkit
 	switch api {
 	case "openai":
-		g = genkit.Init(ctx,
+		g = genkit.Init(
+			ctx,
 			genkit.WithPlugins(&oai.OpenAI{}),
 			genkit.WithDefaultModel(fullModelName),
 		)
 	case "anthropic":
-		g = genkit.Init(ctx,
+		g = genkit.Init(
+			ctx,
 			genkit.WithPlugins(&anthropic.Anthropic{}),
 			genkit.WithDefaultModel(fullModelName),
 		)

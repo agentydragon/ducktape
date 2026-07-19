@@ -79,7 +79,8 @@ func (p *V0Parser) Parse(data []byte) (*ParsedContext, error) {
 	// Log pre-computed args if mcp_config is present
 	if input.McpConfig != nil || len(input.McpConfigData) > 0 {
 		hasMcpConfig := len(input.McpConfigData) > 0
-		logger.Info("Received pre-computed args from sandbox-gateway",
+		logger.Info(
+			"Received pre-computed args from sandbox-gateway",
 			"data_size_bytes", len(data),
 			"mcp_config", input.McpConfig,
 			"data_size_bytes", hasMcpConfig,
@@ -89,7 +90,8 @@ func (p *V0Parser) Parse(data []byte) (*ParsedContext, error) {
 			// Decode the MCP config content
 			decoded, err := base64.StdEncoding.DecodeString(string(input.McpConfig.Data))
 			if err == nil {
-				logger.Warn("Pre-computed MCP config file",
+				logger.Warn(
+					"Pre-computed MCP config file",
 					"data_size_bytes", string(input.McpConfig.Data),
 					"content_preview", string(decoded),
 					"content_preview", string(decoded),
@@ -111,7 +113,8 @@ func (p *V0Parser) Parse(data []byte) (*ParsedContext, error) {
 	outcomesResult := p.parseOutcomes(&input)
 
 	elapsed := time.Since(start)
-	logger.Info("Completed parsing V0 input",
+	logger.Info(
+		"Completed parsing V0 input",
 		"duration_ms", elapsed.Milliseconds(),
 	)
 
@@ -149,7 +152,8 @@ func (p *V0Parser) parseStartupContext(input *v0Input) (*config.StartupContext, 
 	}
 
 	logger := p.Logger
-	logger.Info("Parsed startup context from V0 input",
+	logger.Info(
+		"Parsed startup context from V0 input",
 		"data_size_bytes", ctx.APIBaseURL,
 		"session_id", ctx.SessionID,
 		"data_size_bytes", ctx.Len(),
@@ -196,7 +200,8 @@ func (p *V0Parser) parseEnvironment(input *v0Input) (json.RawMessage, error) {
 	}
 
 	logger := p.Logger
-	logger.Info("Parsed environment from V0 input",
+	logger.Info(
+		"Parsed environment from V0 input",
 		"data_size_bytes", result.EnvironmentType,
 		"content_preview", result.HasInitScript,
 		"data_size_bytes", result.HasMcpServers,
@@ -215,7 +220,8 @@ func (p *V0Parser) parseAuth(input *v0Input) (*auth.AuthContext, error) {
 
 		hasAuth := input.Auth != nil
 		logger := p.Logger
-		logger.Info("Parsed auth from V0 input",
+		logger.Info(
+			"Parsed auth from V0 input",
 			"data_size_bytes", hasAuth,
 		)
 		return authCtx, nil
@@ -228,7 +234,8 @@ func (p *V0Parser) parseAuth(input *v0Input) (*auth.AuthContext, error) {
 
 	hasAuth := input.Auth != nil
 	logger := p.Logger
-	logger.Info("Parsed auth from V0 input",
+	logger.Info(
+		"Parsed auth from V0 input",
 		"data_size_bytes", hasAuth,
 	)
 	return authCtx, nil
@@ -257,7 +264,8 @@ func (p *V0Parser) parseOutcomes(input *v0Input) *claude.Outcomes {
 		} else {
 			// Multiple or zero branches: log a warning
 			logger := p.Logger
-			logger.Warn("Outcome skipped: exactly one branch must be specified",
+			logger.Warn(
+				"Outcome skipped: exactly one branch must be specified",
 				"data_size_bytes", outcome.RemoteURL,
 				"content_preview", len(outcome.Branches),
 			)
@@ -273,7 +281,8 @@ func (p *V0Parser) parseOutcomes(input *v0Input) *claude.Outcomes {
 	}
 
 	logger := p.Logger
-	logger.Info("Parsed outcomes from V0 input",
+	logger.Info(
+		"Parsed outcomes from V0 input",
 		"data_size_bytes", numRepos,
 		"content_preview", numBranches,
 	)

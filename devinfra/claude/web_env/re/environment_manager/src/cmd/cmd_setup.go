@@ -176,7 +176,8 @@ func runSetup(
 	log := logger.CreateLoggerWithFileOutput(level)
 
 	// Binary: 0xb778d6-0xb779a8 - slog.Info with 4 attrs
-	log.Info("Starting setup",
+	log.Info(
+		"Starting setup",
 		"claude_code_version", claudeCodeVersion,
 		"sandbox_runtime_version", sandboxRuntimeVersion,
 		"skip_claude_code", skipClaudeCode,
@@ -330,7 +331,8 @@ func runAPIHealthcheck(ctx context.Context, log *slog.Logger, apiURL string, ser
 	}
 
 	// Binary: 0xb775b3-0xb776b4 - slog.Info with identity fields
-	log.Info("API connectivity verified",
+	log.Info(
+		"API connectivity verified",
 		"environment_id", identity.SessionID,
 		"organization_uuid", identity.OrgID,
 	)

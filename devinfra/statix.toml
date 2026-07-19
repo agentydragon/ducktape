@@ -4,7 +4,8 @@
 # for top-level option assignments.
 disabled = ["repeated_keys"]
 
-# Specimens are committed snapshots, not our source
-ignore = ["props/specimens"]
+# Specimens are committed snapshots, not our source; .worktrees/ holds git
+# worktree checkouts with their own snapshots.
+ignore = ["props/specimens", ".worktrees"]
 
 nix_version = "2.24"

@@ -20,7 +20,8 @@ func UpdateRemoteTrackingBranch(ctx context.Context, dir string, commitHash stri
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		slog.Warn("Failed to update remote tracking branch",
+		slog.Warn(
+			"Failed to update remote tracking branch",
 			slog.String("tracking_ref", refspec),
 			slog.String("branch", branchName),
 			slog.String("revision", commitHash),
@@ -30,7 +31,8 @@ func UpdateRemoteTrackingBranch(ctx context.Context, dir string, commitHash stri
 		return fmt.Errorf("failed to update remote tracking branch %s: %w", refspec, err)
 	}
 
-	slog.Debug("Updated remote tracking branch",
+	slog.Debug(
+		"Updated remote tracking branch",
 		slog.String("tracking_ref", refspec),
 		slog.String("branch", branchName),
 		slog.String("remote", remoteName),

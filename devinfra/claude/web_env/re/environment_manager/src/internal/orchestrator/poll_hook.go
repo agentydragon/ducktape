@@ -223,7 +223,8 @@ func (ph *PollHook) Poll(ctx context.Context) (*SessionResponse, error) {
 		// Log warning with 3 attrs: duration, stderr, error
 		// Binary: 0xa8e5a0-0xa8e70b
 		// DI = 8 (Warn), "poll hook execution failed" (0x1a=26 chars), 3 attrs
-		ph.Logger.Warn("poll hook execution failed",
+		ph.Logger.Warn(
+			"poll hook execution failed",
 			slog.Duration("duration", elapsed),
 			slog.String("stderr", stderrStr),
 			slog.Any("error", err),
@@ -251,7 +252,8 @@ func (ph *PollHook) Poll(ctx context.Context) (*SessionResponse, error) {
 		// Log "poll hook returned empty queue" at Debug level
 		// Binary: 0xa8e916-0xa8e9e1
 		// DI = -4 (Debug), 0x1e=30 chars, 1 attr: "duration"
-		ph.Logger.Debug("poll hook returned empty queue",
+		ph.Logger.Debug(
+			"poll hook returned empty queue",
 			slog.Duration("duration", elapsed),
 		)
 		return nil, nil
@@ -265,7 +267,8 @@ func (ph *PollHook) Poll(ctx context.Context) (*SessionResponse, error) {
 		// Binary: 0xa8ea88-0xa8ec51
 		// slog.Warn "poll hook returned invalid JSON" (0x1f=31 chars)
 		// 3 attrs: "duration", "output", "error"
-		ph.Logger.Warn("poll hook returned invalid JSON",
+		ph.Logger.Warn(
+			"poll hook returned invalid JSON",
 			slog.Duration("duration", elapsed),
 			slog.String("output", output),
 			slog.Any("error", err),
@@ -278,7 +281,8 @@ func (ph *PollHook) Poll(ctx context.Context) (*SessionResponse, error) {
 	// Successful parse - log and return the response
 	// Binary: 0xa8ed14-0xa8edda
 	// DI = 0 (Info), "poll hook returned work" (0x17=23 chars), 1 attr: "duration"
-	ph.Logger.Info("poll hook returned work",
+	ph.Logger.Info(
+		"poll hook returned work",
 		slog.Duration("duration", elapsed),
 	)
 
@@ -316,7 +320,8 @@ func (ph *PollHook) SleepWithJitter(ctx context.Context) error {
 	// DI = -4 (slog.LevelDebug)
 	// SI = "sleeping with jitter after empty queue" (0x26=38 chars)
 	// 1 attr: slog.Duration("sleep_duration", jitter)
-	ph.Logger.Debug("sleeping with jitter after empty queue",
+	ph.Logger.Debug(
+		"sleeping with jitter after empty queue",
 		slog.Duration("sleep_duration", jitter),
 	)
 

@@ -140,7 +140,8 @@ func initOTelMetrics(ctx context.Context, cfg *O11yConfig, res *resource.Resourc
 		return nil, err
 	}
 
-	reader := sdkmetric.NewPeriodicReader(exporter,
+	reader := sdkmetric.NewPeriodicReader(
+		exporter,
 		sdkmetric.WithInterval(60*time.Second),
 		sdkmetric.WithTimeout(30*time.Second),
 	)

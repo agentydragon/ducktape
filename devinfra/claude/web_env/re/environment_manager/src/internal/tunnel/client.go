@@ -173,7 +173,8 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Construct tunnel URL with query parameters
 	url := fmt.Sprintf("%s?tunnel_id=%s&session_id=%s&environment_id=%s", endpoint, c.tunnelID, c.tunnelID, c.tunnelID)
 
-	slog.Info("connecting to tunnel",
+	slog.Info(
+		"connecting to tunnel",
 		"url", url,
 		"tunnel_id", c.tunnelID,
 	)
@@ -209,7 +210,8 @@ func (c *Client) Connect(ctx context.Context) error {
 		return nil
 	})
 
-	slog.Info("connected to tunnel",
+	slog.Info(
+		"connected to tunnel",
 		"url", url,
 		"tunnel_id", c.tunnelID,
 	)
@@ -397,7 +399,8 @@ func (c *Client) handleWSClose(ctx context.Context, wsClose *tunnelpb.TunnelRequ
 			reason = wsClose.GetReason()
 		}
 
-		slog.Warn("ws tunnel close",
+		slog.Warn(
+			"ws tunnel close",
 			"reason", reason,
 			"error", err,
 		)
@@ -458,7 +461,8 @@ func (c *Client) connectWithRetries(ctx context.Context) error {
 	delay := time.Second // 0x3b9aca00 ns
 
 	for attempt <= 5 {
-		slog.Info("connecting to tunnel",
+		slog.Info(
+			"connecting to tunnel",
 			"attempt", attempt,
 			"delay", delay,
 			"tunnel_id", c.tunnelID,
@@ -476,7 +480,8 @@ func (c *Client) connectWithRetries(ctx context.Context) error {
 		// Unwrap the error for logging
 		errMsg := err.Error()
 
-		slog.Warn("tunnel connect failed",
+		slog.Warn(
+			"tunnel connect failed",
 			"attempt", attempt,
 			"error_type", fmt.Sprintf("%T", err),
 			"error", errMsg,
@@ -523,7 +528,8 @@ func (c *Client) ConnectAndRun(ctx context.Context) error {
 				return ctx.Err()
 			}
 
-			slog.Warn("tunnel disconnected, reconnecting",
+			slog.Warn(
+				"tunnel disconnected, reconnecting",
 				"error", err,
 				"tunnel_id", c.tunnelID,
 			)
@@ -549,7 +555,8 @@ func (c *Client) Close() error {
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
-		slog.Info("closing tunnel client",
+		slog.Info(
+			"closing tunnel client",
 			"tunnel_id", c.tunnelID,
 		)
 
@@ -596,7 +603,8 @@ func (c *Client) sendResponse(resp *tunnelpb.TunnelResponse) error {
 	// Write the message
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		dogmetrics.Incr(c.metricsClient, "tunnel.send_response_write_failed")
-		slog.Error("failed to send tunnel response",
+		slog.Error(
+			"failed to send tunnel response",
 			"error", err,
 			"tunnel_id", c.tunnelID,
 		)

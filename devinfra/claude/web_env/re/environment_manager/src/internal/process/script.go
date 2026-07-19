@@ -31,7 +31,8 @@ func ExecuteScript(
 	}
 	defer func() {
 		if err := os.Remove(tmpfile.Name()); err != nil {
-			logger.Warn("Failed to remove temp script file",
+			logger.Warn(
+				"Failed to remove temp script file",
 				"file", tmpfile.Name(),
 				"error", err,
 			)

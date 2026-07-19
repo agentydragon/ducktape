@@ -49,7 +49,8 @@ func extractSkillZips(srcDir string, destDir string, logger *slog.Logger) ([]str
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			logger.Warn("skills directory does not exist, skipping extraction",
+			logger.Warn(
+				"skills directory does not exist, skipping extraction",
 				"src_dir", srcDir,
 			)
 			return nil, nil
@@ -68,14 +69,16 @@ func extractSkillZips(srcDir string, destDir string, logger *slog.Logger) ([]str
 		skillName := strings.TrimSuffix(name, ".zip")
 		destPath := filepath.Join(destDir, skillName)
 
-		logger.Info("extracting skill zip",
+		logger.Info(
+			"extracting skill zip",
 			"zip_path", zipPath,
 			"dest_path", destPath,
 			"skill_name", skillName,
 		)
 
 		if err := extractZip(zipPath, destPath, logger); err != nil {
-			logger.Error("failed to extract skill zip",
+			logger.Error(
+				"failed to extract skill zip",
 				"zip_path", zipPath,
 				"error", err,
 			)

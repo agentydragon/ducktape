@@ -106,7 +106,8 @@ to validate them against the token's identity.`,
 
 			// Step 2: Log all configuration values.
 			// Binary: 0xb73ad0-0xb73dd4 — builds 7 slog.Attr key-value pairs and calls log.Info
-			log.Info("Starting orchestrator",
+			log.Info(
+				"Starting orchestrator",
 				"api-url", apiURL,
 				"service-key-file", serviceKeyFile,
 				"environment-id", environmentID,
@@ -148,13 +149,15 @@ to validate them against the token's identity.`,
 			whoamiClient := orchestrator.NewWhoamiClient(apiURL, secret, environmentID, log)
 			identity, err := whoamiClient.GetIdentity(context.Background())
 			if err != nil {
-				log.Warn("Failed to get identity via whoami",
+				log.Warn(
+					"Failed to get identity via whoami",
 					"error", err,
 				)
 				return fmt.Errorf("failed to get identity: %w", err)
 			}
 
-			log.Info("Discovered orchestrator identity",
+			log.Info(
+				"Discovered orchestrator identity",
 				"identity", identity,
 			)
 
@@ -173,7 +176,8 @@ to validate them against the token's identity.`,
 			// Step 8: Install sandbox runtime if configured.
 			// Binary: 0xb74ac0 os.Getenv, 0xb74af0 InstallSandboxRuntime
 			if sandboxBackend != "" {
-				log.Info("Installing sandbox runtime",
+				log.Info(
+					"Installing sandbox runtime",
 					"backend", sandboxBackend,
 				)
 				if err := sandbox.InstallSandboxRuntime(log, context.Background(), sandboxBackend); err != nil {
@@ -188,7 +192,8 @@ to validate them against the token's identity.`,
 				return fmt.Errorf("failed to get working directory: %w", err)
 			}
 
-			log.Info("Orchestrator configured",
+			log.Info(
+				"Orchestrator configured",
 				"work_dir", workDir,
 			)
 
@@ -214,7 +219,8 @@ to validate them against the token's identity.`,
 
 			go func() {
 				sig := <-sigCh
-				log.Info("Received shutdown signal",
+				log.Info(
+					"Received shutdown signal",
 					"signal", sig,
 				)
 				cancel()
@@ -228,7 +234,8 @@ to validate them against the token's identity.`,
 					log.Info("Orchestrator stopped due to cancellation")
 					return nil
 				}
-				log.Warn("Orchestrator exited with error",
+				log.Warn(
+					"Orchestrator exited with error",
 					"error", err,
 				)
 				return fmt.Errorf("orchestrator failed: %w", err)

@@ -277,7 +277,8 @@ func (lm *LeaseManager) Start(ctx context.Context) error {
 	heartbeatSecs := lm.heartbeatInterval.Seconds()
 	leaseSecs := lm.leaseDuration.Seconds()
 
-	lm.logger.Info("lease_manager_started",
+	lm.logger.Info(
+		"lease_manager_started",
 		"environment_id", lm.environmentID,
 		"heartbeat_interval_seconds", heartbeatSecs,
 		"lease_duration_seconds", leaseSecs,
@@ -424,7 +425,8 @@ func (lm *LeaseManager) heartbeatLoop() {
 		// Heartbeat failed
 		if isPermanentHeartbeatError(err) {
 			// Permanent failure - log and initiate shutdown
-			lm.logger.Error("permanent_heartbeat_failure",
+			lm.logger.Error(
+				"permanent_heartbeat_failure",
 				"environment_id", lm.environmentID,
 				"error", err,
 			)
@@ -436,15 +438,18 @@ func (lm *LeaseManager) heartbeatLoop() {
 			lm.mu.RUnlock()
 
 			if isPreconditionFailedError(err) {
-				lm.logger.Warn("heartbeat_precondition_failed",
+				lm.logger.Warn(
+					"heartbeat_precondition_failed",
 					"message", "heartbeat failed: HTTP 412",
 				)
-				lm.logger.Warn("heartbeat_rejected_lease_not_extended",
+				lm.logger.Warn(
+					"heartbeat_rejected_lease_not_extended",
 					"stuck_threshold_seconds", stuckThreshold,
 					"expected_last_heartbeat", expectedHeartbeat,
 				)
 			} else {
-				lm.logger.Error("heartbeat_failed_stopping_state_immediate_shutdown",
+				lm.logger.Error(
+					"heartbeat_failed_stopping_state_immediate_shutdown",
 					"environment_id", lm.environmentID,
 					"error", err,
 				)
@@ -457,7 +462,8 @@ func (lm *LeaseManager) heartbeatLoop() {
 		}
 
 		// Transient failure - log warning and continue
-		lm.logger.Warn("transient_heartbeat_failure",
+		lm.logger.Warn(
+			"transient_heartbeat_failure",
 			"environment_id", lm.environmentID,
 			"error", err,
 			"consecutive_failures", lm.consecutiveFailures,
@@ -550,7 +556,8 @@ func (lm *LeaseManager) sendHeartbeat() error {
 	lm.mu.Unlock()
 
 	// Log successful heartbeat
-	lm.logger.Debug("heartbeat_successful",
+	lm.logger.Debug(
+		"heartbeat_successful",
 		"heartbeat_time", now.Format(time.RFC3339),
 	)
 
@@ -580,7 +587,8 @@ func (lm *LeaseManager) scheduleLeaseExpiryCheck() {
 	time.AfterFunc(ttl, func() {
 		remaining := lm.timeUntilExpiry()
 		if remaining <= 0 {
-			lm.logger.Warn("lease_approaching_expiry_shutdown",
+			lm.logger.Warn(
+				"lease_approaching_expiry_shutdown",
 				"lease_expires_at", lm.leaseExpiresAt,
 			)
 			lm.cancel()
@@ -610,7 +618,8 @@ func (lm *LeaseManager) scheduleClaudeCodeStuckCheck() {
 
 	// Schedule periodic stuck checks
 	time.AfterFunc(lm.heartbeatInterval, func() {
-		lm.logger.Info("stuck_check",
+		lm.logger.Info(
+			"stuck_check",
 			"stuck_threshold_seconds", threshold,
 		)
 		// Re-schedule
@@ -629,7 +638,8 @@ func (lm *LeaseManager) scheduleClaudeCodeStuckCheck() {
 //	func1 at 0xad7960 - retry loop body
 //	func1.deferwrap1 at 0xad8040 - deferred response body close
 func (lm *LeaseManager) callStopAPI(ctx context.Context, forced bool) {
-	lm.logger.Info("calling_stop_api",
+	lm.logger.Info(
+		"calling_stop_api",
 		"forced", forced,
 	)
 
@@ -734,7 +744,8 @@ func (lm *LeaseManager) updateHealthFile() {
 	// Marshal and write
 	data, err := json.MarshalIndent(healthData, "", "  ")
 	if err != nil {
-		lm.logger.Error("failed to marshal health data",
+		lm.logger.Error(
+			"failed to marshal health data",
 			"error", err,
 		)
 		return
@@ -743,14 +754,16 @@ func (lm *LeaseManager) updateHealthFile() {
 	// Ensure directory exists
 	dir := filepath.Dir(lm.healthFilePath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		lm.logger.Error("failed to create health file directory",
+		lm.logger.Error(
+			"failed to create health file directory",
 			"error", err,
 		)
 		return
 	}
 
 	if err := os.WriteFile(lm.healthFilePath, data, 0o644); err != nil {
-		lm.logger.Error("failed to write health file",
+		lm.logger.Error(
+			"failed to write health file",
 			"error", err,
 			"path", lm.healthFilePath,
 		)

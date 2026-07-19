@@ -256,7 +256,8 @@ Provide a JSON object via stdin with the following structure:
 
 			// 0xb79654-0xb79672: Log custom executable path if set
 			if claudePath != "" {
-				slogger.Info("Using custom executable path from CLI flag",
+				slogger.Info(
+					"Using custom executable path from CLI flag",
 					"claude_path", claudePath,
 				)
 			}
@@ -324,14 +325,16 @@ Provide a JSON object via stdin with the following structure:
 			}
 
 			// 0xb79f4a: Log "Starting environment manager" with session details
-			slogger.Info("Starting environment manager",
+			slogger.Info(
+				"Starting environment manager",
 				"session_id", sess.SessionID,
 				"work_id", sess.WorkID,
 			)
 
 			// 0xb7a1a0: Log configured allowed tools
 			if sess.StartupContext != nil && len(sess.StartupContext.AllowedTools) > 0 {
-				slogger.Info("Configured allowed tools for Claude",
+				slogger.Info(
+					"Configured allowed tools for Claude",
 					"allowed_tools", sess.StartupContext.AllowedTools,
 				)
 			}
@@ -344,7 +347,8 @@ Provide a JSON object via stdin with the following structure:
 				slogger.Info("Executing healthcheck")
 				healthcheckDuration := time.Since(startTime)
 				o11y.RecordDuration("env_manager.healthcheck.duration_ms", nil, nil, float64(healthcheckDuration.Milliseconds()))
-				slogger.Info("Healthcheck completed successfully",
+				slogger.Info(
+					"Healthcheck completed successfully",
 					"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 				)
 				return nil
@@ -380,7 +384,8 @@ Provide a JSON object via stdin with the following structure:
 			o11y.RecordDuration("env_manager.total_setup.duration_ms", nil, nil, float64(totalSetupTime.Milliseconds()))
 
 			// 0xb7a881-0xb7a8a0: Log "Setup completed, starting manager execution"
-			slogger.Info("Setup completed, starting manager execution",
+			slogger.Info(
+				"Setup completed, starting manager execution",
 				"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 			)
 
@@ -401,7 +406,8 @@ Provide a JSON object via stdin with the following structure:
 
 			if managerErr != nil {
 				// 0xb7a9d9-0xb7aaa7: Manager execution failed
-				slogger.Error("Environment manager execution failed",
+				slogger.Error(
+					"Environment manager execution failed",
 					"error", managerErr,
 					"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 				)
@@ -414,7 +420,8 @@ Provide a JSON object via stdin with the following structure:
 			o11y.IncrementEnvManagerEnd("success", nil, "", "", "", nil, nil)
 			diag.LogEnvManagerNoPII(diagService, "end_task_run", nil)
 
-			slogger.Info("Environment manager completed successfully",
+			slogger.Info(
+				"Environment manager completed successfully",
 				"total_startup_duration_ms", time.Since(startTime).Milliseconds(),
 			)
 
@@ -445,7 +452,8 @@ Provide a JSON object via stdin with the following structure:
 			// Binary: Execute() interface call at 0xb7b1a6
 			slogger.Info("Executing Claude Code")
 			if err := executor.Execute(context.Background()); err != nil {
-				slogger.Error("Claude Code execution failed",
+				slogger.Error(
+					"Claude Code execution failed",
 					"error", err,
 				)
 				return fmt.Errorf("Claude Code execution failed: %w", err)
@@ -546,7 +554,8 @@ func loadContextFromStdin(
 
 	// 0xb7b2d6-0xb7b2f4: Log start message
 	// String: "Starting to read and parse stdin" (32 chars)
-	slogger.Info("Starting to read and parse stdin",
+	slogger.Info(
+		"Starting to read and parse stdin",
 		"input_format", inputFormat,
 	)
 
@@ -563,7 +572,8 @@ func loadContextFromStdin(
 
 	// 0xb7b46a-0xb7b488: Log stdin data read with timing
 	// String: "Read stdin data" (15 chars), 4 attrs
-	slogger.Info("Read stdin data",
+	slogger.Info(
+		"Read stdin data",
 		"data_size", dataSize,
 		"input_format", inputFormat,
 		"stdin_parse_duration_ms", readDurationMs,
@@ -602,7 +612,8 @@ func loadContextFromStdin(
 
 	// 0xb7b6f6-0xb7b714: Log completion
 	// String: "Completed parsing stdin context" (31 chars), 4 attrs
-	slogger.Info("Completed parsing stdin context",
+	slogger.Info(
+		"Completed parsing stdin context",
 		"input_format", inputFormat,
 		"data_size", dataSize,
 		"total_parse_duration_ms", totalDurationMs,
@@ -693,7 +704,8 @@ func acknowledgeWorkIfNeeded(
 
 	// 0xb7bc06-0xb7bd40: Log acknowledgment attempt with details
 	// String: "Acknowledging work item" (23 chars), 6 attrs
-	slogger.Info("Acknowledging work item",
+	slogger.Info(
+		"Acknowledging work item",
 		"work_id", workID,
 		"api_url", apiBaseURL,
 		"session_id", sess.SessionID,
@@ -724,7 +736,8 @@ func acknowledgeWorkIfNeeded(
 
 	// Log success
 	// String: "Work item acknowledged successfully" (35 chars), 2 attrs
-	slogger.Info("Work item acknowledged successfully",
+	slogger.Info(
+		"Work item acknowledged successfully",
 		"work_id", workID,
 	)
 
@@ -800,7 +813,8 @@ func (s *stdinConfigClient) GetEnvironmentForSession(ctx context.Context, sessio
 
 	// 0xb7ba64-0xb7ba80: Log with 8 attrs
 	// String: "Using stdin-provided environment configuration" (46 chars)
-	slogger.Info("Using stdin-provided environment configuration",
+	slogger.Info(
+		"Using stdin-provided environment configuration",
 		"session_id", sessionID,
 		"api_base_url", apiBaseURL,
 		"has_allowed_tools", hasAllowedTools,

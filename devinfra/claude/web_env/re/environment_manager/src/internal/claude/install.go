@@ -399,7 +399,8 @@ func handleInstallError(
 
 		// 0xae2a42-0xae2b03: slog.Warn with log message length 0x40 = 64
 		// "Claude Code update failed (non-fatal, using existing installation)"
-		logger.WarnContext(ctx,
+		logger.WarnContext(
+			ctx,
 			"Claude Code update failed (non-fatal, using existing installation)",
 			"error", installErr,
 			"diagKey", diagKey,
@@ -414,7 +415,8 @@ func handleInstallError(
 		diag.LogEnvManagerNoPII(logger, diagKey, diagMap)
 
 		// slog.Error
-		logger.ErrorContext(ctx,
+		logger.ErrorContext(
+			ctx,
 			"Claude Code installation failed",
 			"error", installErr,
 			"diagKey", diagKey,

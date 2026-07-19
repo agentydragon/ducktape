@@ -165,7 +165,8 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 
 	// Generate bearer token
 	if debugHardcodedToken {
-		logger.Warn("Using hardcoded bearer token for debugging",
+		logger.Warn(
+			"Using hardcoded bearer token for debugging",
 			"server", s.name,
 			"token", s.bearerToken,
 		)
@@ -175,7 +176,8 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 			return 0, fmt.Errorf("failed to read random data: %w", err)
 		}
 		s.bearerToken = base64.URLEncoding.EncodeToString(buf)
-		logger.Info("MCP server token generated",
+		logger.Info(
+			"MCP server token generated",
 			"server", s.name,
 		)
 	}
@@ -194,7 +196,8 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 		s.port = tcpAddr.Port
 	}
 
-	logger.Info("TCP listener created successfully",
+	logger.Info(
+		"TCP listener created successfully",
 		"server", s.name,
 		"address", listener.Addr().String(),
 		"port", s.port,
@@ -209,7 +212,8 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 	s.stopCh = make(chan struct{})
 	go func() {
 		if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-			logger.Error("MCP HTTP server error",
+			logger.Error(
+				"MCP HTTP server error",
 				"error", err,
 				"server", s.name,
 			)
@@ -226,7 +230,8 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 			case <-s.stopCh:
 				return
 			case <-ticker.C:
-				logger.Debug("MCP server heartbeat",
+				logger.Debug(
+					"MCP server heartbeat",
 					"server", s.name,
 					"port", s.port,
 				)
@@ -261,7 +266,8 @@ func (s *BaseServer) Stop() bool {
 		defer cancel()
 
 		if err := s.httpServer.Shutdown(ctx); err != nil {
-			s.logger.Warn("error shutting down MCP server",
+			s.logger.Warn(
+				"error shutting down MCP server",
 				"error", err,
 				"server", s.name,
 			)

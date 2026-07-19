@@ -339,7 +339,8 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 
 	// Log initialization start with configuration details.
 	// Binary 0x1fb23a5: computes isNewOrSetup flag.
-	e.logger.Info("Initializing Anthropic environment",
+	e.logger.Info(
+		"Initializing Anthropic environment",
 		"cwd", e.cwd,
 		"session_mode", e.sessionMode,
 		"has_init_script", hasInitScript,
@@ -413,7 +414,8 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	{
 		envVars := e.config.EnvironmentVariables
 		if err := claude.RunInit(e.logger, ctx, e.cwd, envVars); err != nil {
-			e.logger.Warn("claude init failed during initialization",
+			e.logger.Warn(
+				"claude init failed during initialization",
 				"error", err,
 			)
 		}
@@ -440,7 +442,8 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 	// Log languages count.
 	// Binary: 0xafeed1 "Installing languages" (20 chars) at Info level with language count attr
-	e.logger.Info("Installing languages",
+	e.logger.Info(
+		"Installing languages",
 		"count", len(e.config.Languages),
 	)
 
@@ -482,7 +485,8 @@ func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 	if len(errors) > 0 {
 		// Binary: 0xaff45e level=8 (Error), "Failed to install some languages" (32 chars)
 		errMsg := fmt.Sprintf("failed to install %d language(s)", len(errors))
-		e.logger.Error("Failed to install some languages",
+		e.logger.Error(
+			"Failed to install some languages",
 			"error_count", len(errors),
 			"duration", elapsed,
 			"languages", len(e.config.Languages),
@@ -492,7 +496,8 @@ func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 	}
 
 	// Binary: 0xaff4d4+ Log success with duration
-	e.logger.Info("Languages installed successfully",
+	e.logger.Info(
+		"Languages installed successfully",
 		"count", len(e.config.Languages),
 		"duration", elapsed,
 	)
@@ -525,7 +530,8 @@ func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 // 10. If no version match found: logs error "failed to install %s %s: %s (exit code: %d)"
 func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, version string) error {
 	// 0xafffcd: slog.Info "Installing language"
-	e.logger.Info("Installing language",
+	e.logger.Info(
+		"Installing language",
 		"name", name,
 		"version", version,
 		"script_len", 0,
@@ -543,7 +549,8 @@ func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, ve
 		script = install_scripts.PythonScript
 	default:
 		// 0xb00ae0: slog.Error "No install script for language"
-		e.logger.Error("No install script for language",
+		e.logger.Error(
+			"No install script for language",
 			"name", name,
 			"version", version,
 		)
@@ -560,7 +567,8 @@ func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, ve
 	result, err := process.ExecuteScript(ctx, e.logger, script, pattern, nil)
 	if err != nil {
 		// 0xb003ea: slog + fmt.Errorf "failed to execute installation script: %w"
-		e.logger.Error("Failed to execute installation script",
+		e.logger.Error(
+			"Failed to execute installation script",
 			"name", name,
 			"version", version,
 			"error", err,
@@ -576,7 +584,8 @@ func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, ve
 	}
 
 	// 0xb0062c: slog.Info "Installation script completed"
-	e.logger.Info("Installation script completed",
+	e.logger.Info(
+		"Installation script completed",
 		"name", name,
 		"version", version,
 		"exit_code", result.ExitCode,
@@ -631,7 +640,8 @@ func (e *anthropicEnvironmentType) processSources(ctx context.Context) error {
 
 	if result, err := mgr.SetupGitProxyAfterSourcesProcessed(ctx, e.logger, e.startupContext.Sources); err != nil {
 		// Non-fatal: log at Warn, consistent with byoc.handleBranchCheckout
-		e.logger.Warn("Failed to setup git proxy after sources processed",
+		e.logger.Warn(
+			"Failed to setup git proxy after sources processed",
 			"error", err,
 			"result", result,
 		)
@@ -656,7 +666,8 @@ func (e *anthropicEnvironmentType) processSources(ctx context.Context) error {
 //  6. On success: slog.Info "Successfully executed init script" (0x21=33 chars) at 0xafec02
 func (e *anthropicEnvironmentType) runInitScript(ctx context.Context, scriptContent string) error {
 	// 0xafead7: slog.Info "Running initialization script"
-	e.logger.Info("Running initialization script",
+	e.logger.Info(
+		"Running initialization script",
 		"script_len", len(scriptContent),
 	)
 
@@ -741,7 +752,8 @@ func (e *anthropicEnvironmentType) bootstrapClaudeSkillsUnderDir(ctx context.Con
 	// Check if skill file already exists
 	if _, err := os.Stat(skillPath); err == nil {
 		// 0xb0223d: slog.Info "Claude skills already exist, skipping"
-		e.logger.Info("Claude skills already exist, skipping",
+		e.logger.Info(
+			"Claude skills already exist, skipping",
 			"path", skillPath,
 		)
 		return nil
@@ -760,7 +772,8 @@ func (e *anthropicEnvironmentType) bootstrapClaudeSkillsUnderDir(ctx context.Con
 	}
 
 	// 0xb02192: slog.Info "Bootstrapped Claude skills under directory"
-	e.logger.Info("Bootstrapped Claude skills under directory",
+	e.logger.Info(
+		"Bootstrapped Claude skills under directory",
 		"path", skillPath,
 	)
 
@@ -860,12 +873,14 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 			return fmt.Errorf("failed to write settings.json: %w", err)
 		}
 		// 0xb01a00: slog.Info "Wrote default Claude settings"
-		e.logger.Info("Wrote default Claude settings",
+		e.logger.Info(
+			"Wrote default Claude settings",
 			"path", settingsPath,
 		)
 	} else {
 		// 0xb01ab0: slog.Info "Claude settings already exist, skipping"
-		e.logger.Info("Claude settings already exist, skipping",
+		e.logger.Info(
+			"Claude settings already exist, skipping",
 			"path", settingsPath,
 		)
 	}
@@ -879,12 +894,14 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 			return fmt.Errorf("failed to write stop hook script: %w", err)
 		}
 		// 0xb01be9: slog.Info "Wrote stop hook script"
-		e.logger.Info("Wrote stop hook script",
+		e.logger.Info(
+			"Wrote stop hook script",
 			"path", stopHookPath,
 		)
 	} else {
 		// 0xb01c95: slog.Info "Stop hook script already exists, skipping"
-		e.logger.Info("Stop hook script already exists, skipping",
+		e.logger.Info(
+			"Stop hook script already exists, skipping",
 			"path", stopHookPath,
 		)
 	}

@@ -58,7 +58,8 @@ func (h *WSHandler) OpenTunnel(
 		url = wsOpen.GetUrl()
 	}
 
-	slog.Info("opening ws tunnel",
+	slog.Info(
+		"opening ws tunnel",
 		"path", path,
 		"port", port,
 		"url", url,
@@ -97,7 +98,8 @@ func (h *WSHandler) OpenTunnel(
 	dialer := websocket.DefaultDialer
 	conn, _, err := dialer.Dial(wsURL, headers)
 	if err != nil {
-		slog.Error("failed to open ws tunnel",
+		slog.Error(
+			"failed to open ws tunnel",
 			"error", err,
 			"url", wsURL,
 		)
@@ -147,13 +149,15 @@ func (h *WSHandler) readLoop(
 			// Handle close error
 			closeErr, ok := err.(*websocket.CloseError)
 			if ok {
-				slog.Info("ws tunnel closed by upstream",
+				slog.Info(
+					"ws tunnel closed by upstream",
 					"code", closeErr.Code,
 					"reason", closeErr.Text,
 					"connection_id", connectionID,
 				)
 			} else {
-				slog.Warn("ws tunnel read error",
+				slog.Warn(
+					"ws tunnel read error",
 					"error", err,
 					"connection_id", connectionID,
 				)
@@ -173,7 +177,8 @@ func (h *WSHandler) readLoop(
 			},
 		}
 		if err := sender.SendMessage(msgResp); err != nil {
-			slog.Warn("failed to send ws message through tunnel",
+			slog.Warn(
+				"failed to send ws message through tunnel",
 				"error", err,
 				"connection_id", connectionID,
 			)
@@ -204,7 +209,8 @@ func (h *WSHandler) SendMessage(
 	h.mu.RUnlock()
 
 	if !ok {
-		slog.Warn("ws tunnel not found for message",
+		slog.Warn(
+			"ws tunnel not found for message",
 			"connection_id", connectionID,
 		)
 		return
@@ -218,7 +224,8 @@ func (h *WSHandler) SendMessage(
 
 	data := wsMsg.GetData()
 	if err := wsConn.conn.WriteMessage(msgType, data); err != nil {
-		slog.Warn("failed to write ws message to upstream",
+		slog.Warn(
+			"failed to write ws message to upstream",
 			"error", err,
 			"connection_id", connectionID,
 		)
@@ -242,7 +249,8 @@ func (h *WSHandler) CloseTunnel(wsClose *tunnelpb.TunnelRequest_WsClose) error {
 		connectionID = wsClose.GetConnectionId()
 	}
 
-	slog.Info("closing ws tunnel",
+	slog.Info(
+		"closing ws tunnel",
 		"path", path,
 		"port", port,
 		"connection_id", connectionID,

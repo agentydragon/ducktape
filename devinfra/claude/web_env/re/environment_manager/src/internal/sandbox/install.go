@@ -46,7 +46,8 @@ func InstallSandboxRuntime(logger *slog.Logger, ctx context.Context, version str
 	existingPath, lookErr := exec.LookPath(binaryName)
 	if lookErr == nil {
 		// Binary found; log and skip install.
-		logger.Debug("Found existing sandbox-runtime installation",
+		logger.Debug(
+			"Found existing sandbox-runtime installation",
 			"path", existingPath,
 		)
 	} else {
@@ -57,7 +58,8 @@ func InstallSandboxRuntime(logger *slog.Logger, ctx context.Context, version str
 	packageSpec := fmt.Sprintf("%s@%s", "@anthropic-ai/sandbox-runtime", version)
 
 	// Log the install operation.
-	logger.Info("Installing sandbox-runtime via npm",
+	logger.Info(
+		"Installing sandbox-runtime via npm",
 		"package", packageSpec,
 		"version", version,
 	)
@@ -72,7 +74,8 @@ func InstallSandboxRuntime(logger *slog.Logger, ctx context.Context, version str
 		}
 
 		// npm install failed but we had an existing binary; log warning and continue.
-		logger.Warn("sandbox-runtime upgrade failed, continuing with existing installation",
+		logger.Warn(
+			"sandbox-runtime upgrade failed, continuing with existing installation",
 			"error", string(output),
 			"output", string(output),
 		)
@@ -80,7 +83,8 @@ func InstallSandboxRuntime(logger *slog.Logger, ctx context.Context, version str
 	}
 
 	// Install succeeded. Log the output.
-	logger.Debug("npm install completed",
+	logger.Debug(
+		"npm install completed",
 		"output", string(output),
 	)
 
@@ -93,13 +97,15 @@ func InstallSandboxRuntime(logger *slog.Logger, ctx context.Context, version str
 		}
 
 		// Not found at new path but we had an existing installation.
-		logger.Warn("srt not found after install, using existing installation",
+		logger.Warn(
+			"srt not found after install, using existing installation",
 			"error", verifyErr,
 		)
 		return nil
 	}
 
-	logger.Info("sandbox-runtime installed successfully",
+	logger.Info(
+		"sandbox-runtime installed successfully",
 		"version", version,
 		"path", newPath,
 	)

@@ -138,7 +138,8 @@ func NewClaudeCodeExecutor(
 
 	// 0xad88cc-0xad8956: slog.Info
 	// Message length 0x25 = 37: "Constructing new Claude code executor"
-	logger.InfoContext(ctx,
+	logger.InfoContext(
+		ctx,
 		"Constructing new Claude code executor",
 		"claudeConfig", cfg,
 	)
@@ -215,7 +216,8 @@ func addTokenViaFileDescriptor(
 		msg := fmt.Sprintf("failed to write to pipe for key %s", keyName)
 
 		// 0xad8fa1-0xae0fc2: slog.Warn (level 8)
-		logger.Warn(msg,
+		logger.Warn(
+			msg,
 			"error", writeErr,
 		)
 	}
@@ -227,7 +229,8 @@ func addTokenViaFileDescriptor(
 		msg := fmt.Sprintf("failed to close pipe for key %s", keyName)
 
 		// 0xad90f4-0xad9122: slog.Error (level -4)
-		logger.Error(msg,
+		logger.Error(
+			msg,
 			"error", closeErr,
 		)
 	}
@@ -252,7 +255,8 @@ func addTokenViaFileDescriptor(
 	// Format length 0x1d = 29: "added token via fd for key %s"
 	tokenLog := fmt.Sprintf("added token via fd for key %s", keyName)
 
-	logger.Info(tokenLog,
+	logger.Info(
+		tokenLog,
 		"fdNum", fdNum,
 	)
 
@@ -321,7 +325,8 @@ func addTokenViaFileDescriptor(
 func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 	// 0xad94db-0xad9518: slog.Info
 	// First log message at offset 0x47b24f with "claudeConfig" attribute
-	e.Logger.InfoContext(ctx,
+	e.Logger.InfoContext(
+		ctx,
 		"Executing Claude Code",
 		"claudeConfig", e.Config, // *config.StartupContext
 	)
@@ -494,7 +499,8 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 	// 0xadb100-0xadc000: handle exit code
 	if waitErr != nil {
 		// Extract exit code, log error, write diagnostics
-		e.Logger.WarnContext(ctx,
+		e.Logger.WarnContext(
+			ctx,
 			"Claude Code process exited with error",
 			"error", waitErr,
 		)
@@ -506,7 +512,8 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 	}
 
 	// 0xadd100: success path
-	e.Logger.InfoContext(ctx,
+	e.Logger.InfoContext(
+		ctx,
 		"Claude Code process completed successfully",
 	)
 
@@ -542,7 +549,8 @@ func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]
 	// 0xadf76b-0xadf828: slog.Info
 	// Message length 0x31 = 49:
 	// "Building args from gateway config for Claude Code"
-	e.Logger.InfoContext(ctx,
+	e.Logger.InfoContext(
+		ctx,
 		"Building args from gateway config for Claude Code",
 		"numGatewayArgs", len(claudeCodeArgs),
 		"hasMcpConfig", hasMcpConfig,
@@ -628,7 +636,8 @@ func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) 
 
 	// 0xae00ae-0xae01af: slog.Info
 	// Message: "Wrote MCP config file from gateway"
-	e.Logger.InfoContext(ctx,
+	e.Logger.InfoContext(
+		ctx,
 		"Wrote MCP config file from gateway",
 		"filePath", filePath,
 		"size", len(decoded),
@@ -651,7 +660,8 @@ func (e *ClaudeCodeExecutor) Destroy(ctx context.Context) error {
 	// 0xae024c-0xae02c6: slog.Info
 	// Message length 0x1d = 29: "Destroying Claude code executor"
 	// (actually 29 chars)
-	e.Logger.InfoContext(ctx,
+	e.Logger.InfoContext(
+		ctx,
 		"Destroying Claude code executor",
 		"workingDir", e.WorkingDir,
 	)
@@ -665,7 +675,8 @@ func (e *ClaudeCodeExecutor) Destroy(ctx context.Context) error {
 			// 0xae031d-0xae03ee: slog.Warn
 			// Message length 0x33 = 51:
 			// "Failed to remove temporary MCP config file"
-			e.Logger.WarnContext(ctx,
+			e.Logger.WarnContext(
+				ctx,
 				"Failed to remove temporary MCP config file",
 				"error", err,
 			)
@@ -705,7 +716,8 @@ func (e *ClaudeCodeExecutor) printCodeLogs(ctx context.Context) {
 	if err != nil {
 		// 0xae054f-0xae0613: slog.Warn (level 4)
 		// Message length 0x1f = 31: "Failed to read claude code logs"
-		e.Logger.WarnContext(ctx,
+		e.Logger.WarnContext(
+			ctx,
 			"Failed to read claude code logs",
 			"error", err,
 		)
@@ -715,7 +727,8 @@ func (e *ClaudeCodeExecutor) printCodeLogs(ctx context.Context) {
 	if len(content) == 0 {
 		// 0xae0621-0xae0696: slog.Info
 		// Message length 0x1d = 29: "Claude code logs file empty"
-		e.Logger.InfoContext(ctx,
+		e.Logger.InfoContext(
+			ctx,
 			"Claude code logs file empty",
 		)
 		return

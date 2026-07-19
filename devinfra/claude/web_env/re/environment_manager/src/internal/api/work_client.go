@@ -69,7 +69,8 @@ func (c *WorkClient) AcknowledgeWork(
 	escapedWorkID := url.PathEscape(workID)
 
 	// Build endpoint URL.
-	endpoint := fmt.Sprintf("%s/v1/environments/%s/work/%s/ack",
+	endpoint := fmt.Sprintf(
+		"%s/v1/environments/%s/work/%s/ack",
 		c.Client.BaseURL,
 		escapedEnvID,
 		escapedWorkID,
@@ -94,7 +95,8 @@ func (c *WorkClient) AcknowledgeWork(
 	// req.Header.Set("X-Environment-Manager-Version", util.Version)
 
 	// Log at Debug level.
-	c.Logger.Debug("acknowledging work",
+	c.Logger.Debug(
+		"acknowledging work",
 		"endpoint", endpoint,
 		"environment_id", environmentID,
 		"work_id", workID,
@@ -141,7 +143,8 @@ func (c *WorkClient) AcknowledgeWork(
 	}
 
 	// Log success at Debug level.
-	c.Logger.Debug("acknowledged work",
+	c.Logger.Debug(
+		"acknowledged work",
 		"endpoint", endpoint,
 		"environment_id", environmentID,
 		"work_id", workID,

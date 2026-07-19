@@ -146,7 +146,8 @@ func (a *SnapshotAction) Execute(ctx context.Context, path string, body []byte, 
 	}
 
 	// action.go:124 - Log result
-	a.Logger.Info("Snapshot complete",
+	a.Logger.Info(
+		"Snapshot complete",
 		"request_id", path,
 	)
 
@@ -184,7 +185,8 @@ func (a *SnapshotAction) readDir(
 			return nil, 0, false
 		}
 		// action.go:157 - Log warning and return empty
-		a.Logger.Warn("failed to resolve directory path",
+		a.Logger.Warn(
+			"failed to resolve directory path",
 			"path", dirPath,
 			"error", err,
 		)
@@ -197,7 +199,8 @@ func (a *SnapshotAction) readDir(
 		if os.IsNotExist(err) {
 			return nil, 0, false
 		}
-		a.Logger.Warn("failed to read directory",
+		a.Logger.Warn(
+			"failed to read directory",
 			"path", resolved,
 			"error", err,
 		)
@@ -249,7 +252,8 @@ func (a *SnapshotAction) readFileSafe(dir string, filename string) (string, bool
 		if os.IsPermission(err) || os.IsNotExist(err) {
 			return "", false
 		}
-		a.Logger.Warn("failed to read file",
+		a.Logger.Warn(
+			"failed to read file",
 			"path", path,
 			"error", err,
 		)
@@ -283,7 +287,8 @@ func (a *SnapshotAction) gitCommitCount(ctx context.Context) int64 {
 	output, err := exec.CommandContext(ctx, "git", "-C", a.WorkDir, "rev-list", "--count", "HEAD").Output()
 	if err != nil {
 		// action.go:257-258 - Log and return 0
-		a.Logger.Warn("failed to get git commit count",
+		a.Logger.Warn(
+			"failed to get git commit count",
 			"work_dir", a.WorkDir,
 			"error", err,
 		)
@@ -329,7 +334,8 @@ func (a *SnapshotAction) gitAppModified(ctx context.Context, commitCount int64) 
 	output, err := exec.CommandContext(ctx, "git", "-C", a.WorkDir, "diff", "--name-only", "HEAD").Output()
 	if err != nil {
 		// action.go:285-286 - Log and return false
-		a.Logger.Warn("failed to check git modifications",
+		a.Logger.Warn(
+			"failed to check git modifications",
 			"work_dir", a.WorkDir,
 			"error", err,
 		)

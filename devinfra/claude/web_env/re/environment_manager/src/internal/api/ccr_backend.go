@@ -228,7 +228,8 @@ func (b *CCRBackend) OtlpEndpoints(ctx context.Context) (string, string, string,
 //  2. fmt.Sprintf("%s/v2/sessions/%s/%s", baseURL, escapedSessionID, action) at line 145
 func (b *CCRBackend) endpoint(action string) string {
 	escapedSessionID := url.PathEscape(b.SessionID)
-	return fmt.Sprintf("%s/v2/sessions/%s/%s",
+	return fmt.Sprintf(
+		"%s/v2/sessions/%s/%s",
 		b.Client.BaseURL,
 		escapedSessionID,
 		action,

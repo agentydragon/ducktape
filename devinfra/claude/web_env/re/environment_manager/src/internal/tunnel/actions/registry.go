@@ -208,7 +208,8 @@ func (r *Registry) Execute(
 	actionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	slog.Info("executing action",
+	slog.Info(
+		"executing action",
 		"action", actionName,
 		"path", subPath,
 		"final", false,

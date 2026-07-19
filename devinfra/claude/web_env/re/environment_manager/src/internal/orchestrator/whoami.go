@@ -123,7 +123,8 @@ func (w *WhoamiClient) GetIdentity(ctx context.Context) (*WhoamiResponse, error)
 	url := fmt.Sprintf("%s/v1/environments/whoami", w.APIBaseURL)
 
 	// Step 2: Log the request.
-	w.Logger.Info("Calling whoami endpoint",
+	w.Logger.Info(
+		"Calling whoami endpoint",
 		"url", url,
 	)
 

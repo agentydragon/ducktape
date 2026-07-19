@@ -151,7 +151,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Split path into: owner/repo/gitPath (at most 3 parts)
 	parts := strings.SplitN(urlPath, "/", 3)
 	if len(parts) < 3 {
-		h.logger.Error("invalid git path",
+		h.logger.Error(
+			"invalid git path",
 			"status", http.StatusBadRequest,
 		)
 		http.Error(w, "invalid git path", http.StatusBadRequest)
@@ -171,7 +172,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	authorization := r.Header.Get("Authorization")
 
 	// Log the incoming request
-	h.logger.Info("Received git request",
+	h.logger.Info(
+		"Received git request",
 		"method", r.Method,
 		"owner", owner,
 		"repo", repo,
@@ -193,7 +195,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Look up authentication for this repo
 	authToken, ok := h.server.repoAuths[repoKey]
 	if !ok {
-		h.logger.Error("no auth configured for repo",
+		h.logger.Error(
+			"no auth configured for repo",
 			"repo", repoKey,
 		)
 		w.Header().Set("WWW-Authenticate", `Basic realm="Git Proxy"`)
@@ -222,7 +225,8 @@ func (h *handler) forwardRequest(
 ) {
 	// Validate git path
 	if !isValidGitPath(gitPath) {
-		h.logger.Error("invalid git path",
+		h.logger.Error(
+			"invalid git path",
 			"git_path", gitPath,
 		)
 		http.Error(w, "invalid git path", http.StatusBadRequest)
@@ -230,7 +234,8 @@ func (h *handler) forwardRequest(
 	}
 
 	// Log the forwarding operation
-	h.logger.Info("Sending authenticated request to upstream",
+	h.logger.Info(
+		"Sending authenticated request to upstream",
 		"owner", owner,
 		"repo", repo,
 	)
@@ -244,7 +249,8 @@ func (h *handler) forwardRequest(
 	}
 
 	// URL format: baseURL/sessionID/owner/repo/gitPath
-	targetURL := fmt.Sprintf("%s/%s/%s/%s/%s",
+	targetURL := fmt.Sprintf(
+		"%s/%s/%s/%s/%s",
 		baseURL,
 		h.server.sessionID,
 		owner,
@@ -255,7 +261,8 @@ func (h *handler) forwardRequest(
 	// Create the upstream request
 	req, err := http.NewRequestWithContext(ctx, r.Method, targetURL, r.Body)
 	if err != nil {
-		h.logger.Error("failed to create upstream request",
+		h.logger.Error(
+			"failed to create upstream request",
 			"error", sanitizeError(err),
 		)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -278,7 +285,8 @@ func (h *handler) forwardRequest(
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		sanitizedErr := sanitizeError(err)
-		h.logger.Error("upstream request failed",
+		h.logger.Error(
+			"upstream request failed",
 			"error", sanitizedErr,
 		)
 		http.Error(w, sanitizedErr, http.StatusBadGateway)
@@ -298,7 +306,8 @@ func (h *handler) forwardRequest(
 
 	// Copy response body
 	if _, err := io.Copy(w, resp.Body); err != nil {
-		h.logger.Error("Error writing sanitized response body",
+		h.logger.Error(
+			"Error writing sanitized response body",
 			"error", sanitizeError(err),
 		)
 	}

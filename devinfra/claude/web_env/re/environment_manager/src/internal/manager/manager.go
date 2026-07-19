@@ -157,7 +157,8 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 
 		envVars := m.envType.GetClaudeEnvironmentVariables()
 		hasEnvVars := len(envVars) > 0
-		m.Logger.Info("Set startup context for anthropic environment",
+		m.Logger.Info(
+			"Set startup context for anthropic environment",
 			"has_env_vars", hasEnvVars,
 		)
 	}
@@ -168,7 +169,8 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 	if m.envType != nil && m.SessionConfig != nil && m.SessionConfig.AuthContext != nil {
 		m.envType.SetAuthContext(m.SessionConfig.AuthContext)
 
-		m.Logger.Info("Set auth context for environment",
+		m.Logger.Info(
+			"Set auth context for environment",
 			"session_id", m.SessionID,
 		)
 	}
@@ -178,7 +180,8 @@ func (m *Manager) configureEnvironment(ctx context.Context, logger *slog.Logger)
 		sessionMode := config.SessionMode(m.SessionMode)
 		m.envType.SetSessionMode(sessionMode)
 
-		m.Logger.Info("Set session mode for environment",
+		m.Logger.Info(
+			"Set session mode for environment",
 			"session_id", m.SessionID,
 			"session_mode", m.SessionMode,
 		)
@@ -222,7 +225,8 @@ func (m *Manager) configureGitSigning() {
 	// Get executable path
 	execPath, err := os.Executable()
 	if err != nil {
-		m.Logger.Warn("Failed to get executable path for git signing config",
+		m.Logger.Warn(
+			"Failed to get executable path for git signing config",
 			"error", err,
 		)
 		return
@@ -231,7 +235,8 @@ func (m *Manager) configureGitSigning() {
 	// Resolve symlinks
 	resolvedPath, err := filepath.EvalSymlinks(execPath)
 	if err != nil {
-		m.Logger.Warn("Failed to resolve executable path",
+		m.Logger.Warn(
+			"Failed to resolve executable path",
 			"error", err,
 		)
 		return
@@ -258,7 +263,8 @@ func (m *Manager) configureGitSigning() {
 				Err: err,
 			}
 			errMsg := fmt.Sprintf("%s code-sign", linkErr)
-			m.Logger.Warn("Failed to create code-sign symlink",
+			m.Logger.Warn(
+				"Failed to create code-sign symlink",
 				"error", linkErr,
 				"error_string", errMsg,
 				"old", resolvedPath,
@@ -267,7 +273,8 @@ func (m *Manager) configureGitSigning() {
 			)
 
 			// Log final message even on failure
-			m.Logger.Info("Configured git to use environment-manager code-sign for signing",
+			m.Logger.Info(
+				"Configured git to use environment-manager code-sign for signing",
 				"code_sign_path", codeSignPath,
 			)
 			return
@@ -276,13 +283,15 @@ func (m *Manager) configureGitSigning() {
 	}
 
 	// Success
-	m.Logger.Info("Created code-sign symlink",
+	m.Logger.Info(
+		"Created code-sign symlink",
 		"target", resolvedPath,
 		"link", codeSignPath,
 		"code_sign_path", codeSignPath,
 	)
 
-	m.Logger.Info("Configured git to use environment-manager code-sign for signing",
+	m.Logger.Info(
+		"Configured git to use environment-manager code-sign for signing",
 		"code_sign_path", codeSignPath,
 	)
 }
@@ -335,12 +344,14 @@ func (m *Manager) applyEnvironmentConfig(ctx context.Context, logger *slog.Logge
 	cwd := m.envType.GetCWD()
 	if cwd != "" {
 		if err := os.Chdir(cwd); err != nil {
-			m.Logger.Warn("Failed to set working directory",
+			m.Logger.Warn(
+				"Failed to set working directory",
 				"cwd", cwd,
 				"error", err,
 			)
 		} else {
-			m.Logger.Info("Set working directory from environment config",
+			m.Logger.Info(
+				"Set working directory from environment config",
 				"session_id", m.SessionID,
 				"cwd", cwd,
 			)
@@ -412,7 +423,8 @@ func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.L
 	elapsed := time.Since(startTime)
 
 	if initErr != nil {
-		m.Logger.Error("Environment initialization failed (parallel)",
+		m.Logger.Error(
+			"Environment initialization failed (parallel)",
 			"error", initErr,
 			"error_string", initErr.Error(),
 			"duration_ms", elapsed.Milliseconds(),
@@ -420,7 +432,8 @@ func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.L
 		return
 	}
 
-	m.Logger.Info("Environment initialization completed (parallel)",
+	m.Logger.Info(
+		"Environment initialization completed (parallel)",
 		"duration_ms", elapsed.Milliseconds(),
 	)
 
@@ -468,7 +481,8 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 
 	if err != nil {
 		// Error path at 0xb6fdc3: fmt.Errorf with error + output
-		logger.Error("failed to add official plugin marketplace",
+		logger.Error(
+			"failed to add official plugin marketplace",
 			"error", err,
 			"output", string(output),
 			"duration_ms", elapsed.Milliseconds(),
@@ -477,7 +491,8 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 	}
 
 	// Success path at 0xb70021: logs success with duration
-	logger.Info("official plugin marketplace added successfully",
+	logger.Info(
+		"official plugin marketplace added successfully",
 		"duration_ms", elapsed.Milliseconds(),
 	)
 
@@ -550,7 +565,8 @@ func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
 
 		// Log success
 		// Binary: 0xb6dfa0 log call with level 0 (INFO), message "control_plane_enabled" (21 bytes)
-		m.Logger.Info("control_plane_enabled",
+		m.Logger.Info(
+			"control_plane_enabled",
 			"session_id", m.SessionID,
 			"tunnel.endpoint", tunnelEndpoint,
 		)
@@ -560,7 +576,8 @@ func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
 	// Log warning if deploy is unavailable (no tunnel info)
 	// Binary: 0xb6de60 log call with level 4 (WARN), message "control_plane_deploy_unavailable" (32 bytes)
 	envSubType := m.GetEnvironmentSubType()
-	m.Logger.Warn("control_plane_deploy_unavailable",
+	m.Logger.Warn(
+		"control_plane_deploy_unavailable",
 		"session_id", m.SessionID,
 		"environment_sub_type", envSubType,
 		"has_tunnel_info", hasTunnelInfo,
@@ -586,7 +603,8 @@ func (m *Manager) registerMCPServersAsync(ctx context.Context, logger *slog.Logg
 
 	// Log registration results
 	if len(registeredServers) > 0 {
-		m.Logger.Info("MCP servers registered successfully",
+		m.Logger.Info(
+			"MCP servers registered successfully",
 			"count", len(registeredServers),
 			"servers", registeredServers,
 		)
@@ -594,14 +612,16 @@ func (m *Manager) registerMCPServersAsync(ctx context.Context, logger *slog.Logg
 
 	// Log any registration errors
 	if len(errors) > 0 {
-		m.Logger.Warn("MCP server registration errors",
+		m.Logger.Warn(
+			"MCP server registration errors",
 			"error_count", len(errors),
 			"errors", errors,
 		)
 	}
 
 	elapsed := time.Since(startTime)
-	m.Logger.Info("MCP server registration complete",
+	m.Logger.Info(
+		"MCP server registration complete",
 		"duration_ms", elapsed.Milliseconds(),
 		"successful", len(registeredServers),
 		"failed", len(errors),

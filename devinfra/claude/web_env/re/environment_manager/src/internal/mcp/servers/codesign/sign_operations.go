@@ -83,7 +83,8 @@ func (s *CodeSignMCPServer) signContent(
 	sourceIdentifier string,
 	signingKeyPath string,
 ) (*mcplib.CallToolResult, error) {
-	s.logger.Info("Signing content for source",
+	s.logger.Info(
+		"Signing content for source",
 		"source", sourceName,
 		"file_path", filePath,
 		"data_size_bytes", len(content),
@@ -169,7 +170,8 @@ func (s *CodeSignMCPServer) executeSign(
 	hasSigningKey := signingKeyPath != ""
 
 	// Build log attributes
-	logger.Info("Executing sign operation via remote server",
+	logger.Info(
+		"Executing sign operation via remote server",
 		"has_content", hasContent,
 		"data_size_bytes", len(content),
 		"has_signing_key", hasSigningKey,
@@ -199,7 +201,8 @@ func (s *CodeSignMCPServer) executeSign(
 	}
 
 	// Build detailed log message
-	detailMsg := fmt.Sprintf("Executing sign operation via remote server (source=%s, key=%s)",
+	detailMsg := fmt.Sprintf(
+		"Executing sign operation via remote server (source=%s, key=%s)",
 		sourceIdentifier,
 		signingKeyPath,
 	)
@@ -237,7 +240,8 @@ func (s *CodeSignMCPServer) executeSign(
 	signature := string(respBody)
 
 	// Write signature to file if needed, or return as tool result
-	logger.Info("Signing operation completed successfully",
+	logger.Info(
+		"Signing operation completed successfully",
 		"source", sourceName,
 		"file_path", filePath,
 	)

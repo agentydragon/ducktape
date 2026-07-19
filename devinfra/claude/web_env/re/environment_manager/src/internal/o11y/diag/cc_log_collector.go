@@ -102,7 +102,8 @@ func (c *ccLogCollector) collect() {
 
 		var parsed map[string]interface{}
 		if err := json.Unmarshal([]byte(line.Text), &parsed); err != nil {
-			slog.Warn("failed to parse claude-code log line as JSON",
+			slog.Warn(
+				"failed to parse claude-code log line as JSON",
 				"error", err,
 				"line", line.Text,
 			)

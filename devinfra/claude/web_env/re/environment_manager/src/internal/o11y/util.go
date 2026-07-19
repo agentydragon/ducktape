@@ -41,7 +41,8 @@ func makeOTLPEndpoint(endpoint string, apiKey string, signalType string) string 
 // Binary address: 0xa52f40
 // Source: util.go (originally in service.go based on binary call graph)
 func newResource(ctx context.Context, cfg *O11yConfig) (*resource.Resource, error) {
-	return resource.New(ctx,
+	return resource.New(
+		ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(cfg.ServiceName),
 		),

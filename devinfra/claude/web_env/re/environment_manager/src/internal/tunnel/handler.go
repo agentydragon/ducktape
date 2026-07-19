@@ -59,7 +59,8 @@ func (h *Handler) HandleRequest(
 		headerCount = len(req.GetHeaders())
 	}
 
-	slog.Info("handling http request",
+	slog.Info(
+		"handling http request",
 		"path", path,
 		"port", port,
 		"method", method,
@@ -151,7 +152,8 @@ func (h *Handler) HandleRequest(
 	}
 
 	elapsed := time.Since(startTime)
-	slog.Info("completed http request",
+	slog.Info(
+		"completed http request",
 		"path", path,
 		"status", resp.StatusCode,
 		"duration", elapsed,

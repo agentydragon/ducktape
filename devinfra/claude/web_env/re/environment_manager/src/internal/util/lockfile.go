@@ -35,7 +35,8 @@ func AcquireLock(ctx interface{ Value(any) any }, sessionName string, sessionID 
 		file.Close()
 
 		if isEWOULDBLOCK(err) {
-			slog.Warn("Session already running (lock held)",
+			slog.Warn(
+				"Session already running (lock held)",
 				slog.String("session_id", sessionID),
 				slog.String("session_id", sessionName),
 				slog.String("lockfile_path", lockPath),
@@ -48,7 +49,8 @@ func AcquireLock(ctx interface{ Value(any) any }, sessionName string, sessionID 
 
 	pid := os.Getpid()
 
-	slog.Debug("Acquired lockfile using flock",
+	slog.Debug(
+		"Acquired lockfile using flock",
 		slog.String("session_id", sessionID),
 		slog.String("session_id", sessionName),
 		slog.Int("pid", pid),
@@ -69,7 +71,8 @@ func AcquireLock(ctx interface{ Value(any) any }, sessionName string, sessionID 
 			slog.Warn("Could not remove lockfile", slog.String("error", err.Error()))
 		}
 
-		slog.Debug("Released lockfile",
+		slog.Debug(
+			"Released lockfile",
 			slog.String("session_id", sessionID),
 			slog.String("lockfile_path", lockPath),
 		)
@@ -102,7 +105,8 @@ func AcquireContainerLock(ctx interface{ Value(any) any }, sessionName string, s
 		file.Close()
 
 		if isEWOULDBLOCK(err) {
-			slog.Warn("Another orchestrator/session is already running on this container",
+			slog.Warn(
+				"Another orchestrator/session is already running on this container",
 				slog.String("session_id", sessionID),
 				slog.String("lockfile_path", containerLockPath),
 			)
@@ -112,7 +116,8 @@ func AcquireContainerLock(ctx interface{ Value(any) any }, sessionName string, s
 		return nil, fmt.Errorf("failed to acquire container lock: %w", err)
 	}
 
-	slog.Debug("Acquired container-level lock",
+	slog.Debug(
+		"Acquired container-level lock",
 		slog.String("session_id", sessionID),
 		slog.String("lockfile_path", containerLockPath),
 	)
@@ -131,7 +136,8 @@ func AcquireContainerLock(ctx interface{ Value(any) any }, sessionName string, s
 			slog.Warn("Could not remove container lockfile", slog.String("error", err.Error()))
 		}
 
-		slog.Debug("Released container-level lock",
+		slog.Debug(
+			"Released container-level lock",
 			slog.String("session_id", sessionID),
 			slog.String("lockfile_path", containerLockPath),
 		)

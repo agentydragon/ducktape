@@ -48,7 +48,8 @@ func (p *V1Parser) Parse(data []byte) (*ParsedContext, error) {
 		return nil, fmt.Errorf("failed to parse V1 work response: %w", err)
 	}
 
-	logger.Info("Parsing V1 input format",
+	logger.Info(
+		"Parsing V1 input format",
 		"data_size_bytes", workResp.ID,
 		"content_preview", workResp.GetSessionID(),
 		"data_size_bytes", workResp.Data.ID,
@@ -80,7 +81,8 @@ func (p *V1Parser) buildHealthcheckResult(authCtx *auth.AuthContext, secret *Wor
 	logger.Info("Processing healthcheck work type")
 
 	elapsed := time.Since(start)
-	logger.Info("Completed parsing V1 healthcheck input",
+	logger.Info(
+		"Completed parsing V1 healthcheck input",
 		"duration_ms", elapsed.Milliseconds(),
 	)
 
@@ -93,7 +95,8 @@ func (p *V1Parser) buildHealthcheckResult(authCtx *auth.AuthContext, secret *Wor
 func (p *V1Parser) buildSessionResult(workResp *V1WorkResponse, authCtx *auth.AuthContext, secret *WorkSecret, start time.Time) (*ParsedContext, error) {
 	logger := p.Logger
 
-	logger.Info("Decoded work secret",
+	logger.Info(
+		"Decoded work secret",
 		"data_size_bytes", len(secret.Sources),
 		"content_preview", workResp.GetSessionID(),
 		"data_size_bytes", workResp.Data.SessionID,
@@ -118,7 +121,8 @@ func (p *V1Parser) buildSessionResult(workResp *V1WorkResponse, authCtx *auth.Au
 	outcomes := p.buildOutcomes(sessionCtx, secret)
 
 	elapsed := time.Since(start)
-	logger.Info("Completed parsing V1 input",
+	logger.Info(
+		"Completed parsing V1 input",
 		"duration_ms", elapsed.Milliseconds(),
 	)
 
@@ -283,7 +287,8 @@ func (p *V1Parser) buildOutcomes(sessCtx *sessionContext, secret *WorkSecret) *c
 	if err := json.Unmarshal(sessCtx.Outcomes, &rawOutcomes); err != nil {
 		p.O11y.Increment("outcomes_parse_failed", nil, nil)
 		logger := p.Logger
-		logger.Warn("Failed to parse outcomes for git push info",
+		logger.Warn(
+			"Failed to parse outcomes for git push info",
 			"error", err,
 		)
 		return outcomes
@@ -302,7 +307,8 @@ func (p *V1Parser) buildOutcomes(sessCtx *sessionContext, secret *WorkSecret) *c
 			outcomes.Add(outcome.RemoteURL, outcome.Branches[0])
 		} else {
 			logger := p.Logger
-			logger.Warn("Outcome skipped: exactly one branch must be specified",
+			logger.Warn(
+				"Outcome skipped: exactly one branch must be specified",
 				"data_size_bytes", outcome.RemoteURL,
 				"content_preview", len(outcome.Branches),
 			)
@@ -318,7 +324,8 @@ func (p *V1Parser) buildOutcomes(sessCtx *sessionContext, secret *WorkSecret) *c
 	}
 
 	logger := p.Logger
-	logger.Info("Parsed outcomes from V1 session context",
+	logger.Info(
+		"Parsed outcomes from V1 session context",
 		"data_size_bytes", numRepos,
 		"content_preview", numBranches,
 	)

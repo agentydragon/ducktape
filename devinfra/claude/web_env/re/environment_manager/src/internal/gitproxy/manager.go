@@ -96,7 +96,8 @@ func (m *manager) Start(ctx context.Context, logger *slog.Logger) error {
 
 	// Get the port for logging
 	port := m.server.Port()
-	logger.Info("Starting local git proxy",
+	logger.Info(
+		"Starting local git proxy",
 		"port", port,
 	)
 

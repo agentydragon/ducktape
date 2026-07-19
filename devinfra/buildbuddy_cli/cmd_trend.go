@@ -56,7 +56,8 @@ func trendCmd() *cobra.Command {
 				if name == "" && ts.GetBucketStartTimeMicros() > 0 {
 					name = time.UnixMicro(ts.GetBucketStartTimeMicros()).Format("2006-01-02")
 				}
-				t.row(name,
+				t.row(
+					name,
 					ts.GetTotalNumBuilds(),
 					ts.GetUserCount(),
 					ts.GetCommitCount(),

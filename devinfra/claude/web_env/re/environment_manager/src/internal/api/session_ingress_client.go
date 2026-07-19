@@ -60,7 +60,8 @@ func (c *HttpSessionIngressClient) sessionEndpoint(sessionID string, action stri
 		version = "v2"
 	}
 
-	return fmt.Sprintf("%s/%s/session_ingress/session/%s/%s",
+	return fmt.Sprintf(
+		"%s/%s/session_ingress/session/%s/%s",
 		c.Client.BaseURL,
 		version,
 		escapedSessionID,
@@ -169,7 +170,8 @@ func (c *HttpSessionIngressClient) PostSessionIngressEvent(
 	// Log at Debug level: "posting session ingress event"
 	// slog attrs: endpoint (string), session_id (string), event_type (string),
 	//             use_v2 (bool/uint), event_data_type (type), payload (map)
-	c.Logger.Debug("posting session ingress event",
+	c.Logger.Debug(
+		"posting session ingress event",
 		"endpoint", endpoint,
 		"session_id", sessionID,
 		"use_v2", c.UseV2,
@@ -181,7 +183,8 @@ func (c *HttpSessionIngressClient) PostSessionIngressEvent(
 	}
 
 	// Log at Warn level on success with nil error (unexpected path).
-	c.Logger.Warn("posted session ingress event with nil error",
+	c.Logger.Warn(
+		"posted session ingress event with nil error",
 		"session_id", sessionID,
 		"event_type", event.Type,
 	)
@@ -212,7 +215,8 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 
 	// Log at Warn level: "forwarding diag logs"
 	// slog attrs: endpoint (string), session_id (string), num_logs (int)
-	c.Logger.Warn("forwarding diag logs",
+	c.Logger.Warn(
+		"forwarding diag logs",
 		"endpoint", endpoint,
 		"session_id", sessionID,
 		"num_logs", len(logs),
@@ -224,7 +228,8 @@ func (c *HttpSessionIngressClient) PostForwardDiagLogs(
 	}
 
 	// Log at Warn level on success fallthrough.
-	c.Logger.Warn("posted diag logs with nil error",
+	c.Logger.Warn(
+		"posted diag logs with nil error",
 		"session_id", sessionID,
 		"num_logs", len(logs),
 	)

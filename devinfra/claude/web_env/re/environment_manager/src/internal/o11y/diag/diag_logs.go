@@ -168,7 +168,8 @@ func createDiagFile(ctx context.Context, sessionID string, namePrefix string) (*
 		return nil, fmt.Errorf("failed to create %s temp file: %w", namePrefix, err)
 	}
 
-	slog.Info("Created diagnostic file",
+	slog.Info(
+		"Created diagnostic file",
 		"path", f.Name(),
 		"name", namePrefix,
 	)
@@ -234,7 +235,8 @@ func (d *DiagService) Shutdown(ctx context.Context, sessionID string) {
 	logs := d.collectAndMergeLogs(nil, nil, nil)
 	if err := d.flushDiagLogsToRemote(sessionID, logs); err != nil {
 		if !errors.Is(err, api.ErrEndpointNotImplemented) {
-			slog.Warn("Failed to shutdown diagnostic logging service",
+			slog.Warn(
+				"Failed to shutdown diagnostic logging service",
 				"error", err,
 			)
 		}
@@ -385,7 +387,8 @@ func appendAndCapLogs(existing []api.DiagLogEntry, new []api.DiagLogEntry) []api
 	if len(existing) > maxLogEntries {
 		dropped := len(existing) - maxLogEntries
 		existing = existing[dropped:]
-		slog.Warn("Dropping old diagnostic log entries",
+		slog.Warn(
+			"Dropping old diagnostic log entries",
 			"dropped", dropped,
 			"max", maxLogEntries,
 		)
@@ -416,7 +419,8 @@ func (d *DiagService) flushPeriodically(ctx context.Context, sessionID string) {
 					// Endpoint not yet available, keep accumulating
 					continue
 				}
-				slog.Warn("Failed to flush diagnostic logs",
+				slog.Warn(
+					"Failed to flush diagnostic logs",
 					"error", err,
 				)
 				continue

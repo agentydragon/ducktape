@@ -163,7 +163,8 @@ func (s *server) Start(ctx context.Context, logger *slog.Logger) error {
 			backoffSeconds := retries * 10
 			backoffDuration := time.Duration(backoffSeconds) * time.Second
 
-			logger.Warn("Retrying git proxy server start after failure",
+			logger.Warn(
+				"Retrying git proxy server start after failure",
 				"error", err,
 				"attempt", retries,
 				"backoff_seconds", backoffSeconds,
@@ -185,7 +186,8 @@ func (s *server) Start(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			if retries >= 2 {
 				// Log the final failure
-				logger.Error("failed to start git proxy server",
+				logger.Error(
+					"failed to start git proxy server",
 					"error", err,
 					"attempt", retries,
 				)
@@ -210,7 +212,8 @@ func (s *server) Start(ctx context.Context, logger *slog.Logger) error {
 			Handler: h,
 		}
 
-		logger.Info("Git proxy server listening",
+		logger.Info(
+			"Git proxy server listening",
 			"address", listener.Addr().String(),
 		)
 
@@ -218,7 +221,8 @@ func (s *server) Start(ctx context.Context, logger *slog.Logger) error {
 		// func1 at 0xae9a20
 		go func() {
 			if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-				logger.Error("git proxy server error",
+				logger.Error(
+					"git proxy server error",
 					"error", err,
 				)
 			}
@@ -261,7 +265,8 @@ func (s *server) Stop(ctx context.Context, logger *slog.Logger) error {
 
 	err := s.httpServer.Shutdown(shutdownCtx)
 	if err != nil {
-		logger.Error("Error during server shutdown",
+		logger.Error(
+			"Error during server shutdown",
 			"error", err,
 		)
 

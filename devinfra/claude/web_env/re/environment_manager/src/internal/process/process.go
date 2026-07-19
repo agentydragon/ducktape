@@ -111,7 +111,8 @@ func streamPipe(
 	defer func() {
 		if err := pipe.Close(); err != nil {
 			pipeName := streamName(streamType)
-			logger.Warn("Failed to close pipe",
+			logger.Warn(
+				"Failed to close pipe",
 				"stream", pipeName,
 				"error", err,
 			)
@@ -127,7 +128,8 @@ func streamPipe(
 		if n > 0 {
 			if writeErr := streamer(ctx, streamType, buffer[:n]); writeErr != nil {
 				pipeName := streamName(streamType)
-				logger.Debug("Streamer requested stop",
+				logger.Debug(
+					"Streamer requested stop",
 					"stream", pipeName,
 				)
 				return
@@ -136,7 +138,8 @@ func streamPipe(
 		if err != nil {
 			if err != io.EOF {
 				pipeName := streamName(streamType)
-				logger.Warn("Error reading from pipe",
+				logger.Warn(
+					"Error reading from pipe",
 					"stream", pipeName,
 					"error", err,
 				)
@@ -145,7 +148,8 @@ func streamPipe(
 		}
 		if n == 0 {
 			pipeName := streamName(streamType)
-			logger.Warn("Unexpected zero read without error",
+			logger.Warn(
+				"Unexpected zero read without error",
 				"stream", pipeName,
 			)
 			return

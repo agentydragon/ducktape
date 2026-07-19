@@ -158,7 +158,8 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Binary: 0xa8d9e2 slog call with level=0, 3 attrs
 	// Attrs: "session_id" (0x0c), "poll_interval" (0x0d=13), "loop_timeout" (0x0c=12)
 	// "starting orchestrator" (0x15=21 chars)
-	o.Logger.Info("starting orchestrator",
+	o.Logger.Info(
+		"starting orchestrator",
 		"session_id", o.SessionID,
 		"poll_interval", o.PollInterval,
 		"loop_timeout", o.LoopTimeout,

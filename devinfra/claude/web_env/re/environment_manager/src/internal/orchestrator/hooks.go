@@ -123,7 +123,8 @@ func (h *Hook) Execute(ctx context.Context) error {
 		//   "output" (0x06=6 chars) + string(output)
 		//   "error" (0x05=5 chars) + err
 		// Message: "hook execution failed" (0x15=21 chars)
-		hookLogger.Error("hook execution failed",
+		hookLogger.Error(
+			"hook execution failed",
 			"duration", elapsed,
 			"output", string(output),
 			"error", err,
@@ -141,7 +142,8 @@ func (h *Hook) Execute(ctx context.Context) error {
 	//   "duration" (0x08=8 chars)
 	//   "output" (0x06=6 chars)
 	// Message: "hook executed successfully" (0x18=24 chars)
-	hookLogger.Info("hook executed successfully",
+	hookLogger.Info(
+		"hook executed successfully",
 		"duration", elapsed,
 		"output", string(output),
 	)
@@ -212,7 +214,8 @@ func (h *Hook) ExecuteWithStdin(ctx context.Context, session *SessionResponse) e
 	// Binary: 0xa8ba5a-0xa8bb25
 	if sessionInput.WorkID != "" {
 		// Log "using session work_id from stdin" (0x1e=30 chars)
-		hookLogger.Info("using session work_id from stdin",
+		hookLogger.Info(
+			"using session work_id from stdin",
 			"work_id", sessionInput.WorkID,
 		)
 	}
@@ -247,7 +250,8 @@ func (h *Hook) ExecuteWithStdin(ctx context.Context, session *SessionResponse) e
 		// Log wrapped command.
 		// Binary: 0xa8bfcb-0xa8bfe9 slog log
 		// "executing sandboxed command" (0x1c=28 chars)
-		hookLogger.Info("executing sandboxed command",
+		hookLogger.Info(
+			"executing sandboxed command",
 			"sandbox_command", wrappedCmd,
 			"sandbox_args", wrappedArgs,
 		)
@@ -276,7 +280,8 @@ func (h *Hook) ExecuteWithStdin(ctx context.Context, session *SessionResponse) e
 
 	if err != nil {
 		// Error path: similar to Execute error handling
-		hookLogger.Error("hook with stdin execution failed",
+		hookLogger.Error(
+			"hook with stdin execution failed",
 			"duration", elapsed,
 			"output", string(output),
 			"error", err,
@@ -285,7 +290,8 @@ func (h *Hook) ExecuteWithStdin(ctx context.Context, session *SessionResponse) e
 			h.Name, elapsed, err, string(output))
 	}
 
-	hookLogger.Info("hook with stdin executed successfully",
+	hookLogger.Info(
+		"hook with stdin executed successfully",
 		"duration", elapsed,
 		"output", string(output),
 	)

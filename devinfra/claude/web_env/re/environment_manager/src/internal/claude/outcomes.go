@@ -167,7 +167,8 @@ func (o *Outcomes) ValidateWithLogger(logger *slog.Logger) *Outcomes {
 			// 0xae399e-0xae3a14: log error level (-4 = ERROR)
 			// Log message length 0x3b = 59 chars
 			if logger != nil {
-				logger.Log(context.Background(), slog.LevelError,
+				logger.Log(
+					context.Background(), slog.LevelError,
 					"repository has no outcome entries, skipping validation",
 					"repository", repo,
 				)
@@ -180,7 +181,8 @@ func (o *Outcomes) ValidateWithLogger(logger *slog.Logger) *Outcomes {
 			// different level mapping — this is slog.LevelWarn)
 			// Log message with 6 attrs: repo, first entry key/value, remaining entries
 			if logger != nil {
-				logger.Log(context.Background(), slog.LevelWarn,
+				logger.Log(
+					context.Background(), slog.LevelWarn,
 					"repository has multiple outcome entries, using first",
 					"repository", repo,
 					"firstEntry", entries[0],
