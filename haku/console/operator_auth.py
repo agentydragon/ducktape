@@ -23,13 +23,14 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import OperatorOidcConfig, Settings
+from haku.console.oauth_callback_page import render_oauth_callback_page
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
@@ -155,12 +156,20 @@ async def login(request: Request, return_to: str | None = None) -> RedirectRespo
 
 
 @router.get("/callback")
-async def callback(request: Request) -> RedirectResponse:
+async def callback(request: Request) -> Response:
     client = cast(OAuth, request.app.state.operator_oauth).create_client(AUTHENTIK_CLIENT_NAME)
     try:
         token = await client.authorize_access_token(request)
     except OAuthError as e:
-        raise HTTPException(status_code=401, detail=f"OIDC error: {e.error}")
+        logger.info("operator browser login failed: %s", e.error)
+        message = (
+            "This login attempt expired or was superseded by a newer attempt."
+            if e.error == "mismatching_state"
+            else f"The identity provider rejected this login attempt ({e.error})."
+        )
+        return render_oauth_callback_page(
+            "Operator login failed", message, status_code=401, action_url="/auth/login", action_label="Retry login"
+        )
     # Authlib verifies the authorization response and ID-token/userinfo claims against discovered
     # provider metadata. Pin that verified issuer back to Haku's configured trust input explicitly:
     # discovery at a configured URL must not be able to substitute a different issuer.

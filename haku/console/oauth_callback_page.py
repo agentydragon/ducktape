@@ -24,11 +24,15 @@ _CALLBACK_TEMPLATE = Environment(
 ).get_template("oauth_callback.html.j2")
 
 
-def render_oauth_callback_page(title: str, message: str, *, status_code: int = 200) -> HTMLResponse:
+def render_oauth_callback_page(
+    title: str, message: str, *, status_code: int = 200, action_url: str | None = None, action_label: str | None = None
+) -> HTMLResponse:
     csp_nonce = secrets.token_urlsafe(32)
     return HTMLResponse(
         status_code=status_code,
-        content=_CALLBACK_TEMPLATE.render(title=title, message=message, csp_nonce=csp_nonce),
+        content=_CALLBACK_TEMPLATE.render(
+            title=title, message=message, csp_nonce=csp_nonce, action_url=action_url, action_label=action_label
+        ),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (

@@ -268,6 +268,7 @@ def create_app(
         oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
         metadata_provider=tool_call_metadata_provider,
+        node_daemons=node_daemon_service,
     )
 
     mcp_auth = mcp_agent_auth.build_auth(

@@ -60,7 +60,6 @@ from haku.console.mcp_config import (
     PreregisteredOAuthClient,
     RemoteMcpBackend,
     RemoteServerOAuthAuth,
-    _load_servers,
     _operator_oauth_enabled,
     _server_entry,
 )
@@ -626,15 +625,6 @@ async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) 
 def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:
     title = "MCP account connected" if ok else "MCP account connection failed"
     return render_oauth_callback_page(title, message, status_code=status_code)
-
-
-@router.get("/api/mcp/operator-auth")
-async def mcp_operator_auth_statuses(
-    request: Request, settings: SettingsDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep
-) -> McpOperatorAuthStatusResponse:
-    return oauth_store.list_statuses(
-        servers=_load_servers(settings), operator_id=actor.operator_id, username=_operator_username(request)
-    )
 
 
 @router.post("/api/mcp/operator-auth/{server_id}/connect")

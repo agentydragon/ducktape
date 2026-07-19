@@ -71,12 +71,13 @@ console-side lookup/schema errors still fail closed to manual review. haku-state
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 
-Core endpoints:
+Core HTTP mutation/audit endpoints and MCP reflection tools:
 
-- `GET /api/capabilities/mcp-servers` — reflect the configured connected MCP servers and each
-  server's `tools/list` metadata. Entries are explicitly `alive` or `degraded`; the console config
-  names reachable servers, and each live MCP server remains the tool schema source.
-- `GET /api/mcp/operator-auth`, `POST /api/mcp/operator-auth/{server_id}/connect`,
+- MCP `list_mcp_servers` and `get_mcp_server_status` — the shared Agent/console reflection path for
+  configured servers, linked accounts, and current tool availability. The list is passive;
+  the targeted status call actively refreshes credentials and contacts the server. Entries are
+  explicitly `alive` or `degraded`, with the failure stage and reason preserved as data.
+- `POST /api/mcp/operator-auth/{server_id}/connect`,
   `DELETE /api/mcp/operator-auth/{server_id}`, and `GET /api/mcp/operator-auth/callback` —
   operator account association for MCP servers whose config sets `auth: {kind: remote_server_oauth}`
   (this flow lives in `mcp_operator_oauth.py`, not the approval router). The catalog stays in the console
@@ -85,7 +86,7 @@ Core endpoints:
   Connecting is available only while unconnected; disconnect first to replace an account link.
   Client acquisition uses the `client_registration` discriminator. `dynamic` performs DCR and owns
   `client_name`; `preregistered` skips DCR and owns the deploy-provisioned `client_id`.
-- `GET /api/operator-connections`, `POST /api/operator-connections/{connection}/connect`,
+- `POST /api/operator-connections/{connection}/connect`,
   `DELETE /api/operator-connections/{connection}`, and `GET /api/provider-connections/callback` —
   deploy-named per-Operator connections to well-known external OAuth providers for in-process
   servers (this flow lives in `provider_connection.py`). Each connection owns its display name and
@@ -98,9 +99,9 @@ Core endpoints:
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
-- `GET /api/node-daemons` — operator-only heartbeat-derived state for configured execution
+- MCP `list_node_daemons` — shared Agent/console heartbeat-derived state for configured execution
   daemons (`connected`, `busy`, `stale`, or `offline`). The Settings panel refreshes it every ten
-  seconds. The separately authenticated `/api/node-daemons/v1/*` machine API lets daemons
+  seconds through MCP. The separately authenticated `/api/node-daemons/v1/*` machine API lets daemons
   heartbeat, long-poll for durable Postgres-backed work, renew leases, and submit idempotent
   results; it is intentionally outside browser Operator auth.
 
@@ -147,7 +148,10 @@ secrets are never included. Authentication kinds without a separate operator-lin
 `connection: null`. The tool never refreshes credentials or contacts downstream servers. Live tool
 discovery remains the normal MCP `tools/list` path. `get_mcp_server_status(server_id)` is the active
 counterpart: it reflects one configured server now, so it may refresh the operator's credentials and
-contact the downstream server. It returns a degraded reason when that fails; direct calls in a known
+contact the downstream server. By default it returns tool names, descriptions, and annotations but
+omits the potentially large input schemas; callers opt in with `include_tool_schemas=true`. Credential
+resolution and downstream discovery failures return distinct degraded stages and reasons rather than
+failing the reflection call; direct calls in a known
 `<server>__<tool>` namespace return the same actionable error instead of appearing as an unknown tool.
 The promise-semantics preamble lives in each tool's
 **description** (many MCP clients, claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned

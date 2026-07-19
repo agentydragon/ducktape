@@ -16,10 +16,14 @@
       code {
         overflow-wrap: anywhere;
       }
+      a {
+        color: LinkText;
+      }
     </style>
   </head>
   <body>
     <h1>{{ title }}</h1>
     <p><code>{{ message }}</code></p>
+    {% if action_url and action_label %}<p><a href="{{ action_url }}">{{ action_label }}</a></p>{% endif %}
   </body>
 </html>

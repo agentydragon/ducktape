@@ -11,6 +11,7 @@ catalog lives in `mcp_config`; operator OAuth account linkage lives in
 from __future__ import annotations
 
 import datetime
+import logging
 import secrets
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Never, TypeVar, cast
@@ -34,7 +35,6 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     Operator,
 )
-from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -46,13 +46,11 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     StaticBearerAuth,
     _credential_token,
-    _load_servers,
     _transport,
 )
-from haku.console.mcp_operator_oauth import OAuthStoreDep, PostgresMcpOperatorOAuthStore
+from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
-from haku.console.provider_connection import ProviderConnectionStoreDep
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     AuthentikOperatorTokenStore,
@@ -73,6 +71,8 @@ from haku.console.tool_calls import (
     ToolCallStatus,
 )
 
+logger = logging.getLogger(__name__)
+
 # Operator-only routes (reflection, approvals, decisions, and audit history). app.py guards this router with
 # `require_operator`.
 router = APIRouter(tags=["mcp-approval"])
@@ -82,7 +82,7 @@ Csrf = Annotated[CsrfProtect, Depends()]
 class ToolMetadata(BaseModel):
     name: str
     description: str | None = None
-    input_schema: dict[str, Any] = Field(default_factory=dict)
+    input_schema: dict[str, Any] | None = None
     annotations: mcp_types.ToolAnnotations | None = None
 
 
@@ -98,14 +98,11 @@ class AliveServerMetadata(ServerMetadataBase):
 
 class DegradedServerMetadata(ServerMetadataBase):
     status: Literal["degraded"] = "degraded"
+    failure_stage: Literal["credential_resolution", "tool_discovery"]
     degraded_reason: str
 
 
 type ServerMetadata = Annotated[AliveServerMetadata | DegradedServerMetadata, Field(discriminator="status")]
-
-
-class ToolCapabilitiesResponse(BaseModel):
-    servers: list[ServerMetadata] = Field(default_factory=list)
 
 
 class PendingApprovalsResponse(BaseModel):
@@ -545,7 +542,10 @@ class McpServerClient:
             async with Client(transport, auth=transport_auth) as client:
                 tools = await client.list_tools()
         except Exception as e:
-            return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
+            logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
+            return DegradedServerMetadata(
+                server_id=server.id, title=server.id, tools=[], failure_stage="tool_discovery", degraded_reason=str(e)
+            )
         reflected: list[ToolMetadata] = []
         for tool in tools:
             schema = tool.inputSchema
@@ -557,13 +557,6 @@ class McpServerClient:
                 )
             )
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
-
-
-def _metadata_provider(request: Request) -> McpServerClient:
-    return cast(McpServerClient, request.app.state.tool_call_metadata_provider)
-
-
-MetadataProviderDep = Annotated[McpServerClient, Depends(_metadata_provider)]
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -644,7 +637,11 @@ async def _resolve_operator_metadata_auth(
             # The implementation owns its schemas and tools/list invokes no backend operation.
             return _ResolvedAuth(None)
         case RemoteServerOAuthAuth():
-            auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
+            try:
+                auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
+            except Exception as error:
+                logger.warning("MCP credential resolution failed for %s", server.id, exc_info=True)
+                return _DegradedAuth(str(error))
             if not auth_token:
                 return _DegradedAuth(
                     f"Connect your {server.id} MCP account in the console to reflect this server's tools."
@@ -676,30 +673,14 @@ async def metadata_for_operator(
         operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
     )
     if isinstance(resolution, _DegradedAuth):
-        return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=resolution.reason)
+        return DegradedServerMetadata(
+            server_id=server.id,
+            title=server.id,
+            tools=[],
+            failure_stage="credential_resolution",
+            degraded_reason=resolution.reason,
+        )
     return await metadata_provider.metadata(server, resolution.token)
-
-
-@router.get("/api/capabilities/mcp-servers")
-async def mcp_servers(
-    settings: SettingsDep,
-    metadata_provider: MetadataProviderDep,
-    oauth_store: OAuthStoreDep,
-    provider_store: ProviderConnectionStoreDep,
-    actor: OperatorActorDep,
-) -> ToolCapabilitiesResponse:
-    return ToolCapabilitiesResponse(
-        servers=[
-            await metadata_for_operator(
-                operator_id=actor.operator_id,
-                server=server,
-                metadata_provider=metadata_provider,
-                oauth_store=oauth_store,
-                provider_store=provider_store,
-            )
-            for server in _load_servers(settings)
-        ]
-    )
 
 
 @router.get("/api/tool-calls")

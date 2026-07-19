@@ -62,9 +62,15 @@ js_library(
     name = "client",
     srcs = ["client.ts"],
     deps = [
+        ":operator_login",
         ":schema",
         "//:node_modules/openapi-fetch",
     ],
+)
+
+js_library(
+    name = "operator_login",
+    srcs = ["operator_login.ts"],
 )
 
 js_library(
@@ -79,7 +85,17 @@ js_library(
     deps = [
         ":client",
         ":mcp_result",
+        ":operator_login",
         "//:node_modules/@modelcontextprotocol/sdk",
+    ],
+)
+
+js_library(
+    name = "mcp_status_client",
+    srcs = ["mcp_status_client.ts"],
+    deps = [
+        ":mcp_client",
+        "//:node_modules/zod",
     ],
 )
 
@@ -398,6 +414,7 @@ js_library(
         ":client",
         ":console_events",
         ":link",
+        ":mcp_status_client",
         ":open_external",
         ":toast",
         "//:node_modules/@mantine/core",
@@ -645,6 +662,7 @@ tsc_bin.tsc_test(
         "mcp_tool_schema.test.ts",
         "mcp_tool_result_schema.test.ts",
         "open_external.test.ts",
+        "operator_login.test.ts",
         "routing.test.ts",
         "settings_panel.test.ts",
         "shell_chrome.test.ts",
@@ -660,6 +678,7 @@ tsc_bin.tsc_test(
         ":mcp_tool_result_schema",
         ":mcp_tool_results",
         ":mcp_tool_schema",
+        ":operator_login",
         ":schema",
         ":screenshot_harness_lib",
         ":tana_client",
@@ -700,6 +719,7 @@ vitest_bin.vitest_test(
         "mcp_tool_result_schema.test.ts",
         "mcp_tool_schema.test.ts",
         "open_external.test.ts",
+        "operator_login.test.ts",
         "routing.test.ts",
         "screenshot_capture.test.ts",
         "screenshots/sample_data.test.ts",
@@ -718,6 +738,7 @@ vitest_bin.vitest_test(
         ":mcp_tool_result_schema",
         ":mcp_tool_schema",
         ":open_external",
+        ":operator_login",
         ":routing",
         ":screenshot_capture",
         ":screenshot_harness_lib",

@@ -79,6 +79,16 @@ class _MatchingIssuerOAuth:
         return _MatchingIssuerClient()
 
 
+class _MismatchingStateClient:
+    async def authorize_access_token(self, _request: object) -> dict[str, object]:
+        raise operator_auth.OAuthError(error="mismatching_state")
+
+
+class _MismatchingStateOAuth:
+    def create_client(self, _name: str) -> _MismatchingStateClient:
+        return _MismatchingStateClient()
+
+
 def _static_agent_config(tmp_path: Path) -> Path:
     config = tmp_path / "console.yaml"
     config.write_text(
@@ -131,14 +141,14 @@ async def test_credential_matrix_through_real_app(
         # No credential: every `/api/*` route rejects; the health probe stays open.
         async with httpx.AsyncClient(base_url=console_url) as anon:
             assert (await anon.get("/api/tool-calls")).status_code == 401
-            assert (await anon.get("/api/mcp/operator-auth")).status_code == 401
+            assert (await anon.get("/api/config")).status_code == 401
             assert (await anon.get("/healthz")).status_code == 200
 
         # A static Agent bearer grants no browser API access. The retired submission route is absent.
         async with httpx.AsyncClient(base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}) as agent:
             assert (await agent.get("/api/tool-calls")).status_code == 401
             assert (await agent.post("/api/tool-calls", json={})).status_code == 405
-            assert (await agent.get("/api/mcp/operator-auth")).status_code == 401
+            assert (await agent.get("/api/config")).status_code == 401
 
         # A real operator login (authorization-code flow through the mock IdP) reaches everything.
         async with httpx.AsyncClient(base_url=console_url, follow_redirects=True) as operator:
@@ -148,7 +158,7 @@ async def test_credential_matrix_through_real_app(
             assert me.json()["username"] == _OPERATOR_USERNAME
             assert (await operator.get("/api/tool-calls")).status_code == 200
             assert (await operator.post("/api/tool-calls", json={})).status_code == 405
-            assert (await operator.get("/api/mcp/operator-auth")).status_code == 200
+            assert (await operator.get("/api/config")).status_code == 200
 
 
 def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
@@ -184,6 +194,18 @@ def test_successful_login_cookie_has_one_hour_max_age(make_client) -> None:
 
     assert response.status_code == 303
     assert "Max-Age=3600" in response.headers["set-cookie"]
+
+
+def test_state_mismatch_renders_a_retryable_html_error(make_client) -> None:
+    with make_client() as client:
+        client.app.state.operator_oauth = _MismatchingStateOAuth()
+        response = client.get("/auth/callback")
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "expired or was superseded" in response.text
+    assert '<a href="/auth/login">Retry login</a>' in response.text
 
 
 def test_callback_returns_to_exact_local_agent_enrollment_interaction(make_operator_client) -> None:
@@ -235,7 +257,7 @@ def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
         engine.dispose()
 
 
-@pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config", "/api/capabilities/csrf", "/api/mcp/operator-auth"])
+@pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config", "/api/capabilities/csrf"])
 def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, path: str) -> None:
     """The app-owned OIDC session is the only operator identity boundary.
 

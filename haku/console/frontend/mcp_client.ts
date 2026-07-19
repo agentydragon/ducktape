@@ -3,14 +3,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { fetchCsrfToken, refreshCsrfToken } from "./client.ts";
 import { mcpToolError, unwrapMcpToolResult } from "./mcp_result.ts";
+import { redirectToOperatorLogin } from "./operator_login.ts";
 
 let connectedClient: Promise<Client> | null = null;
-
-function redirectToLogin(): void {
-  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/auth/")) {
-    window.location.assign("/auth/login");
-  }
-}
 
 async function connectOperatorMcp(): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL("/mcp", document.baseURI), {
@@ -53,7 +48,7 @@ export async function callOperatorMcpTool(name: string, args: Record<string, unk
     try {
       await refreshCsrfToken();
     } catch {
-      redirectToLogin();
+      redirectToOperatorLogin();
     }
     throw error;
   }

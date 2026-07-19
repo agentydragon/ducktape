@@ -58,6 +58,7 @@ from haku.console.mcp_config import (
     server_tool_prefix,
 )
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
+from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -117,6 +118,7 @@ class ConsoleMcpContext:
     oauth_store: PostgresMcpOperatorOAuthStore
     provider_store: PostgresProviderConnectionStore
     metadata_provider: McpServerClient
+    node_daemons: NodeDaemonService | None = None
 
 
 class ToolCallPromise(BaseModel):
@@ -159,8 +161,9 @@ class McpServerConnectionStatusResponse(BaseModel):
 
 
 class McpServerProbeResponse(BaseModel):
-    """Current, active reflection result for one configured MCP server."""
+    """Persisted linkage plus the current reflection result for one configured server."""
 
+    connection: McpServerConnectionStatus
     server: ServerMetadata
 
 
@@ -221,6 +224,15 @@ def _passive_server_connection_statuses(
             case InProcessBackend(credential=credential):
                 result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=credential.kind))
     return McpServerConnectionStatusResponse(servers=result)
+
+
+def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
+    """Keep the reflected catalog useful while omitting its potentially large schemas."""
+    if isinstance(metadata, DegradedServerMetadata):
+        return metadata
+    return metadata.model_copy(
+        update={"tools": [tool.model_copy(update={"input_schema": None}) for tool in metadata.tools]}
+    )
 
 
 def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -545,26 +557,40 @@ def build_console_mcp(
         return _passive_server_connection_statuses(context, actor)
 
     @mcp.tool(annotations=_READ_ONLY_META)
+    async def list_node_daemons(actor: ToolCallActor = current_actor_dependency) -> DaemonStatusResponse:
+        """List configured node daemons and their current persisted heartbeat/lease status."""
+        _ = actor
+        return context.node_daemons.statuses() if context.node_daemons is not None else DaemonStatusResponse(daemons=[])
+
+    @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(
-        server_id: str, actor: ToolCallActor = current_actor_dependency
+        server_id: str, include_tool_schemas: bool = False, actor: ToolCallActor = current_actor_dependency
     ) -> McpServerProbeResponse:
         """Actively reflect one configured MCP server's current tool availability.
 
         Unlike ``list_mcp_servers``, this may refresh the operator's linked OAuth token and contact
-        the remote MCP server. It returns a degraded reason when that cannot succeed, so agents can
-        distinguish an unavailable configured server from an unknown tool name.
+        the remote MCP server. It returns persisted linkage plus a structured degraded result when
+        that cannot succeed, so agents can distinguish credential failures from downstream tool
+        discovery failures. Tool names, descriptions, and annotations are returned by default;
+        set ``include_tool_schemas`` to include the potentially large input schemas.
         """
         server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
         if server is None:
             raise ToolError(f"unknown configured MCP server {server_id!r}")
+        connection = next(
+            status
+            for status in _passive_server_connection_statuses(context, actor).servers
+            if status.server_id == server_id
+        )
+        metadata = await metadata_for_operator(
+            operator_id=actor.operator_id,
+            server=server,
+            metadata_provider=context.metadata_provider,
+            oauth_store=context.oauth_store,
+            provider_store=context.provider_store,
+        )
         return McpServerProbeResponse(
-            server=await metadata_for_operator(
-                operator_id=actor.operator_id,
-                server=server,
-                metadata_provider=context.metadata_provider,
-                oauth_store=context.oauth_store,
-                provider_store=context.provider_store,
-            )
+            connection=connection, server=metadata if include_tool_schemas else _without_tool_schemas(metadata)
         )
 
     @mcp.tool(annotations=_READ_ONLY_META)

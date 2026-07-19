@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
+import { redirectToOperatorLogin } from "./operator_login.ts";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are
 // generated from the backend's OpenAPI schema: //haku/console/frontend:schema.
@@ -15,9 +16,7 @@ export const api = createClient<paths>({ baseUrl: "" });
 // operator_oidc-unset dev/test mode the guards no-op and /api never 401s, so this never fires there.
 api.use({
   onResponse({ response }) {
-    if (response.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/auth/")) {
-      window.location.assign("/auth/login");
-    }
+    if (response.status === 401 && typeof window !== "undefined") redirectToOperatorLogin();
     return response;
   },
 });
@@ -28,16 +27,9 @@ export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
-export type McpOperatorAuthStatus =
-  | components["schemas"]["McpOperatorAuthConnected"]
-  | components["schemas"]["McpOperatorAuthUnconnected"];
 export type McpOperatorAuthConnectResponse = components["schemas"]["McpOperatorAuthConnectResponse"];
-export type ProviderConnectionStatus =
-  | components["schemas"]["ProviderConnected"]
-  | components["schemas"]["ProviderUnconnected"];
-export type OperatorConnectionName = ProviderConnectionStatus["connection"];
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
-export type DaemonStatus = components["schemas"]["DaemonStatus"];
+export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way. Exported
@@ -60,12 +52,6 @@ export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
   const { data, error } = await api.GET("/api/deployment");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load deployment information"));
   return data;
-}
-
-export async function fetchNodeDaemons(): Promise<DaemonStatus[]> {
-  const { data, error } = await api.GET("/api/node-daemons");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load node daemons"));
-  return data.daemons ?? [];
 }
 
 // fastapi-csrf-protect signs these for one hour. Reuse one token/cookie pair across concurrent
@@ -129,12 +115,6 @@ export async function fetchToolCalls(limit: number): Promise<ToolCallRecord[]> {
   return data.tool_calls ?? [];
 }
 
-export async function fetchMcpOperatorAuthStatuses(): Promise<McpOperatorAuthStatus[]> {
-  const { data, error } = await api.GET("/api/mcp/operator-auth");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load MCP account links"));
-  return data.associations ?? [];
-}
-
 export async function connectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthConnectResponse> {
   const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/mcp/operator-auth/{server_id}/connect", {
@@ -145,7 +125,9 @@ export async function connectMcpOperatorAuth(serverId: string): Promise<McpOpera
   return data;
 }
 
-export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStatus> {
+export async function disconnectMcpOperatorAuth(
+  serverId: string
+): Promise<components["schemas"]["McpOperatorAuthUnconnected"]> {
   const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.DELETE("/api/mcp/operator-auth/{server_id}", {
     params: { path: { server_id: serverId } },
@@ -158,12 +140,6 @@ export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOp
 // Per-Operator external account connections (Google today), the console's own replacement for
 // Airlock's brokered token. Connect opens the provider's consent in a new tab; the backend
 // callback stores the refresh token and broadcasts an `operator_connection_changed` event.
-export async function fetchOperatorConnections(): Promise<ProviderConnectionStatus[]> {
-  const { data, error } = await api.GET("/api/operator-connections");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load connected accounts"));
-  return data.connections ?? [];
-}
-
 export async function connectOperatorConnection(
   connection: OperatorConnectionName
 ): Promise<ProviderConnectionConnectResponse> {
@@ -178,7 +154,7 @@ export async function connectOperatorConnection(
 
 export async function disconnectOperatorConnection(
   connection: OperatorConnectionName
-): Promise<ProviderConnectionStatus> {
+): Promise<components["schemas"]["ProviderUnconnected"]> {
   const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.DELETE("/api/operator-connections/{connection}", {
     params: { path: { connection } },

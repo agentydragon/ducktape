@@ -428,8 +428,3 @@ def finish(execution_id: UUID, body: ExecutionResultRequest, request: Request) -
     service = _service(request)
     service.finish(_daemon(request, request.headers.get("authorization")), execution_id, body)
     return Response(status_code=204)
-
-
-@operator_router.get("")
-def daemon_statuses(request: Request) -> DaemonStatusResponse:
-    return _service(request).statuses()

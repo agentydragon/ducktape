@@ -514,15 +514,6 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
     return operator_ids
 
 
-class RecordingMetadataProvider:
-    def __init__(self) -> None:
-        self.auth_tokens: list[str | None] = []
-
-    async def metadata(self, server: Any, auth_token: str | None) -> AliveServerMetadata:
-        self.auth_tokens.append(auth_token)
-        return AliveServerMetadata(server_id=server.id, title=server.id)
-
-
 class EchoingExecutor:
     async def execute(
         self, server: Any, tool_name: str, arguments: dict[str, Any], auth_token: str | None
@@ -545,56 +536,21 @@ def recording_executor() -> RecordingExecutor:
     return RecordingExecutor()
 
 
-def test_reflection_lists_connected_servers_without_leaking_credentials(
-    make_operator_client, console_config: Path
-) -> None:
-    with make_operator_client(config_file=console_config) as client:
-        resp = client.get("/api/capabilities/mcp-servers")
-    assert resp.status_code == 200
-    body = resp.json()
-    server = body["servers"][0]
-    assert server["server_id"] == "grocy-sf"
-    assert server["status"] == "alive"
-    tools = {tool["name"]: tool for tool in server["tools"]}
-    assert set(tools) == {
-        "echo",
-        "stock_add",
-        "products_list",
-        "locations_list",
-        "quantity_units_list",
-        "product_groups_list",
-        "shopping_lists_list",
-        "shopping_list_get",
-    }
-    assert "status" not in tools["stock_add"]
-    assert tools["stock_add"]["input_schema"]["type"] == "object"
-    assert "status" not in tools["echo"]
-    assert tools["echo"]["input_schema"]["type"] == "object"
-    assert "bearer_token_secret" not in str(body)
-
-
-def test_operator_oauth_association_drives_tool_reflection(
+def test_operator_oauth_association_emits_console_events(
     make_operator_client, operator_oauth_config_file: Path
 ) -> None:
-    metadata_provider = RecordingMetadataProvider()
     with (
-        make_operator_client(
-            config_file=operator_oauth_config_file, tool_call_metadata_provider=metadata_provider
-        ) as client,
+        make_operator_client(config_file=operator_oauth_config_file) as client,
         client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events,
     ):
         assert events.receive_json() == {"event_type": "hello"}
-        before = client.get("/api/capabilities/mcp-servers").json()
         started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
         callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
         association_event = events.receive_json()
-        after = client.get("/api/capabilities/mcp-servers").json()
         disconnected = client.delete("/api/mcp/operator-auth/grocy-sf", headers={"X-CSRF-Token": csrf_token(client)})
         disassociation_event = events.receive_json()
 
-    assert before["servers"][0]["status"] == "degraded"
-    assert "Connect your grocy-sf MCP account" in before["servers"][0]["degraded_reason"]
     assert callback.status_code == 200, callback.text
     assert "BroadcastChannel" not in callback.text
     assert association_event == {
@@ -608,9 +564,6 @@ def test_operator_oauth_association_drives_tool_reflection(
         "server_id": "grocy-sf",
         "status": "disconnected",
     }
-    assert after["servers"][0]["status"] == "alive"
-    assert metadata_provider.auth_tokens == ["operator-access-token"]
-    assert "bearer_token_secret" not in str(after)
 
 
 def test_operator_oauth_preregistered_client_skips_dynamic_registration(
@@ -628,10 +581,8 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
         callback = client.get(
             "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
         )
-        after = client.get("/api/mcp/operator-auth").json()
 
     assert callback.status_code == 200, callback.text
-    assert after["associations"][0]["status"] == "connected"
 
 
 def test_operator_oauth_callback_is_bound_to_flow_operator(
@@ -658,29 +609,11 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
             "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}
         )
         completed = operator_a.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
-        a_status = operator_a.get("/api/mcp/operator-auth").json()["associations"][0]
-        b_status = operator_b.get("/api/mcp/operator-auth").json()["associations"][0]
 
     assert wrong_operator.status_code == 403
     assert "different operator" in wrong_operator.text
     # A mismatched session does not consume the flow: its owner can still complete it.
     assert completed.status_code == 200, completed.text
-    assert a_status["status"] == "connected"
-    assert b_status["status"] == "unconnected"
-
-
-def test_reflection_marks_unreachable_servers_degraded(
-    make_operator_client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
-    with make_operator_client(config_file=_config_file(tmp_path, "http://127.0.0.1:1/mcp")) as client:
-        resp = client.get("/api/capabilities/mcp-servers")
-    assert resp.status_code == 200
-    server = resp.json()["servers"][0]
-    assert server["server_id"] == "grocy-sf"
-    assert server["status"] == "degraded"
-    assert server["tools"] == []
-    assert server["degraded_reason"]
 
 
 def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
@@ -871,11 +804,6 @@ def test_operator_oauth_association_drives_approved_tool_execution(
         operator_external_user_key="operator-oauth-sub",
         tool_call_executor=recording_executor,
     ) as client:
-        before = client.get("/api/mcp/operator-auth").json()
-        assert before["associations"] == [
-            {"server_id": "grocy-sf", "status": "unconnected", "username": "operator@example.com"}
-        ]
-
         started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         assert started.status_code == 200, started.text
         authorization_url = started.json()["authorization_url"]
@@ -890,9 +818,6 @@ def test_operator_oauth_association_drives_approved_tool_execution(
             "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
         )
         assert callback.status_code == 200, callback.text
-        after = client.get("/api/mcp/operator-auth").json()
-        assert after["associations"][0]["status"] == "connected"
-        assert after["associations"][0]["connected_at"]
 
         reconnect = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         removed_start = client.post(

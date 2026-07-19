@@ -1,13 +1,8 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
-import type {
-  DaemonStatus,
-  DeploymentInfo,
-  McpOperatorAuthStatus,
-  ProviderConnectionStatus,
-  ToolCallRecord,
-} from "../client.ts";
+import type { DeploymentInfo, ToolCallRecord } from "../client.ts";
+import type { DaemonStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -180,34 +175,63 @@ export function sampleRecentToolCalls(nowMs: number): RecentToolCall[] {
   return [recent];
 }
 
-export const SAMPLE_MCP: McpOperatorAuthStatus[] = [
+export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
   {
     server_id: "grocy-sf",
-    status: "connected",
-    username: "agentydragon",
-    connected_at: "2026-07-01T09:00:00Z",
-    token_expires_at: "2026-08-01T09:00:00Z",
-    scope: "read write",
+    auth_kind: "remote_server_oauth",
+    connection: {
+      server_id: "grocy-sf",
+      status: "connected",
+      username: "agentydragon",
+      connected_at: "2026-07-01T09:00:00Z",
+      token_expires_at: "2026-07-17T10:00:00Z",
+      scope: "read write",
+    },
+  },
+  {
+    server_id: "gmail",
+    auth_kind: "operator_connection",
+    connection: {
+      connection: "google_mail",
+      display_name: "Google Mail",
+      provider: "google",
+      status: "connected",
+      connected_at: "2026-07-01T09:00:00Z",
+      token_expires_at: "2026-08-17T10:00:00Z",
+      scope: "https://www.googleapis.com/auth/gmail.modify",
+    },
+  },
+  {
+    server_id: "google-calendar",
+    auth_kind: "operator_connection",
+    connection: {
+      connection: "google_calendar",
+      display_name: "Google Calendar",
+      provider: "google",
+      status: "unconnected",
+    },
   },
 ];
 
-export const SAMPLE_PROVIDER_CONNECTIONS: ProviderConnectionStatus[] = [
-  {
-    connection: "google_mail",
-    display_name: "Google Mail",
-    provider: "google",
-    status: "connected",
-    connected_at: "2026-07-01T09:00:00Z",
-    token_expires_at: "2026-07-17T10:00:00Z",
-    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.compose",
-  },
-  {
-    connection: "google_calendar",
-    display_name: "Google Calendar",
-    provider: "google",
-    status: "unconnected",
-  },
-];
+export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntries(
+  SAMPLE_MCP_SERVERS.map((connection) => [
+    connection.server_id,
+    {
+      connection,
+      server:
+        connection.server_id === "grocy-sf"
+          ? {
+              server_id: connection.server_id,
+              title: connection.server_id,
+              tools: [],
+              status: "degraded" as const,
+              failure_stage: "credential_resolution" as const,
+              degraded_reason: "MCP OAuth token refresh failed: 401",
+            }
+          : { server_id: connection.server_id, title: connection.server_id, tools: [], status: "alive" as const },
+    },
+  ])
+);
 
 export const SAMPLE_DAEMONS: DaemonStatus[] = [
   {

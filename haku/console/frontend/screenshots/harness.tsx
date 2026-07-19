@@ -91,8 +91,8 @@ function ShellChromeSyncErrorScene() {
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
-      // The settings panel (a chrome surface); fetches /api/mcp/operator-auth on mount —
-      // mock_api.ts serves SAMPLE_MCP. Render it inside its real shell column
+      // The settings panel (a chrome surface); reflects MCP status on mount through the same
+      // Operator-session MCP client as production. Render it inside its real shell column
       // (.haku-shell-panels, which owns the panel width) so the shot tracks the true layout
       // instead of a hardcoded number; #shot is render.mjs's element-screenshot target and
       // shrink-wraps that column, with padding so the shot includes the card shadows.

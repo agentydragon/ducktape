@@ -8,17 +8,19 @@ import {
   disconnectMcpOperatorAuth,
   disconnectOperatorConnection,
   fetchDeploymentInfo,
-  fetchMcpOperatorAuthStatuses,
-  fetchNodeDaemons,
-  fetchOperatorConnections,
   type DeploymentInfo,
-  type DaemonStatus,
-  type McpOperatorAuthStatus,
   type OperatorConnectionName,
-  type ProviderConnectionStatus,
 } from "./client.ts";
 import { useConsoleEvents } from "./console_events.ts";
 import { ExternalLink } from "./link.tsx";
+import {
+  getMcpServerStatus,
+  listNodeDaemons,
+  listMcpServers,
+  type DaemonStatus,
+  type McpServerConnection,
+  type McpServerProbe,
+} from "./mcp_status_client.ts";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
@@ -72,94 +74,99 @@ function SectionHeading({ title, description }: { title: string; description: st
   );
 }
 
-// Shared presentational card for an operator connection (MCP account or provider). Takes only
-// primitives so each caller does its own discriminated-union narrowing to compute the strings.
-function ConnectionCard({
-  title,
-  subtitle,
-  connected,
-  onConnect,
-  onDisconnect,
+type McpServerView = {
+  connection: McpServerConnection;
+  probe: McpServerProbe | null;
+  checking: boolean;
+  error: string | null;
+};
+
+function connectionSummary(server: McpServerConnection): string {
+  const connection = server.connection;
+  if (connection === null) return `No operator-linked credential (${server.auth_kind})`;
+  if (connection.status === "unconnected") {
+    return "server_id" in connection
+      ? `Not linked for ${connection.username}`
+      : `${connection.display_name} is not connected`;
+  }
+  const until = shortDate(connection.token_expires_at);
+  if ("server_id" in connection) {
+    return `Linked for ${connection.username}${until ? ` until ${until}` : ""}`;
+  }
+  return `${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
+}
+
+function McpServerCard({
+  view,
+  onConnectMcp,
+  onDisconnectMcp,
+  onConnectProvider,
+  onDisconnectProvider,
 }: {
-  title: string;
-  subtitle: string;
-  connected: boolean;
-  onConnect: () => void;
-  onDisconnect: () => void;
+  view: McpServerView;
+  onConnectMcp: (serverId: string) => void;
+  onDisconnectMcp: (serverId: string) => void;
+  onConnectProvider: (connection: OperatorConnectionName) => void;
+  onDisconnectProvider: (connection: OperatorConnectionName) => void;
 }) {
+  const linkage = view.connection.connection;
+  const unconnected = linkage?.status === "unconnected";
+  const state = unconnected
+    ? { label: "Unconnected", color: "gray" }
+    : view.error || view.probe?.server.status === "degraded"
+      ? { label: "Unavailable", color: "red" }
+      : view.probe?.server.status === "alive"
+        ? { label: "Available", color: "teal" }
+        : { label: "Checking", color: "blue" };
+  const reason = view.error ?? (view.probe?.server.status === "degraded" ? view.probe.server.degraded_reason : null);
+  const connect =
+    linkage && "server_id" in linkage
+      ? () => onConnectMcp(linkage.server_id)
+      : linkage
+        ? () => onConnectProvider(linkage.connection)
+        : null;
+  const disconnect =
+    linkage && "server_id" in linkage
+      ? () => onDisconnectMcp(linkage.server_id)
+      : linkage
+        ? () => onDisconnectProvider(linkage.connection)
+        : null;
+
   return (
     <section className="haku-shell-card">
       <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
         <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{title}</Text>
+          <Text fw={600}>{view.connection.server_id}</Text>
           <Text size="xs" c="dimmed">
-            {subtitle}
+            {connectionSummary(view.connection)}
           </Text>
+          {reason && (
+            <Text size="xs" c="red">
+              {reason}
+            </Text>
+          )}
         </Stack>
-        <Badge color={connected ? "teal" : "gray"} variant="light">
-          {connected ? "Connected" : "Unconnected"}
-        </Badge>
+        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+          {view.checking && view.probe && <Loader size={12} />}
+          <Badge color={state.color} variant="light">
+            {state.label}
+          </Badge>
+        </Group>
       </Group>
-      <Group justify="flex-end" gap="xs" mt="sm">
-        {connected ? (
-          <Button size="compact-sm" variant="subtle" color="red" onClick={onDisconnect}>
-            Disconnect
-          </Button>
-        ) : (
-          <Button size="compact-sm" variant="light" onClick={onConnect}>
-            Connect
-          </Button>
-        )}
-      </Group>
+      {linkage && (
+        <Group justify="flex-end" gap="xs" mt="sm">
+          {linkage.status === "connected" ? (
+            <Button size="compact-sm" variant="subtle" color="red" onClick={disconnect ?? undefined}>
+              Disconnect
+            </Button>
+          ) : (
+            <Button size="compact-sm" variant="light" onClick={connect ?? undefined}>
+              Connect
+            </Button>
+          )}
+        </Group>
+      )}
     </section>
-  );
-}
-
-function McpAccountCard({
-  status,
-  onConnect,
-  onDisconnect,
-}: {
-  status: McpOperatorAuthStatus;
-  onConnect: () => void;
-  onDisconnect: () => void;
-}) {
-  const connected = status.status === "connected";
-  const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
-  return (
-    <ConnectionCard
-      title={status.server_id}
-      subtitle={
-        connected
-          ? `Linked for ${status.username}${until ? ` until ${until}` : ""}`
-          : `Not linked for ${status.username}`
-      }
-      connected={connected}
-      onConnect={onConnect}
-      onDisconnect={onDisconnect}
-    />
-  );
-}
-
-function ProviderConnectionCard({
-  status,
-  onConnect,
-  onDisconnect,
-}: {
-  status: ProviderConnectionStatus;
-  onConnect: () => void;
-  onDisconnect: () => void;
-}) {
-  const connected = status.status === "connected";
-  const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
-  return (
-    <ConnectionCard
-      title={status.display_name}
-      subtitle={connected ? `Connected${until ? ` · token until ${until}` : ""}` : "Not connected"}
-      connected={connected}
-      onConnect={onConnect}
-      onDisconnect={onDisconnect}
-    />
   );
 }
 
@@ -198,41 +205,62 @@ function DaemonCard({ daemon }: { daemon: DaemonStatus }) {
 // Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
 // shell chrome's mutually exclusive panels.
 export function SettingsPanel() {
-  const [statuses, setStatuses] = useState<McpOperatorAuthStatus[] | null>(null);
-  const [providerStatuses, setProviderStatuses] = useState<ProviderConnectionStatus[] | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServerView[] | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [daemons, setDaemons] = useState<DaemonStatus[] | null>(null);
-  const [statusesError, setStatusesError] = useState<string | null>(null);
-  const [providerStatusesError, setProviderStatusesError] = useState<string | null>(null);
+  const [mcpError, setMcpError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
   const [daemonsError, setDaemonsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadGeneration = useRef(0);
+  const daemonGeneration = useRef(0);
   const versions = deployment ? deploymentVersions(deployment) : [];
 
   const load = useCallback(() => {
     const generation = ++loadGeneration.current;
     setLoading(true);
-    const statusesRequest = fetchMcpOperatorAuthStatuses().then(
-      (nextStatuses) => {
+    const mcpRequest = listMcpServers().then(
+      async (connections) => {
         if (generation !== loadGeneration.current) return;
-        setStatuses(nextStatuses);
-        setStatusesError(null);
+        setMcpError(null);
+        setMcpServers((current) => {
+          const previous = new Map(current?.map((view) => [view.connection.server_id, view]));
+          return connections.map((connection) => ({
+            connection,
+            probe: previous.get(connection.server_id)?.probe ?? null,
+            checking: true,
+            error: null,
+          }));
+        });
+        await Promise.all(
+          connections.map(async (connection) => {
+            try {
+              const probe = await getMcpServerStatus(connection.server_id);
+              if (generation !== loadGeneration.current) return;
+              setMcpServers(
+                (current) =>
+                  current?.map((view) =>
+                    view.connection.server_id === connection.server_id
+                      ? { connection: probe.connection, probe, checking: false, error: null }
+                      : view
+                  ) ?? null
+              );
+            } catch (e) {
+              if (generation !== loadGeneration.current) return;
+              const error = e instanceof Error ? e.message : String(e);
+              setMcpServers(
+                (current) =>
+                  current?.map((view) =>
+                    view.connection.server_id === connection.server_id ? { ...view, checking: false, error } : view
+                  ) ?? null
+              );
+            }
+          })
+        );
       },
       (e: unknown) => {
         if (generation !== loadGeneration.current) return;
-        setStatusesError(e instanceof Error ? e.message : String(e));
-      }
-    );
-    const providerRequest = fetchOperatorConnections().then(
-      (nextProviderStatuses) => {
-        if (generation !== loadGeneration.current) return;
-        setProviderStatuses(nextProviderStatuses);
-        setProviderStatusesError(null);
-      },
-      (e: unknown) => {
-        if (generation !== loadGeneration.current) return;
-        setProviderStatusesError(e instanceof Error ? e.message : String(e));
+        setMcpError(e instanceof Error ? e.message : String(e));
       }
     );
     const deploymentRequest = fetchDeploymentInfo().then(
@@ -246,30 +274,35 @@ export function SettingsPanel() {
         setDeploymentError(e instanceof Error ? e.message : String(e));
       }
     );
-    const daemonsRequest = fetchNodeDaemons().then(
-      (nextDaemons) => {
-        if (generation !== loadGeneration.current) return;
-        setDaemons(nextDaemons);
-        setDaemonsError(null);
-      },
-      (e: unknown) => {
-        if (generation !== loadGeneration.current) return;
-        setDaemonsError(e instanceof Error ? e.message : String(e));
-      }
-    );
-    void Promise.all([statusesRequest, providerRequest, deploymentRequest, daemonsRequest]).then(() => {
+    void Promise.all([mcpRequest, deploymentRequest]).then(() => {
       if (generation === loadGeneration.current) setLoading(false);
     });
   }, []);
 
+  const loadDaemons = useCallback(() => {
+    const generation = ++daemonGeneration.current;
+    void listNodeDaemons().then(
+      (nextDaemons) => {
+        if (generation !== daemonGeneration.current) return;
+        setDaemons(nextDaemons);
+        setDaemonsError(null);
+      },
+      (e: unknown) => {
+        if (generation !== daemonGeneration.current) return;
+        setDaemonsError(e instanceof Error ? e.message : String(e));
+      }
+    );
+  }, []);
+
   useEffect(() => {
-    load();
-    const interval = window.setInterval(load, 10_000);
+    loadDaemons();
+    const interval = window.setInterval(loadDaemons, 10_000);
     return () => {
       window.clearInterval(interval);
       loadGeneration.current += 1;
+      daemonGeneration.current += 1;
     };
-  }, [load]);
+  }, [loadDaemons]);
 
   useConsoleEvents((event) => {
     if (
@@ -333,49 +366,34 @@ export function SettingsPanel() {
       <div className="haku-shell-scroll">
         <Stack gap="xs">
           <SectionHeading
-            title="MCP accounts"
-            description="Operator OAuth links for connected MCP servers. Connect one to let the console execute its tools with your account."
+            title="MCP servers"
+            description="Live availability through the console's MCP reflection tools. Status refreshes automatically and may verify linked credentials."
           />
-          {statusesError && (
+          {mcpError && (
             <Text c="red" size="sm">
-              Failed to load MCP accounts: {statusesError}
+              Failed to load MCP servers: {mcpError}
             </Text>
           )}
-          {!statuses && !statusesError && (
+          {!mcpServers && !mcpError && (
             <Group justify="center" p="xl">
               <Loader />
             </Group>
           )}
-          {statuses && statuses.length === 0 && (
+          {mcpServers && mcpServers.length === 0 && (
             <section className="haku-shell-card">
               <Text size="sm" c="dimmed">
-                No operator-linked MCP servers are configured.
+                No MCP servers are configured.
               </Text>
             </section>
           )}
-          {statuses?.map((status) => (
-            <McpAccountCard
-              key={status.server_id}
-              status={status}
-              onConnect={() => connect(status.server_id)}
-              onDisconnect={() => disconnect(status.server_id)}
-            />
-          ))}
-          <SectionHeading
-            title="Connected accounts"
-            description="External accounts used by in-process tools. Each linkage requests and stores only its configured scopes."
-          />
-          {providerStatusesError && (
-            <Text c="red" size="sm">
-              Failed to load connected accounts: {providerStatusesError}
-            </Text>
-          )}
-          {providerStatuses?.map((status) => (
-            <ProviderConnectionCard
-              key={status.connection}
-              status={status}
-              onConnect={() => connectProvider(status.connection)}
-              onDisconnect={() => disconnectProvider(status.connection)}
+          {mcpServers?.map((view) => (
+            <McpServerCard
+              key={view.connection.server_id}
+              view={view}
+              onConnectMcp={connect}
+              onDisconnectMcp={disconnect}
+              onConnectProvider={connectProvider}
+              onDisconnectProvider={disconnectProvider}
             />
           ))}
           <SectionHeading

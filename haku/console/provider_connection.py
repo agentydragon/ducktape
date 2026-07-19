@@ -478,13 +478,6 @@ def _store(request: Request) -> PostgresProviderConnectionStore:
 ProviderConnectionStoreDep = Annotated[PostgresProviderConnectionStore, Depends(_store)]
 
 
-@router.get("/api/operator-connections")
-async def provider_connection_statuses(
-    store: ProviderConnectionStoreDep, actor: OperatorActorDep
-) -> ProviderConnectionStatusResponse:
-    return store.list_statuses(operator_id=actor.operator_id)
-
-
 @router.post("/api/operator-connections/{connection}/connect")
 async def connect_provider_connection(
     connection: str,

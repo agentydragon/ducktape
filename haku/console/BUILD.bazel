@@ -419,6 +419,7 @@ py_library(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":node_daemons",
         ":provider_connection",
         ":tool_call_actor",
         ":tool_call_service",
