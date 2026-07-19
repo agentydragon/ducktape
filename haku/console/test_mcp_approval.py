@@ -61,6 +61,7 @@ from haku.console.mcp_config import (
     InProcessServerRegistration,
     McpServerEntry,
     OperatorConnectionCredential,
+    RemoteServerOAuthAuth,
     validate_in_process_server_bindings,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
@@ -166,15 +167,15 @@ def _build_test_mcp_server() -> FastMCP:
 
 
 @contextmanager
-def _serve_remote_oauth(*, static_client_id: str | None = None) -> Generator[str]:
-    """A fake OAuth server. With `static_client_id` set, the metadata omits
+def _serve_remote_oauth(*, preregistered_client_id: str | None = None) -> Generator[str]:
+    """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
     `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
     Authentik (fronted by kubernetes-mcp-server), which has no DCR endpoint — so the test
     fails loudly if the client under test attempts dynamic registration anyway.
     """
     port = pick_free_port()
     base_url = f"http://127.0.0.1:{port}"
-    expected_client_id = static_client_id or "dynamic-client"
+    expected_client_id = preregistered_client_id or "dynamic-client"
 
     async def mcp(request: Request) -> JSONResponse:
         return JSONResponse(
@@ -203,12 +204,13 @@ def _serve_remote_oauth(*, static_client_id: str | None = None) -> Generator[str
             "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256"],
         }
-        if static_client_id is None:
+        if preregistered_client_id is None:
             metadata["registration_endpoint"] = f"{base_url}/auth/register"
         return JSONResponse(metadata)
 
     async def register(request: Request) -> JSONResponse:
         body = await request.json()
+        assert body["client_name"] == "Haku Console"
         return JSONResponse(
             {
                 **body,
@@ -253,7 +255,7 @@ def _serve_remote_oauth(*, static_client_id: str | None = None) -> Generator[str
         Route("/.well-known/oauth-authorization-server/auth", oauth_metadata),
         Route("/auth/token", token, methods=["POST"]),
     ]
-    if static_client_id is None:
+    if preregistered_client_id is None:
         routes.append(Route("/auth/register", register, methods=["POST"]))
     app = Starlette(routes=routes)
     with serve_app_sync(app, port=port):
@@ -268,7 +270,7 @@ def remote_oauth_url() -> Generator[str]:
 
 @pytest.fixture
 def preregistered_remote_oauth_url() -> Generator[str]:
-    with _serve_remote_oauth(static_client_id="preregistered-client") as url:
+    with _serve_remote_oauth(preregistered_client_id="preregistered-client") as url:
         yield url
 
 
@@ -333,6 +335,10 @@ def _remote_server(server_id: str, url: str, auth: dict[str, Any]) -> dict[str, 
     return {"id": server_id, "backend": {"kind": "remote_mcp", "url": url, "auth": auth}}
 
 
+def _dynamic_remote_oauth() -> dict[str, Any]:
+    return {"kind": "remote_server_oauth", "client_registration": {"kind": "dynamic", "client_name": "Haku Console"}}
+
+
 def _in_process_server(server_id: str, credential: dict[str, Any]) -> dict[str, Any]:
     return {"id": server_id, "backend": {"kind": "in_process", "credential": credential}}
 
@@ -370,7 +376,7 @@ def operator_client(make_operator_client: Callable[..., Any], console_config: Pa
 
 @pytest.fixture
 def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
-    servers = [_remote_server("grocy-sf", f"{remote_oauth_url}/mcp", {"kind": "remote_server_oauth"})]
+    servers = [_remote_server("grocy-sf", f"{remote_oauth_url}/mcp", _dynamic_remote_oauth())]
     return write_config(tmp_path / "haku_console_operator_oauth.yaml", _config(servers))
 
 
@@ -387,7 +393,10 @@ def preregistered_operator_oauth_config_file(tmp_path: Path, preregistered_remot
         _remote_server(
             "grocy-sf",
             f"{preregistered_remote_oauth_url}/mcp",
-            {"kind": "remote_server_oauth", "static_client_id": "preregistered-client"},
+            {
+                "kind": "remote_server_oauth",
+                "client_registration": {"kind": "preregistered", "client_id": "preregistered-client"},
+            },
         )
     ]
     return write_config(tmp_path / "haku_console_operator_oauth_static.yaml", _config(servers))
@@ -591,11 +600,11 @@ def test_operator_oauth_association_drives_tool_reflection(
     assert "bearer_token_secret" not in str(after)
 
 
-def test_operator_oauth_static_client_id_skips_dynamic_registration(
+def test_operator_oauth_preregistered_client_skips_dynamic_registration(
     make_operator_client, preregistered_operator_oauth_config_file: Path
 ) -> None:
     """Mirrors kubectl-passthrough-mcp: fronted by Authentik, which has no DCR endpoint —
-    dynamic registration would 401, so a configured static_client_id must skip it entirely.
+    dynamic registration would 401, so a pre-registered client must skip it entirely.
     """
     with make_operator_client(config_file=preregistered_operator_oauth_config_file) as client:
         started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
@@ -950,7 +959,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
     _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
     _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
-    config = _config([_remote_server("grocy-sf", "http://unused.test/mcp", {"kind": "remote_server_oauth"})])
+    config = _config([_remote_server("grocy-sf", "http://unused.test/mcp", _dynamic_remote_oauth())])
     config["static_agents"] = [
         *_STATIC_AGENTS,
         {
@@ -1497,6 +1506,29 @@ def test_config_rejects_incompatible_registered_credential_kind() -> None:
 
     with pytest.raises(ValueError, match="requires 'none' credential, got 'operator_connection'"):
         validate_in_process_server_bindings(config, {"google": registration})
+
+
+def test_remote_oauth_client_registration_variants_reject_each_others_fields() -> None:
+    with pytest.raises(ValidationError, match="client_id"):
+        RemoteServerOAuthAuth.model_validate(
+            {
+                "client_registration": {
+                    "kind": "dynamic",
+                    "client_name": "Haku Console",
+                    "client_id": "not-valid-for-dcr",
+                }
+            }
+        )
+    with pytest.raises(ValidationError, match="client_name"):
+        RemoteServerOAuthAuth.model_validate(
+            {
+                "client_registration": {
+                    "kind": "preregistered",
+                    "client_id": "existing-client",
+                    "client_name": "not-valid-for-preregistered",
+                }
+            }
+        )
 
 
 async def test_executor_dispatches_to_registered_in_process_server() -> None:

@@ -83,6 +83,8 @@ Core endpoints:
   YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
   associations.
   Connecting is available only while unconnected; disconnect first to replace an account link.
+  Client acquisition uses the `client_registration` discriminator. `dynamic` performs DCR and owns
+  `client_name`; `preregistered` skips DCR and owns the deploy-provisioned `client_id`.
 - `GET /api/provider-connections`, `POST /api/provider-connections/{provider}/connect`,
   `DELETE /api/provider-connections/{provider}`, and `GET /api/provider-connections/callback` —
   per-Operator connections to well-known external OAuth providers (Google today) for in-process

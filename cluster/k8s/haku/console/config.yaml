@@ -24,14 +24,18 @@ mcp:
         url: https://grocy-mcp-sf.allegedly.works/mcp
         auth:
           kind: remote_server_oauth
-          client_name: Haku Console
+          client_registration:
+            kind: dynamic
+            client_name: Haku Console
     - id: tana-rw
       backend:
         kind: remote_mcp
         url: https://tana-mcp-facade.allegedly.works/mcp
         auth:
           kind: remote_server_oauth
-          client_name: Haku Console
+          client_registration:
+            kind: dynamic
+            client_name: Haku Console
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
     # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade / ibkr-mcp, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,
@@ -75,16 +79,17 @@ mcp:
         url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         auth:
           kind: remote_server_oauth
-          client_name: Haku Console
-          # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
-          # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
-          # so DCR would 401 against the guessed {server}/register fallback. Use the
-          # pre-registered public/PKCE client_id from the kubectl_passthrough_mcp Authentik
-          # provider instead (tf/gitops/agent-machine-access/main.tf) — it already allows
-          # multiple redirect URIs (CLI localhost, kubernetes-mcp-server's own callback, and
-          # haku-console's operator-auth callback), safe to share since PKCE plus per-request
-          # redirect_uri validation secure each caller independently.
-          static_client_id: kubectl-passthrough-mcp
+          client_registration:
+            kind: preregistered
+            # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
+            # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
+            # so DCR would 401 against the guessed {server}/register fallback. Use the
+            # pre-registered public/PKCE client_id from the kubectl_passthrough_mcp Authentik
+            # provider instead (tf/gitops/agent-machine-access/main.tf) — it already allows
+            # multiple redirect URIs (CLI localhost, kubernetes-mcp-server's own callback, and
+            # haku-console's operator-auth callback), safe to share since PKCE plus per-request
+            # redirect_uri validation secure each caller independently.
+            client_id: kubectl-passthrough-mcp
     # In-process FastMCP servers (haku/console/tools/*.py) attached via an in-memory transport,
     # not remote MCP servers. Calls default to manual approval;
     # reviewed policies may auto-approve exact calls (currently Gmail label operations).

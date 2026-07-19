@@ -270,7 +270,10 @@ def _service(
                         "backend": {
                             "kind": "remote_mcp",
                             "url": "https://backend.invalid/mcp",
-                            "auth": {"kind": "remote_server_oauth"},
+                            "auth": {
+                                "kind": "remote_server_oauth",
+                                "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
+                            },
                         },
                     }
                 ]

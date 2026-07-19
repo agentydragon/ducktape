@@ -15,7 +15,12 @@ from sqlalchemy.orm import sessionmaker
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
-from haku.console.mcp_config import McpServerEntry, RemoteMcpBackend, RemoteServerOAuthAuth
+from haku.console.mcp_config import (
+    DynamicOAuthClientRegistration,
+    McpServerEntry,
+    RemoteMcpBackend,
+    RemoteServerOAuthAuth,
+)
 from haku.console.mcp_operator_oauth import (
     PostgresMcpOperatorOAuthStore,
     _BuiltOperatorOAuthFlow,
@@ -140,7 +145,11 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
 ) -> None:
     oauth_store, operator_id = oauth_store_for("connect-race-operator")
     server = McpServerEntry(
-        id="grocy-sf", backend=RemoteMcpBackend(url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
+        id="grocy-sf",
+        backend=RemoteMcpBackend(
+            url="https://grocy.test/mcp",
+            auth=RemoteServerOAuthAuth(client_registration=DynamicOAuthClientRegistration()),
+        ),
     )
     now = datetime.datetime.now(datetime.UTC)
 
@@ -174,7 +183,11 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
 ) -> None:
     oauth_store, operator_id = oauth_store_for("refresh-race-operator")
     server = McpServerEntry(
-        id="grocy-sf", backend=RemoteMcpBackend(url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
+        id="grocy-sf",
+        backend=RemoteMcpBackend(
+            url="https://grocy.test/mcp",
+            auth=RemoteServerOAuthAuth(client_registration=DynamicOAuthClientRegistration()),
+        ),
     )
     now = datetime.datetime.now(datetime.UTC)
     with sessionmaker(migrated_engine)() as session, session.begin():
@@ -218,7 +231,11 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
 ) -> None:
     oauth_store, operator_id = oauth_store_for("refresh-reconnect-race")
     server = McpServerEntry(
-        id="grocy-sf", backend=RemoteMcpBackend(url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
+        id="grocy-sf",
+        backend=RemoteMcpBackend(
+            url="https://grocy.test/mcp",
+            auth=RemoteServerOAuthAuth(client_registration=DynamicOAuthClientRegistration()),
+        ),
     )
     now = datetime.datetime.now(datetime.UTC)
     replacement_association_id = uuid4()

@@ -19,7 +19,7 @@ from uuid import UUID
 
 import yaml
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import HostexecConfig, Settings
@@ -44,13 +44,21 @@ class OperatorConnectionCredential(BaseModel):
     connection: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
 
 
-class RemoteServerOAuthAuth(BaseModel):
-    """Execute as the acting Operator's account at the connected MCP server's own OAuth authorization
-    server, linked per server via that server's DCR/PKCE flow (e.g. kubectl-passthrough)."""
+class DynamicOAuthClientRegistration(BaseModel):
+    """Register a fresh public OAuth client through RFC 7591 DCR for each connect flow."""
 
-    kind: Literal["remote_server_oauth"] = "remote_server_oauth"
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["dynamic"] = "dynamic"
     client_name: str = "Haku Console"
-    scopes: list[str] | None = None
+
+
+class PreregisteredOAuthClient(BaseModel):
+    """Use a deploy-provisioned public OAuth client and skip Dynamic Client Registration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["preregistered"] = "preregistered"
     # For an authorization server with no open Dynamic Client Registration (RFC 7591) — e.g.
     # Authentik, which has no /register endpoint, so the server-metadata-declared
     # registration_endpoint is absent and DCR would otherwise 401 against a guessed {server}/register
@@ -58,7 +66,20 @@ class RemoteServerOAuthAuth(BaseModel):
     # authorization server, skipping registration entirely. Safe to share: PKCE plus per-request
     # redirect_uri validation secure each caller's auth code exchange independently even though the
     # client_id is the same for all.
-    static_client_id: str | None = None
+    client_id: str = Field(min_length=1)
+
+
+type OAuthClientRegistration = Annotated[
+    DynamicOAuthClientRegistration | PreregisteredOAuthClient, Field(discriminator="kind")
+]
+
+
+class RemoteServerOAuthAuth(BaseModel):
+    """Execute as the acting Operator's account at the remote MCP server's authorization server."""
+
+    kind: Literal["remote_server_oauth"] = "remote_server_oauth"
+    client_registration: OAuthClientRegistration
+    scopes: list[str] | None = None
 
 
 class OperatorLoginIdentityCredential(BaseModel):

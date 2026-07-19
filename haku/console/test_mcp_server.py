@@ -63,6 +63,10 @@ def _in_process_backend(credential: dict[str, Any]) -> dict[str, Any]:
     return {"kind": "in_process", "credential": credential}
 
 
+def _dynamic_remote_oauth() -> dict[str, Any]:
+    return {"kind": "remote_server_oauth", "client_registration": {"kind": "dynamic", "client_name": "Haku Console"}}
+
+
 # The `/mcp` static bearer used across these tests, and the static-agent config that binds it to the
 # `haku` agent id (which acts as operator subject "42"). Env-referenced, like the deploy.
 _AGENT_TOKEN = "agent-token"
@@ -578,9 +582,7 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
             {
                 "static_agents": _STATIC_AGENTS,
                 "mcp": {
-                    "servers": [
-                        {"id": "standin", "backend": _remote_backend(upstream_url, {"kind": "remote_server_oauth"})}
-                    ]
+                    "servers": [{"id": "standin", "backend": _remote_backend(upstream_url, _dynamic_remote_oauth())}]
                 },
             },
         )
@@ -624,13 +626,13 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                     {
                         "id": "expired-remote",
                         "backend": _remote_backend(
-                            "https://must-not-be-contacted.invalid/mcp", {"kind": "remote_server_oauth"}
+                            "https://must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
                         ),
                     },
                     {
                         "id": "unconnected-remote",
                         "backend": _remote_backend(
-                            "https://also-must-not-be-contacted.invalid/mcp", {"kind": "remote_server_oauth"}
+                            "https://also-must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
                         ),
                     },
                     {
