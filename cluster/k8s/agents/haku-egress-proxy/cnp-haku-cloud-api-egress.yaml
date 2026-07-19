@@ -133,8 +133,10 @@ spec:
               protocol: TCP
     # AnkiWeb sync (haku-anki service, haku/plans in haku-state): sync.ankiweb.net plus
     # the shard hosts it 308-redirects to — Anki's own firewall guidance is to allow
-    # *.ankiweb.net because hostnames change. Client is rslib's reqwest (honors
-    # HTTPS_PROXY; verified with a local CONNECT probe 2026-07-13).
+    # *.ankiweb.net because hostnames change. Client is rslib's reqwest: it honors
+    # HTTPS_PROXY and rustls-native-certs reads SSL_CERT_FILE. Kyverno injects the
+    # trust-manager bundle (default roots + haku proxy CA) into every haku-sandbox
+    # container, so AnkiWeb stays TLS-intercepted rather than using --ignore-hosts.
     - toFQDNs:
         - matchPattern: "*.ankiweb.net"
       toPorts:
