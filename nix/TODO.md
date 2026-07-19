@@ -5,7 +5,7 @@
 GRD system Remote Login (PR #3424) is NixOS-blocked (dormant). The chosen-for-now
 path is **xrdp + Xfce over Nebula** (PR #3431, live on wyrm2): headless, pre-login,
 no auto-login, firewall-restricted to the `nebula1` trusted interface. Connect with
-`xfreerdp3 /v:10.42.0.20 /u:agentydragon /cert:tofu`, or the "wyrm2 (RDP)" desktop
+`xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`, or the "wyrm2 (RDP)" desktop
 entry on rugged (PR #3435). Full RCA + security model + connection steps in
 `debug/atlas/remote-desktop-wyrm2.md`.
 

@@ -93,7 +93,7 @@
   home.packages = [
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
-    pkgs.freerdp3 # RDP client for wyrm2's xrdp over Nebula (used by the wyrm2-rdp desktop entry)
+    pkgs.freerdp # RDP client for wyrm2's xrdp over Nebula (used by the wyrm2-rdp desktop entry)
     pkgs.moonlight-qt # Sunshine client (GPU stream) for wyrm2 when logged in
     pkgs.inkscape
     pkgs.kicad
@@ -105,14 +105,14 @@
     ducktapePackages.tana-outliner
   ];
 
-  # One-click "bookmark" for wyrm2's xrdp. Uses xfreerdp3 directly (not
+  # One-click "bookmark" for wyrm2's xrdp. Uses xfreerdp directly (not
   # gnome-connections, which crashes on xrdp's drive-redirection channels — a
-  # gtk-frdp bug). terminal=true so xfreerdp3 can prompt for the PAM password; the
+  # gtk-frdp bug). terminal=true so xfreerdp can prompt for the PAM password; the
   # RDP window opens after. wyrm2 is reached over Nebula (firewall-restricted to the
   # nebula1 interface). See debug/atlas/remote-desktop-wyrm2.md.
   xdg.desktopEntries."wyrm2-rdp" = {
     name = "wyrm2 (RDP)";
-    exec = "xfreerdp3 /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";
+    exec = "xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";
     terminal = true;
     categories = [
       "Network"

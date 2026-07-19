@@ -105,7 +105,7 @@ IP via an xrdp.ini override — not done.)
 ### How to connect (from a mesh peer, e.g. rugged)
 
 ```bash
-xfreerdp3 /v:10.42.0.20 /u:agentydragon /cert:tofu
+xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu
 ```
 
 - `/cert:tofu` trusts xrdp's self-signed cert on first use.
@@ -113,8 +113,8 @@ xfreerdp3 /v:10.42.0.20 /u:agentydragon /cert:tofu
 - You get a separate X11 **Xfce** session (not wyrm2's Wayland/GNOME seat).
 - ⚠ Don't use **gnome-connections** (50.0): it crashes on xrdp's drive-redirection
   channels (gtk-frdp bug — dies in `libgtk-frdp-0.2.so` `fuse_session_thread_func`).
-  Use `xfreerdp3`, or the "wyrm2 (RDP)" desktop entry on rugged (PR #3435) which
-  launches `xfreerdp3` in a terminal for the password prompt.
+  Use `xfreerdp`, or the "wyrm2 (RDP)" desktop entry on rugged (PR #3435) which
+  launches `xfreerdp` in a terminal for the password prompt.
 
 ## Note — wyrm2 rebuilds must run as root (the attic token is fine)
 
