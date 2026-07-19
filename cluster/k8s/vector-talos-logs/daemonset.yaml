@@ -1,0 +1,64 @@
+# Receives Talos service logs on a node-local hostPort and forwards them to Loki.
+# Scoped to Talos nodes via the node-vendor=talos label (set by the Talos machineconfig
+# in cluster/terraform/main/logging.tf). NixOS nodes ship their journal via the separate
+# promtail-journal HelmRelease instead.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vector-talos-logs
+  namespace: vector-talos-logs
+  labels:
+    app: vector-talos-logs
+spec:
+  selector:
+    matchLabels:
+      app: vector-talos-logs
+  template:
+    metadata:
+      labels:
+        app: vector-talos-logs
+    spec:
+      nodeSelector:
+        node-vendor: talos
+      # Talos control-plane nodes carry the control-plane NoSchedule taint; tolerate all
+      # taints so the receiver runs on every Talos node (nodeSelector still restricts it).
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: vector
+          image: docker.io/timberio/vector:0.57.0-distroless-libc@sha256:bb5968aa63f3bf7cf77f8cd7548c1442cc91f2a8c20d7ef5c5a03e2a37fbf205
+          args:
+            - --config
+            - /etc/vector/vector.toml
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: VECTOR_LOG
+              value: warn
+          ports:
+            - name: talos-logs
+              containerPort: 13333
+              hostPort: 13333
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: talos-logs
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: vector-talos-config

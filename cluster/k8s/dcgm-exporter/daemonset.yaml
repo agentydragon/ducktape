@@ -1,0 +1,57 @@
+# NVIDIA DCGM exporter: GPU metrics → Prometheus (/metrics on :9400). The PodMonitor
+# alongside is auto-discovered by Alloy (prometheus.operator.podmonitors "cluster") and
+# forwarded to Mimir (365 d). Motivation: get DCGM_FI_DEV_XID_ERRORS (the
+# `Xid 79 "GPU has fallen off the bus"` signal), PCIe replay counters, and power/temp
+# into Mimir to characterize the recurring RTX 5090 fall-off events; replaces the
+# local-CSV nix/nixos/modules/gpu-monitor.nix poller.
+# Context: debug/atlas/gpu_lockup_20260718_followups.md, cluster/docs/plan.md.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcgm-exporter
+  namespace: dcgm-exporter
+  labels:
+    app: dcgm-exporter
+spec:
+  selector:
+    matchLabels:
+      app: dcgm-exporter
+  template:
+    metadata:
+      labels:
+        app: dcgm-exporter
+    spec:
+      # Only wyrm2 has GPUs (matches the kvm-device-plugin precedent). Generalize to a
+      # GPU label if more GPU nodes appear.
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      # nvidia-container-runtime.cdi injects /dev/nvidia*, driver libs, and NVML.
+      runtimeClassName: nvidia
+      containers:
+        - name: dcgm-exporter
+          image: nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-ubuntu22.04@sha256:17e9d49093f2d86d90260eec3c07b18b3f78fc5eadef3c8ab26a24fa5a9c1b2c
+          env:
+            # Inject all GPUs via the runtime. Do NOT request nvidia.com/gpu — a countable
+            # GPU request would reserve a device and starve real workloads; the exporter
+            # only needs NVML visibility of every GPU.
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            # DCGM talks to NVML + libdcgm; "all" guarantees the driver libraries the
+            # runtime injects cover them (superset of "utility").
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: all
+          ports:
+            - name: metrics
+              containerPort: 9400
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

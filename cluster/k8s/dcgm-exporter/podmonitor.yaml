@@ -1,0 +1,17 @@
+# Alloy's prometheus.operator.podmonitors "cluster" auto-discovers this cluster-wide
+# and forwards the scraped series to Mimir. No Alloy config change is needed.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dcgm-exporter
+  namespace: dcgm-exporter
+  labels:
+    app: dcgm-exporter
+spec:
+  selector:
+    matchLabels:
+      app: dcgm-exporter
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

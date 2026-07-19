@@ -1,0 +1,34 @@
+# Talos service-log receiver.
+#
+# Talos has no journald; machine.logging.destinations (cluster/terraform/main/logging.tf)
+# streams newline-delimited JSON to tcp://127.0.0.1:13333 on each Talos node. Cilium
+# socket-LB (full kubeProxyReplacement) routes that host-loopback connection to the
+# node-local pod of this DaemonSet, which forwards the logs to Loki. The per-node label
+# comes from the downward-API NODE_NAME env (each pod only ever receives its own node's
+# logs, so the DaemonSet's node identity is authoritative).
+
+[sources.talos]
+type = "socket"
+mode = "tcp"
+address = "0.0.0.0:13333"
+
+# Talos emits one JSON object per line; the default newline framing + JSON decoding turns
+# each line into a structured event.
+[sources.talos.decoding]
+codec = "json"
+
+[sinks.loki]
+type = "loki"
+inputs = ["talos"]
+endpoint = "http://loki-write.loki.svc.cluster.local:3100"
+# Loki 3.x accepts out-of-order writes; be explicit rather than dropping late lines.
+out_of_order_action = "accept"
+
+[sinks.loki.labels]
+job = "talos-node"
+node = "${NODE_NAME}"
+
+# Serialize the full structured Talos event as the log line (talos-service, talos-level,
+# msg, …) so LogQL `| json` can filter on any field without exploding label cardinality.
+[sinks.loki.encoding]
+codec = "json"

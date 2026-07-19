@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dcgm-exporter
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/dcgm-exporter
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  dependsOn:
+    # RuntimeClass "nvidia" + the containerd nvidia runtime.
+    - name: nvidia-device-plugin
+    # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
+    - name: monitoring-stack
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: DaemonSet
+      name: dcgm-exporter
+      namespace: dcgm-exporter

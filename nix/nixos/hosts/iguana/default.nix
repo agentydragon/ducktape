@@ -58,6 +58,9 @@ in
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "roaming";
+      # Scopes the journal-only promtail DaemonSet to systemd/journald nodes
+      # (cluster/k8s/monitoring/loki/promtail-journal-helmrelease.yaml).
+      "node-vendor" = "nixos";
     };
     nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };

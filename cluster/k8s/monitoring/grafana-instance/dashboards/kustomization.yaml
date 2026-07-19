@@ -10,3 +10,4 @@ resources:
   - cilium-agent.yaml
   - etcd.yaml
   - seaweedfs.yaml
+  - gpu.yaml

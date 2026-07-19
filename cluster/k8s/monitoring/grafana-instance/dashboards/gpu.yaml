@@ -1,0 +1,14 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: gpu
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID). Backed by the
+  # DCGM metrics from cluster/k8s/dcgm-exporter/ via Mimir.
+  grafanaCom:
+    id: 12239
+    revision: 2

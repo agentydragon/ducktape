@@ -5,6 +5,7 @@
 #
 # Allowed ingress to Loki (port 3100):
 #   - Promtail (loki namespace, log shipping)
+#   - Vector Talos-log receiver (vector-talos-logs namespace, Talos node logs)
 #   - Grafana (monitoring namespace, log queries)
 #   - Alloy (monitoring namespace, OTel log forwarding)
 #   - Gatus (gatus namespace, health checks)
@@ -32,6 +33,16 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: promtail
             k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Vector Talos-log receiver → Loki (Talos node logs)
+    - fromEndpoints:
+        - matchLabels:
+            app: vector-talos-logs
+            k8s:io.kubernetes.pod.namespace: vector-talos-logs
       toPorts:
         - ports:
             - port: "3100"

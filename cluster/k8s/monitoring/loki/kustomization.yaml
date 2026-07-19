@@ -6,6 +6,7 @@ resources:
   - buckets.yaml
   - helmrelease.yaml
   - promtail-helmrelease.yaml
+  - promtail-journal-helmrelease.yaml
   - cilium-network-policy.yaml
   # External access handled by Authentik proxy outpost (native blueprint in k8s/authentik/app/blueprints/).
   # Traffic flows: Gateway → ak-outpost-loki-outpost (auth) → loki backend.

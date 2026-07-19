@@ -138,15 +138,18 @@ So there is no clean rate to compute — treat it as one long-standing flaky-GPU
 
 **Instrument forward (the durable fix):**
 
-1. **[TODO — formal metrics in Mimir] Replace the local CSV poller with a Prometheus path.**
-   Deploy **DCGM exporter** (already planned: `cluster/docs/plan.md:445`, + Grafana dashboard
-   gnetId 12239) as an nvidia-runtime DaemonSet on GPU nodes → Alloy PodMonitor → **Mimir
-   (365 d)**. DCGM gives power/temp/clocks, **PCIe replay counters**, and **XID-as-a-metric**
-   (`DCGM_FI_DEV_XID_ERRORS`) — graphable and correlatable, unlike the local CSV. This is the
-   proper home for "store power draw and such." Retire `gpu-monitor.nix` once it lands.
-2. **[TODO — at next wyrm2 boot] Ship the wyrm2 (+atlas) systemd journal to Loki** (see
-   `cluster/k8s/TODO.md`): a `loki.source.journal` Alloy source so `Xid`/`fallen off the bus`
-   lands in Loki with cluster retention.
+1. **[DONE — formal metrics in Mimir] Replaced the local CSV poller with a Prometheus path.**
+   **DCGM exporter** landed in `cluster/k8s/dcgm-exporter/` — an nvidia-runtime DaemonSet on
+   wyrm2 → Alloy PodMonitor auto-discovery → **Mimir (365 d)**, with the gnetId 12239 Grafana
+   dashboard. DCGM gives power/temp/clocks, **PCIe replay counters**, and **XID-as-a-metric**
+   (`DCGM_FI_DEV_XID_ERRORS`) — graphable and correlatable, unlike the local CSV.
+   **[TODO]** retire `nix/nixos/modules/gpu-monitor.nix` + `ducktape.gpuMonitor.enable` on
+   wyrm2 once Mimir coverage is confirmed (don't lose the local CSV before then).
+2. **[DONE for k8s nodes] Ship the node journals/logs to Loki** (see `cluster/k8s/TODO.md`):
+   NixOS nodes via the `promtail-journal` HelmRelease (journal scrape, `node-vendor=nixos`);
+   Talos nodes via `machine.logging` → the `vector-talos-logs` DaemonSet. So `Xid`/`fallen off
+the bus` on wyrm2 now lands in Loki with cluster retention. **[TODO]** atlas host journal
+   (off-cluster PVE host — host-level shipper over Nebula; see `cluster/k8s/TODO.md`).
 3. Xid watchdog (section A) also appends every Xid 79/154 to an **append-only log** in the
    `code` virtiofs share — survives rotation _and_ the guest dying.
 4. **[TODO] Scrape per-GPU AER correctable-error counts.** AER is _already active on the GPU

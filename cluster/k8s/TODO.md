@@ -222,15 +222,25 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       node loss. RCA and recovery matrix:
       `cluster/docs/lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md`.
 
-## Ship node systemd journals to Loki (not just pod logs)
+## Ship node logs to Loki (not just pod logs)
 
-- [ ] **At next wyrm2 boot:** ship the wyrm2 (and atlas) **systemd journal** to
-      cluster Loki. Today Alloy/promtail scrape pod logs only, so kernel messages —
-      including the RTX 5090 `Xid 79 "GPU has fallen off the bus"` events — never
-      leave the node's local ~4-day journal, leaving no cluster-side history to
-      quantify GPU fall-off frequency. Add a `loki.source.journal` source (Alloy) or
-      a promtail journal scrape on the node. Rationale and the broader
-      detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
+Motivation: Alloy/promtail scrape pod logs only, so kernel/service messages — including
+the RTX 5090 `Xid 79 "GPU has fallen off the bus"` events — never leave a node's local
+journal, leaving no cluster-side history to quantify GPU fall-off frequency. Broader
+detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
+
+- [x] **NixOS nodes** (wyrm2, rugged, iguana): journal → Loki via the journal-only
+      `promtail-journal` HelmRelease (`monitoring/loki/promtail-journal-helmrelease.yaml`),
+      scoped by the `node-vendor=nixos` kubelet label.
+- [x] **Talos nodes** (optiplex, ovh-\*): service logs → Loki via `machine.logging`
+      (`terraform/main/logging.tf`) → the `vector-talos-logs` DaemonSet.
+- [ ] **atlas host journal** — the remaining gap. atlas is the Proxmox/PVE hypervisor,
+      **not a k8s node**, so no in-cluster DaemonSet can reach its journal. Ship it with a
+      host-level promtail/alloy systemd unit on atlas pushing to Loki over the Nebula mesh
+      (needs a mesh-reachable `loki-write` endpoint — `*.svc.cluster.local` doesn't resolve
+      off-cluster). This is host config (Ansible), not the k8s GitOps tree. Lower value than
+      the guest since the authoritative Xid source is the wyrm2 **guest** journal, not the
+      host.
 
 ## agent-box follow-ups
 
