@@ -238,12 +238,13 @@ same `Client(...)` calls either way. The application service still owns approval
 adapter still owns CSRF, with the same live `tools/list` reflection.
 
 An in-process credential is consumed by reviewed implementation code only during execution; it is
-never passed to FastMCP as transport authentication. `operator_connection` selects a deploy-named
-external-account grant (currently `google_workspace`), `operator_login_identity` selects the acting
-Operator's console-login authority for hostexec token exchange, and `none` injects nothing. The
-implementation registry declares the credential kind each built-in accepts, and startup rejects a
-mismatch. See `plans/operator_connection_bindings.md` for the configuration and migration direction.
-The in-process servers are built like standalone MCP servers from `@mcp.tool`-decorated functions:
+never passed to FastMCP as transport authentication. The caller's Agent bearer authenticates the
+outer `/mcp` request and resolves the acting Operator; it is never a backend credential.
+`operator_connection` selects a deploy-named external-account grant (currently `google_workspace`),
+`operator_login_identity` selects the acting Operator's console-login authority for hostexec token
+exchange, and `none` injects nothing. The implementation registry declares the credential kind each
+built-in accepts, and startup rejects a mismatch. The in-process servers are built like standalone
+MCP servers from `@mcp.tool`-decorated functions:
 
 - **`gmail`** (`haku.console.tools.gmail`). Reads mirror Gmail's REST API and return its
   resource shapes **verbatim** (`gmail_api.messages`/`gmail_api.labels`) — no content-type
@@ -282,6 +283,13 @@ in-process), replacing Airlock's brokered `haku_console_google` token. Scopes (`
 `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, and the `google` provider's read-only
 scopes) and the one-time connect flow: `cluster/k8s/haku/console/README.md`. Until an Operator
 connects, both servers are `degraded`.
+
+Provider-connection storage remains keyed by `(operator_id, provider)`: `google_workspace` is the
+deploy name for the existing `google` row, not a new token association. Config therefore rejects two
+logical connections mapped to the same provider; introducing separate Google grants requires the
+token-preserving storage migration tracked in `TODO.md`. Persisted `connection_id` remains the UUID
+of an Operator's actual association; it is distinct from both the logical connection name and the
+provider kind.
 
 The trusted frontend resolves opaque ids by composing each server's ordinary MCP reads with its
 Operator session. Gmail combines `threads_get` with `labels_list`; Calendar uses `list_events`;
