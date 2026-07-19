@@ -67,12 +67,94 @@ async def test_tools_carry_correct_annotations(mcp_client: Client) -> None:
         assert ann(name).destructiveHint is True
 
 
+def _items_body(items: list[dict]) -> dict:
+    """A realistic Laravel `LengthAwarePaginator` `/items` envelope."""
+    return {
+        "status": 1,
+        "data": {
+            "current_page": 1,
+            "last_page": 1,
+            "per_page": 10,
+            "total": len(items),
+            "next_page_url": None,
+            "prev_page_url": None,
+            "data": items,
+        },
+    }
+
+
 async def test_list_items_forwards_query_params_and_api_key(mcp_client: Client, respx_router: respx.Router) -> None:
-    route = respx_router.get("/items").mock(return_value=httpx.Response(200, json={"items": []}))
+    route = respx_router.get("/items").mock(return_value=httpx.Response(200, json=_items_body([])))
     result = await mcp_client.call_tool("list_items", {"sort_order": "asc", "page": 3})
-    assert result.structured_content == {"result": {"items": []}}
+    # query params + api key are forwarded unchanged
     assert dict(route.calls.last.request.url.params) == {"sort_order": "asc", "page": "3"}
     assert route.calls.last.request.headers["x-api-key"] == TEST_API_KEY
+    assert result.structured_content is not None
+    page = result.structured_content
+    assert page["items"] == []
+    assert page["total"] == 0
+
+
+async def test_list_items_parses_typed_page(mcp_client: Client, respx_router: respx.Router) -> None:
+    item = {
+        "mail_id": "217547",
+        "sender_name": "Charles Schwab",
+        "address_id": 1730,
+        "ai_summary": ["Sender Name: Schwab", "Overall Subject: Fee notice"],
+        "ai_summary_version": "v1",
+        "cover_image": "https://psm.example/cover.png?signature=x",
+        "pdf_content": "https://psm.example/mail.pdf?signature=y",
+        "pdf_metadata": {
+            "received_at": "2026-06-20 01:05:18",
+            "current_status": "Inbox",
+            "uploaded_from_address": {"city": "San Francisco", "state": "CA", "postal_code": "94108"},
+        },
+    }
+    respx_router.get("/items").mock(return_value=httpx.Response(200, json=_items_body([item, item])))
+    result = await mcp_client.call_tool("list_items", {})
+    assert result.structured_content is not None
+    page = result.structured_content
+    assert page["total"] == 2
+    assert len(page["items"]) == 2
+    got = page["items"][0]
+    assert got["mail_id"] == "217547"
+    assert got["sender_name"] == "Charles Schwab"
+    assert got["ai_summary"] == ["Sender Name: Schwab", "Overall Subject: Fee notice"]
+    assert got["pdf_content"].startswith("https://psm.example/mail.pdf")
+    assert got["pdf_metadata"]["received_at"] == "2026-06-20 01:05:18"
+    assert got["pdf_metadata"]["uploaded_from_address"]["city"] == "San Francisco"
+
+
+async def test_list_automation_rules_parses(mcp_client: Client, respx_router: respx.Router) -> None:
+    body = {
+        "status": 1,
+        "data": {
+            "current_page": 1,
+            "last_page": 1,
+            "per_page": 10,
+            "total": 1,
+            "next_page_url": None,
+            "prev_page_url": None,
+            "data": [
+                {
+                    "user_full_name": "M Pokorny",
+                    "auto_scan": True,
+                    "auto_shred": False,
+                    "auto_discard": False,
+                    "auto_ai_summary": True,
+                    "last_changed_at": "2026-05-29 18:33:09",
+                }
+            ],
+        },
+    }
+    respx_router.get("/user-defined-rules/system-user-defined-rules").mock(return_value=httpx.Response(200, json=body))
+    result = await mcp_client.call_tool("list_automation_rules", {})
+    assert result.structured_content is not None
+    page = result.structured_content
+    assert page["total"] == 1
+    assert page["rules"][0]["auto_scan"] is True
+    assert page["rules"][0]["auto_shred"] is False
+    assert page["rules"][0]["auto_ai_summary"] is True
 
 
 async def test_set_automation_rule_encodes_bool_as_int(mcp_client: Client, respx_router: respx.Router) -> None:
