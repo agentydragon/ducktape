@@ -41,9 +41,13 @@ with an ad hoc script.
 - Never discard uncommitted changes on your own. Reverting (`git checkout`/`restore`,
   `git clean`, `worktree remove --force`) is destructive and requires explicit user
   approval each time — surface the finding and propose it, but let the user decide.
-- Prefer `workspace-gc` from the released, artifact-pinned Nix `ducktape` package. In a
-  Ducktape source checkout where it is absent, load the devshell and use
-  `bb run //devinfra/gc:workspace_gc --` as the command prefix.
+- Prefer the `workspace-gc` **binary already on PATH** — it is released via Nix and
+  installed as part of `ducktape`, so it is present on your machines. Run it directly
+  (`workspace-gc …`). Check with `command -v workspace-gc` first; only if it is absent
+  (e.g. a bare Ducktape source checkout without the package installed) do you fall back
+  to building+running it under Bazel: load the devshell and prefix the same args with
+  `bb run //devinfra/gc:workspace_gc --` — so `workspace-gc worktrees` becomes
+  `bb run //devinfra/gc:workspace_gc -- worktrees`.
 
 ## Inventory First
 
