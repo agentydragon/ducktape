@@ -57,15 +57,15 @@ let cachedReferenceData: Promise<GrocyReferenceData> | null = null;
 
 async function loadGrocyReferenceData(): Promise<GrocyReferenceData> {
   const [productsPayload, locationsPayload, unitsPayload, groupsPayload, listsPayload] = await Promise.all([
-    callOperatorMcpTool("grocy_sf_products_list", { detail: "full" }),
-    callOperatorMcpTool("grocy_sf_locations_list", {}),
-    callOperatorMcpTool("grocy_sf_quantity_units_list", {}),
-    callOperatorMcpTool("grocy_sf_product_groups_list", {}),
-    callOperatorMcpTool("grocy_sf_shopping_lists_list", {}),
+    callOperatorMcpTool("grocy_sf__products_list", { detail: "full" }),
+    callOperatorMcpTool("grocy_sf__locations_list", {}),
+    callOperatorMcpTool("grocy_sf__quantity_units_list", {}),
+    callOperatorMcpTool("grocy_sf__product_groups_list", {}),
+    callOperatorMcpTool("grocy_sf__shopping_lists_list", {}),
   ]);
   const shoppingLists = z.array(zReferenceItem).parse(listsPayload);
   const listPayloads = await Promise.all(
-    shoppingLists.map((list) => callOperatorMcpTool("grocy_sf_shopping_list_get", { shopping_list: list.id }))
+    shoppingLists.map((list) => callOperatorMcpTool("grocy_sf__shopping_list_get", { shopping_list: list.id }))
   );
   return zGrocyReferenceData.parse({
     products: productsPayload,

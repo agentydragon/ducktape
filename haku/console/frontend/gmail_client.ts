@@ -48,7 +48,7 @@ export function gmailThreadPreview(
 
 /** Every Gmail label's display name by id, for resolving a message/thread's opaque `labelIds`. */
 export async function fetchGmailLabelNames(): Promise<ReadonlyMap<string, string>> {
-  const labels = zGmailLabels.parse(await callOperatorMcpTool("gmail_labels_list", {}));
+  const labels = zGmailLabels.parse(await callOperatorMcpTool("gmail__labels_list", {}));
   return new Map(
     // id/name are optional in the discovery schema, though Gmail always returns both for a label.
     (labels.labels ?? [])
@@ -67,7 +67,7 @@ export async function fetchGmailThreadPreviews(threadIds: string[]): Promise<Rec
     Promise.all(
       uniqueIds.map(async (threadId): Promise<readonly [string, GmailThread | null]> => {
         try {
-          const payload = await callOperatorMcpTool("gmail_threads_get", { id: threadId, format: "metadata" });
+          const payload = await callOperatorMcpTool("gmail__threads_get", { id: threadId, format: "metadata" });
           return [threadId, zGmailThread.parse(payload)] as const;
         } catch (error) {
           console.warn(`Could not resolve Gmail thread ${threadId}`, error);
@@ -90,7 +90,7 @@ export type GmailMessagePreview = { subject: string | null; snippet: string; gma
 // fetchGmailThreadPreviews): this is a lone identity line, not a list with label pills.
 export async function fetchGmailMessagePreview(messageId: string): Promise<GmailMessagePreview | null> {
   try {
-    const payload = await callOperatorMcpTool("gmail_messages_get", { id: messageId, format: "metadata" });
+    const payload = await callOperatorMcpTool("gmail__messages_get", { id: messageId, format: "metadata" });
     const message = zGmailMessage.parse(payload);
     return {
       subject: messageSubject(message),

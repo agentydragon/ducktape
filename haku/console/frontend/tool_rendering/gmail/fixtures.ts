@@ -60,14 +60,14 @@ const GMAIL_MESSAGES: Readonly<Record<string, GmailMessage>> = Object.fromEntrie
 );
 
 export const GMAIL_MCP_FIXTURES = {
-  gmail_labels_list: () => GMAIL_LABELS,
-  gmail_threads_get: (args: Record<string, unknown>) => {
+  gmail__labels_list: () => GMAIL_LABELS,
+  gmail__threads_get: (args: Record<string, unknown>) => {
     const threadId = args.thread_id;
     const result = typeof threadId === "string" ? GMAIL_THREADS[threadId] : undefined;
     if (result === undefined) throw new Error(`No Gmail thread fixture for ${String(threadId)}`);
     return result;
   },
-  gmail_messages_get: (args: Record<string, unknown>) => {
+  gmail__messages_get: (args: Record<string, unknown>) => {
     const messageId = args.message_id;
     const result = typeof messageId === "string" ? GMAIL_MESSAGES[messageId] : undefined;
     if (result === undefined) throw new Error(`No Gmail message fixture for ${String(messageId)}`);

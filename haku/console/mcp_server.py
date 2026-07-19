@@ -9,7 +9,7 @@ Each request exposes only servers connected by that principal's canonical Operat
 Operator-specific surface, the global auto-approval policy divides Agent-visible tools into two
 buckets:
 
-Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator decision
+Every proxied tool is named ``<server>__<tool>`` (one uniform format — operator decision
 2026-07-13; bare upstream names hid which server a tool belonged to):
 
 - **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): the upstream
@@ -73,7 +73,6 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from mcp_infra.naming import build_mcp_function
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +80,10 @@ SERVER_NAME = "haku-console"
 # Synchronous hold budget (ms) before a call returns a promise; overridable per envelope call.
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
+TOOL_NAME_SEPARATOR = "__"
 
 INSTRUCTIONS = (
-    "haku-console tool proxy. Every proxied tool is named `<server>_<tool>`. Tools whose schema "
+    "haku-console tool proxy. Every proxied tool is named `<server>__<tool>`. Tools whose schema "
     "wraps the real arguments in an `input` + `rationale` envelope submit Agent calls to the "
     "operator's approval queue: they return the result if approved within a few seconds, otherwise "
     "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
@@ -341,7 +341,7 @@ def _build_proxy_tool(
     schema = tool.input_schema if isinstance(tool.input_schema, dict) and tool.input_schema else {"type": "object"}
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
-    name = build_mcp_function(server_tool_prefix(server_id), tool.name)
+    name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
     if passthrough:
         parameters = schema
         description = tool.description or ""
@@ -382,7 +382,7 @@ class OperatorServerCatalog:
         candidates = [
             server
             for server in _load_servers(self._context.settings)
-            if name.startswith(f"{server_tool_prefix(server.id)}_")
+            if name.startswith(f"{server_tool_prefix(server.id)}{TOOL_NAME_SEPARATOR}")
         ]
         if not candidates:
             return None

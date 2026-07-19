@@ -29,7 +29,7 @@ export function calendarSummaryFromEvents(calendarId: string, page: CalendarEven
 // Use the existing events.list tool to validate the calendar and obtain its standard `summary`
 // field; the browser derives the stable calendar link from the id already present in the tool call.
 export async function fetchCalendarSummary(calendarId: string): Promise<CalendarSummary> {
-  const payload = await callOperatorMcpTool("google_calendar_list_events", {
+  const payload = await callOperatorMcpTool("google_calendar__list_events", {
     calendar_id: calendarId,
     max_results: 1,
   });

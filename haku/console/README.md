@@ -127,7 +127,7 @@ auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read 
 `search_nodes`, `read_node`, `get_children`, `open_node`, `list_tags`, `list_workspaces`,
 `get_tag_schema`, plus the idempotent `get_or_create_calendar_node`) appear as
 transparent **pass-throughs** (original schema, real result); everything else keeps the same
-`<server>_<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
+`<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
 an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
 read tools. `list_mcp_servers` passively reports the
@@ -139,7 +139,7 @@ secrets are never included. Authentication kinds without a separate operator-lin
 discovery remains the normal MCP `tools/list` path. `get_mcp_server_status(server_id)` is the active
 counterpart: it reflects one configured server now, so it may refresh the operator's credentials and
 contact the downstream server. It returns a degraded reason when that fails; direct calls in a known
-`<server>_<tool>` namespace return the same actionable error instead of appearing as an unknown tool.
+`<server>__<tool>` namespace return the same actionable error instead of appearing as an unknown tool.
 The promise-semantics preamble lives in each tool's
 **description** (many MCP clients, claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned
 `HakuAgentOAuthProxy` composed with the configured `static_agents` through

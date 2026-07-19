@@ -19,7 +19,7 @@ async function fetchTanaNodePreview(nodeId: string): Promise<TanaNodePreview | n
   try {
     // read_node is globally approval-shaped for Agent callers. The Operator branch accepts the
     // same advertised envelope but executes its `input` directly without creating a row.
-    const payload = await callOperatorMcpTool("tana_rw_read_node", {
+    const payload = await callOperatorMcpTool("tana_rw__read_node", {
       input: { nodeId, maxDepth: 0 },
       rationale: "Resolve a Tana node name for an operator approval preview",
     });

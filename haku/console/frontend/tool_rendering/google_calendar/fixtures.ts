@@ -8,5 +8,5 @@ const FAMILY_CALENDAR_EVENTS = {
 } satisfies McpToolResultFor<"google_calendar", "list_events">;
 
 export const GOOGLE_CALENDAR_MCP_FIXTURES = {
-  google_calendar_list_events: () => FAMILY_CALENDAR_EVENTS,
+  google_calendar__list_events: () => FAMILY_CALENDAR_EVENTS,
 };
