@@ -153,7 +153,7 @@ rust_test(
     ],
 )
 
-# The daemon: bind the host's Nebula address, resolve the token's key via JWKS, authorize, exec.
+# The daemon: phone home, lease approved work, verify the operator token, authorize, and exec.
 rust_binary(
     name = "hostexecd",
     srcs = ["main.rs"],
@@ -165,11 +165,13 @@ rust_binary(
         ":jwks",
         ":replay",
         "@crates//:anyhow",
-        "@crates//:axum",
+        "@crates//:clap",
         "@crates//:env_logger",
         "@crates//:jsonwebtoken",
         "@crates//:log",
+        "@crates//:reqwest",
         "@crates//:serde",
         "@crates//:tokio",
+        "@crates//:uuid",
     ],
 )

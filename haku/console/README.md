@@ -98,6 +98,11 @@ Core endpoints:
 - `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
+- `GET /api/node-daemons` — operator-only heartbeat-derived state for configured execution
+  daemons (`connected`, `busy`, `stale`, or `offline`). The Settings panel refreshes it every ten
+  seconds. The separately authenticated `/api/node-daemons/v1/*` machine API lets daemons
+  heartbeat, long-poll for durable Postgres-backed work, renew leases, and submit idempotent
+  results; it is intentionally outside browser Operator auth.
 
 The browser REST API requires the operator's Authentik session, and decisions additionally require
 CSRF. `/mcp` accepts either an Agent bearer or that same DB-revalidated Operator session; browser

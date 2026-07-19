@@ -6,13 +6,12 @@ from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
-from mcp_infra.exec.models import MAX_EXEC_TIMEOUT_MS
 from mcp_infra.persistence import PostgresPersistence
 
 # Both URLs are built from the routine (trigger) id, so only the id + token are
@@ -156,12 +155,12 @@ class ProviderOAuthClientConfig(BaseModel):
 class HostexecHostConfig(BaseModel):
     """One in-scope host for the `hostexec` in-process server.
 
-    `exec_url` is how the console reaches this host's `hostexecd` (the k8s node hostname on the
-    cluster pod network, or a Service DNS name). `audience_client_id` is the Authentik client_id of
+    `daemon_id` selects the outbound node-daemon connection that receives work for this host.
+    `audience_client_id` is the Authentik client_id of
     the host's `hostexec-<host>` provider — the audience the operator's token is exchanged for.
     """
 
-    exec_url: str
+    daemon_id: str
     audience_client_id: str
 
 
@@ -180,10 +179,32 @@ class HostexecConfig(BaseModel):
     # `hostexec-<run_as>-<host>`; `openid` carries `sub` for the audit log. Configurable in case the
     # Authentik scope mapping is named differently.
     exchange_scope: str = "openid groups"
-    # hostexecd responds only once the command finishes or its own timeout_ms fires (capped at
-    # MAX_EXEC_TIMEOUT_MS), so the HTTP wait must outlast the longest command plus margin — otherwise
-    # a slow-but-legitimate command is cut off by an HTTP timeout instead of returning its result.
-    request_timeout: float = MAX_EXEC_TIMEOUT_MS / 1000 + 30
+
+
+class NodeDaemonDefinition(BaseModel):
+    """One outbound node daemon and the secret slot used to authenticate it."""
+
+    display_name: str
+    token_env_var: str
+    backends: list[str] = Field(min_length=1)
+
+
+class NodeDaemonsConfig(BaseModel):
+    """Reusable heartbeat, long-poll, and lease policy for node execution daemons."""
+
+    daemons: dict[str, NodeDaemonDefinition]
+    heartbeat_interval_seconds: int = Field(default=10, ge=2, le=60)
+    connected_after_seconds: int = Field(default=30, ge=5, le=300)
+    offline_after_seconds: int = Field(default=60, ge=10, le=600)
+    claim_wait_seconds: int = Field(default=20, ge=1, le=25)
+    dispatch_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    lease_seconds: int = Field(default=30, ge=10, le=300)
+
+    @model_validator(mode="after")
+    def _ordered_presence_thresholds(self) -> Self:
+        if self.offline_after_seconds <= self.connected_after_seconds:
+            raise ValueError("offline_after_seconds must exceed connected_after_seconds")
+        return self
 
 
 class Settings(BaseSettings):

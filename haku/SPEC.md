@@ -11,3 +11,8 @@ synthesis) and surfaces concise, value-ranked recommendations in its own UI; app
 one means **handing it off** (e.g. a prepared prompt taken into a Claude scaffold that
 does the work under its own permissions). **Haku executing things itself is a later
 direction** (`PLAN.md` → _Future_), not the current contract.
+
+The narrow `hostexec` exception is always operator-approved: node daemons initiate an
+outbound authenticated session to haku-console, and Settings surfaces their heartbeat-derived
+connection state. A daemon routing credential cannot authorize execution; every command still
+requires the approving operator's short-lived per-host Authentik authority.

@@ -80,7 +80,6 @@ py_library(
         "//haku/hostexec:wire",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
     ],
 )
 
@@ -134,10 +133,8 @@ py_test(
         "//haku/console:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//respx",
         # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
         # Gazelle drops it on regen since nothing imports it.
         "@pypi//pytest_asyncio",

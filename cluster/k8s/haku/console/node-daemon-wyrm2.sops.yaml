@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-console-node-daemon-wyrm2
+    namespace: haku-console
+    annotations:
+        description: Scoped routing credential for the wyrm2 outbound node daemon. It cannot create or approve work.
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:pcCOUF8AKZVRyaLkSEprz5YnV5FSSh4yyb4sOBliE23/zm5mdEU7UCMm0eWh3ZK/IK5aWOzC2DmDV5NqscPKFg==,iv:0gO07BVwPGUbOQfvxj8HfJLJQTP2crevdyCjj1GZc0g=,tag:F9rHrRKBaJEyIkhVnDqMow==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBITkF2UThFQzhyY213SC9x
+            NVFYMm9qb1VrZGtkUmdZSytYZktKZU1hajJZCkdhVDgxUTUyKzVHeDJ1eEUzdngx
+            WERVYWczV3JYN1hmODBjZE0rZU9wQU0KLS0tIFQ4VDV2d2MwclJXdHVGYzZydWZB
+            dWRLUjZxa0JJZWJNZTNlWTF2S1o1WHcK9OM0RLPDBeBg/sLw/D4FnTfK8THk76pl
+            12eDIo3xEgtWgAfQ2d2H9megPIB8xi4eBjzMCFUMZmDlASsITIIK+Q==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBpNm01eVF4aHRHR2IvYWN5
+            eUFBUlViMXNzZWs3eG5yenhNRTY1dVdwTEVFCmp2T3VwOVI0NjRCR0hKWW5zOU44
+            WmdCQmFmU0l5Nk1sWmR4NHNkUXNJblUKLS0tIHdMN1pIZy9BNituOUZGM2lDZWgv
+            VmNjQ0hDaitsdTRjamlFRmlHOFBnYzQKT0a0fDbjOSdYtt0CDv0E85VaNLxbNiwn
+            7AnENYERdtjsHiRJy1soxfDtQFfWt1NGLw8JehRUjk4XCq/DMe+qmg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmMXUxZHd4N2Ezc0s0a0xF
+            SU9PRWp3ZWdsbEpDdzhNUzVDaE1FdUdqaEJjCnA2V3I2Q2dWcDN0YXNGRHlHZzl4
+            SExmQkd4cGE3dGY0VzlDbXV1bGpYcXMKLS0tIHc2YWIwcWwwQUpKcndERWdvZGM3
+            Yi9XblE4Y2FQenRQQko0V2Q3ZnFtd1UKmn7a+OLCFdKwLVNv3BAgwXsQJ77LKrjz
+            qosU3CPnGesBhA9NgCsVclQ+x2Ezi4P7a6jkKLop1mtQCzV2XK4dMg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-07-19T18:58:32Z"
+    mac: ENC[AES256_GCM,data:ejoRvFKLCrZbOoAdxrcl3Y9lxyhtOo1cYEz204oPJIFe18K04HPyeoNBJB9NyiTOBSE6ooCxEcXKAIcZBltjiJTRqu13UjennKpRQag6UYXk9ByLgOS1sP9quEM2TGaTlpEHVYfC5vLSm/QbVR4Htm0dHT0m68QvEw+1KNwYmvQ=,iv:SqBtUp/ARWBfkayY/O+b/9bH9JBfVhBiVc1J0Ir4jL0=,tag:DIxBxBSQCYREE71IWCrnHQ==,type:str]
+    version: 3.13.2

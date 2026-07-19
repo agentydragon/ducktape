@@ -1,7 +1,13 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
-import type { DeploymentInfo, McpOperatorAuthStatus, ProviderConnectionStatus, ToolCallRecord } from "../client.ts";
+import type {
+  DaemonStatus,
+  DeploymentInfo,
+  McpOperatorAuthStatus,
+  ProviderConnectionStatus,
+  ToolCallRecord,
+} from "../client.ts";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -200,6 +206,27 @@ export const SAMPLE_PROVIDER_CONNECTIONS: ProviderConnectionStatus[] = [
     display_name: "Google Calendar",
     provider: "google",
     status: "unconnected",
+  },
+];
+
+export const SAMPLE_DAEMONS: DaemonStatus[] = [
+  {
+    daemon_id: "wyrm2",
+    display_name: "wyrm2",
+    status: "busy",
+    last_heartbeat_at: "2026-07-19T16:42:00Z",
+    version: "0.1.0",
+    backends: ["hostexec"],
+    active_execution_id: "8c8b5bc2-8b0c-4e89-9f1b-8129fa28d255",
+  },
+  {
+    daemon_id: "rugged",
+    display_name: "rugged",
+    status: "offline",
+    last_heartbeat_at: "2026-07-19T14:10:00Z",
+    version: "0.1.0",
+    backends: ["hostexec"],
+    active_execution_id: null,
   },
 ];
 

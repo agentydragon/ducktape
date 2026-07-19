@@ -1,379 +1,116 @@
-# hostexec — remote command execution on operator machines
+# hostexec — outbound node execution daemons
 
-**Ask (operator, 2026-07-17):** let Haku run shell commands on the operator's machines
-(`wyrm2`, `rugged`, …) with **no auto-approval**, and the ability to run as `agentydragon`
-**or `root`** once the operator approves. Core decisions are locked (see _Decisions_) and the
-architecture has pivoted a few times (see _Architecture pivots_). The host daemon (`hostexecd/`)
-and the console-side tool + Authentik token exchange + storage are built and tested; the Authentik
-providers, the NixOS `hostexecd` module (enabled on `wyrm2` + `rugged`), and the console host-map +
-catalog entry are all now written. What's left is the operator's deploy: reconcile the Terraform,
-`nixos-rebuild` the two hosts, and roll the console — see _Remaining work_.
+`hostexec` lets Haku request shell commands on operator machines (`wyrm2`, `rugged`, …).
+Every call goes through the console's ordinary MCP approval queue and executes under the
+approving operator's own Authentik authority. There is no auto-approved host execution path.
 
-## TL;DR
+## Architecture
 
-A new `hostexec` **in-process** MCP server in the console (the gmail/google_calendar pattern —
-`haku/console/tools/*.py`), registered in the console catalog so it is **approval-gated by
-construction**. On approval the console **exchanges the operator's identity for a short-lived,
-per-host, single-use Authentik token** (the grocy token-exchange pattern) and POSTs it — with the
-command — **over the cluster pod network** to a tiny host-side service (`hostexecd`). `hostexecd` is an **OIDC
-resource server** (the host analog of kube-apiserver in kubectl-passthrough): it verifies the
-token against Authentik's JWKS — audience `hostexec-<host>`, the `hostexec-<run_as>-<host>` group,
-`exp`, and single-use (per token) — then drops privileges to `run_as`, execs, and returns output.
-
-**Authority is the operator's own Authentik identity — no bespoke keys.** No console signing key,
-no SSH key, no host-resident credential (hosts trust only Authentik's JWKS). "May run root on
-`wyrm2`" is an Authentik group you grant/revoke centrally, like cluster-admin. Scope: `wyrm2` +
-`rugged`, `agentydragon` + `root` on both.
-
-## What is already decided for us
-
-Not a green field. The repo already solved the isomorphic problem — "let a prompt-injectable
-agent run arbitrary privileged operations on operator infrastructure, safely" — for `kubectl`,
-and the doctrine in <../docs/security.md> fixes the shape of any answer:
-
-- **The container/perimeter is the trust boundary, never in-agent rules.** Haku runs
-  `--dangerously-skip-permissions`; the perimeter is what limits it. The exec capability cannot
-  rely on Haku "behaving."
-- **Execution runs under the approving operator's own authority, never a standing Haku
-  credential.** kubectl-passthrough forwards the operator's own OAuth JWT straight to
-  kube-apiserver (`cluster_auth_mode = "passthrough"`,
-  <../../cluster/k8s/agents/kubectl-passthrough-mcp/app/configmap.yaml>); it holds no credential
-  of its own. "There is no narrower RBAC backstop underneath either path" — the approval click in
-  trusted console chrome is the gate. **hostexec is the same pattern**, with `hostexecd` playing
-  the kube-apiserver role and a short-lived per-host token narrowing what kubectl-passthrough left
-  broad.
-- **Everything is in the ledger** (`McpToolCall` row, scoped to the exact principal —
-  `haku/console/tool_call_service.py`), and the **approval surface is trusted chrome only**
-  (security.md invariant #4).
-
-Two consequences make most of the work free:
-
-1. **"No auto-approval" costs zero code.** Any server in the console catalog is approval-gated
-   by default; a tool auto-approves only if added to `UNCONDITIONAL_AUTO_APPROVE`
-   (`haku/console/auto_approval.py`). We never add the exec tool there — comment it as such at
-   the definition. Non-agent callers never auto-approve regardless.
-2. **The approval lifecycle, audit ledger, promise/deep-link semantics, operator-identity model,
-   and token exchange all already exist.** We add a tool server + a host service.
-
-So the real design question is narrow: **what carries an approved command to a shell on
-`wyrm2`/`rugged`, and under what credential.**
-
-## Transport: a host-side OIDC exec service, not SSH
-
-Once the host authenticates the operator's Authentik token, it **is** an OIDC resource server,
-and the natural transport is a small authenticated HTTP endpoint — not sshd + a `ForceCommand`
-shim.
-
-The in-process console tool POSTs `{token, run_as, argv, cwd, timeout_ms}` **over the cluster pod
-network** to `hostexecd` on the target node — the machines are k8s nodes, addressed by
-`kubernetes.io/hostname` (`wyrm2`, `rugged`). `hostexecd` runs as **root in the host's namespaces**,
-validates the Authentik JWT against cached JWKS, drops privileges to `run_as`, execs argv (`execve`,
-no shell), and returns a capped `BaseExecResult`.
-
-- **No SSH key, no host-resident credential.** Hosts trust only Authentik's public JWKS; there is
-  no per-host key to steal and no "is the SSH key root?" surface.
-- **Natural payload + clean `run_as`.** Structured JSON, and privilege-drop happens once,
-  centrally, inside `hostexecd` (root → `setuid`/`runuser` to the approved user) instead of via
-  sshd login-user + `sudo` gymnastics.
-- **Channel security from the token check + a Nebula-IP bind, not a network policy.** The machines
-  are already k8s nodes, so the console reaches `hostexecd` on the pod network — no mesh egress to
-  plumb. But `hostexecd` is a **host systemd daemon** (host netns, Cilium identity `reserved:host`),
-  **not** a Cilium pod endpoint, so a `CiliumNetworkPolicy` cannot select it, and Cilium's
-  host-firewall is off on these Talos/Nebula nodes; node nftables can only match a coarse source IP
-  (pod IPs are ephemeral/shared from the pod CIDR, or SNAT'd), so a precise "only the `haku-console`
-  pod" rule is **not achievable** for a host daemon. The achievable restriction is to **bind to the
-  node's Nebula mesh IP** (which for these workers is also the kubelet InternalIP): reachable
-  in-cluster over the k8s-worker firewall's already-trusted `nebula1`/`cilium_host`/`lxc+`
-  interfaces, but with no listener on the physical/roaming NIC. So the **fail-closed token
-  verification is the load-bearing per-caller gate**; the Nebula-IP bind is coarse defense-in-depth.
-
-**Decided (operator, 2026-07-18): a systemd unit on the host** (not the DaemonSet), on **both
-`wyrm2` and `rugged`**. It runs natively on the host, so `exec.rs`/`users.rs` work as-is (`getpwnam`
-plus the full setgroups/setgid/setuid drop) with no chroot/nsenter host-breakout — the DaemonSet
-would have had to break back out of the container onto the host (host-passwd resolution and a
-chroot+drop `pre_exec`), a re-architecture we avoid. Smallest root TCB (Decision #3); the cost is
-packaging.
-
-Packaging follows the repo's **prebuilt-artifact** pattern, not a nix Cargo rebuild: Bazel builds
-`//haku/hostexec/hostexecd:hostexecd`, CI publishes it as a GitHub release, `nix/artifact-pins.json`
-pins it (url + sha256), and a NixOS module fetches + runs it — exactly how `bbapi`/`bbr` reach the
-hosts today. So there is **no** second (Cargo) build definition to maintain; nix consumes the Bazel
-binary. `hostexecd` binds to the node's Nebula mesh IP (its kubelet InternalIP) on a fixed port, so
-the console reaches it in-cluster while the physical/roaming NIC has no listener (see _Transport_ on
-why a per-pod firewall isn't achievable for a host daemon). exec_url = `http://<node-mesh-IP>:<port>`.
-
-The rejected DaemonSet alternative was **admissible** — the choice was TCB-minimization, not whether
-the cluster allows it
-(investigated 2026-07-18): `wyrm2`/`rugged` are **NixOS** worker nodes, not Talos (Talos is only the
-OVH/Proxmox control plane), so Talos host-hardening never touches the exec targets. The one gate is
-Pod Security Admission — Talos's built-in `baseline` default blocks `privileged`/`hostPID`, but a
-namespace labeled `pod-security.kubernetes.io/enforce: privileged` clears it, exactly as the
-`privileged: true` `kvm-device-plugin` DaemonSet (hostPath `/dev`) and root+`hostNetwork`+`NET_ADMIN`
-`cpap-sync` already run on `wyrm2`. Kyverno doesn't restrict privileged/hostPID (its one workload
-policy is Audit-mode and excludes Flux). So the DaemonSet path is viable — it just adds the
-container/k8s surface around the same root-on-host the systemd unit has.
-
-Rejected: **SSH** — once auth is the Authentik token it only adds a standing transport key and
-`SSH_ORIGINAL_COMMAND` plumbing, for no benefit.
-
-## Authorization model: Authentik-native narrowing (no bespoke keys)
-
-The baseline is kubectl-passthrough: forward the operator's token, and if the resource server
-"likes" it (right group), you may act. That token is _broad_ — possession = any root command on
-the host until it expires. We narrow it as far as possible **using Authentik's own machinery**, so
-authority stays the operator's real identity (revocable, no bespoke standing key). Each rung and
-where it comes from:
-
-| Rung              | Narrows a possessed token to…  | Source                                                                  |
-| ----------------- | ------------------------------ | ----------------------------------------------------------------------- |
-| host              | …only `wyrm2`, not `rugged`    | Authentik: per-host provider, `aud=hostexec-<host>`                     |
-| run_as            | …only `root`, not any user     | Authentik: the `hostexec-<run_as>-<host>` group claim                   |
-| time              | …the next few seconds          | Authentik: short access-token TTL on the exchanged token                |
-| single-use        | …exactly once                  | `hostexecd`: a per-token replay store (reject an already-seen token)    |
-| _(not done)_ argv | …only the one approved command | would need a bespoke console-signed capability — deliberately not built |
-
-The first four rungs are all Authentik-native (**token exchange** to a **per-host provider** —
-reuse `mcp_infra/authentik_auth/token_exchange.py`, the grocy pattern) plus a small host-side
-replay store. `hostexecd` verifies: signature against Authentik JWKS, `aud=hostexec-<host>`, `exp`,
-the `hostexec-<run_as>-<host>` group, and the token unseen (single-use) — then execs.
-
-What this buys (not theater):
-
-- **No bespoke standing key anywhere.** No console signing key, no host key. A console compromise
-  can drive token exchange _as the operator_ — bounded by the operator's Authentik grants and
-  cut instantly by removing the group — but there is no root-capable skeleton key to steal.
-- **A stolen token is nearly worthless.** It is scoped to one host, one `run_as`, valid for
-  seconds, and **consumed on first use** (single-use) — so a leaked-but-not-yet-used token
-  is exploitable only in the millisecond window between mint and the legitimate call.
-- **Time-boxed, attributed, centrally revocable.** Every exec is tied to the operator's Authentik
-  identity and logged; revoke the group → every host refuses.
-
-Why we stopped before the argv rung: the only thing argv-binding adds is shrinking a stolen
-token from "any root command on host X for the TTL" to "the one approved command." With short TTL
-
-- single-use that residual is already a sub-second window, and against real compromise (injected
-  Haku can't hold a token; a compromised console can mint either way) it buys nothing. Not worth a
-  bespoke signing key + custom capability crypto. (See _Architecture pivots_ — this was built, then
-  dropped.)
-
-The load-bearing component and the residual:
-
-- **`hostexecd`'s fail-closed validation is the single load-bearing component.** If it is sloppy
-  (accepts a missing/expired token, skips the group or single-use check, mis-drops privileges) the
-  model collapses. Security-critical reviewed code; test the deny paths.
-- **The console is the trust root** (it holds the operator's linkage and drives token exchange) —
-  as it already is for every approval-gated tool. A console compromise yields host access, but
-  that is the same trust root, not a new one. The irreducible hop no design removes:
-  social-engineering the operator into approving a malicious command via the card — which is the
-  "root given approval" ask itself, mitigated by the operator reading the full command on the
-  approval card before approving.
-
-## Target matrix
-
-Hosts are **k8s nodes** reached over the **cluster pod network**. For these NixOS workers the Nebula
-IP (from the mesh roster <../../nebula-mesh.json>) is also the kubelet InternalIP, so `hostexecd`
-binds it and the console's `exec_url` addresses the host by it (`http://<Nebula-IP>:8765`).
-Reachability: <../../cluster/README.md>.
-
-| Host     | k8s node (`hostname`) | Nebula IP    | In scope?                       | Notes                                            |
-| -------- | --------------------- | ------------ | ------------------------------- | ------------------------------------------------ |
-| `wyrm2`  | `wyrm2`               | `10.42.0.20` | **yes** (`agentydragon`+`root`) | GPU box; primary always-on node                  |
-| `rugged` | `rugged`              | `10.42.0.30` | **yes** (`agentydragon`+`root`) | roaming tablet node; fail-fast when off-cluster  |
-| `iguana` | `iguana`              | `10.42.0.31` | deferred (TODO, 07-17)          | same NixOS config as `rugged`; add later         |
-| `atlas`  | —                     | `10.42.0.5`  | **no** (operator 07-17)         | Proxmox hypervisor, not a k8s node; out of scope |
-| `pixel6` | —                     | `10.42.0.50` | no                              | excluded — no host we run a service on           |
-
-v1 creates a per-host Authentik provider (`hostexec-wyrm2`, `hostexec-rugged`) and the four groups
-`hostexec-{user,root}-{wyrm2,rugged}`, all granted to the operator identity. `root` is an explicit
-per-host group. `rugged`'s `root` grant has more physical exposure (roaming tablet on cellular) —
-accepted (operator, 07-17).
-
-## Architecture (end to end)
+The node initiates every connection:
 
 ```text
-Haku (agent, prompt-injectable)
-  │  hostexec_run {host, run_as, cmd, cwd?, timeout_ms?}  (approval envelope + rationale)
-  ▼
-haku-console  /mcp  ── submit_and_wait ──> McpToolCall row (PENDING_APPROVAL)
-  │  operator clicks Approve in trusted chrome (CSRF, Authentik-operator-only)
-  │  in-process `hostexec` tool executes in the console:
-  │    · token-exchange the operator's identity → short-lived token (aud=hostexec-<host>, groups)
-  │    · POST over the cluster pod network → hostexecd on node <host> (Service/hostPort) /exec
-  ▼
-hostexecd on target node (root, host namespaces; bound to the node's Nebula/InternalIP — in-cluster reach only; token check is the gate):
-  │  verify token vs Authentik JWKS: sig, aud=hostexec-<host>, exp, group hostexec-<run_as>-<host>
-  │  AND token not already used (single-use replay store)
-  │  → drop privileges to run_as → execve(argv) → journald/auditd log
-  │  capped stdout/stderr/exit ────────────────────────────────────────────┘
-  ▼
-result returns through the console → ledger row RUNNING→done ; agent gets result or a promise
+approved hostexec tool call
+  -> console exchanges the operator login token for a short-lived per-host token
+  -> console writes a pending execution to Postgres
+  -> hostexecd heartbeats and long-polls haku-console over outbound HTTPS
+  -> hostexecd claims the execution with a lease
+  -> hostexecd verifies the embedded operator token and its host/run_as authority
+  -> hostexecd executes, renews its lease, and submits an idempotent result
+  -> console completes the waiting tool call
 ```
 
-## Remaining work
+`hostexecd` has no listener or host port. Roaming and off-mesh nodes therefore need only
+ordinary outbound HTTPS access to the public console origin.
 
-- **In-process `hostexec` console MCP server — built, tested, and wired.** The `hostexec_run` tool
-  (`haku/console/tools/hostexec.py`, flat `host` + `run_as` + exec args), its `HostexecClient`
-  (POST `HostexecRequest` to `hostexecd`, return `BaseExecResult`), and the concrete
-  `HostexecJwtBearerExchanger` (RFC-7523 jwt-bearer exchange of the operator's Authentik token → per-host
-  `aud=hostexec-<host>`) are done. Option A's storage is done: login gains `offline_access` (only
-  when hostexec is configured), `PostgresAuthentikOperatorTokenStore` persists + self-refreshes the
-  operator's Authentik token, which `backend_auth_for_operator` resolves for the `OperatorIdentityAuth`
-  variant; the in-process builder is wired from the loaded console config's `hostexec`. **Deploy config
-  now written:** both the catalog entry (`{id: hostexec, auth: {kind: operator_identity}}`) and the
-  `hostexec:` host map (`exec_url` + `audience_client_id` per host, `wyrm2`/`rugged`) live in the one
-  <../../cluster/k8s/haku/console/config.yaml> ConfigMap — non-secret deploy topology, not an env var.
-  Each `exec_url` is `http://<node-mesh-IP>:8765`; the `haku-console` pod reaches `hostexecd` over the
-  **cluster pod network**. **Remaining: roll the console** so it picks up the new config.
-- **`hostexecd` daemon — done and packaged.** The Rust daemon (`hostexecd/`, `axum` + `jsonwebtoken`;
-  verify → resolve `run_as` → single-use claim → full setgroups/setgid/setuid drop → `execve`) is built
-  and tested, including the supplementary-groups drop (was the `initgroups` gap) and the approval + exit
-  audit lines (journald under systemd). Deploy (systemd path, see _Transport_) is now written:
-  (1) the **CI publish** step (`hostexecd` in `devinfra/ci/artifact_targets.json`) merged, the GitHub
-  release exists, and its **`nix/artifact-pins.json`** pin (url + sha256) is committed; (2) the **NixOS
-  module** <../../nix/nixos/modules/hostexecd.nix> fetches the pinned binary (`mkBinaryArtifact` in
-  `nix/packages/default.nix`, threaded through `flake.nix` `mkNixos` specialArgs) and runs it as a root
-  systemd service (env `HOSTEXEC_{HOST,ISSUER,JWKS_URL,BIND}`, `RUST_LOG=info`), binding to the node's
-  Nebula mesh IP (derived from `nebula-mesh.json`) — no per-pod firewall rule, since a host daemon
-  can't be gated by a `CiliumNetworkPolicy` and the k8s-worker firewall already trusts only
-  `nebula1`/`cilium_host`/`lxc+` (see _Transport_); (3) it is **enabled on `wyrm2` + `rugged`**
-  (`ducktape.hostexec.enable = true`). **Remaining: `nixos-rebuild switch` both hosts** (untestable in
-  this environment — needs the actual hosts).
-- **Authentik providers + groups — written** (`tf/gitops/agent-machine-access/hostexec.tf`): per-host
-  `hostexec-<host>` confidential OAuth2 providers (aud = client_id, 1-min TTL, RS256 self-signed key),
-  a `groups` scope mapping emitting the operator's `hostexec-*` groups, the four
-  `hostexec-{user,root}-{wyrm2,rugged}` groups on the operator, and the token-exchange trust
-  (`jwt_federation_providers = [haku_console_operator]`); plus `offline_access` added to the
-  `haku-console` operator-login provider so the console gets a refresh token. **Remaining: apply** —
-  the tofu-controller reconciles this on merge (checkov + tflint pass; a full `tofu validate` needs
-  registry access this env blocks, so the controller is the first real provider-schema check).
+## Two separate credentials
 
-A dedicated approval-card renderer is **not** required to ship: hostexec calls render with the
-generic tool-call card (host, run*as, argv, cwd, rationale are all visible), and there is no
-second-confirm on `root` (operator, 07-18). A bespoke renderer + loud `root` treatment is a deferred
-maybe — see \_Future expansion*.
+The protocol deliberately separates routing identity from execution authority:
 
-## Decisions (operator, 2026-07-17)
+- A random per-daemon bearer authenticates heartbeat, claim, lease-renewal, and result
+  submission. The console stores/compares only its SHA-256 fingerprint. Possession lets a
+  daemon receive work addressed to that daemon id; it does not authorize a command.
+- Each execution carries the approving operator's short-lived, single-use Authentik token.
+  `hostexecd` verifies the per-provider issuer and JWKS, `aud=hostexec-<host>`, expiry,
+  replay, and the `hostexec-<run_as>-<host>` group before executing.
 
-1. **Authorization** — the operator's own **Authentik** token, verified by a fail-closed host
-   service; **no bespoke standing key** (no SSH key, no console signing key). A standing-SSH-key
-   variant was rejected.
-2. **Transport** — a **host-side OIDC exec service (`hostexecd`)** reached over the cluster network
-   (the machines are k8s nodes); not SSH, not over Nebula addressing. **Runs as a NixOS systemd unit
-   on the host** (operator, 07-18) on both `wyrm2` + `rugged`, **bound to the node's Nebula/InternalIP**
-   so it is reachable in-cluster but not on the physical/roaming NIC (a host daemon can't be gated by a
-   `CiliumNetworkPolicy`; the token check is the load-bearing gate — see _Transport_); the
-   privileged-DaemonSet alternative was rejected to avoid a chroot/nsenter host-breakout and keep the
-   smallest root TCB.
-3. **`hostexecd` language** — minimal **Rust** (smallest root TCB, no interpreter on the host).
-4. **Narrowing** — **Authentik-native**: per-host provider (`aud=hostexec-<host>`) + the
-   `hostexec-<run_as>-<host>` group + short token TTL + host-side per-token single-use. **No
-   argv-level binding / no bespoke console-signed capability** — the marginal hardening over
-   short-TTL + single-use doesn't justify a bespoke signing key (superseded the earlier "full
-   argv" decision; see _Architecture pivots_).
-5. **In-process, not a separate MCP server** — the `hostexec` tool runs in-process in the console
-   (gmail/google_calendar pattern). Console→mesh egress is the only thing to plumb.
-6. **Root scope** — `root` on **both `wyrm2` and `rugged`**. `rugged`'s exposure accepted.
-7. **`iguana`** — deferred (TODO below).
-8. **Root friction** — none for now (operator, 07-18): no second-confirm on `root`. A loud
-   approval-card treatment for `root` is a deferred maybe (see _Future expansion_).
+Compromise of a daemon routing bearer therefore does not create standalone root authority.
+The operator token remains the load-bearing authorization boundary for every command.
 
-## Architecture pivots
+## Durable broker
 
-Kept as a record so the reasoning survives the code churn.
+Postgres is authoritative across console replicas and restarts:
 
-- **SSH-over-Nebula → host-side OIDC service (`hostexecd`).** Once auth is the Authentik token,
-  the host is an OIDC resource server; SSH only added a standing transport key and
-  `SSH_ORIGINAL_COMMAND` plumbing for no benefit.
-- **Separate remote `hostexec-mcp` pod → in-process console tool.** The minting/exchange is custom
-  code that belongs at the console (the trust boundary); a separate pod would hold the credential
-  (worse) or need the console to inject it anyway (no gain).
-- **Nebula transport → cluster pod network (console addressing) → but hostexecd binds the Nebula
-  IP after all.** The target machines are already k8s nodes (`kubernetes.io/hostname`), so the
-  console reaches `hostexecd` over the pod network rather than plumbing console→mesh egress. The
-  first cut of this pivot claimed a `CiliumNetworkPolicy` would restrict ingress to `haku-console`;
-  **that is infeasible** — `hostexecd` is a host systemd daemon (host netns, `reserved:host`), not a
-  Cilium pod endpoint, so no CNP can select it, Cilium's host-firewall is off here, and node nftables
-  can only match a coarse source IP. So the daemon does bind to the node's **Nebula/InternalIP** (the
-  `nebula1` bind returns, now as the reach restriction) — reachable in-cluster over the k8s-worker's
-  trusted `nebula1`/`cilium_host`/`lxc+` interfaces, off the physical NIC — and the fail-closed token
-  check is the load-bearing per-caller gate. `hostexecd` still `execve`s in the host's namespaces
-  (systemd unit). Nebula IPs are both the mesh roster's identity and the daemon's bind address.
-- **Bespoke console-signed capability (argv-bound) → Authentik-native narrowing.** Built the
-  capability first (Python `capability.py` + Rust `capability.rs` + cross-language JWT vectors),
-  then dropped it: per-host provider + short TTL + single-use gets the token nearly as narrow
-  (host/run_as/time/one-shot) using the operator's real Authentik identity and existing
-  token-exchange machinery, with **no bespoke standing key**. Argv-binding's only extra is
-  shrinking a leaked-but-unused token's window from "TTL" to "one command" — sub-second given
-  single-use, and worthless against real compromise.
+- `node_daemon_presence` records daemon instance id, version, advertised backends,
+  capacity, connection time, and most recent heartbeat.
+- `node_daemon_executions` records the payload, enum lifecycle state, dispatch deadline,
+  claim instance, hashed lease token, lease deadline, and terminal result/error.
+- Claims use `FOR UPDATE SKIP LOCKED`, so concurrent console replicas cannot dispatch the
+  same execution twice.
+- Pending executions fail after the dispatch deadline. Claimed executions fail closed
+  when their lease expires or a replacement daemon instance appears; the error explicitly
+  says that the execution outcome is unknown.
+- Result submission is idempotent for an identical terminal result and rejects a conflicting
+  second outcome.
 
-## Considered (not taken): daemon-initiated connections (agent phones home)
+Process-local events reduce long-poll latency, but claim and result paths poll Postgres as
+the source of truth. Correctness does not depend on a request reaching the replica that
+enqueued the work.
 
-Invert the transport: instead of the console POSTing inbound to a node listener, the node daemon
-dials **out** to the console and pulls work — "I'm `rugged`, any work for me?" → "yes, run this" →
-result back over the same channel. Secured with **mutual TLS** (each end authenticates the other).
-The tool-call ledger gains explicit stages to match the pull model: `approved → claimed/executing →
-executed` (a claimed-but-not-yet-run row becomes first-class, not an inline transition). Operator
-(2026-07-18): _"if I were doing this again I might build it this way."_ Recorded as the likely
-design-of-choice on a rewrite; not worth re-architecting the working inbound model now.
+## Presence state
 
-**Would buy:**
+The operator Settings panel polls `GET /api/node-daemons` every ten seconds. Its state is a
+derived enum:
 
-- **No inbound listener on the node** — just an outbound TLS dial. Removes a root-capable network
-  service (and the whole bind-to-Nebula-IP / trusted-interface-firewall dance).
-- **Roaming / off-mesh robustness** — outbound-only traverses NAT trivially, and the console can
-  **store-and-forward**: approve now, the daemon claims and runs it when it next reconnects.
-- **Natural online-awareness** — a live connection is the "host is up" signal.
+- `connected`: a recent heartbeat and no active execution;
+- `busy`: a recent heartbeat with a claimed execution;
+- `stale`: heartbeat older than the connected threshold but not yet the offline threshold;
+- `offline`: no heartbeat or one older than the offline threshold.
 
-**Would cost (why not now):**
+The panel also shows version, advertised backends, last heartbeat, and active execution id.
+These are observations, not authorization signals.
 
-- **Reintroduces a standing per-host credential.** The daemon must authenticate its connection so
-  the console routes the right host's work to it (each command carries the operator's per-host token
-  - argv; an anonymous "I'm `rugged`" would let an impostor intercept them). That standing secret on
-    the node is exactly what the current design eliminates ("no bespoke host key"). It can be scoped to
-    _connection routing_ while the per-command Authentik token still gates _command authority_ —
-    connection direction is orthogonal to the auth model, and the operator-identity token must be kept
-    and verified daemon-side either way — but it is still a secret to provision, rotate, and protect.
-- **Stateful console subsystem** — a registry of connected daemons, per-host routing, reconnect,
-  heartbeats, backpressure. The current model is a stateless POST-and-response.
-- **Deferred-execution semantics** — a command approved now but run when the host later reconnects
-  may be stale/surprising for an interactive "run this on my laptop" gesture. Fast-fail is often the
-  wanted behavior, not a queue.
-- **Nebula already covers most of it** — for the current 2-host mesh, Nebula hole-punches/relays so
-  the console _can_ reach an online roaming host inbound, and the connect-timeout split makes an
-  offline host fail in ~10s. The inversion's headline connectivity win is largely redundant here (it
-  becomes the clear choice only if hosts leave the mesh — public/NAT, Tailscale-runner style).
+## Machine API
 
-If roaming reachability ever bites without a rewrite, the smaller doctrine-preserving step is a
-**console-side bounded queue + retry** (hold the approved command, retry reaching the host for a
-short window on reconnect) — no inversion, no new standing credential.
+All machine endpoints require the per-daemon bearer:
 
-## Future expansion (TODO)
+- `POST /api/node-daemons/v1/heartbeat`
+- `POST /api/node-daemons/v1/work/claim`
+- `POST /api/node-daemons/v1/executions/{id}/heartbeat`
+- `POST /api/node-daemons/v1/executions/{id}/result`
 
-- **`iguana`** — add: a `hostexec-iguana` provider + `hostexec-{user,root}-iguana` groups + the
-  `hostexecd` unit; identical NixOS config to `rugged`, purely additive.
-- **Bespoke approval-card renderer + `root` friction** (maybe) — a `hostexec/` renderer under
-  `haku/console/frontend/tool_rendering/` (modeled on `kubectl/`) that highlights `host` / `run_as`
-  and could add a loud treatment or second-confirm for `root`. Deferred (operator, 07-18): the
-  generic tool-call card already shows the full call, and no second-confirm is wanted for now.
-- **Non-node hosts** — pod-network reach covers k8s nodes only; every current in-scope host is a
-  node. A future non-node mesh host would need its own reachability (e.g. Nebula) or to join the
-  cluster.
-- **Tighten the last residual** — closing "socially engineer the operator into approving a
-  malicious command via the card" is an approval-card-integrity / operator-judgment problem, not a
-  transport one.
+The bearer selects the daemon id; callers cannot choose another daemon in the request body.
+Instance ids prevent an old daemon process from continuing after a replacement process has
+started, and opaque per-execution lease tokens bind renewal/result submission to a claim.
 
-## Risks / residuals
+## Configuration ownership
 
-- **The console is the trust root** (holds the operator linkage, drives token exchange) — as it
-  already is for every approval-gated tool. A console compromise yields host access bounded by the
-  operator's Authentik grants and revocation; there is no root-capable standing key to steal.
-- **`hostexecd` is the single load-bearing component** and a root-capable network service. Keep it
-  minimal, fail-closed, privilege-dropping, argv-`execve` (no shell); test the deny paths as
-  security-critical. Its network exposure is limited only by the Nebula-IP bind (a host daemon can't
-  be gated by a `CiliumNetworkPolicy`), so the fail-closed token verification carries the per-caller
-  authorization — it is not backstopped by a precise network ACL.
-- **Roaming hosts** (`rugged`) are frequently offline; treat unreachability as a normal,
-  fast-failing outcome, not an error to retry indefinitely.
-- **Fits the roadmap:** a concrete instance of <../PLAN.md> → _"letting Haku take some actions
-  itself (permission-elevation tokens)"_ — an Authentik-scoped, expiring, single-use, per-host
-  grant enforced by the perimeter is exactly what that section sketches.
+- `cluster/k8s/haku/console/config.yaml` owns daemon ids, display names, allowed backends,
+  token environment slots, and host-to-daemon routing.
+- `cluster/k8s/haku/console/node-daemon-*.sops.yaml` owns one encrypted routing bearer per
+  node. Each file is decryptable by both the cluster secret controller and that NixOS host.
+- `nix/nixos/modules/hostexecd.nix` owns the outbound daemon service and reads the same SOPS
+  file through sops-nix.
+- `tf/gitops/agent-machine-access/hostexec.tf` owns the per-host Authentik provider and
+  execution-authority groups. Routing bearer provisioning does not replace this authority.
+
+## Security and failure semantics
+
+- `hostexec_run` is never in the unconditional auto-approval policy.
+- Arguments are an argv vector executed without a shell.
+- `hostexecd` runs as root only so it can switch to the authorized `run_as` user.
+- Operator tokens, daemon bearers, and lease tokens are never logged or returned by the
+  operator status API.
+- Disconnection before claim is a fast tool error. Loss of a claimed execution is reported
+  as outcome unknown; it is never silently retried because the original command may have run.
+- The daemon uses exponential reconnect backoff and continues heartbeating while a command
+  runs.
+
+## Deployment order
+
+1. Apply Alembic revision `0015` and deploy console configuration/secrets.
+2. Roll the console so the machine API and durable broker are available.
+3. Rebuild `wyrm2` and `rugged`; their daemons begin outbound heartbeats.
+4. Confirm both nodes are `connected` in Settings before approving a hostexec call.
+
+The console may safely deploy before the daemons: configured nodes appear offline and calls
+fail closed until a valid heartbeat arrives.

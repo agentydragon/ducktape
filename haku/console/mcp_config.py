@@ -22,7 +22,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.config import HostexecConfig, Settings
+from haku.console.config import HostexecConfig, NodeDaemonsConfig, Settings
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -212,6 +212,7 @@ class ConsoleConfigFile(BaseModel):
     # → the server is not offered, no offline_access is requested at operator login, and no operator
     # Authentik token is persisted (nothing would read it).
     hostexec: HostexecConfig | None = None
+    node_daemons: NodeDaemonsConfig | None = None
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
@@ -260,6 +261,15 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(f"duplicate normalized static Agent display name {agent.display_name!r}")
             agent_ids.add(agent.agent_id)
             name_keys.add(name_key)
+        if self.hostexec is not None:
+            if self.node_daemons is None:
+                raise ValueError("hostexec requires node_daemons configuration")
+            for host, entry in self.hostexec.hosts.items():
+                daemon = self.node_daemons.daemons.get(entry.daemon_id)
+                if daemon is None:
+                    raise ValueError(f"hostexec host {host!r} references unknown daemon {entry.daemon_id!r}")
+                if "hostexec" not in daemon.backends:
+                    raise ValueError(f"node daemon {entry.daemon_id!r} does not advertise the hostexec backend")
         return self
 
 

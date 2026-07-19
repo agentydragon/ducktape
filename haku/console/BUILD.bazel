@@ -71,6 +71,7 @@ py_library(
     deps = [
         ":config",
         ":mcp_config",
+        ":node_daemons",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:hostexec",
@@ -103,11 +104,30 @@ py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
+        ":node_daemon_models",
         ":operator_identity",
         ":provider_connection_registry",
         "//haku/console/agents:models",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "node_daemon_models",
+    srcs = ["node_daemon_models.py"],
+)
+
+py_library(
+    name = "node_daemons",
+    srcs = ["node_daemons.py"],
+    deps = [
+        ":config",
+        ":database_schema",
+        ":node_daemon_models",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -644,6 +664,7 @@ py_library(
         ":mcp_operator_oauth",
         ":mcp_server",
         ":models",
+        ":node_daemons",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
@@ -666,6 +687,24 @@ py_library(
         # uvicorn needs a WebSocket protocol impl at runtime or every /api/events/ws
         # upgrade fails ("Unsupported upgrade request") — the console's live channel (#2977).
         "@pypi//websockets",
+    ],
+)
+
+py_test(
+    name = "test_node_daemons",
+    size = "medium",
+    srcs = ["test_node_daemons.py"],
+    requires_docker = True,
+    deps = [
+        ":config",
+        ":conftest",
+        ":node_daemon_models",
+        ":node_daemons",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

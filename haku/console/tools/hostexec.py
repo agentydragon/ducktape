@@ -3,8 +3,9 @@
 Runs a shell command on an operator machine (`wyrm2`, `rugged`, …) behind haku-console's
 approval queue. Every call is operator-approved by construction — `hostexec_run` is never in
 `UNCONDITIONAL_AUTO_APPROVE` — and executes under the operator's **own Authentik authority**: on
-approval the console mints a short-lived, single-use per-host token and POSTs it to `hostexecd`,
-which verifies it and drops privileges to `run_as`. There is no standing host credential.
+approval the console mints a short-lived, single-use per-host token, queues it for the configured
+outbound node daemon, and `hostexecd` verifies it before dropping
+privileges to `run_as`. The daemon's standing routing bearer cannot authorize a command.
 
 Built as a real `FastMCP` server attached via an in-memory transport (the gmail/google_calendar
 pattern), so the application service's approval/audit lifecycle runs unchanged. Registered as MCP

@@ -148,6 +148,24 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # Node-daemon routing credentials are one SSOT consumed by Flux in haku-console and by
+  # sops-nix on the matching host. Each host can decrypt only its own credential.
+  - path_regex: cluster/k8s/haku/console/node-daemon-wyrm2\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-host
+
+  - path_regex: cluster/k8s/haku/console/node-daemon-rugged\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *rugged-host
+
   # Cluster k8s secrets (Flux + admin can decrypt)
   - path_regex: cluster/k8s/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$

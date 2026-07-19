@@ -37,6 +37,7 @@ export type ProviderConnectionStatus =
   | components["schemas"]["ProviderUnconnected"];
 export type OperatorConnectionName = ProviderConnectionStatus["connection"];
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
+export type DaemonStatus = components["schemas"]["DaemonStatus"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way. Exported
@@ -59,6 +60,12 @@ export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
   const { data, error } = await api.GET("/api/deployment");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load deployment information"));
   return data;
+}
+
+export async function fetchNodeDaemons(): Promise<DaemonStatus[]> {
+  const { data, error } = await api.GET("/api/node-daemons");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load node daemons"));
+  return data.daemons ?? [];
 }
 
 // fastapi-csrf-protect signs these for one hour. Reuse one token/cookie pair across concurrent

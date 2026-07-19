@@ -3,7 +3,13 @@
 // module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
 // client) — harness.tsx imports this first. Paired with a `<base href>` in the harness page
 // (render.mjs) so the relative "/api/…" URL parses in the origin-less setContent page.
-import { SAMPLE_DEPLOYMENT, SAMPLE_MCP, SAMPLE_PROVIDER_CONNECTIONS, SAMPLE_TOOL_CALLS } from "./sample_data.ts";
+import {
+  SAMPLE_DAEMONS,
+  SAMPLE_DEPLOYMENT,
+  SAMPLE_MCP,
+  SAMPLE_PROVIDER_CONNECTIONS,
+  SAMPLE_TOOL_CALLS,
+} from "./sample_data.ts";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock.ts";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures.ts";
 import { GROCY_MCP_FIXTURES } from "../tool_rendering/grocy/fixtures.ts";
@@ -25,6 +31,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   // Order matters: match the more specific /api/mcp/... path before /api/tool-calls.
   if (url.includes("/api/mcp/operator-auth")) return jsonResponse({ associations: SAMPLE_MCP });
   if (url.includes("/api/operator-connections")) return jsonResponse({ connections: SAMPLE_PROVIDER_CONNECTIONS });
+  if (url.includes("/api/node-daemons")) return jsonResponse({ daemons: SAMPLE_DAEMONS });
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
   const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
     ...GOOGLE_CALENDAR_MCP_FIXTURES,

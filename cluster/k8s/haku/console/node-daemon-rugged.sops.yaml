@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-console-node-daemon-rugged
+    namespace: haku-console
+    annotations:
+        description: Scoped routing credential for the rugged outbound node daemon. It cannot create or approve work.
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:mQgT13QGCzLW/aahYjAardKK0rAxPJhoeF5fuW1My6w9O/luP0p+gBrJL0Wm37gQz2vNmfWi39fQZlznQVASyQ==,iv:id0R6cqciLPm6LKXlOMyzqSzPX89q5VVN59zdoybUUA=,tag:XcmBADka6yNNRHIatlR1Ng==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3RG54eGhEUWp1dy9uRCts
+            KzB3clRNQWo2K3NqbmRVbWxEWEsxMy83T1V3ClVDU1ZrbitXL2RkWkduaUNUd1l5
+            UEIzSmMxTnphWVlyS0VvS3VDZjJmdVEKLS0tIFNlWjQ5RUM3KytyTTNNT29jNVBF
+            VGhQSjFteitWZkMvVFBWWmVKNjhUT2MKmq6kAztYegC7clxLcRTq+vhSBUMGY9Lx
+            Qpdo5iejuzSUWKd72TwDqbwaa0kEomVaiqFKtM73XCzUAWxfeuhQEw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBzMnNhWEVMcnp0TnJSZGVM
+            UTJXM1dhRFV1aTRENkowT1k3R0ZFYW5HaEVBCkhwdDUzcnl1blIzdFhtLzQ5ZmZX
+            ZU95aGV6ZTc1MThJK3JPaFlvSmdUWjAKLS0tIDlKNTNDaGhvdUtSd09GV0hMQW04
+            T2JzbGVPVXRsL2x3S09Hd1RXMTI3TFEKubOo1xoYtHQ6j7QcRbLAa1xDgrDPNmRK
+            4WoWLlPKHr4fEn+U03LiHGFatNlA3iU2wbc34mxZTgjyxFUvq4NnDg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCOHpjZVVHdWZvLzI0Y3Nm
+            azNwZTBiTXJCQUxoWHVsU0JMaEVWMktkZ1NvClRkM0VGZWEzaXJPZmM3R2tXVnVj
+            c21CSW1uU3hpOGs4dGRnWGNuQTdvaVkKLS0tIHpyKzR4VW5qRm80d1BCVnJ6REZ6
+            dkI0QVA3Z3dOWWdHVTdYQ3BnMkcrMjgKMvUSm5RKw/YD5JH3EWeuzQ1fzrRsXsSZ
+            +q4/2VydX2+IiLYnQRh51Lun0h5VQWhSFa9mnJokjrnaOKJT2c2rZA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-07-19T18:58:32Z"
+    mac: ENC[AES256_GCM,data:yjwFZTazrhYVHXKHIY98NrNSKceOkZnffIKPkvYCpoStQfUktimqwoPnpctjuoRjEVg+DyJgxpSZ5A+XPx8fO4rQwCnDDXXXYGT/mkqwcBb+LV1d/eLEUvISHjQdy9jmqC4z90Wnwt3xO95ggS59kGTs4e7sEKngYfn2/hmaJgs=,iv:W+RpUdyzMBxu3WtYCihCPq9eQbDMt/qJSUd2Od/xi3E=,tag:FRp1CPP8Xbih+0jN9qEN0g==,type:str]
+    version: 3.13.2

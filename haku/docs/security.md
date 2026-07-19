@@ -97,6 +97,10 @@ live source reads). Channels out, and what fences each:
    haku-state-served code.
 8. If haku-state ever vendors third-party content, re-examine every "haku-state is
    single-author, so rendering it live is safe" assumption (garden MDX eval).
+9. A node daemon's standing bearer authenticates only heartbeat, claim, and result traffic. It
+   must never become execution authority: every `hostexec` command remains approval-gated and
+   carries the approving Operator's independently verified, short-lived per-host Authentik token.
+   Node daemons initiate outbound HTTPS and expose no command listener.
 
 ## Known gaps (tracked)
 

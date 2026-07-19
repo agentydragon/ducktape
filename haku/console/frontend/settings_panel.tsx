@@ -9,8 +9,10 @@ import {
   disconnectOperatorConnection,
   fetchDeploymentInfo,
   fetchMcpOperatorAuthStatuses,
+  fetchNodeDaemons,
   fetchOperatorConnections,
   type DeploymentInfo,
+  type DaemonStatus,
   type McpOperatorAuthStatus,
   type OperatorConnectionName,
   type ProviderConnectionStatus,
@@ -161,15 +163,49 @@ function ProviderConnectionCard({
   );
 }
 
+const DAEMON_STATUS_COLOR: Record<DaemonStatus["status"], string> = {
+  connected: "teal",
+  busy: "blue",
+  stale: "yellow",
+  offline: "gray",
+};
+
+function DaemonCard({ daemon }: { daemon: DaemonStatus }) {
+  const seen = daemon.last_heartbeat_at ? shortDate(daemon.last_heartbeat_at) : null;
+  return (
+    <section className="haku-shell-card">
+      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text fw={600}>{daemon.display_name}</Text>
+          <Text size="xs" c="dimmed">
+            {daemon.version ? `hostexecd ${daemon.version}` : "Never connected"}
+            {seen ? ` · heartbeat ${seen}` : ""}
+          </Text>
+          {daemon.active_execution_id && (
+            <Text size="xs" c="dimmed" ff="monospace">
+              {daemon.active_execution_id}
+            </Text>
+          )}
+        </Stack>
+        <Badge color={DAEMON_STATUS_COLOR[daemon.status]} variant="light">
+          {daemon.status}
+        </Badge>
+      </Group>
+    </section>
+  );
+}
+
 // Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
 // shell chrome's mutually exclusive panels.
 export function SettingsPanel() {
   const [statuses, setStatuses] = useState<McpOperatorAuthStatus[] | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<ProviderConnectionStatus[] | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [daemons, setDaemons] = useState<DaemonStatus[] | null>(null);
   const [statusesError, setStatusesError] = useState<string | null>(null);
   const [providerStatusesError, setProviderStatusesError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
+  const [daemonsError, setDaemonsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const loadGeneration = useRef(0);
   const versions = deployment ? deploymentVersions(deployment) : [];
@@ -210,17 +246,30 @@ export function SettingsPanel() {
         setDeploymentError(e instanceof Error ? e.message : String(e));
       }
     );
-    void Promise.all([statusesRequest, providerRequest, deploymentRequest]).then(() => {
+    const daemonsRequest = fetchNodeDaemons().then(
+      (nextDaemons) => {
+        if (generation !== loadGeneration.current) return;
+        setDaemons(nextDaemons);
+        setDaemonsError(null);
+      },
+      (e: unknown) => {
+        if (generation !== loadGeneration.current) return;
+        setDaemonsError(e instanceof Error ? e.message : String(e));
+      }
+    );
+    void Promise.all([statusesRequest, providerRequest, deploymentRequest, daemonsRequest]).then(() => {
       if (generation === loadGeneration.current) setLoading(false);
     });
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    load();
+    const interval = window.setInterval(load, 10_000);
+    return () => {
+      window.clearInterval(interval);
       loadGeneration.current += 1;
-    },
-    []
-  );
+    };
+  }, [load]);
 
   useConsoleEvents((event) => {
     if (
@@ -328,6 +377,18 @@ export function SettingsPanel() {
               onConnect={() => connectProvider(status.connection)}
               onDisconnect={() => disconnectProvider(status.connection)}
             />
+          ))}
+          <SectionHeading
+            title="Node daemons"
+            description="Outbound execution daemons. Heartbeats determine whether approved node work can be dispatched."
+          />
+          {daemonsError && (
+            <Text c="red" size="sm">
+              Failed to load node daemons: {daemonsError}
+            </Text>
+          )}
+          {daemons?.map((daemon) => (
+            <DaemonCard key={daemon.daemon_id} daemon={daemon} />
           ))}
           {deployment && (
             <div>

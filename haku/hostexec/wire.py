@@ -5,8 +5,8 @@ Three parties share these shapes:
   signature in `haku/console/tools/hostexec.py`; `RunAsUser` below is shared with it);
 - the **console** approves, then token-exchanges the operator's identity for a short-lived,
   per-host Authentik token;
-- the in-process console tool POSTs `HostexecRequest` to **`hostexecd`**, which returns a
-  `BaseExecResult` (reused from `mcp_infra.exec.models` — the shape every exec backend returns).
+- the console durably queues `HostexecRequest`; **`hostexecd`** claims it over its outbound session
+  and submits a `BaseExecResult` (reused from `mcp_infra.exec.models`).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ RunAsUser = Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]*$", max_length=32)]
 
 
 class HostexecRequest(BaseModel):
-    """In-process console tool → `hostexecd` HTTP body (POST /exec).
+    """Approved command body claimed by `hostexecd` from the console broker.
 
     `token` is the operator's short-lived, per-host Authentik token (`aud=hostexec-<host>`,
     carrying the `hostexec-<run_as>-<host>` group), obtained by the console via token exchange on

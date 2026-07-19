@@ -6,6 +6,8 @@ resources:
   - csrf-secret.sops.yaml
   - deployment.yaml
   - haku-console-google-client-credentials.sops.yaml
+  - node-daemon-rugged.sops.yaml
+  - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
   - routine-launch-token.sops.yaml
   - service.yaml

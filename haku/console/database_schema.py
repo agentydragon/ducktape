@@ -30,6 +30,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
+from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_calls import ToolCallStatus
@@ -519,6 +520,40 @@ class McpToolCallPrincipal(Base):
     binding_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("credential_bindings.binding_id", ondelete="RESTRICT"), nullable=True
     )
+
+
+class NodeDaemonPresence(Base):
+    __tablename__ = "node_daemon_presence"
+
+    daemon_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    instance_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    version: Mapped[str] = mapped_column(Text, nullable=False)
+    backends_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    capacity: Mapped[int] = mapped_column(nullable=False)
+    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_heartbeat_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class NodeDaemonExecution(Base):
+    __tablename__ = "node_daemon_executions"
+    __table_args__ = (Index("idx_node_daemon_executions_dispatch", "daemon_id", "status", "created_at"),)
+
+    execution_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    daemon_id: Mapped[str] = mapped_column(Text, nullable=False)
+    backend: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[NodeDaemonExecutionStatus] = mapped_column(
+        StrEnumColumn(NodeDaemonExecutionStatus, name="node_daemon_execution_status"), nullable=False
+    )
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    dispatch_expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    instance_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    lease_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class McpOperatorOAuthAssociation(Base):

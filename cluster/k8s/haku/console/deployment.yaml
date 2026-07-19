@@ -138,6 +138,16 @@ spec:
                 secretKeyRef:
                   name: haku-console-csrf-secret
                   key: secret
+            - name: HAKU_CONSOLE_NODE_DAEMON_WYRM2_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-node-daemon-wyrm2
+                  key: token
+            - name: HAKU_CONSOLE_NODE_DAEMON_RUGGED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-node-daemon-rugged
+                  key: token
             # Two in-process MCP servers execute as the acting Operator's own Google account:
             # `gmail` (Gmail reads mirroring the REST API, draft creation, thread-label changes,
             # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware

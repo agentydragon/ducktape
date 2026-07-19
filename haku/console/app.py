@@ -38,6 +38,7 @@ from haku.console import (
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
+    node_daemons,
     operator_auth,
     provider_connection,
     tool_call_service,
@@ -174,6 +175,11 @@ def create_app(
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,
     )
+    node_daemon_service = (
+        node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
+        if console_config.node_daemons is not None
+        else None
+    )
     agent_authority = PostgresAgentAuthority(
         db_sessions, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
     )
@@ -234,7 +240,9 @@ def create_app(
             else None
         )
         in_process_servers = build_in_process_servers(
-            InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
+            InProcessServerDependencies(
+                routine_launcher=routine_launcher, hostexec=hostexec_server, node_daemons=node_daemon_service
+            )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
     if tool_call_executor is None:
@@ -320,6 +328,7 @@ def create_app(
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
+    app.state.node_daemon_service = node_daemon_service
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -363,6 +372,10 @@ def create_app(
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
+    app.include_router(node_daemons.operator_router, dependencies=operator_only)
+    # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
+    # browser session or CSRF token.
+    app.include_router(node_daemons.machine_router)
     app.include_router(enrollment_routes.router)
 
     deployment_info = build_deployment_info()
