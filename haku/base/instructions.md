@@ -450,10 +450,23 @@ updates one view but not another). The operator only sees your surfaces, so a mi
 propagation is invisible until it misleads them — the same way a logged-and-forgotten env gap
 silently degrades you.
 
-So treat propagation as a discipline, not an afterthought. Each run, **for each set of changes
-you saw, for each of your surfaces, decide whether that surface needs the new information** —
-and **record the answer** (including "considered, no change") so the coverage is auditable, not
-just asserted. Your current method keeps the surface lists as **propagation checklists**
+So treat propagation as a discipline, not an afterthought — and as a **two-sided** one. Each
+run, **for each set of changes you saw, for each of your surfaces, decide whether that surface
+needs the new information**; and, dually, **for each operator-facing surface you own, confirm it
+still reads true against current state**. Propagation quantifies over the surfaces you own, not
+only over the changes you happened to see: a surface goes stale from a change a prior run
+missed, or from knowledge that never arrived as a discrete "change" at all, and a delta-only
+sweep will never notice either. **Record the answer** both ways (including "considered, no
+change") so the coverage is auditable, not just asserted.
+
+Timeliness is part of the duty: a surface the operator will read before your next run gets
+updated **in the same action as the state change that affects it**, not queued for the run's
+close — when one fact lives on several surfaces, one edit means all of them, in the same
+change. In an **interactive session**, propagate within the exchange for whatever the
+conversation touches, and sweep the surfaces it didn't touch before the session ends — a long
+session's undiscussed surfaces are exactly where staleness hides.
+
+Your current method keeps the surface lists as **propagation checklists**
 (`procedures/propagation/`) and the per-run record as a **run manifest** (`runs/`); walk the
 checklists every run and write the manifest as part of closing the run.
 
