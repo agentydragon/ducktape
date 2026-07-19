@@ -80,13 +80,19 @@ needed — Nebula is the secure transport; UDP stream ports `47998–48000` are 
 `services.sunshine.openFirewall`. (Permanent install: add `moonlight-qt` to
 `nix/home/hosts/rugged.nix`.)
 
-## Path C — xrdp over Nebula — CHOSEN FOR NOW
+## Path C — xrdp over Nebula — WORKING
 
 Headless desktop RD without auto-login and without an SSH tunnel. `services.xrdp`
 
 - Xfce (`nix/nixos/hosts/wyrm2/default.nix`, PR #3431). xrdp spawns its own X
   session on connect (PAM auth with the system password — no stored creds), so it
   works **pre-login** with **no auto-login**.
+
+**Status: working** (verified 2026-07-19). Needed one fix beyond the base setup:
+xrdp-sesman's pam line is `pam_env … readenv=0`, so the session env has no `HOME`,
+and Xfce black-screened on connect. The `rdpSession` wrapper (PR #3442) exports
+`HOME` then execs `startxfce4` (teeing output to `/tmp/xrdp-wm.log`). nixpkgs's own
+xrdp test sidesteps this by using bare window managers that don't need HOME.
 
 ### Security model (why no SSH tunnel)
 
@@ -127,13 +133,25 @@ access); **as root it auths fine** (the root build of the xrdp closure succeeded
 The token is valid — this is secret hygiene, not a rotation problem. Build/switch
 wyrm2 as root.
 
-## Decisions / open
+## Decisions / status
 
-- **For now: xrdp over Nebula** (Path C) — headless desktop RD, pre-login, no
-  auto-login, no tunnel. PR #3431.
-- **Later options**: Sunshine/Moonlight (Path B — passwordless after one-time
-  pairing, GPU/gaming, but needs a logged-in seat0 session); Guacamole via
-  Authentik RAC (`x/linux_rac/` — passwordless browser desktop via a sealed SSH
-  key + SSO; greenfield, not deployed, and its SSH protocol is terminal-not-
-  graphical until the Kerberos/mTLS piece is built).
+- **xrdp over Nebula (Path C) is the working RD** — headless, pre-login, no
+  auto-login, no tunnel. PRs #3431, #3442 (HOME fix). Connect via the "wyrm2 (RDP)"
+  desktop entry on rugged or `xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`.
+
+## Follow-ups (later, not now)
+
+- **Graphical client (no terminal spawn).** The desktop entry runs `xfreerdp` with
+  `terminal=true` because the CLI needs a TTY for the PAM password prompt — so a
+  terminal window opens each connect. A GUI client (e.g. `remmina` — connection list
+  - password dialog) or a freerdp GUI-credential setup would avoid it. (gnome-
+    connections is out: gtk-frdp crashes on xrdp.)
+- **Try GNOME instead of Xfce.** Reuse wyrm2's existing GNOME for a fuller/consistent
+  desktop; `gnome-session` self-manages its env. Caveat: GNOME 50 is Wayland-primary,
+  so an Xorg session under xrdp may not exist — check before assuming.
+- **Visual density / HiDPI.** The Xfce session could use tuning (scale factor /
+  resolution) for the client display.
+- **Sunshine/Moonlight** (Path B) and **Guacamole via Authentik RAC** (`x/linux_rac/`)
+  remain later passwordless options (Sunshine needs a logged-in seat; Guac is
+  greenfield, and its SSH protocol is terminal-not-graphical until Kerberos/mTLS).
 - GRD (#3424) stays merged-dormant (NixOS-blocked; inert).
