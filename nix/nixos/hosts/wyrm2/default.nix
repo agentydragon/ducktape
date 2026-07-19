@@ -216,6 +216,22 @@ in
   # notes in debug/atlas/direct_display_bringup/README.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
+  # ACTUAL remote desktop: xrdp + Xfce. gnome-remote-desktop system "Remote Login"
+  # above is the GNOME-native headless path but is BLOCKED on NixOS (`grdctl enable`
+  # self-systemd-enables into read-only /etc → EROFS; GDM handover broken — nixpkgs
+  # #504490/#535360; see debug/atlas/remote-desktop-wyrm2.md), so it never listens and
+  # stays dormant. xrdp spawns its own X session on connect (PAM auth with your system
+  # password — no stored creds), which works pre-login WITHOUT auto-login. Tunnel-only:
+  # services.xrdp.openFirewall defaults false, so 3389 is not exposed on nebula — reach
+  # it via `ssh -L 3390:localhost:3389 wyrm2` + an RDP client (freerdp3 on rugged).
+  # Separate X11 Xfce session, not the GPU/Wayland seat (use Sunshine for that, when
+  # logged in).
+  services.xrdp = {
+    enable = true;
+    defaultWindowManager = "startxfce4";
+  };
+  services.xserver.desktopManager.xfce.enable = true;
+
   # The self-signed TLS pair RDP mandates. Host-only secret (admin + wyrm2-host), like
   # the Nebula host keys — the daemon decrypts at activation via the host key. Rendered
   # straight to the daemon's paths, owned by the gnome-remote-desktop user so it can
