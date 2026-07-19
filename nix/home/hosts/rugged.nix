@@ -93,7 +93,8 @@
   home.packages = [
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
-    pkgs.freerdp # RDP client for wyrm2's xrdp over Nebula (used by the wyrm2-rdp desktop entry)
+    pkgs.freerdp # RDP client for wyrm2's xrdp over Nebula (also remmina's RDP backend)
+    pkgs.remmina # graphical RDP/VNC client (wyrm2 connection list + password dialog — no terminal spawn)
     pkgs.moonlight-qt # Sunshine client (GPU stream) for wyrm2 when logged in
     pkgs.inkscape
     pkgs.kicad
@@ -105,15 +106,15 @@
     ducktapePackages.tana-outliner
   ];
 
-  # One-click "bookmark" for wyrm2's xrdp. Uses xfreerdp directly (not
-  # gnome-connections, which crashes on xrdp's drive-redirection channels — a
-  # gtk-frdp bug). terminal=true so xfreerdp can prompt for the PAM password; the
-  # RDP window opens after. wyrm2 is reached over Nebula (firewall-restricted to the
-  # nebula1 interface). See debug/atlas/remote-desktop-wyrm2.md.
+  # "wyrm2 (RDP)" opens Remmina — a graphical RDP client (connection list + password
+  # dialog), so no terminal window spawns (unlike xfreerdp; and gnome-connections
+  # crashes on xrdp). Add the wyrm2 connection once in Remmina (RDP, host
+  # 10.42.0.20, username agentydragon); it's saved for reuse. Reached over Nebula
+  # (firewall-restricted to the nebula1 interface). See debug/atlas/remote-desktop-wyrm2.md.
   xdg.desktopEntries."wyrm2-rdp" = {
     name = "wyrm2 (RDP)";
-    exec = "xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";
-    terminal = true;
+    exec = "remmina";
+    terminal = false;
     categories = [
       "Network"
       "RemoteAccess"

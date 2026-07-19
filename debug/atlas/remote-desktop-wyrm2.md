@@ -141,11 +141,11 @@ wyrm2 as root.
 
 ## Follow-ups (later, not now)
 
-- **Graphical client (no terminal spawn).** The desktop entry runs `xfreerdp` with
-  `terminal=true` because the CLI needs a TTY for the PAM password prompt — so a
-  terminal window opens each connect. A GUI client (e.g. `remmina` — connection list
-  - password dialog) or a freerdp GUI-credential setup would avoid it. (gnome-
-    connections is out: gtk-frdp crashes on xrdp.)
+- **Graphical client (no terminal spawn) — DONE.** The desktop entry now opens
+  `remmina` (connection list + password dialog) instead of `xfreerdp` in a terminal,
+  so no terminal window spawns. Add the wyrm2 connection once in Remmina (RDP, host
+  10.42.0.20, username agentydragon). (gnome-connections is out: gtk-frdp crashes on
+  xrdp.)
 - **Try GNOME instead of Xfce.** Reuse wyrm2's existing GNOME for a fuller/consistent
   desktop; `gnome-session` self-manages its env. Caveat: GNOME 50 is Wayland-primary,
   so an Xorg session under xrdp may not exist — check before assuming.
