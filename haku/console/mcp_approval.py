@@ -82,6 +82,7 @@ class ToolMetadata(BaseModel):
     name: str
     description: str | None = None
     input_schema: dict[str, Any] = Field(default_factory=dict)
+    annotations: mcp_types.ToolAnnotations | None = None
 
 
 class ServerMetadataBase(BaseModel):
@@ -545,7 +546,11 @@ class McpMetadataProvider:
             schema = tool.inputSchema
             if not isinstance(schema, dict):
                 schema = {}
-            reflected.append(ToolMetadata(name=tool.name, description=tool.description, input_schema=schema))
+            reflected.append(
+                ToolMetadata(
+                    name=tool.name, description=tool.description, input_schema=schema, annotations=tool.annotations
+                )
+            )
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
 
 

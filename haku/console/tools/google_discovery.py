@@ -24,6 +24,7 @@ from importlib.resources import files
 from typing import Any, cast
 
 from fastmcp.tools import Tool, ToolResult
+from mcp.types import ToolAnnotations
 from pydantic import ConfigDict, Field
 
 _SCALAR = {"string": "string", "integer": "integer", "number": "number", "boolean": "boolean"}
@@ -103,6 +104,7 @@ class GenTool:
     api_version: str  # e.g. "gmail.v1"
     expose: tuple[str, ...] | None = None  # param allowlist (Google names); None = all params
     pin: dict[str, str] = field(default_factory=dict)  # constants the executor injects, hidden from the agent
+    annotations: ToolAnnotations | None = None  # MCP hints advertised on the generated tool
 
 
 def _input_schema(spec: GenTool, method: dict[str, Any], schemas: dict[str, Any]) -> dict[str, Any]:
@@ -174,6 +176,7 @@ def build_generated_tools(specs: list[GenTool], service: Any) -> list[GeneratedG
                 description=(method.get("description") or "").strip(),
                 parameters=_input_schema(spec, method, schemas),
                 output_schema=_output_schema(method, schemas),
+                annotations=spec.annotations,
                 method_id=spec.method_id,
                 pinned=spec.pin,
                 service=service,

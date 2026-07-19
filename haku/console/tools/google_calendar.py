@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from haku.console.tools.google_calendar_client import (
@@ -30,6 +31,8 @@ from haku.console.tools.google_calendar_client import (
 from haku.console.tools.google_service import build_google_api_service
 
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
+# Reads only fetch; advertise read-only so clients (claude.ai) skip per-call approval prompts.
+_READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
 
 # Module-level, not local to build_mcp(): `from __future__ import annotations` makes every
@@ -87,7 +90,7 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
         )
         return calendar.create_event(args)
 
-    @mcp.tool
+    @mcp.tool(annotations=_READ_ONLY)
     async def get_event(
         event_id: Annotated[str, Field(description="Google Calendar event or instance ID.")],
         calendar_id: Annotated[
@@ -97,7 +100,7 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
         """Fetch one event, recurring-series master, or recurring-event instance."""
         return calendar.get_event(calendar_id, event_id)
 
-    @mcp.tool
+    @mcp.tool(annotations=_READ_ONLY)
     async def list_events(
         calendar_id: Annotated[
             str, Field(description="Source calendar; 'primary' is the operator's main calendar.")
@@ -130,7 +133,7 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
             )
         )
 
-    @mcp.tool
+    @mcp.tool(annotations=_READ_ONLY)
     async def list_event_instances(
         recurring_event_id: Annotated[str, Field(description="Recurring-series master event ID.")],
         calendar_id: Annotated[

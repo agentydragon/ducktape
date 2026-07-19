@@ -22,6 +22,7 @@ import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import SecretStr, ValidationError
 
 from haku.console import mcp_server as mcp_server_module
@@ -182,6 +183,11 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
         "upstream_tool_name": "labels_list",
         "approval_mode": "passthrough",
     }
+    # Read tools advertise read-only; the write tool stays unannotated (defaults describe mutating).
+    gmail_read_ann = tools["gmail_labels_list"].annotations
+    assert gmail_read_ann is not None
+    assert gmail_read_ann.readOnlyHint is True
+    assert tools["gmail_drafts_create"].annotations is None
     # Gmail writes are approval-request tools with the envelope.
     assert "gmail_drafts_create" in tools
     envelope = tools["gmail_drafts_create"].inputSchema
@@ -197,12 +203,22 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
+    # Native read tools advertise read-only + closed-world so clients (claude.ai) treat them as
+    # passive reads and skip approvals. See mcp_infra/docs/tool_annotations.md.
+    for meta_tool in ("get_tool_call", "list_tool_calls", "list_mcp_servers"):
+        ann = tools[meta_tool].annotations
+        assert ann is not None
+        assert ann.readOnlyHint is True
+        assert ann.openWorldHint is False
     # The promise preamble is in the envelope tool's description.
     assert "operator-approval queue" in tools["gmail_drafts_create"].description
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
     # prefix supplies "calendar", so no tool repeats it in the local name.
     assert "google_calendar_get_event" in tools
     assert "input" not in tools["google_calendar_get_event"].inputSchema.get("properties", {})
+    cal_read_ann = tools["google_calendar_get_event"].annotations
+    assert cal_read_ann is not None
+    assert cal_read_ann.readOnlyHint is True
     assert "google_calendar_create_event" in tools
     assert "google_calendar_create_calendar_event" not in tools
 
@@ -393,7 +409,7 @@ def _serve_upstream() -> Generator[str]:
     """A real upstream MCP server process stand-in (echo tool) served over streamable HTTP."""
     upstream: FastMCP = FastMCP("standin")
 
-    @upstream.tool
+    @upstream.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def echo(text: str) -> str:
         """Echo a string back."""
         return f"echo:{text}"
@@ -438,8 +454,13 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
 
             # The agent (bearer) sees the upstream tool behind the approval envelope and gets a promise.
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                tools = {t.name for t in await client.list_tools()}
+                tools = {t.name: t for t in await client.list_tools()}
                 assert "standin_echo" in tools
+                # Upstream self-declared annotations propagate through the proxy reflection.
+                ann = tools["standin_echo"].annotations
+                assert ann is not None
+                assert ann.readOnlyHint is True
+                assert ann.openWorldHint is False
                 result = await client.call_tool(
                     "standin_echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
                 )

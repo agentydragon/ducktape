@@ -99,6 +99,11 @@ _REQUEST_PREAMBLE = (
     "executes directly and creates no approval record."
 )
 
+# Console-native read tools: they read only the console's own persisted catalog/ledger (closed
+# world — never a downstream MCP/provider lookup) and mutate nothing, so advertise both axes.
+# Clients like claude.ai key off readOnlyHint to group these as read-only and skip approvals.
+_READ_ONLY_META = mcp_types.ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+
 
 @dataclass(frozen=True)
 class ConsoleMcpContext:
@@ -341,6 +346,10 @@ def _build_proxy_tool(
         name=name,
         description=description,
         parameters=parameters,
+        # Propagate the upstream server's self-declared hints unchanged. They are advisory (the
+        # spec forbids trusting them for security), and the console's own approval policy is
+        # enforced server-side regardless — this only sets client-facing UX grouping.
+        annotations=tool.annotations,
         context=context,
         server_id=server_id,
         upstream_tool_name=tool.name,
@@ -441,7 +450,7 @@ def build_console_mcp(
 
     current_actor_dependency = Depends(actor_resolver.resolve)
 
-    @mcp.tool
+    @mcp.tool(annotations=_READ_ONLY_META)
     async def list_mcp_servers(actor: ToolCallActor = current_actor_dependency) -> McpServerConnectionStatusResponse:
         """List configured MCP servers and their persisted connection state.
 
@@ -452,7 +461,7 @@ def build_console_mcp(
         """
         return _passive_server_connection_statuses(context, actor)
 
-    @mcp.tool
+    @mcp.tool(annotations=_READ_ONLY_META)
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
@@ -461,7 +470,7 @@ def build_console_mcp(
             raise ToolError(str(error)) from error
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
 
-    @mcp.tool
+    @mcp.tool(annotations=_READ_ONLY_META)
     async def list_tool_calls(
         status: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,

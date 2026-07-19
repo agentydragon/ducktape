@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
@@ -61,16 +62,20 @@ _RemoveLabelsAnn = Annotated[
 # acting Operator's own account). Writes below stay hand-authored (shaped bodies / label policy).
 # Auto-approval keys on these exact names (auto_approval.py).
 _ME = {"userId": "me"}
+# Reads only fetch. Advertise read-only so clients (claude.ai) group them as reads and skip
+# per-call approval prompts. openWorldHint stays default (true): they reach the Operator's
+# external Gmail mailbox — open world, unlike the console's own closed catalog.
+_READ_ONLY = ToolAnnotations(readOnlyHint=True)
 _GMAIL_READ_TOOLS: list[GenTool] = [
-    GenTool("gmail.users.threads.list", "threads_list", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.threads.get", "threads_get", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.messages.get", "messages_get", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.labels.list", "labels_list", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.labels.get", "labels_get", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.settings.filters.list", "filters_list", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.settings.filters.get", "filters_get", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.drafts.list", "drafts_list", "gmail.v1", pin=_ME),
-    GenTool("gmail.users.drafts.get", "drafts_get", "gmail.v1", pin=_ME),
+    GenTool("gmail.users.threads.list", "threads_list", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.threads.get", "threads_get", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.messages.get", "messages_get", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.labels.list", "labels_list", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.labels.get", "labels_get", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.settings.filters.list", "filters_list", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.settings.filters.get", "filters_get", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.drafts.list", "drafts_list", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
+    GenTool("gmail.users.drafts.get", "drafts_get", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
 ]
 
 

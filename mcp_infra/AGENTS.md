@@ -11,6 +11,7 @@
 - **Typing**: convert loose external API objects at the boundary so internal code sees a single concrete type. Centralize boundary conversions.
 - **Server state**: constructors accept per-agent state (no globals/singletons). In-proc servers mount on a `Compositor` via `mount_inproc(...)`.
 - **Server instructions don't reliably reach the model**: many MCP clients never surface `instructions` to the LLM. Anything the model must know to call a tool correctly (parameter conventions, safety caveats) belongs in the tool/field descriptions themselves — repeating it from server instructions there is intentional redundancy, not drift.
+- **Annotate read-only tools**: set `annotations=ToolAnnotations(readOnlyHint=True)` on tools that don't mutate state, so clients (claude.ai / Claude Code) group them as read-only and skip per-call approvals. See <docs/tool_annotations.md>.
 
 ### CallToolResult Conventions
 
