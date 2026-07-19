@@ -8,8 +8,8 @@ which verifies it and drops privileges to `run_as`. There is no standing host cr
 
 Built as a real `FastMCP` server attached via an in-memory transport (the gmail/google_calendar
 pattern), so the application service's approval/audit lifecycle runs unchanged. Registered as MCP
-server id `hostexec` in `cluster/k8s/haku/console/config.yaml` (no `server_url`). See
-`haku/docs/security.md` and `haku/hostexec/PLAN.md`.
+server id `hostexec` with an `in_process` backend and `operator_login_identity` credential in
+`cluster/k8s/haku/console/config.yaml`. See `haku/docs/security.md` and `haku/hostexec/PLAN.md`.
 """
 
 from __future__ import annotations

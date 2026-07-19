@@ -83,12 +83,15 @@ Core endpoints:
   YAML/ConfigMap; Postgres stores only short-lived DCR/PKCE flow state and per-operator token
   associations.
   Connecting is available only while unconnected; disconnect first to replace an account link.
+  Client acquisition uses the `client_registration` discriminator. `dynamic` performs DCR and owns
+  `client_name`; `preregistered` skips DCR and owns the deploy-provisioned `client_id`.
 - `GET /api/provider-connections`, `POST /api/provider-connections/{provider}/connect`,
   `DELETE /api/provider-connections/{provider}`, and `GET /api/provider-connections/callback` —
   per-Operator connections to well-known external OAuth providers (Google today) for in-process
-  servers marked `provider_connection` (this flow lives in `provider_connection.py`). Fixed
+  servers bound to an `operator_connection` (this flow lives in `provider_connection.py`). Fixed
   pre-registered client (no DCR); Postgres stores the per-Operator refresh token, self-refreshed
-  in-process. Backs the `gmail`/`google_calendar` servers, replacing Airlock's brokered token.
+  in-process. Backs the `gmail`/`google_calendar` servers through the deploy-named
+  `google_workspace` connection, replacing Airlock's brokered token.
 - `GET /api/approvals/pending` and `WebSocket /api/events/ws` — canonical-Operator-routed
   frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
   wakes the shell to refresh.
@@ -125,7 +128,8 @@ buckets:
 tools the policy **unconditionally**
 auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read tools —
 `search_nodes`, `read_node`, `get_children`, `open_node`, `list_tags`, `list_workspaces`,
-`get_tag_schema`, plus the idempotent `get_or_create_calendar_node`) appear as
+`get_tag_schema`, plus the idempotent `get_or_create_calendar_node`, and postscanmail-mcp
+reads) appear as
 transparent **pass-throughs** (original schema, real result); everything else keeps the same
 `<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
@@ -230,17 +234,21 @@ models.
 
 ### In-process MCP servers — no second deployment
 
-A `mcp.servers` entry that omits `server_url` is served by an **in-process `FastMCP`
-instance** instead of a remote server reached over the network: `fastmcp.client.Client`
-accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
-`McpToolExecutor`/`McpMetadataProvider` run the exact same `Client(...)` calls either
-way — the application service still owns approval/audit and the HTTP adapter still owns CSRF,
-with the same live `tools/list` reflection and just a different transport (`_transport()` in
-`mcp_approval.py` picks the registered in-process
-`FastMCP` for a server id, falling back to `server_url`). The in-process servers are built like
-standalone MCP servers from `@mcp.tool`-decorated functions. The only transport difference is that
-`create_app` hands the `FastMCP` object straight to the executor instead of serving it over
-HTTP:
+An `mcp.servers` entry explicitly selects either a `remote_mcp` backend with an HTTP URL and
+transport `auth`, or an `in_process` backend with an implementation `credential`. The latter is a
+registered **in-process `FastMCP` instance**: `fastmcp.client.Client` accepts a `FastMCP` object
+directly (an in-memory `FastMCPTransport`), so `McpToolExecutor`/`McpMetadataProvider` run the exact
+same `Client(...)` calls either way. The application service still owns approval/audit and the HTTP
+adapter still owns CSRF, with the same live `tools/list` reflection.
+
+An in-process credential is consumed by reviewed implementation code only during execution; it is
+never passed to FastMCP as transport authentication. The caller's Agent bearer authenticates the
+outer `/mcp` request and resolves the acting Operator; it is never a backend credential.
+`operator_connection` selects a deploy-named external-account grant (currently `google_workspace`),
+`operator_login_identity` selects the acting Operator's console-login authority for hostexec token
+exchange, and `none` injects nothing. The implementation registry declares the credential kind each
+built-in accepts, and startup rejects a mismatch. The in-process servers are built like standalone
+MCP servers from `@mcp.tool`-decorated functions:
 
 - **`gmail`** (`haku.console.tools.gmail`). Reads mirror Gmail's REST API and return its
   resource shapes **verbatim** (`gmail_api.messages`/`gmail_api.labels`) — no content-type
@@ -271,13 +279,21 @@ HTTP:
 
 The `gmail` and `google_calendar` servers execute as the **acting Operator's own Google
 account**: each call resolves that Operator's per-Operator Google access token from the
-console's own connection store (`provider_connection.py`, `auth: {kind: provider_connection, provider: google}`
-in config), then builds the client for that one call — no shared/startup credential. The console
+console's own connection store (`provider_connection.py`) through the config-bound
+`operator_connection: google_workspace`, then builds the client for that one call — no
+shared/startup credential. The console
 holds the Google OAuth client and each Operator's refresh token itself (Postgres, self-refreshed
 in-process), replacing Airlock's brokered `haku_console_google` token. Scopes (`calendar.events`,
 `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, and the `google` provider's read-only
 scopes) and the one-time connect flow: `cluster/k8s/haku/console/README.md`. Until an Operator
 connects, both servers are `degraded`.
+
+Provider-connection storage remains keyed by `(operator_id, provider)`: `google_workspace` is the
+deploy name for the existing `google` row, not a new token association. Config therefore rejects two
+logical connections mapped to the same provider; introducing separate Google grants requires the
+token-preserving storage migration tracked in `TODO.md`. Persisted `connection_id` remains the UUID
+of an Operator's actual association; it is distinct from both the logical connection name and the
+provider kind.
 
 The trusted frontend resolves opaque ids by composing each server's ordinary MCP reads with its
 Operator session. Gmail combines `threads_get` with `labels_list`; Calendar uses `list_events`;

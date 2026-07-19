@@ -42,6 +42,7 @@ TANA_RW_SERVER_ID = "tana-rw"
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
 IBKR_SERVER_ID = "interactive_brokers"
 OSM_SERVER_ID = "osm"
+POSTSCANMAIL_SERVER_ID = "postscanmail-mcp"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
 GMAIL_READ_TOOLS = frozenset(
@@ -159,6 +160,11 @@ OSM_AUTO_APPROVE_TOOLS = frozenset(
     }
 )
 
+# postscanmail-mcp's GET-only reads. Every state-changing tool stays approval-gated:
+# set_automation_rule (account-wide toggle), request_*/cancel_* (open & rescan are paid scans;
+# discard removes mail to trash; shred is secure destruction). See x/postscanmail_mcp_server.
+POSTSCANMAIL_READ_TOOLS = frozenset({"list_items", "list_automation_rules"})
+
 # (server_id -> tools) auto-approved for any authenticated agent regardless of arguments. Drives the
 # MCP server's transparent pass-through bucket. Argument-conditional approvals
 # (GMAIL_CONDITIONAL_TOOLS) are deliberately excluded — those still route through the request_
@@ -170,6 +176,7 @@ UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     TANA_RW_SERVER_ID: TANA_AUTO_APPROVE_TOOLS,
     IBKR_SERVER_ID: IBKR_AUTO_APPROVE_TOOLS,
     OSM_SERVER_ID: OSM_AUTO_APPROVE_TOOLS,
+    POSTSCANMAIL_SERVER_ID: POSTSCANMAIL_READ_TOOLS,
 }
 
 

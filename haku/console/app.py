@@ -50,7 +50,16 @@ from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
-from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_console_config, load_static_agents
+from haku.console.mcp_config import (
+    InProcessBackend,
+    InProcessServers,
+    LoadedStaticAgent,
+    OperatorConnectionCredential,
+    _server_entry,
+    load_console_config,
+    load_static_agents,
+    validate_in_process_server_bindings,
+)
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -151,7 +160,10 @@ def create_app(
         {ProviderConnectionKind.GOOGLE: settings.google_client} if settings.google_client is not None else {}
     )
     provider_connection_store = provider_connection.PostgresProviderConnectionStore(
-        db_sessions, operator_identity_store=operator_identity_store, provider_clients=provider_clients
+        db_sessions,
+        operator_identity_store=operator_identity_store,
+        provider_clients=provider_clients,
+        operator_connections=console_config.operator_connections,
     )
     # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
     # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
@@ -198,8 +210,13 @@ def create_app(
     async def gmail_client_provider(operator_id: UUID) -> gmail_tools.GmailToolsClient | None:
         if gmail_client is not None:
             return gmail_client
+        backend = _server_entry(settings, gmail_tools.GMAIL_SERVER_ID).backend
+        if not isinstance(backend, InProcessBackend) or not isinstance(
+            backend.credential, OperatorConnectionCredential
+        ):
+            raise RuntimeError("gmail must bind an operator connection credential")
         token = await provider_connection_store.access_token_for(
-            provider=ProviderConnectionKind.GOOGLE, operator_id=operator_id
+            connection=backend.credential.connection, operator_id=operator_id
         )
         return gmail_tools.build_gmail_client_from_token(token) if token is not None else None
 
@@ -221,6 +238,7 @@ def create_app(
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
+    validate_in_process_server_bindings(console_config, in_process_servers)
     if tool_call_executor is None:
         tool_call_executor = mcp_approval.McpToolExecutor(in_process_servers)
     if tool_call_metadata_provider is None:

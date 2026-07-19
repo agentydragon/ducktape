@@ -36,12 +36,13 @@ from haku.console.database_schema import (
 )
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
+    InProcessBackend,
     InProcessServers,
     McpServerEntry,
     McpServerNotFoundError,
-    NoBackendAuth,
-    OperatorIdentityAuth,
-    ProviderConnectionAuth,
+    NoCredential,
+    OperatorConnectionCredential,
+    OperatorLoginIdentityCredential,
     RemoteServerOAuthAuth,
     StaticBearerAuth,
     _credential_token,
@@ -524,7 +525,8 @@ class McpToolExecutor:
     async def execute(
         self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
     ) -> dict[str, Any]:
-        async with Client(_transport(server, self._in_process, auth_token), auth=auth_token) as client:
+        transport, transport_auth = _transport(server, self._in_process, auth_token)
+        async with Client(transport, auth=transport_auth) as client:
             result = await client.call_tool_mcp(tool_name, arguments)
         if result.isError:
             raise RuntimeError(_mcp_error_message(result))
@@ -537,7 +539,8 @@ class McpMetadataProvider:
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
         try:
-            async with Client(_transport(server, self._in_process, auth_token), auth=auth_token) as client:
+            transport, transport_auth = _transport(server, self._in_process, auth_token)
+            async with Client(transport, auth=transport_auth) as client:
                 tools = await client.list_tools()
         except Exception as e:
             return DegradedServerMetadata(server_id=server.id, title=server.id, tools=[], degraded_reason=str(e))
@@ -624,19 +627,20 @@ async def _resolve_operator_metadata_auth(
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> _ResolvedAuth | _DegradedAuth:
-    """Resolve the operator-linked reflection token per the server's `auth` variant, or a degraded
+    """Resolve reflection readiness per the server's backend credential, or a degraded
     reason.
 
-    Deviation from `backend_auth_for_operator` (which dispatches on the same `auth` variants): a
+    Deviation from `backend_auth_for_operator` (which dispatches on the same variants): a
     missing operator-linked token or a missing static credential degrades reflection here rather than
     raising.
     """
-    match server.auth:
-        case ProviderConnectionAuth(provider=provider):
-            auth_token = await provider_store.access_token_for(provider=provider, operator_id=operator_id)
-            if not auth_token:
-                return _DegradedAuth(f"Connect your {provider} account in the console to use this server.")
-            return _ResolvedAuth(auth_token)
+    credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
+    match credential:
+        case OperatorConnectionCredential(connection=connection):
+            if not provider_store.is_connected(connection=connection, operator_id=operator_id):
+                return _DegradedAuth(f"Connect your {connection} account in the console to use this server.")
+            # The implementation owns its schemas and tools/list invokes no backend operation.
+            return _ResolvedAuth(None)
         case RemoteServerOAuthAuth():
             auth_token = await oauth_store.access_token_for(server=server, operator_id=operator_id)
             if not auth_token:
@@ -644,7 +648,7 @@ async def _resolve_operator_metadata_auth(
                     f"Connect your {server.id} MCP account in the console to reflect this server's tools."
                 )
             return _ResolvedAuth(auth_token)
-        case OperatorIdentityAuth():
+        case OperatorLoginIdentityCredential():
             # Reflection (tools/list) doesn't need the per-host token — the in-process hostexec
             # server lists its tools regardless — so reflect with no token and never degrade here.
             # The operator's identity token is required only at execution (backend_auth_for_operator).
@@ -654,7 +658,7 @@ async def _resolve_operator_metadata_auth(
                 return _ResolvedAuth(_credential_token(server.id, secret))
             except Exception as e:
                 return _DegradedAuth(str(e))
-        case NoBackendAuth():
+        case NoCredential():
             return _ResolvedAuth(None)
 
 

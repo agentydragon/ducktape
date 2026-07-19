@@ -10,6 +10,8 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
 )
@@ -40,6 +42,7 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: root conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",

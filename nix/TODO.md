@@ -85,19 +85,16 @@ Consider whether `nix/nixos/hosts/rugged` should switch from the current single 
 
 Evaluate whether console TTY password prompts can show visual feedback (for example `*` per keystroke) on NixOS hosts. This is not a standard NixOS knob like `sudo` `pwfeedback`; TTY login goes through `agetty` into `login`/PAM, so this likely requires a downstream package override or alternate login program. Scope and risks need review before implementing.
 
-## Roll out private-cache substituter + drivefs to remaining hosts
+## Roll out drivefs to remaining hosts
 
-drivefs and the `cache.allegedly.works/gaffer` substituter are wired on **wyrm2**
-only (`nix/home/hosts/wyrm2.nix` `services.google-drive.enable = true`; pin in
-`nix/gaffer-pins.json`). Roll the same wiring to **rugged, iguana, atlas**:
+The per-host `cache.allegedly.works/{main,gaffer}` reader credentials and Nix
+substituter wiring are present for all supported machines. `drivefs` itself is
+enabled on **wyrm2** and **rugged**. Decide whether to enable
+`services.google-drive` on **iguana** and **atlas**; atlas is not NixOS, so this
+would remain a Home Manager service.
 
-- [ ] Each host needs its own per-host SOPS attic reader file plus a parallel
-      `attic-rotate-<host>-reader` CronJob (mirror the wyrm2 one in
-      `cluster/k8s/agents/attic-jwt-rotation/`).
-- [ ] Enable `ducktape.attic-substituter.enable = true` +
-      `services.google-drive.enable = true` per host.
 - [ ] Auto-fetch the gaffer pubkey post-cache-creation and PR it into
-      `nix/nixos/modules/attic-substituter.nix` (TODO already noted in the module + `bootstrap.sh`).
+      `nix/attic-pubkeys.json` (TODO already noted in the module + `bootstrap.sh`).
 - [ ] Split the `&ci` age recipient into `&ducktape-ci` and `&gaffer-ci` so the
       gaffer writer token isn't decryptable by ducktape CI's age key (TODO already
       noted in `.sops.yaml`).

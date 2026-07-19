@@ -54,6 +54,19 @@ from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
+
+def _remote_backend(url: str, auth: dict[str, Any]) -> dict[str, Any]:
+    return {"kind": "remote_mcp", "url": url, "auth": auth}
+
+
+def _in_process_backend(credential: dict[str, Any]) -> dict[str, Any]:
+    return {"kind": "in_process", "credential": credential}
+
+
+def _dynamic_remote_oauth() -> dict[str, Any]:
+    return {"kind": "remote_server_oauth", "client_registration": {"kind": "dynamic", "client_name": "Haku Console"}}
+
+
 # The `/mcp` static bearer used across these tests, and the static-agent config that binds it to the
 # `haku` agent id (which acts as operator subject "42"). Env-referenced, like the deploy.
 _AGENT_TOKEN = "agent-token"
@@ -148,8 +161,8 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
             "static_agents": _STATIC_AGENTS,
             "mcp": {
                 "servers": [
-                    {"id": "gmail", "auth": {"kind": "none"}},
-                    {"id": "google_calendar", "auth": {"kind": "none"}},
+                    {"id": "gmail", "backend": _in_process_backend({"kind": "none"})},
+                    {"id": "google_calendar", "backend": _in_process_backend({"kind": "none"})},
                 ]
             },
         },
@@ -424,7 +437,7 @@ def _console_config(tmp_path: Path, upstream_url: str) -> Path:
         tmp_path / "console.yaml",
         {
             "static_agents": _STATIC_AGENTS,
-            "mcp": {"servers": [{"id": "standin", "server_url": upstream_url, "auth": {"kind": "none"}}]},
+            "mcp": {"servers": [{"id": "standin", "backend": _remote_backend(upstream_url, {"kind": "none"})}]},
         },
     )
 
@@ -570,7 +583,7 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
             {
                 "static_agents": _STATIC_AGENTS,
                 "mcp": {
-                    "servers": [{"id": "standin", "server_url": upstream_url, "auth": {"kind": "remote_server_oauth"}}]
+                    "servers": [{"id": "standin", "backend": _remote_backend(upstream_url, _dynamic_remote_oauth())}]
                 },
             },
         )
@@ -616,20 +629,28 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         tmp_path / "connection-status.yaml",
         {
             "static_agents": _STATIC_AGENTS,
+            "operator_connections": {"google_workspace": {"provider": "google"}},
             "mcp": {
                 "servers": [
                     {
                         "id": "expired-remote",
-                        "server_url": "https://must-not-be-contacted.invalid/mcp",
-                        "auth": {"kind": "remote_server_oauth"},
+                        "backend": _remote_backend(
+                            "https://must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
+                        ),
                     },
                     {
                         "id": "unconnected-remote",
-                        "server_url": "https://also-must-not-be-contacted.invalid/mcp",
-                        "auth": {"kind": "remote_server_oauth"},
+                        "backend": _remote_backend(
+                            "https://also-must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
+                        ),
                     },
-                    {"id": "gmail", "auth": {"kind": "provider_connection", "provider": "google"}},
-                    {"id": "routine", "auth": {"kind": "none"}},
+                    {
+                        "id": "gmail",
+                        "backend": _in_process_backend(
+                            {"kind": "operator_connection", "connection": "google_workspace"}
+                        ),
+                    },
+                    {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
                 ]
             },
         },
@@ -699,7 +720,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     }
     assert statuses["gmail"].model_dump(mode="json") == {
         "server_id": "gmail",
-        "auth_kind": "provider_connection",
+        "auth_kind": "operator_connection",
         "connection": {
             "provider": "google",
             "status": "connected",
@@ -733,8 +754,8 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
             "static_agents": _STATIC_AGENTS,
             "mcp": {
                 "servers": [
-                    {"id": "beta", "server_url": "https://beta.invalid/mcp", "auth": {"kind": "none"}},
-                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp", "auth": {"kind": "none"}},
+                    {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
+                    {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
                 ]
             },
         },
@@ -773,8 +794,8 @@ async def test_tool_dispatch_reflects_only_target_server(
             "static_agents": _STATIC_AGENTS,
             "mcp": {
                 "servers": [
-                    {"id": "alpha", "server_url": "https://alpha.invalid/mcp", "auth": {"kind": "none"}},
-                    {"id": "beta", "server_url": "https://beta.invalid/mcp", "auth": {"kind": "none"}},
+                    {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
+                    {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
                 ]
             },
         },
@@ -826,7 +847,12 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [{"id": "grocy-sf", "server_url": "https://grocy.invalid/mcp", "auth": {"kind": "none"}}]
+                "servers": [
+                    {
+                        "id": "grocy-sf",
+                        "backend": {"kind": "remote_mcp", "url": "https://grocy.invalid/mcp", "auth": {"kind": "none"}},
+                    }
+                ]
             },
         },
     )
@@ -854,7 +880,7 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
         actor_resolver,
     )
 
-    assert await provider._get_tool("grocy_sf_product_groups_list") is None
+    assert await provider._get_tool("grocy_sf__product_groups_list") is None
 
 
 @dataclass(frozen=True)
@@ -1111,7 +1137,14 @@ def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path:
 def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
     with pytest.raises(ValidationError, match="duplicate MCP server id 'grocy'"):
         ConsoleConfigFile.model_validate(
-            {"mcp": {"servers": [{"id": "grocy", "auth": {"kind": "none"}}, {"id": "grocy", "auth": {"kind": "none"}}]}}
+            {
+                "mcp": {
+                    "servers": [
+                        {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
+                        {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
+                    ]
+                }
+            }
         )
 
 
@@ -1121,8 +1154,8 @@ def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> Non
             {
                 "mcp": {
                     "servers": [
-                        {"id": "grocy-sf", "auth": {"kind": "none"}},
-                        {"id": "grocy_sf", "auth": {"kind": "none"}},
+                        {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
+                        {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
                     ]
                 }
             }

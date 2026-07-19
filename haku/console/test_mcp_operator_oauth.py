@@ -15,7 +15,12 @@ from sqlalchemy.orm import sessionmaker
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
-from haku.console.mcp_config import McpServerEntry, RemoteServerOAuthAuth
+from haku.console.mcp_config import (
+    DynamicOAuthClientRegistration,
+    McpServerEntry,
+    RemoteMcpBackend,
+    RemoteServerOAuthAuth,
+)
 from haku.console.mcp_operator_oauth import (
     PostgresMcpOperatorOAuthStore,
     _BuiltOperatorOAuthFlow,
@@ -60,6 +65,16 @@ def _disable_operator(engine: Engine, operator_id: UUID) -> None:
         assert operator is not None
         operator.status = OperatorStatus.DISABLED
         operator.updated_at = datetime.datetime.now(datetime.UTC)
+
+
+def _dynamic_remote_oauth_server() -> McpServerEntry:
+    return McpServerEntry(
+        id="grocy-sf",
+        backend=RemoteMcpBackend(
+            url="https://grocy.test/mcp",
+            auth=RemoteServerOAuthAuth(client_registration=DynamicOAuthClientRegistration()),
+        ),
+    )
 
 
 def test_callback_response_autoescapes_content_and_locks_down_browser_capabilities() -> None:
@@ -139,7 +154,7 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = oauth_store_for("connect-race-operator")
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
 
     async def build_flow_after_disable(_server: McpServerEntry, _public_base_url: str) -> _BuiltOperatorOAuthFlow:
@@ -171,7 +186,7 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = oauth_store_for("refresh-race-operator")
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     with sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -213,7 +228,7 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = oauth_store_for("refresh-reconnect-race")
-    server = McpServerEntry(id="grocy-sf", server_url="https://grocy.test/mcp", auth=RemoteServerOAuthAuth())
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     replacement_association_id = uuid4()
     with sessionmaker(migrated_engine)() as session, session.begin():

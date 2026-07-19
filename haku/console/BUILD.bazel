@@ -204,6 +204,7 @@ py_library(
         ":console_events",
         ":database_schema",
         ":deps",
+        ":mcp_config",
         ":oauth_callback_page",
         ":oauth_token_support",
         ":operator_auth",

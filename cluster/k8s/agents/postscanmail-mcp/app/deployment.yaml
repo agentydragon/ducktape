@@ -23,7 +23,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: postscanmail-mcp-server
-          image: ghcr.io/agentydragon/postscanmail-mcp-server:devel-20260716235025-8210bf3 # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}
+          image: ghcr.io/agentydragon/postscanmail-mcp-server:devel-20260719023539-e6992db # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge

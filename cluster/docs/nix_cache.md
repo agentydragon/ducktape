@@ -174,12 +174,12 @@ that the earlier "force off everywhere with home-manager" approach hit on
 can't touch `drivefs` chunks — `gaffer` would need its **own S3 bucket** with
 separate credentials. The narinfo boundary above is the current line of defense.
 
-## Pulling (NixOS Hosts)
+## Pulling (Machines and Users)
 
 Substituter wiring is via `ducktape.attic-substituter.enable` in
 `nix/nixos/modules/attic-substituter.nix`. It renders `/run/secrets/rendered/attic-netrc`
 from a per-host SOPS reader JWT (`secrets/hosts/<host>-attic.yaml`,
-auto-rotated) and points `nix.settings.netrc-file` at it.
+auto-rotated) and points the daemon's `nix.settings.netrc-file` at it.
 
 ```nix
 ducktape.attic-substituter = {
@@ -188,8 +188,16 @@ ducktape.attic-substituter = {
 };
 ```
 
-The reader token is minted with `--pull main --pull gaffer`, so the same
-file unlocks both caches.
+Home Manager's `ducktape.attic` module decrypts the same per-host SOPS file for
+the machine's user and renders `~/.config/nix/attic-netrc`. Its `nix.settings`
+adds both private substituters and their trusted public keys. This user-level
+copy is required because `builtins.fetchClosure` opens its explicit cache URL
+from the evaluating process rather than relying only on the daemon's root-only
+netrc. Atlas is not NixOS, so it has only this Home Manager side.
+
+The reader token is minted with `--pull main --pull gaffer`, so one per-host JWT
+unlocks both caches for the daemon and the machine's user without a second
+user-specific Attic credential.
 
 ## Environment Variables
 

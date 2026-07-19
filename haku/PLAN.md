@@ -27,8 +27,8 @@ history holds the original full design rationale. The **actionable build checkli
   upstream credential callers never see) for an upstream with neither of the above: a
   Deployment + a `config.yaml` allowlist + the upstream secret + a bearer-gated route —
   no new boundary code, the generalization is mechanical. Still to wire this way:
-  PostScanMail (unopened mail), Manifold. (The Authentik OAuth facades are _auth_ only —
-  they forward the full tool set — so they don't substitute for this.)
+  Manifold. (The Authentik OAuth facades are _auth_ only — they forward the full tool
+  set — so they don't substitute for this.)
 - **Console executions panel + one-in-flight guard.** Both want a routine-runs-**listing**
   API, and **none is known to exist** for `claude_code` routines (only `/fire`), so the
   interim "review past runs" affordance is the deep-link to the routine's `claude.ai/code`

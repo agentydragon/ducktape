@@ -259,6 +259,27 @@ async def test_osm_unlisted_tool_stays_manual() -> None:
     )
 
 
+@pytest.mark.parametrize("tool_name", ["list_items", "list_automation_rules"])
+async def test_postscanmail_reads_auto_approve(tool_name: str) -> None:
+    policy_id, evaluation = await _remote_decision("postscanmail-mcp", tool_name, {"page": 1})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+@pytest.mark.parametrize(
+    "tool_name", ["set_automation_rule", "request_open", "request_discard", "request_shred", "cancel_shred"]
+)
+async def test_postscanmail_writes_stay_manual(tool_name: str) -> None:
+    # Every mutating/paid/destructive tool stays approval-gated — only the two GET reads
+    # auto-approve. Covers a paid scan (request_open), the destructive pair (discard/shred),
+    # the automation toggle, and a cancel.
+    assert await _remote_decision("postscanmail-mcp", tool_name, {}) == (
+        None,
+        f"manual: postscanmail-mcp/{tool_name} is not auto-approved",
+    )
+
+
 async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:
     gmail = Mock()
     gmail.labels_get.side_effect = RuntimeError("gmail unavailable")

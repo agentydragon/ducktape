@@ -4,7 +4,7 @@ Some MCP servers execute a tool call as *the operator's own account* rather than
 static console-held bearer (e.g. `kubectl-passthrough-mcp`, which runs kubectl as the
 approving operator's cluster-admin identity). For those, the operator links their account
 once through an OAuth authorization-code + PKCE flow; the console runs Dynamic Client
-Registration (or uses a pre-registered `static_client_id`), stores the resulting token
+Registration (or uses a pre-registered client), stores the resulting token
 association, and refreshes it as needed. This module owns that flow, its Postgres-backed
 storage, and the connect/disconnect/callback endpoints. `ToolCallApplicationService`
 consumes the linked token via `access_token_for` before executing an approved call; the
@@ -54,8 +54,11 @@ from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChang
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
+    DynamicOAuthClientRegistration,
     McpServerEntry,
     McpServerNotFoundError,
+    PreregisteredOAuthClient,
+    RemoteMcpBackend,
     RemoteServerOAuthAuth,
     _load_servers,
     _operator_oauth_enabled,
@@ -477,11 +480,12 @@ async def _resolve_operator_oauth_client(
     server: McpServerEntry, server_url: str, redirect_uri: str
 ) -> _ResolvedOAuthClient:
     """Probe the MCP server, discover its authorization-server metadata, and obtain a client
-    registration — a configured `static_client_id`, or Dynamic Client Registration. All the
+    registration — a configured pre-registered client, or Dynamic Client Registration. All the
     network I/O of starting an operator OAuth flow lives here."""
-    assert isinstance(server.auth, RemoteServerOAuthAuth)
+    assert isinstance(server.backend, RemoteMcpBackend)
+    assert isinstance(server.backend.auth, RemoteServerOAuthAuth)
     # Bind to a local so the RemoteServerOAuthAuth narrowing survives the awaits below.
-    oauth = server.auth
+    oauth = server.backend.auth
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=10.0) as client:
             auth_probe = await client.get(server_url, headers=_metadata_request_headers())
@@ -494,24 +498,24 @@ async def _resolve_operator_oauth_client(
                     extract_scope_from_www_auth(auth_probe), resource_metadata, oauth_metadata
                 )
             )
-            client_metadata = OAuthClientMetadata(
-                client_name=oauth.client_name,
-                redirect_uris=[redirect_uri],
-                grant_types=["authorization_code", "refresh_token"],
-                response_types=["code"],
-                scope=scope,
-            )
-            if oauth.static_client_id:
-                client_info = OAuthClientInformationFull(
-                    client_id=oauth.static_client_id,
-                    redirect_uris=client_metadata.redirect_uris,
-                    grant_types=client_metadata.grant_types,
-                    response_types=client_metadata.response_types,
-                    scope=client_metadata.scope,
-                    client_name=client_metadata.client_name,
-                )
-            else:
-                client_info = await _register_oauth_client(client, server_url, oauth_metadata, client_metadata)
+            match oauth.client_registration:
+                case PreregisteredOAuthClient(client_id=client_id):
+                    client_info = OAuthClientInformationFull(
+                        client_id=client_id,
+                        redirect_uris=[redirect_uri],
+                        grant_types=["authorization_code", "refresh_token"],
+                        response_types=["code"],
+                        scope=scope,
+                    )
+                case DynamicOAuthClientRegistration(client_name=client_name):
+                    client_metadata = OAuthClientMetadata(
+                        client_name=client_name,
+                        redirect_uris=[redirect_uri],
+                        grant_types=["authorization_code", "refresh_token"],
+                        response_types=["code"],
+                        scope=scope,
+                    )
+                    client_info = await _register_oauth_client(client, server_url, oauth_metadata, client_metadata)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"failed to start MCP OAuth flow for {server.id}: {e}") from e
     if not client_info.client_id:
@@ -522,12 +526,12 @@ async def _resolve_operator_oauth_client(
 
 
 async def _build_operator_oauth_flow(server: McpServerEntry, public_base_url: str) -> _BuiltOperatorOAuthFlow:
-    assert isinstance(server.auth, RemoteServerOAuthAuth)
+    assert isinstance(server.backend, RemoteMcpBackend)
+    assert isinstance(server.backend.auth, RemoteServerOAuthAuth)
     # remote_server_oauth is meaningless for an in-process server (there's no remote authorization
     # server to run DCR/metadata discovery against); bind server_url to a local for stable
     # mypy narrowing across the awaits.
-    assert server.server_url is not None
-    server_url = server.server_url
+    server_url = server.backend.url
     redirect_uri = f"{public_base_url}{MCP_OPERATOR_AUTH_CALLBACK_PATH}"
     resolved = await _resolve_operator_oauth_client(server, server_url, redirect_uri)
     client_info = resolved.client_info

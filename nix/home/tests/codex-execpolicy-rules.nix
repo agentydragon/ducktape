@@ -106,7 +106,14 @@ in
   };
 
   test_has_header_pointer_to_checker = {
-    expr = lib.hasInfix "codex execpolicy check --pretty" generated.text;
+    expr = lib.hasInfix ''--rules "$CODEX_HOME/rules/managed.rules"'' generated.text;
+    expected = true;
+  };
+
+  test_generated_file_identifies_ownership = {
+    expr =
+      lib.hasInfix "# Managed by Home Manager" generated.text
+      && lib.hasInfix "$CODEX_HOME/rules/default.rules" generated.text;
     expected = true;
   };
 }

@@ -65,9 +65,10 @@ let
       };
     };
     # Pair the built-in trusted-command heuristic with our generated execpolicy
-    # allow rules under $CODEX_HOME/rules/default.rules so safe commands auto-run,
+    # allow rules under $CODEX_HOME/rules/managed.rules so safe commands auto-run,
     # while the agent can explicitly request approval to run other commands
-    # outside the sandbox when needed.
+    # outside the sandbox when needed. Codex owns default.rules for amendments
+    # accepted through the approval UI.
     #
     # Note: a surrounding web/host harness can still override this at runtime.
     # This setting controls locally launched Codex sessions that read
@@ -167,11 +168,14 @@ let
   baseFileRelative = "${codexHomeRelative}/config.nix-base.toml";
   baseFileAbsolute = "${codexHomeAbsolute}/config.nix-base.toml";
   liveFileAbsolute = "${codexHomeAbsolute}/config.toml";
-  rulesFileRelative = "${codexHomeRelative}/rules/default.rules";
+  rulesDirectoryAbsolute = "${codexHomeAbsolute}/rules";
+  managedRulesFileAbsolute = "${rulesDirectoryAbsolute}/managed.rules";
+  defaultRulesFileAbsolute = "${rulesDirectoryAbsolute}/default.rules";
   rulesReadmeRelative = "${codexHomeRelative}/rules/README.md";
   skillPrefix = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
 
   pythonMerge = pkgs.python3.withPackages (ps: [ ps."tomli-w" ]);
+  managedRulesSource = pkgs.writeText "codex-managed.rules" execPolicyRules.text;
   mkSkills = import ../skills.nix sharedSkillsArgs;
   # Codex currently skips symlinked SKILL.md files, so deploy each skill as a directory symlink.
   skillFiles = mkSkills {
@@ -199,6 +203,52 @@ let
     done
 
     BASE='${baseFileAbsolute}' LIVE='${liveFileAbsolute}' ${pythonMerge}/bin/python ${./merge.py}
+  '';
+
+  materializeExecPolicyRules = ''
+    rules_dir='${rulesDirectoryAbsolute}'
+    managed_rules='${managedRulesFileAbsolute}'
+    default_rules='${defaultRulesFileAbsolute}'
+
+    mkdir -p "$rules_dir"
+
+    # Home Manager used to own default.rules as a symlink. Codex ignores
+    # symlinked *.rules during automatic discovery and reserves default.rules
+    # for amendments accepted through its approval UI. linkGeneration normally
+    # removes the obsolete managed link before this activation step; this check
+    # also handles an interrupted/partial migration. Preserve any regular file
+    # containing Codex-owned amendments.
+    if [ -L "$default_rules" ]; then
+      default_rules_target=$(readlink "$default_rules")
+      case "$default_rules_target" in
+        /nix/store/*-home-manager-files/.codex/rules/default.rules)
+          rm "$default_rules"
+          ;;
+        *)
+          echo "Refusing to replace non-Home-Manager default.rules symlink: $default_rules -> $default_rules_target" >&2
+          false
+          ;;
+      esac
+    fi
+    if [ ! -e "$default_rules" ]; then
+      touch "$default_rules"
+      chmod 0600 "$default_rules"
+    fi
+
+    # Codex 0.144.1 only discovers directory entries whose file type is a
+    # regular file. Materialize the declarative rules instead of exposing the
+    # usual Home Manager symlink into the Nix store.
+    managed_rules_tmp="$rules_dir/.managed.rules.tmp"
+    install -m 0600 '${managedRulesSource}' "$managed_rules_tmp"
+    mv -f "$managed_rules_tmp" "$managed_rules"
+
+    # Automatic discovery requires a real directory entry. Rule semantics are
+    # exercised separately by the codex-execpolicy-evaluation flake check so
+    # Home Manager activation does not need to launch Codex on every switch.
+    if [ ! -f "$managed_rules" ] || [ -L "$managed_rules" ]; then
+      echo "Codex managed exec policy is not a regular file: $managed_rules" >&2
+      false
+    fi
   '';
 in
 {
@@ -232,14 +282,16 @@ in
   config.home = {
     file = {
       "${baseFileRelative}".source = baseConfigFile;
-      "${rulesFileRelative}".text = execPolicyRules.text;
       "${rulesReadmeRelative}".text = ''
         Codex execpolicy rules
         =====================
 
-        This directory is managed by Home Manager.
+        This directory contains both declarative and Codex-owned policy state.
 
-        - `default.rules` is generated from `nix/home/allowed-commands.nix`.
+        - `managed.rules` is generated from `nix/home/allowed-commands.nix` and
+          materialized as a regular file because Codex ignores symlinked rules.
+        - `default.rules` is writable state owned by Codex for amendments accepted
+          through the approval UI. Home Manager preserves it across switches.
         - Codex loads every `*.rules` file in this directory automatically.
         - The generated rules are prefix-based `allow` entries.
 
@@ -251,8 +303,8 @@ in
 
         Local checks:
 
-        - `codex execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- git status`
-        - `codex execpolicy check --pretty --rules "$CODEX_HOME/rules/default.rules" -- bash -lc 'git status'`
+        - `codex execpolicy check --pretty --rules "$CODEX_HOME/rules/managed.rules" -- git status`
+        - `codex execpolicy check --pretty --rules "$CODEX_HOME/rules/managed.rules" -- bash -lc 'git status'`
 
         Notes:
 
@@ -264,7 +316,10 @@ in
       '';
     }
     // skillFiles;
-    activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] mergeScript;
+    activation = {
+      codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] mergeScript;
+      codexExecPolicyRules = lib.hm.dag.entryAfter [ "linkGeneration" ] materializeExecPolicyRules;
+    };
     sessionVariables = lib.mkIf useXdgDirectories {
       CODEX_HOME = "${config.xdg.configHome}/codex";
     };

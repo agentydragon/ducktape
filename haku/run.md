@@ -94,6 +94,11 @@ backlogs) you advance a little each run and pick up next time — not a one-pass
   - Re-rank; retire what's elapsed (today: `expired` past-`act_by` entries); **promote**
     anything deferred whose wake trigger arrived; **defer** anything whose only next step is
     to wait (today: `snooze`); keep valid lower-priority work as backlog.
+  - Keep operator-facing surfaces **current as you go**: a state change lands on every
+    surface carrying that fact in the same action, and surfaces the run's changes didn't
+    touch still get their freshness confirmed (manual → _Propagation discipline_, both
+    sides). In an interactive session, propagate within the exchange and sweep what the
+    conversation didn't touch before the session ends.
   - Bring your open set into conformance with your current method's conventions (today:
     links-as-affordances, the actionability gate, …). **If you adopted a base update this
     run, the conformance sweep is mandatory over _everything_ open** — apply each noted

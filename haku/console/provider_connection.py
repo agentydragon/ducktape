@@ -36,6 +36,7 @@ from haku.console.config import ProviderOAuthClientConfig
 from haku.console.console_events import ConsoleEventHubDep, ProviderConnectionChangedEvent
 from haku.console.database_schema import ProviderConnection, ProviderConnectionFlow
 from haku.console.deps import SettingsDep
+from haku.console.mcp_config import OperatorConnectionDefinition
 from haku.console.oauth_callback_page import render_oauth_callback_page
 from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at, token_is_fresh
 from haku.console.operator_auth import OperatorActorDep
@@ -186,12 +187,27 @@ class PostgresProviderConnectionStore:
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
         provider_clients: dict[ProviderConnectionKind, ProviderOAuthClientConfig],
+        operator_connections: dict[str, OperatorConnectionDefinition],
     ) -> None:
         # Migrations are applied once at startup (database_migrate.apply_migrations), not here. The
         # engine/sessionmaker is created once in create_app and shared across every store.
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
         self._provider_clients = provider_clients
+        self._operator_connections = operator_connections
+
+    def _connection_provider(self, connection: str) -> ProviderConnectionKind:
+        definition = self._operator_connections.get(connection)
+        if definition is None:
+            raise RuntimeError(f"operator connection {connection!r} is not configured")
+        return definition.provider
+
+    def is_connected(self, *, connection: str, operator_id: UUID) -> bool:
+        """Read persisted connection presence without refreshing or returning its credential."""
+        provider = self._connection_provider(connection)
+        with self._sessions.begin() as session:
+            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            return session.get(ProviderConnection, (operator_id, provider)) is not None
 
     @property
     def configured_providers(self) -> list[ProviderConnectionKind]:
@@ -323,7 +339,8 @@ class PostgresProviderConnectionStore:
             if row is not None:
                 session.delete(row)
 
-    async def access_token_for(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> str | None:
+    async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
+        provider = self._connection_provider(connection)
         descriptor = PROVIDER_DESCRIPTORS[provider]
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)

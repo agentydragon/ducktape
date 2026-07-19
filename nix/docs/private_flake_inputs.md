@@ -27,8 +27,11 @@ the pinned closure paths.
   hermetic `builtins.fetchClosure` dependencies from
   `https://cache.allegedly.works/gaffer`.
 - [`nix/nixos/modules/attic-substituter.nix`](../nixos/modules/attic-substituter.nix)
-  configures the cache URL, its trusted signing key, and a SOPS-rendered
-  per-host reader JWT. The token must permit `gaffer:r`.
+  configures the daemon's cache URL, trusted signing key, and root-readable
+  rendering of a per-host reader JWT.
+- [`nix/home/modules/attic.nix`](../home/modules/attic.nix) configures the same
+  cache for user-side evaluation and renders the same per-host JWT into a
+  user-readable netrc. The token must permit `gaffer:r`.
 - [`nix/home/modules/google-drive.nix`](../home/modules/google-drive.nix) is
   the only current consumer. A host opts in with
   `services.google-drive.enable = true`.
