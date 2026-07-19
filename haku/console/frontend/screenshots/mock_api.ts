@@ -24,7 +24,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   const url = requestUrl(input);
   // Order matters: match the more specific /api/mcp/... path before /api/tool-calls.
   if (url.includes("/api/mcp/operator-auth")) return jsonResponse({ associations: SAMPLE_MCP });
-  if (url.includes("/api/provider-connections")) return jsonResponse({ connections: SAMPLE_PROVIDER_CONNECTIONS });
+  if (url.includes("/api/operator-connections")) return jsonResponse({ connections: SAMPLE_PROVIDER_CONNECTIONS });
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
   const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
     ...GOOGLE_CALENDAR_MCP_FIXTURES,

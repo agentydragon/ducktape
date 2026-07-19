@@ -69,17 +69,6 @@ deferred:
   authenticated webhook delivery, durable channel metadata, expiration renewal, deduplication,
   replay/catch-up, and cleanup on disconnect.
 
-## Operator connections — separate Google grants
-
-If Gmail, Calendar, Drive, or another Google surface needs independent consent, define separate
-logical operator connections and bind each in-process implementation to the appropriate name. First
-migrate provider-connection storage from `(operator_id, provider)` to
-`(operator_id, connection_name)` so multiple grants can use the same provider. The forward migration
-must map the existing `google` row to the chosen connection name while preserving its access token,
-refresh token, scope, revision, and timestamps; changing the storage key must not require Operators
-to reconnect. Remove the one-logical-connection-per-provider config rejection only after that
-migration exists.
-
 ## MCP server (`/mcp`) — deferred follow-ups
 
 The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and

@@ -629,7 +629,9 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         tmp_path / "connection-status.yaml",
         {
             "static_agents": _STATIC_AGENTS,
-            "operator_connections": {"google_workspace": {"provider": "google"}},
+            "operator_connections": {
+                "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
+            },
             "mcp": {
                 "servers": [
                     {
@@ -676,7 +678,12 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         return_value=ProviderConnectionStatusResponse(
             connections=[
                 ProviderConnected(
-                    provider="google", connected_at=connected_at, token_expires_at=None, scope="openid email"
+                    connection="google_workspace",
+                    display_name="Google Workspace",
+                    provider="google",
+                    connected_at=connected_at,
+                    token_expires_at=None,
+                    scope="openid email",
                 )
             ]
         )
@@ -722,6 +729,8 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         "server_id": "gmail",
         "auth_kind": "operator_connection",
         "connection": {
+            "connection": "google_workspace",
+            "display_name": "Google Workspace",
             "provider": "google",
             "status": "connected",
             "connected_at": connected_at.isoformat().replace("+00:00", "Z"),

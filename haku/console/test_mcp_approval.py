@@ -382,8 +382,14 @@ def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
 
 @pytest.fixture
 def gmail_config_file(tmp_path: Path) -> Path:
-    config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_workspace"})])
-    config["operator_connections"] = {"google_workspace": {"provider": "google"}}
+    config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_mail"})])
+    config["operator_connections"] = {
+        "google_mail": {
+            "display_name": "Google Mail",
+            "provider": "google",
+            "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
+        }
+    }
     return write_config(tmp_path / "haku_console_gmail.yaml", config)
 
 
@@ -1482,17 +1488,24 @@ def test_config_rejects_unknown_operator_connection() -> None:
         )
 
 
-def test_config_rejects_two_logical_connections_aliasing_one_provider() -> None:
-    with pytest.raises(ValidationError, match="only one logical connection per provider"):
-        ConsoleConfigFile.model_validate(
-            {"operator_connections": {"google_mail": {"provider": "google"}, "google_calendar": {"provider": "google"}}}
-        )
+def test_config_allows_two_logical_connections_for_one_provider() -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            "operator_connections": {
+                "google_mail": {"display_name": "Google Mail", "provider": "google", "scopes": ["gmail"]},
+                "google_calendar": {"display_name": "Google Calendar", "provider": "google", "scopes": ["calendar"]},
+            }
+        }
+    )
+    assert list(config.operator_connections) == ["google_mail", "google_calendar"]
 
 
 def test_config_rejects_incompatible_registered_credential_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
-            "operator_connections": {"google_workspace": {"provider": "google"}},
+            "operator_connections": {
+                "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
+            },
             "mcp": {
                 "servers": [
                     _in_process_server("google", {"kind": "operator_connection", "connection": "google_workspace"})

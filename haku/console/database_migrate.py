@@ -20,22 +20,22 @@ _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_LOCK_KEY = 0x4B41_4B55  # "KAKU" in hex, close enough to "haku" to be memorable
 
 
-def run_migrations_for_connection(conn: Any) -> None:
+def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
     conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     cfg.attributes["connection"] = conn
     cfg.attributes["target_metadata"] = metadata
-    alembic_command.upgrade(cfg, "head")
+    alembic_command.upgrade(cfg, revision)
 
 
-def apply_migrations(database_url: str) -> None:
+def apply_migrations(database_url: str, revision: str = "head") -> None:
     """Upgrade the haku-console database to head. The explicit startup step (app.main) and the tests
     call this once against the shared database — migrations are an ownership of the process, not a
     side effect of constructing a ledger/store."""
     engine = create_engine(database_url)
     try:
         with engine.begin() as conn:
-            run_migrations_for_connection(conn)
+            run_migrations_for_connection(conn, revision)
     finally:
         engine.dispose()

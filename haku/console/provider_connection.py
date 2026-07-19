@@ -1,9 +1,9 @@
 """Per-Operator OAuth connections to well-known external providers (Google today).
 
 This is the console's own replacement for Airlock's brokered ``haku_console_google`` token:
-each Operator links their Google account once through an authorization-code + PKCE flow, and
-the console stores that Operator's refresh token in Postgres and self-refreshes the access
-token in-process. ``ToolCallApplicationService`` reads the fresh access token via
+each Operator links deploy-named, scope-specific Google connections through authorization-code +
+PKCE flows, and the console stores and self-refreshes each refresh token independently in Postgres.
+``ToolCallApplicationService`` reads the fresh access token via
 ``access_token_for`` before executing a gmail/google_calendar call; the ``gmail`` and
 ``google_calendar`` in-process servers are built per call from it.
 
@@ -33,7 +33,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.config import ProviderOAuthClientConfig
-from haku.console.console_events import ConsoleEventHubDep, ProviderConnectionChangedEvent
+from haku.console.console_events import ConsoleEventHubDep, OperatorConnectionChangedEvent
 from haku.console.database_schema import ProviderConnection, ProviderConnectionFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import OperatorConnectionDefinition
@@ -53,10 +53,12 @@ PROVIDER_CONNECTION_CALLBACK_PATH = "/api/provider-connections/callback"
 _FLOW_TTL = datetime.timedelta(minutes=10)
 _TOKEN_ENDPOINT_TIMEOUT_SECONDS = 10.0
 
-router = APIRouter(tags=["provider-connections"])
+router = APIRouter(tags=["operator-connections"])
 
 
 class ProviderConnectionStatusBase(BaseModel):
+    connection: str
+    display_name: str
     provider: ProviderConnectionKind
 
 
@@ -81,6 +83,7 @@ class ProviderConnectionStatusResponse(BaseModel):
 
 
 class ProviderConnectionConnectResponse(BaseModel):
+    connection: str
     provider: ProviderConnectionKind
     authorization_url: str
     expires_at: datetime.datetime
@@ -90,6 +93,7 @@ class _FlowState(BaseModel):
     """A ``ProviderConnectionFlow`` row read out before its session closes, carried across the
     authorization-code → token exchange (which must not hold a DB session open)."""
 
+    connection_name: str
     provider: ProviderConnectionKind
     operator_id: UUID
     expires_at: datetime.datetime
@@ -102,6 +106,7 @@ class _RefreshState(BaseModel):
     """A ``ProviderConnection`` row's refresh inputs read out before its session closes."""
 
     operator_id: UUID
+    connection_name: str
     provider: ProviderConnectionKind
     connection_id: UUID
     token_revision: int
@@ -120,11 +125,20 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-def _status_from_row(provider: ProviderConnectionKind, row: ProviderConnection | None) -> ProviderConnectionStatus:
+def _status_from_row(
+    connection: str, definition: OperatorConnectionDefinition, row: ProviderConnection | None
+) -> ProviderConnectionStatus:
     if row is None:
-        return ProviderUnconnected(provider=provider)
+        return ProviderUnconnected(
+            connection=connection, display_name=definition.display_name, provider=definition.provider
+        )
     return ProviderConnected(
-        provider=provider, connected_at=row.created_at, token_expires_at=row.token_expires_at, scope=row.scope
+        connection=connection,
+        display_name=definition.display_name,
+        provider=definition.provider,
+        connected_at=row.created_at,
+        token_expires_at=row.token_expires_at,
+        scope=row.scope,
     )
 
 
@@ -196,23 +210,27 @@ class PostgresProviderConnectionStore:
         self._provider_clients = provider_clients
         self._operator_connections = operator_connections
 
-    def _connection_provider(self, connection: str) -> ProviderConnectionKind:
+    def _require_definition(self, connection: str) -> OperatorConnectionDefinition:
         definition = self._operator_connections.get(connection)
         if definition is None:
-            raise RuntimeError(f"operator connection {connection!r} is not configured")
-        return definition.provider
+            raise HTTPException(status_code=404, detail=f"operator connection {connection!r} is not configured")
+        return definition
 
     def is_connected(self, *, connection: str, operator_id: UUID) -> bool:
         """Read persisted connection presence without refreshing or returning its credential."""
-        provider = self._connection_provider(connection)
+        self._require_definition(connection)
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            return session.get(ProviderConnection, (operator_id, provider)) is not None
+            return session.get(ProviderConnection, (operator_id, connection)) is not None
 
     @property
-    def configured_providers(self) -> list[ProviderConnectionKind]:
-        """Providers with a configured OAuth client, in registry order."""
-        return [kind for kind in PROVIDER_DESCRIPTORS if kind in self._provider_clients]
+    def configured_connections(self) -> list[tuple[str, OperatorConnectionDefinition]]:
+        """Logical connections whose provider has an installed OAuth client, in config order."""
+        return [
+            (name, definition)
+            for name, definition in self._operator_connections.items()
+            if definition.provider in self._provider_clients
+        ]
 
     def _require_client(self, provider: ProviderConnectionKind) -> ProviderOAuthClientConfig:
         client = self._provider_clients.get(provider)
@@ -221,24 +239,28 @@ class PostgresProviderConnectionStore:
         return client
 
     def list_statuses(self, *, operator_id: UUID) -> ProviderConnectionStatusResponse:
-        providers = self.configured_providers
+        connections = self.configured_connections
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            if not providers:
+            if not connections:
                 return ProviderConnectionStatusResponse()
             rows = session.scalars(
                 select(ProviderConnection)
                 .where(ProviderConnection.operator_id == operator_id)
-                .where(ProviderConnection.provider.in_(providers))
+                .where(ProviderConnection.connection_name.in_([name for name, _ in connections]))
             ).all()
-        by_provider = {row.provider: row for row in rows}
+        by_connection = {row.connection_name: row for row in rows}
         return ProviderConnectionStatusResponse(
-            connections=[_status_from_row(kind, by_provider.get(kind)) for kind in providers]
+            connections=[
+                _status_from_row(name, definition, by_connection.get(name)) for name, definition in connections
+            ]
         )
 
     async def connect_flow(
-        self, *, provider: ProviderConnectionKind, operator_id: UUID, public_base_url: str
+        self, *, connection: str, operator_id: UUID, public_base_url: str
     ) -> ProviderConnectionConnectResponse:
+        definition = self._require_definition(connection)
+        provider = definition.provider
         descriptor = PROVIDER_DESCRIPTORS[provider]
         client = self._require_client(provider)
         redirect_uri = f"{public_base_url.rstrip('/')}{PROVIDER_CONNECTION_CALLBACK_PATH}"
@@ -251,7 +273,7 @@ class PostgresProviderConnectionStore:
             "client_id": client.client_id,
             "redirect_uri": redirect_uri,
             "state": state,
-            "scope": descriptor.scope,
+            "scope": " ".join(definition.scopes),
             "code_challenge": pkce.code_challenge,
             "code_challenge_method": "S256",
             **dict(descriptor.extra_auth_params),
@@ -259,30 +281,31 @@ class PostgresProviderConnectionStore:
         authorization_url = f"{descriptor.authorize_url}?{urlencode(params)}"
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            if session.get(ProviderConnection, (operator_id, provider)) is not None:
+            if session.get(ProviderConnection, (operator_id, connection)) is not None:
                 raise HTTPException(
-                    status_code=409, detail=f"{descriptor.display_name} is already connected; disconnect it first"
+                    status_code=409, detail=f"{definition.display_name} is already connected; disconnect it first"
                 )
             session.execute(delete(ProviderConnectionFlow).where(ProviderConnectionFlow.expires_at < now))
             session.execute(
                 delete(ProviderConnectionFlow)
                 .where(ProviderConnectionFlow.operator_id == operator_id)
-                .where(ProviderConnectionFlow.provider == provider)
+                .where(ProviderConnectionFlow.connection_name == connection)
             )
             session.add(
                 ProviderConnectionFlow(
                     state=state,
                     operator_id=operator_id,
+                    connection_name=connection,
                     provider=provider,
                     created_at=now,
                     expires_at=expires_at,
                     redirect_uri=redirect_uri,
                     code_verifier=pkce.code_verifier,
-                    scope=descriptor.scope,
+                    scope=" ".join(definition.scopes),
                 )
             )
         return ProviderConnectionConnectResponse(
-            provider=provider, authorization_url=authorization_url, expires_at=expires_at
+            connection=connection, provider=provider, authorization_url=authorization_url, expires_at=expires_at
         )
 
     async def complete_callback(self, *, state: str, code: str, operator_id: UUID) -> ProviderConnectionStatus:
@@ -293,6 +316,7 @@ class PostgresProviderConnectionStore:
             if row.operator_id != operator_id:
                 raise HTTPException(status_code=403, detail="OAuth flow belongs to a different operator")
             flow = _FlowState(
+                connection_name=row.connection_name,
                 provider=row.provider,
                 operator_id=row.operator_id,
                 expires_at=row.expires_at,
@@ -305,6 +329,9 @@ class PostgresProviderConnectionStore:
         if flow.expires_at < now:
             raise HTTPException(status_code=410, detail="OAuth flow expired; start the connection again")
         descriptor = PROVIDER_DESCRIPTORS[flow.provider]
+        definition = self._require_definition(flow.connection_name)
+        if definition.provider != flow.provider:
+            raise HTTPException(status_code=409, detail="operator connection provider changed; start again")
         client = self._require_client(flow.provider)
         token = await _exchange_code(
             descriptor, client, code=code, redirect_uri=flow.redirect_uri, code_verifier=flow.code_verifier
@@ -314,12 +341,16 @@ class PostgresProviderConnectionStore:
             # The code exchange is external I/O. Make the active-status check and the persistence one
             # atomic final step, so a disable committed while it was in flight is observed here.
             self._operator_identity_store.require_active_in_transaction(session, flow.operator_id)
-            if session.get(ProviderConnection, (flow.operator_id, flow.provider), with_for_update=True) is not None:
+            if (
+                session.get(ProviderConnection, (flow.operator_id, flow.connection_name), with_for_update=True)
+                is not None
+            ):
                 raise HTTPException(
-                    status_code=409, detail=f"{descriptor.display_name} is already connected; disconnect it first"
+                    status_code=409, detail=f"{definition.display_name} is already connected; disconnect it first"
                 )
             connection = ProviderConnection(
                 operator_id=flow.operator_id,
+                connection_name=flow.connection_name,
                 provider=flow.provider,
                 created_at=now,
                 updated_at=now,
@@ -330,21 +361,26 @@ class PostgresProviderConnectionStore:
                 token_expires_at=expires_at,
             )
             session.add(connection)
-            return _status_from_row(flow.provider, connection)
+            return _status_from_row(flow.connection_name, definition, connection)
 
-    def disconnect(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> None:
+    def disconnect(self, *, connection: str, operator_id: UUID) -> ProviderUnconnected:
+        definition = self._require_definition(connection)
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(ProviderConnection, (operator_id, provider), with_for_update=True)
+            row = session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
             if row is not None:
                 session.delete(row)
+        return ProviderUnconnected(
+            connection=connection, display_name=definition.display_name, provider=definition.provider
+        )
 
     async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
-        provider = self._connection_provider(connection)
+        definition = self._require_definition(connection)
+        provider = definition.provider
         descriptor = PROVIDER_DESCRIPTORS[provider]
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(ProviderConnection, (operator_id, provider), with_for_update=True)
+            row = session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
             if row is None:
                 return None
             if token_is_fresh(row.token_expires_at, _now()):
@@ -353,6 +389,7 @@ class PostgresProviderConnectionStore:
                 return None
             snapshot = _RefreshState(
                 operator_id=operator_id,
+                connection_name=connection,
                 provider=provider,
                 connection_id=row.connection_id,
                 token_revision=row.token_revision,
@@ -365,7 +402,7 @@ class PostgresProviderConnectionStore:
             # Refresh is external I/O. Revalidate in the same transaction as the write and the return
             # so a disable committed during refresh cannot produce a usable token.
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(ProviderConnection, (operator_id, provider), with_for_update=True)
+            row = session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
             if row is None:
                 return None
             if not snapshot.still_matches(row):
@@ -396,16 +433,16 @@ def _store(request: Request) -> PostgresProviderConnectionStore:
 ProviderConnectionStoreDep = Annotated[PostgresProviderConnectionStore, Depends(_store)]
 
 
-@router.get("/api/provider-connections")
+@router.get("/api/operator-connections")
 async def provider_connection_statuses(
     store: ProviderConnectionStoreDep, actor: OperatorActorDep
 ) -> ProviderConnectionStatusResponse:
     return store.list_statuses(operator_id=actor.operator_id)
 
 
-@router.post("/api/provider-connections/{provider}/connect")
+@router.post("/api/operator-connections/{connection}/connect")
 async def connect_provider_connection(
-    provider: ProviderConnectionKind,
+    connection: str,
     request: Request,
     csrf_protect: Csrf,
     settings: SettingsDep,
@@ -414,13 +451,13 @@ async def connect_provider_connection(
 ) -> ProviderConnectionConnectResponse:
     await csrf_protect.validate_csrf(request)
     return await store.connect_flow(
-        provider=provider, operator_id=actor.operator_id, public_base_url=public_base_url(settings)
+        connection=connection, operator_id=actor.operator_id, public_base_url=public_base_url(settings)
     )
 
 
-@router.delete("/api/provider-connections/{provider}")
+@router.delete("/api/operator-connections/{connection}")
 async def disconnect_provider_connection(
-    provider: ProviderConnectionKind,
+    connection: str,
     request: Request,
     csrf_protect: Csrf,
     store: ProviderConnectionStoreDep,
@@ -429,9 +466,11 @@ async def disconnect_provider_connection(
 ) -> ProviderUnconnected:
     await csrf_protect.validate_csrf(request)
     operator_id = actor.operator_id
-    store.disconnect(provider=provider, operator_id=operator_id)
-    await event_hub.broadcast(operator_id, [ProviderConnectionChangedEvent(provider=provider, status="disconnected")])
-    return ProviderUnconnected(provider=provider)
+    status = store.disconnect(connection=connection, operator_id=operator_id)
+    await event_hub.broadcast(
+        operator_id, [OperatorConnectionChangedEvent(connection=connection, status="disconnected")]
+    )
+    return status
 
 
 @router.get(PROVIDER_CONNECTION_CALLBACK_PATH)
@@ -454,7 +493,6 @@ async def provider_connection_callback(
         detail = e.detail if isinstance(e.detail, str) else "Connection failed."
         return _callback_response(False, detail, status_code=e.status_code)
     await event_hub.broadcast(
-        operator_id, [ProviderConnectionChangedEvent(provider=status.provider, status="connected")]
+        operator_id, [OperatorConnectionChangedEvent(connection=status.connection, status="connected")]
     )
-    descriptor = PROVIDER_DESCRIPTORS[status.provider]
-    return _callback_response(True, f"Connected {descriptor.display_name}.")
+    return _callback_response(True, f"Connected {status.display_name}.")

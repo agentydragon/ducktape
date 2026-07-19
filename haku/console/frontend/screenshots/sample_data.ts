@@ -187,11 +187,19 @@ export const SAMPLE_MCP: McpOperatorAuthStatus[] = [
 
 export const SAMPLE_PROVIDER_CONNECTIONS: ProviderConnectionStatus[] = [
   {
+    connection: "google_mail",
+    display_name: "Google Mail",
     provider: "google",
     status: "connected",
     connected_at: "2026-07-01T09:00:00Z",
     token_expires_at: "2026-07-17T10:00:00Z",
-    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar.events",
+    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.compose",
+  },
+  {
+    connection: "google_calendar",
+    display_name: "Google Calendar",
+    provider: "google",
+    status: "unconnected",
   },
 ];
 

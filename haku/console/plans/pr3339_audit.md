@@ -13,7 +13,7 @@ Only the deliberately-deferred items remain below.
 
 ## DEFER — judgment calls / low value / intentional parallelism
 
-- **DF1** `ProviderConnectionChangedEvent` ≈ `McpOperatorAuthChangedEvent` (`console_events.py`) — a
+- **DF1** `OperatorConnectionChangedEvent` ≈ `McpOperatorAuthChangedEvent` (`console_events.py`) — a
   shared base carrying `status: Literal["connected","disconnected"]` + `extra="forbid"` would remove
   one copied field, but the distinct event types/keys are intentional. Low value.
 - **DF2** `ProviderConnection`/`ProviderConnectionFlow` parallel the `McpOperatorOAuth*` tables

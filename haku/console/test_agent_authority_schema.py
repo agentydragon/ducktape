@@ -564,6 +564,61 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
         engine.dispose()
 
 
+def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db_url: str) -> None:
+    apply_migrations(db_url, "0012")
+    engine = create_engine(db_url)
+    operator_id = uuid4()
+    now = _now()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO operators (operator_id, status, created_at, updated_at)
+                    VALUES (:operator_id, 'active', :now, :now)
+                    """
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO provider_connections (
+                        operator_id, provider, connection_id, token_revision, created_at, updated_at,
+                        access_token, refresh_token, token_type, scope, token_expires_at
+                    ) VALUES (
+                        :operator_id, 'google', :connection_id, 0, :now, :now,
+                        'old-access', 'old-refresh', 'Bearer', 'old-broad-scope', NULL
+                    )
+                    """
+                ),
+                {"operator_id": operator_id, "connection_id": uuid4(), "now": now},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO provider_connection_flows (
+                        state, operator_id, provider, created_at, expires_at,
+                        redirect_uri, code_verifier, scope
+                    ) VALUES (
+                        'old-flow', :operator_id, 'google', :now, :now,
+                        'https://haku.test/callback', 'verifier', 'old-broad-scope'
+                    )
+                    """
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+
+        apply_migrations(db_url)
+
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM provider_connections")).scalar_one() == 0
+            assert conn.execute(text("SELECT count(*) FROM provider_connection_flows")).scalar_one() == 0
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
+    finally:
+        engine.dispose()
+
+
 def test_database_already_at_head_is_unchanged(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)

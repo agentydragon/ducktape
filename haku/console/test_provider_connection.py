@@ -30,7 +30,10 @@ from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
 
 GOOGLE = ProviderConnectionKind.GOOGLE
-GOOGLE_WORKSPACE = "google_workspace"
+GOOGLE_MAIL = "google_mail"
+GOOGLE_CALENDAR = "google_calendar"
+GMAIL_SCOPES = ("https://www.googleapis.com/auth/gmail.modify",)
+CALENDAR_SCOPES = ("https://www.googleapis.com/auth/calendar.events",)
 _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
@@ -42,7 +45,12 @@ def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, U
         console_sessions(migrated_db_url),
         operator_identity_store=identity_store,
         provider_clients={GOOGLE: ProviderOAuthClientConfig(client_id="client-123", client_secret=SecretStr("s3cret"))},
-        operator_connections={GOOGLE_WORKSPACE: OperatorConnectionDefinition(provider=GOOGLE)},
+        operator_connections={
+            GOOGLE_MAIL: OperatorConnectionDefinition(display_name="Google Mail", provider=GOOGLE, scopes=GMAIL_SCOPES),
+            GOOGLE_CALENDAR: OperatorConnectionDefinition(
+                display_name="Google Calendar", provider=GOOGLE, scopes=CALENDAR_SCOPES
+            ),
+        },
     )
     return store, operator_id
 
@@ -62,11 +70,12 @@ async def _connect(
     operator_id: UUID,
     monkeypatch: pytest.MonkeyPatch,
     *,
+    connection: str = GOOGLE_MAIL,
     access_token: str = "at-1",
     refresh_token: str | None = "rt-1",
     expires_in: int | None = 3600,
 ) -> None:
-    flow = await store.connect_flow(provider=GOOGLE, operator_id=operator_id, public_base_url="https://haku.test")
+    flow = await store.connect_flow(connection=connection, operator_id=operator_id, public_base_url="https://haku.test")
     state = parse_qs(urlsplit(flow.authorization_url).query)["state"][0]
 
     async def fake_exchange(
@@ -88,7 +97,9 @@ async def _connect(
 async def test_connect_flow_builds_google_consent_url(
     store: PostgresProviderConnectionStore, operator_id: UUID
 ) -> None:
-    flow = await store.connect_flow(provider=GOOGLE, operator_id=operator_id, public_base_url="https://haku.test")
+    flow = await store.connect_flow(
+        connection=GOOGLE_MAIL, operator_id=operator_id, public_base_url="https://haku.test"
+    )
     parsed = urlsplit(flow.authorization_url)
     query = parse_qs(parsed.query)
     assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "https://accounts.google.com/o/oauth2/v2/auth"
@@ -96,16 +107,29 @@ async def test_connect_flow_builds_google_consent_url(
     assert query["prompt"] == ["consent"]
     assert query["code_challenge_method"] == ["S256"]
     assert query["redirect_uri"] == [_CALLBACK]
-    assert "https://www.googleapis.com/auth/gmail.modify" in query["scope"][0]
+    assert query["scope"] == ["https://www.googleapis.com/auth/gmail.modify"]
 
 
 async def test_callback_persists_connection(
     store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
-    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) == "at-1"
+    assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-1"
     connections = store.list_statuses(operator_id=operator_id).connections
-    assert [(c.provider, c.status) for c in connections] == [(GOOGLE, "connected")]
+    assert [(c.connection, c.display_name, c.provider, c.status) for c in connections] == [
+        (GOOGLE_MAIL, "Google Mail", GOOGLE, "connected"),
+        (GOOGLE_CALENDAR, "Google Calendar", GOOGLE, "unconnected"),
+    ]
+
+
+async def test_same_provider_connections_have_independent_grants(
+    store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _connect(store, operator_id, monkeypatch, connection=GOOGLE_MAIL, access_token="mail-token")
+    await _connect(store, operator_id, monkeypatch, connection=GOOGLE_CALENDAR, access_token="calendar-token")
+
+    assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "mail-token"
+    assert await store.access_token_for(connection=GOOGLE_CALENDAR, operator_id=operator_id) == "calendar-token"
 
 
 async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token(
@@ -116,7 +140,7 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     engine = create_engine(migrated_db_url)
     sessions = sessionmaker(engine, expire_on_commit=False)
     with sessions.begin() as session:
-        row = session.get(ProviderConnection, (operator_id, GOOGLE))
+        row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         row.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
         revision_before = row.token_revision
@@ -127,10 +151,10 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
         return OAuthToken(access_token="at-2", refresh_token=None, token_type="Bearer", expires_in=3600, scope="s")
 
     monkeypatch.setattr(provider_connection_module, "_refresh_token", fake_refresh)
-    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) == "at-2"
+    assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-2"
 
     with sessions.begin() as session:
-        row = session.get(ProviderConnection, (operator_id, GOOGLE))
+        row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         assert row.token_revision == revision_before + 1
         assert row.refresh_token == "rt-1"
@@ -141,10 +165,10 @@ async def test_disconnect_removes_connection(
     store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
-    store.disconnect(provider=GOOGLE, operator_id=operator_id)
-    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) is None
+    store.disconnect(connection=GOOGLE_MAIL, operator_id=operator_id)
+    assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
     connections = store.list_statuses(operator_id=operator_id).connections
-    assert [c.status for c in connections] == ["unconnected"]
+    assert [c.status for c in connections] == ["unconnected", "unconnected"]
 
 
 async def test_connect_when_already_connected_conflicts(
@@ -152,12 +176,12 @@ async def test_connect_when_already_connected_conflicts(
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
     with pytest.raises(HTTPException) as excinfo:
-        await store.connect_flow(provider=GOOGLE, operator_id=operator_id, public_base_url="https://haku.test")
+        await store.connect_flow(connection=GOOGLE_MAIL, operator_id=operator_id, public_base_url="https://haku.test")
     assert excinfo.value.status_code == 409
 
 
 async def test_access_token_for_unconnected_is_none(store: PostgresProviderConnectionStore, operator_id: UUID) -> None:
-    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) is None
+    assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
 
 
 def _provider_store(token: str | None) -> Any:
@@ -180,7 +204,7 @@ def _unconsulted_store() -> Any:
 
 async def test_backend_auth_resolves_provider_connection() -> None:
     server = McpServerEntry(
-        id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_WORKSPACE))
+        id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_MAIL))
     )
     token = await backend_auth_for_operator(
         server=server,
@@ -194,7 +218,7 @@ async def test_backend_auth_resolves_provider_connection() -> None:
 
 async def test_backend_auth_raises_when_provider_unconnected() -> None:
     server = McpServerEntry(
-        id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_WORKSPACE))
+        id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_MAIL))
     )
     with pytest.raises(BackendAccountNotConnectedError):
         await backend_auth_for_operator(

@@ -34,7 +34,28 @@ class McpServerNotFoundError(LookupError):
 class OperatorConnectionDefinition(BaseModel):
     """A deploy-named external-account linkage backed by one provider's OAuth client."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1)
     provider: ProviderConnectionKind
+    scopes: tuple[str, ...] = Field(min_length=1)
+
+    @field_validator("display_name")
+    @classmethod
+    def _normalize_display_name(cls, value: str) -> str:
+        if not (normalized := value.strip()):
+            raise ValueError("operator connection display name must not be blank")
+        return normalized
+
+    @field_validator("scopes")
+    @classmethod
+    def _require_distinct_scopes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(scope.strip() for scope in value)
+        if any(not scope for scope in normalized):
+            raise ValueError("operator connection scopes must not be blank")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("operator connection scopes must not contain duplicates")
+        return normalized
 
 
 class OperatorConnectionCredential(BaseModel):
@@ -203,16 +224,9 @@ class ConsoleConfigFile(BaseModel):
                         f"MCP server {server.id!r} references unknown operator connection {credential.connection!r}"
                     )
 
-        connection_providers: set[ProviderConnectionKind] = set()
-        for name, definition in self.operator_connections.items():
+        for name in self.operator_connections:
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
                 raise ValueError(f"invalid operator connection name {name!r}")
-            if definition.provider in connection_providers:
-                raise ValueError(
-                    f"multiple operator connections map to provider {definition.provider.value!r}; "
-                    "provider-keyed storage supports only one logical connection per provider"
-                )
-            connection_providers.add(definition.provider)
 
         agent_ids: set[UUID] = set()
         name_keys: set[str] = set()

@@ -577,10 +577,10 @@ class McpOperatorOAuthFlow(Base):
 class ProviderConnection(Base):
     """One Operator's linked account for a well-known OAuth provider (Google today).
 
-    One row per ``(operator_id, provider)`` — a single Google connection backs both the
-    ``gmail`` and ``google_calendar`` in-process servers. The console self-refreshes
-    ``access_token`` from ``refresh_token`` using the provider's fixed client (injected from
-    Settings, never stored here); ``token_revision`` guards a concurrent refresh/reconnect.
+    One row per deploy-named ``(operator_id, connection_name)``. Multiple logical connections may
+    use the same provider and fixed OAuth client while requesting independent scope sets. The
+    console self-refreshes ``access_token`` from ``refresh_token`` using that provider client;
+    ``token_revision`` guards a concurrent refresh/reconnect.
     """
 
     __tablename__ = "provider_connections"
@@ -592,8 +592,9 @@ class ProviderConnection(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
     )
+    connection_name: Mapped[str] = mapped_column(Text, primary_key=True)
     provider: Mapped[ProviderConnectionKind] = mapped_column(
-        StringBackedStrEnumColumn(ProviderConnectionKind), primary_key=True
+        StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
     )
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
     token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
@@ -619,6 +620,7 @@ class ProviderConnectionFlow(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
+    connection_name: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[ProviderConnectionKind] = mapped_column(
         StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
     )

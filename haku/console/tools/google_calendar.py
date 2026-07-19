@@ -6,8 +6,8 @@ so the application service's approval/audit lifecycle and the HTTP adapter's CSR
 behavior run unchanged.
 Registered as MCP server id `google_calendar` with an `in_process` backend in
 `cluster/k8s/haku/console/config.yaml`. Executes as the acting Operator's own Google account via the
-config-bound `google_workspace` operator connection in `provider_connection.py` — the same grant the
-`gmail` server uses. See `haku/docs/security.md` for the credential/consent model.
+config-bound `google_calendar` operator connection in `provider_connection.py`. See
+`haku/docs/security.md` for the credential/consent model.
 """
 
 from __future__ import annotations

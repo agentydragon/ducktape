@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from haku.console import operator_auth
 from haku.console.config import Settings
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.provider_connection_registry import ProviderConnectionKind
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["console-events"])
@@ -31,11 +30,11 @@ class McpOperatorAuthChangedEvent(BaseModel):
     status: Literal["connected", "disconnected"]
 
 
-class ProviderConnectionChangedEvent(BaseModel):
+class OperatorConnectionChangedEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    event_type: Literal["provider_connection_changed"] = "provider_connection_changed"
-    provider: ProviderConnectionKind
+    event_type: Literal["operator_connection_changed"] = "operator_connection_changed"
+    connection: str
     status: Literal["connected", "disconnected"]
 
 
@@ -52,7 +51,7 @@ class ToolCallsChangedEvent(BaseModel):
     tool_call_id: str
 
 
-type ConsoleEvent = ToolCallsChangedEvent | McpOperatorAuthChangedEvent | ProviderConnectionChangedEvent
+type ConsoleEvent = ToolCallsChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
 
 
 class _RoutedConsoleEvent(BaseModel):

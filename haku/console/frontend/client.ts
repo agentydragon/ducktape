@@ -35,7 +35,7 @@ export type McpOperatorAuthConnectResponse = components["schemas"]["McpOperatorA
 export type ProviderConnectionStatus =
   | components["schemas"]["ProviderConnected"]
   | components["schemas"]["ProviderUnconnected"];
-export type ProviderConnectionKind = ProviderConnectionStatus["provider"];
+export type OperatorConnectionName = ProviderConnectionStatus["connection"];
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
@@ -150,31 +150,31 @@ export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOp
 
 // Per-Operator external account connections (Google today), the console's own replacement for
 // Airlock's brokered token. Connect opens the provider's consent in a new tab; the backend
-// callback stores the refresh token and broadcasts a `provider_connection_changed` event.
-export async function fetchProviderConnections(): Promise<ProviderConnectionStatus[]> {
-  const { data, error } = await api.GET("/api/provider-connections");
+// callback stores the refresh token and broadcasts an `operator_connection_changed` event.
+export async function fetchOperatorConnections(): Promise<ProviderConnectionStatus[]> {
+  const { data, error } = await api.GET("/api/operator-connections");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load connected accounts"));
   return data.connections ?? [];
 }
 
-export async function connectProviderConnection(
-  provider: ProviderConnectionKind
+export async function connectOperatorConnection(
+  connection: OperatorConnectionName
 ): Promise<ProviderConnectionConnectResponse> {
   const csrfToken = await fetchCsrfToken();
-  const { data, error } = await api.POST("/api/provider-connections/{provider}/connect", {
-    params: { path: { provider } },
+  const { data, error } = await api.POST("/api/operator-connections/{connection}/connect", {
+    params: { path: { connection } },
     headers: { "X-CSRF-Token": csrfToken },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to start account connection"));
   return data;
 }
 
-export async function disconnectProviderConnection(
-  provider: ProviderConnectionKind
+export async function disconnectOperatorConnection(
+  connection: OperatorConnectionName
 ): Promise<ProviderConnectionStatus> {
   const csrfToken = await fetchCsrfToken();
-  const { data, error } = await api.DELETE("/api/provider-connections/{provider}", {
-    params: { path: { provider } },
+  const { data, error } = await api.DELETE("/api/operator-connections/{connection}", {
+    params: { path: { connection } },
     headers: { "X-CSRF-Token": csrfToken },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to disconnect account"));

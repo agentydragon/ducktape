@@ -64,10 +64,11 @@ reviewed transparent auto-approved tools; `create_event` always remains operator
    as an authorized redirect URI on that Google OAuth client, or the callback fails with
    `redirect_uri_mismatch`.
 
-**Connect (operator, per account):** open the console's Settings → Connected accounts and click
-**Connect** on Google, then complete consent (`access_type=offline`, `prompt=consent`). The
-callback stores the refresh token in the console's Postgres and self-refreshes the access token
-thereafter; Disconnect revokes it.
+**Connect (operator, per linkage):** open the console's Settings → Connected accounts and connect
+Google Mail and Google Calendar separately, then complete consent (`access_type=offline`,
+`prompt=consent`). Each callback stores its own refresh token in Postgres; disconnecting one linkage
+deletes only that local grant. Both linkages currently use the same Google OAuth client/project, so
+revoking project access at Google invalidates both.
 
 **Gotcha — Testing publishing status expires the refresh token every 7 days.** The OAuth app
 (project `rai-personal`) is in **Testing**, not **In production**, because the requested Gmail/Drive
@@ -80,13 +81,10 @@ published-but-unverified state for restricted scopes (unlike merely _sensitive_ 
 unverified production app just shows a warning). So the options are: stay in **Testing** and re-Connect
 roughly weekly, or complete verification. Testing is accepted for now.
 
-Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, plus every read-only scope the
-`google` provider carries (`gmail.readonly`, `drive.readonly`, `drive.activity.readonly`,
-`calendar.readonly`, `tasks.readonly`, `contacts.readonly`, `documents.readonly`,
-`spreadsheets.readonly`, `presentations.readonly`, `youtube.readonly`) — requested in one grant
-(`haku/console/provider_connection_registry.py`) so the console can read across the same surface
-without a second consent round-trip. See `haku/docs/security.md` for the enforcement-inventory
-entry.
+Scopes are explicit per deploy-named connection in `config.yaml`: Google Mail requests
+`gmail.modify`, `gmail.compose`, and `gmail.settings.basic`; Google Calendar requests
+`calendar.events`. Add a new logical connection when another Google surface is actually exposed
+rather than broadening either existing grant.
 
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
 

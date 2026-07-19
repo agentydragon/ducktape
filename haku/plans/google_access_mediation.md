@@ -10,9 +10,10 @@ Sequenced later than the common Agent lifecycle (H1–H3 there).
 
 1. **G1 (done):** the console owns the per-Operator Google connection —
    `haku/console/provider_connection.py` (Postgres per-Operator refresh storage + in-process
-   self-refresh), the `/api/provider-connections/*` connect/status/disconnect flow, the
-   `provider_connection: google` marker with execution-time Operator selection, and the Settings →
-   Connected accounts UI. The console holds its own dedicated Google OAuth client
+   self-refresh), the `/api/operator-connections/*` connect/status/disconnect flow, deploy-named
+   connection bindings with execution-time Operator selection, and the Settings → Connected
+   accounts UI. Gmail and Calendar have separate least-privilege grants while currently sharing
+   one provider client. The console holds its own dedicated Google OAuth client
    (`haku-console-google-client-credentials`, project `rai-personal`, independent of Airlock's). A
    downstream-provider relationship, not Agent enrollment or an Agent-held credential.
 2. **G2 (done):** removed `haku_console_google`, its Secret publication/External Secrets mirror, and

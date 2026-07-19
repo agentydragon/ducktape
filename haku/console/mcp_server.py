@@ -55,7 +55,6 @@ from haku.console.mcp_config import (
     RemoteMcpBackend,
     RemoteServerOAuthAuth,
     _load_servers,
-    load_console_config,
     server_tool_prefix,
 )
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
@@ -199,11 +198,10 @@ def _passive_server_connection_statuses(
         ).associations
     }
     provider_statuses = {
-        status.provider: status
+        status.connection: status
         for status in context.provider_store.list_statuses(operator_id=actor.operator_id).connections
     }
     result: list[McpServerConnectionStatus] = []
-    connection_definitions = load_console_config(context.settings).operator_connections
     for server in servers:
         match server.backend:
             case RemoteMcpBackend(auth=RemoteServerOAuthAuth() as auth):
@@ -212,8 +210,7 @@ def _passive_server_connection_statuses(
                     McpServerConnectionStatus(server_id=server.id, auth_kind=auth.kind, connection=oauth_status)
                 )
             case InProcessBackend(credential=OperatorConnectionCredential(connection=connection) as credential):
-                provider = connection_definitions[connection].provider
-                provider_status = provider_statuses.get(provider)
+                provider_status = provider_statuses.get(connection)
                 result.append(
                     McpServerConnectionStatus(
                         server_id=server.id, auth_kind=credential.kind, connection=provider_status

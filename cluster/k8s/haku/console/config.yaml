@@ -12,10 +12,18 @@ static_agents:
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
 operator_connections:
-  # Logical deploy name for the existing provider-keyed Google grant. Both implementations share
-  # it today; a future token-preserving storage migration can split it into mail/calendar grants.
-  google_workspace:
+  google_mail:
+    display_name: Google Mail
     provider: google
+    scopes:
+      - https://www.googleapis.com/auth/gmail.modify
+      - https://www.googleapis.com/auth/gmail.compose
+      - https://www.googleapis.com/auth/gmail.settings.basic
+  google_calendar:
+    display_name: Google Calendar
+    provider: google
+    scopes:
+      - https://www.googleapis.com/auth/calendar.events
 mcp:
   servers:
     - id: grocy-sf
@@ -94,14 +102,10 @@ mcp:
     # not remote MCP servers. Calls default to manual approval;
     # reviewed policies may auto-approve exact calls (currently Gmail label operations).
     #
-    # `gmail` + `google_calendar` execute as the acting Operator's own Google account:
-    # `operator_connection: google_workspace` makes each call resolve that Operator's existing,
-    # provider-keyed Google access token from the console's own connection store
-    # (haku/console/provider_connection.py),
-    # self-refreshed in-process — replacing the Airlock-brokered haku_console_google token. The
-    # Operator links Google once from the console's Access tab (calendar.events + gmail.modify +
-    # gmail.compose + gmail.settings.basic + Google's read scopes). Until an Operator connects,
-    # both servers are degraded.
+    # `gmail` + `google_calendar` execute as the acting Operator's own Google account. Each resolves
+    # its own logical connection and least-privilege grant from the console's connection store,
+    # self-refreshed in-process. Both currently reuse the same deploy-provided Google OAuth client,
+    # but are connected, stored, and disconnected separately in the console's Access tab.
     #
     # `gmail`: reads mirror Gmail's REST API and return its resource shapes verbatim
     # (threads_list, threads_get, messages_get, labels_list, labels_get); writes are
@@ -112,14 +116,14 @@ mcp:
         kind: in_process
         credential:
           kind: operator_connection
-          connection: google_workspace
+          connection: google_mail
     # `google_calendar`: recurrence-aware get/list/instances reads + approval-gated create_event.
     - id: google_calendar
       backend:
         kind: in_process
         credential:
           kind: operator_connection
-          connection: google_workspace
+          connection: google_calendar
     # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
     # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the
     # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own

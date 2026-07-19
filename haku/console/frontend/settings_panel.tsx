@@ -4,15 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { shortDate } from "./approval_state.ts";
 import {
   connectMcpOperatorAuth,
-  connectProviderConnection,
+  connectOperatorConnection,
   disconnectMcpOperatorAuth,
-  disconnectProviderConnection,
+  disconnectOperatorConnection,
   fetchDeploymentInfo,
   fetchMcpOperatorAuthStatuses,
-  fetchProviderConnections,
+  fetchOperatorConnections,
   type DeploymentInfo,
   type McpOperatorAuthStatus,
-  type ProviderConnectionKind,
+  type OperatorConnectionName,
   type ProviderConnectionStatus,
 } from "./client.ts";
 import { useConsoleEvents } from "./console_events.ts";
@@ -139,10 +139,6 @@ function McpAccountCard({
   );
 }
 
-function providerLabel(provider: ProviderConnectionKind): string {
-  return provider.charAt(0).toUpperCase() + provider.slice(1);
-}
-
 function ProviderConnectionCard({
   status,
   onConnect,
@@ -156,7 +152,7 @@ function ProviderConnectionCard({
   const until = status.status === "connected" ? shortDate(status.token_expires_at) : null;
   return (
     <ConnectionCard
-      title={providerLabel(status.provider)}
+      title={status.display_name}
       subtitle={connected ? `Connected${until ? ` · token until ${until}` : ""}` : "Not connected"}
       connected={connected}
       onConnect={onConnect}
@@ -192,7 +188,7 @@ export function SettingsPanel() {
         setStatusesError(e instanceof Error ? e.message : String(e));
       }
     );
-    const providerRequest = fetchProviderConnections().then(
+    const providerRequest = fetchOperatorConnections().then(
       (nextProviderStatuses) => {
         if (generation !== loadGeneration.current) return;
         setProviderStatuses(nextProviderStatuses);
@@ -230,7 +226,7 @@ export function SettingsPanel() {
     if (
       event.event_type === "sync" ||
       event.event_type === "mcp_operator_auth_changed" ||
-      event.event_type === "provider_connection_changed"
+      event.event_type === "operator_connection_changed"
     )
       load();
   });
@@ -257,8 +253,8 @@ export function SettingsPanel() {
     );
   }
 
-  function connectProvider(provider: ProviderConnectionKind) {
-    connectProviderConnection(provider).then(
+  function connectProvider(connection: OperatorConnectionName) {
+    connectOperatorConnection(connection).then(
       (started) => {
         if (!openExternal(started.authorization_url)) {
           toastError("Pop-up blocked", POPUP_HINT);
@@ -270,9 +266,9 @@ export function SettingsPanel() {
     );
   }
 
-  function disconnectProvider(provider: ProviderConnectionKind) {
-    disconnectProviderConnection(provider).then(
-      () => toastSuccess("Account disconnected", providerLabel(provider)),
+  function disconnectProvider(connection: OperatorConnectionName) {
+    disconnectOperatorConnection(connection).then(
+      (status) => toastSuccess("Account disconnected", status.display_name),
       (e: unknown) => toastError("Couldn't disconnect account", e)
     );
   }
@@ -318,7 +314,7 @@ export function SettingsPanel() {
           ))}
           <SectionHeading
             title="Connected accounts"
-            description="The Google account the console uses for the Gmail and Calendar tools. Connect once to let them run as your account; disconnect to revoke."
+            description="External accounts used by in-process tools. Each linkage requests and stores only its configured scopes."
           />
           {providerStatusesError && (
             <Text c="red" size="sm">
@@ -327,10 +323,10 @@ export function SettingsPanel() {
           )}
           {providerStatuses?.map((status) => (
             <ProviderConnectionCard
-              key={status.provider}
+              key={status.connection}
               status={status}
-              onConnect={() => connectProvider(status.provider)}
-              onDisconnect={() => disconnectProvider(status.provider)}
+              onConnect={() => connectProvider(status.connection)}
+              onDisconnect={() => disconnectProvider(status.connection)}
             />
           ))}
           {deployment && (
