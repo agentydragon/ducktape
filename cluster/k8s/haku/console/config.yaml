@@ -76,12 +76,22 @@ mcp:
     # per-operator identity, so unlike every other remote server here it isn't
     # OAuth-fronted: reachable only from haku-console's own namespace via
     # CiliumNetworkPolicy (cluster/k8s/agents/osm-mcp/), not a public HTTPRoute.
-    - id: osm
-      backend:
-        kind: remote_mcp
-        url: http://osm-mcp.osm-mcp.svc.cluster.local:7082/mcp
-        auth:
-          kind: none
+    #
+    # Unwired for now (operator, 2026-07-19): not yet tested properly and possibly clunky —
+    # first live use found routing `mode` is a no-op (the public OSRM demo serves only the
+    # car profile; the URL's profile segment is decorative), so foot/bike distances and
+    # durations are silently car values, and route geometry is returned as a path on the
+    # SERVER pod's own /tmp (osmmcp is local-first). Findings + interim recipes:
+    # haku-state memory/improvements/geocoding-geo-search-api.md. Re-enable by
+    # uncommenting once routing has a properly profiled backend and a real test pass
+    # (the deployment and its NetworkPolicy stay up; auto_approval.py keeps the osm
+    # policy for that day).
+    # - id: osm
+    #   backend:
+    #     kind: remote_mcp
+    #     url: http://osm-mcp.osm-mcp.svc.cluster.local:7082/mcp
+    #     auth:
+    #       kind: none
     # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight
     # to kube-apiserver (cluster_auth_mode=passthrough) — no group override, no scoped
     # credential of its own. RBAC is agentydragon's real cluster-admin binding
