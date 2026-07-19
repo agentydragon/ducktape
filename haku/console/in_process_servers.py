@@ -15,7 +15,12 @@ import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.routine as routine_tools
 from haku.console.config import HostexecConfig
-from haku.console.mcp_config import InProcessServers, const_in_process_server
+from haku.console.mcp_config import (
+    InProcessCredentialKind,
+    InProcessServerRegistration,
+    InProcessServers,
+    const_in_process_server,
+)
 from haku.console.tools.hostexec_client import HostexecClient
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 
@@ -45,11 +50,15 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
     """Build the per-call builder for every configured in-process server."""
 
     servers: InProcessServers = {
-        gmail_tools.GMAIL_SERVER_ID: lambda token: gmail_tools.build_mcp(
-            gmail_tools.build_gmail_client_from_token(token)
+        gmail_tools.GMAIL_SERVER_ID: InProcessServerRegistration(
+            builder=lambda token: gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(token)),
+            credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION,
         ),
-        google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID: lambda token: google_calendar_tools.build_mcp(
-            google_calendar_tools.build_calendar_client_from_token(token)
+        google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID: InProcessServerRegistration(
+            builder=lambda token: google_calendar_tools.build_mcp(
+                google_calendar_tools.build_calendar_client_from_token(token)
+            ),
+            credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION,
         ),
     }
     if dependencies.routine_launcher is not None:
@@ -59,16 +68,19 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
     if (hostexec := dependencies.hostexec) is not None:
         exec_urls = {host: entry.exec_url for host, entry in hostexec.config.hosts.items()}
         audience_client_ids = {host: entry.audience_client_id for host, entry in hostexec.config.hosts.items()}
-        servers[hostexec_tools.HOSTEXEC_SERVER_ID] = lambda token: hostexec_tools.build_mcp(
-            HostexecClient(
-                exec_urls=exec_urls,
-                exchange=HostexecJwtBearerExchanger(
-                    operator_token=token,
-                    token_endpoint=hostexec.token_endpoint,
-                    audience_client_ids=audience_client_ids,
-                    scope=hostexec.config.exchange_scope,
-                ).exchange,
-                timeout=hostexec.config.request_timeout,
-            )
+        servers[hostexec_tools.HOSTEXEC_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda token: hostexec_tools.build_mcp(
+                HostexecClient(
+                    exec_urls=exec_urls,
+                    exchange=HostexecJwtBearerExchanger(
+                        operator_token=token,
+                        token_endpoint=hostexec.token_endpoint,
+                        audience_client_ids=audience_client_ids,
+                        scope=hostexec.config.exchange_scope,
+                    ).exchange,
+                    timeout=hostexec.config.request_timeout,
+                )
+            ),
+            credential_kind=InProcessCredentialKind.OPERATOR_LOGIN_IDENTITY,
         )
     return servers

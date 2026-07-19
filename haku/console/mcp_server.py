@@ -47,11 +47,14 @@ from haku.console.config import Settings
 from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import (
+    InProcessBackend,
     McpServerEntry,
     McpServerNotFoundError,
-    ProviderConnectionAuth,
+    OperatorConnectionCredential,
+    RemoteMcpBackend,
     RemoteServerOAuthAuth,
     _load_servers,
+    load_console_config,
     server_tool_prefix,
 )
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
@@ -193,22 +196,26 @@ def _passive_server_connection_statuses(
         for status in context.provider_store.list_statuses(operator_id=actor.operator_id).connections
     }
     result: list[McpServerConnectionStatus] = []
+    connection_definitions = load_console_config(context.settings).operator_connections
     for server in servers:
-        match server.auth:
-            case RemoteServerOAuthAuth():
+        match server.backend:
+            case RemoteMcpBackend(auth=RemoteServerOAuthAuth() as auth):
                 oauth_status = oauth_statuses.get(server.id)
                 result.append(
-                    McpServerConnectionStatus(server_id=server.id, auth_kind=server.auth.kind, connection=oauth_status)
+                    McpServerConnectionStatus(server_id=server.id, auth_kind=auth.kind, connection=oauth_status)
                 )
-            case ProviderConnectionAuth(provider=provider):
+            case InProcessBackend(credential=OperatorConnectionCredential(connection=connection) as credential):
+                provider = connection_definitions[connection].provider
                 provider_status = provider_statuses.get(provider)
                 result.append(
                     McpServerConnectionStatus(
-                        server_id=server.id, auth_kind=server.auth.kind, connection=provider_status
+                        server_id=server.id, auth_kind=credential.kind, connection=provider_status
                     )
                 )
-            case _:
-                result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=server.auth.kind))
+            case RemoteMcpBackend(auth=auth):
+                result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=auth.kind))
+            case InProcessBackend(credential=credential):
+                result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=credential.kind))
     return McpServerConnectionStatusResponse(servers=result)
 
 

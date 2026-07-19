@@ -19,12 +19,18 @@ from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import ProviderConnection
-from haku.console.mcp_config import McpServerEntry, ProviderConnectionAuth
+from haku.console.mcp_config import (
+    InProcessBackend,
+    McpServerEntry,
+    OperatorConnectionCredential,
+    OperatorConnectionDefinition,
+)
 from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
 
 GOOGLE = ProviderConnectionKind.GOOGLE
+GOOGLE_WORKSPACE = "google_workspace"
 _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
@@ -36,6 +42,7 @@ def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, U
         console_sessions(migrated_db_url),
         operator_identity_store=identity_store,
         provider_clients={GOOGLE: ProviderOAuthClientConfig(client_id="client-123", client_secret=SecretStr("s3cret"))},
+        operator_connections={GOOGLE_WORKSPACE: OperatorConnectionDefinition(provider=GOOGLE)},
     )
     return store, operator_id
 
@@ -96,7 +103,7 @@ async def test_callback_persists_connection(
     store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
-    assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) == "at-1"
+    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) == "at-1"
     connections = store.list_statuses(operator_id=operator_id).connections
     assert [(c.provider, c.status) for c in connections] == [(GOOGLE, "connected")]
 
@@ -120,7 +127,7 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
         return OAuthToken(access_token="at-2", refresh_token=None, token_type="Bearer", expires_in=3600, scope="s")
 
     monkeypatch.setattr(provider_connection_module, "_refresh_token", fake_refresh)
-    assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) == "at-2"
+    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) == "at-2"
 
     with sessions.begin() as session:
         row = session.get(ProviderConnection, (operator_id, GOOGLE))
@@ -135,7 +142,7 @@ async def test_disconnect_removes_connection(
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
     store.disconnect(provider=GOOGLE, operator_id=operator_id)
-    assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) is None
+    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) is None
     connections = store.list_statuses(operator_id=operator_id).connections
     assert [c.status for c in connections] == ["unconnected"]
 
@@ -150,12 +157,12 @@ async def test_connect_when_already_connected_conflicts(
 
 
 async def test_access_token_for_unconnected_is_none(store: PostgresProviderConnectionStore, operator_id: UUID) -> None:
-    assert await store.access_token_for(provider=GOOGLE, operator_id=operator_id) is None
+    assert await store.access_token_for(connection=GOOGLE_WORKSPACE, operator_id=operator_id) is None
 
 
 def _provider_store(token: str | None) -> Any:
     class _Store:
-        async def access_token_for(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> str | None:
+        async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
             return token
 
     return _Store()
@@ -172,7 +179,9 @@ def _unconsulted_store() -> Any:
 
 
 async def test_backend_auth_resolves_provider_connection() -> None:
-    server = McpServerEntry(id="gmail", auth=ProviderConnectionAuth(provider=GOOGLE))
+    server = McpServerEntry(
+        id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_WORKSPACE))
+    )
     token = await backend_auth_for_operator(
         server=server,
         operator_id=uuid4(),
@@ -184,7 +193,9 @@ async def test_backend_auth_resolves_provider_connection() -> None:
 
 
 async def test_backend_auth_raises_when_provider_unconnected() -> None:
-    server = McpServerEntry(id="gmail", auth=ProviderConnectionAuth(provider=GOOGLE))
+    server = McpServerEntry(
+        id="gmail", backend=InProcessBackend(credential=OperatorConnectionCredential(connection=GOOGLE_WORKSPACE))
+    )
     with pytest.raises(BackendAccountNotConnectedError):
         await backend_auth_for_operator(
             server=server,

@@ -19,17 +19,17 @@ from uuid import UUID
 from haku.console.auto_approval import SchemaDenial, auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.mcp_config import (
+    InProcessBackend,
     InProcessServers,
     McpServerEntry,
-    NoBackendAuth,
-    OperatorIdentityAuth,
-    ProviderConnectionAuth,
+    NoCredential,
+    OperatorConnectionCredential,
+    OperatorLoginIdentityCredential,
     RemoteServerOAuthAuth,
     StaticBearerAuth,
     _credential_token,
     _server_entry,
 )
-from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_calls import (
     ApprovalDecision,
@@ -99,7 +99,9 @@ class OperatorOAuthTokenStore(Protocol):
 
 
 class ProviderConnectionTokenStore(Protocol):
-    async def access_token_for(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> str | None: ...
+    async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None: ...
+
+    def is_connected(self, *, connection: str, operator_id: UUID) -> bool: ...
 
 
 class AuthentikOperatorTokenStore(Protocol):
@@ -151,30 +153,31 @@ async def backend_auth_for_operator(
 ) -> str | None:
     """Resolve the server's backend credential for the acting operator, per its ``auth`` variant.
 
-    - ``ProviderConnectionAuth``: the operator's linked provider account token (Google).
+    - ``OperatorConnectionCredential``: the operator's configured external-account token (Google).
     - ``RemoteServerOAuthAuth``: the operator's OAuth token at the remote MCP server itself.
-    - ``OperatorIdentityAuth``: the operator's own Authentik login token (captured via
+    - ``OperatorLoginIdentityCredential``: the operator's own Authentik login token (captured via
       offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
       operator has not logged in with offline_access yet.
     - ``StaticBearerAuth``: the console's fixed configured bearer, not operator-scoped.
-    - ``NoBackendAuth``: none — the server carries its own credential.
+    - ``NoCredential``: none — the server carries its own credential.
     """
-    match server.auth:
-        case ProviderConnectionAuth(provider=provider):
+    credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
+    match credential:
+        case OperatorConnectionCredential(connection=connection):
             return await _require_operator_linked_token(
-                provider_store.access_token_for(provider=provider, operator_id=operator_id), server.id
+                provider_store.access_token_for(connection=connection, operator_id=operator_id), server.id
             )
         case RemoteServerOAuthAuth():
             return await _require_operator_linked_token(
                 oauth_store.access_token_for(server=server, operator_id=operator_id), server.id
             )
-        case OperatorIdentityAuth():
+        case OperatorLoginIdentityCredential():
             return await _require_operator_linked_token(
                 authentik_store.access_token_for(operator_id=operator_id), server.id
             )
         case StaticBearerAuth(bearer_token_secret=secret):
             return _credential_token(server.id, secret)
-        case NoBackendAuth():
+        case NoCredential():
             return None
 
 
@@ -230,7 +233,7 @@ class ToolCallApplicationService:
             arguments=req.arguments,
             label_prefix=self._settings.gmail_auto_approve_label_prefix,
             gmail=gmail,
-            mcp=server_builder(None) if server_builder is not None else None,
+            mcp=server_builder.builder(None) if server_builder is not None else None,
         )
         if isinstance(decision, SchemaDenial):
             # Arguments failed an owned in-process schema: the call can never execute, so it is

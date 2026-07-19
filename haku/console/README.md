@@ -86,9 +86,10 @@ Core endpoints:
 - `GET /api/provider-connections`, `POST /api/provider-connections/{provider}/connect`,
   `DELETE /api/provider-connections/{provider}`, and `GET /api/provider-connections/callback` —
   per-Operator connections to well-known external OAuth providers (Google today) for in-process
-  servers marked `provider_connection` (this flow lives in `provider_connection.py`). Fixed
+  servers bound to an `operator_connection` (this flow lives in `provider_connection.py`). Fixed
   pre-registered client (no DCR); Postgres stores the per-Operator refresh token, self-refreshed
-  in-process. Backs the `gmail`/`google_calendar` servers, replacing Airlock's brokered token.
+  in-process. Backs the `gmail`/`google_calendar` servers through the deploy-named
+  `google_workspace` connection, replacing Airlock's brokered token.
 - `GET /api/approvals/pending` and `WebSocket /api/events/ws` — canonical-Operator-routed
   frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
   wakes the shell to refresh.
@@ -227,17 +228,20 @@ models.
 
 ### In-process MCP servers — no second deployment
 
-A `mcp.servers` entry that omits `server_url` is served by an **in-process `FastMCP`
-instance** instead of a remote server reached over the network: `fastmcp.client.Client`
-accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
-`McpToolExecutor`/`McpMetadataProvider` run the exact same `Client(...)` calls either
-way — the application service still owns approval/audit and the HTTP adapter still owns CSRF,
-with the same live `tools/list` reflection and just a different transport (`_transport()` in
-`mcp_approval.py` picks the registered in-process
-`FastMCP` for a server id, falling back to `server_url`). The in-process servers are built like
-standalone MCP servers from `@mcp.tool`-decorated functions. The only transport difference is that
-`create_app` hands the `FastMCP` object straight to the executor instead of serving it over
-HTTP:
+An `mcp.servers` entry explicitly selects either a `remote_mcp` backend with an HTTP URL and
+transport `auth`, or an `in_process` backend with an implementation `credential`. The latter is a
+registered **in-process `FastMCP` instance**: `fastmcp.client.Client` accepts a `FastMCP` object
+directly (an in-memory `FastMCPTransport`), so `McpToolExecutor`/`McpMetadataProvider` run the exact
+same `Client(...)` calls either way. The application service still owns approval/audit and the HTTP
+adapter still owns CSRF, with the same live `tools/list` reflection.
+
+An in-process credential is consumed by reviewed implementation code only during execution; it is
+never passed to FastMCP as transport authentication. `operator_connection` selects a deploy-named
+external-account grant (currently `google_workspace`), `operator_login_identity` selects the acting
+Operator's console-login authority for hostexec token exchange, and `none` injects nothing. The
+implementation registry declares the credential kind each built-in accepts, and startup rejects a
+mismatch. See `plans/operator_connection_bindings.md` for the configuration and migration direction.
+The in-process servers are built like standalone MCP servers from `@mcp.tool`-decorated functions:
 
 - **`gmail`** (`haku.console.tools.gmail`). Reads mirror Gmail's REST API and return its
   resource shapes **verbatim** (`gmail_api.messages`/`gmail_api.labels`) — no content-type
@@ -268,8 +272,9 @@ HTTP:
 
 The `gmail` and `google_calendar` servers execute as the **acting Operator's own Google
 account**: each call resolves that Operator's per-Operator Google access token from the
-console's own connection store (`provider_connection.py`, `auth: {kind: provider_connection, provider: google}`
-in config), then builds the client for that one call — no shared/startup credential. The console
+console's own connection store (`provider_connection.py`) through the config-bound
+`operator_connection: google_workspace`, then builds the client for that one call — no
+shared/startup credential. The console
 holds the Google OAuth client and each Operator's refresh token itself (Postgres, self-refreshed
 in-process), replacing Airlock's brokered `haku_console_google` token. Scopes (`calendar.events`,
 `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, and the `google` provider's read-only

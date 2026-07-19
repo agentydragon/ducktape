@@ -126,8 +126,8 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # build their own inert client from a None token; only routine needs the inert launcher.
     dependency: Any = inert
     servers = {
-        server_id: builder(None)
-        for server_id, builder in build_in_process_servers(
+        server_id: registration.builder(None)
+        for server_id, registration in build_in_process_servers(
             InProcessServerDependencies(routine_launcher=dependency)
         ).items()
     }

@@ -10,12 +10,13 @@ mutations.
 Built as a real `FastMCP` server and attached to `McpToolExecutor`/`McpMetadataProvider`
 as an **in-process** transport (`fastmcp.client.Client` accepts a `FastMCP` instance
 directly), so the application service's approval/audit lifecycle and the HTTP adapter's
-CSRF/reflection behavior run unchanged; only the transport differs from a remote server's. Registered as MCP server id
-`gmail` in `cluster/k8s/haku/console/config.yaml` (no `server_url`). Executes as the acting
-Operator's own Google account, resolving that Operator's per-Operator token from the console's
-connection store (`provider_connection.py`, `provider_connection: google`) — the same store the
-`google_calendar` server uses. See `haku/docs/security.md` for the credential/consent model, and
-`haku/console/TODO.md` for Gmail API affordances not yet exposed.
+CSRF/reflection behavior run unchanged; only the transport differs from a remote server's. Registered
+as MCP server id `gmail` with an `in_process` backend in
+`cluster/k8s/haku/console/config.yaml`. Executes as the acting Operator's own Google account,
+resolving the config-bound `google_workspace` operator connection from the console's connection store
+(`provider_connection.py`) — the same grant the `google_calendar` server uses. See
+`haku/docs/security.md` for the credential/consent model, and `haku/console/TODO.md` for Gmail API
+affordances not yet exposed.
 """
 
 from __future__ import annotations

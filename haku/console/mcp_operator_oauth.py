@@ -56,6 +56,7 @@ from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     McpServerEntry,
     McpServerNotFoundError,
+    RemoteMcpBackend,
     RemoteServerOAuthAuth,
     _load_servers,
     _operator_oauth_enabled,
@@ -479,9 +480,10 @@ async def _resolve_operator_oauth_client(
     """Probe the MCP server, discover its authorization-server metadata, and obtain a client
     registration — a configured `static_client_id`, or Dynamic Client Registration. All the
     network I/O of starting an operator OAuth flow lives here."""
-    assert isinstance(server.auth, RemoteServerOAuthAuth)
+    assert isinstance(server.backend, RemoteMcpBackend)
+    assert isinstance(server.backend.auth, RemoteServerOAuthAuth)
     # Bind to a local so the RemoteServerOAuthAuth narrowing survives the awaits below.
-    oauth = server.auth
+    oauth = server.backend.auth
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=10.0) as client:
             auth_probe = await client.get(server_url, headers=_metadata_request_headers())
@@ -522,12 +524,12 @@ async def _resolve_operator_oauth_client(
 
 
 async def _build_operator_oauth_flow(server: McpServerEntry, public_base_url: str) -> _BuiltOperatorOAuthFlow:
-    assert isinstance(server.auth, RemoteServerOAuthAuth)
+    assert isinstance(server.backend, RemoteMcpBackend)
+    assert isinstance(server.backend.auth, RemoteServerOAuthAuth)
     # remote_server_oauth is meaningless for an in-process server (there's no remote authorization
     # server to run DCR/metadata discovery against); bind server_url to a local for stable
     # mypy narrowing across the awaits.
-    assert server.server_url is not None
-    server_url = server.server_url
+    server_url = server.backend.url
     redirect_uri = f"{public_base_url}{MCP_OPERATOR_AUTH_CALLBACK_PATH}"
     resolved = await _resolve_operator_oauth_client(server, server_url, redirect_uri)
     client_info = resolved.client_info

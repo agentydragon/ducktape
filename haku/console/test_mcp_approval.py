@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
+from pydantic import ValidationError
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -51,8 +52,17 @@ from haku.console.mcp_approval import (
     PostgresToolCallLedger,
     _execution_auth,
     _mcp_result_to_json,
+    metadata_for_operator,
 )
-from haku.console.mcp_config import McpServerEntry, NoBackendAuth, const_in_process_server
+from haku.console.mcp_config import (
+    ConsoleConfigFile,
+    InProcessBackend,
+    InProcessCredentialKind,
+    InProcessServerRegistration,
+    McpServerEntry,
+    OperatorConnectionCredential,
+    validate_in_process_server_bindings,
+)
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -63,7 +73,7 @@ from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
 
 
-def _test_mcp_server() -> FastMCP:
+def _build_test_mcp_server() -> FastMCP:
     server = FastMCP("haku-console-test")
 
     @server.tool()
@@ -290,7 +300,7 @@ def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def mcp_server_url(monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
     monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
-    with serve_fastmcp(_test_mcp_server()) as url:
+    with serve_fastmcp(_build_test_mcp_server()) as url:
         yield url
 
 
@@ -319,14 +329,26 @@ def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
     return {"mcp": {"servers": servers}, "static_agents": _STATIC_AGENTS}
 
 
+def _remote_server(server_id: str, url: str, auth: dict[str, Any]) -> dict[str, Any]:
+    return {"id": server_id, "backend": {"kind": "remote_mcp", "url": url, "auth": auth}}
+
+
+def _in_process_server(server_id: str, credential: dict[str, Any]) -> dict[str, Any]:
+    return {"id": server_id, "backend": {"kind": "in_process", "credential": credential}}
+
+
+def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
+    return InProcessServerRegistration(
+        builder=lambda _token: mcp, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+    )
+
+
 def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     servers = [
-        {
-            "id": "grocy-sf",
-            "server_url": mcp_server_url,
-            "auth": {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"},
-        },
-        {"id": "smoke", "server_url": mcp_server_url, "auth": {"kind": "none"}},
+        _remote_server(
+            "grocy-sf", mcp_server_url, {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"}
+        ),
+        _remote_server("smoke", mcp_server_url, {"kind": "none"}),
     ]
     return write_config(tmp_path / "haku_console.yaml", _config(servers))
 
@@ -348,23 +370,25 @@ def operator_client(make_operator_client: Callable[..., Any], console_config: Pa
 
 @pytest.fixture
 def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
-    servers = [{"id": "grocy-sf", "server_url": f"{remote_oauth_url}/mcp", "auth": {"kind": "remote_server_oauth"}}]
+    servers = [_remote_server("grocy-sf", f"{remote_oauth_url}/mcp", {"kind": "remote_server_oauth"})]
     return write_config(tmp_path / "haku_console_operator_oauth.yaml", _config(servers))
 
 
 @pytest.fixture
 def gmail_config_file(tmp_path: Path) -> Path:
-    return write_config(tmp_path / "haku_console_gmail.yaml", _config([{"id": "gmail", "auth": {"kind": "none"}}]))
+    config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_workspace"})])
+    config["operator_connections"] = {"google_workspace": {"provider": "google"}}
+    return write_config(tmp_path / "haku_console_gmail.yaml", config)
 
 
 @pytest.fixture
 def preregistered_operator_oauth_config_file(tmp_path: Path, preregistered_remote_oauth_url: str) -> Path:
     servers = [
-        {
-            "id": "grocy-sf",
-            "server_url": f"{preregistered_remote_oauth_url}/mcp",
-            "auth": {"kind": "remote_server_oauth", "static_client_id": "preregistered-client"},
-        }
+        _remote_server(
+            "grocy-sf",
+            f"{preregistered_remote_oauth_url}/mcp",
+            {"kind": "remote_server_oauth", "static_client_id": "preregistered-client"},
+        )
     ]
     return write_config(tmp_path / "haku_console_operator_oauth_static.yaml", _config(servers))
 
@@ -680,11 +704,12 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         make_client(
             config_file=gmail_config_file,
             gmail_client=gmail_client,
-            in_process_servers={"gmail": const_in_process_server(build_gmail_mcp(gmail_client))},
+            in_process_servers={"gmail": _operator_connection_server(build_gmail_mcp(gmail_client))},
             tool_call_executor=echoing_executor,
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
+        client.app.state.provider_connection_store.access_token_for = AsyncMock(return_value="operator-token")
         record = _submit_request(
             client,
             SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
@@ -726,7 +751,7 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
         make_client(
             config_file=gmail_config_file,
             gmail_client=gmail_client,
-            in_process_servers={"gmail": const_in_process_server(build_gmail_mcp(gmail_client))},
+            in_process_servers={"gmail": _operator_connection_server(build_gmail_mcp(gmail_client))},
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
@@ -925,9 +950,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
     _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
     _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
-    config = _config(
-        [{"id": "grocy-sf", "server_url": "http://unused.test/mcp", "auth": {"kind": "remote_server_oauth"}}]
-    )
+    config = _config([_remote_server("grocy-sf", "http://unused.test/mcp", {"kind": "remote_server_oauth"})])
     config["static_agents"] = [
         *_STATIC_AGENTS,
         {
@@ -987,11 +1010,11 @@ def test_two_operator_two_agent_http_authorization_matrix(
         monkeypatch.setenv(operator_env, operator_key)
     config = _config(
         [
-            {
-                "id": "grocy-sf",
-                "server_url": mcp_server_url,
-                "auth": {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"},
-            }
+            _remote_server(
+                "grocy-sf",
+                mcp_server_url,
+                {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"},
+            )
         ]
     )
     config["static_agents"] = [
@@ -1429,37 +1452,86 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
 
 # --- In-process MCP servers (McpToolExecutor/McpMetadataProvider in-process registration) ---
 # Unit tests only: no postgres/network fixtures, exercising McpToolExecutor/McpMetadataProvider
-# directly (over the module-level `_test_mcp_server()` FastMCP fixture, in-memory — no HTTP)
+# directly (over a fresh `_build_test_mcp_server()` instance, in-memory — no HTTP)
 # rather than through the FastAPI app.
 
 
-def test_server_entry_allows_missing_server_url() -> None:
+def test_server_entry_allows_in_process_backend() -> None:
     McpServerEntry(
-        id="google", auth=NoBackendAuth()
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )  # ok: resolved via the in-process registry at runtime, not this model
 
 
+def test_config_rejects_unknown_operator_connection() -> None:
+    with pytest.raises(ValidationError, match="unknown operator connection 'missing'"):
+        ConsoleConfigFile.model_validate(
+            {
+                "mcp": {
+                    "servers": [_in_process_server("google", {"kind": "operator_connection", "connection": "missing"})]
+                }
+            }
+        )
+
+
+def test_config_rejects_two_logical_connections_aliasing_one_provider() -> None:
+    with pytest.raises(ValidationError, match="only one logical connection per provider"):
+        ConsoleConfigFile.model_validate(
+            {"operator_connections": {"google_mail": {"provider": "google"}, "google_calendar": {"provider": "google"}}}
+        )
+
+
+def test_config_rejects_incompatible_registered_credential_kind() -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            "operator_connections": {"google_workspace": {"provider": "google"}},
+            "mcp": {
+                "servers": [
+                    _in_process_server("google", {"kind": "operator_connection", "connection": "google_workspace"})
+                ]
+            },
+        }
+    )
+    registration = InProcessServerRegistration(
+        builder=lambda _token: _build_test_mcp_server(), credential_kind=InProcessCredentialKind.NONE
+    )
+
+    with pytest.raises(ValueError, match="requires 'none' credential, got 'operator_connection'"):
+        validate_in_process_server_bindings(config, {"google": registration})
+
+
 async def test_executor_dispatches_to_registered_in_process_server() -> None:
-    builder = Mock(return_value=_test_mcp_server())
-    executor = McpToolExecutor({"google": builder})
-    server = McpServerEntry(id="google", auth=NoBackendAuth())
+    builder = Mock(return_value=_build_test_mcp_server())
+    registration = InProcessServerRegistration(
+        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+    )
+    executor = McpToolExecutor({"google": registration})
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
     result = await executor.execute(server, "echo", {"text": "hi"}, auth_token="operator-token")
     assert result["content"][0]["text"] == "echo:hi"
     builder.assert_called_once_with("operator-token")
 
 
-async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
+async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
     executor = McpToolExecutor({})
-    server = McpServerEntry(id="google", auth=NoBackendAuth())
-    with pytest.raises(RuntimeError, match="no server_url and no in-process registration"):
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
+    with pytest.raises(RuntimeError, match="no in-process registration"):
         await executor.execute(server, "echo", {}, auth_token=None)
 
 
 async def test_metadata_provider_reflects_in_process_server_tools() -> None:
-    builder = Mock(return_value=_test_mcp_server())
-    metadata_provider = McpMetadataProvider({"google": builder})
-    server = McpServerEntry(id="google", auth=NoBackendAuth())
-    metadata = await metadata_provider.metadata(server, auth_token="operator-token")
+    builder = Mock(return_value=_build_test_mcp_server())
+    registration = InProcessServerRegistration(
+        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+    )
+    metadata_provider = McpMetadataProvider({"google": registration})
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
+    metadata = await metadata_provider.metadata(server, auth_token=None)
     assert isinstance(metadata, AliveServerMetadata)
     assert {tool.name for tool in metadata.tools} == {
         "stock_add",
@@ -1471,12 +1543,44 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
         "shopping_lists_list",
         "shopping_list_get",
     }
-    builder.assert_called_once_with("operator-token")
+    builder.assert_called_once_with(None)
 
 
-async def test_metadata_provider_degrades_when_no_server_url_and_not_registered() -> None:
+async def test_operator_connection_reflection_checks_presence_without_resolving_token() -> None:
+    provider_store = Mock()
+    provider_store.is_connected.return_value = True
+    builder = Mock(return_value=_build_test_mcp_server())
+    metadata_provider = McpMetadataProvider(
+        {
+            "google": InProcessServerRegistration(
+                builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+            )
+        }
+    )
+    operator = UUID(int=42)
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
+
+    metadata = await metadata_for_operator(
+        operator_id=operator,
+        server=server,
+        metadata_provider=metadata_provider,
+        oauth_store=Mock(),
+        provider_store=provider_store,
+    )
+
+    assert isinstance(metadata, AliveServerMetadata)
+    builder.assert_called_once_with(None)
+    provider_store.is_connected.assert_called_once_with(connection="google_workspace", operator_id=operator)
+    provider_store.access_token_for.assert_not_called()
+
+
+async def test_metadata_provider_degrades_when_in_process_backend_is_not_registered() -> None:
     metadata_provider = McpMetadataProvider({})
-    server = McpServerEntry(id="google", auth=NoBackendAuth())
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
     metadata = await metadata_provider.metadata(server, auth_token=None)
     assert metadata.status == "degraded"
 

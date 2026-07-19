@@ -11,41 +11,56 @@ static_agents:
     display_name: Haku
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
+operator_connections:
+  # Logical deploy name for the existing provider-keyed Google grant. Both implementations share
+  # it today; a future token-preserving storage migration can split it into mail/calendar grants.
+  google_workspace:
+    provider: google
 mcp:
   servers:
     - id: grocy-sf
-      server_url: https://grocy-mcp-sf.allegedly.works/mcp
-      auth:
-        kind: remote_server_oauth
-        client_name: Haku Console
+      backend:
+        kind: remote_mcp
+        url: https://grocy-mcp-sf.allegedly.works/mcp
+        auth:
+          kind: remote_server_oauth
+          client_name: Haku Console
     - id: tana-rw
-      server_url: https://tana-mcp-facade.allegedly.works/mcp
-      auth:
-        kind: remote_server_oauth
-        client_name: Haku Console
+      backend:
+        kind: remote_mcp
+        url: https://tana-mcp-facade.allegedly.works/mcp
+        auth:
+          kind: remote_server_oauth
+          client_name: Haku Console
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
     # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade / ibkr-mcp, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,
-    # no static_client_id). Restricted to agentydragon by the facade's Authentik group policy
+    # using dynamic client registration). Restricted to agentydragon by the facade's Authentik group policy
     # (tf/gitops/agent-machine-access/postscanmail-mcp.tf). Reads (list_items,
     # list_automation_rules) auto-approve for the agent; every mutating/paid/destructive action
     # (set_automation_rule, request_*/cancel_* — open & rescan are paid, discard & shred remove
     # mail) queues for operator approval — see haku/console/auto_approval.py. Reached via the
     # public hostname like the other remote facades; no Terraform or NetworkPolicy change.
     - id: postscanmail-mcp
-      server_url: https://postscanmail-mcp.allegedly.works/mcp
-      auth:
-        kind: remote_server_oauth
-        client_name: Haku Console
+      backend:
+        kind: remote_mcp
+        url: https://postscanmail-mcp.allegedly.works/mcp
+        auth:
+          kind: remote_server_oauth
+          client_registration:
+            kind: dynamic
+            client_name: Haku Console
     # osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM,
     # place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no
     # per-operator identity, so unlike every other remote server here it isn't
     # OAuth-fronted: reachable only from haku-console's own namespace via
     # CiliumNetworkPolicy (cluster/k8s/agents/osm-mcp/), not a public HTTPRoute.
     - id: osm
-      server_url: http://osm-mcp.osm-mcp.svc.cluster.local:7082/mcp
-      auth:
-        kind: none
+      backend:
+        kind: remote_mcp
+        url: http://osm-mcp.osm-mcp.svc.cluster.local:7082/mcp
+        auth:
+          kind: none
     # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight
     # to kube-apiserver (cluster_auth_mode=passthrough) — no group override, no scoped
     # credential of its own. RBAC is agentydragon's real cluster-admin binding
@@ -55,26 +70,29 @@ mcp:
     # cluster-admin once approved; the approval click in trusted console chrome is the
     # only gate, by design — see haku/docs/security.md.
     - id: kubectl-passthrough-mcp
-      server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-      auth:
-        kind: remote_server_oauth
-        client_name: Haku Console
-        # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
-        # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
-        # so DCR would 401 against the guessed {server}/register fallback. Use the
-        # pre-registered public/PKCE client_id from the kubectl_passthrough_mcp Authentik
-        # provider instead (tf/gitops/agent-machine-access/main.tf) — it already allows
-        # multiple redirect URIs (CLI localhost, kubernetes-mcp-server's own callback, and
-        # haku-console's operator-auth callback), safe to share since PKCE plus per-request
-        # redirect_uri validation secure each caller independently.
-        static_client_id: kubectl-passthrough-mcp
+      backend:
+        kind: remote_mcp
+        url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+        auth:
+          kind: remote_server_oauth
+          client_name: Haku Console
+          # Authentik has no open Dynamic Client Registration endpoint (kubernetes-mcp-server
+          # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
+          # so DCR would 401 against the guessed {server}/register fallback. Use the
+          # pre-registered public/PKCE client_id from the kubectl_passthrough_mcp Authentik
+          # provider instead (tf/gitops/agent-machine-access/main.tf) — it already allows
+          # multiple redirect URIs (CLI localhost, kubernetes-mcp-server's own callback, and
+          # haku-console's operator-auth callback), safe to share since PKCE plus per-request
+          # redirect_uri validation secure each caller independently.
+          static_client_id: kubectl-passthrough-mcp
     # In-process FastMCP servers (haku/console/tools/*.py) attached via an in-memory transport,
-    # not remote MCP servers — no server_url/operator_oauth. Calls default to manual approval;
+    # not remote MCP servers. Calls default to manual approval;
     # reviewed policies may auto-approve exact calls (currently Gmail label operations).
     #
     # `gmail` + `google_calendar` execute as the acting Operator's own Google account:
-    # `provider_connection: google` makes each call resolve that Operator's per-Operator Google
-    # access token from the console's own connection store (haku/console/provider_connection.py),
+    # `operator_connection: google_workspace` makes each call resolve that Operator's existing,
+    # provider-keyed Google access token from the console's own connection store
+    # (haku/console/provider_connection.py),
     # self-refreshed in-process — replacing the Airlock-brokered haku_console_google token. The
     # Operator links Google once from the console's Access tab (calendar.events + gmail.modify +
     # gmail.compose + gmail.settings.basic + Google's read scopes). Until an Operator connects,
@@ -85,32 +103,40 @@ mcp:
     # drafts_create, threads_modify_labels, and label CRUD (labels_create, labels_patch,
     # labels_delete).
     - id: gmail
-      auth:
-        kind: provider_connection
-        provider: google
+      backend:
+        kind: in_process
+        credential:
+          kind: operator_connection
+          connection: google_workspace
     # `google_calendar`: recurrence-aware get/list/instances reads + approval-gated create_event.
     - id: google_calendar
-      auth:
-        kind: provider_connection
-        provider: google
+      backend:
+        kind: in_process
+        credential:
+          kind: operator_connection
+          connection: google_workspace
     # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
     # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the
     # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
     # credential, so it needs no operator-resolved backend auth.
     - id: haku_routine
-      auth:
-        kind: none
+      backend:
+        kind: in_process
+        credential:
+          kind: none
     # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
     # operator machine (wyrm2/rugged) under the operator's OWN Authentik identity. There
-    # is no standing credential: `operator_identity` makes each call resolve the acting
+    # is no standing credential: `operator_login_identity` makes each call resolve the acting
     # Operator's stored console-login token (captured via offline_access) and exchange it
     # (jwt-bearer) for a short-lived, single-use, per-host token that hostexecd verifies
     # against Authentik's JWKS. This catalog entry only selects the auth mode; the in-scope
     # hosts + their exec URLs / audiences are the top-level `hostexec:` block below. Every
     # call is manual-approval (no auto-approve policy). See haku/hostexec/PLAN.md.
     - id: hostexec
-      auth:
-        kind: operator_identity
+      backend:
+        kind: in_process
+        credential:
+          kind: operator_login_identity
 # In-scope operator machines for the `hostexec` in-process server (catalog entry above). Non-secret
 # deploy topology, so it lives here rather than in a deployment env var. `exec_url` is the node's
 # cluster InternalIP — for these NixOS workers the Nebula mesh IP, which hostexecd binds to
