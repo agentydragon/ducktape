@@ -44,7 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
+from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, ServerMetadata, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import (
     McpServerEntry,
@@ -153,6 +153,12 @@ class McpServerConnectionStatus(BaseModel):
 
 class McpServerConnectionStatusResponse(BaseModel):
     servers: list[McpServerConnectionStatus] = Field(default_factory=list)
+
+
+class McpServerProbeResponse(BaseModel):
+    """Current, active reflection result for one configured MCP server."""
+
+    server: ServerMetadata
 
 
 class ApprovalRequestEnvelope(BaseModel):
@@ -328,6 +334,37 @@ class ProxyTool(Tool):
         return _record_to_result(record, ctx.settings)
 
 
+class UnavailableServerTool(Tool):
+    """A targeted error for a configured server whose tool catalog cannot be reflected.
+
+    FastMCP asks providers for a named tool again at call time. Returning this tool for a known
+    server namespace preserves the actual availability failure instead of degrading it into its
+    generic "Unknown tool" response.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    server_id: str
+    reason: str
+
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        del arguments
+        reason = self.reason.rstrip().rstrip(".") or "unknown availability error"
+        return ToolResult(
+            content=[
+                mcp_types.TextContent(
+                    type="text",
+                    text=(
+                        f"MCP server {self.server_id!r} is unavailable: {reason}. "
+                        f"Use get_mcp_server_status(server_id={self.server_id!r}) to check it; "
+                        "reconnect the server in the console if its OAuth connection has expired or been revoked."
+                    ),
+                )
+            ],
+            is_error=True,
+        )
+
+
 def _build_proxy_tool(
     context: ConsoleMcpContext, server_id: str, tool: Any, *, passthrough: bool, actor: ToolCallActor
 ) -> ProxyTool:
@@ -365,6 +402,18 @@ def _build_proxy_tool(
     )
 
 
+def _build_unavailable_server_tool(name: str, server_id: str, reason: str) -> UnavailableServerTool:
+    return UnavailableServerTool(
+        name=name,
+        description=f"Unavailable proxy tool for configured MCP server {server_id!r}.",
+        # The upstream schema is unavailable with the server, but this tool never acts on its
+        # arguments; accepting an object lets the caller receive the actionable availability error.
+        parameters={"type": "object", "additionalProperties": True},
+        server_id=server_id,
+        reason=reason,
+    )
+
+
 class OperatorToolProvider(Provider):
     """Reflect the connected-server catalog for the current principal's Operator.
 
@@ -378,14 +427,17 @@ class OperatorToolProvider(Provider):
         self._context = context
         self._actor_resolver = actor_resolver
 
-    async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
-        meta = await metadata_for_operator(
+    async def _server_metadata(self, server: McpServerEntry, actor: ToolCallActor) -> ServerMetadata:
+        return await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
             metadata_provider=self._context.metadata_provider,
             oauth_store=self._context.oauth_store,
             provider_store=self._context.provider_store,
         )
+
+    async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
+        meta = await self._server_metadata(server, actor)
         if isinstance(meta, DegradedServerMetadata):
             logger.info(
                 "mcp_server: hiding unavailable server %s from Operator %s: %s",
@@ -425,7 +477,17 @@ class OperatorToolProvider(Provider):
         # A longer namespace is the more specific match (for example, ``google_calendar``
         # rather than ``google``). Startup validation guarantees exact namespace uniqueness.
         server = max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
-        for tool in await self._server_tools(server, actor):
+        meta = await self._server_metadata(server, actor)
+        if isinstance(meta, DegradedServerMetadata):
+            return _build_unavailable_server_tool(name, server.id, meta.degraded_reason)
+        for upstream_tool in meta.tools:
+            tool = _build_proxy_tool(
+                self._context,
+                server.id,
+                upstream_tool,
+                passthrough=is_unconditionally_auto_approved(server.id, upstream_tool.name),
+                actor=actor,
+            )
             if tool.name == name and (version is None or version.matches(tool.version)):
                 return tool
         return None
@@ -460,6 +522,29 @@ def build_console_mcp(
         discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
         """
         return _passive_server_connection_statuses(context, actor)
+
+    @mcp.tool(annotations=_READ_ONLY_META)
+    async def get_mcp_server_status(
+        server_id: str, actor: ToolCallActor = current_actor_dependency
+    ) -> McpServerProbeResponse:
+        """Actively reflect one configured MCP server's current tool availability.
+
+        Unlike ``list_mcp_servers``, this may refresh the operator's linked OAuth token and contact
+        the remote MCP server. It returns a degraded reason when that cannot succeed, so agents can
+        distinguish an unavailable configured server from an unknown tool name.
+        """
+        server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
+        if server is None:
+            raise ToolError(f"unknown configured MCP server {server_id!r}")
+        return McpServerProbeResponse(
+            server=await metadata_for_operator(
+                operator_id=actor.operator_id,
+                server=server,
+                metadata_provider=context.metadata_provider,
+                oauth_store=context.oauth_store,
+                provider_store=context.provider_store,
+            )
+        )
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:

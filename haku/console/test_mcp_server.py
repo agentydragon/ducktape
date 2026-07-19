@@ -22,6 +22,7 @@ import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
+from mcp import types as mcp_types
 from mcp.types import ToolAnnotations
 from pydantic import SecretStr, ValidationError
 
@@ -29,7 +30,7 @@ from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
-from haku.console.mcp_approval import AliveServerMetadata, ToolMetadata
+from haku.console.mcp_approval import AliveServerMetadata, DegradedServerMetadata, ToolMetadata
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_operator_oauth import (
     McpOperatorAuthConnected,
@@ -199,13 +200,14 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
         "approval_mode": "approval_required",
     }
     # The read tools are present.
-    assert {"get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
+    assert {"get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
+    assert "actor" not in tools["get_mcp_server_status"].inputSchema.get("properties", {})
     # Native read tools advertise read-only + closed-world so clients (claude.ai) treat them as
     # passive reads and skip approvals. See mcp_infra/docs/tool_annotations.md.
-    for meta_tool in ("get_tool_call", "list_tool_calls", "list_mcp_servers"):
+    for meta_tool in ("get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"):
         ann = tools[meta_tool].annotations
         assert ann is not None
         assert ann.readOnlyHint is True
@@ -586,9 +588,17 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
         with serve_app_sync(app) as base:
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "standin_echo" in {tool.name for tool in await client.list_tools()}
+                status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
+                assert status.structured_content is not None
+                assert status.structured_content["server"]["status"] == "alive"
+                assert status.structured_content["server"]["server_id"] == "standin"
             async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
                 assert "standin_echo" not in {tool.name for tool in await client.list_tools()}
-                with pytest.raises(ToolError, match="Unknown tool"):
+                status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
+                assert status.structured_content is not None
+                assert status.structured_content["server"]["status"] == "degraded"
+                assert "Connect your standin MCP account" in status.structured_content["server"]["degraded_reason"]
+                with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
                     await client.call_tool("standin_echo", {"input": {"text": "no"}, "rationale": "test"})
 
             connected.clear()
@@ -807,6 +817,55 @@ async def test_tool_dispatch_reflects_only_target_server(
     assert tool.name == "beta_echo"
     assert tool.actor == actor
     assert reflected == ["beta"]
+
+
+async def test_targeted_dispatch_reports_a_known_degraded_server(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_file = write_config(
+        tmp_path / "degraded-dispatch.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [{"id": "grocy-sf", "server_url": "https://grocy.invalid/mcp", "auth": {"kind": "none"}}]
+            },
+        },
+    )
+    settings = console_settings(migrated_db_url, config_file=config_file)
+    app = create_app(settings)
+
+    async def metadata_for_operator(**kwargs: Any) -> DegradedServerMetadata:
+        return DegradedServerMetadata(
+            server_id=str(kwargs["server"].id), title="grocy-sf", degraded_reason="MCP OAuth token refresh failed: 401"
+        )
+
+    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
+    actor_resolver.resolve = AsyncMock(
+        return_value=AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
+    )
+    provider = mcp_server_module.OperatorToolProvider(
+        mcp_server_module.ConsoleMcpContext(
+            settings=settings,
+            tool_calls=app.state.tool_call_service,
+            oauth_store=app.state.mcp_operator_oauth_store,
+            provider_store=app.state.provider_connection_store,
+            metadata_provider=app.state.tool_call_metadata_provider,
+        ),
+        actor_resolver,
+    )
+
+    tool = await provider._get_tool("grocy_sf_product_groups_list")
+
+    assert isinstance(tool, mcp_server_module.UnavailableServerTool)
+    result = await tool.run({})
+    assert result.is_error is True
+    assert isinstance(result.content[0], mcp_types.TextContent)
+    assert result.content[0].text == (
+        "MCP server 'grocy-sf' is unavailable: MCP OAuth token refresh failed: 401. "
+        "Use get_mcp_server_status(server_id='grocy-sf') to check it; reconnect the server in the console "
+        "if its OAuth connection has expired or been revoked."
+    )
 
 
 @dataclass(frozen=True)
