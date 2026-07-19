@@ -223,6 +223,7 @@ data "talos_machine_configuration" "proxmox" {
     each.value.type == "worker" ? [local.worker_link_config] : [],
     each.value.type == "controlplane" ? [local.control_plane_metrics_firewall_config] : [],
     local.nebula_machine_patches[each.key],
+    [local.talos_node_logging_patch],
   )
 }
 

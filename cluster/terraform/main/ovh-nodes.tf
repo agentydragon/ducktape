@@ -534,6 +534,7 @@ data "talos_machine_configuration" "kimsufi" {
     local.kimsufi_cloud_provider_external_patches[each.key],
     each.value.role == "controlplane" ? [local.control_plane_metrics_firewall_config] : [],
     local.nebula_machine_patches[each.key],
+    [local.talos_node_logging_patch],
   )
 }
 
@@ -651,6 +652,7 @@ data "talos_machine_configuration" "kimsufi_cp" {
     local.kimsufi_cloud_provider_external_patches[each.key],
     [local.control_plane_metrics_firewall_config],
     local.nebula_machine_patches[each.key],
+    [local.talos_node_logging_patch],
   )
 }
 

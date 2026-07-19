@@ -58,5 +58,6 @@ data "talos_machine_configuration" "home_worker" {
       }),
     ],
     local.nebula_machine_patches[each.key],
+    [local.talos_node_logging_patch],
   )
 }
