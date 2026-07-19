@@ -61,6 +61,9 @@ let
     "info"
     "build"
     "test"
+    # shutdown stops the local Bazel server; the next invocation restarts it.
+    # No source or persistent system-state mutation.
+    "shutdown"
   ];
 
   bazelCommands = prefixCommandProduct bazelExecutables bazelSubcommands;
@@ -150,6 +153,20 @@ let
       cmd = "bbapi";
     }
   ];
+
+  # workspace-gc — the repo's own local-dev reclamation tool (devinfra/gc/):
+  # prunes stale git worktrees, merged branches, and orphaned Bazel output
+  # bases. Deviation: unlike everything else here, this is a *mutating*
+  # cleanup (deletes worktrees/branches/bases when given --prune), not a
+  # read-only query. Explicitly opted in because the tool is designed to
+  # remove only prunable state (merged branches, husk worktrees) and never
+  # touches source. Any suffix covers `all`/`worktrees`/`bazel-bases` + flags.
+  workspaceGcCommands = [
+    {
+      type = "prefix";
+      cmd = "workspace-gc";
+    }
+  ];
 in
 {
   # All allowed commands (no sudo - these are user-accessible commands)
@@ -186,7 +203,8 @@ in
     ]
     ++ wrappedCommands
     ++ cargoMetadataCommands
-    ++ bbapiCommands;
+    ++ bbapiCommands
+    ++ workspaceGcCommands;
 
   # TODO: Add build system queries:
   # { type = "prefix"; cmd = "bazelisk fetch"; }

@@ -59,6 +59,16 @@ in
     expected = true;
   };
 
+  test_has_bazelisk_shutdown_permission = {
+    expr = builtins.elem "Bash(bazelisk shutdown:*)" bashPerms;
+    expected = true;
+  };
+
+  test_has_workspace_gc_permission = {
+    expr = builtins.elem "Bash(workspace-gc:*)" bashPerms;
+    expected = true;
+  };
+
   test_has_gh_run_view_permission = {
     expr = builtins.elem "Bash(gh run view:*)" bashPerms;
     expected = true;
