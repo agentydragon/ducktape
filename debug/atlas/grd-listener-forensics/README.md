@@ -2,19 +2,19 @@
 
 Live forensic investigation (2026-07-19), `root@wyrm2`. This file has been
 **rewritten** after several wrong claims below were refuted by direct checks —
-see **"Errors made during this investigation"**. Treat only the *Verified* lines
-as fact; anything under *Open* is not yet confirmed.
+see **"Errors made during this investigation"**. Treat only the _Verified_ lines
+as fact; anything under _Open_ is not yet confirmed.
 
 ## Verified facts (directly checked on wyrm2 / source)
 
 - The RDP listener binds via `grd_daemon_maybe_enable_services →
-  maybe_start_rdp_server → start_rdp_server → grd_rdp_server_start` (binds the
+maybe_start_rdp_server → start_rdp_server → grd_rdp_server_start` (binds the
   port). `src/grd-daemon.c`. `maybe_start_rdp_server` returns early unless
   `is_daemon_ready()` is true, then unless `rdp-enabled`.
 - `grd_daemon_system_is_ready` (`grd-daemon-system.c:125`) returns FALSE unless
   `remote_display_factory_proxy` + `display_objects` + `handover_manager_server` +
   `dispatcher_skeleton` are all set and their bus names are owned.
-- **GDM *does* expose `RemoteDisplayFactory`.** Introspecting
+- **GDM _does_ expose `RemoteDisplayFactory`.** Introspecting
   `org.gnome.DisplayManager` shows child nodes `LocalDisplayFactory`, `Displays`,
   and **`RemoteDisplayFactory`**; `/org/gnome/DisplayManager/RemoteDisplayFactory`
   is introspectable. (GDM creates it unconditionally — `gdm-manager.c:2438`,
@@ -29,7 +29,7 @@ as fact; anything under *Open* is not yet confirmed.
   still reports RDP **`Status: disabled`** → the system daemon's
   `is_daemon_ready` is still false.
 - The `Enabled` D-Bus property is **read-only** (`Property "Enabled" is not
-  writable`) — cannot be set directly.
+writable`) — cannot be set directly.
 - `grdctl --system rdp enable` fails `EROFS` on
   `/etc/systemd/system/graphical.target.wants/…` (read-only on NixOS) — but the
   source shows this is the **boot-persistence** step (the wants-symlink), separate
@@ -45,6 +45,29 @@ as fact; anything under *Open* is not yet confirmed.
   failing. **This is the real next step — not yet done.**
 - Whether enabling the handover persistently for `gdm-greeter` + a GDM restart would
   change anything (not tested — would disrupt any seat0 session).
+
+## Suggested next step (to pin the `is_daemon_ready` blocker)
+
+With the factory exposed + the handover running, RDP is still disabled, so one of
+the four `is_daemon_ready` components isn't set up in the system daemon — but the
+"Daemon not ready" line is at debug level. The definitive next step is to run the
+**system** daemon with debug logging and read which component is missing/failing
+(don't guess — read it):
+
+```bash
+# 1. start the handover in the greeter (gdm-greeter, UID 60578 — NOT gdm/132)
+systemctl --user --machine=gdm-greeter@.host start gnome-remote-desktop-handover.service
+# 2. ephemeral unit override to turn on GLib debug logging, then restart it
+sudo systemctl edit gnome-remote-desktop.service   # add:
+#   [Service]
+#   Environment=G_MESSAGES_DEBUG=all
+sudo systemctl restart gnome-remote-desktop.service
+# 3. read which readiness component is unset / failing
+journalctl -u gnome-remote-desktop.service -f | grep -iE 'ready|handover|dispatcher|factory|display_objects|not start'
+```
+
+(Optional: stop xrdp first to also see an actual bind attempt, not just readiness.)
+The override is ephemeral (wiped on next `nixos-rebuild`), so no cleanup needed.
 
 ## Why xrdp works where GRD doesn't (still true)
 
@@ -65,7 +88,7 @@ I asserted several checkable claims before verifying them. Each was wrong:
    `gdm` (UID 132, no session); the greeter runs as `gdm-greeter` (UID 60578),
    whose user manager IS reachable. Wrong user, not a NixOS transport bug.
 4. **"GDM doesn't expose `RemoteDisplayFactory`"** — wrong. I checked `busctl list`
-   (which lists bus *names*, not objects); introspecting the object shows GDM does
+   (which lists bus _names_, not objects); introspecting the object shows GDM does
    expose it.
 
 Lesson: verify each link (read the source for the exact gate; introspect the actual
