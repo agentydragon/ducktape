@@ -51,60 +51,32 @@ resource "forgejo_repository" "state" {
 
 # Block force-pushes (and branch deletion) on main. Forgejo rejects force-push
 # on any protected branch by default — there is no separate "force push" toggle
-# — so protecting `main` is what disallows it.
+# — so protecting `main` is what disallows it. enable_push keeps the whole
+# write plane direct-push (haku-ui WAL click-commits, scan-run content, anki
+# srs/ reconciles, Flux's k8s/ image-tag pushes).
 #
-# Code lands via PRs; the write plane stays direct-push — enforced by IDENTITY,
-# not file patterns (operator, 2026-07-19): only `haku` (the write plane:
-# haku-ui WAL click-commits, scan-run content, anki srs/ reconciles, Flux's
-# k8s/ image-tag pushes) may push main directly. Agent CODE work uses the
-# `haku-dev` account below, whose main pushes are rejected wholesale, so its
-# changes merge only through PRs gated on the required contexts.
-#
-# Gotcha that killed the first design (protected_file_patterns): Forgejo blocks
-# protected-file changes even via PR merge — only an admin force_merge lands
-# them, and force_merge also overrides RED checks, defeating the point.
-#
-# Rationale for the gate: Forgejo cancels an in-flight main run when a new push
-# arrives, so with concurrent Haku sessions pushing, code could merge with its
-# tests never executed (incident: the anki srs-checkout commit landed red under
-# a cancelled run). PR branches get their own uncancelled runs; required
-# contexts make "merged" imply "tested".
+# Code changes land via PRs gated on the required contexts below. That routing
+# is agent PROCEDURE, not server enforcement (operator, 2026-07-20): agents
+# hold the haku credential for the content write plane, and Forgejo cannot
+# scope one user's push rights by path — protected_file_patterns turned out to
+# block PR merges too (only admin force_merge lands them, which also overrides
+# RED checks), and a push whitelist admitting haku would gate nothing. The
+# structural fix is evicting code trees from this repo entirely (tracked in
+# haku-state memory/improvements). What IS server-enforced: any PR merge
+# requires the listed contexts green — and PR branches get their own runs, so
+# the cancelled-main-run race (the anki srs-checkout incident, 2026-07-19)
+# cannot hide a red test behind a superseded push.
 resource "forgejo_branch_protection" "state_main" {
   repository_id = forgejo_repository.state.id
   branch_name   = "main"
   enable_push   = true
-  enable_push_whitelist   = true
-  push_whitelist_usernames = [forgejo_user.haku.login]
-  enable_status_check     = true
+  enable_status_check = true
   # Context format observed live: "<workflow> / <job> (<event>)".
   status_check_contexts = [
     "bazel-ci / bazel (pull_request)",
     "validate-state / validate (pull_request)",
     "linkcheck / linkcheck (pull_request)",
   ]
-}
-
-# The agent DEV identity: code work (ui/, tools/, anki_service/, workflows)
-# happens as this user, so it structurally cannot direct-push main (not on the
-# whitelist above) — branches + PRs only. Write access lets it push feature
-# branches and merge its own PRs once the required checks are green.
-resource "random_password" "haku_dev" {
-  length  = 48
-  special = false
-}
-
-resource "forgejo_user" "haku_dev" {
-  login                = "haku-dev"
-  email                = "haku-dev@allegedly.works"
-  password             = random_password.haku_dev.result
-  must_change_password = false
-  visibility           = "private"
-}
-
-resource "forgejo_collaborator" "haku_dev" {
-  repository_id = forgejo_repository.state.id
-  user          = forgejo_user.haku_dev.login
-  permission    = "write"
 }
 
 # Read-only access for the claude agent account (user provisioned by
@@ -139,22 +111,6 @@ resource "kubernetes_secret" "haku_state_git_write" {
   data = {
     username = forgejo_user.haku.login
     password = random_password.haku.result
-    repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.haku.login}/${forgejo_repository.state.name}.git"
-  }
-}
-
-# The dev identity's credentials, for agent sessions doing CODE work on
-# haku-state (branches + PRs only — see haku_dev above). haku-sandbox only:
-# nothing in flux-system acts as the dev identity.
-resource "kubernetes_secret" "haku_state_dev_write" {
-  metadata {
-    name      = "haku-state-dev-write"
-    namespace = "haku-sandbox"
-  }
-
-  data = {
-    username = forgejo_user.haku_dev.login
-    password = random_password.haku_dev.result
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.haku.login}/${forgejo_repository.state.name}.git"
   }
 }
