@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
 
-from sqlalchemy import Engine, literal, select, text, union_all
+from sqlalchemy import Engine, Text, cast as sql_cast, literal, select, text, union_all
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
@@ -94,7 +94,9 @@ class OAuthAssociationMaintenance:
         if self._refresh_authentik_tokens:
             candidates.append(
                 select(
-                    literal("operator_login").label("kind"), literal(None).label("name"), OAuthTokenState.operator_id
+                    literal("operator_login").label("kind"),
+                    sql_cast(literal(None), Text).label("name"),
+                    OAuthTokenState.operator_id,
                 )
                 .join(OperatorAuthentikToken, OperatorAuthentikToken.token_state_id == OAuthTokenState.token_state_id)
                 .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
