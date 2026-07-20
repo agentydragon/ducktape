@@ -67,9 +67,9 @@ resource "forgejo_repository" "state" {
 # the cancelled-main-run race (the anki srs-checkout incident, 2026-07-19)
 # cannot hide a red test behind a superseded push.
 resource "forgejo_branch_protection" "state_main" {
-  repository_id = forgejo_repository.state.id
-  branch_name   = "main"
-  enable_push   = true
+  repository_id       = forgejo_repository.state.id
+  branch_name         = "main"
+  enable_push         = true
   enable_status_check = true
   # Context format observed live: "<workflow> / <job> (<event>)".
   status_check_contexts = [
