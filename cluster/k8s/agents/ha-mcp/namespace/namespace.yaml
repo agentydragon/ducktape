@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ha-mcp
+  labels:
+    app.kubernetes.io/name: ha-mcp
+    goldilocks.fairwinds.com/enabled: "false"

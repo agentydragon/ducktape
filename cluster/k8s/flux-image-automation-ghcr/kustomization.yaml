@@ -37,6 +37,8 @@ resources:
   - tana-litellm-proxy-image-policy.yaml
   - token-provisioner-image-repository.yaml
   - token-provisioner-image-policy.yaml
+  - ha-mcp-token-provisioner-image-repository.yaml
+  - ha-mcp-token-provisioner-image-policy.yaml
   - matrix-user-provisioner-image-repository.yaml
   - matrix-user-provisioner-image-policy.yaml
   - authentik-jwt-rotation-image-repository.yaml

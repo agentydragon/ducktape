@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ha-mcp
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/ha-mcp/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ha-mcp
+      namespace: ha-mcp
+  dependsOn:
+    - name: gateway
+    - name: home-assistant
+    - name: ha-mcp-namespace
+    - name: ha-mcp-credentials
+    - name: valkey
+    - name: agent-machine-access-tf

@@ -156,6 +156,11 @@ jobs:
               test_target: "",
             }
           - {
+              image: "//cluster/provisioners/ha_mcp_token_provisioner:image",
+              image_name: ha-mcp-token-provisioner,
+              test_target: "//cluster/provisioners/ha_mcp_token_provisioner/...",
+            }
+          - {
               image: "//cluster/provisioners/grocy_user_perms:image",
               image_name: grocy-user-perms-provisioner,
               registry: forgejo,

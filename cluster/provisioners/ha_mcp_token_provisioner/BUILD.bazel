@@ -1,0 +1,59 @@
+"""Home Assistant token provisioner OCI image."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "provision",
+    srcs = ["provision.py"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//kubernetes",
+        "@pypi//websockets",
+    ],
+)
+
+py_test(
+    name = "test_provision",
+    srcs = ["test_provision.py"],
+    deps = [
+        ":provision",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//kubernetes",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+aspect_py_binary(
+    name = "provision_bin",
+    main = "provision.py",
+    deps = [":provision"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":provision_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("provision_bin"),
+    env = py_image_env(binary_name = "provision_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["ha-mcp-token-provisioner:latest"],
+)

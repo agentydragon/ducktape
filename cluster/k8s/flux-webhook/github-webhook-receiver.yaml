@@ -114,6 +114,9 @@ spec:
       name: token-provisioner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: ha-mcp-token-provisioner
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: matrix-user-provisioner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

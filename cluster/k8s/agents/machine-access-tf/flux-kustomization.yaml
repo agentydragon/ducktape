@@ -32,6 +32,8 @@ spec:
     - name: manifold-mcp-namespace
     # Same for postscanmail-mcp.
     - name: postscanmail-mcp-namespace
+    # TF writes the `ha-mcp-oidc` Secret into the HA-MCP namespace.
+    - name: ha-mcp-namespace
     # Same for plaid-mcp.
     - name: plaid-mcp-namespace
     # TF writes the `haku-console-oidc` secret (MCP OIDCProxy + operator-login client

@@ -1,0 +1,25 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ha-mcp-ingress
+  namespace: ha-mcp
+  annotations:
+    description: "Default-deny ingress for HA-MCP. The Gateway reaches only the OAuth facade; the upstream server port is reachable only over pod-local loopback."
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ha-mcp
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP

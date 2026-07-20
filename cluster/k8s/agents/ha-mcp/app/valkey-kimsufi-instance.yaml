@@ -1,0 +1,47 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: ha-mcp-valkey-kimsufi
+  namespace: ha-mcp
+  annotations:
+    description: Kimsufi Valkey for Home Assistant MCP facade OAuth state
+spec:
+  clusterSize: 2
+  kubernetesConfig:
+    image: valkey/valkey:8-alpine
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path-ovh-hdd
+        resources:
+          requests:
+            storage: 1Gi
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["hil-ovh"]
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: ha-mcp-valkey-kimsufi
+          topologyKey: kubernetes.io/hostname
