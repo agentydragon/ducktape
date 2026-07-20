@@ -202,6 +202,9 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     assert gmail_read_ann is not None
     assert gmail_read_ann.readOnlyHint is True
     assert tools["gmail__drafts_create"].annotations is None
+    # No upstream title to prefix here, so the proxy sets none (clients fall back to the
+    # already server-prefixed name).
+    assert tools["gmail__labels_list"].title is None
     # Gmail writes are approval-request tools with the envelope.
     assert "gmail__drafts_create" in tools
     envelope = tools["gmail__drafts_create"].inputSchema
@@ -438,7 +441,7 @@ def _serve_upstream() -> Generator[str]:
     """A real upstream MCP server process stand-in (echo tool) served over streamable HTTP."""
     upstream: FastMCP = FastMCP("standin")
 
-    @upstream.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @upstream.tool(annotations=ToolAnnotations(title="Echo text", readOnlyHint=True, openWorldHint=False))
     async def echo(text: str) -> str:
         """Echo a string back."""
         return f"echo:{text}"
@@ -490,6 +493,8 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 assert ann is not None
                 assert ann.readOnlyHint is True
                 assert ann.openWorldHint is False
+                # The human-readable title is re-prefixed with the server id, just like the name.
+                assert tools["standin__echo"].title == "standin: Echo text"
                 result = await client.call_tool(
                     "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
                 )

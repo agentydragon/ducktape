@@ -10,7 +10,10 @@ Operator-specific surface, the global auto-approval policy divides Agent-visible
 buckets:
 
 Every proxied tool is named ``<server>__<tool>`` (one uniform format — operator decision
-2026-07-13; bare upstream names hid which server a tool belonged to):
+2026-07-13; bare upstream names hid which server a tool belonged to). An upstream tool's
+human-readable ``annotations.title`` is likewise re-prefixed with the server id (operator decision
+2026-07-20; same rationale, same fix) into the proxy's own display ``title``, which takes
+precedence over ``annotations.title`` for clients:
 
 - **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): the upstream
   schema and description unchanged, so they behave like the real tool and return the real result.
@@ -405,6 +408,11 @@ def _build_proxy_tool(
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
     name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
+    upstream_title = tool.annotations.title if tool.annotations else None
+    # The upstream human-readable title hides which server a tool belongs to just like the bare
+    # name did, so prefix it the same way (operator decision 2026-07-20). This is a display-only
+    # `title`, which FastMCP's MCP conversion prefers over `annotations.title` for clients.
+    title = f"{server_id}: {upstream_title}" if upstream_title else None
     if passthrough:
         parameters = schema
         description = tool.description or ""
@@ -414,6 +422,7 @@ def _build_proxy_tool(
         description = f"{preamble}\n\n{tool.description}" if tool.description else preamble
     return ProxyTool(
         name=name,
+        title=title,
         description=description,
         parameters=parameters,
         # Propagate the upstream server's self-declared hints unchanged. They are advisory (the
