@@ -497,6 +497,28 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
     assert "- [`//b:y`](https://v/commits/sha/tests/b/index.html): unchanged" in lines
 
 
+def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged() -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    review_tests = [
+        ReviewTest(target_label="//a:x", slug="a", title="A", summary=ClassificationCounts(unchanged=3), assets=[]),
+        ReviewTest(target_label="//b:y", slug="b", title="B", summary=ClassificationCounts(unchanged=5), assets=[]),
+    ]
+
+    body = success_comment_body(
+        repository="r", commit_sha=sha, url="https://v/commits/sha/", review_tests=review_tests, base_sha="f" * 40
+    )
+
+    assert body == "\n".join(
+        [
+            "<!-- pr-visuals -->",
+            "## Visual review for [`01234567`](https://github.com/r/commit/0123456789abcdef0123456789abcdef01234567)",
+            "",
+            "No visual changes among the 2 affected Bazel test targets. "
+            "[Open visual review](https://v/commits/sha/index.html).",
+        ]
+    )
+
+
 def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None:
     """A PR that only adds new fixtures (no existing screenshot changed) must still get image
     previews in the comment, not just the text counts — this was the bug: `_with_diff_previews`

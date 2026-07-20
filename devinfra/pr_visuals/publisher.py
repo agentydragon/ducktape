@@ -564,6 +564,17 @@ def success_comment_body(
         return "\n".join(lines)
 
     totals = _totals(review_tests)
+    if totals.modified == totals.new == totals.removed == 0:
+        return "\n".join(
+            [
+                COMMENT_MARKER,
+                f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
+                "",
+                f"No visual changes among the {target_count} affected Bazel test target{plural}. "
+                f"[Open visual review]({page_url}).",
+            ]
+        )
+
     lines = [
         COMMENT_MARKER,
         f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
