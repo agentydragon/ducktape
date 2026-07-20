@@ -23,6 +23,7 @@ from haku.console.conftest import console_sessions, console_settings, operator_i
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, NoCredential, RemoteMcpBackend
+from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -260,6 +261,9 @@ def _service(
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
 ) -> ToolCallApplicationService:
+    sessions = console_sessions(database_url)
+    identity_store = operator_identity_store(database_url)
+    token_states = PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store)
     config_file = write_config(
         tmp_path / "tool-call-service.yaml",
         {
@@ -288,15 +292,17 @@ def _service(
         oauth_store=tokens,
         in_process_servers={},
         provider_store=PostgresProviderConnectionStore(
-            console_sessions(database_url),
-            operator_identity_store=operator_identity_store(database_url),
+            sessions,
+            operator_identity_store=identity_store,
+            token_states=token_states,
             provider_definitions={},
             provider_clients={},
             operator_connections={},
         ),
         authentik_token_store=PostgresAuthentikOperatorTokenStore(
-            console_sessions(database_url),
-            operator_identity_store=operator_identity_store(database_url),
+            sessions,
+            operator_identity_store=identity_store,
+            token_states=token_states,
             client_id="test-client",
             client_secret="test-secret",
             issuer="https://auth.test/application/o/haku-console/",

@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import os
 import secrets
+from functools import partial
 from typing import Annotated, Literal, cast
 from urllib.parse import urlencode
 from uuid import UUID
@@ -31,7 +32,7 @@ from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.console_events import ConsoleEventHubDep, OperatorConnectionChangedEvent
@@ -43,7 +44,8 @@ from haku.console.mcp_config import (
     OperatorConnectionProviderDefinition,
 )
 from haku.console.oauth_callback_page import render_oauth_callback_page
-from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at, token_is_fresh
+from haku.console.oauth_token_state import PostgresOAuthTokenStateStore, new_oauth_token_state
+from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import (
@@ -116,24 +118,6 @@ class _FlowState(BaseModel):
     scope: str | None = None
 
 
-class _RefreshState(BaseModel):
-    """A ``ProviderConnection`` row's refresh inputs read out before its session closes."""
-
-    operator_id: UUID
-    connection_name: str
-    connection_id: UUID
-    token_revision: int
-    refresh_token: str
-
-    def still_matches(self, row: ProviderConnection) -> bool:
-        """Whether ``row`` is exactly the credential generation this refresh used."""
-        return (
-            row.connection_id == self.connection_id
-            and row.token_revision == self.token_revision
-            and row.refresh_token == self.refresh_token
-        )
-
-
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
@@ -162,8 +146,8 @@ def _status_from_row(
         display_name=definition.display_name,
         provider=provider.kind,
         connected_at=row.created_at,
-        token_expires_at=row.token_expires_at,
-        scope=row.scope,
+        token_expires_at=row.token_state.token_expires_at,
+        scope=row.token_state.scope,
     )
 
 
@@ -243,6 +227,7 @@ class PostgresProviderConnectionStore:
         sessions: sessionmaker[Session],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
+        token_states: PostgresOAuthTokenStateStore,
         provider_definitions: dict[str, OperatorConnectionProviderDefinition],
         provider_clients: dict[str, ProviderOAuthClientConfig],
         operator_connections: dict[str, OperatorConnectionDefinition],
@@ -251,6 +236,7 @@ class PostgresProviderConnectionStore:
         # engine/sessionmaker is created once in create_app and shared across every store.
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
+        self._token_states = token_states
         self._provider_definitions = provider_definitions
         self._provider_clients = provider_clients
         self._operator_connections = operator_connections
@@ -299,6 +285,7 @@ class PostgresProviderConnectionStore:
                 select(ProviderConnection)
                 .where(ProviderConnection.operator_id == operator_id)
                 .where(ProviderConnection.connection_name.in_([name for name, _ in connections]))
+                .options(selectinload(ProviderConnection.token_state))
             ).all()
         by_connection = {row.connection_name: row for row in rows}
         return ProviderConnectionStatusResponse(
@@ -417,12 +404,15 @@ class PostgresProviderConnectionStore:
                 provider_name=flow.provider_name,
                 provider=flow.provider,
                 created_at=now,
-                updated_at=now,
-                access_token=token.access_token,
-                refresh_token=token.refresh_token,
-                token_type=token.token_type,
-                scope=token.scope or flow.scope,
-                token_expires_at=expires_at,
+                token_state=new_oauth_token_state(
+                    operator_id=flow.operator_id,
+                    access_token=token.access_token,
+                    refresh_token=token.refresh_token,
+                    token_type=token.token_type,
+                    scope=token.scope or flow.scope,
+                    expires_at=expires_at,
+                    now=now,
+                ),
             )
             session.add(connection)
             return _status_from_row(flow.connection_name, definition, provider, connection, provisioned=True)
@@ -441,50 +431,27 @@ class PostgresProviderConnectionStore:
         definition = self._require_definition(connection)
         provider = self._require_provider_definition(definition.provider)
         descriptor = PROVIDER_DESCRIPTORS[provider.kind]
-        with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
-            if row is None:
-                return None
-            if row.provider_name != definition.provider or row.provider != provider.kind:
-                raise RuntimeError(
-                    f"operator connection {connection!r} provider changed; disconnect it before continuing"
-                )
-            if token_is_fresh(row.token_expires_at, _now()):
-                return row.access_token
-            if not row.refresh_token:
-                return None
-            snapshot = _RefreshState(
-                operator_id=operator_id,
-                connection_name=connection,
-                connection_id=row.connection_id,
-                token_revision=row.token_revision,
-                refresh_token=row.refresh_token,
-            )
         client = self._require_client(definition.provider)
-        refreshed = await _refresh_token(descriptor, client, snapshot.refresh_token)
-        expires_at = token_expires_at(refreshed, _now())
-        with self._sessions.begin() as session:
-            # Refresh is external I/O. Revalidate in the same transaction as the write and the return
-            # so a disable committed during refresh cannot produce a usable token.
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
-            if row is None:
-                return None
-            if not snapshot.still_matches(row):
-                # A concurrent refresh or disconnect/reconnect owns the row now. Its current fresh
-                # token is safe to use; an already-expired replacement must be retried from a new snapshot.
-                if token_is_fresh(row.token_expires_at, _now()):
-                    return row.access_token
-                raise RuntimeError("provider connection changed during refresh; retry the tool call")
-            row.updated_at = _now()
-            row.access_token = refreshed.access_token
-            row.refresh_token = refreshed.refresh_token or row.refresh_token
-            row.token_type = refreshed.token_type
-            row.scope = refreshed.scope or row.scope
-            row.token_expires_at = expires_at
-            row.token_revision += 1
-            return row.access_token
+        for attempt in range(2):
+            with self._sessions.begin() as session:
+                self._operator_identity_store.require_active_in_transaction(session, operator_id)
+                row = session.get(ProviderConnection, (operator_id, connection))
+                if row is None:
+                    return None
+                if row.provider_name != definition.provider or row.provider != provider.kind:
+                    raise RuntimeError(
+                        f"operator connection {connection!r} provider changed; disconnect it before continuing"
+                    )
+                token_state_id = row.token_state_id
+
+            access_token = await self._token_states.access_token_for(
+                token_state_id=token_state_id,
+                operator_id=operator_id,
+                refresh=partial(_refresh_token, descriptor, client),
+            )
+            if access_token is not None or attempt:
+                return access_token
+        return None
 
 
 def _callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:

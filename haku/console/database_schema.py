@@ -20,7 +20,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from haku.console.agents.models import (
     MAX_AGENT_DISPLAY_NAME_LENGTH,
@@ -556,32 +556,65 @@ class NodeDaemonExecution(Base):
     completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class McpOperatorOAuthAssociation(Base):
-    __tablename__ = "mcp_operator_oauth_associations"
+class OAuthTokenState(Base):
+    """Current access/refresh token state shared by every Operator OAuth association."""
+
+    __tablename__ = "oauth_token_states"
     __table_args__ = (
-        UniqueConstraint("association_id", name="uq_mcp_operator_oauth_associations_association_id"),
-        Index("idx_mcp_operator_oauth_associations_operator", "operator_id"),
+        UniqueConstraint("token_state_id", "operator_id", name="uq_oauth_token_states_id_operator"),
+        CheckConstraint(
+            "(refresh_claim_id IS NULL) = (refresh_claim_expires_at IS NULL)",
+            name="ck_oauth_token_states_refresh_claim_shape",
+        ),
+        Index(
+            "idx_oauth_token_states_refresh_candidates",
+            "token_expires_at",
+            postgresql_where=text("refresh_token IS NOT NULL AND token_expires_at IS NOT NULL"),
+        ),
     )
 
-    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
-    association_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
     token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_type: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refresh_claim_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    refresh_claim_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class McpOperatorOAuthAssociation(Base):
+    __tablename__ = "mcp_operator_oauth_associations"
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    association_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    token_state: Mapped[OAuthTokenState] = relationship(cascade="all, delete-orphan", single_parent=True)
     client_id: Mapped[str] = mapped_column(Text, nullable=False)
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     client_secret_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     token_endpoint_auth_method: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
     resource: Mapped[str | None] = mapped_column(Text, nullable=True)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_type: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("association_id", name="uq_mcp_operator_oauth_associations_association_id"),
+        UniqueConstraint("token_state_id", name="uq_mcp_operator_oauth_associations_token_state_id"),
+        ForeignKeyConstraint(
+            ["token_state_id", "operator_id"],
+            ["oauth_token_states.token_state_id", "oauth_token_states.operator_id"],
+            name="fk_mcp_operator_oauth_associations_token_state",
+            ondelete="CASCADE",
+        ),
+        Index("idx_mcp_operator_oauth_associations_operator", "operator_id"),
+    )
 
 
 class McpOperatorOAuthFlow(Base):
@@ -614,35 +647,34 @@ class ProviderConnection(Base):
 
     One row per deploy-named ``(operator_id, connection_name)``. ``provider_name`` records the
     configured OAuth application that issued the grant, while ``provider`` records its protocol
-    kind. The console self-refreshes ``access_token`` with that same client; ``token_revision``
-    guards a concurrent refresh/reconnect.
+    kind. The connection owns one shared ``OAuthTokenState`` refreshed with that same client.
     """
 
     __tablename__ = "provider_connections"
-    __table_args__ = (
-        UniqueConstraint("connection_id", name="uq_provider_connections_connection_id"),
-        CheckConstraint("btrim(connection_name) <> ''", name="ck_provider_connections_connection_name_nonempty"),
-        CheckConstraint("btrim(provider_name) <> ''", name="ck_provider_connections_provider_name_nonempty"),
-        Index("idx_provider_connections_operator", "operator_id"),
-    )
-
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
-    )
+    operator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_name: Mapped[str] = mapped_column(Text, primary_key=True)
     provider_name: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[ProviderConnectionKind] = mapped_column(
         StringBackedStrEnumColumn(ProviderConnectionKind), nullable=False
     )
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
-    token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_type: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    token_state: Mapped[OAuthTokenState] = relationship(cascade="all, delete-orphan", single_parent=True)
+
+    __table_args__ = (
+        UniqueConstraint("connection_id", name="uq_provider_connections_connection_id"),
+        UniqueConstraint("token_state_id", name="uq_provider_connections_token_state_id"),
+        CheckConstraint("btrim(connection_name) <> ''", name="ck_provider_connections_connection_name_nonempty"),
+        CheckConstraint("btrim(provider_name) <> ''", name="ck_provider_connections_provider_name_nonempty"),
+        ForeignKeyConstraint(
+            ["token_state_id", "operator_id"],
+            ["oauth_token_states.token_state_id", "oauth_token_states.operator_id"],
+            name="fk_provider_connections_token_state",
+            ondelete="CASCADE",
+        ),
+        Index("idx_provider_connections_operator", "operator_id"),
+    )
 
 
 class ProviderConnectionFlow(Base):
@@ -675,26 +707,29 @@ class ProviderConnectionFlow(Base):
 class OperatorAuthentikToken(Base):
     """The acting Operator's own Authentik OAuth token, captured at browser login (offline_access).
 
-    One row per Operator. The console self-refreshes ``access_token`` from ``refresh_token`` using
+    One row per Operator. The console self-refreshes the associated token state using
     the operator-OIDC client (injected from Settings, never stored here); the ``hostexec`` server
     then exchanges that access token for a short-lived per-host token, so the operator acts under
-    their own Authentik identity with no bespoke console key. ``token_revision`` guards a concurrent
-    refresh/re-login.
+    their own Authentik identity with no bespoke console key. The shared token state's revision
+    guards a concurrent refresh/re-login.
     """
 
     __tablename__ = "operator_authentik_tokens"
 
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), primary_key=True
-    )
-    token_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    operator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_type: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
-    token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    token_state: Mapped[OAuthTokenState] = relationship(cascade="all, delete-orphan", single_parent=True)
+
+    __table_args__ = (
+        UniqueConstraint("token_state_id", name="uq_operator_authentik_tokens_token_state_id"),
+        ForeignKeyConstraint(
+            ["token_state_id", "operator_id"],
+            ["oauth_token_states.token_state_id", "oauth_token_states.operator_id"],
+            name="fk_operator_authentik_tokens_token_state",
+            ondelete="CASCADE",
+        ),
+    )
 
 
 metadata = Base.metadata

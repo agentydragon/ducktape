@@ -200,6 +200,18 @@ py_test(
 )
 
 py_library(
+    name = "oauth_token_state",
+    srcs = ["oauth_token_state.py"],
+    deps = [
+        ":database_schema",
+        ":oauth_token_support",
+        ":operator_identity_store",
+        "@pypi//mcp",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "mcp_operator_oauth",
     srcs = ["mcp_operator_oauth.py"],
     deps = [
@@ -210,6 +222,7 @@ py_library(
         ":deps",
         ":mcp_config",
         ":oauth_callback_page",
+        ":oauth_token_state",
         ":oauth_token_support",
         ":operator_auth",
         ":operator_identity",
@@ -238,6 +251,7 @@ py_library(
         ":deps",
         ":mcp_config",
         ":oauth_callback_page",
+        ":oauth_token_state",
         ":oauth_token_support",
         ":operator_auth",
         ":operator_identity_store",
@@ -256,6 +270,7 @@ py_library(
     srcs = ["authentik_operator_token.py"],
     deps = [
         ":database_schema",
+        ":oauth_token_state",
         ":oauth_token_support",
         ":operator_identity_store",
         "//mcp_infra/authentik_auth:config",
@@ -295,6 +310,7 @@ py_test(
         ":database_schema",
         ":mcp_config",
         ":oauth_association_maintenance",
+        ":oauth_token_state",
         ":provider_connection_registry",
         "//:conftest",
         "@pypi//pytest_bazel",
@@ -316,6 +332,7 @@ py_test(
     deps = [
         ":authentik_operator_token",
         ":conftest",
+        ":oauth_token_state",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -340,6 +357,7 @@ py_test(
         ":conftest",
         ":database_schema",
         ":mcp_config",
+        ":oauth_token_state",
         ":operator_identity",
         ":operator_identity_store",
         ":provider_connection",
@@ -628,6 +646,7 @@ py_test(
         ":database_schema",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":oauth_token_state",
         ":operator_identity",
         ":operator_identity_store",
         "//:conftest",
@@ -718,6 +737,7 @@ py_library(
         ":models",
         ":node_daemons",
         ":oauth_association_maintenance",
+        ":oauth_token_state",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
@@ -943,6 +963,7 @@ py_test(
         ":database_schema",
         ":mcp_approval",
         ":mcp_config",
+        ":oauth_token_state",
         ":operator_identity",
         ":operator_identity_store",
         ":tool_call_actor",
@@ -977,6 +998,7 @@ py_test(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":node_daemon_models",
+        ":oauth_token_state",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",

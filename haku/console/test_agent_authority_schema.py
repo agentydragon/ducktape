@@ -564,6 +564,109 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
         engine.dispose()
 
 
+def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: str) -> None:
+    apply_migrations(db_url, "0015")
+    engine = create_engine(db_url)
+    operator_id = uuid4()
+    now = _now()
+    expires_at = now + datetime.timedelta(hours=1)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO operators (operator_id, status, created_at, updated_at)
+                    VALUES (:operator_id, 'active', :now, :now)
+                    """
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO mcp_operator_oauth_associations (
+                        server_id, operator_id, association_id, token_revision, created_at, updated_at,
+                        client_id, token_endpoint, access_token, refresh_token, token_type, scope,
+                        token_expires_at
+                    ) VALUES (
+                        'remote', :operator_id, :association_id, 3, :now, :now,
+                        'client', 'https://issuer.test/token', 'mcp-access', 'mcp-refresh', 'Bearer',
+                        'mcp-scope', :expires_at
+                    )
+                    """
+                ),
+                {"operator_id": operator_id, "association_id": uuid4(), "now": now, "expires_at": expires_at},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO provider_connections (
+                        operator_id, connection_name, provider_name, provider, connection_id,
+                        token_revision, created_at, updated_at, access_token, refresh_token,
+                        token_type, scope, token_expires_at
+                    ) VALUES (
+                        :operator_id, 'google_mail', 'google', 'google', :connection_id,
+                        4, :now, :now, 'provider-access', 'provider-refresh', 'Bearer',
+                        'provider-scope', :expires_at
+                    )
+                    """
+                ),
+                {"operator_id": operator_id, "connection_id": uuid4(), "now": now, "expires_at": expires_at},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO operator_authentik_tokens (
+                        operator_id, token_revision, created_at, updated_at, access_token,
+                        refresh_token, token_type, scope, token_expires_at
+                    ) VALUES (
+                        :operator_id, 5, :now, :now, 'login-access', 'login-refresh',
+                        'Bearer', 'login-scope', :expires_at
+                    )
+                    """
+                ),
+                {"operator_id": operator_id, "now": now, "expires_at": expires_at},
+            )
+
+        apply_migrations(db_url)
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT access_token, refresh_token, token_revision, scope, token_expires_at
+                    FROM oauth_token_states
+                    WHERE operator_id = :operator_id
+                    ORDER BY access_token
+                    """
+                ),
+                {"operator_id": operator_id},
+            ).tuples()
+            assert list(rows) == [
+                ("login-access", "login-refresh", 5, "login-scope", expires_at),
+                ("mcp-access", "mcp-refresh", 3, "mcp-scope", expires_at),
+                ("provider-access", "provider-refresh", 4, "provider-scope", expires_at),
+            ]
+            assert (
+                conn.execute(
+                    text(
+                        """
+                    SELECT count(*)
+                    FROM (
+                        SELECT token_state_id FROM mcp_operator_oauth_associations
+                        UNION ALL SELECT token_state_id FROM provider_connections
+                        UNION ALL SELECT token_state_id FROM operator_authentik_tokens
+                    ) AS owners
+                    JOIN oauth_token_states USING (token_state_id)
+                    """
+                    )
+                ).scalar_one()
+                == 3
+            )
+    finally:
+        engine.dispose()
+
+
 def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db_url: str) -> None:
     apply_migrations(db_url, "0012")
     engine = create_engine(db_url)

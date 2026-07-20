@@ -40,6 +40,7 @@ from haku.console import (
     mcp_server,
     node_daemons,
     oauth_association_maintenance,
+    oauth_token_state,
     operator_auth,
     provider_connection,
     tool_call_service,
@@ -151,10 +152,13 @@ def create_app(
     db_engine = create_engine(database_url, pool_pre_ping=True)
     db_sessions = sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
+    oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
+        db_sessions, operator_identity_store=operator_identity_store
+    )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
-        db_sessions, operator_identity_store=operator_identity_store
+        db_sessions, operator_identity_store=operator_identity_store, token_states=oauth_token_states
     )
     # Per-Operator external provider connections (Google today), replacing Airlock's brokered
     # token. Only deploy-named providers whose client env vars are present are offered.
@@ -162,6 +166,7 @@ def create_app(
     provider_connection_store = provider_connection.PostgresProviderConnectionStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
+        token_states=oauth_token_states,
         provider_definitions=console_config.operator_connection_providers,
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
@@ -173,6 +178,7 @@ def create_app(
     authentik_operator_token_store = PostgresAuthentikOperatorTokenStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
+        token_states=oauth_token_states,
         client_id=settings.operator_oidc.client_id,
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,

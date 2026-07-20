@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import datetime
 import secrets
+from functools import partial
 from typing import Annotated, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
 from uuid import UUID
@@ -47,7 +48,7 @@ from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_serv
 from mcp.types import LATEST_PROTOCOL_VERSION
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from haku.console import operator_auth
 from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
@@ -64,11 +65,11 @@ from haku.console.mcp_config import (
     _server_entry,
 )
 from haku.console.oauth_callback_page import render_oauth_callback_page
+from haku.console.oauth_token_state import PostgresOAuthTokenStateStore, new_oauth_token_state
 from haku.console.oauth_token_support import (
     parse_token_response,
     public_base_url,
     token_expires_at,
-    token_is_fresh,
     token_request_error_message,
 )
 from haku.console.operator_auth import OperatorActorDep
@@ -128,6 +129,16 @@ class _OperatorOAuthTokenClient(BaseModel):
     token_endpoint: str
     resource: str | None = None
 
+    @classmethod
+    def from_association(cls, row: McpOperatorOAuthAssociation) -> _OperatorOAuthTokenClient:
+        return cls(
+            client_id=row.client_id,
+            client_secret=row.client_secret,
+            token_endpoint_auth_method=row.token_endpoint_auth_method,
+            token_endpoint=row.token_endpoint,
+            resource=row.resource,
+        )
+
 
 class OperatorOAuthFlowState(_OperatorOAuthTokenClient):
     """An `McpOperatorOAuthFlow` row read out before its session closes, carried across the
@@ -159,41 +170,6 @@ class OperatorOAuthFlowState(_OperatorOAuthTokenClient):
         )
 
 
-class OperatorOAuthRefreshState(_OperatorOAuthTokenClient):
-    """An `McpOperatorOAuthAssociation` row's refresh inputs read out before its session
-    closes, carried across the token-refresh network call."""
-
-    association_id: UUID
-    token_revision: int
-    refresh_token: str | None = None
-
-    @classmethod
-    def from_row(cls, row: McpOperatorOAuthAssociation) -> OperatorOAuthRefreshState:
-        return cls(
-            association_id=row.association_id,
-            token_revision=row.token_revision,
-            client_id=row.client_id,
-            client_secret=row.client_secret,
-            token_endpoint_auth_method=row.token_endpoint_auth_method,
-            token_endpoint=row.token_endpoint,
-            resource=row.resource,
-            refresh_token=row.refresh_token,
-        )
-
-    def still_matches(self, row: McpOperatorOAuthAssociation) -> bool:
-        """Whether ``row`` is exactly the credential generation this refresh used."""
-        return (
-            row.association_id == self.association_id
-            and row.token_revision == self.token_revision
-            and row.client_id == self.client_id
-            and row.client_secret == self.client_secret
-            and row.token_endpoint_auth_method == self.token_endpoint_auth_method
-            and row.token_endpoint == self.token_endpoint
-            and row.resource == self.resource
-            and row.refresh_token == self.refresh_token
-        )
-
-
 class _BuiltOperatorOAuthFlow(BaseModel):
     state: str
     authorization_url: str
@@ -210,13 +186,18 @@ class PostgresMcpOperatorOAuthStore:
     """Postgres-backed operator OAuth association store for connected MCP servers."""
 
     def __init__(
-        self, sessions: sessionmaker[Session], *, operator_identity_store: PostgresOperatorIdentityStore
+        self,
+        sessions: sessionmaker[Session],
+        *,
+        operator_identity_store: PostgresOperatorIdentityStore,
+        token_states: PostgresOAuthTokenStateStore,
     ) -> None:
         # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
         # here — constructing the store neither connects nor mutates schema. The engine/sessionmaker is
         # created once in create_app and shared across every store.
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
+        self._token_states = token_states
 
     def list_statuses(
         self, *, servers: list[McpServerEntry], operator_id: UUID, username: str
@@ -231,6 +212,7 @@ class PostgresMcpOperatorOAuthStore:
                 select(McpOperatorOAuthAssociation)
                 .where(McpOperatorOAuthAssociation.operator_id == operator_id)
                 .where(McpOperatorOAuthAssociation.server_id.in_(server_ids))
+                .options(selectinload(McpOperatorOAuthAssociation.token_state))
             ).all()
         by_server = {row.server_id: row for row in rows}
         return McpOperatorAuthStatusResponse(
@@ -316,18 +298,21 @@ class PostgresMcpOperatorOAuthStore:
                 server_id=flow.server_id,
                 operator_id=flow.operator_id,
                 created_at=now,
-                updated_at=now,
                 client_id=flow.client_id,
                 client_secret=flow.client_secret,
                 client_secret_expires_at=flow.client_secret_expires_at,
                 token_endpoint_auth_method=flow.token_endpoint_auth_method,
                 token_endpoint=flow.token_endpoint,
                 resource=flow.resource,
-                access_token=token.access_token,
-                refresh_token=token.refresh_token,
-                token_type=token.token_type,
-                scope=token.scope or flow.scope,
-                token_expires_at=expires_at,
+                token_state=new_oauth_token_state(
+                    operator_id=flow.operator_id,
+                    access_token=token.access_token,
+                    refresh_token=token.refresh_token,
+                    token_type=token.token_type,
+                    scope=token.scope or flow.scope,
+                    expires_at=expires_at,
+                    now=now,
+                ),
             )
             session.add(existing)
             return _oauth_status_from_row(flow.server_id, username, existing)
@@ -342,44 +327,25 @@ class PostgresMcpOperatorOAuthStore:
     async def access_token_for(self, *, server: McpServerEntry, operator_id: UUID) -> str | None:
         if not _operator_oauth_enabled(server):
             return None
-        with self._sessions.begin() as session:
-            # Keep the status check and fresh-token read under one Operator row lock. This avoids
-            # returning a capability after a disable has already committed.
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(McpOperatorOAuthAssociation, (server.id, operator_id), with_for_update=True)
-            if row is None:
-                return None
-            now = datetime.datetime.now(datetime.UTC)
-            if token_is_fresh(row.token_expires_at, now):
-                return row.access_token
-            if not row.refresh_token:
-                return None
-            snapshot = OperatorOAuthRefreshState.from_row(row)
-        refreshed = await _refresh_operator_oauth_token(snapshot)
-        expires_at = token_expires_at(refreshed, datetime.datetime.now(datetime.UTC))
-        with self._sessions.begin() as session:
-            # Refresh is external I/O. Revalidate in the same transaction as both the token write
-            # and return so a disable committed during refresh cannot produce a usable token.
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(McpOperatorOAuthAssociation, (server.id, operator_id), with_for_update=True)
-            if row is None:
-                return None
-            if not snapshot.still_matches(row):
-                # The external call used a credential snapshot after releasing the association
-                # lock. A concurrent refresh or disconnect/reconnect owns the row now; never let
-                # this stale response overwrite it. Its current fresh token is safe to use, while
-                # an already-expired replacement must be retried from a new snapshot.
-                if token_is_fresh(row.token_expires_at, datetime.datetime.now(datetime.UTC)):
-                    return row.access_token
-                raise RuntimeError("MCP OAuth association changed during refresh; retry the tool call")
-            row.updated_at = datetime.datetime.now(datetime.UTC)
-            row.access_token = refreshed.access_token
-            row.refresh_token = refreshed.refresh_token or row.refresh_token
-            row.token_type = refreshed.token_type
-            row.scope = refreshed.scope or row.scope
-            row.token_expires_at = expires_at
-            row.token_revision += 1
-            return row.access_token
+        for attempt in range(2):
+            with self._sessions.begin() as session:
+                self._operator_identity_store.require_active_in_transaction(session, operator_id)
+                row = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+                if row is None:
+                    return None
+                token_state_id = row.token_state_id
+                client = _OperatorOAuthTokenClient.from_association(row)
+
+            access_token = await self._token_states.access_token_for(
+                token_state_id=token_state_id,
+                operator_id=operator_id,
+                refresh=partial(_refresh_operator_oauth_token, client),
+            )
+            if access_token is not None or attempt:
+                return access_token
+            # A callback can replace the association while its old token is refreshing.
+            # Reload once so that call observes the replacement token state.
+        return None
 
 
 def _oauth_store(request: Request) -> PostgresMcpOperatorOAuthStore:
@@ -404,8 +370,8 @@ def _oauth_status_from_row(
         server_id=server_id,
         username=username,
         connected_at=row.created_at,
-        token_expires_at=row.token_expires_at,
-        scope=row.scope,
+        token_expires_at=row.token_state.token_expires_at,
+        scope=row.token_state.scope,
     )
 
 
@@ -620,22 +586,19 @@ async def _exchange_operator_oauth_code(flow: OperatorOAuthFlowState, code: str)
     )
 
 
-async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) -> OAuthToken:
-    refresh_token = association.refresh_token
-    if not refresh_token:
-        raise RuntimeError("MCP OAuth association has no refresh token; reconnect in the console")
+async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient, refresh_token: str) -> OAuthToken:
     data: dict[str, str] = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
-        "client_id": association.client_id,
+        "client_id": token_client.client_id,
     }
-    if association.resource:
-        data["resource"] = association.resource
-    data, headers = _token_request_auth(data, association)
+    if token_client.resource:
+        data["resource"] = token_client.resource
+    data, headers = _token_request_auth(data, token_client)
     timeout_seconds = 10.0
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            response = await client.post(association.token_endpoint, data=data, headers=headers)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as http:
+            response = await http.post(token_client.token_endpoint, data=data, headers=headers)
     except httpx.RequestError as e:
         raise RuntimeError(
             token_request_error_message(

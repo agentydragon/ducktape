@@ -9,23 +9,14 @@ self-referential doc counts, the `[path](path)` link), and the rest in PR #3339 
 invalid-combo-validator/garbled-comment STYLE fixes, the security-SSOT + `gmail.settings.basic`
 scope corrections, and the conftest identity-store test fixtures).
 
-Only the deliberately-deferred items remain below.
+Only the deliberately-deferred items remain below. The shared `oauth_token_states` extraction
+subsequently resolved DF2, DF3, and DF5.
 
 ## DEFER — judgment calls / low value / intentional parallelism
 
 - **DF1** `OperatorConnectionChangedEvent` ≈ `McpOperatorAuthChangedEvent` (`console_events.py`) — a
   shared base carrying `status: Literal["connected","disconnected"]` + `extra="forbid"` would remove
   one copied field, but the distinct event types/keys are intentional. Low value.
-- **DF2** `ProviderConnection`/`ProviderConnectionFlow` parallel the `McpOperatorOAuth*` tables
-  (`database_schema.py`) — a token-column mixin is extractable, but the divergence (fixed client vs
-  DCR columns, different PKs) is largely intentional. Mixin-only, if ever.
-- **DF3** `ProviderConnection.token_type` + `updated_at` are write-only (`database_schema.py`;
-  written in `provider_connection.py`) — but faithfully mirror the pre-existing
-  `McpOperatorOAuthAssociation.token_type`/`updated_at`. Decide whether to trim the pattern repo-wide
-  (out of this PR's scope) or accept it.
-- **DF5** `access_token_for` refresh **write-tail** (7 lines) is still parallel between the two
-  stores (`provider_connection.py` ≡ `mcp_operator_oauth.py`) — `apply_refreshed_token(row,…)` over a
-  small Protocol would share it. Lower payoff; the surrounding sequence is intentionally parallel.
 - **DF6** `_now()` / `timeout=10.0` are named in `provider_connection.py` but still inlined in
   `mcp_operator_oauth.py`. Could fold `now()`/`TOKEN_ENDPOINT_TIMEOUT_SECONDS` into the shared
   `oauth_token_support` module — or accept the local inconsistency.

@@ -15,6 +15,7 @@ import respx
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.conftest import console_sessions, operator_identity_store
+from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 
 ISSUER = "https://auth.test/application/o/haku-console/"
 # The store derives this endpoint from ISSUER (strips the provider slug); respx mocks it.
@@ -29,9 +30,11 @@ def _utc(offset_seconds: int) -> datetime.datetime:
 def _env(migrated_db_url: str) -> tuple[PostgresAuthentikOperatorTokenStore, UUID]:
     identity_store = operator_identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("op-hostexec")
+    sessions = console_sessions(migrated_db_url)
     store = PostgresAuthentikOperatorTokenStore(
-        console_sessions(migrated_db_url),
+        sessions,
         operator_identity_store=identity_store,
+        token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
         client_id="op-client",
         client_secret="op-secret",
         issuer=ISSUER,

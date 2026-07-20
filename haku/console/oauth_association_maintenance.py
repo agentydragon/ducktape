@@ -7,14 +7,17 @@ import datetime
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
+from typing import Literal, cast
 from uuid import UUID
 
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, literal, select, text, union_all
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.database_schema import (
     McpOperatorOAuthAssociation,
+    OAuthTokenState,
     Operator,
     OperatorAuthentikToken,
     ProviderConnection,
@@ -31,6 +34,13 @@ DEFAULT_REFRESH_INTERVAL = datetime.timedelta(seconds=30)
 # Session-level PostgreSQL advisory lock spelling "HAKUOAUT" in ASCII. It keeps multiple
 # interchangeable console replicas from concurrently presenting the same rotating refresh token.
 _REFRESH_ADVISORY_LOCK = 0x48414B554F415554
+
+
+@dataclass(frozen=True, slots=True)
+class _RefreshTarget:
+    kind: Literal["remote_mcp", "provider", "operator_login"]
+    name: str | None
+    operator_id: UUID
 
 
 class OAuthAssociationMaintenance:
@@ -55,68 +65,77 @@ class OAuthAssociationMaintenance:
         self._authentik_store = authentik_store
         self._refresh_authentik_tokens = refresh_authentik_tokens
 
-    def _candidates(self) -> tuple[list[tuple[str, UUID]], list[tuple[str, UUID]], list[UUID]]:
+    def _candidates(self) -> list[_RefreshTarget]:
         refresh_before = datetime.datetime.now(datetime.UTC) + REFRESH_SKEW
-        active_operator = Operator.status == OperatorStatus.ACTIVE
-        with self._sessions.begin() as session:
-            oauth = list(
-                session.execute(
-                    select(McpOperatorOAuthAssociation.server_id, McpOperatorOAuthAssociation.operator_id)
-                    .join(Operator)
-                    .where(active_operator)
-                    .where(McpOperatorOAuthAssociation.refresh_token.is_not(None))
-                    .where(McpOperatorOAuthAssociation.token_expires_at.is_not(None))
-                    .where(McpOperatorOAuthAssociation.token_expires_at <= refresh_before)
-                ).tuples()
+        refreshable = (
+            Operator.status == OperatorStatus.ACTIVE,
+            OAuthTokenState.refresh_token.is_not(None),
+            OAuthTokenState.token_expires_at.is_not(None),
+            OAuthTokenState.token_expires_at <= refresh_before,
+        )
+        candidates = [
+            select(
+                literal("remote_mcp").label("kind"),
+                McpOperatorOAuthAssociation.server_id.label("name"),
+                OAuthTokenState.operator_id,
             )
-            providers = list(
-                session.execute(
-                    select(ProviderConnection.connection_name, ProviderConnection.operator_id)
-                    .join(Operator)
-                    .where(active_operator)
-                    .where(ProviderConnection.refresh_token.is_not(None))
-                    .where(ProviderConnection.token_expires_at.is_not(None))
-                    .where(ProviderConnection.token_expires_at <= refresh_before)
-                ).tuples()
+            .join(OAuthTokenState, McpOperatorOAuthAssociation.token_state_id == OAuthTokenState.token_state_id)
+            .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
+            .where(*refreshable),
+            select(
+                literal("provider").label("kind"),
+                ProviderConnection.connection_name.label("name"),
+                OAuthTokenState.operator_id,
             )
-            authentik = (
-                list(
-                    session.scalars(
-                        select(OperatorAuthentikToken.operator_id)
-                        .join(Operator)
-                        .where(active_operator)
-                        .where(OperatorAuthentikToken.refresh_token.is_not(None))
-                        .where(OperatorAuthentikToken.token_expires_at.is_not(None))
-                        .where(OperatorAuthentikToken.token_expires_at <= refresh_before)
-                    )
+            .join(OAuthTokenState, ProviderConnection.token_state_id == OAuthTokenState.token_state_id)
+            .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
+            .where(*refreshable),
+        ]
+        if self._refresh_authentik_tokens:
+            candidates.append(
+                select(
+                    literal("operator_login").label("kind"), literal(None).label("name"), OAuthTokenState.operator_id
                 )
-                if self._refresh_authentik_tokens
-                else []
+                .join(OperatorAuthentikToken, OperatorAuthentikToken.token_state_id == OAuthTokenState.token_state_id)
+                .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
+                .where(*refreshable)
             )
-        return oauth, providers, authentik
+        with self._sessions.begin() as session:
+            rows = session.execute(union_all(*candidates)).tuples()
+            return [
+                _RefreshTarget(
+                    kind=cast(Literal["remote_mcp", "provider", "operator_login"], kind),
+                    name=name,
+                    operator_id=operator_id,
+                )
+                for kind, name, operator_id in rows
+            ]
 
-    async def _refresh_oauth(self, server_id: str, operator_id: UUID) -> None:
-        if (server := self._servers.get(server_id)) is None:
-            logger.warning(
-                "Cannot background-refresh OAuth association for removed MCP server %r (%s)", server_id, operator_id
+    async def _refresh(self, target: _RefreshTarget) -> None:
+        try:
+            match target.kind:
+                case "remote_mcp":
+                    assert target.name is not None
+                    if (server := self._servers.get(target.name)) is None:
+                        logger.warning(
+                            "Cannot background-refresh OAuth association for removed MCP server %r (%s)",
+                            target.name,
+                            target.operator_id,
+                        )
+                        return
+                    await self._oauth_store.access_token_for(server=server, operator_id=target.operator_id)
+                case "provider":
+                    assert target.name is not None
+                    await self._provider_store.access_token_for(connection=target.name, operator_id=target.operator_id)
+                case "operator_login":
+                    await self._authentik_store.access_token_for(operator_id=target.operator_id)
+        except Exception:
+            logger.exception(
+                "Background OAuth refresh failed for %s association %r (%s)",
+                target.kind,
+                target.name,
+                target.operator_id,
             )
-            return
-        try:
-            await self._oauth_store.access_token_for(server=server, operator_id=operator_id)
-        except Exception:
-            logger.exception("Background OAuth refresh failed for MCP server %r (%s)", server_id, operator_id)
-
-    async def _refresh_provider(self, connection: str, operator_id: UUID) -> None:
-        try:
-            await self._provider_store.access_token_for(connection=connection, operator_id=operator_id)
-        except Exception:
-            logger.exception("Background OAuth refresh failed for provider connection %r (%s)", connection, operator_id)
-
-    async def _refresh_authentik(self, operator_id: UUID) -> None:
-        try:
-            await self._authentik_store.access_token_for(operator_id=operator_id)
-        except Exception:
-            logger.exception("Background OAuth refresh failed for Operator login token (%s)", operator_id)
 
     async def refresh_once(self) -> None:
         """Refresh one snapshot of candidates when this replica wins the database lock."""
@@ -124,14 +143,9 @@ class OAuthAssociationMaintenance:
             if not leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}):
                 return
             try:
-                oauth, providers, authentik = self._candidates()
                 async with asyncio.TaskGroup() as tasks:
-                    for server_id, operator_id in oauth:
-                        tasks.create_task(self._refresh_oauth(server_id, operator_id))
-                    for connection, operator_id in providers:
-                        tasks.create_task(self._refresh_provider(connection, operator_id))
-                    for operator_id in authentik:
-                        tasks.create_task(self._refresh_authentik(operator_id))
+                    for target in self._candidates():
+                        tasks.create_task(self._refresh(target))
             finally:
                 if not leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}):
                     logger.error("OAuth association refresh advisory lock was not held at release")

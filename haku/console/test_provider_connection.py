@@ -27,6 +27,7 @@ from haku.console.mcp_config import (
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,
 )
+from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 from haku.console.provider_connection import PostgresProviderConnectionStore, load_provider_clients
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
@@ -45,9 +46,11 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
     identity_store = operator_identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("op-provider")
+    sessions = console_sessions(migrated_db_url)
     store = PostgresProviderConnectionStore(
-        console_sessions(migrated_db_url),
+        sessions,
         operator_identity_store=identity_store,
+        token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
         provider_definitions={
             GOOGLE_MAIL: OperatorConnectionProviderDefinition(
                 kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"
@@ -193,8 +196,8 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     with sessions.begin() as session:
         row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
-        row.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
-        revision_before = row.token_revision
+        row.token_state.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
+        revision_before = row.token_state.token_revision
 
     async def fake_refresh(descriptor: Any, client: Any, refresh_token: str) -> OAuthToken:
         assert refresh_token == "rt-1"
@@ -207,8 +210,8 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     with sessions.begin() as session:
         row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
-        assert row.token_revision == revision_before + 1
-        assert row.refresh_token == "rt-1"
+        assert row.token_state.token_revision == revision_before + 1
+        assert row.token_state.refresh_token == "rt-1"
     engine.dispose()
 
 

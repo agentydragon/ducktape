@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from collections.abc import Callable, Generator
 from uuid import UUID, uuid4
@@ -26,6 +27,7 @@ from haku.console.mcp_operator_oauth import (
     _BuiltOperatorOAuthFlow,
     _oauth_callback_response,
 )
+from haku.console.oauth_token_state import PostgresOAuthTokenStateStore, new_oauth_token_state
 from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
@@ -53,7 +55,11 @@ def oauth_store_for(migrated_db_url: str) -> Callable[[str], tuple[PostgresMcpOp
             ),
         )
         operator_id = identity_store.resolve_configured_external_user_key(external_user_key)
-        store = PostgresMcpOperatorOAuthStore(sessions, operator_identity_store=identity_store)
+        store = PostgresMcpOperatorOAuthStore(
+            sessions,
+            operator_identity_store=identity_store,
+            token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
+        )
         return store, operator_id
 
     return build
@@ -194,17 +200,21 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
                 server_id=server.id,
                 operator_id=operator_id,
                 created_at=now,
-                updated_at=now,
                 client_id="client-id",
                 token_endpoint="https://auth.test/token",
-                access_token="old-expired-token",
-                refresh_token="refresh-token",
-                token_type="Bearer",
-                token_expires_at=now - datetime.timedelta(minutes=1),
+                token_state=new_oauth_token_state(
+                    operator_id=operator_id,
+                    access_token="old-expired-token",
+                    refresh_token="refresh-token",
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now - datetime.timedelta(minutes=1),
+                    now=now,
+                ),
             )
         )
 
-    async def refresh_after_disable(_association: object) -> OAuthToken:
+    async def refresh_after_disable(_client: object, _refresh_token: str) -> OAuthToken:
         _disable_operator(migrated_engine, operator_id)
         return OAuthToken(
             access_token="must-not-be-written-or-returned", refresh_token="must-not-be-written", expires_in=3600
@@ -218,8 +228,8 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
     with sessionmaker(migrated_engine)() as session:
         association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
         assert association is not None
-        assert association.access_token == "old-expired-token"
-        assert association.refresh_token == "refresh-token"
+        assert association.token_state.access_token == "old-expired-token"
+        assert association.token_state.refresh_token == "refresh-token"
 
 
 async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
@@ -237,31 +247,47 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
                 server_id=server.id,
                 operator_id=operator_id,
                 created_at=now,
-                updated_at=now,
                 client_id="old-client",
                 token_endpoint="https://old-auth.test/token",
-                access_token="old-expired-token",
-                refresh_token="old-refresh-token",
-                token_type="Bearer",
-                token_expires_at=now - datetime.timedelta(minutes=1),
+                token_state=new_oauth_token_state(
+                    operator_id=operator_id,
+                    access_token="old-expired-token",
+                    refresh_token="old-refresh-token",
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now - datetime.timedelta(minutes=1),
+                    now=now,
+                ),
             )
         )
 
-    async def refresh_after_reconnect(_association: object) -> OAuthToken:
+    async def refresh_after_reconnect(_client: object, _refresh_token: str) -> OAuthToken:
         replacement_expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
         with sessionmaker(migrated_engine)() as session, session.begin():
             association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
             assert association is not None
             replacement_now = datetime.datetime.now(datetime.UTC)
-            association.association_id = replacement_association_id
-            association.token_revision = 0
-            association.created_at = replacement_now
-            association.updated_at = replacement_now
-            association.client_id = "replacement-client"
-            association.token_endpoint = "https://replacement-auth.test/token"
-            association.access_token = "replacement-access-token"
-            association.refresh_token = "replacement-refresh-token"
-            association.token_expires_at = replacement_expires_at
+            session.delete(association)
+            session.flush()
+            session.add(
+                McpOperatorOAuthAssociation(
+                    association_id=replacement_association_id,
+                    server_id=server.id,
+                    operator_id=operator_id,
+                    created_at=replacement_now,
+                    client_id="replacement-client",
+                    token_endpoint="https://replacement-auth.test/token",
+                    token_state=new_oauth_token_state(
+                        operator_id=operator_id,
+                        access_token="replacement-access-token",
+                        refresh_token="replacement-refresh-token",
+                        token_type="Bearer",
+                        scope=None,
+                        expires_at=replacement_expires_at,
+                        now=replacement_now,
+                    ),
+                )
+            )
         return OAuthToken(
             access_token="stale-refresh-result", refresh_token="stale-rotated-refresh-token", expires_in=3600
         )
@@ -276,8 +302,59 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
         assert association is not None
         assert association.association_id == replacement_association_id
         assert association.client_id == "replacement-client"
-        assert association.access_token == "replacement-access-token"
-        assert association.refresh_token == "replacement-refresh-token"
+        assert association.token_state.access_token == "replacement-access-token"
+        assert association.token_state.refresh_token == "replacement-refresh-token"
+
+
+async def test_operator_oauth_concurrent_callers_share_one_refresh(
+    migrated_engine: Engine,
+    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oauth_store, operator_id = oauth_store_for("shared-refresh-claim")
+    server = _dynamic_remote_oauth_server()
+    now = datetime.datetime.now(datetime.UTC)
+    with sessionmaker(migrated_engine)() as session, session.begin():
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id=server.id,
+                operator_id=operator_id,
+                created_at=now,
+                client_id="client-id",
+                token_endpoint="https://auth.test/token",
+                token_state=new_oauth_token_state(
+                    operator_id=operator_id,
+                    access_token="expired",
+                    refresh_token="refresh-token",
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now - datetime.timedelta(minutes=1),
+                    now=now,
+                ),
+            )
+        )
+
+    refresh_started = asyncio.Event()
+    allow_refresh = asyncio.Event()
+    refresh_count = 0
+
+    async def controlled_refresh(_client: object, refresh_token: str) -> OAuthToken:
+        nonlocal refresh_count
+        assert refresh_token == "refresh-token"
+        refresh_count += 1
+        refresh_started.set()
+        await allow_refresh.wait()
+        return OAuthToken(access_token="fresh", refresh_token="rotated", expires_in=3600)
+
+    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", controlled_refresh)
+    first = asyncio.create_task(oauth_store.access_token_for(server=server, operator_id=operator_id))
+    await refresh_started.wait()
+    second = asyncio.create_task(oauth_store.access_token_for(server=server, operator_id=operator_id))
+    await asyncio.sleep(0.1)
+    allow_refresh.set()
+
+    assert await asyncio.gather(first, second) == ["fresh", "fresh"]
+    assert refresh_count == 1
 
 
 if __name__ == "__main__":

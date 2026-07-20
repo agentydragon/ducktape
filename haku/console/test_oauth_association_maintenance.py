@@ -12,6 +12,7 @@ from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import McpOperatorOAuthAssociation, OperatorAuthentikToken, ProviderConnection
 from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
 from haku.console.oauth_association_maintenance import OAuthAssociationMaintenance
+from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.provider_connection_registry import ProviderConnectionKind
 
 
@@ -29,13 +30,17 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(migrat
                     server_id="remote",
                     operator_id=operator_id,
                     created_at=now,
-                    updated_at=now,
                     client_id="client",
                     token_endpoint="https://auth.test/token",
-                    access_token="remote-old",
-                    refresh_token="remote-refresh",
-                    token_type="Bearer",
-                    token_expires_at=now,
+                    token_state=new_oauth_token_state(
+                        operator_id=operator_id,
+                        access_token="remote-old",
+                        refresh_token="remote-refresh",
+                        token_type="Bearer",
+                        scope=None,
+                        expires_at=now,
+                        now=now,
+                    ),
                 ),
                 ProviderConnection(
                     operator_id=operator_id,
@@ -43,20 +48,28 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(migrat
                     provider_name="google_mail",
                     provider=ProviderConnectionKind.GOOGLE,
                     created_at=now,
-                    updated_at=now,
-                    access_token="provider-old",
-                    refresh_token="provider-refresh",
-                    token_type="Bearer",
-                    token_expires_at=now,
+                    token_state=new_oauth_token_state(
+                        operator_id=operator_id,
+                        access_token="provider-old",
+                        refresh_token="provider-refresh",
+                        token_type="Bearer",
+                        scope=None,
+                        expires_at=now,
+                        now=now,
+                    ),
                 ),
                 OperatorAuthentikToken(
                     operator_id=operator_id,
                     created_at=now,
-                    updated_at=now,
-                    access_token="authentik-old",
-                    refresh_token="authentik-refresh",
-                    token_type="Bearer",
-                    token_expires_at=now,
+                    token_state=new_oauth_token_state(
+                        operator_id=operator_id,
+                        access_token="authentik-old",
+                        refresh_token="authentik-refresh",
+                        token_type="Bearer",
+                        scope=None,
+                        expires_at=now,
+                        now=now,
+                    ),
                 ),
             ]
         )
@@ -87,7 +100,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(migrat
     assert oauth_store.access_token_for.await_args.kwargs["operator_id"] == operator_id
     provider_store.access_token_for.assert_awaited_once_with(connection="google_mail", operator_id=operator_id)
     authentik_store.access_token_for.assert_awaited_once_with(operator_id=operator_id)
-    assert "Background OAuth refresh failed for MCP server 'remote'" in caplog.text
+    assert "Background OAuth refresh failed for remote_mcp association 'remote'" in caplog.text
 
 
 if __name__ == "__main__":

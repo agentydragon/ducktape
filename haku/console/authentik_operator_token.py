@@ -14,11 +14,15 @@ from uuid import UUID
 
 import httpx
 from mcp.shared.auth import OAuthToken
-from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.database_schema import OperatorAuthentikToken
-from haku.console.oauth_token_support import parse_token_response, token_expires_at, token_is_fresh
+from haku.console.oauth_token_state import (
+    PostgresOAuthTokenStateStore,
+    new_oauth_token_state,
+    replace_oauth_token_state,
+)
+from haku.console.oauth_token_support import parse_token_response
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -29,16 +33,6 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-class _RefreshState(BaseModel):
-    """A row's refresh inputs, read out before its session closes (refresh is external I/O)."""
-
-    token_revision: int
-    refresh_token: str
-
-    def still_matches(self, row: OperatorAuthentikToken) -> bool:
-        return row.token_revision == self.token_revision and row.refresh_token == self.refresh_token
-
-
 class PostgresAuthentikOperatorTokenStore:
     """Stores and self-refreshes each Operator's own Authentik access/refresh token."""
 
@@ -47,6 +41,7 @@ class PostgresAuthentikOperatorTokenStore:
         sessions: sessionmaker[Session],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
+        token_states: PostgresOAuthTokenStateStore,
         client_id: str,
         client_secret: str,
         issuer: str,
@@ -55,6 +50,7 @@ class PostgresAuthentikOperatorTokenStore:
         # engine/sessionmaker is created once in create_app and shared across every store.
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
+        self._token_states = token_states
         self._client_id = client_id
         self._client_secret = client_secret
         # The Authentik token endpoint is derived lazily (only on refresh, which only happens when
@@ -81,25 +77,28 @@ class PostgresAuthentikOperatorTokenStore:
                 session.add(
                     OperatorAuthentikToken(
                         operator_id=operator_id,
-                        token_revision=0,
                         created_at=now,
-                        updated_at=now,
-                        access_token=access_token,
-                        refresh_token=refresh_token,
-                        token_type=token_type,
-                        scope=scope,
-                        token_expires_at=expires_at,
+                        token_state=new_oauth_token_state(
+                            operator_id=operator_id,
+                            access_token=access_token,
+                            refresh_token=refresh_token,
+                            token_type=token_type,
+                            scope=scope,
+                            expires_at=expires_at,
+                            now=now,
+                        ),
                     )
                 )
                 return
-            row.updated_at = now
-            row.access_token = access_token
-            # Authentik may omit a fresh refresh_token on re-login; keep the existing one then.
-            row.refresh_token = refresh_token or row.refresh_token
-            row.token_type = token_type
-            row.scope = scope
-            row.token_expires_at = expires_at
-            row.token_revision += 1
+            replace_oauth_token_state(
+                row.token_state,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_type=token_type,
+                scope=scope,
+                expires_at=expires_at,
+                now=now,
+            )
 
     async def _refresh(self, refresh_token: str) -> OAuthToken:
         data = {
@@ -115,34 +114,10 @@ class PostgresAuthentikOperatorTokenStore:
     async def access_token_for(self, *, operator_id: UUID) -> str | None:
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(OperatorAuthentikToken, operator_id, with_for_update=True)
+            row = session.get(OperatorAuthentikToken, operator_id)
             if row is None:
                 return None
-            if token_is_fresh(row.token_expires_at, _now()):
-                return row.access_token
-            if not row.refresh_token:
-                return None
-            snapshot = _RefreshState(token_revision=row.token_revision, refresh_token=row.refresh_token)
-        refreshed = await self._refresh(snapshot.refresh_token)
-        expires_at = token_expires_at(refreshed, _now())
-        with self._sessions.begin() as session:
-            # Refresh is external I/O. Revalidate active-status and the row generation in the same
-            # transaction as the write so a disable/re-login during refresh cannot yield a usable token.
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(OperatorAuthentikToken, operator_id, with_for_update=True)
-            if row is None:
-                return None
-            if not snapshot.still_matches(row):
-                # A concurrent refresh or re-login owns the row now. Its current fresh token is safe;
-                # an already-expired replacement must be retried from a new snapshot.
-                if token_is_fresh(row.token_expires_at, _now()):
-                    return row.access_token
-                raise RuntimeError("operator Authentik token changed during refresh; retry the tool call")
-            row.updated_at = _now()
-            row.access_token = refreshed.access_token
-            row.refresh_token = refreshed.refresh_token or row.refresh_token
-            row.token_type = refreshed.token_type
-            row.scope = refreshed.scope or row.scope
-            row.token_expires_at = expires_at
-            row.token_revision += 1
-            return row.access_token
+            token_state_id = row.token_state_id
+        return await self._token_states.access_token_for(
+            token_state_id=token_state_id, operator_id=operator_id, refresh=self._refresh
+        )

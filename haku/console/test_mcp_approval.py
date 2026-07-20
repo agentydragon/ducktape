@@ -65,6 +65,7 @@ from haku.console.mcp_config import (
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
+from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
@@ -870,12 +871,17 @@ def _seed_association(db_url: str, *, operator_external_user_key: str, access_to
                     server_id="grocy-sf",
                     operator_id=operator_id(db_url, operator_external_user_key),
                     created_at=now,
-                    updated_at=now,
                     client_id="test-client",
                     token_endpoint="http://unused.test/token",
-                    access_token=access_token,
-                    token_type="Bearer",
-                    token_expires_at=now + datetime.timedelta(hours=1),
+                    token_state=new_oauth_token_state(
+                        operator_id=operator_id(db_url, operator_external_user_key),
+                        access_token=access_token,
+                        refresh_token=None,
+                        token_type="Bearer",
+                        scope=None,
+                        expires_at=now + datetime.timedelta(hours=1),
+                        now=now,
+                    ),
                 )
             )
     finally:
