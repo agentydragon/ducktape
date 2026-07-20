@@ -8,7 +8,9 @@ flow shares one implementation and the stores cannot drift.
 from __future__ import annotations
 
 import datetime
+import json
 from collections.abc import Callable
+from typing import Any
 
 import httpx
 from mcp.client.auth.utils import handle_token_response_scopes
@@ -19,6 +21,8 @@ from haku.console.config import Settings
 
 # Refresh a little before expiry so a token handed to a tool call stays valid for the call.
 REFRESH_SKEW = datetime.timedelta(seconds=60)
+_ERROR_BODY_LIMIT = 512
+_OAUTH_ERROR_FIELDS = ("error", "error_description", "error_uri")
 
 
 def token_expires_at(token: OAuthToken, now: datetime.datetime) -> datetime.datetime | None:
@@ -35,12 +39,46 @@ def public_base_url(settings: Settings) -> str:
     return settings.public_base_url.rstrip("/")
 
 
+def token_request_error_message(*, label: str, request_error: httpx.RequestError, timeout_seconds: float) -> str:
+    """Describe token-endpoint transport failures even when httpx's message is empty."""
+    if isinstance(request_error, httpx.TimeoutException):
+        return f"{label} timed out after {timeout_seconds:g} seconds"
+    detail = str(request_error).strip()
+    suffix = f": {detail}" if detail else ""
+    return f"{label} request failed: {type(request_error).__name__}{suffix}"
+
+
 async def parse_token_response(
     response: httpx.Response, *, label: str, error: Callable[[str], Exception]
 ) -> OAuthToken:
     if response.status_code != 200:
-        raise error(f"{label} failed: {response.status_code}")
+        raise error(f"{label} failed: {response.status_code}{_oauth_error_detail(response)}")
     try:
         return await handle_token_response_scopes(response)
     except ValidationError as e:
         raise error(f"{label} response was invalid: {e}") from e
+
+
+def _oauth_error_detail(response: httpx.Response) -> str:
+    """Return bounded, useful token-endpoint diagnostics without echoing token fields.
+
+    OAuth error responses are normally JSON. Only the RFC error fields are retained from
+    structured responses, so a broken endpoint cannot make us log an access or refresh token.
+    Non-JSON responses are necessarily less structured; retain a short, whitespace-normalized
+    excerpt because reverse proxies commonly return the only useful failure reason as plain text.
+    """
+    try:
+        payload: Any = response.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        excerpt = " ".join(response.text.split())[:_ERROR_BODY_LIMIT]
+        return f": {excerpt}" if excerpt else ""
+
+    if not isinstance(payload, dict):
+        return f": unexpected JSON {type(payload).__name__} response"
+    oauth_error = {
+        field: value for field in _OAUTH_ERROR_FIELDS if isinstance((value := payload.get(field)), str) and value
+    }
+    if not oauth_error:
+        return ": OAuth error response contained no standard error fields"
+    encoded = json.dumps(oauth_error, ensure_ascii=True, separators=(",", ":"))
+    return f": {encoded[:_ERROR_BODY_LIMIT]}"

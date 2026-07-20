@@ -186,6 +186,19 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_oauth_token_support",
+    srcs = ["test_oauth_token_support.py"],
+    deps = [
+        ":oauth_token_support",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "mcp_operator_oauth",
     srcs = ["mcp_operator_oauth.py"],

@@ -64,7 +64,13 @@ from haku.console.mcp_config import (
     _server_entry,
 )
 from haku.console.oauth_callback_page import render_oauth_callback_page
-from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at, token_is_fresh
+from haku.console.oauth_token_support import (
+    parse_token_response,
+    public_base_url,
+    token_expires_at,
+    token_is_fresh,
+    token_request_error_message,
+)
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
@@ -598,8 +604,17 @@ async def _exchange_operator_oauth_code(flow: OperatorOAuthFlowState, code: str)
     if flow.resource:
         data["resource"] = flow.resource
     data, headers = _token_request_auth(data, flow)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(flow.token_endpoint, data=data, headers=headers)
+    timeout_seconds = 10.0
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await client.post(flow.token_endpoint, data=data, headers=headers)
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=token_request_error_message(
+                label="MCP OAuth token exchange", request_error=e, timeout_seconds=timeout_seconds
+            ),
+        ) from e
     return await parse_token_response(
         response, label="MCP OAuth token exchange", error=lambda m: HTTPException(status_code=502, detail=m)
     )
@@ -617,8 +632,16 @@ async def _refresh_operator_oauth_token(association: OperatorOAuthRefreshState) 
     if association.resource:
         data["resource"] = association.resource
     data, headers = _token_request_auth(data, association)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(association.token_endpoint, data=data, headers=headers)
+    timeout_seconds = 10.0
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await client.post(association.token_endpoint, data=data, headers=headers)
+    except httpx.RequestError as e:
+        raise RuntimeError(
+            token_request_error_message(
+                label="MCP OAuth token refresh", request_error=e, timeout_seconds=timeout_seconds
+            )
+        ) from e
     return await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
 
 
