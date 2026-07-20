@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["httpx>=0.27", "pydantic>=2"]
+# ///
 """Inspect Forgejo Actions from the command line.
 
 Two subcommands:
@@ -19,7 +23,6 @@ Two subcommands:
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import html
 import json
 import os
@@ -29,43 +32,39 @@ import urllib.parse
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any
 
 import httpx
+from pydantic import BaseModel
 
 # ── timing ───────────────────────────────────────────────────────────────────
 
 FINISHED = {"success", "failure"}
 
 
-@dataclass(frozen=True)
-class Task:
-    id: int
-    name: str
-    status: str
-    run_started_at: str | None
-    updated_at: str | None
+class Task(BaseModel):
+    """One Actions task row; `model_validate` parses the API JSON at the boundary.
 
-    @classmethod
-    def from_row(cls, row: dict) -> Task:
-        # run_started_at, NOT started_at — the latter does not exist on this endpoint.
-        return cls(
-            id=row.get("id", 0),
-            name=row.get("name", "?"),
-            status=row.get("status", "?"),
-            run_started_at=row.get("run_started_at"),
-            updated_at=row.get("updated_at"),
-        )
+    Fields are named exactly as the endpoint returns them — note `run_started_at` (there is
+    no `started_at`), and there is no `conclusion`/`stopped_at` (`status` carries
+    success/failure/…, `updated_at` is completion time). Pydantic parses the ISO-8601
+    timestamps (including the trailing `Z`) straight to datetimes; unknown fields are ignored.
+    """
+
+    id: int = 0
+    name: str = "?"
+    status: str = "?"
+    run_started_at: datetime | None = None
+    updated_at: datetime | None = None
 
     @property
     def duration_seconds(self) -> float | None:
         """Run+queue wall time, or None if unfinished / timestamps missing."""
         if self.status not in FINISHED or not self.run_started_at or not self.updated_at:
             return None
-        secs = (
-            dt.datetime.fromisoformat(self.updated_at) - dt.datetime.fromisoformat(self.run_started_at)
-        ).total_seconds()
+        secs = (self.updated_at - self.run_started_at).total_seconds()
         return secs if secs >= 0 else None
 
 
@@ -85,7 +84,7 @@ def recent_finished(rows: list[dict], limit: int) -> list[Task]:
     Filter for a usable duration first, then take the newest `limit`, so an
     unfinished/stuck row in the window doesn't shrink the analyzed sample.
     """
-    tasks = sorted((Task.from_row(r) for r in rows), key=lambda t: t.id, reverse=True)
+    tasks = sorted((Task.model_validate(r) for r in rows), key=lambda t: t.id, reverse=True)
     return [t for t in tasks if t.duration_seconds is not None][:limit]
 
 

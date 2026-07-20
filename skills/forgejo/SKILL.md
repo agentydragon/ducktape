@@ -61,10 +61,12 @@ the `event` field before using one run to explain another.
 ## Actions CI Timing
 
 The `logs` subcommand (below) answers "why did this run fail?"; `timing` answers "why is CI
-slow?" — a per-job duration distribution over recent tasks:
+slow?" — a per-job duration distribution over recent tasks. The script is self-contained
+(PEP 723 inline deps), so `uv run` fetches `httpx` + `pydantic` on the fly; in-repo,
+`bb run //skills/forgejo:cli -- timing …` works too:
 
 ```bash
-python skills/forgejo/scripts/forgejo.py timing --owner "$OWNER" --repo "$REPO"
+uv run skills/forgejo/scripts/forgejo.py timing --owner "$OWNER" --repo "$REPO"
 # --list       also prints individual recent tasks
 # --limit N    analyze the N most-recent finished tasks (default 200)
 # --max-seconds S  drop longer rows as outliers (default 1800, the runner job timeout)
@@ -118,11 +120,11 @@ Prefer the bundled helper when you need logs:
 
 ```bash
 # List step indexes from the run page.
-python skills/forgejo/scripts/forgejo.py logs \
+uv run skills/forgejo/scripts/forgejo.py logs \
   --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --list-steps
 
 # Fetch one expanded step's log.
-python skills/forgejo/scripts/forgejo.py logs \
+uv run skills/forgejo/scripts/forgejo.py logs \
   --owner "$OWNER" --repo "$REPO" --run "$RUN_NUMBER" --step "$STEP_INDEX"
 ```
 

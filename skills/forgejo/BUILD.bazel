@@ -13,15 +13,18 @@ py_library(
     name = "forgejo_lib",
     srcs = ["scripts/forgejo.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//httpx"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
 )
 
 py_binary(
     name = "cli",
-    srcs = ["scripts/forgejo.py"],
-    main = "scripts/forgejo.py",
+    imports = ["../.."],
+    main_module = "skills.forgejo.scripts.forgejo",
     visibility = ["//visibility:public"],
-    deps = ["@pypi//httpx"],
+    deps = [":forgejo_lib"],
 )
 
 py_test(
