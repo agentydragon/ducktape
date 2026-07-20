@@ -1,6 +1,6 @@
-//! Command execution for `hostexecd`: spawn argv directly (execve, **no shell**), enforce a
-//! wall-clock timeout that kills the process, and cap captured stdout/stderr while still counting
-//! the total bytes so truncation is reported honestly.
+//! Command execution for `hostexecd`: run `req.cmd` as a bash script (`bash -c cmd` — full shell
+//! semantics, not an argv vector), enforce a wall-clock timeout that kills the process, and cap
+//! captured stdout/stderr while still counting the total bytes so truncation is reported honestly.
 //!
 //! The result shape mirrors `mcp_infra.exec.models.BaseExecResult` (the shape every exec backend
 //! in the repo returns) so the console-side caller deserializes it directly: `exit` is a
@@ -50,10 +50,10 @@ pub struct ExecResult {
     pub duration_ms: u64,
 }
 
-/// What to run. `argv[0]` is the program (resolved on PATH); the rest are literal arguments.
+/// What to run: bash script text, executed as `bash -c cmd`.
 #[derive(Debug, Clone)]
 pub struct ExecRequest {
-    pub argv: Vec<String>,
+    pub cmd: String,
     pub cwd: Option<PathBuf>,
     pub timeout: Duration,
     pub max_bytes: usize,
@@ -67,18 +67,20 @@ pub struct ExecRequest {
 /// (an orphaned grandchild holding a pipe open must not hang the server).
 const DRAIN_GRACE: Duration = Duration::from_secs(5);
 
-/// Spawn `req.argv` (no shell), capture capped stdout/stderr, enforce the timeout, and return the
+/// Spawn `bash -c req.cmd`, capture capped stdout/stderr, enforce the timeout, and return the
 /// outcome. Errors only on spawn/IO failure; a non-zero exit or a timeout is a normal `ExecResult`.
 pub async fn run_command(req: &ExecRequest) -> io::Result<ExecResult> {
     let start = Instant::now();
-    let mut cmd = Command::new(&req.argv[0]);
-    cmd.args(&req.argv[1..])
+    let mut command = Command::new("bash");
+    command
+        .arg("-c")
+        .arg(&req.cmd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     if let Some(cwd) = &req.cwd {
-        cmd.current_dir(cwd);
+        command.current_dir(cwd);
     }
     if let Some(creds) = &req.credentials {
         let (uid, gid, groups) = (creds.uid, creds.gid, creds.groups.clone());
@@ -87,7 +89,7 @@ pub async fn run_command(req: &ExecRequest) -> io::Result<ExecResult> {
         // setuid the process no longer has the privilege to set groups/gid. A failure returns an
         // error, so a drop that cannot complete fails the spawn (never runs with the wrong uid).
         unsafe {
-            cmd.pre_exec(move || {
+            command.pre_exec(move || {
                 if libc::setgroups(groups.len(), groups.as_ptr()) != 0 {
                     return Err(io::Error::last_os_error());
                 }
@@ -101,7 +103,7 @@ pub async fn run_command(req: &ExecRequest) -> io::Result<ExecResult> {
             });
         }
     }
-    let mut child = cmd.spawn()?;
+    let mut child = command.spawn()?;
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");
     // Read both streams concurrently with waiting, so a full pipe can't deadlock the process.

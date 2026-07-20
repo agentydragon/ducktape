@@ -13,7 +13,6 @@ js_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:code_block",
-        "//haku/console/frontend:shell_lang",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:variant",
     ],

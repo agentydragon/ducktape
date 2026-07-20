@@ -96,7 +96,10 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 ## Security and failure semantics
 
 - `hostexec_run` is never in the unconditional auto-approval policy.
-- Arguments are an argv vector executed without a shell.
+- `cmd` is bash script text, run as `bash -c cmd` — full shell semantics apply (pipes,
+  redirects, globs, quoting, `$VAR` expansion). This is intentional: the approving operator
+  sees the exact script text before it runs, and the operator-approval gate (not argv
+  restriction) is what bounds what a call can do.
 - `hostexecd` runs as root only so it can switch to the authorized `run_as` user.
 - Operator tokens, daemon bearers, and lease tokens are never logged or returned by the
   operator status API.

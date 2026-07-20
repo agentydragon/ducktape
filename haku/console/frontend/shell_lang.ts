@@ -1,11 +1,10 @@
-// A minimal CodeMirror 6 grammar for displaying a shell-quoted argv line (see `code_block.tsx`'s
-// `shell` language and `hostexec/requests.tsx`'s rendering of `cmd`). hostexec's `cmd` is an argv
-// vector executed via `execve` — never actually shell-parsed — so this isn't a real shell parser;
-// it just highlights the tokens an operator needs to scan quickly: quoted arguments, `$VAR`/`-flag`
-// tokens (common when `cmd` itself invokes a shell, e.g. `["bash", "-lc", "..."]`), and comments.
-// `StreamLanguage` (from `@codemirror/language`, already a project dependency) supports exactly
-// this "define a `token()` function" style grammar, so no extra CodeMirror language package
-// (e.g. `@codemirror/legacy-modes`) is needed.
+// A minimal CodeMirror 6 grammar for displaying a bash script (see `code_block.tsx`'s `shell`
+// language and `hostexec/requests.tsx`'s rendering of `cmd`, which hostexecd runs verbatim as
+// `bash -c cmd`). It isn't a full shell parser — just enough to highlight what an operator needs
+// to scan quickly: quoted strings, `$VAR` references, `-flag`/`--flag` tokens, comments, and a
+// handful of control-flow keywords. `StreamLanguage` (from `@codemirror/language`, already a
+// project dependency) supports exactly this "define a `token()` function" style grammar, so no
+// extra CodeMirror language package (e.g. `@codemirror/legacy-modes`) is needed.
 import { StreamLanguage, type StreamParser } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 
@@ -63,18 +62,3 @@ const shellStreamParser: StreamParser<null> = {
 /** Singleton — `StreamLanguage.define` output is immutable, so every `CodeBlock language="shell"`
  * reuses the same instance rather than rebuilding the grammar per render. */
 export const shellLanguage = StreamLanguage.define(shellStreamParser);
-
-/** Shell-quote an argv vector for display (single-quoted when an element needs quoting, with
- * embedded single quotes escaped `'\''`) — the inverse of hostexec's argv splitting, so the
- * operator sees the command the way they'd type it rather than a raw JSON string array. */
-export function formatArgv(argv: readonly string[]): string {
-  return argv.map(shellQuoteOne).join(" ");
-}
-
-const SAFE_UNQUOTED = /^[A-Za-z0-9_.,:/@%+=-]+$/;
-
-function shellQuoteOne(arg: string): string {
-  if (arg === "") return "''";
-  if (SAFE_UNQUOTED.test(arg)) return arg;
-  return `'${arg.replaceAll("'", "'\\''")}'`;
-}

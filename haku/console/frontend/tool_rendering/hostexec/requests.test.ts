@@ -6,7 +6,7 @@ import { hostexecPreviews } from "./requests.tsx";
 const VALID_ARGS = {
   host: "wyrm2",
   run_as: "agentydragon",
-  cmd: ["rg", "-n", "TODO", "src/"],
+  cmd: "rg -n TODO src/",
   max_bytes: 100_000,
   timeout_ms: 30_000,
   cwd: null,
@@ -31,7 +31,7 @@ describe("hostexecPreviews", () => {
   });
 
   it("returns null when cmd is empty", () => {
-    expect(renderPreview(hostexecPreviews.hostexec_run, { ...VALID_ARGS, cmd: [] }, "detailed")).toBeNull();
+    expect(renderPreview(hostexecPreviews.hostexec_run, { ...VALID_ARGS, cmd: "" }, "detailed")).toBeNull();
   });
 
   it("returns null when args don't match the tool's schema", () => {

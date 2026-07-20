@@ -14,7 +14,7 @@ const PREVIEW_FIXTURES = [
     args: {
       host: "wyrm2",
       run_as: "agentydragon",
-      cmd: ["rg", "-n", "TODO", "src/"],
+      cmd: "rg -n TODO src/",
       max_bytes: 100_000,
       timeout_ms: 30_000,
       cwd: "/home/agentydragon/ducktape",
@@ -33,7 +33,7 @@ const PREVIEW_FIXTURES = [
     args: {
       host: "rugged",
       run_as: "root",
-      cmd: ["systemctl", "restart", "haproxy"],
+      cmd: "systemctl restart haproxy",
       max_bytes: 100_000,
       timeout_ms: 15_000,
     },
@@ -46,7 +46,7 @@ const PREVIEW_FIXTURES = [
     args: {
       host: "wyrm2",
       run_as: "agentydragon",
-      cmd: ["bash", "-lc", "cargo build --release 2>&1 | tail -20"],
+      cmd: "cargo build --release 2>&1 | tail -20",
       max_bytes: 100_000,
       timeout_ms: 300_000,
     },

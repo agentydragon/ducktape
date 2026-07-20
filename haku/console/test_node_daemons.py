@@ -39,7 +39,7 @@ async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: 
     service.heartbeat(
         "wyrm2", HeartbeatRequest(instance_id=instance_id, version="test", backends=["hostexec"], capacity=1)
     )
-    execution_id = service.enqueue(daemon_id="wyrm2", backend="hostexec", payload={"argv": ["true"]})
+    execution_id = service.enqueue(daemon_id="wyrm2", backend="hostexec", payload={"cmd": "true"})
     claim = await service.claim("wyrm2", ClaimRequest(instance_id=instance_id, wait_seconds=0))
     assert claim is not None
     assert claim.execution_id == execution_id

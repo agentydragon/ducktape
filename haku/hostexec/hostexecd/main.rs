@@ -85,7 +85,7 @@ struct ExecutionLease {
 struct RunRequest {
     token: String,
     run_as: String,
-    argv: Vec<String>,
+    cmd: String,
     cwd: Option<String>,
     max_bytes: usize,
     timeout_ms: u64,
@@ -214,13 +214,13 @@ impl App {
             &self.replay,
             now_unix(),
         )?;
-        let argv0 = request.argv.first().cloned();
+        let cmd_summary = cmd_summary(&request.cmd);
         info!(
-            "exec approved by {} host={} run_as={} argv0={argv0:?}",
+            "exec approved by {} host={} run_as={} cmd={cmd_summary:?}",
             authorized.subject, self.config.host, request.run_as
         );
         let result = run_command(&ExecRequest {
-            argv: request.argv,
+            cmd: request.cmd,
             cwd: request.cwd.map(Into::into),
             timeout: Duration::from_millis(request.timeout_ms),
             max_bytes: request.max_bytes,
@@ -228,7 +228,7 @@ impl App {
         })
         .await?;
         info!(
-            "exec done host={} run_as={} argv0={argv0:?} exit={:?} duration_ms={}",
+            "exec done host={} run_as={} cmd={cmd_summary:?} exit={:?} duration_ms={}",
             self.config.host, request.run_as, result.exit, result.duration_ms
         );
         Ok(result)
@@ -330,6 +330,19 @@ async fn main() -> Result<()> {
                 backoff = (backoff * 2).min(60);
             }
         }
+    }
+}
+
+/// A safe one-line log summary for a (possibly multi-line) bash script: just its first line,
+/// capped in length, so an embedded newline can't fragment the log line and a long one-liner
+/// can't blow it out.
+fn cmd_summary(cmd: &str) -> String {
+    let first_line = cmd.lines().next().unwrap_or("");
+    let truncated: String = first_line.chars().take(200).collect();
+    if truncated.len() < first_line.len() || cmd.contains('\n') {
+        format!("{truncated}…")
+    } else {
+        truncated
     }
 }
 

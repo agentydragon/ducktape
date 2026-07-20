@@ -1,7 +1,8 @@
 // Per-tool-type rendering for haku-console's in-process `hostexec` MCP server (see
-// haku/console/tools/hostexec.py). `hostexec_run` executes an argv vector on an operator machine
-// as a chosen POSIX user; every call is manually approved (never auto-approved), so showing the
-// exact command unambiguously matters more than for narrower-scoped tools.
+// haku/console/tools/hostexec.py). `hostexec_run` runs `cmd` as a bash script (`bash -c cmd`) on
+// an operator machine as a chosen POSIX user; every call is manually approved (never
+// auto-approved), so showing the exact script unambiguously matters more than for narrower-scoped
+// tools.
 //
 // hostexec isn't yet wired into the build-time in-process schema catalog (`export_mcp_tool_schemas.py`
 // only builds gmail/google_calendar/routine for schema reflection today), so — like the remote
@@ -13,7 +14,6 @@ import { Stack } from "@mantine/core";
 import { z } from "zod";
 
 import { CodeBlock } from "../../code_block.tsx";
-import { formatArgv } from "../../shell_lang.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { clampBlock, PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
 
@@ -23,7 +23,7 @@ const zHostexecRunArgs = z.object({
   host: z.string(),
   // Mirrors RunAsUser (haku/hostexec/wire.py): `^[a-z_][a-z0-9_-]*$`, max 32 chars.
   run_as: z.string(),
-  cmd: z.array(z.string()).min(1),
+  cmd: z.string().min(1),
   max_bytes: z.number().int().min(0).max(100_000),
   timeout_ms: z.number().int().gt(0).max(300_000),
   cwd: z.string().nullish(),
@@ -56,19 +56,18 @@ function HostexecTarget({ args }: { args: HostexecRunArgs }) {
 }
 
 function HostexecRunPreview({ args, variant }: PreviewProps<HostexecRunArgs>) {
-  const commandLine = formatArgv(args.cmd);
   if (variant === "compact") {
     return (
       <Stack gap={4}>
         <HostexecTarget args={args} />
-        <CodeBlock language="shell" value={clampBlock(commandLine, 3)} compact />
+        <CodeBlock language="shell" value={clampBlock(args.cmd, 3)} compact />
       </Stack>
     );
   }
   return (
     <Stack gap="xs">
       <HostexecTarget args={args} />
-      <CodeBlock language="shell" value={commandLine} lineNumbers />
+      <CodeBlock language="shell" value={args.cmd} lineNumbers />
       <PreviewText size="xs" c="dimmed">
         timeout {formatTimeoutMs(args.timeout_ms)} · max output {formatMaxBytes(args.max_bytes)}
       </PreviewText>

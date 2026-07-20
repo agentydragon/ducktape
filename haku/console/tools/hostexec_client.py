@@ -44,17 +44,17 @@ class HostexecClient:
         self._broker = broker
 
     async def run(
-        self, *, host: str, run_as: str, argv: list[str], cwd: str | None, max_bytes: int, timeout_ms: int
+        self, *, host: str, run_as: str, cmd: str, cwd: str | None, max_bytes: int, timeout_ms: int
     ) -> BaseExecResult:
         daemon_id = self._daemon_ids.get(host)
         if daemon_id is None:
             raise ToolError(f"host {host!r} is not in hostexec scope (configured: {sorted(self._daemon_ids)})")
         token = await self._exchange(host, run_as)
         request = HostexecRequest(
-            token=token, run_as=run_as, argv=argv, cwd=cwd, max_bytes=max_bytes, timeout_ms=timeout_ms
+            token=token, run_as=run_as, cmd=cmd, cwd=cwd, max_bytes=max_bytes, timeout_ms=timeout_ms
         )
         # Audit to stdout in the haku-console namespace (Haku can't read these logs); never the token.
-        logger.info("hostexec run host=%s run_as=%s argv0=%s", host, run_as, argv[0])
+        logger.info("hostexec run host=%s run_as=%s cmd=%r", host, run_as, cmd[:200])
         try:
             execution_id = self._broker.enqueue(daemon_id=daemon_id, backend="hostexec", payload=request.model_dump())
             result = await self._broker.wait(execution_id)

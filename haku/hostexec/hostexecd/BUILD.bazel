@@ -65,8 +65,9 @@ rust_test(
     deps = [":users"],
 )
 
-# Command execution: spawn argv (no shell), wall-clock timeout + kill, output caps with truncation
-# reporting, and privilege-drop to run_as. Result shape mirrors mcp_infra.exec.models.BaseExecResult.
+# Command execution: run cmd as `bash -c cmd`, wall-clock timeout + kill, output caps with
+# truncation reporting, and privilege-drop to run_as. Result shape mirrors
+# mcp_infra.exec.models.BaseExecResult.
 rust_library(
     name = "exec",
     srcs = ["exec.rs"],

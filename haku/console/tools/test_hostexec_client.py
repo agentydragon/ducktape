@@ -48,7 +48,7 @@ async def test_run_queues_exchanged_token_and_returns_result() -> None:
     exchange = _exchange()
     broker = Broker()
     result = await _client(exchange, broker).run(
-        host="wyrm2", run_as="root", argv=["echo", "hi"], cwd=None, max_bytes=1000, timeout_ms=5000
+        host="wyrm2", run_as="root", cmd="echo hi", cwd=None, max_bytes=1000, timeout_ms=5000
     )
     assert result == _ok_result()
     assert exchange.await_args_list == [call("wyrm2", "root")]
@@ -56,20 +56,20 @@ async def test_run_queues_exchanged_token_and_returns_result() -> None:
     assert (daemon_id, backend) == ("wyrm2", "hostexec")
     assert payload["token"] == "token-wyrm2-root"
     assert payload["run_as"] == "root"
-    assert payload["argv"] == ["echo", "hi"]
+    assert payload["cmd"] == "echo hi"
 
 
 async def test_run_rejects_host_out_of_scope_before_exchange() -> None:
     exchange = _exchange()
     with pytest.raises(ToolError, match="not in hostexec scope"):
-        await _client(exchange).run(host="atlas", run_as="root", argv=["true"], cwd=None, max_bytes=0, timeout_ms=1000)
+        await _client(exchange).run(host="atlas", run_as="root", cmd="true", cwd=None, max_bytes=0, timeout_ms=1000)
     exchange.assert_not_awaited()
 
 
 async def test_run_surfaces_disconnected_daemon() -> None:
     with pytest.raises(ToolError, match="not connected"):
         await _client(broker=Broker(error="node daemon 'rugged' is not connected")).run(
-            host="rugged", run_as="agentydragon", argv=["true"], cwd=None, max_bytes=0, timeout_ms=1000
+            host="rugged", run_as="agentydragon", cmd="true", cwd=None, max_bytes=0, timeout_ms=1000
         )
 
 

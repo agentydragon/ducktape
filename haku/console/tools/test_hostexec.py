@@ -1,5 +1,5 @@
-"""Tests for the in-process `hostexec` MCP server (build_mcp): tool surface, argv mapping, and that
-the schema rejects an invalid run_as before the tool body runs."""
+"""Tests for the in-process `hostexec` MCP server (build_mcp): tool surface, cmd forwarding, and
+that the schema rejects an invalid run_as before the tool body runs."""
 
 from unittest.mock import AsyncMock, Mock
 
@@ -21,21 +21,19 @@ async def test_tool_surface() -> None:
     assert HOSTEXEC_SERVER_ID == "hostexec"
 
 
-async def test_hostexec_run_maps_cmd_to_argv_and_returns_result() -> None:
+async def test_hostexec_run_forwards_cmd_and_returns_result() -> None:
     client_mock = Mock()
     client_mock.run = AsyncMock(return_value=_result())
     async with Client(build_mcp(client_mock)) as client:
         result = await client.call_tool(
-            "hostexec_run",
-            {"host": "wyrm2", "run_as": "root", "cmd": ["ls", "-la"], "max_bytes": 2000, "timeout_ms": 5000},
+            "hostexec_run", {"host": "wyrm2", "run_as": "root", "cmd": "ls -la", "max_bytes": 2000, "timeout_ms": 5000}
         )
     assert not result.is_error
     # FastMCP returns the discriminated-union `exit` field as a plain dict in result.data.
     assert result.data.exit == {"kind": "exited", "exit_code": 0}
     assert result.data.stdout == "ok"
-    # The tool renames the agent-facing `cmd` to the wire's `argv` and defaults cwd to None.
     client_mock.run.assert_awaited_once_with(
-        host="wyrm2", run_as="root", argv=["ls", "-la"], cwd=None, max_bytes=2000, timeout_ms=5000
+        host="wyrm2", run_as="root", cmd="ls -la", cwd=None, max_bytes=2000, timeout_ms=5000
     )
 
 
@@ -46,7 +44,21 @@ async def test_hostexec_run_rejects_invalid_run_as() -> None:
     async with Client(build_mcp(client_mock)) as client:
         result = await client.call_tool(
             "hostexec_run",
-            {"host": "wyrm2", "run_as": "Root User", "cmd": ["true"], "max_bytes": 0, "timeout_ms": 1000},
+            {"host": "wyrm2", "run_as": "Root User", "cmd": "true", "max_bytes": 0, "timeout_ms": 1000},
+            raise_on_error=False,
+        )
+    assert result.is_error
+    client_mock.run.assert_not_awaited()
+
+
+async def test_hostexec_run_rejects_empty_cmd() -> None:
+    # cmd's min_length=1 rejects an empty script before the tool runs.
+    client_mock = Mock()
+    client_mock.run = AsyncMock(return_value=_result())
+    async with Client(build_mcp(client_mock)) as client:
+        result = await client.call_tool(
+            "hostexec_run",
+            {"host": "wyrm2", "run_as": "root", "cmd": "", "max_bytes": 0, "timeout_ms": 1000},
             raise_on_error=False,
         )
     assert result.is_error
