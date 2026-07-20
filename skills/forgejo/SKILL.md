@@ -58,6 +58,54 @@ A green run on a non-main branch does not prove a main-gated publish step ran. A
 `workflow_dispatch` run also does not prove the push-triggered path is healthy; compare
 the `event` field before using one run to explain another.
 
+## Actions CI Timing
+
+`fetch_forgejo_logs.py` answers "why did this run fail?"; this answers "why is CI slow?" — a
+per-job duration distribution over recent tasks. Prefer the bundled helper:
+
+```bash
+bb run //skills/forgejo:forgejo_ci_timing -- --owner "$OWNER" --repo "$REPO"
+# --list       also prints individual recent tasks
+# --limit N    analyze the N most-recent finished tasks (default 200)
+# --max-seconds S  drop longer rows as outliers (default 1800, the runner job timeout)
+```
+
+It reads `FORGEJO_URL` (defaults to this deployment) and authenticates via `~/.netrc` (or
+`FORGEJO_USER` / `FORGEJO_PASSWORD`). Sample (`haku/haku-state`):
+
+```text
+job               n    min    p50    p90    max
+bazel            37   494s   538s   593s   659s
+validate         51   161s   223s   247s   276s
+linkcheck        92    20s    61s    72s   131s
+```
+
+A flat `min ≈ p50` on every run (no run ever incremental) is the signature of a build with no
+persistent cache.
+
+Manual equivalent — duration is `updated_at - run_started_at`, per finished task:
+
+```bash
+curl -fsS -u "$USER:$PASS" "$FORGEJO_URL/api/v1/repos/$OWNER/$REPO/actions/tasks" \
+  | jq -r '.workflow_runs[]
+      | select(.status=="success" or .status=="failure")
+      | [.name, ((.updated_at|fromdateiso8601) - (.run_started_at|fromdateiso8601) | floor)]
+      | @tsv'
+```
+
+Timing-field gotchas on this deployment (they bite a naive reading):
+
+- **No `conclusion`, no `stopped_at`.** `status` carries
+  `success`/`failure`/`cancelled`/`running`; `updated_at` is the completion time of a finished
+  task.
+- **The start field is `run_started_at`, not `started_at`** — there is no `started_at`, so
+  reading it silently yields `null` and drops every row.
+- **Duration is run + queue wall time.** The runner is capacity-limited, so a row can sit
+  queued before it runs; treat a long tail as queue wait and filter outliers (the helper's
+  `--max-seconds`).
+- **`limit` is ignored** — the endpoint returns the whole task list under `workflow_runs`;
+  slice client-side.
+
 ## Logs
 
 On this deployment, logs are web UI endpoints, not documented REST routes. Treat these

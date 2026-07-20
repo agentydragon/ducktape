@@ -6,6 +6,7 @@ skill_package(
     srcs = [
         "SKILL.md",
         "scripts/fetch_forgejo_logs.py",
+        "scripts/forgejo_ci_timing.py",
     ],
 )
 
@@ -30,6 +31,30 @@ py_test(
     deps = [
         ":fetch_forgejo_logs_lib",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "forgejo_ci_timing_lib",
+    srcs = ["scripts/forgejo_ci_timing.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//httpx"],
+)
+
+py_binary(
+    name = "forgejo_ci_timing",
+    srcs = ["scripts/forgejo_ci_timing.py"],
+    main = "scripts/forgejo_ci_timing.py",
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_forgejo_ci_timing",
+    srcs = ["test_forgejo_ci_timing.py"],
+    deps = [
+        ":forgejo_ci_timing_lib",
         "@pypi//pytest_bazel",
     ],
 )
