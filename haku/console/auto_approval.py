@@ -43,6 +43,7 @@ GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
 IBKR_SERVER_ID = "interactive_brokers"
 OSM_SERVER_ID = "osm"
 POSTSCANMAIL_SERVER_ID = "postscanmail-mcp"
+HOME_ASSISTANT_SERVER_ID = "home-assistant"
 
 # Gmail read tools auto-approved for any authenticated agent regardless of arguments.
 GMAIL_READ_TOOLS = frozenset(
@@ -165,6 +166,51 @@ OSM_AUTO_APPROVE_TOOLS = frozenset(
 # discard removes mail to trash; shred is secure destruction). See x/postscanmail_mcp_server.
 POSTSCANMAIL_READ_TOOLS = frozenset({"list_items", "list_automation_rules"})
 
+# home-assistant (homeassistant-ai/ha-mcp) read tools: the subset the upstream server annotates
+# `readOnlyHint: true`, minus `ha_report_issue` — which is annotated read-only but actually files an
+# issue outward (a side effect), so it stays approval-gated. Every state-changing tool stays gated:
+# ha_call_service / ha_bulk_control / ha_call_event (device control), the ha_set_*/ha_remove_* entity
+# & registry mutations, ha_config_set_*/remove_*/delete_* (automations, scripts, scenes, dashboards,
+# helpers), ha_manage_* (add-ons, backups, updates, energy, HACS), ha_restart, ha_reload_core,
+# ha_import_blueprint, and todo mutations. `ha_eval_template` is a pure read (HA template rendering
+# cannot invoke services). Rollout-gated per the config comment until the live schemas were
+# exercised — done 2026-07-20 (full tools/list reflected), so reads open now, writes stay gated.
+HOME_ASSISTANT_READ_TOOLS = frozenset(
+    {
+        "ha_config_get_automation",
+        "ha_config_get_calendar_events",
+        "ha_config_get_category",
+        "ha_config_get_label",
+        "ha_config_get_scene",
+        "ha_config_get_script",
+        "ha_config_list_dashboard_resources",
+        "ha_config_list_groups",
+        "ha_config_list_helpers",
+        "ha_eval_template",
+        "ha_get_addon",
+        "ha_get_automation_traces",
+        "ha_get_blueprint",
+        "ha_get_camera_image",
+        "ha_get_device",
+        "ha_get_entity",
+        "ha_get_entity_exposure",
+        "ha_get_hacs_info",
+        "ha_get_history",
+        "ha_get_integration",
+        "ha_get_logs",
+        "ha_get_operation_status",
+        "ha_get_overview",
+        "ha_get_skill_guide",
+        "ha_get_state",
+        "ha_get_system_health",
+        "ha_get_todo",
+        "ha_get_zone",
+        "ha_list_floors_areas",
+        "ha_list_services",
+        "ha_search",
+    }
+)
+
 # (server_id -> tools) auto-approved for any authenticated agent regardless of arguments. Drives the
 # MCP server's transparent pass-through bucket. Argument-conditional approvals
 # (GMAIL_CONDITIONAL_TOOLS) are deliberately excluded — those still route through the request_
@@ -177,6 +223,7 @@ UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     IBKR_SERVER_ID: IBKR_AUTO_APPROVE_TOOLS,
     OSM_SERVER_ID: OSM_AUTO_APPROVE_TOOLS,
     POSTSCANMAIL_SERVER_ID: POSTSCANMAIL_READ_TOOLS,
+    HOME_ASSISTANT_SERVER_ID: HOME_ASSISTANT_READ_TOOLS,
 }
 
 

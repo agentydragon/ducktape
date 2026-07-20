@@ -259,6 +259,27 @@ async def test_osm_unlisted_tool_stays_manual() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "tool_name", ["ha_get_state", "ha_search", "ha_get_history", "ha_eval_template", "ha_get_overview"]
+)
+async def test_home_assistant_reads_auto_approve(tool_name: str) -> None:
+    policy_id, evaluation = await _remote_decision("home-assistant", tool_name, {})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+@pytest.mark.parametrize(
+    "tool_name", ["ha_call_service", "ha_set_state", "ha_config_set_automation", "ha_restart", "ha_report_issue"]
+)
+async def test_home_assistant_writes_and_side_effects_stay_manual(tool_name: str) -> None:
+    # Control/config-write tools stay gated; ha_report_issue is annotated read-only upstream but
+    # files an issue outward, so it is deliberately excluded from the read allowlist.
+    policy_id, evaluation = await _remote_decision("home-assistant", tool_name, {})
+    assert policy_id is None
+    assert evaluation == f"manual: home-assistant/{tool_name} is not auto-approved"
+
+
 @pytest.mark.parametrize("tool_name", ["list_items", "list_automation_rules"])
 async def test_postscanmail_reads_auto_approve(tool_name: str) -> None:
     policy_id, evaluation = await _remote_decision("postscanmail-mcp", tool_name, {"page": 1})

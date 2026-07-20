@@ -73,9 +73,9 @@ mcp:
             client_name: Haku Console
     # Writable Home Assistant management through homeassistant-ai/ha-mcp. The
     # upstream Home Assistant token remains in the ha-mcp pod; callers authenticate
-    # to the shared facade through operator OAuth. No calls are auto-approved at
-    # rollout: reads and writes both require operator review until the live schemas
-    # and response sizes have been exercised.
+    # to the shared facade through operator OAuth. Read tools now auto-approve
+    # (the readOnlyHint subset, minus ha_report_issue — see auto_approval.py); every
+    # state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
     - id: home-assistant
       backend:
         kind: remote_mcp
