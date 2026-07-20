@@ -248,7 +248,10 @@ revisit if `haku-ci` ever runs non-Haku-authored code.**
 - **Tier 1 — bind-mount the disk cache only, keep the fresh job container.** Warms disk + repo
   cache but not the server (no analysis reuse) → `bazel` ~60–150 s. Zero isolation cost; full
   per-job isolation preserved. Lower ceiling, but a good substrate Tier 2 builds on, and it
-  can ship independently and immediately.
+  can ship independently and immediately. **Landed** in `cluster/k8s/haku-ci/` (`pvc.yaml` +
+  the `-v /bazel-cache:/root/.cache` job-container mount in `config.yaml`): a
+  `local-path-ovh-hdd` PVC mounted into dind and bind-mounted onto every job container's
+  `~/.cache`, so the output base + `--disk_cache` + repo cache persist across job containers.
 - **Tier 3 — in-cluster `bazel-remote` gRPC cache.** Persistent, LRU-evicting,
   concurrency-safe, survives node moves; honors source-in-cluster (only content-addressed CAS
   blobs go to it, never source). Complements Tier 2 (remote cache for execution, warm server

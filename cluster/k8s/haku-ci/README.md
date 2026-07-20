@@ -57,12 +57,13 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File                 | Role                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `namespace.yaml`     | the `haku-ci` namespace                                                                  |
-| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                    |
-| `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity), via a `configMapGenerator` |
-| `deployment.yaml`    | the act_runner + rootless `dind` sidecar                                                 |
+| File                 | Role                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| `namespace.yaml`     | the `haku-ci` namespace                                                                 |
+| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                   |
+| `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts) |
+| `deployment.yaml`    | the act_runner + rootless `dind` sidecar (+ Bazel-cache init/mount)                     |
+| `pvc.yaml`           | persistent Bazel cache (output base + `--disk_cache`), bind-mounted into job containers |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —

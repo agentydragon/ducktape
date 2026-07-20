@@ -85,6 +85,7 @@ container:
     -e NODE_EXTRA_CA_CERTS=/egress-proxy-ca/ca-certificates.crt
     -v /egress-proxy-ca/ca-certificates.crt:/egress-proxy-ca/ca-certificates.crt:ro
     -v /egress-proxy-ca/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    -v /bazel-cache:/root/.cache
   # NO oci-cache credential is injected. The oci-cache Zot registry is a public
   # pull-through cache — anonymous by design; only its *public* HTTPRoute is fronted
   # by a basic-auth sidecar. In-cluster consumers reach Zot's internal Service
@@ -101,9 +102,16 @@ container:
   # which broke `docker login` in every other job — `rename … device or resource busy`.
   # Removed 2026-07-05; see cluster/docs/harbor_pullthrough.md.)
   #
-  # Allow the runner's own CA bind mount above through act_runner's volume gate
-  # (a Haku-authored workflow still cannot mount arbitrary dind-host paths).
+  # Allow the runner's own CA bind mount + the persistent Bazel-cache mount above through
+  # act_runner's volume gate (a Haku-authored workflow still cannot mount arbitrary dind-host
+  # paths). `-v /bazel-cache:/root/.cache` maps the runner-owned PVC (deployment.yaml) onto
+  # each job container's ~/.cache, so the Bazel output base + --disk_cache + repo cache
+  # persist across the otherwise-ephemeral job containers. Same host-path bind mechanism as
+  # the CA mounts (resolved on the dind filesystem, where the PVC is mounted at /bazel-cache).
   valid_volumes:
     - /egress-proxy-ca/ca-certificates.crt
+    - /bazel-cache
+# No act_runner cache server (that backs actions/cache) — the persistent Bazel cache is the
+# bind-mounted PVC above, not a tar'd-and-uploaded actions/cache blob.
 cache:
   enabled: false

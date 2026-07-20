@@ -1,0 +1,27 @@
+# Persistent Bazel cache for the runner: the output base (external-dep repository cache +
+# action cache) and `--disk_cache`, bind-mounted into every job container at `~/.cache`
+# (config.yaml `options` + the dind mount in deployment.yaml). Without it the runner pays a
+# full cold Bazel build every job — job containers are ephemeral, so the Bazel server, output
+# base, disk cache, and repo cache are discarded per job (design:
+# cluster/docs/plans/haku_ci_warm_bazel_server.md, "Tier 1"). capacity:1 keeps the cache a
+# single writer, so a shared output base is safe.
+#
+# Deviation from the repo's seaweedfs-ovh default (cluster/AGENTS.md § Storage Selection): a
+# Bazel cache is regenerable and latency-sensitive, so node-local wins — exactly the case the
+# default carves out. The runner is already a single node-pinned replica (Recreate +
+# nodeAffinity), so node-local storage doesn't cut resilience below the status quo.
+# `local-path-ovh-hdd` is the tier on the KS-5 workers the runner is fenced onto (the NVMe
+# `-ssd` tier lives on the KS-GAME control planes the runner avoids).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: haku-bazel-cache
+  namespace: haku-ci
+  labels:
+    app.kubernetes.io/name: haku-runner
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-ovh-hdd
+  resources:
+    requests:
+      storage: 40Gi

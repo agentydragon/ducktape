@@ -36,6 +36,21 @@ spec:
                     values: ["hil"]
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
+      initContainers:
+        # Ensure the Bazel-cache PVC dir is world-writable before dind and the job
+        # containers use it. Job containers run as (rootless-dind-remapped) root, so they
+        # write to the bind-mounted ~/.cache as a non-owning UID; 0777 on the top dir lets
+        # them create their own subtrees (bazel/, bazel-disk/, bazelisk/). Reuses the dind
+        # image (already pulled) to avoid a new image dependency; runs as root to chmod a
+        # root-owned local-path dir. Idempotent — re-runs harmlessly on each pod restart.
+        - name: prep-bazel-cache
+          image: docker:27-dind-rootless
+          command: ["sh", "-c", "mkdir -p /bazel-cache && chmod 0777 /bazel-cache"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: bazel-cache
+              mountPath: /bazel-cache
       containers:
         # The Forgejo Actions runner: registers (ephemerally) with the haku-state
         # repo via the registration token, long-polls for jobs, and runs them in
@@ -164,6 +179,11 @@ spec:
             - name: egress-proxy-ca
               mountPath: /egress-proxy-ca
               readOnly: true
+            # The persistent Bazel cache. dind resolves the `-v /bazel-cache:/root/.cache`
+            # job-container bind mount (config.yaml) against its own filesystem, so the PVC
+            # must be mounted here in dind, not just in the runner.
+            - name: bazel-cache
+              mountPath: /bazel-cache
           resources:
             requests:
               cpu: 200m
@@ -185,6 +205,11 @@ spec:
           emptyDir: {}
         - name: docker-data
           emptyDir: {}
+        # Persistent Bazel cache (output base + --disk_cache + repo cache), bind-mounted
+        # into each ephemeral job container's ~/.cache via config.yaml `options`. See pvc.yaml.
+        - name: bazel-cache
+          persistentVolumeClaim:
+            claimName: haku-bazel-cache
         # haku-egress-proxy CA trust bundle, written into this namespace by the
         # trust-manager Bundle (agents/haku-egress-proxy/trust-bundle.yaml). Mounted into
         # both the runner and dind so intercepted external TLS validates.

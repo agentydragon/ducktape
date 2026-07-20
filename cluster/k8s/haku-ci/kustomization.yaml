@@ -9,6 +9,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - ccnp-force-proxy-egress.yaml
+  - pvc.yaml
   - deployment.yaml
 configMapGenerator:
   # Hashed name (kustomize rewrites the Deployment's volume reference) so editing
