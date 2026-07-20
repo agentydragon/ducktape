@@ -20,6 +20,8 @@
     --haku-json-string: #2f9e44;
     --haku-json-number: #e8590c;
     --haku-json-literal: #9c36b5;
+    /* Muted comment hue for the shell grammar (hostexec `cmd`), separate from the JSON hues. */
+    --haku-code-comment: var(--mantine-color-gray-6);
     --haku-backdrop: rgb(21 74 70 / 55%);
     --haku-shell-shadow: rgb(36 31 43 / 20%);
     --haku-shell-muted-bg: #f4f0f7;
@@ -43,6 +45,7 @@
     --haku-json-string: #8ce99a;
     --haku-json-number: #ffc078;
     --haku-json-literal: #eebefa;
+    --haku-code-comment: var(--mantine-color-gray-5);
   }
   body {
     margin: 0;

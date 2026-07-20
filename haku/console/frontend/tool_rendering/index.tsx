@@ -25,6 +25,8 @@ import { googleCalendarResultPreviews } from "./google_calendar/responses.tsx";
 import { GROCY_SERVER_ID, grocyPreviews } from "./grocy/requests.tsx";
 import { grocyResultPreviews } from "./grocy/responses.tsx";
 import { HAKU_ROUTINE_SERVER_ID, hakuRoutinePreviews } from "./haku_routine/requests.tsx";
+import { HOSTEXEC_SERVER_ID, hostexecPreviews } from "./hostexec/requests.tsx";
+import { hostexecResultPreviews } from "./hostexec/responses.tsx";
 import { KUBECTL_SERVER_ID, kubectlPreviews } from "./kubectl/requests.tsx";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry.tsx";
 import { TANA_RW_SERVER_ID, tanaPreviews } from "./tana/requests.tsx";
@@ -35,6 +37,7 @@ const REGISTRY = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
+  [HOSTEXEC_SERVER_ID]: hostexecPreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
   [TANA_RW_SERVER_ID]: tanaPreviews,
 } as const satisfies Record<string, Record<string, ToolPreview>>;
@@ -48,6 +51,7 @@ const RESULT_REGISTRY = {
   [GMAIL_SERVER_ID]: gmailResultPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
+  [HOSTEXEC_SERVER_ID]: hostexecResultPreviews,
 } as const satisfies Record<string, Record<string, ToolResultPreview>>;
 type ResultRegistry = typeof RESULT_REGISTRY;
 const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = RESULT_REGISTRY;

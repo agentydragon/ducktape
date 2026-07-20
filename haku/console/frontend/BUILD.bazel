@@ -260,9 +260,19 @@ js_library(
 )
 
 js_library(
+    name = "shell_lang",
+    srcs = ["shell_lang.ts"],
+    deps = [
+        "//:node_modules/@codemirror/language",
+        "//:node_modules/@lezer/highlight",
+    ],
+)
+
+js_library(
     name = "code_block",
     srcs = ["code_block.tsx"],
     deps = [
+        ":shell_lang",
         "//:node_modules/@codemirror/lang-json",
         "//:node_modules/@codemirror/lang-yaml",
         "//:node_modules/@codemirror/language",
@@ -689,6 +699,8 @@ tsc_bin.tsc_test(
         "//haku/console/frontend/tool_rendering/grocy:requests_test",
         "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
         "//haku/console/frontend/tool_rendering:index_test",
+        "//haku/console/frontend/tool_rendering/hostexec:requests_test",
+        "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
         "//haku/console/frontend/tool_rendering:variant_test",
@@ -725,6 +737,7 @@ vitest_bin.vitest_test(
         "screenshots/sample_data.test.ts",
         "settings_panel.test.ts",
         "shell_chrome.test.ts",
+        "shell_lang.test.ts",
         "tana_client.test.ts",
         "tool_call_decision.test.ts",
         "vitest.config.ts",
@@ -744,6 +757,7 @@ vitest_bin.vitest_test(
         ":screenshot_harness_lib",
         ":settings_panel",
         ":shell_chrome",
+        ":shell_lang",
         ":tana_client",
         ":tool_call_decision",
         "//:node_modules",
@@ -761,6 +775,8 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/grocy:requests_test",
         "//haku/console/frontend/tool_rendering/grocy:responses_test",
         "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
+        "//haku/console/frontend/tool_rendering/hostexec:requests_test",
+        "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
     ],

@@ -1,9 +1,10 @@
 // Read-only CodeMirror 6 viewer for highlighted, foldable code — the one component behind every
-// code-shaped surface in tool-call previews (JSON arguments/results, kubectl YAML manifests, plain
-// bodies like an email or a routine instruction). Per-language grammars arrive as extensions; the
-// fold gutter collapses long/nested regions. Colors read the `--haku-json-*` / `--haku-code-*` CSS
-// variables (see styles.src.css), which flip with the Mantine color scheme, so one style adapts to
-// light and dark and keeps the muted palette the former highlight.js hues used.
+// code-shaped surface in tool-call previews (JSON arguments/results, kubectl YAML manifests,
+// hostexec shell commands, plain bodies like an email or a routine instruction). Per-language
+// grammars arrive as extensions; the fold gutter collapses long/nested regions. Colors read the
+// `--haku-json-*` / `--haku-code-*` CSS variables (see styles.src.css), which flip with the
+// Mantine color scheme, so one style adapts to light and dark and keeps the muted palette the
+// former highlight.js hues used.
 import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
@@ -20,13 +21,17 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useMemo } from "react";
 
-export type CodeLanguage = "json" | "yaml";
+import { shellLanguage } from "./shell_lang.ts";
+
+export type CodeLanguage = "json" | "yaml" | "shell";
 
 const HAKU_HIGHLIGHT = HighlightStyle.define([
   { tag: tags.propertyName, color: "var(--haku-json-key)" },
   { tag: tags.string, color: "var(--haku-json-string)" },
   { tag: tags.number, color: "var(--haku-json-number)" },
   { tag: [tags.bool, tags.keyword, tags.atom, tags.literal], color: "var(--haku-json-literal)" },
+  { tag: tags.variableName, color: "var(--haku-json-key)" },
+  { tag: tags.comment, color: "var(--haku-code-comment)", fontStyle: "italic" },
 ]);
 
 // Neutral chrome over the same `--haku-code-*` surface the old `<pre>` blocks used. `&` is
@@ -55,6 +60,7 @@ const HAKU_THEME = EditorView.theme({
 const LANGUAGE_EXTENSIONS: Record<CodeLanguage, () => Extension> = {
   json: () => json(),
   yaml: () => yaml(),
+  shell: () => shellLanguage,
 };
 
 // Lines of content that fit in the editor's clipped height — the compact block fills this rather
