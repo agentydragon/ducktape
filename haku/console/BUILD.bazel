@@ -266,6 +266,44 @@ py_library(
     ],
 )
 
+py_library(
+    name = "oauth_association_maintenance",
+    srcs = ["oauth_association_maintenance.py"],
+    deps = [
+        ":authentik_operator_token",
+        ":database_schema",
+        ":mcp_config",
+        ":mcp_operator_oauth",
+        ":oauth_token_support",
+        ":operator_identity",
+        ":provider_connection",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_oauth_association_maintenance",
+    size = "medium",
+    srcs = ["test_oauth_association_maintenance.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_schema",
+        ":mcp_config",
+        ":oauth_association_maintenance",
+        ":provider_connection_registry",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
 py_test(
     name = "test_authentik_operator_token",
     size = "medium",
@@ -679,6 +717,7 @@ py_library(
         ":mcp_server",
         ":models",
         ":node_daemons",
+        ":oauth_association_maintenance",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
