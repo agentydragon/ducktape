@@ -81,9 +81,12 @@ Csrf = Annotated[CsrfProtect, Depends()]
 
 class ToolMetadata(BaseModel):
     name: str
+    title: str | None = None
     description: str | None = None
     input_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
     annotations: mcp_types.ToolAnnotations | None = None
+    icons: list[mcp_types.Icon] | None = None
 
 
 class ServerMetadataBase(BaseModel):
@@ -553,7 +556,13 @@ class McpServerClient:
                 schema = {}
             reflected.append(
                 ToolMetadata(
-                    name=tool.name, description=tool.description, input_schema=schema, annotations=tool.annotations
+                    name=tool.name,
+                    title=tool.title,
+                    description=tool.description,
+                    input_schema=schema,
+                    output_schema=tool.outputSchema,
+                    annotations=tool.annotations,
+                    icons=tool.icons,
                 )
             )
         return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)

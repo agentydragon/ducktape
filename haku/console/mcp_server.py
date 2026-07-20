@@ -281,8 +281,35 @@ def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
     if isinstance(metadata, DegradedServerMetadata):
         return metadata
     return metadata.model_copy(
-        update={"tools": [tool.model_copy(update={"input_schema": None}) for tool in metadata.tools]}
+        update={
+            "tools": [tool.model_copy(update={"input_schema": None, "output_schema": None}) for tool in metadata.tools]
+        }
     )
+
+
+def _output_schema(upstream_output_schema: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A truthful output schema: any proxied call — passthrough or approval-request alike — can
+    return either the upstream tool's own result or, when execution outlasts
+    ``wait_for_approval_ms``, the pending-approval promise (`ToolCallPromise`, see
+    `_record_to_result`). Only meaningful when the upstream declares its own output schema;
+    otherwise there is nothing to narrow beyond "anything", so declaring none is more honest than
+    inventing a promise-only schema that would wrongly reject the upstream shape.
+
+    ``$ref``s are JSON pointers resolved against the document root, so each branch's own
+    ``$defs`` has to be hoisted to the combined schema's root rather than left nested under
+    ``oneOf`` (where the pointer would dangle). ``ToolCallPromise`` is the only source of
+    defs here; an upstream schema defining a same-named def is an unreviewed-but-unlikely
+    collision, not something this display-only schema needs to guard against.
+    """
+    if upstream_output_schema is None:
+        return None
+    upstream = copy.deepcopy(upstream_output_schema)
+    promise = ToolCallPromise.model_json_schema()
+    defs = {**upstream.pop("$defs", {}), **promise.pop("$defs", {})}
+    combined: dict[str, Any] = {"oneOf": [upstream, promise]}
+    if defs:
+        combined["$defs"] = defs
+    return combined
 
 
 def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -408,7 +435,9 @@ def _build_proxy_tool(
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
     name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
-    upstream_title = tool.annotations.title if tool.annotations else None
+    # `title` is the spec-preferred display name; `annotations.title` is the legacy fallback FastMCP
+    # still honors when `title` is unset (mirrors `Tool.to_mcp_tool`'s own precedence).
+    upstream_title = tool.title or (tool.annotations.title if tool.annotations else None)
     # The upstream human-readable title hides which server a tool belongs to just like the bare
     # name did, so prefix it the same way (operator decision 2026-07-20). This is a display-only
     # `title`, which FastMCP's MCP conversion prefers over `annotations.title` for clients.
@@ -425,6 +454,10 @@ def _build_proxy_tool(
         title=title,
         description=description,
         parameters=parameters,
+        output_schema=_output_schema(tool.output_schema),
+        # Icons are opaque display assets (URLs/data URIs) — no server identity to prefix, so they
+        # propagate unchanged, unlike the textual name/title above.
+        icons=tool.icons,
         # Propagate the upstream server's self-declared hints unchanged. They are advisory (the
         # spec forbids trusting them for security), and the console's own approval policy is
         # enforced server-side regardless — this only sets client-facing UX grouping.
@@ -637,8 +670,8 @@ def build_console_mcp(
         Unlike ``list_mcp_servers``, this may refresh the operator's linked OAuth token and contact
         the remote MCP server. It returns persisted linkage plus a structured degraded result when
         that cannot succeed, so agents can distinguish credential failures from downstream tool
-        discovery failures. Tool names, descriptions, and annotations are returned by default;
-        set ``include_tool_schemas`` to include the potentially large input schemas.
+        discovery failures. Tool names, titles, descriptions, icons, and annotations are returned by
+        default; set ``include_tool_schemas`` to include the potentially large input/output schemas.
         """
         server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
         if server is None:

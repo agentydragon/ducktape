@@ -22,8 +22,11 @@ import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from jsonschema import Draft202012Validator
+from mcp.types import Icon, ToolAnnotations
 from pydantic import SecretStr, ValidationError
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
 
 from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
@@ -107,6 +110,36 @@ _STATIC_AGENTS = [
         "operator_subject_env": _OTHER_SIBLING_AGENT_OPERATOR_ENV,
     },
 ]
+
+
+def _assert_valid_json_schema(schema: dict[str, Any] | None) -> None:
+    """`schema` must be a structurally valid JSON Schema document with every `$ref` resolvable.
+
+    `check_schema` alone validates shape (types, keyword usage) but not reference resolution, so
+    it would not have caught the bug this guards against: combining schemas (e.g. an envelope's or
+    a `oneOf`'s own `$defs`) can leave a nested `$defs` block whose sibling `$ref`s are root-relative
+    JSON pointers that no longer resolve once the block isn't at the document root. Walking every
+    `$ref` through a `referencing` registry rooted at the document reproduces exactly the failure
+    an MCP client hits when it tries to validate a real result against the schema.
+    """
+    if schema is None:
+        return
+    Draft202012Validator.check_schema(schema)
+    resource = Resource.from_contents(schema, default_specification=DRAFT202012)
+    resolver = Registry().with_resource("", resource).resolver()
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                resolver.lookup(ref)
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(schema)
 
 
 def test_direct_result_preserves_upstream_error_and_metadata() -> None:
@@ -253,6 +286,11 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     assert cal_read_ann.readOnlyHint is True
     assert "google_calendar__create_event" in tools
     assert "google_calendar__create_calendar_event" not in tools
+    # Every advertised tool's schemas — passthrough and envelope input schemas, and any declared
+    # output schema — must be valid, fully-resolvable JSON Schema, not just superficially shaped.
+    for tool in tools.values():
+        _assert_valid_json_schema(tool.inputSchema)
+        _assert_valid_json_schema(tool.outputSchema)
 
 
 async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> None:
@@ -441,10 +479,17 @@ def _serve_upstream() -> Generator[str]:
     """A real upstream MCP server process stand-in (echo tool) served over streamable HTTP."""
     upstream: FastMCP = FastMCP("standin")
 
-    @upstream.tool(annotations=ToolAnnotations(title="Echo text", readOnlyHint=True, openWorldHint=False))
-    async def echo(text: str) -> str:
+    @upstream.tool(
+        # `title` is the spec-preferred display name and should win over the legacy
+        # `annotations.title` below — proves the proxy honors that precedence too.
+        title="Echo text",
+        icons=[Icon(src="https://example.invalid/echo.png")],
+        output_schema={"type": "object", "properties": {"echoed": {"type": "string"}}, "required": ["echoed"]},
+        annotations=ToolAnnotations(title="legacy annotations title", readOnlyHint=True, openWorldHint=False),
+    )
+    async def echo(text: str) -> dict[str, str]:
         """Echo a string back."""
-        return f"echo:{text}"
+        return {"echoed": f"echo:{text}"}
 
     with serve_fastmcp(upstream) as url:
         yield url
@@ -493,8 +538,25 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 assert ann is not None
                 assert ann.readOnlyHint is True
                 assert ann.openWorldHint is False
-                # The human-readable title is re-prefixed with the server id, just like the name.
+                # The human-readable title is re-prefixed with the server id, just like the name,
+                # and the spec-preferred `title` field wins over the legacy `annotations.title`.
                 assert tools["standin__echo"].title == "standin: Echo text"
+                # Icons are opaque display assets — propagate unchanged, no server prefix.
+                assert tools["standin__echo"].icons == [Icon(src="https://example.invalid/echo.png")]
+                # The output schema is truthful: either the upstream's own result shape, or the
+                # pending-approval promise if execution outlasts wait_for_approval_ms.
+                echo_output_schema = tools["standin__echo"].outputSchema
+                assert echo_output_schema is not None
+                assert echo_output_schema["oneOf"][0] == {
+                    "type": "object",
+                    "properties": {"echoed": {"type": "string"}},
+                    "required": ["echoed"],
+                }
+                assert echo_output_schema["oneOf"][1]["title"] == "ToolCallPromise"
+                # Both schemas must be valid, fully-resolvable JSON Schema — this is exactly the
+                # `oneOf` + `$defs` combination that broke before `$defs` were hoisted to the root.
+                _assert_valid_json_schema(tools["standin__echo"].inputSchema)
+                _assert_valid_json_schema(echo_output_schema)
                 result = await client.call_tool(
                     "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
                 )
@@ -929,7 +991,14 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
         return AliveServerMetadata(
             server_id=server_id,
             title=server_id,
-            tools=[ToolMetadata(name="echo", description="Echo input", input_schema={"type": "object"})],
+            tools=[
+                ToolMetadata(
+                    name="echo",
+                    description="Echo input",
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object", "properties": {"echoed": {"type": "string"}}},
+                )
+            ],
         )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
@@ -944,11 +1013,18 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     assert detailed.structured_content is not None
     assert summary.structured_content["server"]["tools"][0] == {
         "name": "echo",
+        "title": None,
         "description": "Echo input",
         "input_schema": None,
+        "output_schema": None,
         "annotations": None,
+        "icons": None,
     }
     assert detailed.structured_content["server"]["tools"][0]["input_schema"] == {"type": "object"}
+    assert detailed.structured_content["server"]["tools"][0]["output_schema"] == {
+        "type": "object",
+        "properties": {"echoed": {"type": "string"}},
+    }
 
 
 async def test_tool_discovery_is_concurrent_and_preserves_config_order(

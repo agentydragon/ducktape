@@ -941,11 +941,13 @@ py_test(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//jsonschema",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
         "@pypi//pytest_asyncio",
+        "@pypi//referencing",
     ],
 )
 
