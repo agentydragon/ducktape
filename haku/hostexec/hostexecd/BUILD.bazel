@@ -93,6 +93,30 @@ rust_test(
     ],
 )
 
+# Deserialize the durable claim envelope before interpreting its backend-specific payload so the
+# daemon retains the lease identity needed to report incompatible work as failed.
+rust_library(
+    name = "claim",
+    srcs = ["claim.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "claim_test",
+    size = "small",
+    srcs = ["claim_test.rs"],
+    edition = "2024",
+    deps = [
+        ":claim",
+        "@crates//:serde_json",
+    ],
+)
+
 # The authorization composition: verify the token, resolve run_as, then claim single-use. The whole
 # security decision, so the axum handler carries no policy.
 rust_library(
@@ -162,6 +186,7 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":authorize",
+        ":claim",
         ":exec",
         ":jwks",
         ":replay",

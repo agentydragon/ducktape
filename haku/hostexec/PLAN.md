@@ -49,6 +49,8 @@ Postgres is authoritative across console replicas and restarts:
 - Pending executions fail after the dispatch deadline. Claimed executions fail closed
   when their lease expires or a replacement daemon instance appears; the error explicitly
   says that the execution outcome is unknown.
+- The daemon decodes the claim envelope before the backend payload, retaining the execution id
+  and lease token so it can submit malformed or unsupported work as an immediate terminal failure.
 - Result submission is idempotent for an identical terminal result and rejects a conflicting
   second outcome.
 
