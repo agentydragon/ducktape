@@ -15,8 +15,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  prepareDeterministicPage,
+  screenshotElement,
+  settle,
+} from "../../../../util/testing/frontend_visual/capture.mjs";
+import {
   DISABLE_ANIMATIONS_CSS,
-  frozenClockScript,
   launchDeterministicBrowser,
 } from "../../../../util/testing/frontend_visual/launcher.mjs";
 import { writeVisualReviewManifest } from "../../../../util/testing/frontend_visual/visual-review-manifest.mjs";
@@ -93,11 +97,6 @@ const harnessJs = readInput("HARNESS_JS", "dist", "harness.js");
 const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
-// Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
-// Date.now() into sampleRecentToolCalls, so without a frozen clock any date-relative text
-// (e.g. formatAge) would drift between runs instead of rendering the same value every time.
-const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
-
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
 // @playwright_browsers build under RBE) or the ambient Playwright browser for
 // a local `bazel run` — both resolved inside launchDeterministicBrowser. The deterministic flag
@@ -112,7 +111,10 @@ try {
   for (const colorScheme of COLOR_SCHEMES) {
     for (const { name, viewport, click, clicks, closeApprovals, element, fullPage = false, frame } of SCENES) {
       const page = await browser.newPage();
-      await page.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
+      // Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
+      // Date.now() into sampleRecentToolCalls, so without a frozen clock any date-relative text
+      // (e.g. formatAge) would drift between runs instead of rendering the same value every time.
+      await prepareDeterministicPage(page, { viewport: { ...viewport, deviceScaleFactor: 2 }, colorScheme });
       page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
       page.on("pageerror", (error) => console.error(`[${name}] browser error:`, error));
       await page.setRequestInterception(true);
@@ -126,11 +128,6 @@ try {
           void request.continue();
         }
       });
-      await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
-      await page.emulateMediaFeatures([
-        { name: "prefers-reduced-motion", value: "reduce" },
-        { name: "prefers-color-scheme", value: colorScheme },
-      ]);
       await page.goto("https://haku-console.test/", { waitUntil: "load" });
       await page.waitForSelector("#app > *", { timeout: 10_000 });
       if (frame) {
@@ -140,18 +137,26 @@ try {
       }
       // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
       // delay so they render enabled (animations are reduced above).
-      await new Promise((r) => setTimeout(r, 700));
+      await settle(700);
       // Some scenes need clicks to reveal state internal to a component: a popover's open state
       // (location-sharing control) or history rows toggled into their detailed view.
       // Each click re-renders the DOM, so re-settle before the next one.
       for (const selector of clicks ?? (click ? [click] : [])) {
         await page.click(selector);
-        await new Promise((r) => setTimeout(r, 300));
+        await settle(300);
       }
       if (closeApprovals) {
         const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
         if (drawerClose) await drawerClose.click();
         await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
+      }
+      if (frame) {
+        // haku_ui_embed.tsx's refreshToolApprovals() fires on mount and increments syncsInFlight
+        // around a mocked fetch — same class of race as the MCP-server probes below, on the rail's
+        // sync-status icon. Only the real-shell (frame) scenes hit this; the isolated sync-* scenes
+        // force a specific state via clicks (sync-syncing deliberately wants "Syncing" left showing,
+        // so this must not run there).
+        await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: 5_000 });
       }
       // The settings scene's MCP server list resolves through two chained async mock-fetch
       // rounds (list, then a per-connection status probe) — occasionally still in flight past
@@ -161,14 +166,9 @@ try {
       await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
       await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
       const file = `${name}-${colorScheme}.png`;
-      let shot;
-      if (element) {
-        const handle = await page.$(element);
-        if (!handle) throw new Error(`scene ${name}: element ${element} not found`);
-        shot = await handle.screenshot();
-      } else {
-        shot = await page.screenshot({ fullPage });
-      }
+      const shot = element
+        ? await screenshotElement(page, element, { context: `scene ${name}` })
+        : await page.screenshot({ fullPage });
       writeFileSync(join(outDir, file), shot);
       assets.push({ path: file, label: `${name} - ${colorScheme}` });
       console.log(`wrote ${join(outDir, file)}`);

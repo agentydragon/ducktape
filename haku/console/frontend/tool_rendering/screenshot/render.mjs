@@ -11,8 +11,14 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  prepareDeterministicPage,
+  screenshotElement,
+  settle,
+} from "../../../../../util/testing/frontend_visual/capture.mjs";
+import {
   DISABLE_ANIMATIONS_CSS,
   frozenClockScript,
+  FROZEN_NOW_MS,
   launchDeterministicBrowser,
 } from "../../../../../util/testing/frontend_visual/launcher.mjs";
 import { writeVisualReviewManifest } from "../../../../../util/testing/frontend_visual/visual-review-manifest.mjs";
@@ -73,9 +79,6 @@ const harnessJs = readInput("HARNESS_JS", "dist", "harness.js");
 const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
-// Matches visual-test-lib.mjs's fixed epoch — see screenshots/render.mjs for why.
-const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
-
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
 // @playwright_browsers build under RBE) or the ambient Playwright browser for
 // a local `bazel run` — both resolved inside launchDeterministicBrowser, matching the same
@@ -103,22 +106,20 @@ try {
     for (const colorScheme of COLOR_SCHEMES) {
       for (const variant of PREVIEW_VARIANTS) {
         const page = await browser.newPage();
-        await page.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
-        await page.setViewport({ width: VIEWPORT_WIDTH, height: 900, deviceScaleFactor: 2 });
-        await page.emulateMediaFeatures([
-          { name: "prefers-reduced-motion", value: "reduce" },
-          { name: "prefers-color-scheme", value: colorScheme },
-        ]);
+        await prepareDeterministicPage(page, {
+          viewport: { width: VIEWPORT_WIDTH, height: 900, deviceScaleFactor: 2 },
+          colorScheme,
+        });
         await page.setContent(pageHtml(css, harnessJs, colorScheme, { __FIXTURE__: index, __VARIANT__: variant }), {
           waitUntil: "load",
         });
         await page.waitForSelector(".haku-preview-card", { timeout: 10_000 });
         // Let Mantine mount and any mock-backed widget (gmail subjects, grocy reference, calendar
         // name) fetch + re-render before the screenshot.
-        await new Promise((r) => setTimeout(r, 700));
-        const card = await page.$(".haku-preview-card");
+        await settle(700);
         const file = `preview-${slug}-${variant}-${colorScheme}.png`;
-        writeFileSync(join(outDir, file), await card.screenshot());
+        const context = `fixture ${slug} ${variant} ${colorScheme}`;
+        writeFileSync(join(outDir, file), await screenshotElement(page, ".haku-preview-card", { context }));
         assets.push({ path: file, label: `${label} — ${variant} · ${colorScheme}` });
         console.log(`wrote ${join(outDir, file)}`);
         await page.close();

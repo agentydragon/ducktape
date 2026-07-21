@@ -51,6 +51,7 @@ def preview_screenshots(name, entry, deps, visibility = None):
         data = [
             ":%s_bundle" % name,
             "//haku/console/frontend:styles_css",
+            "//util/testing/frontend_visual:capture",
             "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
             "@playwright_browsers//:chromium-headless-shell",
@@ -62,6 +63,7 @@ def preview_screenshots(name, entry, deps, visibility = None):
         },
         no_copy_to_bin = [
             ":%s_bundle" % name,
+            "//util/testing/frontend_visual:capture",
             "//util/testing/frontend_visual:launcher",
             "//util/testing/frontend_visual:visual_review_manifest",
             "@playwright_browsers//:chromium-headless-shell",

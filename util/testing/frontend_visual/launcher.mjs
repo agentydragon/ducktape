@@ -27,6 +27,10 @@ export function frozenClockScript(nowMs) {
   return `(() => { ${source}\nfrozenClock(${nowMs}); })();`;
 }
 
+/** The fixed "now" every deterministic screenshot test freezes the page clock to, so
+ * date-relative text (e.g. formatAge) renders the same value on every run. */
+export const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
+
 /**
  * CSS that hard-pins every animation/transition to its first frame.
  *

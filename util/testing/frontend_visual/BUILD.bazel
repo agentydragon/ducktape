@@ -17,6 +17,23 @@ js_library(
     ],
 )
 
+# Page-level primitives shared by every visual-test consumer: prepare an already-launched page
+# (freeze clock, viewport, media emulation) and capture an element screenshot from it. Loading
+# content and orchestrating multiple shots stays caller-owned (visual_test_lib, and haku console's
+# own multi-scene renderers) — see capture.mjs's docstring for why that isn't abstracted here too.
+js_library(
+    name = "capture",
+    srcs = ["capture.mjs"],
+    visibility = ["//visibility:public"],
+    deps = [":launcher"],
+)
+
+js_test(
+    name = "capture_test",
+    data = [":capture"],
+    entry_point = "capture.test.mjs",
+)
+
 # Puppeteer-based visual render-health test runner.
 js_library(
     name = "visual_test_lib",
@@ -28,6 +45,7 @@ js_library(
         "//x/study_casino/frontend:__pkg__",
     ],
     deps = [
+        ":capture",
         ":launcher",
         ":visual_review_manifest",
     ],

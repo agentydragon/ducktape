@@ -24,7 +24,8 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join, resolve } from "path";
 
-import { frozenClockScript, launchDeterministicBrowser } from "./launcher.mjs";
+import { prepareDeterministicPage, screenshotElement, settle } from "./capture.mjs";
+import { launchDeterministicBrowser } from "./launcher.mjs";
 import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,18 +84,11 @@ export async function main(scenarioName, options) {
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error));
     const viewport = { width: 1200, height: 800, deviceScaleFactor: 1, ...options.viewport };
-    await page.setViewport(viewport);
     const colorScheme = options.colorScheme || "light";
-    await page.emulateMediaFeatures([
-      { name: "prefers-color-scheme", value: colorScheme },
-      { name: "prefers-reduced-motion", value: "reduce" },
-    ]);
-
-    // Freeze the wall clock so time-relative formatters (e.g. date-fns
-    // formatDistanceToNow used by formatAge) produce deterministic text.
-    // Without this, renders drift as the mock dates cross date-fns
-    // thresholds ("about 1 year" → "over 1 year", etc.).
-    await page.evaluateOnNewDocument(frozenClockScript(Date.parse("2025-02-01T12:00:00Z")));
+    // Freezing the wall clock keeps time-relative formatters (e.g. date-fns
+    // formatDistanceToNow used by formatAge) deterministic — without it, renders drift
+    // as the mock dates cross date-fns thresholds ("about 1 year" → "over 1 year", etc.).
+    await prepareDeterministicPage(page, { viewport, colorScheme });
 
     const harnessUrl = `file://${indexPath}`;
 
@@ -112,12 +106,9 @@ export async function main(scenarioName, options) {
     console.log(`Testing: ${outputName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#app > *", { timeout: 5000 });
-    await new Promise((r) => setTimeout(r, options.waitMs ?? 200));
+    await settle(options.waitMs ?? 200);
 
-    const element = await page.$(options.element);
-    if (!element) throw new Error(`main(): element ${options.element} not found`);
-    const screenshotData = await element.screenshot();
-    const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
+    const screenshot = await screenshotElement(page, options.element, { context: "main()" });
 
     if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
     writeFileSync(join(outputDir, `${outputName}-actual.png`), screenshot);
