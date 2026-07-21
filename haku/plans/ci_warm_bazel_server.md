@@ -5,10 +5,13 @@ analysis graph resident in RAM — alive across CI jobs on the in-cluster `haku-
 successive PRs skip loading, analysis, and unchanged-action execution instead of paying a
 full cold build every time.
 
-**Status:** proposal. It asks for exactly one operator decision — the shared-workspace
-isolation trade-off (see [The isolation decision](#the-isolation-decision)). Nothing here has
-landed. Manifests live in `cluster/k8s/haku-ci/` (this repo); workflow edits live in
-`haku-state` (`.forgejo/`).
+**Status:** Tier 1 (persistent disk cache) and **Tier 1.5** (validate folded into the `bazel`
+job) have **landed** — both zero-isolation-cost, and together they bank most of the cheap win
+(see [Results so far](#results-so-far-landed)). The **warm-server-across-PRs** design below
+(Tier 2) remains a proposal; it asks for one operator decision — the shared-workspace isolation
+trade-off ([The isolation decision](#the-isolation-decision)) — but the prior question is
+whether to build it at all: **[recommendation: defer](#tier-2-build-it-now)**. Manifests live
+in `cluster/k8s/haku-ci/` (this repo); workflow edits live in `haku-state` (`.forgejo/`).
 
 ## Why
 
@@ -46,6 +49,16 @@ Two changes shipped, both with **zero isolation cost**, measured against live ru
   (~90 s/job); now it imports only the egress-proxy CA (`CN=haku-egress-proxy-root-ca`,
   `openssl`-filtered) in one call. Applies to `validate` and `bazel` alike (shared
   `bazel-runner-setup`).
+- **Tier 1.5 — `validate` folded into the `bazel` job** (haku-state #24 + ducktape #3474):
+  `validate_state` + `freshness_lint` moved from the standalone `validate-state` workflow (its
+  own ephemeral container + **cold** Bazel) into the `bazel` job's first steps, so the opening
+  `bazel run //tools:validate_state` warms the server and the following `bazel test //...`
+  reuses the resident Skyframe graph. The `validate-state` workflow was retired and its
+  required branch-protection context dropped (ducktape #3474); the image gate (test/build/push)
+  is now per-step path-gated so data-only commits still validate but don't rebuild the image.
+  **Measured:** folding validate in added only **~2 s** to the `bazel` job (a cache-heavy run
+  went 59 → 61 s) while eliminating the separate ~40–47 s `validate` job — **≈40 s saved per
+  PR / code-push**, a fixed saving independent of diff size; data-only pushes stay ~44 s.
 
 | Job        | Before (cold every run) | After (warm, both fixes) |
 | ---------- | ----------------------- | ------------------------ |
@@ -62,11 +75,44 @@ analysis phase is exactly what a warm server (below) removes.
 A related egress question — could the proxy allow only specific GitHub repos? — was
 investigated separately: <../docs/egress_proxy_repo_filtering.md>.
 
+## Tier 2: build it now?
+
+With Tier 1 + 1.5 landed, the **isolation-free** wins are banked. Tier 1.5 removed the
+_duplicate_ cold `load+analyze` (validate's, ~40 s). What remains is **one** cold load+analyze
+per run — the ~45 s serial bzlmod-resolution + Skyframe-analysis phase in the surviving `bazel`
+job (the profile-confirmed floor above). Tier 2 (a server kept warm _across_ runs) is what
+removes that last ~45 s.
+
+**Payoff vs. cost.** The prize is ~45 s/run — the same order as what Tier 1.5 just banked, but
+now bought with materially more machinery: a custom builder image, a long-lived dind container
+holding a persistent workspace + output base on a node-pinned PVC, a `ci-build.sh` dispatch
+path, a periodic bounce, and `--disk_cache` GC — plus the **cross-PR isolation exposure** this
+doc's [isolation decision](#the-isolation-decision) exists to weigh. Tiers 1 and 1.5 cost a PVC
+and a workflow edit at _zero_ isolation cost; Tier 2 is a step-change in both ongoing
+operational surface and risk model for a single, fixed ~45 s.
+
+**Recommendation: defer (don't drop).** For a single-tenant, personal-infra CI at current PR
+volume, ~45 s/run does not justify standing up and babysitting a persistent cross-PR Bazel
+server — Skyframe staleness, workspace lifecycle _outside_ the ephemeral job container, cache
+GC, and foothold-bounce cadence are all new, always-on failure modes. Keep this design as the
+ready plan and revisit when a **trigger** fires:
+
+- PR / code-push volume grows enough that ~45 s/run aggregates to real wall-clock pain (the
+  `capacity: 1` serial runner makes head-of-line blocking compound it).
+- The analysis phase itself grows — a much larger `MODULE.bazel` graph or target count pushes
+  load+analyze well past ~45 s.
+- The isolation calculus changes (e.g. `haku-ci` ever runs non-Haku-authored code), which would
+  independently force a rethink.
+
+Until a trigger fires, everything below is the **plan of record for Tier 2**, not an active
+build.
+
 ## Goal / non-goals
 
-**Goal:** a Bazel server reused across PRs, so a no-op-diff `bazel test //...` returns in
-seconds (Skyframe warm, only genuinely-changed actions execute). Target: `bazel` from
-~500–575 s to ~10–60 s depending on the diff; `validate` from ~220 s to a few seconds.
+**Goal (Tier 2):** a Bazel server reused across PRs, so a no-op-diff `bazel test //...` returns
+in seconds (Skyframe warm, only genuinely-changed actions execute). Post-Tier-1.5 baseline is a
+single `bazel` job at ~60–130 s (paying one cold load+analyze); Tier 2's target is to drop the
+warm case toward ~10–30 s by removing that remaining analysis phase.
 
 **Non-goals:** introducing BuildBuddy/RBE or any external CI — the founding constraint is that
 `haku-state` source never leaves the cluster (`cluster/k8s/haku-ci/README.md`,
@@ -279,15 +325,16 @@ revisit if `haku-ci` ever runs non-Haku-authored code.**
   the `-v /bazel-cache:/root/.cache` job-container mount in `config.yaml`): a
   `local-path-ovh-hdd` PVC mounted into dind and bind-mounted onto every job container's
   `~/.cache`, so the output base + `--disk_cache` + repo cache persist across job containers.
-- **Tier 1.5 — run `validate` + `bazel` in one job/container.** They are separate workflows
-  today, so on a PR each spins up a fresh container and a **cold** Bazel server, re-paying the
-  ~45 s load+analyze twice. Merging them into one job shares the checkout/setup **and one warm
+- **Tier 1.5 — run `validate` + `bazel` in one job/container. ✅ Landed** (haku-state #24,
+  ducktape #3474; see [Results so far](#results-so-far-landed)). They were separate workflows,
+  so on a PR each spun up a fresh container and a **cold** Bazel server, re-paying the ~45 s
+  load+analyze twice. Merging them into one job shares the checkout/setup **and one warm
   server** — `validate`'s `bazel run //tools:validate_state` warms it, and the following
-  `bazel test //...` reuses the resident Skyframe graph. Captures much of Tier 2's analysis win
-  **within a single job, so no cross-PR isolation cost**. Caveat: `validate-state` is
-  deliberately path-**un**filtered (runs on every data commit) while `bazel-ci` is scoped to
-  code/config — so the merged job must still gate the `bazel test/build` steps on changed
-  paths, or data-only commits would start paying for the image build.
+  `bazel test //...` reuses the resident Skyframe graph. Captured much of Tier 2's analysis win
+  **within a single job, so no cross-PR isolation cost** (measured ≈40 s/run). The caveat —
+  `validate-state` was path-**un**filtered (runs on every data commit) while `bazel-ci` is
+  scoped to code/config — was handled by gating the `bazel test/build/push` steps per-step on
+  changed paths, so data-only commits still validate but don't pay for the image build.
 - **Tier 3 — in-cluster `bazel-remote` gRPC cache.** Persistent, LRU-evicting,
   concurrency-safe, survives node moves; honors source-in-cluster (only content-addressed CAS
   blobs go to it, never source). Complements Tier 2 (remote cache for execution, warm server
@@ -298,13 +345,18 @@ revisit if `haku-ci` ever runs non-Haku-authored code.**
 
 ## Rollout
 
-1. Land the **Tier 1 substrate** (PVC + cache mount) — safe, immediate, no isolation change.
-   Ships independently.
+Tier 2 rollout, **if/when a trigger fires** ([above](#tier-2-build-it-now)). Step 1 is done;
+the rest are unbuilt.
+
+1. ~~Land the **Tier 1 substrate** (PVC + cache mount).~~ ✅ Done (ducktape #3467); Tier 1.5
+   (folding `validate` into the `bazel` job) also landed (haku-state #24). These are the
+   substrate Tier 2 builds on.
 2. Build and publish the **builder image** to the in-cluster registry.
 3. Add lazy-create + `docker exec` dispatch in a **non-gating** workflow first; measure warm
    vs. cold.
-4. Flip **`validate-state` first** (smallest graph, lowest risk), then `bazel-ci` test/build
-   — keeping the push in the job container.
+4. Flip the `bazel` job's `test`/`build` steps to `docker exec haku-bazel-builder ci-build.sh`
+   (`validate` now runs inside that same job, so it rides along) — keeping the credentialed
+   push in the ephemeral job container.
 5. Add the periodic builder bounce + cache GC.
 
 **Rollback:** revert the workflow steps to in-job `bazel`; delete the builder container + PVC.
