@@ -153,6 +153,13 @@ try {
         if (drawerClose) await drawerClose.click();
         await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
       }
+      // The settings scene's MCP server list resolves through two chained async mock-fetch
+      // rounds (list, then a per-connection status probe) — occasionally still in flight past
+      // the fixed 700ms settle under RBE scheduling jitter, capturing a spinner instead of the
+      // resolved status. Waiting for these loaders to clear is a no-op on scenes that never had
+      // them: `hidden: true` is already satisfied for a selector that was never in the DOM.
+      await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
+      await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
       const file = `${name}-${colorScheme}.png`;
       let shot;
       if (element) {

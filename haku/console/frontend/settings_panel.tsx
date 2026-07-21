@@ -163,7 +163,7 @@ function McpServerCard({
           )}
         </Stack>
         <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
-          {view.checking && view.probe && <Loader size={12} />}
+          {view.checking && view.probe && <Loader size={12} aria-label="Checking connection status" />}
           <Badge color={state.color} variant="light">
             {state.label}
           </Badge>
@@ -394,7 +394,7 @@ export function SettingsPanel() {
           )}
           {!mcpServers && !mcpError && (
             <Group justify="center" p="xl">
-              <Loader />
+              <Loader aria-label="Loading MCP servers" />
             </Group>
           )}
           {mcpServers && mcpServers.length === 0 && (
