@@ -111,23 +111,27 @@ class ToolMetadata(BaseModel):
     icons: list[mcp_types.Icon] | None = None
 
 
-class ServerMetadataBase(BaseModel):
-    server_id: str
-    title: str
+class AliveServerState(BaseModel):
+    status: Literal["alive"] = "alive"
     tools: list[ToolMetadata] = Field(default_factory=list)
 
 
-class AliveServerMetadata(ServerMetadataBase):
-    status: Literal["alive"] = "alive"
-
-
-class DegradedServerMetadata(ServerMetadataBase):
+class DegradedServerState(BaseModel):
     status: Literal["degraded"] = "degraded"
     failure_stage: Literal["credential_resolution", "tool_discovery"]
     degraded_reason: str
 
 
-type ServerMetadata = Annotated[AliveServerMetadata | DegradedServerMetadata, Field(discriminator="status")]
+type ServerState = Annotated[AliveServerState | DegradedServerState, Field(discriminator="status")]
+
+
+class ServerMetadata(BaseModel):
+    """The curated `get_mcp_server_status` response: identity (`server_id`/`title`) once, wrapping
+    whichever state reflection produced — never duplicated across an alive/degraded variant pair."""
+
+    server_id: str
+    title: str
+    state: ServerState
 
 
 def _tool_metadata(tool: mcp_types.Tool) -> ToolMetadata:
@@ -146,16 +150,12 @@ def _tool_metadata(tool: mcp_types.Tool) -> ToolMetadata:
 def server_metadata_response(server_id: str, reflection: ServerReflection) -> ServerMetadata:
     """Project a raw reflection result into the curated API response shape. The only caller is
     `get_mcp_server_status`; every other reflection consumer works with `ServerReflection` directly."""
-    if isinstance(reflection, DegradedReflection):
-        return DegradedServerMetadata(
-            server_id=server_id,
-            title=server_id,
-            failure_stage=reflection.failure_stage,
-            degraded_reason=reflection.degraded_reason,
-        )
-    return AliveServerMetadata(
-        server_id=server_id, title=server_id, tools=[_tool_metadata(tool) for tool in reflection]
+    state: ServerState = (
+        DegradedServerState(failure_stage=reflection.failure_stage, degraded_reason=reflection.degraded_reason)
+        if isinstance(reflection, DegradedReflection)
+        else AliveServerState(tools=[_tool_metadata(tool) for tool in reflection])
     )
+    return ServerMetadata(server_id=server_id, title=server_id, state=state)
 
 
 class PendingApprovalsResponse(BaseModel):
@@ -593,7 +593,8 @@ class McpServerClient:
         try:
             transport, transport_auth = _transport(server, self._in_process, auth_token)
             async with Client(transport, auth=transport_auth) as client:
-                return await client.list_tools()
+                tools: list[mcp_types.Tool] = await client.list_tools()
+                return tools
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
             return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))

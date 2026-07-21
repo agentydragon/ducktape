@@ -234,22 +234,28 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
           ? {
               server_id: connection.server_id,
               title: connection.server_id,
-              tools: [],
-              status: "degraded" as const,
-              failure_stage: "credential_resolution" as const,
-              degraded_reason: "MCP OAuth token refresh failed: 401",
+              state: {
+                status: "degraded" as const,
+                failure_stage: "credential_resolution" as const,
+                degraded_reason: "MCP OAuth token refresh failed: 401",
+              },
             }
           : connection.connection?.status === "unprovisioned"
             ? {
                 server_id: connection.server_id,
                 title: connection.server_id,
-                tools: [],
-                status: "degraded" as const,
-                failure_stage: "credential_resolution" as const,
-                degraded_reason:
-                  "OAuth client for google_calendar is not provisioned on this console; see the console deployment README.",
+                state: {
+                  status: "degraded" as const,
+                  failure_stage: "credential_resolution" as const,
+                  degraded_reason:
+                    "OAuth client for google_calendar is not provisioned on this console; see the console deployment README.",
+                },
               }
-            : { server_id: connection.server_id, title: connection.server_id, tools: [], status: "alive" as const },
+            : {
+                server_id: connection.server_id,
+                title: connection.server_id,
+                state: { status: "alive" as const, tools: [] },
+              },
     },
   ])
 );

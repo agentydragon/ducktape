@@ -50,7 +50,7 @@ from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
 from haku.console.mcp_approval import (
     DegradedReflection,
-    DegradedServerMetadata,
+    DegradedServerState,
     McpServerClient,
     ServerMetadata,
     ServerReflection,
@@ -286,13 +286,10 @@ def _passive_server_connection_statuses(
 
 def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
     """Keep the reflected catalog useful while omitting its potentially large schemas."""
-    if isinstance(metadata, DegradedServerMetadata):
+    if isinstance(metadata.state, DegradedServerState):
         return metadata
-    return metadata.model_copy(
-        update={
-            "tools": [tool.model_copy(update={"input_schema": None, "output_schema": None}) for tool in metadata.tools]
-        }
-    )
+    tools = [tool.model_copy(update={"input_schema": None, "output_schema": None}) for tool in metadata.state.tools]
+    return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
 def _output_schema(upstream_output_schema: dict[str, Any] | None) -> dict[str, Any] | None:

@@ -684,15 +684,16 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
                 assert "standin__echo" in {tool.name for tool in await client.list_tools()}
                 status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
                 assert status.structured_content is not None
-                assert status.structured_content["server"]["status"] == "alive"
+                assert status.structured_content["server"]["state"]["status"] == "alive"
                 assert status.structured_content["server"]["server_id"] == "standin"
             async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
                 assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
                 status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
                 assert status.structured_content is not None
-                assert status.structured_content["server"]["status"] == "degraded"
-                assert status.structured_content["server"]["failure_stage"] == "credential_resolution"
-                assert "Connect your standin MCP account" in status.structured_content["server"]["degraded_reason"]
+                assert status.structured_content["server"]["state"]["status"] == "degraded"
+                assert status.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
+                degraded_reason = status.structured_content["server"]["state"]["degraded_reason"]
+                assert "Connect your standin MCP account" in degraded_reason
                 with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
                     await client.call_tool("standin__echo", {"input": {"text": "no"}, "rationale": "test"})
 
@@ -909,10 +910,11 @@ async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
     assert result.structured_content["server"] == {
         "server_id": "standin",
         "title": "standin",
-        "tools": [],
-        "status": "degraded",
-        "failure_stage": "credential_resolution",
-        "degraded_reason": "MCP OAuth token refresh failed: 401",
+        "state": {
+            "status": "degraded",
+            "failure_stage": "credential_resolution",
+            "degraded_reason": "MCP OAuth token refresh failed: 401",
+        },
     }
     assert result.structured_content["connection"]["server_id"] == "standin"
 
@@ -965,9 +967,9 @@ async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisi
     assert connection["display_name"] == "Google Calendar"
     assert probed.structured_content is not None
     assert probed.structured_content["connection"]["connection"] == connection
-    assert probed.structured_content["server"]["status"] == "degraded"
-    assert probed.structured_content["server"]["failure_stage"] == "credential_resolution"
-    assert "not provisioned" in probed.structured_content["server"]["degraded_reason"]
+    assert probed.structured_content["server"]["state"]["status"] == "degraded"
+    assert probed.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
+    assert "not provisioned" in probed.structured_content["server"]["state"]["degraded_reason"]
 
 
 async def test_get_mcp_server_status_includes_schemas_only_when_requested(
@@ -1006,7 +1008,7 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
 
     assert summary.structured_content is not None
     assert detailed.structured_content is not None
-    assert summary.structured_content["server"]["tools"][0] == {
+    assert summary.structured_content["server"]["state"]["tools"][0] == {
         "name": "echo",
         "title": None,
         "description": "Echo input",
@@ -1015,8 +1017,8 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
         "annotations": None,
         "icons": None,
     }
-    assert detailed.structured_content["server"]["tools"][0]["input_schema"] == {"type": "object"}
-    assert detailed.structured_content["server"]["tools"][0]["output_schema"] == {
+    assert detailed.structured_content["server"]["state"]["tools"][0]["input_schema"] == {"type": "object"}
+    assert detailed.structured_content["server"]["state"]["tools"][0]["output_schema"] == {
         "type": "object",
         "properties": {"echoed": {"type": "string"}},
     }

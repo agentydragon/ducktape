@@ -128,15 +128,15 @@ function McpServerCard({
     ? { label: "Unprovisioned", color: "orange" }
     : unconnected
       ? { label: "Unconnected", color: "gray" }
-      : view.error || view.probe?.server.status === "degraded"
+      : view.error || view.probe?.server.state.status === "degraded"
         ? { label: "Unavailable", color: "red" }
-        : view.probe?.server.status === "alive"
+        : view.probe?.server.state.status === "alive"
           ? { label: "Available", color: "teal" }
           : { label: "Checking", color: "blue" };
   const reason =
     (unprovisioned ? linkage.detail : null) ??
     view.error ??
-    (view.probe?.server.status === "degraded" ? view.probe.server.degraded_reason : null);
+    (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
   const connect = linkedMcpServerId
     ? () => onConnectMcp(linkedMcpServerId)
     : providerConnection
