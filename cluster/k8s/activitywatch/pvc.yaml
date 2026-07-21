@@ -14,6 +14,21 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: activitywatch-syncthing-state
+  namespace: activitywatch
+  annotations:
+    description: Persistent Syncthing index state; losing it creates receive-only conflicts on restart.
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-ovh
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: activitywatch-sync-inbox
   namespace: activitywatch
   annotations:

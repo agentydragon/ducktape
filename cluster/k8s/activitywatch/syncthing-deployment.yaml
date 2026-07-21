@@ -83,27 +83,6 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
-        - name: importer
-          image: ghcr.io/agentydragon/aw-server:devel-20260717000713-6162a72 # {"$imagepolicy": "flux-system:activitywatch"}
-          command:
-            - /usr/local/bin/aw-sync
-            - --host
-            - activitywatch-write.activitywatch.svc.cluster.local
-            - --port
-            - "5600"
-            - --sync-dir
-            - /sync-inbox
-            - daemon
-          volumeMounts:
-            - name: sync-inbox
-              mountPath: /sync-inbox
-          resources:
-            requests:
-              cpu: 25m
-              memory: 64Mi
-            limits:
-              cpu: 250m
-              memory: 256Mi
       volumes:
         - name: sync-inbox
           persistentVolumeClaim:
@@ -126,4 +105,5 @@ spec:
           configMap:
             name: activitywatch-syncthing-config
         - name: state
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: activitywatch-syncthing-state

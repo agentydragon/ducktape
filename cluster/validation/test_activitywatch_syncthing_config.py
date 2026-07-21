@@ -17,6 +17,9 @@ from util.bazel.runfiles import get_required_path
 CONFIG_XML = get_required_path("_main/cluster/k8s/activitywatch/syncthing-config.xml")
 CLUSTER_IDENTITY = get_required_path("_main/cluster/k8s/activitywatch/syncthing-identity.yaml")
 CLUSTER_KEY = get_required_path("_main/cluster/k8s/activitywatch/syncthing-key.sops.yaml")
+SYNCTHING_DEPLOYMENT = get_required_path("_main/cluster/k8s/activitywatch/syncthing-deployment.yaml")
+IMPORTER_CRONJOB = get_required_path("_main/cluster/k8s/activitywatch/importer-cronjob.yaml")
+PVC_MANIFEST = get_required_path("_main/cluster/k8s/activitywatch/pvc.yaml")
 HOST_CERT_SENTINEL = get_required_path("_main/secrets/home/rugged/activitywatch-syncthing.cert.pem")
 
 SYNCTHING_BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -115,6 +118,51 @@ def test_syncthing_config_matches_identity_sources() -> None:
     assert options.findtext("localAnnouncePort") == "21027"
     assert options.findtext("relaysEnabled") == "true"
     assert options.findtext("urAccepted") == "-1"
+
+
+def test_ovh_workloads_use_the_canonical_zone_label() -> None:
+    expected_selector = {"topology.kubernetes.io/zone": "hil-ovh"}
+    syncthing = _read_yaml(SYNCTHING_DEPLOYMENT)
+    importer = _read_yaml(IMPORTER_CRONJOB)
+
+    assert syncthing["spec"]["template"]["spec"]["nodeSelector"] == expected_selector
+    assert importer["spec"]["jobTemplate"]["spec"]["template"]["spec"]["nodeSelector"] == expected_selector
+
+
+def test_syncthing_index_state_is_persistent() -> None:
+    syncthing = _read_yaml(SYNCTHING_DEPLOYMENT)
+    pod_spec = syncthing["spec"]["template"]["spec"]
+    state_volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == "state")
+    assert state_volume == {"name": "state", "persistentVolumeClaim": {"claimName": "activitywatch-syncthing-state"}}
+
+    pvcs = {manifest["metadata"]["name"]: manifest for manifest in yaml.safe_load_all(PVC_MANIFEST.read_text())}
+    state_pvc = pvcs["activitywatch-syncthing-state"]
+    assert state_pvc["spec"]["accessModes"] == ["ReadWriteOnce"]
+    assert state_pvc["spec"]["storageClassName"] == "local-path-ovh"
+
+
+def test_importer_is_suspended_pull_only_and_fails_closed() -> None:
+    importer = _read_yaml(IMPORTER_CRONJOB)
+    assert importer["spec"]["suspend"] is True
+    assert importer["spec"]["concurrencyPolicy"] == "Forbid"
+
+    pod_spec = importer["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    assert {volume["name"] for volume in pod_spec["volumes"]} == {"sync-inbox"}
+    assert pod_spec["volumes"][0]["persistentVolumeClaim"]["claimName"] == "activitywatch-sync-inbox"
+
+    validator = pod_spec["initContainers"][0]
+    assert validator["name"] == "validate-canonical-device-databases"
+    validator_script = validator["command"][-1]
+    assert "-name '*.db'" in validator_script
+    assert "!= test.db" in validator_script
+    assert "Refusing to import unexpected database" in validator_script
+    assert validator["volumeMounts"][0]["readOnly"] is True
+
+    container = pod_spec["containers"][0]
+    command = container["command"]
+    assert command[-3:] == ["sync", "--mode", "pull"]
+    assert "push" not in command
+    assert container["volumeMounts"] == [{"name": "sync-inbox", "mountPath": "/sync-inbox"}]
 
 
 if __name__ == "__main__":

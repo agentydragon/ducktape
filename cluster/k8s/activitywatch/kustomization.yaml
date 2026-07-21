@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - syncthing-deployment.yaml
+  - importer-cronjob.yaml
   - pvc.yaml
   - service.yaml
   - cilium-network-policy.yaml

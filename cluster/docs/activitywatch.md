@@ -18,13 +18,22 @@ read-only proxy and, for public access, Authentik.
   gated by Authentik group `activitywatch-users` (currently `agentydragon`).
 - **Write API**: internal Service `activitywatch-write`, admitted only from the
   Syncthing/importer pod by CiliumNetworkPolicy.
-- **Sync receiver**: `activitywatch-syncthing` Deployment on OVH, receiving into
+- **Sync receiver**: `activitywatch-syncthing` Deployment on OVH, pinned with
+  `topology.kubernetes.io/zone: hil-ovh`, and receiving into
   `activitywatch-sync-inbox` (`seaweedfs-ovh`, RWX, 10Gi). The cluster Syncthing
-  folder is receive-only.
-- **Importer**: an `aw-sync daemon` sidecar in the Syncthing Deployment. It points at
-  `/sync-inbox`, pulls synced device DBs into the query server, and writes the cluster's
-  own non-authoritative `/sync-inbox/activitywatch-cluster/test.db`. This uses the
-  upstream daemon loop instead of a repo-owned shell loop.
+  folder is receive-only. Syncthing's index lives separately on
+  `activitywatch-syncthing-state` (`local-path-ovh`, RWO, 1Gi); losing that index while
+  retaining the inbox makes Syncthing treat the existing files as untracked local changes
+  and create conflict copies when peers reconnect. OVH nodes have `region: hil` and
+  `zone: hil-ovh`; do not use `region: hil-ovh`, which matches no node.
+- **Importer**: an `activitywatch-importer` CronJob runs every five minutes with
+  `aw-sync sync --mode pull` directly against the Syncthing inbox. An init container
+  fails closed unless every discovered database has the canonical
+  `<device-id>/test.db` shape, so Syncthing conflict copies are never imported. The
+  importer mounts the inbox read-write because upstream `aw-sync` opens remote SQLite
+  databases through its writable datastore implementation and unconditionally creates
+  `/sync-inbox/activitywatch-cluster/test.db`, even in pull-only mode. Receive-only
+  Syncthing keeps those cluster-local changes from propagating to desktop peers.
 - **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel
   (`@ducktape_activitywatch//:image`). The image includes both `aw-server` and upstream
   `aw-sync`. The pinned `aw-sync` source is patched to use reqwest's rustls backend
@@ -100,7 +109,8 @@ The Syncthing inbox is intentionally on SeaweedFS (`activitywatch-sync-inbox`,
 is one SQLite file on `activitywatch-data` (`local-path-proxmox`), and the server is pinned
 to Proxmox to stay near that local-path PVC.
 
-Both PVCs request 10Gi. That is deliberately a starting budget, not a retention policy:
+The two data PVCs request 10Gi; the rebuildable Syncthing index requests 1Gi. These are
+deliberately starting budgets, not a retention policy:
 window/AFK data should usually fit for a long time at that size, but multi-device history is
 unbounded until we measure real growth on rugged and later devices.
 
@@ -108,12 +118,12 @@ TODO:
 
 - Resolve the SQLite benchmark issue (#2959) before putting the hot query DB on SeaweedFS
   CSI or any other replicated POSIX-ish layer.
-- If Syncthing's receive-only status is noisy because `aw-sync daemon` writes
-  `/sync-inbox/activitywatch-cluster/test.db`, patch or wrap `aw-sync` with a pull-only
-  daemon mode. Do not reintroduce per-host staging folders just to avoid that local file.
 - Revisit whether the Syncthing config initContainer can avoid copying `config.xml` once
   we have a supported way to keep Syncthing's config file writable without staging it out
   of the ConfigMap.
+- If another `*.sync-conflict-*.db` appears after the Syncthing index is persistent,
+  suspend the importer and investigate before deleting it. The importer intentionally
+  refuses to run while any non-canonical database is present.
 - Move the query server off `local-path-proxmox` once a validated storage target or backup
   strategy exists. Until then, treat the cluster DB as node-local state that must be backed
   up or rebuildable from synced device folders.
@@ -187,7 +197,7 @@ background behavior.
 
 ## Validation
 
-Last checked 2026-07-07:
+Last checked 2026-07-21:
 
 - `bazelisk build --config=rbe @ducktape_activitywatch//:image` passed; `aw-sync` and
   `aw_sync_bin` compiled and the OCI image assembled.
@@ -199,8 +209,8 @@ Last checked 2026-07-07:
   send-only folder, and the paired cluster device ID.
 - The local nixpkgs `aw-sync` supports the desktop push timer command with
   `sync-advanced --mode push`.
-- The pinned `@ducktape_activitywatch` source commit supports the cluster sidecar command
-  with `daemon`.
+- The pinned `@ducktape_activitywatch` source commit supports explicit pull-only mode,
+  bounded 5,000-event chunks, and resuming from the destination's newest event.
 - Full `nix build .#nixosConfigurations.rugged.config.system.build.toplevel --no-link`
   still fails before ActivityWatch on the unrelated
   `nix/packages/gaffer.nix` `builtins.fetchClosure` blocker.

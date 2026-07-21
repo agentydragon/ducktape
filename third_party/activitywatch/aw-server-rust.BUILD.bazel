@@ -9,7 +9,7 @@ rust-embed's interpolate-folder-path feature.  The Bazel-built dist/ directory
 is wired in through the rustc_env + compile_data attributes below.
 """
 
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 exports_files([
     "Cargo.toml",
@@ -75,6 +75,7 @@ rust_library(
         "@aw_server_crates//:dirs",
         "@aw_server_crates//:log",
         "@aw_server_crates//:mpsc_requests",
+        "@aw_server_crates//:regex",
         "@aw_server_crates//:rusqlite",
         "@aw_server_crates//:serde",
         "@aw_server_crates//:serde_json",
@@ -163,6 +164,7 @@ rust_library(
         "@aw_server_crates//:rust-embed",
         "@aw_server_crates//:serde",
         "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:subtle",
         "@aw_server_crates//:toml",
         "@aw_server_crates//:uuid",
     ],
@@ -195,6 +197,22 @@ rust_library(
         "@aw_server_crates//:serde",
         "@aw_server_crates//:serde_json",
         "@aw_server_crates//:toml",
+    ],
+)
+
+rust_test(
+    name = "aw_sync_tests",
+    srcs = ["aw-sync/tests/sync.rs"],
+    crate_root = "aw-sync/tests/sync.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_datastore",
+        ":aw_models",
+        ":aw_sync",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:serde_json",
     ],
 )
 

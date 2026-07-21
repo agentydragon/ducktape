@@ -1,0 +1,84 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: activitywatch-importer
+  namespace: activitywatch
+  labels:
+    app.kubernetes.io/name: activitywatch-importer
+  annotations:
+    description: Pull canonical device databases into the central ActivityWatch server.
+spec:
+  # Keep scheduled imports disabled until two identical manual canary passes prove
+  # that pull mode is idempotent against the live Syncthing inbox.
+  suspend: true
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: activitywatch-importer
+        spec:
+          automountServiceAccountToken: false
+          securityContext:
+            fsGroup: 1000
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          initContainers:
+            - name: validate-canonical-device-databases
+              image: busybox:1.37
+              command:
+                - sh
+                - -ec
+                - |
+                  remote_count=0
+                  for database in $(find /sync-inbox -type f -name '*.db'); do
+                    device_dir="$(dirname "$database")"
+                    if [ "$(basename "$database")" != test.db ] || [ "$(dirname "$device_dir")" != /sync-inbox ]; then
+                      echo "Refusing to import unexpected database: $database" >&2
+                      exit 1
+                    fi
+                    if [ "$(basename "$device_dir")" != activitywatch-cluster ]; then
+                      remote_count=$((remote_count + 1))
+                    fi
+                  done
+                  if [ "$remote_count" -eq 0 ]; then
+                    echo "Refusing to import an inbox with no remote canonical databases" >&2
+                    exit 1
+                  fi
+              volumeMounts:
+                - name: sync-inbox
+                  mountPath: /sync-inbox
+                  readOnly: true
+          containers:
+            - name: importer
+              image: ghcr.io/agentydragon/aw-server:devel-20260717000713-6162a72 # {"$imagepolicy": "flux-system:activitywatch"}
+              command:
+                - /usr/local/bin/aw-sync
+                - --host
+                - activitywatch-write.activitywatch.svc.cluster.local
+                - --port
+                - "5600"
+                - --sync-dir
+                - /sync-inbox
+                - sync
+                - --mode
+                - pull
+              volumeMounts:
+                - name: sync-inbox
+                  mountPath: /sync-inbox
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+          volumes:
+            - name: sync-inbox
+              persistentVolumeClaim:
+                claimName: activitywatch-sync-inbox
