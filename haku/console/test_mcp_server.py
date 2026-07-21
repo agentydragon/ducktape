@@ -23,7 +23,7 @@ import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from jsonschema import Draft202012Validator
-from mcp.types import Icon, ToolAnnotations
+from mcp.types import Icon, Tool, ToolAnnotations
 from pydantic import SecretStr, ValidationError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
@@ -32,7 +32,7 @@ from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
-from haku.console.mcp_approval import AliveServerMetadata, DegradedServerMetadata, ToolMetadata
+from haku.console.mcp_approval import DegradedReflection
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_operator_oauth import (
     McpOperatorAuthConnected,
@@ -986,20 +986,15 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     )
     app = create_app(console_settings(migrated_db_url, config_file=config_file))
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
-        server_id = str(kwargs["server"].id)
-        return AliveServerMetadata(
-            server_id=server_id,
-            title=server_id,
-            tools=[
-                ToolMetadata(
-                    name="echo",
-                    description="Echo input",
-                    input_schema={"type": "object"},
-                    output_schema={"type": "object", "properties": {"echoed": {"type": "string"}}},
-                )
-            ],
-        )
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+        return [
+            Tool(
+                name="echo",
+                description="Echo input",
+                inputSchema={"type": "object"},
+                outputSchema={"type": "object", "properties": {"echoed": {"type": "string"}}},
+            )
+        ]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1046,18 +1041,15 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     started: set[str] = set()
     both_started = asyncio.Event()
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
-        server = kwargs["server"]
-        server_id = str(server.id)
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+        server_id = str(kwargs["server"].id)
         started.add(server_id)
         if len(started) == 2:
             both_started.set()
         await asyncio.wait_for(both_started.wait(), timeout=1)
         if server_id == "beta":
             await asyncio.sleep(0.01)
-        return AliveServerMetadata(
-            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
-        )
+        return [Tool(name="echo", inputSchema={"type": "object"})]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1084,13 +1076,11 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
     )
     app = create_app(console_settings(migrated_db_url, config_file=config_file))
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
         server_id = str(kwargs["server"].id)
         if server_id == "broken":
             raise RuntimeError("unexpected reflection failure")
-        return AliveServerMetadata(
-            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
-        )
+        return [Tool(name="echo", inputSchema={"type": "object"})]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1121,13 +1111,10 @@ async def test_tool_dispatch_reflects_only_target_server(
     app = create_app(settings)
     reflected: list[str] = []
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
-        server = kwargs["server"]
-        server_id = str(server.id)
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+        server_id = str(kwargs["server"].id)
         reflected.append(server_id)
-        return AliveServerMetadata(
-            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
-        )
+        return [Tool(name="echo", inputSchema={"type": "object"})]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     actor = AgentActor(
@@ -1176,12 +1163,9 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
     settings = console_settings(migrated_db_url, config_file=config_file)
     app = create_app(settings)
 
-    async def metadata_for_operator(**kwargs: Any) -> DegradedServerMetadata:
-        return DegradedServerMetadata(
-            server_id=str(kwargs["server"].id),
-            title="grocy-sf",
-            failure_stage="credential_resolution",
-            degraded_reason="MCP OAuth token refresh failed: 401",
+    async def metadata_for_operator(**kwargs: Any) -> DegradedReflection:
+        return DegradedReflection(
+            failure_stage="credential_resolution", degraded_reason="MCP OAuth token refresh failed: 401"
         )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)

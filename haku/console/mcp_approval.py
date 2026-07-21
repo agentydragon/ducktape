@@ -79,7 +79,29 @@ router = APIRouter(tags=["mcp-approval"])
 Csrf = Annotated[CsrfProtect, Depends()]
 
 
+@dataclass(frozen=True)
+class DegradedReflection:
+    """A downstream server's tools couldn't be reflected right now — the *reason*, not a response
+    shape. `server_metadata_response` is the only place this becomes the `degraded` API shape."""
+
+    failure_stage: Literal["credential_resolution", "tool_discovery"]
+    degraded_reason: str
+
+
+# What one reflection attempt actually produced: the real upstream `mcp.types.Tool` objects
+# (already validated by the MCP client), or why there aren't any. Internal consumers building
+# proxy tools (`_build_proxy_tool`) read the real upstream type directly — no separate mirror to
+# keep in sync as the proxy needs more of what the upstream tool declares.
+type ServerReflection = list[mcp_types.Tool] | DegradedReflection
+
+
 class ToolMetadata(BaseModel):
+    """The curated, snake_case, wire-stable projection of one reflected tool — used only for the
+    `get_mcp_server_status`/`list_mcp_servers` API response, never as internal plumbing. Deliberately
+    narrower than `mcp.types.Tool`: that type allows arbitrary extra fields from the upstream server
+    (`model_config = ConfigDict(extra="allow")`) and uses camelCase, neither of which the console's
+    own API contract should inherit unfiltered from an untrusted third-party MCP server."""
+
     name: str
     title: str | None = None
     description: str | None = None
@@ -106,6 +128,34 @@ class DegradedServerMetadata(ServerMetadataBase):
 
 
 type ServerMetadata = Annotated[AliveServerMetadata | DegradedServerMetadata, Field(discriminator="status")]
+
+
+def _tool_metadata(tool: mcp_types.Tool) -> ToolMetadata:
+    schema = tool.inputSchema if isinstance(tool.inputSchema, dict) else {}
+    return ToolMetadata(
+        name=tool.name,
+        title=tool.title,
+        description=tool.description,
+        input_schema=schema,
+        output_schema=tool.outputSchema,
+        annotations=tool.annotations,
+        icons=tool.icons,
+    )
+
+
+def server_metadata_response(server_id: str, reflection: ServerReflection) -> ServerMetadata:
+    """Project a raw reflection result into the curated API response shape. The only caller is
+    `get_mcp_server_status`; every other reflection consumer works with `ServerReflection` directly."""
+    if isinstance(reflection, DegradedReflection):
+        return DegradedServerMetadata(
+            server_id=server_id,
+            title=server_id,
+            failure_stage=reflection.failure_stage,
+            degraded_reason=reflection.degraded_reason,
+        )
+    return AliveServerMetadata(
+        server_id=server_id, title=server_id, tools=[_tool_metadata(tool) for tool in reflection]
+    )
 
 
 class PendingApprovalsResponse(BaseModel):
@@ -539,33 +589,14 @@ class McpServerClient:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
 
-    async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerMetadata:
+    async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerReflection:
         try:
             transport, transport_auth = _transport(server, self._in_process, auth_token)
             async with Client(transport, auth=transport_auth) as client:
-                tools = await client.list_tools()
+                return await client.list_tools()
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
-            return DegradedServerMetadata(
-                server_id=server.id, title=server.id, tools=[], failure_stage="tool_discovery", degraded_reason=str(e)
-            )
-        reflected: list[ToolMetadata] = []
-        for tool in tools:
-            schema = tool.inputSchema
-            if not isinstance(schema, dict):
-                schema = {}
-            reflected.append(
-                ToolMetadata(
-                    name=tool.name,
-                    title=tool.title,
-                    description=tool.description,
-                    input_schema=schema,
-                    output_schema=tool.outputSchema,
-                    annotations=tool.annotations,
-                    icons=tool.icons,
-                )
-            )
-        return AliveServerMetadata(server_id=server.id, title=server.id, tools=reflected)
+            return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -682,18 +713,12 @@ async def metadata_for_operator(
     metadata_provider: McpServerClient,
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
-) -> ServerMetadata:
+) -> ServerReflection:
     resolution = await _resolve_operator_metadata_auth(
         operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
     )
     if isinstance(resolution, _DegradedAuth):
-        return DegradedServerMetadata(
-            server_id=server.id,
-            title=server.id,
-            tools=[],
-            failure_stage="credential_resolution",
-            degraded_reason=resolution.reason,
-        )
+        return DegradedReflection(failure_stage="credential_resolution", degraded_reason=resolution.reason)
     return await metadata_provider.metadata(server, resolution.token)
 
 

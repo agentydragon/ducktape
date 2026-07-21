@@ -48,7 +48,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import DegradedServerMetadata, McpServerClient, ServerMetadata, metadata_for_operator
+from haku.console.mcp_approval import (
+    DegradedReflection,
+    DegradedServerMetadata,
+    McpServerClient,
+    ServerMetadata,
+    ServerReflection,
+    metadata_for_operator,
+    server_metadata_response,
+)
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -429,9 +437,12 @@ class ProxyTool(Tool):
 
 
 def _build_proxy_tool(
-    context: ConsoleMcpContext, server_id: str, tool: Any, *, passthrough: bool, actor: ToolCallActor
+    context: ConsoleMcpContext, server_id: str, tool: mcp_types.Tool, *, passthrough: bool, actor: ToolCallActor
 ) -> ProxyTool:
-    schema = tool.input_schema if isinstance(tool.input_schema, dict) and tool.input_schema else {"type": "object"}
+    # `inputSchema` is a required field on the real upstream type, but treat a degenerate empty
+    # dict the same as "no schema" — an empty object schema is a worse minimal schema than the
+    # canonical one.
+    schema = tool.inputSchema or {"type": "object"}
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
     name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
@@ -454,7 +465,7 @@ def _build_proxy_tool(
         title=title,
         description=description,
         parameters=parameters,
-        output_schema=_output_schema(tool.output_schema),
+        output_schema=_output_schema(tool.outputSchema),
         # Icons are opaque display assets (URLs/data URIs) — no server identity to prefix, so they
         # propagate unchanged, unlike the textual name/title above.
         icons=tool.icons,
@@ -495,7 +506,7 @@ class OperatorServerCatalog:
         # rather than ``google``). Startup validation guarantees exact namespace uniqueness.
         return max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
 
-    async def metadata(self, server: McpServerEntry, actor: ToolCallActor) -> ServerMetadata:
+    async def metadata(self, server: McpServerEntry, actor: ToolCallActor) -> ServerReflection:
         return await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
@@ -540,7 +551,7 @@ class OperatorToolProvider(Provider):
             # must remain visible in logs without erasing every unrelated server's tools.
             logger.exception("mcp_server: failed to reflect server %s for Operator %s", server.id, actor.operator_id)
             return []
-        if isinstance(meta, DegradedServerMetadata):
+        if isinstance(meta, DegradedReflection):
             logger.info(
                 "mcp_server: hiding unavailable server %s from Operator %s: %s",
                 server.id,
@@ -556,7 +567,7 @@ class OperatorToolProvider(Provider):
                 passthrough=is_unconditionally_auto_approved(server.id, tool.name),
                 actor=actor,
             )
-            for tool in meta.tools
+            for tool in meta
         ]
 
     async def _list_tools(self) -> Sequence[Tool]:
@@ -573,9 +584,9 @@ class OperatorToolProvider(Provider):
         if server is None:
             return None
         meta = await self._catalog.metadata(server, actor)
-        if isinstance(meta, DegradedServerMetadata):
+        if isinstance(meta, DegradedReflection):
             return None
-        for upstream_tool in meta.tools:
+        for upstream_tool in meta:
             tool = _build_proxy_tool(
                 self._context,
                 server.id,
@@ -612,7 +623,7 @@ class OperatorToolAvailabilityMiddleware(Middleware):
                 raise
             actor = await self._actor_resolver.resolve()
             meta = await self._catalog.metadata(server, actor)
-            if isinstance(meta, DegradedServerMetadata):
+            if isinstance(meta, DegradedReflection):
                 raise ToolError(_unavailable_server_message(server.id, meta.degraded_reason)) from error
             raise
 
@@ -681,13 +692,14 @@ def build_console_mcp(
             for status in _passive_server_connection_statuses(context, actor).servers
             if status.server_id == server_id
         )
-        metadata = await metadata_for_operator(
+        reflection = await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
             metadata_provider=context.metadata_provider,
             oauth_store=context.oauth_store,
             provider_store=context.provider_store,
         )
+        metadata = server_metadata_response(server_id, reflection)
         return McpServerProbeResponse(
             connection=connection, server=metadata if include_tool_schemas else _without_tool_schemas(metadata)
         )

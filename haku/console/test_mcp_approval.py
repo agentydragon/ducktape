@@ -46,7 +46,7 @@ from haku.console.database_schema import (
     StaticCredential,
 )
 from haku.console.mcp_approval import (
-    AliveServerMetadata,
+    DegradedReflection,
     McpServerClient,
     PostgresToolCallLedger,
     _execution_auth,
@@ -1539,8 +1539,8 @@ async def test_metadata_provider_reflects_in_process_server_tools() -> None:
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
     metadata = await metadata_provider.metadata(server, auth_token=None)
-    assert isinstance(metadata, AliveServerMetadata)
-    assert {tool.name for tool in metadata.tools} == {
+    assert isinstance(metadata, list)
+    assert {tool.name for tool in metadata} == {
         "stock_add",
         "echo",
         "products_list",
@@ -1577,7 +1577,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
         provider_store=provider_store,
     )
 
-    assert isinstance(metadata, AliveServerMetadata)
+    assert isinstance(metadata, list)
     builder.assert_called_once_with(None)
     provider_store.is_connected.assert_called_once_with(connection="google_workspace", operator_id=operator)
     provider_store.access_token_for.assert_not_called()
@@ -1589,7 +1589,7 @@ async def test_metadata_provider_degrades_when_in_process_backend_is_not_registe
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
     metadata = await metadata_provider.metadata(server, auth_token=None)
-    assert metadata.status == "degraded"
+    assert isinstance(metadata, DegradedReflection)
 
 
 if __name__ == "__main__":
