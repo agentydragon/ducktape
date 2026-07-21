@@ -42,13 +42,14 @@ def test_static_image_cache_contract() -> None:
         assert revalidated.status_code == 200
         assert revalidated.headers["cache-control"] == "no-store"
 
-        deep_link = httpx.get(f"{base_url}/tool-calls")
-        assert deep_link.status_code == 200
-        assert deep_link.text == shell.text
-        assert deep_link.headers["cache-control"] == "no-store"
-        assert "etag" not in deep_link.headers
+        for path in ("/_console/settings", "/_console/tool-calls", "/tool-calls", "/garden/test-note"):
+            deep_link = httpx.get(f"{base_url}{path}")
+            assert deep_link.status_code == 200
+            assert deep_link.text == shell.text
+            assert deep_link.headers["cache-control"] == "no-store"
+            assert "etag" not in deep_link.headers
 
-        match = re.search(r'src="(?P<path>/assets/[^"]+\.js)"', shell.text)
+        match = re.search(r'src="(?P<path>/_console/assets/[^"]+\.js)"', shell.text)
         assert match is not None
         asset_path = match.group("path")
         # Immutable is safe only because the bundle names the content, not merely its role.
@@ -57,7 +58,7 @@ def test_static_image_cache_contract() -> None:
         assert asset.status_code == 200
         assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
 
-        missing = httpx.get(f"{base_url}/assets/not-current.js")
+        missing = httpx.get(f"{base_url}/_console/assets/not-current.js")
         assert missing.status_code == 404
         assert missing.headers["cache-control"] == "no-store"
 

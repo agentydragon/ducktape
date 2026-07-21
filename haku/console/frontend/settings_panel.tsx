@@ -372,15 +372,17 @@ export function SettingsPanel() {
   }
 
   return (
-    <aside className="haku-shell-card haku-shell-settings" aria-label="Settings">
-      <Group justify="space-between" align="center" wrap="nowrap" className="haku-shell-header">
-        <Text fw={700}>Settings</Text>
-        <Button size="compact-xs" variant="light" color="gray" loading={loading} onClick={() => load()}>
-          Refresh
-        </Button>
-      </Group>
-      <div className="haku-shell-scroll">
-        <Stack gap="xs">
+    <section className="haku-page" aria-label="Settings">
+      <header className="haku-page-header">
+        <div className="haku-page-bar">
+          <Text fw={700}>Settings</Text>
+          <Button size="xs" variant="light" color="gray" loading={loading} onClick={() => load()}>
+            Refresh
+          </Button>
+        </div>
+      </header>
+      <div className="haku-page-scroll">
+        <Stack gap="xs" className="haku-page-list">
           <SectionHeading
             title="MCP servers"
             description="Live availability through the console's MCP reflection tools. Status refreshes automatically and may verify linked credentials."
@@ -446,6 +448,6 @@ export function SettingsPanel() {
           )}
         </Stack>
       </div>
-    </aside>
+    </section>
   );
 }

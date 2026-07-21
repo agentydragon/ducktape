@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Button, Group, Indicator, Stack, Text } from "@mantine/core";
+import { ActionIcon, Badge, Button, Group, Indicator, Loader, Stack, Text, Tooltip } from "@mantine/core";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import {
@@ -19,9 +19,19 @@ import {
 import type { ToolCallRecord } from "./client.ts";
 import { CodeBlock } from "./code_block.tsx";
 import { Field } from "./field.tsx";
-import { CameraIcon, ChecklistIcon, HistoryIcon, MapPinIcon, SettingsIcon, WifiIcon, WifiOffIcon } from "./icons.tsx";
+import {
+  CameraIcon,
+  ChecklistIcon,
+  CloseIcon,
+  HistoryIcon,
+  HomeIcon,
+  MapPinIcon,
+  SettingsIcon,
+  SyncCurrentIcon,
+  SyncErrorIcon,
+} from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import { SettingsPanel } from "./settings_panel.tsx";
+import type { ConsoleView } from "./routing.ts";
 import { SUCCESS_COLOR } from "./theme.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import type { LiveStatus } from "./console_events.ts";
@@ -44,7 +54,8 @@ export interface ShellChromeProps {
   onApproveScreenshot: (approval: ScreenshotApproval) => void;
   onDenyScreenshot: (approval: ScreenshotApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
-  onOpenToolCalls: () => void;
+  view: ConsoleView;
+  onNavigate: (view: Exclude<ConsoleView, "notFound">) => void;
   // Live tool-call WebSocket health: drives the sync-status icon that is always visible (as an
   // ok-sync indicator) and the clickable panel that explains the current state.
   liveStatus: LiveStatus;
@@ -52,6 +63,8 @@ export interface ShellChromeProps {
   // the sync-status panel and turns the icon orange so transient load errors are visible without
   // a toast flood.
   syncError: string | null;
+  syncing: boolean;
+  lastSyncAt: Date | null;
   // Location-sharing chrome (rendered only while the standing grant is held): a map-pin toggle
   // with a live indicator while a watch is actively reading, opening a stop/withdraw panel.
   geoGranted: boolean;
@@ -160,9 +173,27 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
 // Sync-status panel: always accessible via the wifi icon in the toolbar. Shows the current
 // state of the live WebSocket channel and the last REST fetch outcome in one place, so the
 // operator never has to wonder whether the approval list is current.
-function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; syncError: string | null }) {
+export type SyncState = "current" | "syncing" | "error";
+
+export function syncState(liveStatus: LiveStatus, syncError: string | null, syncing: boolean): SyncState {
+  if (liveStatus === "offline" || syncError !== null) return "error";
+  if (liveStatus === "connecting" || syncing) return "syncing";
+  return "current";
+}
+
+function SyncStatusPanel({
+  liveStatus,
+  syncError,
+  syncing,
+  lastSyncAt,
+}: {
+  liveStatus: LiveStatus;
+  syncError: string | null;
+  syncing: boolean;
+  lastSyncAt: Date | null;
+}) {
   const offline = liveStatus === "offline";
-  const unhealthy = offline || syncError !== null;
+  const state = syncState(liveStatus, syncError, syncing);
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Sync status">
       <Stack gap="xs">
@@ -170,14 +201,8 @@ function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; sy
           <Text fw={600} size="sm">
             Sync status
           </Text>
-          <Badge color={unhealthy ? "orange" : liveStatus === "connecting" ? "yellow" : "teal"} variant="light">
-            {offline
-              ? "Offline"
-              : liveStatus === "connecting"
-                ? "Connecting"
-                : syncError !== null
-                  ? "Fetch error"
-                  : "Live"}
+          <Badge color={state === "error" ? "orange" : state === "syncing" ? "yellow" : "teal"} variant="light">
+            {offline ? "Offline" : syncError !== null ? "Fetch error" : state === "syncing" ? "Syncing" : "Up to date"}
           </Badge>
         </Group>
         {offline && (
@@ -191,9 +216,20 @@ function SyncStatusPanel({ liveStatus, syncError }: { liveStatus: LiveStatus; sy
             Failed to load pending approvals: {syncError}
           </Text>
         )}
-        {!unhealthy && (
+        {state === "syncing" && !offline && syncError === null && (
           <Text size="xs" c="dimmed">
-            Live updates are connected and the approval list loaded successfully.
+            {liveStatus === "connecting" ? "Connecting to live updates…" : "Refreshing pending approvals…"}
+          </Text>
+        )}
+        {state === "current" && (
+          <Text size="xs" c="dimmed">
+            Live updates are connected and pending approvals are current.
+          </Text>
+        )}
+        {lastSyncAt && (
+          <Text size="xs" c="dimmed">
+            Last refreshed{" "}
+            {lastSyncAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
           </Text>
         )}
       </Stack>
@@ -485,17 +521,22 @@ function ApprovalsTab({
 
 // The approvals panel — the primary chrome surface. It occupies the shared panel slot below the
 // toolbar, follows its content up to the available height, and then scrolls its own list.
-function ApprovalsPanel(props: ShellChromeProps) {
+function ApprovalsPanel(props: ShellChromeProps & { onClose: () => void }) {
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
   return (
     <aside className="haku-shell-card haku-shell-approvals" aria-label="Approvals">
       <section className="haku-shell-panel-nav">
-        <Group gap="xs" align="center" className="haku-shell-header">
-          <Text fw={700}>Approvals</Text>
-          <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
-            {pendingCount}
-          </Badge>
+        <Group justify="space-between" align="center" wrap="nowrap" className="haku-shell-header">
+          <Group gap="xs" align="center">
+            <Text fw={700}>Approvals</Text>
+            <Badge color={pendingCount > 0 ? "yellow" : "gray"} variant="light">
+              {pendingCount}
+            </Badge>
+          </Group>
+          <ActionIcon variant="subtle" color="gray" aria-label="Close approvals" onClick={props.onClose}>
+            <CloseIcon />
+          </ActionIcon>
         </Group>
         <Button
           size="xs"
@@ -503,7 +544,7 @@ function ApprovalsPanel(props: ShellChromeProps) {
           color="gray"
           fullWidth
           leftSection={<HistoryIcon />}
-          onClick={props.onOpenToolCalls}
+          onClick={() => props.onNavigate("toolCalls")}
         >
           Past tool calls
         </Button>
@@ -515,9 +556,7 @@ function ApprovalsPanel(props: ShellChromeProps) {
   );
 }
 
-// One toolbar toggle: `filled` (neutral gray, unless a semantic color is given) while its panel
-// is open, `subtle` otherwise — so the row of squished buttons reads as pressed/unpressed.
-function ChromeToggle({
+function RailButton({
   open,
   label,
   color = "gray",
@@ -531,36 +570,26 @@ function ChromeToggle({
   children: ReactNode;
 }) {
   return (
-    <ActionIcon
-      size="lg"
-      radius="md"
-      variant={open ? "filled" : "subtle"}
-      color={color}
-      onClick={onClick}
-      aria-label={label}
-      aria-pressed={open}
-    >
-      {children}
-    </ActionIcon>
+    <Tooltip label={label} position="right" withArrow openDelay={350} zIndex={PANEL_Z}>
+      <ActionIcon
+        size="lg"
+        radius="md"
+        variant={open ? "filled" : "subtle"}
+        color={color}
+        onClick={onClick}
+        aria-label={label}
+        aria-pressed={open}
+      >
+        {children}
+      </ActionIcon>
+    </Tooltip>
   );
 }
 
-export type ShellPanel = "approvals" | "settings" | "location" | "screenshot" | "sync-status";
+export type IndicatorPanel = "location" | "screenshot" | "sync-status";
 
-export function nextShellPanel(selected: ShellPanel | null, clicked: ShellPanel): ShellPanel | null {
-  return selected === clicked ? null : clicked;
-}
-
-export function selectedShellPanel(approvalsOpen: boolean, openPanel: ShellPanel | null): ShellPanel | null {
-  // A newly arriving approval may light the badge, but must not preempt an explicit operator
-  // selection—especially the location/screenshot kill-switch panels.
-  return openPanel ?? (approvalsOpen ? "approvals" : null);
-}
-
-// The persistent shell chrome over the framed haku-ui: a floating top-right toolbar whose
-// mutually-exclusive toggles behave like deselectable tabs. Toggles are neutral gray; only
-// genuinely semantic cues keep a color (red pending count, orange offline/error, green
-// live-location/live-capture dot).
+// Trusted chrome lives in a real left-hand layout rail. Page navigation is independent from the
+// approvals drawer, while the three compact indicator popovers are mutually exclusive.
 export function ShellChrome(props: ShellChromeProps) {
   const {
     approvalsOpen,
@@ -574,97 +603,128 @@ export function ShellChrome(props: ShellChromeProps) {
     sharingScreen,
     onWithdrawScreenshot,
   } = props;
-  const [openPanel, setOpenPanel] = useState<ShellPanel | null>(null);
+  const [openIndicator, setOpenIndicator] = useState<IndicatorPanel | null>(null);
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
-  const offline = liveStatus === "offline";
-  const syncUnhealthy = offline || syncError !== null;
-  const selectedPanel = selectedShellPanel(approvalsOpen, openPanel);
+  const currentSyncState = syncState(liveStatus, syncError, props.syncing);
 
   useEffect(() => {
-    if ((openPanel === "location" && !geoGranted) || (openPanel === "screenshot" && !screenshotGranted)) {
-      setOpenPanel(null);
+    if ((openIndicator === "location" && !geoGranted) || (openIndicator === "screenshot" && !screenshotGranted)) {
+      setOpenIndicator(null);
     }
-  }, [geoGranted, openPanel, screenshotGranted]);
+  }, [geoGranted, openIndicator, screenshotGranted]);
 
-  function togglePanel(panel: ShellPanel) {
-    const next = nextShellPanel(selectedPanel, panel);
-    onApprovalsOpenChange(next === "approvals");
-    setOpenPanel(next === "approvals" ? null : next);
-  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (openIndicator) setOpenIndicator(null);
+      else if (approvalsOpen) onApprovalsOpenChange(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [approvalsOpen, onApprovalsOpenChange, openIndicator]);
+
+  const toggleIndicator = (panel: IndicatorPanel) => setOpenIndicator((open) => (open === panel ? null : panel));
 
   return (
-    <div className="haku-shell-chrome" style={{ zIndex: PANEL_Z }}>
-      <Group className="haku-shell-toolbar" gap={0} wrap="nowrap">
-        <ChromeToggle
-          open={selectedPanel === "sync-status"}
-          label={
-            syncUnhealthy
-              ? "Live updates: error"
-              : liveStatus === "connecting"
-                ? "Live updates: connecting"
-                : "Live updates: connected"
-          }
-          color={syncUnhealthy ? "orange" : undefined}
-          onClick={() => togglePanel("sync-status")}
-        >
-          {syncUnhealthy ? <WifiOffIcon /> : <WifiIcon />}
-        </ChromeToggle>
-        {geoGranted && (
-          <Indicator color="green" size={10} offset={6} processing disabled={!tracking} withBorder>
-            <ChromeToggle
-              open={selectedPanel === "location"}
-              label={tracking ? "Location sharing: live" : "Location sharing: allowed"}
-              onClick={() => togglePanel("location")}
-            >
-              <MapPinIcon />
-            </ChromeToggle>
-          </Indicator>
-        )}
-        {screenshotGranted && (
-          <Indicator color="green" size={10} offset={6} processing disabled={!sharingScreen} withBorder>
-            <ChromeToggle
-              open={selectedPanel === "screenshot"}
-              label={sharingScreen ? "Screenshot capture: live" : "Screenshot capture: allowed"}
-              onClick={() => togglePanel("screenshot")}
-            >
-              <CameraIcon />
-            </ChromeToggle>
-          </Indicator>
-        )}
-        <ChromeToggle open={selectedPanel === "settings"} label="Settings" onClick={() => togglePanel("settings")}>
-          <SettingsIcon />
-        </ChromeToggle>
-        <Indicator
-          color="red"
-          size={16}
-          offset={6}
-          processing
-          disabled={pendingCount === 0}
-          label={pendingCount > 0 ? pendingCount : undefined}
-        >
-          <ChromeToggle
-            open={selectedPanel === "approvals"}
-            label={selectedPanel === "approvals" ? "Close approvals" : "Open approvals"}
-            onClick={() => togglePanel("approvals")}
+    <>
+      <nav className="haku-shell-rail" aria-label="Haku Console" style={{ zIndex: PANEL_Z }}>
+        <div className="haku-shell-rail-top">
+          <Indicator
+            color="red"
+            size={16}
+            offset={5}
+            processing
+            disabled={pendingCount === 0}
+            label={pendingCount || undefined}
           >
-            <ChecklistIcon />
-          </ChromeToggle>
-        </Indicator>
-      </Group>
-      {selectedPanel && (
-        <div className="haku-shell-panels">
-          {selectedPanel === "approvals" && <ApprovalsPanel {...props} />}
-          {selectedPanel === "settings" && <SettingsPanel />}
-          {selectedPanel === "location" && geoGranted && (
-            <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />
+            <RailButton
+              open={approvalsOpen}
+              label={approvalsOpen ? "Close approvals" : "Open approvals"}
+              onClick={() => onApprovalsOpenChange(!approvalsOpen)}
+            >
+              <ChecklistIcon />
+            </RailButton>
+          </Indicator>
+          <div className="haku-shell-rail-divider" />
+          <RailButton open={props.view === "embed"} label="Haku UI" onClick={() => props.onNavigate("embed")}>
+            <HomeIcon />
+          </RailButton>
+          <RailButton open={props.view === "settings"} label="Settings" onClick={() => props.onNavigate("settings")}>
+            <SettingsIcon />
+          </RailButton>
+          <RailButton
+            open={props.view === "toolCalls"}
+            label="Past tool calls"
+            onClick={() => props.onNavigate("toolCalls")}
+          >
+            <HistoryIcon />
+          </RailButton>
+        </div>
+        <div className="haku-shell-rail-bottom">
+          <RailButton
+            open={openIndicator === "sync-status"}
+            label={
+              currentSyncState === "error" ? "Sync error" : currentSyncState === "syncing" ? "Syncing" : "Up to date"
+            }
+            color={currentSyncState === "error" ? "orange" : currentSyncState === "current" ? "teal" : undefined}
+            onClick={() => toggleIndicator("sync-status")}
+          >
+            {currentSyncState === "error" ? (
+              <SyncErrorIcon />
+            ) : currentSyncState === "syncing" ? (
+              <Loader size={20} color="gray" />
+            ) : (
+              <SyncCurrentIcon />
+            )}
+          </RailButton>
+          {geoGranted && (
+            <Indicator color="green" size={10} offset={5} processing disabled={!tracking} withBorder>
+              <RailButton
+                open={openIndicator === "location"}
+                label={tracking ? "Location sharing: live" : "Location sharing: allowed"}
+                onClick={() => toggleIndicator("location")}
+              >
+                <MapPinIcon />
+              </RailButton>
+            </Indicator>
           )}
-          {selectedPanel === "screenshot" && screenshotGranted && (
-            <ScreenshotPanel sharing={sharingScreen} onWithdraw={onWithdrawScreenshot} />
+          {screenshotGranted && (
+            <Indicator color="green" size={10} offset={5} processing disabled={!sharingScreen} withBorder>
+              <RailButton
+                open={openIndicator === "screenshot"}
+                label={sharingScreen ? "Screenshot capture: live" : "Screenshot capture: allowed"}
+                onClick={() => toggleIndicator("screenshot")}
+              >
+                <CameraIcon />
+              </RailButton>
+            </Indicator>
           )}
-          {selectedPanel === "sync-status" && <SyncStatusPanel liveStatus={liveStatus} syncError={syncError} />}
+        </div>
+        {openIndicator && (
+          <div className="haku-shell-indicator-popover">
+            {openIndicator === "sync-status" && (
+              <SyncStatusPanel
+                liveStatus={liveStatus}
+                syncError={syncError}
+                syncing={props.syncing}
+                lastSyncAt={props.lastSyncAt}
+              />
+            )}
+            {openIndicator === "location" && geoGranted && (
+              <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />
+            )}
+            {openIndicator === "screenshot" && screenshotGranted && (
+              <ScreenshotPanel sharing={sharingScreen} onWithdraw={onWithdrawScreenshot} />
+            )}
+          </div>
+        )}
+      </nav>
+      {approvalsOpen && (
+        <div className="haku-shell-drawer haku-shell-panels" style={{ zIndex: PANEL_Z - 1 }}>
+          <ApprovalsPanel {...props} onClose={() => onApprovalsOpenChange(false)} />
         </div>
       )}
-    </div>
+    </>
   );
 }

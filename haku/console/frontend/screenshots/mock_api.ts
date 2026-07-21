@@ -8,6 +8,7 @@ import {
   SAMPLE_DEPLOYMENT,
   SAMPLE_MCP_PROBES,
   SAMPLE_MCP_SERVERS,
+  SAMPLE_PENDING,
   SAMPLE_TOOL_CALLS,
 } from "./sample_data.ts";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock.ts";
@@ -29,6 +30,7 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = requestUrl(input);
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
+  if (url.includes("/api/approvals/pending")) return jsonResponse({ approvals: SAMPLE_PENDING });
   const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
     ...GOOGLE_CALENDAR_MCP_FIXTURES,
     ...GROCY_MCP_FIXTURES,

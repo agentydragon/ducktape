@@ -107,7 +107,7 @@ class _ConsoleStaticFiles(StaticFiles):
 
 
 def _cache_control_for_path(path: str, status_code: int) -> str:
-    if path.startswith("/assets/") and status_code in {200, 206, 304}:
+    if path.startswith("/_console/assets/") and status_code in {200, 206, 304}:
         return IMMUTABLE_ASSET_CACHE_CONTROL
     # The app is authoritative for the cache policy of every backend surface it serves — nginx no
     # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
@@ -429,15 +429,18 @@ def create_app(
     if settings.static_dir is not None and settings.static_dir.is_dir():
         index_file = settings.static_dir / "index.html"
 
-        # SPA client-side routes (frontend/routing.ts, e.g. /tool-calls) have no file on
-        # disk; production's nginx serves index.html for them (try_files $uri /index.html).
-        # Mirror that here — registered before the mount so it wins — so the dev fallback
-        # can deep-link a console route instead of 404ing.
-        @app.get("/tool-calls")
-        async def _spa_route() -> Response:
-            return Response(content=index_file.read_bytes(), media_type="text/html")
+        # The production image exposes fingerprinted browser assets under the reserved console
+        # namespace even though they remain in dist/assets on disk. Mirror that mapping here;
+        # mounting it before the SPA fallback also keeps a missing asset a real 404.
+        assets_dir = settings.static_dir / "assets"
+        if assets_dir.is_dir():
+            app.mount("/_console/assets", _ConsoleStaticFiles(directory=assets_dir), name="console-assets")
 
-        app.mount("/", _ConsoleStaticFiles(directory=settings.static_dir, html=True), name="spa")
+        # Every other browser path is a client-side route: /_console/* selects trusted console
+        # pages, while all other paths are mirrored Haku UI routes.
+        @app.get("/{spa_path:path}")
+        async def _spa_route(spa_path: str) -> Response:
+            return Response(content=index_file.read_bytes(), media_type="text/html")
 
     return app
 

@@ -3,7 +3,6 @@ import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
 import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
-import { ArrowLeftIcon } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import { useToolCallDecision } from "./tool_call_decision.ts";
@@ -46,12 +45,12 @@ function ToolCallRow({
   );
 }
 
-// The console's own full-page view of the whole tool-call audit ledger — a bigger,
-// persistent counterpart to the approvals panel's ephemeral "Recent" list. Its own route
-// (routing.ts → "/tool-calls"), so the framed haku-ui is unmounted while it's open.
+// The console's own page view of the whole tool-call audit ledger — a bigger,
+// persistent counterpart to the approvals drawer's ephemeral "Recent" list. The shared shell
+// keeps the framed haku-ui mounted behind this page.
 // A pending call that streams in (via the live WS signal) can be approved/denied here too,
 // through the same CSRF-gated endpoints the approvals panel uses, without going back to the shell.
-export function ToolCallsPage({ onBack }: { onBack: () => void }) {
+export function ToolCallsPage() {
   const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,9 +81,6 @@ export function ToolCallsPage({ onBack }: { onBack: () => void }) {
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Group gap="xs" wrap="nowrap" align="center">
-            <Button size="xs" variant="subtle" color="gray" leftSection={<ArrowLeftIcon />} onClick={onBack}>
-              Back
-            </Button>
             <Text fw={700}>Past tool calls</Text>
             {records && (
               <Text size="sm" c="dimmed">

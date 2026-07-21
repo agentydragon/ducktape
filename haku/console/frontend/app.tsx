@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { type ConfigResponse, fetchConfig } from "./client.ts";
 import { HakuUiEmbed } from "./haku_ui_embed.tsx";
 import { useConsoleView } from "./routing.ts";
-import { ToolCallsPage } from "./tool_calls_page.tsx";
 
 // The console is now just the trusted outer shell: a full-page frame for Haku's own UI
 // (a sandboxed cross-origin iframe) plus the bridge that brokers the iframe's privileged
@@ -31,10 +30,6 @@ export default function App() {
     };
   }, []);
 
-  // The history view is a self-contained console page that reads its own API and needs no shell
-  // config, so it renders regardless of the config load (even if it failed).
-  if (view === "toolCalls") return <ToolCallsPage onBack={() => navigate("embed")} />;
-
   // The initial config load is the one thing rendered by the shell itself; a failure
   // leaves nothing to frame, so it gets a persistent page-level message.
   if (error)
@@ -56,7 +51,8 @@ export default function App() {
     <HakuUiEmbed
       uiUrl={config.haku_ui_url}
       launchAvailable={config.launch_routine_url != null}
-      onOpenToolCalls={() => navigate("toolCalls")}
+      view={view}
+      onNavigate={navigate}
     />
   );
 }

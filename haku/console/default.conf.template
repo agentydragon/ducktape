@@ -45,7 +45,8 @@ server {
   # geolocation + screenshot permissions to the shell origin so neither is ever delegated to the
   # framed haku-ui iframe — docs/containment.md.)
 
-  location /assets/ {
+  location /_console/assets/ {
+    alias /usr/share/nginx/html/dist/assets/;
     try_files $uri =404;
     add_header Content-Security-Policy
       "frame-src 'self' ${HAKU_CONSOLE_HAKU_UI_URL} ${HAKU_CONSOLE_AUTH_ORIGIN}; frame-ancestors 'none'"

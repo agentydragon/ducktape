@@ -63,8 +63,12 @@ def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_operator_clien
     (assets_dir / "main-abcdef123456.js").write_text("console.log('haku')", encoding="utf-8")
 
     with make_operator_client(static_dir=static_dir) as c:
-        assert c.get("/assets/main-abcdef123456.js").headers["cache-control"] == ("public, max-age=31536000, immutable")
-        assert c.get("/assets/missing.js").headers["cache-control"] == "no-store"
+        assert c.get("/_console/assets/main-abcdef123456.js").headers["cache-control"] == (
+            "public, max-age=31536000, immutable"
+        )
+        missing_asset = c.get("/_console/assets/missing.js")
+        assert missing_asset.status_code == 404
+        assert missing_asset.headers["cache-control"] == "no-store"
         shell = c.get("/")
         assert shell.headers["cache-control"] == "no-store"
         assert "etag" not in shell.headers
@@ -79,17 +83,18 @@ def test_cache_policy_splits_hashed_assets_app_shell_and_api(make_operator_clien
 
 
 def test_spa_route_deep_link_serves_index(make_client, tmp_path: Path) -> None:
-    # The console's own client-side routes (e.g. /tool-calls) have no file on disk; the dev
-    # fallback must serve the SPA shell for them, matching production's nginx try_files.
+    # Console pages and mirrored Haku UI routes have no file on disk; the dev fallback must
+    # serve the SPA shell for both, matching production's nginx try_files.
     static_dir = tmp_path / "web"
     static_dir.mkdir()
     (static_dir / "index.html").write_text("<!doctype html><div id='root'></div>", encoding="utf-8")
 
     with make_client(static_dir=static_dir) as c:
-        resp = c.get("/tool-calls")
-        assert resp.status_code == 200
-        assert "id='root'" in resp.text
-        assert resp.headers["cache-control"] == "no-store"
+        for path in ("/_console/settings", "/_console/tool-calls", "/tool-calls", "/garden/a.md"):
+            resp = c.get(path)
+            assert resp.status_code == 200
+            assert "id='root'" in resp.text
+            assert resp.headers["cache-control"] == "no-store"
 
 
 if __name__ == "__main__":

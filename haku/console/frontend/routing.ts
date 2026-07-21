@@ -1,55 +1,78 @@
 import { useCallback, useEffect, useState } from "react";
 
-// The console's views are distinguished by URL *path*. `/tool-calls` is the console's own
-// full-page history view; **every other path belongs to the framed haku-ui route** — the
-// shell mirrors the iframe's route straight into the console pathname
-// (haku_ui_embed.tsx's routeChanged handler), so `haku.allegedly.works/garden/<file>`
-// deep-links restore both the shell and the frame (operator, 2026-07-13 — path-form
-// links used to 404 / only hash-form worked). The hash is no longer load-bearing; legacy
-// `#/…` console URLs still restore via the embed's hash fallback. (Operator settings is
-// not a view — it's a shell-chrome panel; see shell_chrome.tsx's ShellChrome.)
-//
-//   "/tool-calls"     → the console's own full-page history of every past MCP tool call
-//   anything else     → the full-page haku-ui embed, at that mirrored route
-//
-// Production's nginx serves index.html for any non-asset/API path (`try_files $uri
-// /index.html`), and the dev fallback mirrors that (app.py), so deep-linking any path
-// loads the SPA, which then renders the matching view from the pathname.
-export const TOOL_CALLS_PATH = "/tool-calls";
+// The trusted console owns one reserved namespace. Every other pathname belongs to the
+// cross-origin Haku UI frame, including the old /tool-calls console path.
+export const CONSOLE_ROOT_PATH = "/_console";
+export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
+export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
 export const HOME_PATH = "/";
+const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleView = "embed" | "toolCalls";
+export type ConsoleView = "embed" | "settings" | "toolCalls" | "notFound";
 
-// TODO: Recognize `/tool-calls/<id>` as the toolCalls view and pass the id through so
-// tool_calls_page.tsx can focus/highlight the canonical call named by an MCP promise URL.
 export function viewForPathname(pathname: string): ConsoleView {
+  if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
+  if (pathname === SETTINGS_PATH) return "settings";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
+  if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
   return "embed";
 }
 
-// The embed route survives a detour through the console's own views: navigating to
-// /tool-calls would otherwise lose the mirrored haku-ui path, and "back to embed" would
-// dump the operator on the home view instead of where they were.
-let lastEmbedPath: string = HOME_PATH;
-
-export function rememberEmbedPath(path: string): void {
-  lastEmbedPath = path;
+function storedEmbedPath(): string {
+  let stored: string | null;
+  try {
+    stored = sessionStorage.getItem(LAST_EMBED_PATH_KEY);
+  } catch (error) {
+    console.warn("Unable to read the last Haku UI route from session storage", error);
+    return HOME_PATH;
+  }
+  return stored && viewForPathname(stored) === "embed" && !stored.startsWith(CONSOLE_ROOT_PATH) ? stored : HOME_PATH;
 }
 
-function pathForView(view: ConsoleView): string {
-  if (view === "toolCalls") return TOOL_CALLS_PATH;
+let lastEmbedPath = storedEmbedPath();
+
+export function rememberedEmbedPath(): string {
   return lastEmbedPath;
 }
 
-export function useConsoleView(): { view: ConsoleView; navigate: (view: ConsoleView) => void } {
+export function rememberEmbedPath(path: string): void {
+  if (viewForPathname(path) !== "embed" || path.startsWith(CONSOLE_ROOT_PATH)) return;
+  lastEmbedPath = path;
+  try {
+    sessionStorage.setItem(LAST_EMBED_PATH_KEY, path);
+  } catch (error) {
+    console.warn("Unable to remember the last Haku UI route in session storage", error);
+  }
+}
+
+function pathForView(view: Exclude<ConsoleView, "notFound">): string {
+  if (view === "settings") return SETTINGS_PATH;
+  if (view === "toolCalls") return TOOL_CALLS_PATH;
+  return rememberedEmbedPath();
+}
+
+export function useConsoleView(): {
+  view: ConsoleView;
+  navigate: (view: Exclude<ConsoleView, "notFound">) => void;
+} {
   const [pathname, setPathname] = useState(() => window.location.pathname);
+
   useEffect(() => {
+    if (window.location.pathname === CONSOLE_ROOT_PATH || window.location.pathname === `${CONSOLE_ROOT_PATH}/`) {
+      const path = rememberedEmbedPath();
+      history.replaceState(null, "", `${path}${window.location.search}`);
+      setPathname(path);
+    }
     const onPop = () => setPathname(window.location.pathname);
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  const navigate = useCallback((next: ConsoleView) => {
-    if (viewForPathname(window.location.pathname) === "embed") {
+
+  const navigate = useCallback((next: Exclude<ConsoleView, "notFound">) => {
+    if (
+      viewForPathname(window.location.pathname) === "embed" &&
+      !window.location.pathname.startsWith(CONSOLE_ROOT_PATH)
+    ) {
       rememberEmbedPath(window.location.pathname);
     }
     const path = pathForView(next);
@@ -57,5 +80,6 @@ export function useConsoleView(): { view: ConsoleView; navigate: (view: ConsoleV
     history.pushState(null, "", `${path}${window.location.search}`);
     setPathname(path);
   }, []);
+
   return { view: viewForPathname(pathname), navigate };
 }

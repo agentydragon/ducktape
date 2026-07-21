@@ -1,33 +1,34 @@
-// Screenshot harness for the console's full-page visual surfaces (the history view, shell
-// chrome, and settings panel). Renders the surface selected by `window.__SCENE__` into #app with
-// mocked data, one scene and color scheme per page load. Bundled to an IIFE by
-// esbuild.config.mjs and driven by render.mjs, which screenshots each combination to a PNG. A
-// generator for eyeballing the visuals, not a pixel-diff gate — see frontend/AGENTS.md.
-//
-// Per-tool preview cards have their own harness in tool_rendering/screenshot/ (one `:previews`
-// target per server under tool_rendering/<server>/).
-//
-// `./mock_api.ts` is imported FIRST so its `fetch` stub is installed before client.ts (via
-// tool_calls_page.tsx) captures `globalThis.fetch`; the history view then renders populated.
+// Full-page screenshot harness for Haku Console. The production shell is rendered with mocked
+// API data; render.mjs intercepts the real iframe request and supplies an unmistakable striped
+// Haku UI document so layout overlap is visible in the resulting image.
 import "./mock_api.ts";
 
 import { MantineProvider } from "@mantine/core";
-import { useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import { SettingsPanel } from "../settings_panel.tsx";
+import { HakuUiEmbed } from "../haku_ui_embed.tsx";
+import type { ConsoleView } from "../routing.ts";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome.tsx";
 import { hakuTheme } from "../theme.ts";
-import { ToolCallsPage } from "../tool_calls_page.tsx";
 import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data.ts";
 
 const noop = () => {};
+const noopNavigate = (_view: Exclude<ConsoleView, "notFound">) => {};
 
-const chromeProps: Omit<ShellChromeProps, "approvalsOpen" | "onApprovalsOpenChange" | "recentToolCalls"> = {
+function ConsoleScene({ view }: { view: ConsoleView }) {
+  return <HakuUiEmbed uiUrl="https://haku-ui.test/" launchAvailable view={view} onNavigate={noopNavigate} />;
+}
+
+const chromeProps: ShellChromeProps = {
+  view: "embed",
+  onNavigate: noopNavigate,
+  approvalsOpen: false,
+  onApprovalsOpenChange: noop,
   pendingApprovals: SAMPLE_PENDING,
   geolocationApprovals: [],
   screenshotApprovals: [],
   decidingApprovalIds: [],
+  recentToolCalls: sampleRecentToolCalls(Date.now()),
   onApproveTool: noop,
   onDenyTool: noop,
   onApproveGeolocation: noop,
@@ -35,9 +36,10 @@ const chromeProps: Omit<ShellChromeProps, "approvalsOpen" | "onApprovalsOpenChan
   onApproveScreenshot: noop,
   onDenyScreenshot: noop,
   onDismissRecentToolCall: noop,
-  onOpenToolCalls: noop,
-  liveStatus: "offline",
+  liveStatus: "live",
   syncError: null,
+  syncing: false,
+  lastSyncAt: new Date("2026-07-20T12:34:56-07:00"),
   geoGranted: true,
   tracking: true,
   onWithdrawGeolocation: noop,
@@ -46,79 +48,38 @@ const chromeProps: Omit<ShellChromeProps, "approvalsOpen" | "onApprovalsOpenChan
   onWithdrawScreenshot: noop,
 };
 
-function ShellChromeScene() {
-  const [approvalsOpen, setApprovalsOpen] = useState(true);
+function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
   return (
-    <ShellChrome
-      {...chromeProps}
-      approvalsOpen={approvalsOpen}
-      onApprovalsOpenChange={setApprovalsOpen}
-      recentToolCalls={sampleRecentToolCalls(Date.now())}
-    />
-  );
-}
-
-// Sync-status toolbar in the healthy state: neutral wifi icon, "Live" panel.
-function ShellChromeSyncOkScene() {
-  const [approvalsOpen, setApprovalsOpen] = useState(false);
-  return (
-    <ShellChrome
-      {...chromeProps}
-      liveStatus="live"
-      syncError={null}
-      approvalsOpen={approvalsOpen}
-      onApprovalsOpenChange={setApprovalsOpen}
-      recentToolCalls={[]}
-    />
-  );
-}
-
-// Sync-status toolbar in the error state: orange WifiOff icon, fetch-error panel.
-function ShellChromeSyncErrorScene() {
-  const [approvalsOpen, setApprovalsOpen] = useState(false);
-  return (
-    <ShellChrome
-      {...chromeProps}
-      liveStatus="live"
-      syncError="Failed to load pending approvals: Unauthorized"
-      approvalsOpen={approvalsOpen}
-      onApprovalsOpenChange={setApprovalsOpen}
-      recentToolCalls={[]}
-    />
+    <div className="haku-console-shell">
+      <ShellChrome
+        {...chromeProps}
+        liveStatus={state === "error" ? "offline" : "live"}
+        syncError={state === "error" ? "Unauthorized" : null}
+        syncing={state === "syncing"}
+      />
+      <main className="haku-shell-content" />
+    </div>
   );
 }
 
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
-      // The settings panel (a chrome surface); reflects MCP status on mount through the same
-      // Operator-session MCP client as production. Render it inside its real shell column
-      // (.haku-shell-panels, which owns the panel width) so the shot tracks the true layout
-      // instead of a hardcoded number; #shot is render.mjs's element-screenshot target and
-      // shrink-wraps that column, with padding so the shot includes the card shadows.
-      return (
-        <div id="shot" style={{ display: "inline-block", padding: 24 }}>
-          <div className="haku-shell-panels">
-            <SettingsPanel />
-          </div>
-        </div>
-      );
-    case "chrome":
-      // The whole shell chrome: the toggle-button toolbar over the panel column. Approvals starts
-      // open; render.mjs switches between the mutually exclusive panel tabs.
-      return <ShellChromeScene />;
-    case "chrome-sync-ok":
-      return <ShellChromeSyncOkScene />;
-    case "chrome-sync-error":
-      return <ShellChromeSyncErrorScene />;
-    // The history page; render.mjs expands its first rows into their detailed state (opening the
-    // Metadata disclosure) with a click sequence, so one shot shows both compact and detailed rows.
+      return <ConsoleScene view="settings" />;
+    case "history":
+      return <ConsoleScene view="toolCalls" />;
+    case "sync-current":
+      return <IndicatorScene state="current" />;
+    case "sync-syncing":
+      return <IndicatorScene state="syncing" />;
+    case "sync-error":
+      return <IndicatorScene state="error" />;
     default:
-      return <ToolCallsPage onBack={noop} />;
+      return <ConsoleScene view="embed" />;
   }
 }
 
-const scene = (window as unknown as { __SCENE__?: string }).__SCENE__ ?? "history";
+const scene = (window as unknown as { __SCENE__?: string }).__SCENE__ ?? "console";
 const colorScheme = (window as unknown as { __COLOR_SCHEME__?: "light" | "dark" }).__COLOR_SCHEME__ ?? "light";
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");

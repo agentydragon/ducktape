@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { initialFrameSrc, routeFromLocation } from "./haku_ui_embed.tsx";
+import { rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH } from "./routing.ts";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
 
 describe("initialFrameSrc", () => {
@@ -27,6 +28,8 @@ describe("initialFrameSrc", () => {
 });
 
 describe("routeFromLocation", () => {
+  beforeEach(() => sessionStorage.clear());
+
   it("prefers a legacy #/ fragment, else mirrors the pathname", () => {
     expect(routeFromLocation({ pathname: "/", hash: "#/garden/a.md" })).toBe("/garden/a.md");
     expect(routeFromLocation({ pathname: "/garden/a.md", hash: "" })).toBe("/garden/a.md");
@@ -34,7 +37,9 @@ describe("routeFromLocation", () => {
   });
 
   it("carries no frame route for console-own views", () => {
-    expect(routeFromLocation({ pathname: "/tool-calls", hash: "" })).toBe("/");
+    rememberEmbedPath("/garden/remembered.md");
+    expect(routeFromLocation({ pathname: TOOL_CALLS_PATH, hash: "" })).toBe("/garden/remembered.md");
+    expect(routeFromLocation({ pathname: SETTINGS_PATH, hash: "" })).toBe("/garden/remembered.md");
   });
 });
 

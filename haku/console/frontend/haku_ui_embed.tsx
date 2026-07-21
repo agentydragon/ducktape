@@ -19,12 +19,20 @@ import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geo
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { ExternalLink } from "./link.tsx";
 import { openExternal, POPUP_HINT } from "./open_external.ts";
-import { rememberEmbedPath, viewForPathname } from "./routing.ts";
+import {
+  CONSOLE_ROOT_PATH,
+  rememberEmbedPath,
+  rememberedEmbedPath,
+  type ConsoleView,
+  viewForPathname,
+} from "./routing.ts";
 import { ScreenshotSession } from "./screenshot_capture.ts";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
+import { SettingsPanel } from "./settings_panel.tsx";
 import { toastError, toastSuccess } from "./toast.ts";
 import { useToolCallDecision } from "./tool_call_decision.ts";
 import { useConsoleEvents } from "./console_events.ts";
+import { ToolCallsPage } from "./tool_calls_page.tsx";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
@@ -60,19 +68,26 @@ export function initialFrameSrc(uiUrl: string, routePath: string): string {
  * unless it's a console-own view's path, which carries no frame route. */
 export function routeFromLocation(loc: { pathname: string; hash: string }): string {
   if (loc.hash.startsWith("#/")) return loc.hash.slice(1);
-  return viewForPathname(loc.pathname) === "embed" ? loc.pathname : "/";
+  return viewForPathname(loc.pathname) === "embed" && !loc.pathname.startsWith(CONSOLE_ROOT_PATH)
+    ? loc.pathname
+    : rememberedEmbedPath();
 }
 
 export function HakuUiEmbed({
   uiUrl,
   launchAvailable,
-  onOpenToolCalls,
+  view,
+  onNavigate,
 }: {
   uiUrl: string;
   launchAvailable: boolean;
-  onOpenToolCalls: () => void;
+  view: ConsoleView;
+  onNavigate: (view: Exclude<ConsoleView, "notFound">) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const frameTitleRef = useRef("Haku");
   // The single escalation awaiting the operator's trusted confirm (a link to open or a run
   // to launch). One typed action, dispatched on its `kind` — see ConfirmDialog's Escalation.
   const [pending, setPending] = useState<Escalation | null>(null);
@@ -160,6 +175,8 @@ export function HakuUiEmbed({
   const [screenshotGranted, setScreenshotGranted] = useState(() => hasScreenshotGrant());
   const [sharingScreen, setSharingScreen] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncsInFlight, setSyncsInFlight] = useState(0);
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
   // The shell (never the iframe) holds the one live getDisplayMedia stream, reused across
   // requests so only the first capture (or the first after the operator's browser-native "Stop
@@ -274,13 +291,17 @@ export function HakuUiEmbed({
   }
 
   function refreshToolApprovals() {
-    void fetchPendingApprovals().then(
-      (approvals) => {
-        setSyncError(null);
-        applyToolApprovals(approvals);
-      },
-      (e: unknown) => setSyncError(e instanceof Error ? e.message : String(e))
-    );
+    setSyncsInFlight((count) => count + 1);
+    void fetchPendingApprovals()
+      .then(
+        (approvals) => {
+          setSyncError(null);
+          setLastSyncAt(new Date());
+          applyToolApprovals(approvals);
+        },
+        (e: unknown) => setSyncError(e instanceof Error ? e.message : String(e))
+      )
+      .finally(() => setSyncsInFlight((count) => count - 1));
   }
 
   const toolDecisions = useToolCallDecision({
@@ -300,6 +321,17 @@ export function HakuUiEmbed({
   // Tear down any live browser watches / capture stream if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
   useEffect(() => () => screenshotSession.stop(), [screenshotSession]);
+
+  useEffect(() => {
+    document.title =
+      view === "embed"
+        ? frameTitleRef.current
+        : view === "settings"
+          ? "Settings · Haku"
+          : view === "toolCalls"
+            ? "Past tool calls · Haku"
+            : "Not found · Haku";
+  }, [view]);
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -336,6 +368,10 @@ export function HakuUiEmbed({
         return;
       }
       if (msg.type === "requestScreenshot") {
+        if (viewRef.current !== "embed") {
+          reply({ type: "screenshotResult", id: msg.id, ok: false, reason: "Haku UI is not visible." });
+          return;
+        }
         // Same grant-gate shape as geolocation, but capture ALSO needs the browser's own
         // tab-share picker (no persistent silent grant for getDisplayMedia) — so even with the
         // standing grant set, a dead session (operator stopped sharing) still needs a fresh
@@ -349,7 +385,7 @@ export function HakuUiEmbed({
         // view (path-form URLs are the copyable ones — operator, 2026-07-13).
         // replaceState, not pushState: the iframe's own history navigations already create
         // joint-session-history entries, so Back works via the frame. Skip while a
-        // console-own view (e.g. /tool-calls) holds the pathname — just remember the
+        // console-own view (e.g. /_console/tool-calls) holds the pathname — just remember the
         // route for the return trip.
         rememberEmbedPath(msg.path);
         if (viewForPathname(window.location.pathname) === "embed") {
@@ -360,7 +396,8 @@ export function HakuUiEmbed({
       if (msg.type === "titleChanged") {
         // The frame is cross-origin, so a validated bridge message is the only way for the
         // outer tab to follow its document.title.
-        document.title = msg.title;
+        frameTitleRef.current = msg.title;
+        if (viewRef.current === "embed") document.title = msg.title;
         return;
       }
       // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.
@@ -494,19 +531,16 @@ export function HakuUiEmbed({
   }
 
   return (
-    <>
-      <iframe
-        ref={iframeRef}
-        src={frameSrc}
-        title="Haku UI"
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
-      />
+    <div className="haku-console-shell">
       <ShellChrome
+        view={view}
+        onNavigate={onNavigate}
         approvalsOpen={approvalsOpen}
         onApprovalsOpenChange={setApprovalsOpen}
         liveStatus={liveStatus}
         syncError={syncError}
+        syncing={syncsInFlight > 0}
+        lastSyncAt={lastSyncAt}
         geoGranted={geoGranted}
         tracking={tracking}
         onWithdrawGeolocation={withdrawGeolocation}
@@ -525,9 +559,29 @@ export function HakuUiEmbed({
         onApproveScreenshot={approveScreenshotApproval}
         onDenyScreenshot={denyScreenshotApproval}
         onDismissRecentToolCall={dismissRecentToolCall}
-        onOpenToolCalls={onOpenToolCalls}
       />
+      <main className="haku-shell-content">
+        <iframe
+          ref={iframeRef}
+          src={frameSrc}
+          title="Haku UI"
+          aria-hidden={view !== "embed"}
+          tabIndex={view === "embed" ? 0 : -1}
+          sandbox="allow-scripts allow-same-origin allow-forms"
+          className={`haku-ui-frame ${view === "embed" ? "" : "haku-ui-frame-hidden"}`}
+        />
+        {view === "settings" && <SettingsPanel />}
+        {view === "toolCalls" && <ToolCallsPage />}
+        {view === "notFound" && (
+          <section className="haku-page" aria-label="Not found">
+            <div className="haku-page-list">
+              <h1>Page not found</h1>
+              <p>This path is reserved for Haku Console, but it does not name a console page.</p>
+            </div>
+          </section>
+        )}
+      </main>
       <ConfirmDialog action={activeAction} onApprove={onApprove} onCancel={onCancel} />
-    </>
+    </div>
   );
 }

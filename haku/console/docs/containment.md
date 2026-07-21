@@ -75,7 +75,7 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
 
 ## The shell as a thin trusted layer
 
-The iframe covers the page; the shell owns only the moment-of-decision surfaces, the frame,
+The iframe fills the content area beside a narrow shell-owned navigation rail; the shell owns only the moment-of-decision surfaces, the frame,
 the bridge, and the CSP. **A persistent "trust indicator" is not a security control**: a web
 page has no secure-attention channel, and an iframe can render a pixel-perfect decoy badge.
 Security rests on two things instead:
@@ -84,17 +84,17 @@ Security rests on two things instead:
    a bridge request, which the shell re-gates with its own CSRF + confirm + bearer.
 2. **The shell is the only trustworthy approval surface.** Immediate bridge escalations render as
    a **top-layer `<dialog>.showModal()` with a backdrop**. Queueable approvals render in the
-   shell-owned non-modal approvals panel. In both cases the iframe cannot draw over the trusted controls,
+   shell-owned non-modal approvals drawer. In both cases the iframe cannot draw over the trusted controls,
    read them, or intercept their clicks. Anti-clickjacking hygiene: explicit action text, a
    deliberate click on a freshly-rendered button, no click-through.
 
 Fullscreen is withheld from the iframe (no `allow="fullscreen"`) so it can't spoof browser
 chrome.
 
-**The shell chrome.** A persistent shell-owned toolbar, fixed above the full-page frame, opens one
-of the trusted panels in `shell_chrome.tsx` — chrome the frame can't render into, holding
-shell-owned status and controls (today: approvals, Settings, location-sharing, screenshot capture,
-and live-channel status). It is **not** a consent surface:
+**The shell chrome.** A persistent shell-owned left rail reserves layout space the frame cannot
+render into. It navigates among the still-mounted Haku UI frame and trusted Settings/history
+pages, opens the approvals drawer independently, and exposes location, screenshot, and sync state
+through compact indicator popovers. It is **not** a consent surface:
 it only reveals state and _reduces_ privilege, so — unlike `ConfirmDialog` — it needn't be a
 top-layer `<dialog>`. The one authority moment (granting a capability) always stays in the
 top-layer confirm. Consistent with invariant #4: a persistent panel is not a trust
@@ -117,9 +117,10 @@ Haku's UI will link the same package as a Bazel module from haku-state (migratio
 haku-ui posts `{type: "routeChanged", path}` whenever its route changes. On the first such call,
 the shared bridge client also starts a `MutationObserver` over the iframe document's `<head>` and
 posts `{type: "titleChanged", title}` initially and whenever `document.title` changes. The shell
-validates and mirrors the path into its own URL for refresh/deep-link restoration and copies each
-bounded string title into its own `document.title`, since the cross-origin boundary prevents it
-from reading the iframe document directly.
+validates and mirrors the path into its own URL for refresh/deep-link restoration while Haku UI is
+selected, remembering it while a `/_console/*` page is visible. The shell likewise copies each
+bounded title only while Haku UI is selected; console-owned pages own their tab titles. The
+cross-origin boundary prevents the shell from reading the iframe document directly.
 
 ### `requestLaunch` — fire the launch-routine capability
 

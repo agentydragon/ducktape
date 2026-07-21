@@ -19,43 +19,33 @@ import { writeVisualReviewManifest } from "../../../../util/testing/frontend_vis
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// The console's full-page application surfaces (ToolCallsPage, ShellChrome) are position:fixed,
-// so a viewport screenshot — not an #app element shot — is what captures them. A scene that sets
-// `element` is instead captured as an element screenshot of that selector (the settings panel,
-// which is a normal-flow chrome surface, not a fixed overlay). Each scene is a separate page load
-// driven by window.__SCENE__ (see harness.tsx).
+// Every scene renders the full production shell. Haku UI scenes use an actual iframe whose
+// request is intercepted below and answered with a conspicuous striped test document.
 const SCENES = [
-  // The history page, showing both row states in one shot: flip the first row's Brief/Full
-  // selector to Full (its segments are icons, so match the "Full" icon by aria-label) and open
-  // its Metadata disclosure, leaving the rest Brief. `[aria-label="Full"]` matches the first
-  // row's Full segment; the Metadata summary only exists once that row is detailed.
+  {
+    name: "console",
+    viewport: { width: 1200, height: 800 },
+    closeApprovals: true,
+    frame: true,
+  },
+  { name: "console-drawer", viewport: { width: 1200, height: 800 }, frame: true },
+  { name: "console-mobile", viewport: { width: 390, height: 760 }, frame: true },
+  {
+    name: "settings",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    frame: true,
+  },
   {
     name: "history",
     viewport: { width: 1200, height: 1500 },
+    closeApprovals: true,
     clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
+    frame: true,
   },
-  // The settings panel is captured as an element shot of its `#shot` wrapper (harness.tsx), so
-  // the PNG is just the panel and its card shadows — not a mostly-empty viewport.
-  { name: "settings", viewport: { width: 1200, height: 900 }, element: "#shot" },
-  // The whole shell chrome: approvals starts selected; switch to screenshot so the capture checks
-  // both the active tab styling and its mutually exclusive panel.
-  {
-    name: "chrome",
-    viewport: { width: 860, height: 1260 },
-    clicks: ['[aria-label="Screenshot capture: live"]'],
-  },
-  // Sync-status toolbar in the healthy state: neutral wifi icon open to the "Live" panel.
-  {
-    name: "chrome-sync-ok",
-    viewport: { width: 600, height: 300 },
-    clicks: ['[aria-label="Live updates: connected"]'],
-  },
-  // Sync-status toolbar in the error state: orange WifiOff icon open to the fetch-error panel.
-  {
-    name: "chrome-sync-error",
-    viewport: { width: 600, height: 300 },
-    clicks: ['[aria-label="Live updates: error"]'],
-  },
+  { name: "sync-current", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Up to date"]'] },
+  { name: "sync-syncing", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Syncing"]'] },
+  { name: "sync-error", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Sync error"]'] },
 ];
 const COLOR_SCHEMES = ["light", "dark"];
 
@@ -104,17 +94,36 @@ mkdirSync(outDir, { recursive: true });
 // a local `bazel run` — both resolved inside launchBrowser.
 const browser = await launchBrowser({ args: ["--force-color-profile=srgb"] });
 const assets = [];
+const mockHakuUi = readInput("MOCK_HAKU_UI", "mock_haku_ui.html");
 try {
   for (const colorScheme of COLOR_SCHEMES) {
-    for (const { name, viewport, click, clicks, element, fullPage = false } of SCENES) {
+    for (const { name, viewport, click, clicks, closeApprovals, element, fullPage = false, frame } of SCENES) {
       const page = await browser.newPage();
+      page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
+      page.on("pageerror", (error) => console.error(`[${name}] browser error:`, error));
+      await page.setRequestInterception(true);
+      const html = pageHtml(css, harnessJs, name, colorScheme);
+      page.on("request", (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+          void request.respond({ status: 200, contentType: "text/html", body: html });
+        } else if (request.url().startsWith("https://haku-ui.test/")) {
+          void request.respond({ status: 200, contentType: "text/html", body: mockHakuUi });
+        } else {
+          void request.continue();
+        }
+      });
       await page.setViewport({ ...viewport, deviceScaleFactor: 2 });
       await page.emulateMediaFeatures([
         { name: "prefers-reduced-motion", value: "reduce" },
         { name: "prefers-color-scheme", value: colorScheme },
       ]);
-      await page.setContent(pageHtml(css, harnessJs, name, colorScheme), { waitUntil: "load" });
+      await page.goto("https://haku-console.test/", { waitUntil: "load" });
       await page.waitForSelector("#app > *", { timeout: 10_000 });
+      if (frame) {
+        const hakuFrame = page.frames().find((candidate) => candidate.url().startsWith("https://haku-ui.test/"));
+        if (!hakuFrame) throw new Error(`scene ${name}: mocked Haku UI iframe did not load`);
+        await hakuFrame.waitForSelector("main", { timeout: 10_000 });
+      }
       // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
       // delay so they render enabled (animations are reduced above).
       await new Promise((r) => setTimeout(r, 700));
@@ -124,6 +133,11 @@ try {
       for (const selector of clicks ?? (click ? [click] : [])) {
         await page.click(selector);
         await new Promise((r) => setTimeout(r, 300));
+      }
+      if (closeApprovals) {
+        const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
+        if (drawerClose) await drawerClose.click();
+        await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
       }
       const file = `${name}-${colorScheme}.png`;
       let shot;

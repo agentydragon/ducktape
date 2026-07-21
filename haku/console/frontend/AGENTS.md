@@ -11,10 +11,9 @@ screenshots before handing off:
 bbr test //haku/console/frontend:screenshots
 ```
 
-It renders each surface (`screenshots/harness.tsx`) in both light and dark themes to PNGs in the
-test's **undeclared outputs**: two per full-page scene (`history` — its first rows expanded into
-their detailed state with the Metadata disclosure open, the rest left compact — `chrome` — the
-shell chrome with its mutually exclusive panel tabs — and `settings`).
+It renders the production shell (`screenshots/harness.tsx`) in both light and dark themes to PNGs
+in the test's **undeclared outputs**: Haku UI with its unmistakable intercepted mock iframe and
+drawer open/closed, a narrow viewport, Settings, history, and each sync-indicator state.
 Browser rendering runs on the RBE worker, so this is a `bbr` test, not a local `bb run`. Fetch
 the PNGs
 with the `buildbuddy_api` skill (download the target's undeclared test outputs), then open every
@@ -36,7 +35,7 @@ is its own figure on the PR-visuals page, and a widget change re-runs only that 
 error) and re-run `bbr test //haku/console/frontend/tool_rendering/<server>:previews`. Add a whole
 new scene to `screenshots/harness.tsx` (and the `SCENES` list in `screenshots/render.mjs`) whenever
 you add a new surface. A single-component scene must render inside its real production container
-(as `settings` does with `.haku-shell-panels`, and preview cards do too) and take an element
+(preview cards use `.haku-shell-panels`) and take an element
 screenshot of that wrapper — never a hardcoded width or a full-viewport shot of a small surface;
 see <../../../util/testing/frontend_visual/README.md> for the repo-wide convention and why.
 

@@ -1,28 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { nextShellPanel, selectedShellPanel } from "./shell_chrome.tsx";
+import { syncState } from "./shell_chrome.tsx";
 
-describe("nextShellPanel", () => {
-  it("opens a closed panel", () => {
-    expect(nextShellPanel(null, "settings")).toBe("settings");
+describe("syncState", () => {
+  it("reports an error before any lower-priority state", () => {
+    expect(syncState("offline", null, true)).toBe("error");
+    expect(syncState("live", "Unauthorized", true)).toBe("error");
   });
 
-  it("closes the selected panel on its second click", () => {
-    expect(nextShellPanel("settings", "settings")).toBeNull();
+  it("reports connecting and active refreshes as syncing", () => {
+    expect(syncState("connecting", null, false)).toBe("syncing");
+    expect(syncState("live", null, true)).toBe("syncing");
   });
 
-  it("switches directly to another panel", () => {
-    expect(nextShellPanel("approvals", "screenshot")).toBe("screenshot");
-  });
-});
-
-describe("selectedShellPanel", () => {
-  it("auto-opens approvals when no panel is selected", () => {
-    expect(selectedShellPanel(true, null)).toBe("approvals");
-  });
-
-  it("does not let a new approval preempt an operator-selected safety panel", () => {
-    expect(selectedShellPanel(true, "location")).toBe("location");
-    expect(selectedShellPanel(true, "screenshot")).toBe("screenshot");
+  it("only reports current after connection and refresh both succeed", () => {
+    expect(syncState("live", null, false)).toBe("current");
   });
 });

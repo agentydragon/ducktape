@@ -8,26 +8,20 @@ components + **Tailwind v4** utilities — modeled on
 `finance/augur/frontend` (references root `//:node_modules/*`; no per-package
 `package.json`).
 
-- `main.tsx` (wraps the app in `MantineProvider`) → `app.tsx` (routes between the console
-  views) → `haku_ui_embed.tsx` (the full-page framed haku-ui plus shell chrome, bridge, and
-  confirmations) or `tool_calls_page.tsx` (the full-page past-tool-calls history).
-- `routing.ts` — the console's tiny pathname router. `/tool-calls` is the console's own
-  history view; **every other path is the mirrored haku-ui route** (the embed), so
-  path-form deep links restore both shell and frame. The last embed path is remembered
-  across a `/tool-calls` detour.
-- `shell_chrome.tsx` — the shell chrome (`ShellChrome`): a fixed top-right **floating toolbar**
-  (one squished bar of toggle buttons, each `filled` when its panel is selected) over its active
-  panel. The toggles behave as deselectable tabs, so at most one panel is open. Toolbar buttons are neutral gray with only
-  semantic color cues (red pending count, orange offline, green live-location/live-capture dot):
-  approvals (a checklist), settings (a gear), plus a crossed-wifi live-offline warning when the
-  event socket is down, a location pin while the geolocation standing grant is held, and a camera
-  while the screenshot standing grant is held. The approvals panel (queue + a Past-tool-calls
-  link) follows its content until it reaches the available height, then scrolls its list.
-- `settings_panel.tsx` — `SettingsPanel`, the operator settings panel; reads MCP/account and node-daemon
+- `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin
+  iframe remains mounted while the content area switches between Haku UI, Settings, and Past tool
+  calls, preserving bridge and in-frame state.
+- `routing.ts` — `/_console/settings` and `/_console/tool-calls` are trusted console pages;
+  `/_console/assets/*` holds fingerprinted browser assets. Every other pathname is mirrored into
+  haku-ui, and the last frame path is remembered per tab across console-page detours.
+- `shell_chrome.tsx` — a fixed-width icon rail that reserves the left edge of the viewport. Its
+  top approvals trigger controls an independent non-modal drawer over the content area; page icons
+  select Haku UI, Settings, or Past tool calls; bottom indicators expose sync, location-sharing,
+  and screenshot-capture state through compact popovers.
+- `settings_panel.tsx` — the Settings page; reads MCP/account and node-daemon
   reflection through the console's Operator-authenticated MCP transport and validates it with the
   Python-generated MCP result schema catalog
-  toggled from the toolbar's gear: MCP operator account connect/reconnect/disconnect plus linked
-  server/web deployment commits. It is shell chrome, not a route.
+  including MCP operator account connect/disconnect plus linked server/web deployment commits.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
   severed, shared by the embed shell (the `openLink` bridge action) and the settings panel
   (the MCP OAuth popup).
@@ -52,11 +46,11 @@ components + **Tailwind v4** utilities — modeled on
   grants, off-whitelist opens, and MCP tool-call approvals.
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
   `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into
-  `dist/assets/styles-<hash>.css`. Deviation from a plain Tailwind setup: the `@source`
+  `dist/assets/styles-<hash>.css` and served at `/_console/assets/…`. Deviation from a plain Tailwind setup: the `@source`
   content index is a generated file (`tailwind_content_index`) concatenating the sources
   Tailwind must scan, since Bazel sandboxes the inputs.
 - `index.html` — the docroot shell template; `spa_bundle(fingerprint = True)` rewrites
-  placeholders to hashed JS/CSS/logo URLs under `dist/assets/`.
+  placeholders to hashed JS/CSS/logo URLs under `/_console/assets/`.
 
 ```bash
 bbr build //haku/console/frontend:bundle   # production bundle (dist/)
