@@ -512,7 +512,6 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
-            csrf_secret=SecretStr("csrf"),
             ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
         )
@@ -565,7 +564,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
                 tool_call_id = result.structured_content["tool_call_id"]
 
-            # The operator approves via the CSRF-gated decision endpoint -> the real upstream runs.
+            # The operator approves via the exact-Origin-gated decision endpoint -> the real upstream runs.
             async with httpx.AsyncClient(
                 base_url=base,
                 cookies={
@@ -576,7 +575,6 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                     )
                 },
             ) as operator:
-                csrf = (await operator.get("/api/capabilities/csrf")).json()["csrf_token"]
                 direct_request = {
                     "jsonrpc": "2.0",
                     "id": 10,
@@ -590,7 +588,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
 
                 initialized = await operator.post(
                     "/mcp",
-                    headers={**mcp_headers, "Origin": base, "X-CSRF-Token": csrf},
+                    headers={**mcp_headers, "Origin": base},
                     json={
                         "jsonrpc": "2.0",
                         "id": 9,
@@ -604,9 +602,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 )
                 assert initialized.status_code == 200, (initialized.text, dict(initialized.headers))
 
-                direct = await operator.post(
-                    "/mcp", headers={**mcp_headers, "Origin": base, "X-CSRF-Token": csrf}, json=direct_request
-                )
+                direct = await operator.post("/mcp", headers={**mcp_headers, "Origin": base}, json=direct_request)
                 assert direct.status_code == 200, (direct.text, dict(direct.headers))
                 assert "echo:operator" in direct.text
 
@@ -615,29 +611,21 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                 )
                 assert [call.tool_call_id for call in calls] == [tool_call_id]
 
-                missing_origin = await operator.post(
-                    "/mcp", headers={**mcp_headers, "X-CSRF-Token": csrf}, json=direct_request
-                )
+                missing_origin = await operator.post("/mcp", headers=mcp_headers, json=direct_request)
                 assert missing_origin.status_code == 403
                 assert missing_origin.json()["error"] == "operator_session_rejected"
-
-                missing_csrf = await operator.post("/mcp", headers={**mcp_headers, "Origin": base}, json=direct_request)
-                assert missing_csrf.status_code == 422
-                assert missing_csrf.json()["error"] == "operator_session_rejected"
 
                 # An explicit bearer always owns admission. A rejected bearer cannot fall back to
                 # the otherwise valid browser session and become an Operator call.
                 invalid_bearer = await operator.post(
                     "/mcp",
-                    headers={**mcp_headers, "Authorization": "Bearer rejected", "Origin": base, "X-CSRF-Token": csrf},
+                    headers={**mcp_headers, "Authorization": "Bearer rejected", "Origin": base},
                     json=direct_request,
                 )
                 assert invalid_bearer.status_code == 401
 
                 decided = await operator.post(
-                    f"/api/tool-calls/{tool_call_id}/decision",
-                    headers={"X-CSRF-Token": csrf},
-                    json={"decision": "approve"},
+                    f"/api/tool-calls/{tool_call_id}/decision", headers={"Origin": base}, json={"decision": "approve"}
                 )
             assert decided.status_code == 200, decided.text
             # decide records the approval and dispatches execution in the background — it returns RUNNING.
@@ -1278,7 +1266,6 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
-            csrf_secret=SecretStr("csrf"),
             ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
             mcp_oauth=McpOAuthConfig(

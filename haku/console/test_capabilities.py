@@ -1,4 +1,4 @@
-"""Capability-tier tests: the launch-routine action is CSRF-gated, forwards the
+"""Capability-tier tests: the launch-routine action is exact-Origin-gated, forwards the
 server-side bearer to the fire URL, and maps upstream failure / missing config to
 clean statuses. The external fire call is mocked with respx (which patches httpx's
 real transport, not TestClient's ASGI transport, so app calls still reach the app).
@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from haku.console.config import LaunchRoutineConfig
-from haku.console.conftest import csrf_token
 
 ROUTINE_ID = "trig_test"
 FIRE_URL = f"https://api.anthropic.com/v1/claude_code/routines/{ROUTINE_ID}/fire"
@@ -29,8 +28,7 @@ PAGE_URL = f"https://claude.ai/code/routines/{ROUTINE_ID}"
 def cap_client(make_operator_client: Callable[..., Any]) -> Iterator[TestClient]:
     """Console app with the launch-routine capability configured (over the seeded remote)."""
     with make_operator_client(
-        launch_routine=LaunchRoutineConfig(routine_id=ROUTINE_ID, token=SecretStr("sk-test-token")),
-        csrf_secret=SecretStr("test-csrf-secret"),
+        launch_routine=LaunchRoutineConfig(routine_id=ROUTINE_ID, token=SecretStr("sk-test-token"))
     ) as c:
         yield c
 
@@ -51,7 +49,7 @@ def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
     route = respx.post(FIRE_URL).mock(
         return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
     )
-    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)})
+    resp = cap_client.post("/api/capabilities/launch-routine")
     assert resp.status_code == 200
     assert resp.json() == {"session_url": session_url}
     # The bearer + required anthropic-version header are attached server-side; the
@@ -63,31 +61,12 @@ def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
 
 
 @respx.mock
-def test_csrf_token_remains_valid_when_another_tab_fetches_it(cap_client) -> None:
-    first_token = csrf_token(cap_client)
-    first_cookie = cap_client.cookies["fastapi-csrf-token"]
-
-    second_response = cap_client.get("/api/capabilities/csrf")
-
-    assert second_response.json()["csrf_token"] == first_token
-    assert cap_client.cookies["fastapi-csrf-token"] == first_cookie
-    route = respx.post(FIRE_URL).mock(return_value=httpx.Response(200, json={"claude_code_session_url": "ok"}))
-    response = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": first_token})
-    assert response.status_code == 200
-    assert route.called
-
-
-@respx.mock
 def test_launch_routine_forwards_custom_text(cap_client) -> None:
     session_url = "https://claude.ai/code/session_custom"
     route = respx.post(FIRE_URL).mock(
         return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
     )
-    resp = cap_client.post(
-        "/api/capabilities/launch-routine",
-        headers={"X-CSRF-Token": csrf_token(cap_client)},
-        json={"text": "scan CPAP and summarize anomalies"},
-    )
+    resp = cap_client.post("/api/capabilities/launch-routine", json={"text": "scan CPAP and summarize anomalies"})
     assert resp.status_code == 200
     assert json.loads(route.calls.last.request.content) == {"text": "scan CPAP and summarize anomalies"}
 
@@ -98,9 +77,7 @@ def test_launch_routine_blank_text_uses_routine_default(cap_client) -> None:
     route = respx.post(FIRE_URL).mock(
         return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
     )
-    resp = cap_client.post(
-        "/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)}, json={"text": "   "}
-    )
+    resp = cap_client.post("/api/capabilities/launch-routine", json={"text": "   "})
     assert resp.status_code == 200
     assert json.loads(route.calls.last.request.content) == {}
 
@@ -110,30 +87,30 @@ def test_launch_routine_surfaces_upstream_error_detail(cap_client) -> None:
     respx.post(FIRE_URL).mock(
         return_value=httpx.Response(400, json={"error": {"message": "anthropic-version: header is required"}})
     )
-    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)})
+    resp = cap_client.post("/api/capabilities/launch-routine")
     assert resp.status_code == 502
     # The real upstream reason is propagated to the client, not a bare 502.
     assert "anthropic-version: header is required" in resp.json()["detail"]
 
 
 @respx.mock
-def test_launch_routine_without_csrf_token_is_rejected(cap_client) -> None:
+def test_launch_routine_from_another_origin_is_rejected(cap_client) -> None:
     route = respx.post(FIRE_URL).mock(return_value=httpx.Response(200))
-    resp = cap_client.post("/api/capabilities/launch-routine")
-    assert resp.status_code in (400, 401)
+    resp = cap_client.post("/api/capabilities/launch-routine", headers={"Origin": "https://haku-ui.test"})
+    assert resp.status_code == 403
     assert not route.called  # rejected before any upstream call
 
 
 @respx.mock
 def test_launch_routine_upstream_failure_is_502(cap_client) -> None:
     respx.post(FIRE_URL).mock(return_value=httpx.Response(500))
-    resp = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(cap_client)})
+    resp = cap_client.post("/api/capabilities/launch-routine")
     assert resp.status_code == 502
 
 
 def test_launch_routine_unconfigured_is_503(make_operator_client: Callable[..., Any]) -> None:
-    with make_operator_client(csrf_secret=SecretStr("test-csrf-secret")) as c:
-        resp = c.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": csrf_token(c)})
+    with make_operator_client() as c:
+        resp = c.post("/api/capabilities/launch-routine")
     assert resp.status_code == 503
 
 

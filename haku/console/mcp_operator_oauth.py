@@ -26,7 +26,6 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
@@ -92,8 +91,6 @@ from haku.console.oauth_token_support import (
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-
-Csrf = Annotated[CsrfProtect, Depends()]
 
 logger = logging.getLogger(__name__)
 
@@ -708,16 +705,12 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
     return token
 
 
-@router.post("/api/mcp/operator-auth/{server_id}/connect")
+@router.post(
+    "/api/mcp/operator-auth/{server_id}/connect", dependencies=[Depends(operator_auth.require_operator_origin)]
+)
 async def connect_mcp_operator_auth(
-    server_id: str,
-    request: Request,
-    csrf_protect: Csrf,
-    settings: SettingsDep,
-    oauth_store: OAuthStoreDep,
-    actor: OperatorActorDep,
+    server_id: str, settings: SettingsDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep
 ) -> McpOperatorAuthConnectResponse:
-    await csrf_protect.validate_csrf(request)
     try:
         server = _server_entry(settings, server_id)
     except McpServerNotFoundError as error:
@@ -727,16 +720,10 @@ async def connect_mcp_operator_auth(
     )
 
 
-@router.delete("/api/mcp/operator-auth/{server_id}")
+@router.delete("/api/mcp/operator-auth/{server_id}", dependencies=[Depends(operator_auth.require_operator_origin)])
 async def disconnect_mcp_operator_auth(
-    server_id: str,
-    request: Request,
-    csrf_protect: Csrf,
-    oauth_store: OAuthStoreDep,
-    event_hub: ConsoleEventHubDep,
-    actor: OperatorActorDep,
+    server_id: str, request: Request, oauth_store: OAuthStoreDep, event_hub: ConsoleEventHubDep, actor: OperatorActorDep
 ) -> McpOperatorAuthStatus:
-    await csrf_protect.validate_csrf(request)
     operator_id = actor.operator_id
     oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
     await event_hub.broadcast(operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")])

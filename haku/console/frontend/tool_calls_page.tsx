@@ -49,7 +49,7 @@ function ToolCallRow({
 // persistent counterpart to the approvals drawer's ephemeral "Recent" list. The shared shell
 // keeps the framed haku-ui mounted behind this page.
 // A pending call that streams in (via the live WS signal) can be approved/denied here too,
-// through the same CSRF-gated endpoints the approvals panel uses, without going back to the shell.
+// through the same exact-Origin-gated endpoints the approvals panel uses, without going back to the shell.
 export function ToolCallsPage() {
   const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);

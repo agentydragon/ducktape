@@ -1,7 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import { fetchCsrfToken, refreshCsrfToken } from "./client.ts";
 import { mcpToolError, unwrapMcpToolResult } from "./mcp_result.ts";
 import { redirectToOperatorLogin } from "./operator_login.ts";
 
@@ -10,13 +9,10 @@ let connectedClient: Promise<Client> | null = null;
 async function connectOperatorMcp(): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL("/mcp", document.baseURI), {
     requestInit: { credentials: "same-origin" },
-    // The SDK invokes this for initialize, notifications, calls, and its optional SSE probe.
-    // Resolve the current double-submit token each time so a legitimate console action that
-    // refreshes the signed cookie cannot leave a long-lived transport holding the old header.
     fetch: async (input, init) => {
-      const headers = new Headers(init?.headers);
-      headers.set("X-CSRF-Token", await fetchCsrfToken());
-      return globalThis.fetch(input, { ...init, credentials: "same-origin", headers });
+      const response = await globalThis.fetch(input, { ...init, credentials: "same-origin" });
+      if (response.status === 401) redirectToOperatorLogin();
+      return response;
     },
   });
   const client = new Client({ name: "haku-console-browser", version: "1" }, { capabilities: {} });
@@ -42,14 +38,6 @@ export async function callOperatorMcpTool(name: string, args: Record<string, unk
     return unwrapMcpToolResult(result);
   } catch (error) {
     connectedClient = null;
-    // Confirm whether the browser session expired. The shared OpenAPI response hook performs the
-    // redirect on 401; when the session is healthy this cheap probe succeeds and the real MCP/upstream
-    // error remains visible to the preview.
-    try {
-      await refreshCsrfToken();
-    } catch {
-      redirectToOperatorLogin();
-    }
     throw error;
   }
 }

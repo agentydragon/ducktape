@@ -124,6 +124,13 @@ def operator_username(request: Request) -> str | None:
     return session.username if session is not None else None
 
 
+def require_operator_origin(request: Request) -> None:
+    """Reject browser mutations that did not originate in the trusted console shell."""
+    settings = cast(Settings, request.app.state.settings)
+    if request.headers.get("origin") != settings.public_base_url.rstrip("/"):
+        raise HTTPException(status_code=403, detail="operator mutations require the console's exact Origin")
+
+
 def _redirect_uri(request: Request) -> str:
     settings = cast(Settings, request.app.state.settings)
     base = settings.public_base_url.rstrip("/")

@@ -15,7 +15,7 @@ behind its inventory rows #10–#11.
 
 ```text
  haku.allegedly.works            TRUSTED shell (ducktape, Authentik, holds the bearer)
-   • capability tier (CSRF, bearer, shell-owned)
+   • capability tier (exact Origin, bearer, shell-owned)
    • <iframe src="https://haku-ui.allegedly.works">   ← cross-origin, same-site
         │
         ▼
@@ -47,8 +47,8 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
 
 1. **Cross-origin isolation from the shell.** `haku-ui` is a different origin than `haku`,
    so the iframe cannot read the shell's DOM, cookies, or `localStorage`, and cannot call the
-   shell's capability API or Operator-authenticated `/mcp` path. Both reject the iframe's Origin
-   and require the shell origin's inaccessible CSRF token; the launch bearer is unreachable from
+   shell's capability API or Operator-authenticated `/mcp` path. Both reject the iframe's Origin;
+   the launch bearer is unreachable from
    any browser context. The subdomain is **same-site** (`*.allegedly.works`): isolated
    from the shell, yet the Authentik SSO cookie isn't a blocked third-party cookie. Pinned by
    `sandbox="allow-scripts allow-same-origin allow-forms"` (**no `allow-popups`**, no
@@ -81,7 +81,7 @@ page has no secure-attention channel, and an iframe can render a pixel-perfect d
 Security rests on two things instead:
 
 1. **The capability gate makes a faked control inert.** A fake "Launch" button can only emit
-   a bridge request, which the shell re-gates with its own CSRF + confirm + bearer.
+   a bridge request, which the shell re-gates with exact-Origin admission + confirm + bearer.
 2. **The shell is the only trustworthy approval surface.** Immediate bridge escalations render as
    a **top-layer `<dialog>.showModal()` with a backdrop**. Queueable approvals render in the
    shell-owned non-modal approvals drawer. In both cases the iframe cannot draw over the trusted controls,

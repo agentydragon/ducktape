@@ -139,14 +139,6 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
-            # CSRF double-submit signing key, shared across replicas (see
-            # csrf-secret.sops.yaml) — without it each pod would sign/validate with
-            # its own ephemeral secret and cross-pod requests would randomly 403.
-            - name: HAKU_CONSOLE_CSRF_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: haku-console-csrf-secret
-                  key: secret
             - name: HAKU_CONSOLE_NODE_DAEMON_WYRM2_TOKEN
               valueFrom:
                 secretKeyRef:

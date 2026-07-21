@@ -3,8 +3,8 @@
 The console is the trusted outer shell: it frames Haku's own UI (haku-state's ``ui/``)
 full-page as a sandboxed cross-origin iframe and owns the one privileged surface — the
 **capability tier** (``haku.console.capabilities``), which uses console-only secrets and
-acts on the world (launching the routine); it is CSRF-gated and audited (see
-``haku/docs/security.md`` → enforcement inventory #11). ``app.py`` wires that router, configures CSRF, and serves
+acts on the world (launching the routine); it is same-origin gated and audited (see
+``haku/docs/security.md`` → enforcement inventory #11). ``app.py`` wires that router and serves
 the config endpoint. It can also mount the built SPA when ``static_dir`` is explicitly
 configured for a direct local/dev fallback.
 """
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import os
-import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,10 +21,7 @@ from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi_csrf_protect import CsrfProtect
-from fastapi_csrf_protect.exceptions import CsrfProtectError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
@@ -370,20 +366,6 @@ def create_app(
         response.headers.setdefault("Referrer-Policy", REFERRER_POLICY)
         response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
         return response
-
-    # CSRF for the capability tier: a header-located double-submit token (the SPA
-    # echoes the token from GET /api/capabilities/csrf in X-CSRF-Token). Use the
-    # configured secret (shared across every replica — see csrf-secret.sops.yaml),
-    # else an ephemeral one; the ephemeral fallback only ever worked by accident
-    # with exactly one replica (a token from a different pod's secret would fail
-    # validation), so it's a dev/test convenience now, not a real deploy path.
-    csrf_secret = settings.csrf_secret.get_secret_value() if settings.csrf_secret else secrets.token_urlsafe(32)
-    app.state.csrf_secret = csrf_secret
-    CsrfProtect.load_config(lambda: [("secret_key", csrf_secret), ("token_location", "header")])
-
-    @app.exception_handler(CsrfProtectError)
-    async def _csrf_error(request: Request, exc: CsrfProtectError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

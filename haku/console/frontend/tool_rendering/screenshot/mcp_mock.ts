@@ -45,7 +45,6 @@ export async function mockOperatorMcpFetch(
   url: string,
   fixtures: OperatorMcpToolFixtures
 ): Promise<Response | null> {
-  if (url.includes("/api/capabilities/csrf")) return jsonResponse({ csrf_token: "screenshot-csrf" });
   if (!url.includes("/mcp")) return null;
   const method = init?.method ?? (input instanceof Request ? input.method : "GET");
   if (method === "GET") return new Response(null, { status: 405 });

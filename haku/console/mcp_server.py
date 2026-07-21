@@ -22,7 +22,7 @@ precedence over ``annotations.title`` for clients:
   returns the real result *or* a promise.
 
 For Agents both buckets run through ``submit_and_wait``. Operators bypass that lifecycle only after
-the transport has established a DB-revalidated, same-origin, CSRF-gated browser principal.
+the transport has established a DB-revalidated, exact-Origin-gated browser principal.
 """
 
 from __future__ import annotations

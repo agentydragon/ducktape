@@ -35,7 +35,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.conftest import csrf_token, operator_id, write_config
+from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
@@ -537,6 +537,25 @@ def recording_executor() -> RecordingExecutor:
     return RecordingExecutor()
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "json"),
+    [
+        ("POST", "/api/mcp/operator-auth/grocy-sf/connect", None),
+        ("DELETE", "/api/mcp/operator-auth/grocy-sf", None),
+        ("POST", "/api/operator-connections/google_mail/connect", None),
+        ("DELETE", "/api/operator-connections/google_mail", None),
+        ("POST", "/api/tool-calls/not-a-call/decision", {"decision": "approve"}),
+    ],
+)
+def test_operator_mutations_reject_untrusted_origin(
+    operator_client: TestClient, method: str, path: str, json: dict[str, str] | None
+) -> None:
+    response = operator_client.request(method, path, headers={"Origin": "https://haku-ui.test"}, json=json)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "operator mutations require the console's exact Origin"
+
+
 def test_operator_oauth_association_emits_console_events(
     make_operator_client, operator_oauth_config_file: Path
 ) -> None:
@@ -545,13 +564,13 @@ def test_operator_oauth_association_emits_console_events(
         client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events,
     ):
         assert events.receive_json() == {"event_type": "hello"}
-        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect")
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
         callback = client.get(
             "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}, follow_redirects=False
         )
         association_event = events.receive_json()
-        disconnected = client.delete("/api/mcp/operator-auth/grocy-sf", headers={"X-CSRF-Token": csrf_token(client)})
+        disconnected = client.delete("/api/mcp/operator-auth/grocy-sf")
         disassociation_event = events.receive_json()
 
     assert callback.status_code == 303, callback.text
@@ -576,7 +595,7 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
     dynamic registration would 401, so a pre-registered client must skip it entirely.
     """
     with make_operator_client(config_file=preregistered_operator_oauth_config_file) as client:
-        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect")
         assert started.status_code == 200, started.text
         auth_query = parse_qs(urlparse(started.json()["authorization_url"]).query)
         assert auth_query["client_id"] == ["preregistered-client"]
@@ -605,9 +624,7 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
             operator_username="b@example.com",
         ) as operator_b,
     ):
-        started = operator_a.post(
-            "/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(operator_a)}
-        )
+        started = operator_a.post("/api/mcp/operator-auth/grocy-sf/connect")
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
 
         wrong_operator = operator_b.get(
@@ -757,11 +774,7 @@ def _drain_executions(client: TestClient) -> None:
 
 def test_approval_executes_tool_and_records_terminal_result(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
-    resp = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-        headers={"X-CSRF-Token": csrf_token(operator_client)},
-        json={"decision": "approve"},
-    )
+    resp = operator_client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
     assert resp.status_code == 200, resp.text
     # decide records the approval and dispatches execution: the response is RUNNING, no result yet.
     decided = resp.json()["tool_call"]
@@ -790,11 +803,7 @@ def test_configured_credential_approval_passes_canonical_operator_id(
         tool_call_executor=recording_executor,
     ) as client:
         submitted = _submit(client)
-        approved = client.post(
-            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": csrf_token(client)},
-            json={"decision": "approve"},
-        )
+        approved = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
         # Drain before the client (and its lifespan aclose) tears down, so execution runs to completion.
         _drain_executions(client)
 
@@ -817,7 +826,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(
         operator_external_user_key="operator-oauth-sub",
         tool_call_executor=recording_executor,
     ) as client:
-        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect")
         assert started.status_code == 200, started.text
         authorization_url = started.json()["authorization_url"]
         parsed_authorization = urlparse(authorization_url)
@@ -834,20 +843,14 @@ def test_operator_oauth_association_drives_approved_tool_execution(
         )
         assert callback.status_code == 303, callback.text
 
-        reconnect = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
-        removed_start = client.post(
-            "/api/mcp/operator-auth/grocy-sf/start", headers={"X-CSRF-Token": csrf_token(client)}
-        )
+        reconnect = client.post("/api/mcp/operator-auth/grocy-sf/connect")
+        removed_start = client.post("/api/mcp/operator-auth/grocy-sf/start")
         assert reconnect.status_code == 409
         assert reconnect.json()["detail"] == "MCP server grocy-sf is already connected; disconnect it first"
         assert removed_start.status_code == 404
 
         submitted = _submit(client)
-        approved = client.post(
-            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": csrf_token(client)},
-            json={"decision": "approve"},
-        )
+        approved = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
         _drain_executions(client)
 
     assert approved.status_code == 200, approved.text
@@ -861,11 +864,7 @@ def test_operator_oauth_approval_requires_existing_association(
 ) -> None:
     with make_operator_client(config_file=operator_oauth_config_file, tool_call_executor=recording_executor) as client:
         submitted = _submit(client)
-        resp = client.post(
-            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": csrf_token(client)},
-            json={"decision": "approve"},
-        )
+        resp = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
         fetched = client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
 
     assert resp.status_code == 409
@@ -1049,22 +1048,12 @@ def test_two_operator_two_agent_http_authorization_matrix(
 
         # Decision ownership is checked before OAuth lookup, transition, or execution.
         for operator, foreign_call_id in ((operator_a, call_ids["ops"]), (operator_b, call_ids["haku"])):
-            response = operator.post(
-                f"/api/tool-calls/{foreign_call_id}/decision",
-                headers={"X-CSRF-Token": csrf_token(operator)},
-                json={"decision": "approve"},
-            )
+            response = operator.post(f"/api/tool-calls/{foreign_call_id}/decision", json={"decision": "approve"})
             assert response.status_code == 404
 
-        approved = operator_a.post(
-            f"/api/tool-calls/{call_ids['haku']}/decision",
-            headers={"X-CSRF-Token": csrf_token(operator_a)},
-            json={"decision": "approve"},
-        )
+        approved = operator_a.post(f"/api/tool-calls/{call_ids['haku']}/decision", json={"decision": "approve"})
         denied = operator_b.post(
-            f"/api/tool-calls/{call_ids['ops']}/decision",
-            headers={"X-CSRF-Token": csrf_token(operator_b)},
-            json={"decision": "deny", "reason": "no"},
+            f"/api/tool-calls/{call_ids['ops']}/decision", json={"decision": "deny", "reason": "no"}
         )
         assert approved.status_code == 200, approved.text
         assert approved.json()["tool_call"]["status"] == "running"
@@ -1075,9 +1064,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
 def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-        headers={"X-CSRF-Token": csrf_token(operator_client)},
-        json={"decision": "deny", "reason": "not today"},
+        f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "deny", "reason": "not today"}
     )
     assert resp.status_code == 200
     tool_call = resp.json()["tool_call"]
@@ -1102,9 +1089,7 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
 
 
 def test_unknown_oauth_server_maps_to_http_not_found(operator_client: TestClient) -> None:
-    connected = operator_client.post(
-        "/api/mcp/operator-auth/missing/connect", headers={"X-CSRF-Token": csrf_token(operator_client)}
-    )
+    connected = operator_client.post("/api/mcp/operator-auth/missing/connect")
 
     assert connected.status_code == 404
     assert connected.json()["detail"] == "unknown MCP server: missing"
@@ -1127,18 +1112,11 @@ def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_
         assert operator_b.get(f"/api/tool-calls/{call_id}").status_code == 404
         assert operator_b.get("/api/approvals/pending").json()["approvals"] == []
 
-        b_csrf = csrf_token(operator_b)
         for decision in ("deny", "approve"):
-            response = operator_b.post(
-                f"/api/tool-calls/{call_id}/decision", headers={"X-CSRF-Token": b_csrf}, json={"decision": decision}
-            )
+            response = operator_b.post(f"/api/tool-calls/{call_id}/decision", json={"decision": decision})
             assert response.status_code == 404
 
-        approved = operator_a.post(
-            f"/api/tool-calls/{call_id}/decision",
-            headers={"X-CSRF-Token": csrf_token(operator_a)},
-            json={"decision": "approve"},
-        )
+        approved = operator_a.post(f"/api/tool-calls/{call_id}/decision", json={"decision": "approve"})
         assert approved.status_code == 200, approved.text
         assert approved.json()["tool_call"]["status"] == "running"
 
@@ -1298,9 +1276,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=0),
     )
     approved = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-        headers={"X-CSRF-Token": csrf_token(operator_client)},
-        json={"decision": "approve"},
+        f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"}
     ).json()["tool_call"]
     assert approved["status"] == "running"
 

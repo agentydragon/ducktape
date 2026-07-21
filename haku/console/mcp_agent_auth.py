@@ -5,11 +5,9 @@ from __future__ import annotations
 import hmac
 from dataclasses import dataclass
 
-from fastapi_csrf_protect import CsrfProtect
-from fastapi_csrf_protect.exceptions import CsrfProtectError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
 from starlette.concurrency import run_in_threadpool
-from starlette.requests import HTTPConnection, Request
+from starlette.requests import HTTPConnection
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -130,10 +128,6 @@ class _OperatorMcpSessionAuthenticator:
             return None
         if conn.headers.get("origin") != self._public_origin:
             raise OperatorSessionAuthenticationError("operator MCP requests require the console's exact Origin")
-        try:
-            await CsrfProtect().validate_csrf(Request(conn.scope))
-        except CsrfProtectError as error:
-            raise OperatorSessionAuthenticationError(error.message, status_code=error.status_code) from error
         return OperatorActor(operator_id=session.operator_id)
 
 

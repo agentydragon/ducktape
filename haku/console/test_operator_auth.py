@@ -257,7 +257,7 @@ def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
         engine.dispose()
 
 
-@pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config", "/api/capabilities/csrf"])
+@pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config"])
 def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, path: str) -> None:
     """The app-owned OIDC session is the only operator identity boundary.
 

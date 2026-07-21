@@ -24,10 +24,9 @@ The launch-routine path remains in the **capability tier**
 (`capabilities.py`, `/api/capabilities/*`). It uses console-only secrets and acts on the
 world, so it's gated hard (see <../docs/security.md> → enforcement inventory #11):
 
-- **CSRF-gated.** A header-located double-submit token: the SPA fetches it from
-  `GET /api/capabilities/csrf` (which also sets the signed cookie) and echoes it in
-  `X-CSRF-Token` on the POST — so a cross-site request can't ride the operator's
-  Authentik session cookie to fire a capability.
+- **Exact-Origin gated.** Every browser mutation must carry an `Origin` exactly equal to
+  the canonical console origin, so the same-site but untrusted Haku iframe cannot ride the
+  operator's Authentik session cookie to fire a capability.
 - **Server-side secret.** The bearer is read from `Settings` / the
   `haku-routine-launch-token` secret and attached to the upstream call; it never
   reaches the client.
@@ -46,9 +45,7 @@ UI can ask for the capability but can never script or spoof it.
 approval queue — the `haku_routine` in-process MCP server's `launch_routine` tool (below)
 fires the same routine, gated by the ordinary approvals panel instead of a separate confirm.
 This capability path stays only until haku-ui submits `launch_routine` through its backend and
-the `requestLaunch` bridge verb is dropped, at which point `capabilities.py` retires entirely
-(the shared `GET /api/capabilities/csrf` endpoint moves; it's used by the approval + operator-auth
-flows too).
+the `requestLaunch` bridge verb is dropped, at which point `capabilities.py` retires entirely.
 
 There is **no** low-privilege "trace" write tier anymore — operator feedback now writes
 straight into haku-state from haku-ui (which Haku already owns), so the console needs no
@@ -104,7 +101,7 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
 - `GET /api/approvals/pending` and `WebSocket /api/events/ws` — canonical-Operator-routed
   frontend state plus lossy invalidations. REST remains the source of truth; the WebSocket only
   wakes the shell to refresh.
-- `POST /api/tool-calls/{tool_call_id}/decision` — CSRF-gated trusted-frontend approval/denial.
+- `POST /api/tool-calls/{tool_call_id}/decision` — exact-Origin-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
 - MCP `list_node_daemons` — shared Agent/console heartbeat-derived state for configured execution
@@ -113,9 +110,9 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
   heartbeat, long-poll for durable Postgres-backed work, renew leases, and submit idempotent
   results; it is intentionally outside browser Operator auth.
 
-The browser REST API requires the operator's Authentik session, and decisions additionally require
-CSRF. `/mcp` accepts either an Agent bearer or that same DB-revalidated Operator session; browser
-MCP requests additionally require the console's exact `Origin` and the CSRF header/cookie pair. The
+The browser REST API requires the operator's Authentik session, and mutations additionally require
+the console's exact `Origin`. `/mcp` accepts either an Agent bearer or that same DB-revalidated
+Operator session; browser MCP requests also require the console's exact `Origin`. The
 approvals panel renders in trusted
 console chrome, not inside Haku's iframe, and does not block the framed Haku UI. If a server's `auth`
 is `remote_server_oauth`, approval execution
@@ -265,7 +262,7 @@ transport `auth`, or an `in_process` backend with an implementation `credential`
 registered **in-process `FastMCP` instance**: `fastmcp.client.Client` accepts a `FastMCP` object
 directly (an in-memory `FastMCPTransport`), so `McpServerClient` runs the exact
 same `Client(...)` calls either way. The application service still owns approval/audit and the HTTP
-adapter still owns CSRF, with the same live `tools/list` reflection.
+adapter still owns exact-Origin admission, with the same live `tools/list` reflection.
 
 An in-process credential is consumed by reviewed implementation code only during execution; it is
 never passed to FastMCP as transport authentication. The caller's Agent bearer authenticates the
@@ -366,7 +363,7 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 | Path                               | Role                                                                                                                                                                                                                                                                   |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app.py`                           | Composition root for FastAPI, FastMCP, storage, execution, event delivery, and the shared `ToolCallApplicationService`; public app state exposes the service rather than its ledger/executor internals. Also serves config/health and the optional local SPA fallback. |
-| `capabilities.py`                  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token.                                    |
+| `capabilities.py`                  | Capability-tier router (`/api/capabilities/*`): exact-Origin-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text.                                                                        |
 | `tool_call_service.py`             | Actor-scoped application boundary for policy evaluation, submit/read/wait, decisions, execution orchestration, and event publication.                                                                                                                                  |
 | `mcp_approval.py`                  | Operator-browser FastAPI adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own agent admission or lifecycle orchestration.                                                                           |
 | `mcp_server.py`                    | FastMCP transport adapter for proxy and result-read tools; resolves its request dependency to a canonical `AgentActor` and delegates lifecycle operations to the application service.                                                                                  |

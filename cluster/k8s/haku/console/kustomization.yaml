@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: haku-console
 
 resources:
-  - csrf-secret.sops.yaml
   - deployment.yaml
   - haku-console-google-calendar-client-credentials.sops.yaml
   - haku-console-google-client-credentials.sops.yaml

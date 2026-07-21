@@ -18,7 +18,6 @@ from typing import Annotated, Any, Literal, Never, TypeVar, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi_csrf_protect import CsrfProtect
 from fastmcp.client import Client
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
@@ -49,7 +48,7 @@ from haku.console.mcp_config import (
     _transport,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.operator_auth import OperatorActorDep
+from haku.console.operator_auth import OperatorActorDep, require_operator_origin
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -76,7 +75,6 @@ logger = logging.getLogger(__name__)
 # Operator-only routes (reflection, approvals, decisions, and audit history). app.py guards this router with
 # `require_operator`.
 router = APIRouter(tags=["mcp-approval"])
-Csrf = Annotated[CsrfProtect, Depends()]
 
 
 @dataclass(frozen=True)
@@ -752,16 +750,10 @@ async def pending_approvals(service: ToolCallServiceDep, actor: OperatorActorDep
     return PendingApprovalsResponse(approvals=service.pending_approvals(actor=actor))
 
 
-@router.post("/api/tool-calls/{tool_call_id}/decision")
+@router.post("/api/tool-calls/{tool_call_id}/decision", dependencies=[Depends(require_operator_origin)])
 async def decide_approval(
-    tool_call_id: str,
-    body: ApprovalDecisionRequest,
-    request: Request,
-    csrf_protect: Csrf,
-    service: ToolCallServiceDep,
-    actor: OperatorActorDep,
+    tool_call_id: str, body: ApprovalDecisionRequest, service: ToolCallServiceDep, actor: OperatorActorDep
 ) -> ApprovalDecisionResponse:
-    await csrf_protect.validate_csrf(request)
     try:
         tool_call = await service.decide(tool_call_id=tool_call_id, decision=body, actor=actor)
     except BackendAccountNotConnectedError as error:

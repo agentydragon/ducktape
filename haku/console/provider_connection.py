@@ -27,7 +27,6 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
 from pydantic import BaseModel, ConfigDict, Field
@@ -62,15 +61,13 @@ from haku.console.oauth_token_support import (
     public_base_url,
     token_expires_at,
 )
-from haku.console.operator_auth import OperatorActorDep
+from haku.console.operator_auth import OperatorActorDep, require_operator_origin
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import (
     PROVIDER_DESCRIPTORS,
     ProviderConnectionDescriptor,
     ProviderConnectionKind,
 )
-
-Csrf = Annotated[CsrfProtect, Depends()]
 
 PROVIDER_CONNECTION_CALLBACK_PATH = "/api/provider-connections/callback"
 _FLOW_TTL = datetime.timedelta(minutes=10)
@@ -496,31 +493,19 @@ def _store(request: Request) -> PostgresProviderConnectionStore:
 ProviderConnectionStoreDep = Annotated[PostgresProviderConnectionStore, Depends(_store)]
 
 
-@router.post("/api/operator-connections/{connection}/connect")
+@router.post("/api/operator-connections/{connection}/connect", dependencies=[Depends(require_operator_origin)])
 async def connect_provider_connection(
-    connection: str,
-    request: Request,
-    csrf_protect: Csrf,
-    settings: SettingsDep,
-    store: ProviderConnectionStoreDep,
-    actor: OperatorActorDep,
+    connection: str, settings: SettingsDep, store: ProviderConnectionStoreDep, actor: OperatorActorDep
 ) -> ProviderConnectionConnectResponse:
-    await csrf_protect.validate_csrf(request)
     return await store.connect_flow(
         connection=connection, operator_id=actor.operator_id, public_base_url=public_base_url(settings)
     )
 
 
-@router.delete("/api/operator-connections/{connection}")
+@router.delete("/api/operator-connections/{connection}", dependencies=[Depends(require_operator_origin)])
 async def disconnect_provider_connection(
-    connection: str,
-    request: Request,
-    csrf_protect: Csrf,
-    store: ProviderConnectionStoreDep,
-    event_hub: ConsoleEventHubDep,
-    actor: OperatorActorDep,
+    connection: str, store: ProviderConnectionStoreDep, event_hub: ConsoleEventHubDep, actor: OperatorActorDep
 ) -> ProviderUnconnected:
-    await csrf_protect.validate_csrf(request)
     operator_id = actor.operator_id
     status = store.disconnect(connection=connection, operator_id=operator_id)
     await event_hub.broadcast(

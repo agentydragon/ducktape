@@ -66,45 +66,9 @@ export async function consumeOAuthConnectionResult(resultId: string): Promise<OA
   return data;
 }
 
-// fastapi-csrf-protect signs these for one hour. Reuse one token/cookie pair across concurrent
-// console and MCP requests, but refresh with margin so a long-open tab never relies on an expired
-// token. mcp_client reads this cache for every transport request, so a refresh cannot strand it
-// with an older header than the browser's newly rotated HttpOnly cookie.
-const CSRF_TOKEN_CACHE_MS = 50 * 60 * 1000;
-let csrfToken: Promise<string> | null = null;
-let csrfTokenExpiresAt = 0;
-
-async function requestCsrfToken(): Promise<string> {
-  const { data: csrf, error: csrfError } = await api.GET("/api/capabilities/csrf");
-  if (csrfError || !csrf) throw new Error(errorDetail(csrfError, "Failed to get CSRF token"));
-  return csrf.csrf_token;
-}
-
-export async function fetchCsrfToken(): Promise<string> {
-  if (csrfToken === null || Date.now() >= csrfTokenExpiresAt) {
-    csrfTokenExpiresAt = Date.now() + CSRF_TOKEN_CACHE_MS;
-    csrfToken = requestCsrfToken().catch((error: unknown) => {
-      csrfToken = null;
-      csrfTokenExpiresAt = 0;
-      throw error;
-    });
-  }
-  return csrfToken;
-}
-
-export async function refreshCsrfToken(): Promise<string> {
-  csrfToken = null;
-  csrfTokenExpiresAt = 0;
-  return fetchCsrfToken();
-}
-
-// Capability tier. Fetch a CSRF token (which also sets the signed double-submit
-// cookie), then fire the routine echoing the token in X-CSRF-Token. The bearer
-// stays server-side; this only triggers the action and returns the new session URL.
+// The bearer stays server-side; this only triggers the action and returns the new session URL.
 export async function launchRoutine(text?: string): Promise<LaunchRoutineResult> {
-  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/capabilities/launch-routine", {
-    headers: { "X-CSRF-Token": csrfToken },
     body: text ? { text } : {},
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to launch routine"));
@@ -128,20 +92,16 @@ export async function fetchToolCalls(limit: number): Promise<ToolCallRecord[]> {
 }
 
 export async function connectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthConnectResponse> {
-  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/mcp/operator-auth/{server_id}/connect", {
     params: { path: { server_id: serverId } },
-    headers: { "X-CSRF-Token": csrfToken },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to start MCP account link"));
   return data;
 }
 
 export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStatus> {
-  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.DELETE("/api/mcp/operator-auth/{server_id}", {
     params: { path: { server_id: serverId } },
-    headers: { "X-CSRF-Token": csrfToken },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to disconnect MCP account"));
   return data;
@@ -153,10 +113,8 @@ export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOp
 export async function connectOperatorConnection(
   connection: OperatorConnectionName
 ): Promise<ProviderConnectionConnectResponse> {
-  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/operator-connections/{connection}/connect", {
     params: { path: { connection } },
-    headers: { "X-CSRF-Token": csrfToken },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to start account connection"));
   return data;
@@ -165,10 +123,8 @@ export async function connectOperatorConnection(
 export async function disconnectOperatorConnection(
   connection: OperatorConnectionName
 ): Promise<components["schemas"]["ProviderUnconnected"]> {
-  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.DELETE("/api/operator-connections/{connection}", {
     params: { path: { connection } },
-    headers: { "X-CSRF-Token": csrfToken },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to disconnect account"));
   return data;
@@ -179,10 +135,8 @@ async function decideToolCall(
   body: ApprovalDecisionRequest,
   fallback: string
 ): Promise<ToolCallRecord> {
-  const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.POST("/api/tool-calls/{tool_call_id}/decision", {
     params: { path: { tool_call_id: toolCallId } },
-    headers: { "X-CSRF-Token": csrfToken },
     body,
   });
   if (error || !data) throw new Error(errorDetail(error, fallback));

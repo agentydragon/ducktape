@@ -85,7 +85,6 @@ class _TokenChainHarness:
     tool_calls: ToolCallApplicationService
     agent_actor: AgentActor
     downstream_url: str
-    csrf: str
     stored_reference: str
     exchange_gate: _ExchangeGate
     exchanged_assertions: list[str]
@@ -121,9 +120,7 @@ class _TokenChainHarness:
         assert submitted.status == "pending_approval"
 
         decided = await self.operator.post(
-            f"/api/tool-calls/{submitted.tool_call_id}/decision",
-            headers={"X-CSRF-Token": self.csrf},
-            json={"decision": "approve"},
+            f"/api/tool-calls/{submitted.tool_call_id}/decision", json={"decision": "approve"}
         )
         assert decided.status_code == 200, decided.text
         # decide records the approval and dispatches execution to a background task on the server, so
@@ -288,7 +285,6 @@ async def token_chain_harness(
             haku_ui_url="about:blank",
             config_file=_console_config(tmp_path / "console.yaml", downstream_url),
             public_base_url=console_url,
-            csrf_secret=SecretStr("csrf-secret"),
             operator_oidc=OperatorOidcConfig(
                 issuer=issuer,
                 client_id="haku-console",
@@ -300,14 +296,15 @@ async def token_chain_harness(
         await stack.enter_async_context(serve_app(backend, port=backend_port))
         await stack.enter_async_context(serve_app(downstream_app, port=downstream_port))
         await stack.enter_async_context(serve_app(console, port=console_port))
-        operator = await stack.enter_async_context(httpx.AsyncClient(base_url=console_url, follow_redirects=True))
+        operator = await stack.enter_async_context(
+            httpx.AsyncClient(base_url=console_url, follow_redirects=True, headers={"Origin": console_url})
+        )
         await operator.get("/auth/login")
         me = await operator.get("/auth/me")
         assert me.status_code == 200, me.text
         assert me.json() == {"username": _OPERATOR_USERNAME}
 
-        csrf = (await operator.get("/api/capabilities/csrf")).json()["csrf_token"]
-        connected = await operator.post("/api/mcp/operator-auth/grocy-test/connect", headers={"X-CSRF-Token": csrf})
+        connected = await operator.post("/api/mcp/operator-auth/grocy-test/connect")
         assert connected.status_code == 200, connected.text
         callback = await _approve_downstream_consent(operator, connected.json()["authorization_url"])
         assert callback.status_code == 303, callback.text
@@ -346,7 +343,6 @@ async def token_chain_harness(
                 binding_id=authorization.binding_id,
             ),
             downstream_url=downstream_url,
-            csrf=csrf,
             stored_reference=stored_reference,
             exchange_gate=exchange_gate,
             exchanged_assertions=exchanged_assertions,

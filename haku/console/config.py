@@ -218,12 +218,8 @@ class Settings(BaseSettings):
     static_dir: Path | None = None
 
     # Capability tier. launch_routine enables POST /api/capabilities/launch-routine
-    # (None → the capability returns 503). csrf_secret signs the double-submit CSRF
-    # tokens that gate the capability tier; when unset, create_app generates an
-    # ephemeral one at startup (fine for the single-replica console — a restart just
-    # makes the SPA refetch its token).
+    # (None → the capability returns 503).
     launch_routine: LaunchRoutineConfig | None = None
-    csrf_secret: SecretStr | None = None
 
     # The Authentik-gated origin of Haku's own UI service (runs in haku-sandbox), which the
     # console frames full-page as a sandboxed cross-origin iframe; the CSP allows framing it
