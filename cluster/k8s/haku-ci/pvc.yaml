@@ -3,7 +3,7 @@
 # (config.yaml `options` + the dind mount in deployment.yaml). Without it the runner pays a
 # full cold Bazel build every job — job containers are ephemeral, so the Bazel server, output
 # base, disk cache, and repo cache are discarded per job (design:
-# cluster/docs/plans/haku_ci_warm_bazel_server.md, "Tier 1"). capacity:1 keeps the cache a
+# haku/plans/ci_warm_bazel_server.md, "Tier 1"). capacity:1 keeps the cache a
 # single writer, so a shared output base is safe.
 #
 # Deviation from the repo's seaweedfs-ovh default (cluster/AGENTS.md § Storage Selection): a

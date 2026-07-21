@@ -60,7 +60,7 @@ module resolution + Skyframe analysis, single-threaded) plus fixed per-job overh
 analysis phase is exactly what a warm server (below) removes.
 
 A related egress question — could the proxy allow only specific GitHub repos? — was
-investigated separately: <../lessons_learned/2026_07_21_egress_proxy_repo_filtering.md>.
+investigated separately: <../docs/egress_proxy_repo_filtering.md>.
 
 ## Goal / non-goals
 
