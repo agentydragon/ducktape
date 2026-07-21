@@ -359,8 +359,8 @@ def create_app(
     @app.middleware("http")
     async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
-        # Route-owned HTML responses (Agent enrollment and operator-login failure) carry a stricter,
-        # nonce-bound policy. Preserve it; this default governs the SPA/API surfaces.
+        # The operator-login failure response carries its own stricter, nonce-bound policy.
+        # Preserve it; this default governs the SPA/API surfaces.
         response.headers.setdefault("Content-Security-Policy", csp)
         response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
         response.headers.setdefault("Referrer-Policy", REFERRER_POLICY)
@@ -380,11 +380,12 @@ def create_app(
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(oauth_connection_result.router, dependencies=operator_only)
+    app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(node_daemons.operator_router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session or CSRF token.
     app.include_router(node_daemons.machine_router)
-    app.include_router(enrollment_routes.router)
+    app.include_router(enrollment_routes.entry_router)
 
     deployment_info = build_deployment_info()
 

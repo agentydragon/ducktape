@@ -58,7 +58,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260721041616-a698993 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260721051306-2f9df39 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -68,9 +68,9 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
-              value: devel-20260721041616-a698993 # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260721051306-2f9df39 # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE_STATIC_IMAGE_TAG
-              value: devel-20260721041230-a698993 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
+              value: devel-20260721051543-2f9df39 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
@@ -281,7 +281,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260721041230-a698993 # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: ghcr.io/agentydragon/haku-console-static:devel-20260721051543-2f9df39 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           env:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template

@@ -54,10 +54,8 @@ binding, expiry, form/CSRF validation, Agent creation or reconnection, authoriza
 protocol continuation. This trusted Console route does not render inside or disclose enrollment
 state to the sandboxed, cross-origin Haku UI frame.
 
-The current backend-rendered enrollment pages are migration state, not the desired ownership
-boundary. Move their view model and actions behind same-origin Console APIs, add the Agents section
-and enrollment route atomically, then remove the duplicate Jinja enrollment, continuation, and
-denial surfaces.
+The enrollment view model and actions are exposed only through same-origin Console APIs. The
+Settings migration removed the duplicate Jinja enrollment, continuation, and denial surfaces.
 
 ## Remaining non-SPA surfaces
 

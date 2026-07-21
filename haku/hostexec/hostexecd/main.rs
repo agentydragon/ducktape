@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
 use authorize::authorize;
+use claim::{ClaimedExecution, RunRequest, decode_run_request};
 use clap::Parser;
 use exec::{ExecRequest, ExecResult, run_command};
 use jwks::Jwks;
@@ -67,28 +68,9 @@ struct ClaimRequest {
     wait_seconds: u8,
 }
 
-#[derive(Deserialize)]
-struct ClaimedExecution {
-    execution_id: String,
-    backend: String,
-    payload: RunRequest,
-    lease_token: String,
-    lease_expires_at: String,
-}
-
 struct ExecutionLease {
     execution_id: String,
     lease_token: String,
-}
-
-#[derive(Deserialize)]
-struct RunRequest {
-    token: String,
-    run_as: String,
-    cmd: String,
-    cwd: Option<String>,
-    max_bytes: usize,
-    timeout_ms: u64,
 }
 
 #[derive(Serialize)]
@@ -200,6 +182,11 @@ impl App {
         Ok(())
     }
 
+    async fn reject_claim(&self, lease: &ExecutionLease, error: &str) -> Result<()> {
+        warn!("rejecting execution {}: {error}", lease.execution_id);
+        self.submit_result(lease, Err(error)).await
+    }
+
     async fn execute(&self, request: RunRequest) -> Result<ExecResult> {
         let header =
             jsonwebtoken::decode_header(&request.token).context("malformed operator token")?;
@@ -242,9 +229,6 @@ impl App {
             lease_token,
             lease_expires_at,
         } = claim;
-        if backend != "hostexec" {
-            return Err(anyhow!("unsupported backend {backend}"));
-        }
         let lease = ExecutionLease {
             execution_id,
             lease_token,
@@ -253,6 +237,19 @@ impl App {
             "claimed execution {} lease_expires_at={}",
             lease.execution_id, lease_expires_at
         );
+        if backend != "hostexec" {
+            self.reject_claim(&lease, &format!("unsupported backend {backend}"))
+                .await?;
+            return Ok(());
+        }
+        let payload = match decode_run_request(payload) {
+            Ok(payload) => payload,
+            Err(error) => {
+                self.reject_claim(&lease, &format!("invalid hostexec payload: {error}"))
+                    .await?;
+                return Ok(());
+            }
+        };
         let execution = self.execute(payload);
         tokio::pin!(execution);
         let mut renewals = interval(Duration::from_secs(

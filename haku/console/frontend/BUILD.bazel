@@ -432,9 +432,21 @@ js_library(
 )
 
 js_library(
+    name = "agent_enrollment_panel",
+    srcs = ["agent_enrollment_panel.tsx"],
+    deps = [
+        ":client",
+        ":toast",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
     deps = [
+        ":agent_enrollment_panel",
         ":approval_state",
         ":bridge",
         ":client",
@@ -512,6 +524,7 @@ js_library(
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
+        "agent_enrollment_panel.tsx",
         "app.tsx",
         "approval_state.ts",
         "calendar_client.ts",

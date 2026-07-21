@@ -6,7 +6,6 @@ import asyncio
 import base64
 import datetime
 import hashlib
-import html
 import re
 import secrets
 from collections.abc import AsyncGenerator, Generator
@@ -1211,13 +1210,6 @@ def _pkce_challenge(code_verifier: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
 
 
-def _hidden_input(page: str, name: str) -> str:
-    match = re.search(rf'<input[^>]+name="{name}"[^>]+value="([^"]+)"', page)
-    if match is None:
-        raise AssertionError(f"OAuth consent page has no {name!r} input")
-    return match.group(1)
-
-
 def test_mcp_oauth_requires_postgres_persistence() -> None:
     provider = {
         "oidc_issuer": "https://auth.example.test/application/o/haku-console-mcp/",
@@ -1366,20 +1358,30 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 assert enrollment_url.startswith(f"{base}/auth/agent-enrollment/")
 
                 enrollment = await anon.get(enrollment_url, follow_redirects=True)
-                assert enrollment.status_code == 200, enrollment.text
-                assert "Connect an agent" in enrollment.text
-                create_action = re.search(r'<form method="post" action="([^"]+/new)">', enrollment.text)
-                assert create_action is not None
+                settings_redirect = next(
+                    response
+                    for response in reversed(enrollment.history)
+                    if response.headers.get("location", "").startswith("/_console/settings/agents/enroll/")
+                )
+                settings_enrollment_path = settings_redirect.headers["location"]
+                assert settings_enrollment_path.startswith("/_console/settings/agents/enroll/")
+                interaction_id = settings_enrollment_path.rsplit("/", 1)[-1]
+                enrollment_view = await anon.get(f"{base}/api/agent-enrollment/{interaction_id}")
+                assert enrollment_view.status_code == 200, enrollment_view.text
+                enrollment_data = enrollment_view.json()
+                assert enrollment_data["client_software"] == "claude.ai"
                 approved = await anon.post(
-                    f"{base}{create_action.group(1)}",
+                    f"{base}/api/agent-enrollment/{interaction_id}/decision",
                     headers={"Origin": base},
-                    data={"form_token": _hidden_input(enrollment.text, "form_token"), "agent_name": "OAuth Claude"},
+                    json={
+                        "kind": "create",
+                        "form_token": enrollment_data["form_token"],
+                        "display_name": "OAuth Claude",
+                    },
                     follow_redirects=False,
                 )
                 assert approved.status_code == 200, approved.text
-                continue_link = re.search(r'<a class="continue" href="([^"]+)">', approved.text)
-                assert continue_link is not None
-                upstream_authorize = httpx.URL(html.unescape(continue_link.group(1)))
+                upstream_authorize = httpx.URL(approved.json()["authorization_url"])
                 assert str(upstream_authorize).startswith(f"{oidc.origin}/application/o/authorize/?")
                 assert upstream_authorize.params["redirect_uri"] == f"{base}/mcp/auth/callback"
 

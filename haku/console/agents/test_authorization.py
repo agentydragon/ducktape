@@ -33,7 +33,7 @@ from haku.console.agents.enrollment import (
     EnrollmentDecisionConflictError,
     ReconnectAgentDecision,
 )
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, EnrollmentPhase
+from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
 from haku.console.conftest import console_sessions
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -287,6 +287,29 @@ async def _create_grant(
             grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
         )
     return grant
+
+
+async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_binding(db_url: str) -> None:
+    harness = _harness(db_url)
+    assert await harness.authority.list_agents(operator_id=harness.browser.operator_id) == ()
+
+    grant = await _create_grant(harness, label="listed", display_name="Listed Agent", activate=True)
+    [active] = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
+    assert active.agent_id == grant.actor.agent_id
+    assert active.display_name == "Listed Agent"
+    assert active.status is AgentStatus.ACTIVE
+    assert active.credential_kind is CredentialKind.OAUTH
+    assert active.credential_status is CredentialBindingStatus.ACTIVE
+    assert active.last_seen_at == harness.clock.now
+
+    await harness.authority.revoke_grant(grant_id=grant.grant_id)
+    [disabled] = await harness.authority.list_agents(operator_id=harness.browser.operator_id)
+    assert disabled.agent_id == active.agent_id
+    assert disabled.status is AgentStatus.DISABLED
+    assert disabled.credential_status is CredentialBindingStatus.REVOKED
+
+    other = _harness(db_url, subject="other-operator")
+    assert await other.authority.list_agents(operator_id=other.browser.operator_id) == ()
 
 
 async def test_reservation_accumulates_exact_fastmcp_validated_redirects(db_url: str) -> None:
