@@ -72,9 +72,12 @@ resource "forgejo_branch_protection" "state_main" {
   enable_push         = true
   enable_status_check = true
   # Context format observed live: "<workflow> / <job> (<event>)".
+  # State validation (validate_state + freshness_lint) folded into the bazel-ci `bazel`
+  # job so it reuses that job's warm Bazel server instead of paying a second cold
+  # load+analyze in its own container (haku-state .forgejo/workflows/bazel-ci.yaml); the
+  # standalone validate-state workflow was retired, so its context is gone from this list.
   status_check_contexts = [
     "bazel-ci / bazel (pull_request)",
-    "validate-state / validate (pull_request)",
     "linkcheck / linkcheck (pull_request)",
   ]
 }
