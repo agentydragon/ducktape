@@ -7,6 +7,7 @@ import os
 from typing import Any, Literal
 
 from github import Auth, Github
+from pydantic import BaseModel
 
 CheckConclusion = Literal[
     "action_required", "cancelled", "failure", "neutral", "skipped", "stale", "startup_failure", "success", "timed_out"
@@ -23,6 +24,14 @@ CHECK_CONCLUSIONS = (
     "success",
     "timed_out",
 )
+
+
+class CheckRunOutput(BaseModel):
+    title: str
+    summary: str
+
+    def api_payload(self) -> dict[str, str | list[dict[str, str | int]]]:
+        return {"title": self.title, "summary": self.summary}
 
 
 def upsert_check_run(
@@ -52,7 +61,7 @@ def upsert_check_run(
         if len(existing) > 1:
             raise ValueError(f"multiple {name!r} checks have external ID {external_id!r}")
 
-        output = {"title": name, "summary": summary[:65000]}
+        output = CheckRunOutput(title=name, summary=summary[:65000]).api_payload()
         optional: dict[str, Any] = {
             **({"conclusion": conclusion} if conclusion is not None else {}),
             **({"details_url": details_url} if details_url is not None else {}),
