@@ -1,7 +1,7 @@
 # devinfra/pr_visuals
 
 Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
-(`.github/workflows/haku-pr-visuals-publish.yml`) runs `publisher.py` after
+(`.github/workflows/pr-visuals-publish.yml`) runs `publisher.py` after
 every successful Bazel CI run. It scans the run's test invocations for targets
 whose undeclared outputs contain a `visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
