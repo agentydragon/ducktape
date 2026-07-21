@@ -14,7 +14,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launchBrowser } from "../../../../util/testing/frontend_visual/launcher.mjs";
+import {
+  DISABLE_ANIMATIONS_CSS,
+  frozenClockScript,
+  launchDeterministicBrowser,
+} from "../../../../util/testing/frontend_visual/launcher.mjs";
 import { writeVisualReviewManifest } from "../../../../util/testing/frontend_visual/visual-review-manifest.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -68,7 +72,7 @@ function pageHtml(css, harnessJs, scene, colorScheme) {
   return [
     "<!doctype html><html><head><meta charset='utf-8'>",
     "<base href='https://haku-console.test/'>",
-    `<style>${css}</style></head><body><div id='app'></div>`,
+    `<style>${css}${DISABLE_ANIMATIONS_CSS}</style></head><body><div id='app'></div>`,
     `<script>window.__SCENE__=${JSON.stringify(scene)};</script>`,
     `<script>window.__COLOR_SCHEME__=${JSON.stringify(colorScheme)};</script>`,
     `<script>${harnessJs}</script></body></html>`,
@@ -89,16 +93,26 @@ const harnessJs = readInput("HARNESS_JS", "dist", "harness.js");
 const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
+// Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
+// Date.now() into sampleRecentToolCalls, so without a frozen clock any date-relative text
+// (e.g. formatAge) would drift between runs instead of rendering the same value every time.
+const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
+
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
 // @playwright_browsers build under RBE) or the ambient Playwright browser for
-// a local `bazel run` — both resolved inside launchBrowser.
-const browser = await launchBrowser({ args: ["--force-color-profile=srgb"] });
+// a local `bazel run` — both resolved inside launchDeterministicBrowser. The deterministic flag
+// bundle (font hinting/subpixel positioning, LCD text, Skia runtime opts, swiftshader, …) pins
+// general rasterization, matching the same launcher every other visual-test consumer uses — see
+// haku/console/debug/pr_visuals_flaky_diffs.md for the specific bug this + DISABLE_ANIMATIONS_CSS
+// below fix (an unguarded Mantine `Indicator processing` CSS animation was the actual cause).
+const browser = await launchDeterministicBrowser();
 const assets = [];
 const mockHakuUi = readInput("MOCK_HAKU_UI", "mock_haku_ui.html");
 try {
   for (const colorScheme of COLOR_SCHEMES) {
     for (const { name, viewport, click, clicks, closeApprovals, element, fullPage = false, frame } of SCENES) {
       const page = await browser.newPage();
+      await page.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
       page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
       page.on("pageerror", (error) => console.error(`[${name}] browser error:`, error));
       await page.setRequestInterception(true);

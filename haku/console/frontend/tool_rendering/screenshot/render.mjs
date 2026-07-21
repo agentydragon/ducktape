@@ -10,7 +10,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { launchBrowser } from "../../../../../util/testing/frontend_visual/launcher.mjs";
+import {
+  DISABLE_ANIMATIONS_CSS,
+  frozenClockScript,
+  launchDeterministicBrowser,
+} from "../../../../../util/testing/frontend_visual/launcher.mjs";
 import { writeVisualReviewManifest } from "../../../../../util/testing/frontend_visual/visual-review-manifest.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +60,7 @@ function pageHtml(css, harnessJs, colorScheme, globals = {}) {
   return [
     "<!doctype html><html><head><meta charset='utf-8'>",
     "<base href='https://haku-console.test/'>",
-    `<style>${css}</style></head><body><div id='app'></div>`,
+    `<style>${css}${DISABLE_ANIMATIONS_CSS}</style></head><body><div id='app'></div>`,
     `<script>window.__SCENE__="preview";</script>`,
     `<script>window.__COLOR_SCHEME__=${JSON.stringify(colorScheme)};</script>`,
     `<script>${injectGlobals}</script>`,
@@ -69,16 +73,22 @@ const harnessJs = readInput("HARNESS_JS", "dist", "harness.js");
 const outDir = outputDir();
 mkdirSync(outDir, { recursive: true });
 
+// Matches visual-test-lib.mjs's fixed epoch — see screenshots/render.mjs for why.
+const FROZEN_NOW_MS = Date.parse("2025-02-01T12:00:00Z");
+
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
 // @playwright_browsers build under RBE) or the ambient Playwright browser for
-// a local `bazel run` — both resolved inside launchBrowser.
-const browser = await launchBrowser({ args: ["--force-color-profile=srgb"] });
+// a local `bazel run` — both resolved inside launchDeterministicBrowser, matching the same
+// launcher every other visual-test consumer uses. See screenshots/render.mjs and
+// haku/console/debug/pr_visuals_flaky_diffs.md for what this + DISABLE_ANIMATIONS_CSS fix.
+const browser = await launchDeterministicBrowser();
 const assets = [];
 try {
   // Discover the fixture manifest (slug + label per sample) the harness exposes, then capture one
   // page per fixture × variant × scheme. Each page renders a single card in isolation, at its real
   // approvals-panel width (card.tsx's `.haku-shell-panels` wrapper) — no shared gallery.
   const discover = await browser.newPage();
+  await discover.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
   await discover.setContent(pageHtml(css, harnessJs, COLOR_SCHEMES[0], { __FIXTURE__: 0, __VARIANT__: "compact" }), {
     waitUntil: "load",
   });
@@ -93,6 +103,7 @@ try {
     for (const colorScheme of COLOR_SCHEMES) {
       for (const variant of PREVIEW_VARIANTS) {
         const page = await browser.newPage();
+        await page.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
         await page.setViewport({ width: VIEWPORT_WIDTH, height: 900, deviceScaleFactor: 2 });
         await page.emulateMediaFeatures([
           { name: "prefers-reduced-motion", value: "reduce" },

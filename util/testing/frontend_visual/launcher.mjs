@@ -27,6 +27,27 @@ export function frozenClockScript(nowMs) {
   return `(() => { ${source}\nfrozenClock(${nowMs}); })();`;
 }
 
+/**
+ * CSS that hard-pins every animation/transition to its first frame.
+ *
+ * `emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }])` only helps for
+ * component CSS that actually checks that media feature — some don't (e.g. Mantine's
+ * `Indicator processing` ping, an unconditional `animation: … 1000ms linear infinite` with no
+ * `prefers-reduced-motion` guard in its shipped stylesheet). An animation like that keeps
+ * running on the compositor's own clock regardless of a frozen `Date`, so whichever frame lands
+ * at screenshot time depends on real elapsed time — i.e. on scheduling jitter between runs.
+ * Callers that inline their own page HTML can concatenate this into their `<style>` tag; it must
+ * be present before the animated element mounts, since `animation-play-state: paused` only pins
+ * an animation deterministically to its start frame when it's already in effect at creation —
+ * applying it later would freeze whatever frame the animation happened to reach by then.
+ */
+export const DISABLE_ANIMATIONS_CSS = `
+*, *::before, *::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+`;
+
 /** Launch headless Chromium with the container-safe base flags plus `args`. */
 export async function launchBrowser({ args = [], headless = true, userDataDir } = {}) {
   const launchOptions = { args: [...CONTAINER_BASE_ARGS, ...args], headless };
