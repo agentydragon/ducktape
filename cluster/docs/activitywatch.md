@@ -1,8 +1,13 @@
 # ActivityWatch
 
 Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
-The cluster is the query surface; individual devices keep local ActivityWatch capture and push
-`aw-sync` databases through Syncthing.
+The cluster is intended to be the query surface; individual devices keep local ActivityWatch
+capture and currently push `aw-sync` staging databases through Syncthing.
+
+**Ingestion is not operational.** The importer and its Flux Kustomization are suspended after
+the first live pull canary exposed source mutation, provenance collisions, and already-amplified
+desktop staging data. The central database contains partial canary output and is not canonical.
+See [the importer canary record](../../debug/activitywatch_importer_canary.md).
 
 No built-in ActivityWatch auth is enabled. Read/query access goes through the
 read-only proxy and, for public access, Authentik.
@@ -26,14 +31,17 @@ read-only proxy and, for public access, Authentik.
   retaining the inbox makes Syncthing treat the existing files as untracked local changes
   and create conflict copies when peers reconnect. OVH nodes have `region: hil` and
   `zone: hil-ovh`; do not use `region: hil-ovh`, which matches no node.
-- **Importer**: an `activitywatch-importer` CronJob runs every five minutes with
-  `aw-sync sync --mode pull` directly against the Syncthing inbox. An init container
+- **Importer**: an `activitywatch-importer` CronJob is configured for five-minute
+  `aw-sync sync --mode pull` runs directly against the Syncthing inbox, but
+  `spec.suspend: true` prevents scheduled execution. An init container
   fails closed unless every discovered database has the canonical
   `<device-id>/test.db` shape, so Syncthing conflict copies are never imported. The
   importer mounts the inbox read-write because upstream `aw-sync` opens remote SQLite
   databases through its writable datastore implementation and unconditionally creates
-  `/sync-inbox/activitywatch-cluster/test.db`, even in pull-only mode. Receive-only
-  Syncthing keeps those cluster-local changes from propagating to desktop peers.
+  `/sync-inbox/activitywatch-cluster/test.db`, even in pull-only mode. The canary proved
+  that this also migrates source databases in place. Receive-only Syncthing does not make
+  those writes safe: it classifies them as local changes and can create conflict copies
+  when peer versions arrive.
 - **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel
   (`@ducktape_activitywatch//:image`). The image includes both `aw-server` and upstream
   `aw-sync`. The pinned `aw-sync` source is patched to use reqwest's rustls backend
@@ -50,6 +58,24 @@ read-only proxy and, for public access, Authentik.
   Syncthing expects.
 - **No mesh sidecar**: ActivityWatch is not joined to Nebula. Devices send data through
   Syncthing, and query access should use an explicit in-cluster or authenticated route.
+
+## Current Incident State
+
+Verified 2026-07-21 UTC:
+
+- Flux Kustomization `activitywatch` and CronJob `activitywatch-importer` are suspended.
+- Deployments `activitywatch` and `activitywatch-syncthing` are each ready with one replica.
+- Manual Job `activitywatch-importer-canary-1` completed, but its result failed the
+  correctness gates below.
+- The central query database was empty before the canary and now contains partial canary
+  imports. It must be rebuilt before another test.
+- The four source files were restored byte-for-byte from pre-canary snapshots before
+  Syncthing restarted. Syncthing then correctly preserved the two restored local versions
+  as new rugged/wyrm2 conflict files when newer peer versions arrived. Their hashes equal
+  the recorded pre-canary snapshots, which attributes these conflicts to the manual
+  restoration rather than another lost Syncthing index.
+- Do not delete the new conflict files until their hashes and provenance in the canary
+  record have been preserved. The importer rejects them and remains suspended.
 
 ## Query Auth
 
@@ -121,9 +147,18 @@ TODO:
 - Revisit whether the Syncthing config initContainer can avoid copying `config.xml` once
   we have a supported way to keep Syncthing's config file writable without staging it out
   of the ConfigMap.
-- If another `*.sync-conflict-*.db` appears after the Syncthing index is persistent,
-  suspend the importer and investigate before deleting it. The importer intentionally
-  refuses to run while any non-canonical database is present.
+- If a `*.sync-conflict-*.db` appears, keep the importer suspended and establish whether
+  the file represents a receiver-local write, an index reset, or an independent peer
+  history before deleting it. Receive-only prevents propagation; it does not prevent
+  local writes or conflicts.
+- Replace or repair the desktop export path before enabling ingestion. Repeated
+  `aw-sync --mode push` runs amplified AFK and browser heartbeat rows in the exported
+  staging databases; Atlas had 84,814 AFK rows but only 4,738 distinct
+  `(starttime,endtime,data)` rows at canary time. This is a concrete amplified input
+  behind the earlier database growth and memory pressure.
+- Do not use direct upstream `aw-sync --mode pull` on the receive-only inbox. It opens
+  and migrates sources read-write, creates its own `activitywatch-cluster/test.db`, and
+  derives provenance from bucket hostname rather than the source device directory.
 - Move the query server off `local-path-proxmox` once a validated storage target or backup
   strategy exists. Until then, treat the cluster DB as node-local state that must be backed
   up or rebuildable from synced device folders.
@@ -155,7 +190,11 @@ Current synced desktops are `rugged`, `wyrm2`, `iguana`, and `atlas`.
 - `aw-sync` runs without `--start-date`, so initial rollout backfills existing local
   ActivityWatch history instead of silently dropping pre-rollout events.
 
-## Spike Results
+This desktop export path is the identified amplification source and must be replaced or
+made idempotent. The files under `~/.activitywatch-sync` are staging databases, not the
+desktop server's authoritative SQLite database.
+
+## Superseded Spike Result
 
 On 2026-07-06, the local spike used two temporary ActivityWatch servers:
 
@@ -168,10 +207,15 @@ On 2026-07-06, the local spike used two temporary ActivityWatch servers:
 7. The receiver created bucket `aw-watcher-window_rugged-spike-synced-from-rugged` with
    bucket data `{"$aw.sync.origin":"rugged"}` and the original event.
 
-That spike used an extra host folder because the first design kept one Syncthing folder per
-source host. The current design flattens the Syncthing folder: each ActivityWatch server
-writes only its own `<sync-root>/<aw-device-id>/test.db`, and imports preserve provenance
-by appending `-synced-from-<bucket-hostname>` to cluster-side bucket IDs.
+That spike proved only that a single push and pull could move one event. It did not exercise
+repeated desktop pushes, a read-only Syncthing receiver, old database migrations, or two
+browser buckets whose hostname is `localhost`. The live canary disproved the resulting
+design assumptions:
+
+- repeated pushes can amplify heartbeat-shaped rows in staging databases;
+- pull mode writes to every opened SQLite database and creates a cluster-local staging DB;
+- provenance from `bucket.hostname` collapses rugged and wyrm2 browser history into the
+  same `...-synced-from-localhost` destination.
 
 ## Adding More Devices
 
@@ -188,8 +232,9 @@ For another desktop:
    `//cluster/validation:test_activitywatch_syncthing_config` parity test fails if the XML
    device IDs drift from the public certificates or if a cert is missing its SOPS key.
 
-Each device contributes its own ActivityWatch device-ID subdirectory under the shared root,
-so no cluster-side per-host folder or importer sidecar is needed for normal desktops.
+Do not add another device until the export/import format is replaced or repaired. The next
+design must have a repo-managed stable source identity, immutable or read-only source
+snapshots, and an idempotency test using repeated exports and imports.
 
 Phones need a separate pass. ActivityWatch Android has sync-facing code upstream, but this
 repo has not yet wired a phone into the Syncthing folder topology or verified Android
@@ -211,6 +256,10 @@ Last checked 2026-07-21:
   `sync-advanced --mode push`.
 - The pinned `@ducktape_activitywatch` source commit supports explicit pull-only mode,
   bounded 5,000-event chunks, and resuming from the destination's newest event.
+- A live pull-only canary failed: it migrated all four sources, created
+  `activitywatch-cluster/test.db` in the inbox, collided both `localhost` browser
+  buckets, and imported already-amplified Atlas AFK history. Passing build tests do not
+  establish safe runtime semantics for this topology.
 - Full `nix build .#nixosConfigurations.rugged.config.system.build.toplevel --no-link`
   still fails before ActivityWatch on the unrelated
   `nix/packages/gaffer.nix` `builtins.fetchClosure` blocker.

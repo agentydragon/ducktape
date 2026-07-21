@@ -1,4 +1,4 @@
-# ActivityWatch Syncthing conflict evidence
+# ActivityWatch Syncthing index-loss conflict evidence
 
 Captured before the one-time conflict cleanup on 2026-07-21 UTC.
 
@@ -12,9 +12,14 @@ two conflict filenames carry those same timestamps.
 
 This strongly identifies loss of the receiver index across restart as the conflict source,
 not simultaneous desktop writers. The fix persists `/var/syncthing/data` on
-`activitywatch-syncthing-state`. The first rollout starts with an empty persistent index and
-may create one final set of conflicts; those will be inventoried and deleted after the new
-index has converged. Any later conflict is a new incident and must stop the importer.
+`activitywatch-syncthing-state`. The two files below were deleted after the new index
+converged.
+
+Later conflicts are not automatically evidence that the index was lost again. The importer
+canary deliberately restored older files on the receive-only receiver, and Syncthing
+correctly preserved those local versions as conflicts when newer peer versions arrived.
+See [the importer canary record](activitywatch_importer_canary.md). Every conflict still
+stops the importer and requires attribution before deletion.
 
 ## Files preserved in the diagnostic snapshot
 
