@@ -257,7 +257,7 @@ def _persist_operator_authentik_token(request: Request, operator_id: UUID, token
         logger.warning("operator login: failed to persist Authentik token for hostexec", exc_info=True)
 
 
-@router.get("/logout")
+@router.post("/logout", dependencies=[Depends(require_operator_mutation_origin)])
 async def logout(request: Request) -> RedirectResponse:
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)

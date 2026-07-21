@@ -68,7 +68,7 @@ export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
 }
 
 export async function consumeOAuthConnectionResult(resultId: string): Promise<OAuthConnectionResult> {
-  const { data, error } = await api.GET("/api/oauth-results/{result_id}", {
+  const { data, error } = await api.POST("/api/oauth-results/{result_id}", {
     params: { path: { result_id: resultId } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load the connection result"));

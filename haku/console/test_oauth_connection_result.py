@@ -33,9 +33,9 @@ def test_result_is_operator_bound_and_consumed_once(
             ),
         )
 
-        wrong_operator = other.get(f"/api/oauth-results/{result_id}")
-        consumed = owner.get(f"/api/oauth-results/{result_id}")
-        replay = owner.get(f"/api/oauth-results/{result_id}")
+        wrong_operator = other.post(f"/api/oauth-results/{result_id}")
+        consumed = owner.post(f"/api/oauth-results/{result_id}")
+        replay = owner.post(f"/api/oauth-results/{result_id}")
 
     assert wrong_operator.status_code == 404
     assert consumed.json() == {
@@ -61,7 +61,7 @@ def test_expired_result_is_not_returned(
             assert row is not None
             row.expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
 
-        response = owner.get(f"/api/oauth-results/{result_id}")
+        response = owner.post(f"/api/oauth-results/{result_id}")
 
     assert response.status_code == 404
 

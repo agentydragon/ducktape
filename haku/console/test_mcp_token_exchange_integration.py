@@ -309,7 +309,7 @@ async def token_chain_harness(
         callback = await _approve_downstream_consent(operator, connected.json()["authorization_url"])
         assert callback.status_code == 303, callback.text
         result_id = parse_qs(urlparse(callback.headers["location"]).query)["oauth_result"][0]
-        result = await operator.get(f"/api/oauth-results/{result_id}")
+        result = await operator.post(f"/api/oauth-results/{result_id}")
         assert result.json() == {
             "status": "success",
             "title": "Connected to grocy-test",

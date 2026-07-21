@@ -92,7 +92,7 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
   `(operator_id, connection_name)` and records which provider instance issued it. A
   replica-coordinated background sweep refreshes expiring remote-server, provider, and (when
   hostexec is enabled) Operator-login grants even when no foreground tool call is using them.
-- `GET /api/oauth-results/{result_id}` — consumes the short-lived, Operator-bound result created by
+- `POST /api/oauth-results/{result_id}` — consumes the short-lived, Operator-bound result created by
   either account-link callback. Provider callbacks redirect to `/_console/oauth-result/{result_id}`;
   MCP callbacks return to `/_console/settings` and announce the consumed result there. Result text
   is never carried in either URL. See

@@ -631,7 +631,7 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
             "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}, follow_redirects=False
         )
         wrong_result_id = parse_qs(urlparse(wrong_operator.headers["location"]).query)["oauth_result"][0]
-        wrong_result = operator_b.get(f"/api/oauth-results/{wrong_result_id}")
+        wrong_result = operator_b.post(f"/api/oauth-results/{wrong_result_id}")
         completed = operator_a.get(
             "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}, follow_redirects=False
         )

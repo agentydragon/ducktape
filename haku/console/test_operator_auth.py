@@ -195,6 +195,9 @@ def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) 
         if route.path.startswith("/api/node-daemons/v1/"):
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin not in calls, route.path
+        elif route.path == "/auth/logout":
+            assert operator_auth.require_operator not in calls, route.path
+            assert operator_auth.require_operator_mutation_origin in calls, route.path
         else:
             assert operator_auth.require_operator in calls, route.path
             assert operator_auth.require_operator_mutation_origin in calls, route.path
@@ -204,6 +207,21 @@ def test_signed_operator_session_has_an_absolute_reauthentication_deadline(make_
     with make_operator_client(operator_session_expires_at=int(time.time()) - 1) as client:
         assert client.get("/auth/me").status_code == 401
         assert client.get("/api/config").status_code == 401
+
+
+def test_logout_is_an_exact_origin_post_that_clears_the_session(make_operator_client) -> None:
+    with make_operator_client() as client:
+        assert client.get("/auth/logout", follow_redirects=False).status_code == 405
+        rejected = client.post("/auth/logout", headers={"Origin": "https://attacker.test"}, follow_redirects=False)
+        assert rejected.status_code == 403
+        assert client.get("/auth/me").status_code == 200
+
+        logged_out = client.post("/auth/logout", follow_redirects=False)
+        assert logged_out.status_code == 303
+        assert logged_out.headers["location"] == "/"
+        deletion_cookie = logged_out.headers["set-cookie"]
+        assert "session=null" in deletion_cookie
+        assert "expires=Thu, 01 Jan 1970 00:00:00 GMT" in deletion_cookie
 
 
 def test_continuous_use_cannot_slide_operator_session_past_absolute_deadline(

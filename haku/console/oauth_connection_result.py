@@ -114,7 +114,7 @@ def result_redirect(
     return RedirectResponse(url=url, status_code=303)
 
 
-@router.get("/api/oauth-results/{result_id}", response_model=OAuthConnectionResult)
+@router.post("/api/oauth-results/{result_id}", response_model=OAuthConnectionResult)
 def consume_oauth_connection_result(
     result_id: UUID, store: OAuthConnectionResultStoreDep, actor: OperatorActorDep
 ) -> OAuthConnectionResult:
