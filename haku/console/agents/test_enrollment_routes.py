@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest_bazel
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from haku.console.agents.enrollment import (
@@ -27,7 +27,7 @@ from haku.console.agents.enrollment import (
 )
 from haku.console.agents.enrollment_routes import _operator_session, entry_router, operator_router
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.operator_auth import OperatorSession
+from haku.console.operator_auth import OperatorSession, require_operator_mutation_origin
 
 INTERACTION_ID = UUID("10000000-0000-4000-8000-000000000001")
 OPERATOR_ID = UUID("20000000-0000-4000-8000-000000000002")
@@ -133,7 +133,7 @@ def _client(
     fake = service or _FakeEnrollmentService()
     app.state.agent_enrollment_service = fake
     app.state.settings = SimpleNamespace(public_base_url="https://haku.test")
-    app.include_router(operator_router)
+    app.include_router(operator_router, dependencies=[Depends(require_operator_mutation_origin)])
     app.include_router(entry_router)
 
     def operator_session_override() -> OperatorSession | None:
@@ -272,7 +272,7 @@ def test_decision_rejects_invalid_origin_or_missing_browser_binding() -> None:
         headers = {} if origin is None else {"Origin": origin}
         rejected = client.post(f"{API_PATH}/decision", json=body, headers=headers)
         assert rejected.status_code == 403
-        assert rejected.json() == {"detail": "invalid Agent enrollment origin"}
+        assert rejected.json() == {"detail": "operator mutations require the console's exact Origin"}
         assert service.decisions == []
 
     client.cookies.clear()

@@ -18,6 +18,7 @@ import httpx
 import pytest
 import pytest_bazel
 import yaml
+from fastapi.routing import APIRoute
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import create_engine, func, select
 
@@ -35,6 +36,18 @@ _AGENT_TOKEN_ENV = "HAKU_CONSOLE_OPERATOR_AUTH_TEST_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_OPERATOR_AUTH_TEST_OPERATOR"
 _OPERATOR_SUBJECT = "op-subject-1"  # the opaque Authentik `sub` the mock IdP issues
 _OPERATOR_USERNAME = "agentydragon"
+_UNSAFE_HTTP_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _dependency_calls(route: APIRoute) -> set[object]:
+    pending = list(route.dependant.dependencies)
+    calls: set[object] = set()
+    while pending:
+        dependency = pending.pop()
+        if dependency.call is not None:
+            calls.add(dependency.call)
+        pending.extend(dependency.dependencies)
+    return calls
 
 
 class _MismatchedIssuerClient:
@@ -165,6 +178,26 @@ def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
     with make_client() as client:
         assert client.get("/api/tool-calls").status_code == 401
         assert client.get("/api/config").status_code == 401
+
+
+def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) -> None:
+    """Adding an unsafe browser route cannot silently omit exact-Origin admission."""
+    with make_client() as client:
+        unsafe_routes = [
+            route
+            for route in client.app.routes
+            if isinstance(route, APIRoute) and _UNSAFE_HTTP_METHODS.intersection(route.methods)
+        ]
+
+    assert unsafe_routes
+    for route in unsafe_routes:
+        calls = _dependency_calls(route)
+        if route.path.startswith("/api/node-daemons/v1/"):
+            assert operator_auth.require_operator not in calls, route.path
+            assert operator_auth.require_operator_mutation_origin not in calls, route.path
+        else:
+            assert operator_auth.require_operator in calls, route.path
+            assert operator_auth.require_operator_mutation_origin in calls, route.path
 
 
 def test_signed_operator_session_has_an_absolute_reauthentication_deadline(make_operator_client) -> None:

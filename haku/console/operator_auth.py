@@ -1,8 +1,8 @@
 """Operator **browser** authentication for haku-console (Authentik OIDC).
 
 The console authenticates the operator's browser itself via the Authentik authorization-code flow,
-storing the identity in a signed session cookie. `/mcp` accepts either that session (with exact
-Origin + CSRF checks) or an Agent credential through MultiAuth's OIDCProxy/static-bearer path.
+storing the identity in a signed session cookie. `/mcp` accepts either that session (with an exact
+Origin check) or an Agent credential through MultiAuth's OIDCProxy/static-bearer path.
 
 `require_operator` guards the entire browser API (approvals, decisions, audit history, and account
 linking) with a DB-revalidated canonical Operator session.
@@ -124,10 +124,17 @@ def operator_username(request: Request) -> str | None:
     return session.username if session is not None else None
 
 
-def require_operator_origin(request: Request) -> None:
-    """Reject browser mutations that did not originate in the trusted console shell."""
-    settings = cast(Settings, request.app.state.settings)
-    if request.headers.get("origin") != settings.public_base_url.rstrip("/"):
+def exact_operator_origin(conn: HTTPConnection) -> bool:
+    """Whether a browser connection presents the console's canonical exact Origin."""
+    settings = cast(Settings, conn.app.state.settings)
+    return conn.headers.get("origin") == settings.public_base_url.rstrip("/")
+
+
+def require_operator_mutation_origin(conn: HTTPConnection) -> None:
+    """Reject unsafe operator-browser requests outside the trusted console shell."""
+    if conn.scope["type"] != "http" or conn.scope.get("method") in {"GET", "HEAD", "OPTIONS"}:
+        return
+    if not exact_operator_origin(conn):
         raise HTTPException(status_code=403, detail="operator mutations require the console's exact Origin")
 
 

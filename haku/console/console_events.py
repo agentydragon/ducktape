@@ -7,7 +7,6 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Iterable
 from typing import Annotated, ClassVar, Literal, cast
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import psycopg
@@ -15,7 +14,6 @@ from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from haku.console import operator_auth
-from haku.console.config import Settings
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 logger = logging.getLogger(__name__)
@@ -284,10 +282,7 @@ ConsoleEventHubDep = Annotated[ConsoleEventHub, Depends(_event_hub)]
 @router.websocket("/api/events/ws")
 async def console_events_ws(websocket: WebSocket, actor: operator_auth.OperatorActorDep) -> None:
     hub = cast(ConsoleEventHub, websocket.app.state.console_event_hub)
-    settings = cast(Settings, websocket.app.state.settings)
-    public_url = urlsplit(settings.public_base_url)
-    expected_origin = f"{public_url.scheme}://{public_url.netloc}"
-    if websocket.headers.get("origin") != expected_origin:
+    if not operator_auth.exact_operator_origin(websocket):
         await websocket.close(code=1008, reason="invalid websocket origin")
         return
     if not await hub.connect(websocket, actor.operator_id):

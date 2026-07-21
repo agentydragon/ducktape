@@ -705,9 +705,7 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
     return token
 
 
-@router.post(
-    "/api/mcp/operator-auth/{server_id}/connect", dependencies=[Depends(operator_auth.require_operator_origin)]
-)
+@router.post("/api/mcp/operator-auth/{server_id}/connect")
 async def connect_mcp_operator_auth(
     server_id: str, settings: SettingsDep, oauth_store: OAuthStoreDep, actor: OperatorActorDep
 ) -> McpOperatorAuthConnectResponse:
@@ -720,7 +718,7 @@ async def connect_mcp_operator_auth(
     )
 
 
-@router.delete("/api/mcp/operator-auth/{server_id}", dependencies=[Depends(operator_auth.require_operator_origin)])
+@router.delete("/api/mcp/operator-auth/{server_id}")
 async def disconnect_mcp_operator_auth(
     server_id: str, request: Request, oauth_store: OAuthStoreDep, event_hub: ConsoleEventHubDep, actor: OperatorActorDep
 ) -> McpOperatorAuthStatus:

@@ -20,7 +20,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from haku.console import operator_auth
 from haku.console.config import LaunchRoutineConfig
 from haku.console.deps import SettingsDep
 from haku.console.tools.routine import LaunchRoutineResult, RoutineLauncher
@@ -40,7 +39,7 @@ def _launch_config(settings: SettingsDep) -> LaunchRoutineConfig:
     return settings.launch_routine
 
 
-@router.post("/launch-routine", dependencies=[Depends(operator_auth.require_operator_origin)])
+@router.post("/launch-routine")
 async def launch_routine(
     config: Annotated[LaunchRoutineConfig, Depends(_launch_config)], body: LaunchRoutineRequest | None = None
 ) -> LaunchRoutineResult:

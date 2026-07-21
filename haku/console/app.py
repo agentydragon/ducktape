@@ -373,7 +373,7 @@ def create_app(
 
     # The browser API is operator-only. Agents use /mcp; static bearer support there does not grant
     # access to any /api/* route. The same endpoint separately recognizes the Operator session.
-    operator_only = [Depends(operator_auth.require_operator)]
+    operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)

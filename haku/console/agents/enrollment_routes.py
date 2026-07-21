@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Annotated, Literal, Never, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -131,17 +131,6 @@ def _login_redirect(interaction_id: UUID, browser_nonce: str | None) -> Redirect
     if browser_nonce is not None:
         return_to = f"{return_to}?{urlencode({'browser_nonce': browser_nonce})}"
     return RedirectResponse(url=f"/auth/login?{urlencode({'return_to': return_to})}", status_code=303)
-
-
-def _public_origin(settings: Settings) -> str:
-    parsed = urlsplit(settings.public_base_url)
-    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-
-
-def _require_same_origin(request: Request) -> None:
-    settings = cast(Settings, request.app.state.settings)
-    if request.headers.get("origin") != _public_origin(settings):
-        raise HTTPException(status_code=403, detail="invalid Agent enrollment origin")
 
 
 def _raise_interaction_error(error: Exception) -> Never:
@@ -278,7 +267,6 @@ async def decide_enrollment(
     session: OperatorSessionDep,
 ) -> Response:
     operator = _require_operator(session)
-    _require_same_origin(request)
     interaction_cookie = request.cookies.get(_INTERACTION_COOKIE)
     if interaction_cookie is None:
         raise HTTPException(status_code=403, detail="missing Agent enrollment browser binding")

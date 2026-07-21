@@ -61,7 +61,7 @@ from haku.console.oauth_token_support import (
     public_base_url,
     token_expires_at,
 )
-from haku.console.operator_auth import OperatorActorDep, require_operator_origin
+from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import (
     PROVIDER_DESCRIPTORS,
@@ -493,7 +493,7 @@ def _store(request: Request) -> PostgresProviderConnectionStore:
 ProviderConnectionStoreDep = Annotated[PostgresProviderConnectionStore, Depends(_store)]
 
 
-@router.post("/api/operator-connections/{connection}/connect", dependencies=[Depends(require_operator_origin)])
+@router.post("/api/operator-connections/{connection}/connect")
 async def connect_provider_connection(
     connection: str, settings: SettingsDep, store: ProviderConnectionStoreDep, actor: OperatorActorDep
 ) -> ProviderConnectionConnectResponse:
@@ -502,7 +502,7 @@ async def connect_provider_connection(
     )
 
 
-@router.delete("/api/operator-connections/{connection}", dependencies=[Depends(require_operator_origin)])
+@router.delete("/api/operator-connections/{connection}")
 async def disconnect_provider_connection(
     connection: str, store: ProviderConnectionStoreDep, event_hub: ConsoleEventHubDep, actor: OperatorActorDep
 ) -> ProviderUnconnected:

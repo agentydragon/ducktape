@@ -48,7 +48,7 @@ from haku.console.mcp_config import (
     _transport,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.operator_auth import OperatorActorDep, require_operator_origin
+from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -750,7 +750,7 @@ async def pending_approvals(service: ToolCallServiceDep, actor: OperatorActorDep
     return PendingApprovalsResponse(approvals=service.pending_approvals(actor=actor))
 
 
-@router.post("/api/tool-calls/{tool_call_id}/decision", dependencies=[Depends(require_operator_origin)])
+@router.post("/api/tool-calls/{tool_call_id}/decision")
 async def decide_approval(
     tool_call_id: str, body: ApprovalDecisionRequest, service: ToolCallServiceDep, actor: OperatorActorDep
 ) -> ApprovalDecisionResponse:
