@@ -158,6 +158,7 @@ py_library(
     deps = [
         ":config",
         ":deps",
+        ":operator_auth",
         "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//pydantic",
