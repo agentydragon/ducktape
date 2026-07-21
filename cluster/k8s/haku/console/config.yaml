@@ -47,12 +47,12 @@ mcp:
     - id: tana-rw
       backend:
         kind: remote_mcp
-        url: https://tana-mcp-facade.allegedly.works/mcp
+        # Cluster-internal callers authenticate directly with the account PAT. The credential
+        # lives only in haku-console; Haku receives proxied tool schemas/results, never the PAT.
+        url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
         auth:
-          kind: remote_server_oauth
-          client_registration:
-            kind: dynamic
-            client_name: Haku Console
+          kind: static_bearer
+          bearer_token_secret: tana-account-pat
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
     # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade / ibkr-mcp, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,

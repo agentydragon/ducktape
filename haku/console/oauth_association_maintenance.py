@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
 
-from sqlalchemy import Engine, Text, cast as sql_cast, literal, select, text, union_all
+from sqlalchemy import Engine, Text, cast as sql_cast, literal, or_, select, text, union_all
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
@@ -72,6 +72,16 @@ class OAuthAssociationMaintenance:
             OAuthTokenState.refresh_token.is_not(None),
             OAuthTokenState.token_expires_at.is_not(None),
             OAuthTokenState.token_expires_at <= refresh_before,
+            or_(
+                OAuthTokenState.refresh_failure_action.is_(None),
+                (
+                    (OAuthTokenState.refresh_failure_action == "retrying")
+                    & (
+                        OAuthTokenState.refresh_retry_at.is_(None)
+                        | (OAuthTokenState.refresh_retry_at <= datetime.datetime.now(datetime.UTC))
+                    )
+                ),
+            ),
         )
         candidates = [
             select(

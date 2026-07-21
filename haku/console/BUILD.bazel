@@ -207,6 +207,7 @@ py_library(
         ":oauth_token_support",
         ":operator_identity_store",
         "@pypi//mcp",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -231,6 +232,7 @@ py_library(
         "@pypi//fastapi_csrf_protect",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],

@@ -211,6 +211,8 @@ External clients that need MCP OAuth/DCR should use the separate public facade:
 This split is intentional:
 
 - internal `tana-mcp` stays simple and bearer-authenticated
+- `haku-console` is an internal client: it holds a namespace-reflected copy of the PAT and proxies
+  Tana tools to the inner Haku agent without disclosing the credential
 - public `tana-mcp-facade` handles Authentik OAuth and caller allowlisting
 - the Tana PAT never leaves Kubernetes
 

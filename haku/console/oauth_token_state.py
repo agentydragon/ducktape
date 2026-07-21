@@ -7,9 +7,11 @@ import datetime
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from mcp.shared.auth import OAuthToken
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.database_schema import OAuthTokenState
@@ -22,6 +24,52 @@ type RefreshToken = Callable[[str], Awaitable[OAuthToken]]
 
 _REFRESH_CLAIM_TTL = datetime.timedelta(seconds=30)
 _REFRESH_CLAIM_POLL_SECONDS = 0.05
+_REFRESH_RETRY_BASE = datetime.timedelta(seconds=30)
+_REFRESH_RETRY_MAX = datetime.timedelta(minutes=15)
+_FAILURE_MESSAGE_LIMIT = 1024
+
+
+class OAuthRefreshFailureKind(StrEnum):
+    CONNECT = "connect"
+    OUTCOME_UNKNOWN = "outcome_unknown"
+    UPSTREAM = "upstream"
+    OAUTH_REJECTED = "oauth_rejected"
+    INVALID_RESPONSE = "invalid_response"
+    INTERNAL = "internal"
+
+
+class OAuthRefreshFailureAction(StrEnum):
+    RETRYING = "retrying"
+    RECONNECT = "reconnect"
+    OPERATOR_ACTION = "operator_action"
+
+
+class OAuthRefreshFailureDetail(BaseModel):
+    at: datetime.datetime
+    kind: OAuthRefreshFailureKind
+    message: str
+
+
+class OAuthRefreshFailureEpisode(BaseModel):
+    started_at: datetime.datetime
+    initial: OAuthRefreshFailureDetail
+    latest: OAuthRefreshFailureDetail
+    attempts: int
+    action: OAuthRefreshFailureAction
+    next_retry_at: datetime.datetime | None = None
+
+
+class OAuthRefreshError(RuntimeError):
+    """A sanitized, classified refresh failure safe to persist and reflect."""
+
+    def __init__(self, message: str, *, kind: OAuthRefreshFailureKind, action: OAuthRefreshFailureAction) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.action = action
+
+
+class OAuthRefreshBlockedError(RuntimeError):
+    """The durable failure state currently prevents another refresh attempt."""
 
 
 def _now() -> datetime.datetime:
@@ -50,6 +98,7 @@ def new_oauth_token_state(
         token_expires_at=expires_at,
         refresh_claim_id=None,
         refresh_claim_expires_at=None,
+        refresh_failure_count=0,
     )
 
 
@@ -72,6 +121,43 @@ def replace_oauth_token_state(
     state.token_revision += 1
     state.refresh_claim_id = None
     state.refresh_claim_expires_at = None
+    state.refresh_failure_started_at = None
+    state.refresh_failure_initial_kind = None
+    state.refresh_failure_initial_message = None
+    state.refresh_failure_latest_at = None
+    state.refresh_failure_latest_kind = None
+    state.refresh_failure_latest_message = None
+    state.refresh_failure_count = 0
+    state.refresh_failure_action = None
+    state.refresh_retry_at = None
+
+
+def refresh_failure_episode(state: OAuthTokenState) -> OAuthRefreshFailureEpisode | None:
+    if state.refresh_failure_count == 0:
+        return None
+    assert state.refresh_failure_started_at is not None
+    assert state.refresh_failure_initial_kind is not None
+    assert state.refresh_failure_initial_message is not None
+    assert state.refresh_failure_latest_at is not None
+    assert state.refresh_failure_latest_kind is not None
+    assert state.refresh_failure_latest_message is not None
+    assert state.refresh_failure_action is not None
+    return OAuthRefreshFailureEpisode(
+        started_at=state.refresh_failure_started_at,
+        initial=OAuthRefreshFailureDetail(
+            at=state.refresh_failure_started_at,
+            kind=OAuthRefreshFailureKind(state.refresh_failure_initial_kind),
+            message=state.refresh_failure_initial_message,
+        ),
+        latest=OAuthRefreshFailureDetail(
+            at=state.refresh_failure_latest_at,
+            kind=OAuthRefreshFailureKind(state.refresh_failure_latest_kind),
+            message=state.refresh_failure_latest_message,
+        ),
+        attempts=state.refresh_failure_count,
+        action=OAuthRefreshFailureAction(state.refresh_failure_action),
+        next_retry_at=state.refresh_retry_at,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +182,12 @@ class _Claim:
     refresh_token: str
 
 
-type _ClaimResult = _Fresh | _Missing | _Wait | _Claim
+@dataclass(frozen=True, slots=True)
+class _Blocked:
+    failure: OAuthRefreshFailureEpisode
+
+
+type _ClaimResult = _Fresh | _Missing | _Wait | _Claim | _Blocked
 
 
 class PostgresOAuthTokenStateStore:
@@ -119,6 +210,11 @@ class PostgresOAuthTokenStateStore:
                 return _Fresh(state.access_token)
             if not state.refresh_token:
                 return _Missing()
+            if (failure := refresh_failure_episode(state)) is not None:
+                if failure.action != OAuthRefreshFailureAction.RETRYING:
+                    return _Blocked(failure)
+                if failure.next_retry_at is not None and failure.next_retry_at > now:
+                    return _Blocked(failure)
             if state.refresh_claim_expires_at is not None and state.refresh_claim_expires_at > now:
                 return _Wait(min(_REFRESH_CLAIM_POLL_SECONDS, (state.refresh_claim_expires_at - now).total_seconds()))
             claim_id = uuid4()
@@ -132,6 +228,42 @@ class PostgresOAuthTokenStateStore:
             if state is not None and state.refresh_claim_id == claim_id:
                 state.refresh_claim_id = None
                 state.refresh_claim_expires_at = None
+
+    def _store_failure(self, *, token_state_id: UUID, claim_id: UUID, error: Exception) -> None:
+        with self._sessions.begin() as session:
+            state = session.get(OAuthTokenState, token_state_id, with_for_update=True)
+            if state is None or state.refresh_claim_id != claim_id:
+                return
+            now = _now()
+            if isinstance(error, OAuthRefreshError):
+                kind = error.kind
+                action = error.action
+                message = str(error).strip()[:_FAILURE_MESSAGE_LIMIT] or type(error).__name__
+            else:
+                kind = OAuthRefreshFailureKind.INTERNAL
+                action = OAuthRefreshFailureAction.RETRYING
+                # Unknown exceptions can contain request bodies, DSNs, or other secrets. The full
+                # traceback remains in the caller's logs; persist only its safe class identity.
+                message = f"OAuth token refresh failed: {type(error).__name__}"
+            if state.refresh_failure_count == 0:
+                state.refresh_failure_started_at = now
+                state.refresh_failure_initial_kind = kind
+                state.refresh_failure_initial_message = message
+            state.refresh_failure_latest_at = now
+            state.refresh_failure_latest_kind = kind
+            state.refresh_failure_latest_message = message
+            state.refresh_failure_count += 1
+            state.refresh_failure_action = action
+            if action == OAuthRefreshFailureAction.RETRYING:
+                delay_seconds = min(
+                    _REFRESH_RETRY_BASE.total_seconds() * 2 ** (state.refresh_failure_count - 1),
+                    _REFRESH_RETRY_MAX.total_seconds(),
+                )
+                state.refresh_retry_at = now + datetime.timedelta(seconds=delay_seconds)
+            else:
+                state.refresh_retry_at = None
+            state.refresh_claim_id = None
+            state.refresh_claim_expires_at = None
 
     def _store_refreshed(
         self, *, token_state_id: UUID, operator_id: UUID, claim: _Claim, refreshed: OAuthToken
@@ -170,6 +302,8 @@ class PostgresOAuthTokenStateStore:
                     return None
                 case _Wait(seconds):
                     await asyncio.sleep(seconds)
+                case _Blocked(failure):
+                    raise OAuthRefreshBlockedError(failure.latest.message)
                 case _Claim() as claim:
                     break
         try:
@@ -177,6 +311,9 @@ class PostgresOAuthTokenStateStore:
             return self._store_refreshed(
                 token_state_id=token_state_id, operator_id=operator_id, claim=claim, refreshed=refreshed
             )
+        except Exception as error:
+            self._store_failure(token_state_id=token_state_id, claim_id=claim.claim_id, error=error)
+            raise
         except BaseException:
             try:
                 self._release_claim(token_state_id=token_state_id, claim_id=claim.claim_id)

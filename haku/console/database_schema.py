@@ -566,6 +566,30 @@ class OAuthTokenState(Base):
             "(refresh_claim_id IS NULL) = (refresh_claim_expires_at IS NULL)",
             name="ck_oauth_token_states_refresh_claim_shape",
         ),
+        CheckConstraint(
+            """
+            (refresh_failure_count = 0
+                AND refresh_failure_started_at IS NULL
+                AND refresh_failure_initial_kind IS NULL
+                AND refresh_failure_initial_message IS NULL
+                AND refresh_failure_latest_at IS NULL
+                AND refresh_failure_latest_kind IS NULL
+                AND refresh_failure_latest_message IS NULL
+                AND refresh_failure_action IS NULL
+                AND refresh_retry_at IS NULL)
+            OR
+            (refresh_failure_count > 0
+                AND refresh_failure_started_at IS NOT NULL
+                AND refresh_failure_initial_kind IS NOT NULL
+                AND refresh_failure_initial_message IS NOT NULL
+                AND refresh_failure_latest_at IS NOT NULL
+                AND refresh_failure_latest_kind IS NOT NULL
+                AND refresh_failure_latest_message IS NOT NULL
+                AND ((refresh_failure_action = 'retrying' AND refresh_retry_at IS NOT NULL)
+                    OR (refresh_failure_action IN ('reconnect', 'operator_action') AND refresh_retry_at IS NULL)))
+            """,
+            name="ck_oauth_token_states_refresh_failure_shape",
+        ),
         Index(
             "idx_oauth_token_states_refresh_candidates",
             "token_expires_at",
@@ -587,6 +611,15 @@ class OAuthTokenState(Base):
     token_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     refresh_claim_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     refresh_claim_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refresh_failure_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refresh_failure_initial_kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_failure_initial_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_failure_latest_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refresh_failure_latest_kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_failure_latest_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_failure_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    refresh_failure_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class McpOperatorOAuthAssociation(Base):

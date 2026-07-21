@@ -87,13 +87,13 @@ rather than broadening either existing grant.
 
 The `kubectl-passthrough-mcp` MCP server entry (config.yaml — `pods_*`, `resources_*`,
 `nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
-per-operator browser-linked mechanism as `grocy-sf`/`tana-rw`: the operator connects once
+per-operator browser-linked mechanism as `grocy-sf`: the operator connects once
 from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),
 which runs Authentik's PKCE flow against `kubectl-passthrough-mcp`'s own OAuth2
 application and stores the association in the console's Postgres database — no static
 token, no secret to mount.
 
-Unlike `grocy-sf`/`tana-rw`, this server forwards the connecting operator's own token
+Unlike `grocy-sf`, this server forwards the connecting operator's own token
 straight to kube-apiserver (`cluster_auth_mode = passthrough` in
 `agents/kubectl-passthrough-mcp/`) rather than acting through a scoped service credential
 of its own — the operator's real permissions apply, via the
@@ -102,3 +102,10 @@ of its own — the operator's real permissions apply, via the
 So every tool call here runs with full cluster-admin once approved; the operator-approval
 click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
 enforcement-inventory entry.
+
+## Tana backend credential
+
+`tana-rw` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
+server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
+only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
+The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.

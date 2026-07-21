@@ -7,6 +7,7 @@ import datetime
 from collections.abc import Callable, Generator
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -23,11 +24,22 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
 )
 from haku.console.mcp_operator_oauth import (
+    McpOperatorAuthConnected,
+    McpOperatorAuthDegraded,
     PostgresMcpOperatorOAuthStore,
     _BuiltOperatorOAuthFlow,
     _oauth_callback_response,
+    _OperatorOAuthTokenClient,
+    _refresh_operator_oauth_token,
 )
-from haku.console.oauth_token_state import PostgresOAuthTokenStateStore, new_oauth_token_state
+from haku.console.oauth_token_state import (
+    OAuthRefreshBlockedError,
+    OAuthRefreshError,
+    OAuthRefreshFailureAction,
+    OAuthRefreshFailureKind,
+    PostgresOAuthTokenStateStore,
+    new_oauth_token_state,
+)
 from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
@@ -114,6 +126,38 @@ def test_callback_response_autoescapes_content_and_locks_down_browser_capabiliti
     assert nonces[0] != nonces[1]
 
 
+async def test_refresh_read_timeout_is_classified_as_ambiguous_and_uses_configured_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class TimeoutClient:
+        async def __aenter__(self) -> TimeoutClient:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def post(self, url: str, **_kwargs: object) -> httpx.Response:
+            request = httpx.Request("POST", url)
+            raise httpx.ReadTimeout("late response", request=request)
+
+    def client(*, timeout: float) -> TimeoutClient:
+        assert timeout == 37.0
+        return TimeoutClient()
+
+    monkeypatch.setattr("haku.console.mcp_operator_oauth.httpx.AsyncClient", client)
+    with pytest.raises(OAuthRefreshError) as raised:
+        await _refresh_operator_oauth_token(
+            _OperatorOAuthTokenClient(
+                client_id="client", token_endpoint="https://auth.test/token", timeout_seconds=37.0
+            ),
+            "refresh-token",
+        )
+
+    assert raised.value.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
+    assert raised.value.action == OAuthRefreshFailureAction.RECONNECT
+    assert str(raised.value) == "MCP OAuth token refresh timed out after 37 seconds"
+
+
 async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
     migrated_engine: Engine,
     oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
@@ -136,7 +180,8 @@ async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
             )
         )
 
-    async def exchange_after_disable(_flow: object, _code: str) -> OAuthToken:
+    async def exchange_after_disable(_flow: object, _code: str, *, timeout_seconds: float) -> OAuthToken:
+        assert timeout_seconds == 30.0
         _disable_operator(migrated_engine, operator_id)
         return OAuthToken(access_token="must-not-be-persisted")
 
@@ -355,6 +400,119 @@ async def test_operator_oauth_concurrent_callers_share_one_refresh(
 
     assert await asyncio.gather(first, second) == ["fresh", "fresh"]
     assert refresh_count == 1
+
+
+async def test_operator_oauth_timeout_is_persisted_and_not_replayed(
+    migrated_engine: Engine,
+    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oauth_store, operator_id = oauth_store_for("refresh-timeout-operator")
+    server = _dynamic_remote_oauth_server()
+    now = datetime.datetime.now(datetime.UTC)
+    with sessionmaker(migrated_engine)() as session, session.begin():
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id=server.id,
+                operator_id=operator_id,
+                created_at=now,
+                client_id="client-id",
+                token_endpoint="https://auth.test/token",
+                token_state=new_oauth_token_state(
+                    operator_id=operator_id,
+                    access_token="expired",
+                    refresh_token="one-time-refresh-token",
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now - datetime.timedelta(minutes=1),
+                    now=now,
+                ),
+            )
+        )
+
+    attempts = 0
+
+    async def timeout(_client: object, _refresh_token: str) -> OAuthToken:
+        nonlocal attempts
+        attempts += 1
+        raise OAuthRefreshError(
+            "MCP OAuth token refresh timed out after 30 seconds",
+            kind=OAuthRefreshFailureKind.OUTCOME_UNKNOWN,
+            action=OAuthRefreshFailureAction.RECONNECT,
+        )
+
+    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", timeout)
+    with pytest.raises(OAuthRefreshError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+    with pytest.raises(OAuthRefreshBlockedError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+
+    status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
+    assert isinstance(status, McpOperatorAuthDegraded)
+    assert status.refresh_failure.initial.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
+    assert status.refresh_failure.latest.message == "MCP OAuth token refresh timed out after 30 seconds"
+    assert status.refresh_failure.action == OAuthRefreshFailureAction.RECONNECT
+    assert status.refresh_failure.attempts == 1
+    assert attempts == 1
+
+
+async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_success(
+    migrated_engine: Engine,
+    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oauth_store, operator_id = oauth_store_for("refresh-retry-operator")
+    server = _dynamic_remote_oauth_server()
+    now = datetime.datetime.now(datetime.UTC)
+    with sessionmaker(migrated_engine)() as session, session.begin():
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id=server.id,
+                operator_id=operator_id,
+                created_at=now,
+                client_id="client-id",
+                token_endpoint="https://auth.test/token",
+                token_state=new_oauth_token_state(
+                    operator_id=operator_id,
+                    access_token="expired",
+                    refresh_token="refresh-token",
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now - datetime.timedelta(minutes=1),
+                    now=now,
+                ),
+            )
+        )
+
+    attempts = 0
+
+    async def refresh(_client: object, _refresh_token: str) -> OAuthToken:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OAuthRefreshError(
+                "MCP OAuth token refresh request failed: ConnectError",
+                kind=OAuthRefreshFailureKind.CONNECT,
+                action=OAuthRefreshFailureAction.RETRYING,
+            )
+        return OAuthToken(access_token="fresh", refresh_token="rotated", expires_in=3600)
+
+    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh)
+    with pytest.raises(OAuthRefreshError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+    with pytest.raises(OAuthRefreshBlockedError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+
+    with sessionmaker(migrated_engine)() as session, session.begin():
+        association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        assert association is not None
+        assert association.token_state.refresh_retry_at is not None
+        association.token_state.refresh_retry_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+
+    assert await oauth_store.access_token_for(server=server, operator_id=operator_id) == "fresh"
+    status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
+    assert isinstance(status, McpOperatorAuthConnected)
+    assert attempts == 2
 
 
 if __name__ == "__main__":

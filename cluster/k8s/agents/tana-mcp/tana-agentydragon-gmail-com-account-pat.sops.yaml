@@ -5,6 +5,10 @@ metadata:
   namespace: tana-mcp
   annotations:
     description: Tana personal access token for the full agentydragon@gmail.com account
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
 type: Opaque
 stringData:
   token: ENC[AES256_GCM,data:eiPL/cBHWYFLfMv+4fFkfHAKphjZxA4iotXqNCKzTTN6cB3njXoyaSMcSl91Wn5g59I9uXCxMZDXveVaCstZW1gXdZ2mVt25iTDkI+9y0LLceevmQ3h2Hc8+tbYoRamTUn4e2JcLFKb69sizorwXM3A6Hbvm3lWs+8Z2XpQrg0kvcZJ+9/L/Z5X78+ar8To0h0IvLeNFcoDLwWqW/7b49EXIWeyqVkHJNBCZA+9q3KKR7PGcL+PmwF+XdLC0Qgo4lMBMP1bcc+GG77BY0vHp10RHSMiEQkTZhV0oBow=,iv:su9c46xOnigr+OWH2DSzHZj3xJi/H+D0ZEzosw4qp30=,tag:A13oT1KKw6m+EcNMm/ux7Q==,type:str]

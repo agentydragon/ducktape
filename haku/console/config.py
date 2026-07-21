@@ -257,6 +257,11 @@ class Settings(BaseSettings):
     # Unset → no link is included.
     ui_base_url: str | None = None
 
+    # Outbound token endpoint budget for remote MCP operator OAuth. Refresh endpoints may
+    # legitimately queue behind an authorization server's control-plane work; keep this larger
+    # than httpx's historical 10-second default while retaining a bounded deployment knob.
+    mcp_operator_oauth_token_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
     # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus

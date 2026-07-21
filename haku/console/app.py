@@ -158,7 +158,10 @@ def create_app(
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
-        db_sessions, operator_identity_store=operator_identity_store, token_states=oauth_token_states
+        db_sessions,
+        operator_identity_store=operator_identity_store,
+        token_states=oauth_token_states,
+        token_timeout_seconds=settings.mcp_operator_oauth_token_timeout_seconds,
     )
     # Per-Operator external provider connections (Google today), replacing Airlock's brokered
     # token. Only deploy-named providers whose client env vars are present are offered.

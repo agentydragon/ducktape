@@ -95,6 +95,15 @@ spec:
               value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
+            - name: HAKU_CONSOLE_MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
+              value: "30"
+            # Direct tana-rw credential. It is resolved only while Console calls the internal
+            # Tana MCP backend and is never mounted into the inner Haku workload.
+            - name: HAKU_CONSOLE_MCP_CREDENTIAL_TANA_ACCOUNT_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: tana-agentydragon-gmail-com-account-pat
+                  key: token
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -188,7 +197,7 @@ spec:
             - name: HAKU_CONSOLE_UI_BASE_URL
               value: https://haku.allegedly.works
             # The Operator the `haku` static agent acts as when it reaches an operator_oauth server:
-            # reflecting grocy-sf/tana-rw/kubectl schemas and executing its own auto-approved
+            # reflecting grocy-sf/kubectl schemas and executing its own auto-approved
             # operator_oauth calls (a machine agent has no operator token of its own). The value is the
             # controller-fed Authentik user id. Haku resolves it through the configured identity
             # trust domain to a canonical Operator UUID; it never becomes live request authority.
