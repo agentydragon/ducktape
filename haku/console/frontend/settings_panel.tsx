@@ -8,6 +8,8 @@ import {
   disconnectMcpOperatorAuth,
   disconnectOperatorConnection,
   fetchDeploymentInfo,
+  listAgents,
+  type AgentView,
   type DeploymentInfo,
   type OperatorConnectionName,
 } from "./client.ts";
@@ -249,13 +251,47 @@ function DaemonCard({ daemon }: { daemon: DaemonStatus }) {
   );
 }
 
+const AGENT_STATUS_COLOR: Record<AgentView["status"], string> = {
+  draft: "blue",
+  active: "teal",
+  abandoned: "gray",
+  disabled: "orange",
+  deleted: "gray",
+};
+
+function AgentCard({ agent }: { agent: AgentView }) {
+  const lastSeen = shortDate(agent.last_seen_at);
+  const activated = shortDate(agent.activated_at);
+  return (
+    <section className="haku-shell-card">
+      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text fw={600}>{agent.display_name}</Text>
+          <Text size="xs" c="dimmed">
+            {lastSeen ? `Last seen ${lastSeen}` : "Not seen yet"}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {agent.credential_kind === "oauth" ? "OAuth" : "Static credential"}
+            {activated ? ` · active since ${activated}` : ""}
+          </Text>
+        </Stack>
+        <Badge color={AGENT_STATUS_COLOR[agent.status]} variant="light">
+          {agent.status}
+        </Badge>
+      </Group>
+    </section>
+  );
+}
+
 // Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
 // shell chrome's mutually exclusive panels.
 export function SettingsPanel() {
+  const [agents, setAgents] = useState<AgentView[] | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerView[] | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [daemons, setDaemons] = useState<DaemonStatus[] | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
   const [daemonsError, setDaemonsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -266,6 +302,17 @@ export function SettingsPanel() {
   const load = useCallback(() => {
     const generation = ++loadGeneration.current;
     setLoading(true);
+    const agentsRequest = listAgents().then(
+      (nextAgents) => {
+        if (generation !== loadGeneration.current) return;
+        setAgents(nextAgents);
+        setAgentsError(null);
+      },
+      (e: unknown) => {
+        if (generation !== loadGeneration.current) return;
+        setAgentsError(e instanceof Error ? e.message : String(e));
+      }
+    );
     const mcpRequest = listMcpServers().then(
       async (connections) => {
         if (generation !== loadGeneration.current) return;
@@ -321,7 +368,7 @@ export function SettingsPanel() {
         setDeploymentError(e instanceof Error ? e.message : String(e));
       }
     );
-    void Promise.all([mcpRequest, deploymentRequest]).then(() => {
+    void Promise.all([agentsRequest, mcpRequest, deploymentRequest]).then(() => {
       if (generation === loadGeneration.current) setLoading(false);
     });
   }, []);
@@ -414,6 +461,30 @@ export function SettingsPanel() {
       </header>
       <div className="haku-page-scroll">
         <Stack gap="xs" className="haku-page-list">
+          <SectionHeading
+            title="Agents"
+            description="Clients authorized to use Haku. Activity is historical and does not indicate that a client is currently online."
+          />
+          {agentsError && (
+            <Text c="red" size="sm">
+              Failed to load Agents: {agentsError}
+            </Text>
+          )}
+          {!agents && !agentsError && (
+            <Group justify="center" p="xl">
+              <Loader aria-label="Loading Agents" />
+            </Group>
+          )}
+          {agents && agents.length === 0 && (
+            <section className="haku-shell-card">
+              <Text size="sm" c="dimmed">
+                No Agents have been authorized.
+              </Text>
+            </section>
+          )}
+          {agents?.map((agent) => (
+            <AgentCard key={agent.agent_id} agent={agent} />
+          ))}
           <SectionHeading
             title="MCP servers"
             description="Live availability through the console's MCP reflection tools. Status refreshes automatically and may verify linked credentials."

@@ -1,15 +1,15 @@
-"""FastAPI routes for Haku's Operator-authenticated Agent enrollment page."""
+"""FastAPI boundaries for Haku's Operator-authenticated Agent enrollment ceremony."""
 
 from __future__ import annotations
 
-import secrets
-from typing import Annotated, Never, cast
-from urllib.parse import urlencode
+import datetime
+from typing import Annotated, Literal, Never, cast
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from starlette.datastructures import FormData
-from starlette.responses import PlainTextResponse, RedirectResponse, Response
+from pydantic import BaseModel, Field
+from starlette.responses import RedirectResponse, Response
 
 from haku.console.agents.enrollment import (
     AgentEnrollmentService,
@@ -25,23 +25,84 @@ from haku.console.agents.enrollment import (
     EnrollmentInteractionExpiredError,
     EnrollmentInteractionNotFoundError,
     EnrollmentPage,
+    OperatorAgent,
     ReconnectAgentDecision,
 )
-from haku.console.agents.enrollment_page import (
-    AgentEnrollmentPageView,
-    ReconnectAgentView,
-    http_origin,
-    render_agent_enrollment_continuation,
-    render_agent_enrollment_page,
-)
+from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.agents.naming import InvalidAgentNameError
 from haku.console.config import Settings
 from haku.console.operator_auth import OperatorSession, operator_session
 
-router = APIRouter(prefix="/auth/agent-enrollment", tags=["agent-enrollment"])
+entry_router = APIRouter(prefix="/auth/agent-enrollment", tags=["agent-enrollment"])
+operator_router = APIRouter(prefix="/api/agent-enrollment", tags=["agent-enrollment"])
 
 _INTERACTION_COOKIE = "haku_agent_enrollment"
 _INTERACTION_COOKIE_MAX_AGE_SECONDS = 10 * 60
+_SETTINGS_ENROLLMENT_PATH = "/_console/settings/agents/enroll"
+
+
+class AgentView(BaseModel):
+    agent_id: UUID
+    display_name: str
+    status: AgentStatus
+    credential_kind: CredentialKind
+    credential_status: CredentialBindingStatus
+    created_at: datetime.datetime
+    activated_at: datetime.datetime | None
+    last_seen_at: datetime.datetime | None
+
+
+class AgentListResponse(BaseModel):
+    agents: list[AgentView]
+
+
+class ReconnectableAgentView(BaseModel):
+    agent_id: UUID
+    display_name: str
+
+
+class EnrollmentView(BaseModel):
+    operator_display_name: str
+    client_software: str
+    redirect_host: str
+    requested_scopes: list[str]
+    suggested_agent_name: str
+    reconnectable_agents: list[ReconnectableAgentView]
+    form_token: str
+
+
+class CreateEnrollmentRequest(BaseModel):
+    kind: Literal["create"] = "create"
+    form_token: str
+    display_name: str
+
+
+class ReconnectEnrollmentRequest(BaseModel):
+    kind: Literal["reconnect"] = "reconnect"
+    form_token: str
+    agent_id: UUID
+
+
+class DenyEnrollmentRequest(BaseModel):
+    kind: Literal["deny"] = "deny"
+    form_token: str
+
+
+type EnrollmentDecisionRequest = Annotated[
+    CreateEnrollmentRequest | ReconnectEnrollmentRequest | DenyEnrollmentRequest, Field(discriminator="kind")
+]
+
+
+class EnrollmentContinues(BaseModel):
+    status: Literal["continue"] = "continue"
+    authorization_url: str
+
+
+class EnrollmentWasDenied(BaseModel):
+    status: Literal["denied"] = "denied"
+
+
+type EnrollmentDecisionResponse = EnrollmentContinues | EnrollmentWasDenied
 
 
 def _enrollment_service(request: Request) -> AgentEnrollmentService:
@@ -73,20 +134,14 @@ def _login_redirect(interaction_id: UUID, browser_nonce: str | None) -> Redirect
 
 
 def _public_origin(settings: Settings) -> str:
-    return http_origin(settings.public_base_url)
+    parsed = urlsplit(settings.public_base_url)
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
 def _require_same_origin(request: Request) -> None:
     settings = cast(Settings, request.app.state.settings)
     if request.headers.get("origin") != _public_origin(settings):
         raise HTTPException(status_code=403, detail="invalid Agent enrollment origin")
-
-
-def _one_form_value(form: FormData, name: str) -> str:
-    values = form.getlist(name)
-    if len(values) != 1 or not isinstance(values[0], str):
-        raise HTTPException(status_code=400, detail=f"invalid {name}")
-    return values[0]
 
 
 def _raise_interaction_error(error: Exception) -> Never:
@@ -104,64 +159,37 @@ def _raise_interaction_error(error: Exception) -> Never:
 
 
 def _cookie_path(interaction_id: UUID) -> str:
-    return f"/auth/agent-enrollment/{interaction_id}"
+    return f"/api/agent-enrollment/{interaction_id}"
 
 
-def _render_page(
-    *,
-    interaction_id: UUID,
-    session: OperatorSession,
-    page: EnrollmentPage,
-    settings: Settings,
-    error: str | None = None,
-    status_code: int = 200,
-) -> Response:
-    base = _cookie_path(interaction_id)
-    response = render_agent_enrollment_page(
-        AgentEnrollmentPageView(
-            create_form_action=f"{base}/new",
-            reconnect_form_action=f"{base}/reconnect",
-            deny_form_action=f"{base}/deny",
-            form_token=page.form_token,
-            operator_display_name=session.username,
-            client_software=page.client_software,
-            redirect_host=page.redirect_host,
-            scopes=page.requested_scopes,
-            suggested_agent_name=page.suggested_agent_name,
-            reconnect_agents=tuple(
-                ReconnectAgentView(agent_id=str(agent.agent_id), display_name=agent.display_name)
-                for agent in page.reconnectable_agents
-            ),
-            error=error,
-        ),
-        csp_nonce=secrets.token_urlsafe(32),
-        form_action_url=page.upstream_authorization_url,
-        status_code=status_code,
-    )
+def _set_interaction_cookie(response: Response, interaction_id: UUID, page: EnrollmentPage, settings: Settings) -> None:
     response.set_cookie(
         key=_INTERACTION_COOKIE,
         value=page.form_token,
         max_age=_INTERACTION_COOKIE_MAX_AGE_SECONDS,
-        path=base,
+        path=_cookie_path(interaction_id),
         secure=settings.public_base_url.startswith("https://"),
         httponly=True,
         samesite="lax",
     )
-    return response
 
 
-@router.get("/{interaction_id}")
-async def enrollment_page(
-    interaction_id: UUID,
-    request: Request,
-    service: EnrollmentServiceDep,
-    session: OperatorSessionDep,
-    browser_nonce: str | None = None,
-) -> Response:
+def _require_operator(session: OperatorSession | None) -> OperatorSession:
     if session is None:
-        return _login_redirect(interaction_id, browser_nonce)
+        raise HTTPException(status_code=401, detail="Operator authentication required")
+    return session
+
+
+async def _open_bound_interaction(
+    *,
+    interaction_id: UUID,
+    browser_nonce: str | None,
+    request: Request,
+    service: AgentEnrollmentService,
+    session: OperatorSession,
+) -> EnrollmentPage:
     try:
-        page = await service.open_interaction(
+        return await service.open_interaction(
             interaction_id=interaction_id,
             browser_nonce=browser_nonce,
             interaction_cookie=request.cookies.get(_INTERACTION_COOKIE),
@@ -174,52 +202,107 @@ async def enrollment_page(
         EnrollmentDecisionConflictError,
     ) as error:
         _raise_interaction_error(error)
-    return _render_page(
-        interaction_id=interaction_id, session=session, page=page, settings=cast(Settings, request.app.state.settings)
+
+
+def _enrollment_view(page: EnrollmentPage, session: OperatorSession) -> EnrollmentView:
+    return EnrollmentView(
+        operator_display_name=session.username,
+        client_software=page.client_software,
+        redirect_host=page.redirect_host,
+        requested_scopes=list(page.requested_scopes),
+        suggested_agent_name=page.suggested_agent_name,
+        reconnectable_agents=[
+            ReconnectableAgentView(agent_id=agent.agent_id, display_name=agent.display_name)
+            for agent in page.reconnectable_agents
+        ],
+        form_token=page.form_token,
     )
 
 
-async def _decide(
-    *,
+def _agent_view(agent: OperatorAgent) -> AgentView:
+    return AgentView(
+        agent_id=agent.agent_id,
+        display_name=agent.display_name,
+        status=agent.status,
+        credential_kind=agent.credential_kind,
+        credential_status=agent.credential_status,
+        created_at=agent.created_at,
+        activated_at=agent.activated_at,
+        last_seen_at=agent.last_seen_at,
+    )
+
+
+@entry_router.get("/{interaction_id}")
+async def enrollment_entry(
     interaction_id: UUID,
     request: Request,
-    service: AgentEnrollmentService,
-    session: OperatorSession,
-    decision: EnrollmentDecision,
+    service: EnrollmentServiceDep,
+    session: OperatorSessionDep,
+    browser_nonce: str | None = None,
 ) -> Response:
+    if session is None:
+        return _login_redirect(interaction_id, browser_nonce)
+    page = await _open_bound_interaction(
+        interaction_id=interaction_id, browser_nonce=browser_nonce, request=request, service=service, session=session
+    )
+    response = RedirectResponse(url=f"{_SETTINGS_ENROLLMENT_PATH}/{interaction_id}", status_code=303)
+    _set_interaction_cookie(response, interaction_id, page, cast(Settings, request.app.state.settings))
+    return response
+
+
+@operator_router.get("/agents", response_model=AgentListResponse)
+async def list_agents(service: EnrollmentServiceDep, session: OperatorSessionDep) -> AgentListResponse:
+    operator = _require_operator(session)
+    return AgentListResponse(
+        agents=[_agent_view(agent) for agent in await service.list_agents(operator_id=operator.operator_id)]
+    )
+
+
+@operator_router.get("/{interaction_id}", response_model=EnrollmentView)
+async def get_enrollment(
+    interaction_id: UUID, request: Request, service: EnrollmentServiceDep, session: OperatorSessionDep
+) -> EnrollmentView:
+    operator = _require_operator(session)
+    page = await _open_bound_interaction(
+        interaction_id=interaction_id, browser_nonce=None, request=request, service=service, session=operator
+    )
+    return _enrollment_view(page, operator)
+
+
+@operator_router.post("/{interaction_id}/decision", response_model=EnrollmentDecisionResponse)
+async def decide_enrollment(
+    interaction_id: UUID,
+    body: EnrollmentDecisionRequest,
+    request: Request,
+    service: EnrollmentServiceDep,
+    session: OperatorSessionDep,
+) -> Response:
+    operator = _require_operator(session)
+    _require_same_origin(request)
     interaction_cookie = request.cookies.get(_INTERACTION_COOKIE)
     if interaction_cookie is None:
         raise HTTPException(status_code=403, detail="missing Agent enrollment browser binding")
+
+    decision: EnrollmentDecision
+    match body:
+        case CreateEnrollmentRequest(form_token=form_token, display_name=display_name):
+            decision = CreateAgentDecision(form_token=form_token, display_name=display_name)
+        case ReconnectEnrollmentRequest(form_token=form_token, agent_id=agent_id):
+            decision = ReconnectAgentDecision(form_token=form_token, agent_id=agent_id)
+        case DenyEnrollmentRequest(form_token=form_token):
+            decision = DenyEnrollmentDecision(form_token=form_token)
+
     try:
         result = await service.decide(
             interaction_id=interaction_id,
-            browser=_browser(session),
+            browser=_browser(operator),
             interaction_cookie=interaction_cookie,
             decision=decision,
         )
-    except (AgentNameUnavailableError, InvalidAgentNameError) as error:
-        try:
-            page = await service.open_interaction(
-                interaction_id=interaction_id,
-                browser_nonce=None,
-                interaction_cookie=interaction_cookie,
-                browser=_browser(session),
-            )
-        except (
-            EnrollmentInteractionNotFoundError,
-            EnrollmentInteractionExpiredError,
-            EnrollmentBrowserBindingError,
-            EnrollmentDecisionConflictError,
-        ) as reopen_error:
-            _raise_interaction_error(reopen_error)
-        return _render_page(
-            interaction_id=interaction_id,
-            session=session,
-            page=page,
-            settings=cast(Settings, request.app.state.settings),
-            error=str(error),
-            status_code=409 if isinstance(error, AgentNameUnavailableError) else 422,
-        )
+    except AgentNameUnavailableError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except InvalidAgentNameError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     except (
         EnrollmentInteractionNotFoundError,
         EnrollmentInteractionExpiredError,
@@ -227,69 +310,14 @@ async def _decide(
         EnrollmentDecisionConflictError,
     ) as error:
         _raise_interaction_error(error)
+
     response: Response
     match result:
         case EnrollmentAllowed(upstream_authorization_url=url):
-            response = render_agent_enrollment_continuation(authorization_url=url, csp_nonce=secrets.token_urlsafe(32))
+            response = Response(
+                content=EnrollmentContinues(authorization_url=url).model_dump_json(), media_type="application/json"
+            )
         case EnrollmentDenied():
-            response = PlainTextResponse("Agent enrollment denied. You may close this window.")
+            response = Response(content=EnrollmentWasDenied().model_dump_json(), media_type="application/json")
     response.delete_cookie(key=_INTERACTION_COOKIE, path=_cookie_path(interaction_id))
     return response
-
-
-def _require_authenticated_post(request: Request, session: OperatorSession | None) -> OperatorSession:
-    if session is None:
-        raise HTTPException(status_code=401, detail="Operator authentication required")
-    _require_same_origin(request)
-    return session
-
-
-@router.post("/{interaction_id}/new")
-async def create_agent(
-    interaction_id: UUID, request: Request, service: EnrollmentServiceDep, session: OperatorSessionDep
-) -> Response:
-    session = _require_authenticated_post(request, session)
-    form = await request.form()
-    return await _decide(
-        interaction_id=interaction_id,
-        request=request,
-        service=service,
-        session=session,
-        decision=CreateAgentDecision(
-            form_token=_one_form_value(form, "form_token"), display_name=_one_form_value(form, "agent_name")
-        ),
-    )
-
-
-@router.post("/{interaction_id}/reconnect")
-async def reconnect_agent(
-    interaction_id: UUID, request: Request, service: EnrollmentServiceDep, session: OperatorSessionDep
-) -> Response:
-    session = _require_authenticated_post(request, session)
-    form = await request.form()
-    try:
-        agent_id = UUID(_one_form_value(form, "agent_id"))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="invalid reconnect Agent") from None
-    return await _decide(
-        interaction_id=interaction_id,
-        request=request,
-        service=service,
-        session=session,
-        decision=ReconnectAgentDecision(form_token=_one_form_value(form, "form_token"), agent_id=agent_id),
-    )
-
-
-@router.post("/{interaction_id}/deny")
-async def deny_agent(
-    interaction_id: UUID, request: Request, service: EnrollmentServiceDep, session: OperatorSessionDep
-) -> Response:
-    session = _require_authenticated_post(request, session)
-    form = await request.form()
-    return await _decide(
-        interaction_id=interaction_id,
-        request=request,
-        service=service,
-        session=session,
-        decision=DenyEnrollmentDecision(form_token=_one_form_value(form, "form_token")),
-    )

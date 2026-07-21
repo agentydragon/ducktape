@@ -650,7 +650,11 @@ export function ShellChrome(props: ShellChromeProps) {
           <RailButton open={props.view === "embed"} label="Haku UI" onClick={() => props.onNavigate("embed")}>
             <HomeIcon />
           </RailButton>
-          <RailButton open={props.view === "settings"} label="Settings" onClick={() => props.onNavigate("settings")}>
+          <RailButton
+            open={props.view === "settings" || props.view === "agentEnrollment"}
+            label="Settings"
+            onClick={() => props.onNavigate("settings")}
+          >
             <SettingsIcon />
           </RailButton>
           <RailButton

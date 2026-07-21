@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
+
+from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +88,21 @@ class AgentNameUnavailableError(ValueError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class OperatorAgent:
+    agent_id: UUID
+    display_name: str
+    status: AgentStatus
+    credential_kind: CredentialKind
+    credential_status: CredentialBindingStatus
+    created_at: datetime.datetime
+    activated_at: datetime.datetime | None
+    last_seen_at: datetime.datetime | None
+
+
 class AgentEnrollmentService(Protocol):
+    async def list_agents(self, *, operator_id: UUID) -> tuple[OperatorAgent, ...]: ...
+
     async def open_interaction(
         self,
         *,

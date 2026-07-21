@@ -34,6 +34,15 @@ export type OperatorConnectionName = ProviderConnectionConnectResponse["connecti
 export type OAuthConnectionResult =
   | components["schemas"]["OAuthConnectionSucceeded"]
   | components["schemas"]["OAuthConnectionFailed"];
+export type AgentView = components["schemas"]["AgentView"];
+export type EnrollmentView = components["schemas"]["EnrollmentView"];
+export type EnrollmentDecisionRequest =
+  | components["schemas"]["CreateEnrollmentRequest"]
+  | components["schemas"]["ReconnectEnrollmentRequest"]
+  | components["schemas"]["DenyEnrollmentRequest"];
+export type EnrollmentDecisionResponse =
+  | components["schemas"]["EnrollmentContinues"]
+  | components["schemas"]["EnrollmentWasDenied"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way. Exported
@@ -63,6 +72,32 @@ export async function consumeOAuthConnectionResult(resultId: string): Promise<OA
     params: { path: { result_id: resultId } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load the connection result"));
+  return data;
+}
+
+export async function listAgents(): Promise<AgentView[]> {
+  const { data, error } = await api.GET("/api/agent-enrollment/agents");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load Agents"));
+  return data.agents;
+}
+
+export async function getAgentEnrollment(interactionId: string): Promise<EnrollmentView> {
+  const { data, error } = await api.GET("/api/agent-enrollment/{interaction_id}", {
+    params: { path: { interaction_id: interactionId } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load Agent enrollment"));
+  return data;
+}
+
+export async function decideAgentEnrollment(
+  interactionId: string,
+  body: EnrollmentDecisionRequest
+): Promise<EnrollmentDecisionResponse> {
+  const { data, error } = await api.POST("/api/agent-enrollment/{interaction_id}/decision", {
+    params: { path: { interaction_id: interactionId } },
+    body,
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to complete Agent enrollment"));
   return data;
 }
 

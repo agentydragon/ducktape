@@ -23,21 +23,9 @@ py_test(
 )
 
 py_library(
-    name = "enrollment_page",
-    srcs = ["enrollment_page.py"],
-    data = [
-        "agent_enrollment.html.j2",
-        "agent_enrollment_continuation.html.j2",
-    ],
-    deps = [
-        "@pypi//jinja2",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
     name = "enrollment",
     srcs = ["enrollment.py"],
+    deps = [":models"],
 )
 
 py_library(
@@ -88,23 +76,13 @@ py_library(
     srcs = ["enrollment_routes.py"],
     deps = [
         ":enrollment",
-        ":enrollment_page",
+        ":models",
         ":naming",
         "//haku/console:config",
         "//haku/console:operator_auth",
         "@pypi//fastapi",
+        "@pypi//pydantic",
         "@pypi//starlette",
-    ],
-)
-
-py_test(
-    name = "test_enrollment_page",
-    srcs = ["test_enrollment_page.py"],
-    deps = [
-        ":enrollment_page",
-        "@pypi//beautifulsoup4",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -237,8 +237,8 @@ Interactive enrollment proceeds as follows:
 
 The enrollment cookie is only a short-lived page/CSRF binding: path-scoped, `HttpOnly`,
 `SameSite=Lax`, and `Secure` in production. It contains no name, token, raw claim, or durable
-authority. The Haku-owned Jinja template autoescapes untrusted client metadata and the response is
-no-store with strict CSP, Origin, and referrer controls.
+authority. The trusted Console SPA receives an escaped typed view model from same-origin APIs;
+decision endpoints enforce the browser binding and exact Origin before changing authority state.
 
 The runtime caller is `OperatorActor | AgentActor`. Only the authority constructs an
 `AgentActor(agent_id, operator_id, binding_id)`. Agents can submit/read only their own calls;
@@ -371,7 +371,7 @@ non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work loca
 | `mcp_approval.py`                  | Operator-browser FastAPI adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own agent admission or lifecycle orchestration.                                                                           |
 | `mcp_server.py`                    | FastMCP transport adapter for proxy and result-read tools; resolves its request dependency to a canonical `AgentActor` and delegates lifecycle operations to the application service.                                                                                  |
 | `mcp_agent_auth.py`                | Agent-facing auth composition: one Haku OAuth adapter plus static-bearer verification, both resolving through the shared `PostgresAgentAuthority`.                                                                                                                     |
-| `agents/`                          | Canonical Agent domain: naming, enrollment contracts/routes/template, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                             |
+| `agents/`                          | Canonical Agent domain: naming, enrollment contracts/routes/APIs, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                                 |
 | `mcp_auth/`                        | Haku-owned FastMCP composition adapter and exact-version contract tests; contains the single accepted private `_code_store` seam.                                                                                                                                      |
 | `console_events.py`                | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                     |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, reflection adapter, and operator OAuth linkage.                                                                                         |

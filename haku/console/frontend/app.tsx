@@ -16,7 +16,7 @@ import { useConsoleView } from "./routing.ts";
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, oauthResultId, navigate } = useConsoleView();
+  const { view, agentEnrollmentId, oauthResultId, navigate } = useConsoleView();
   useOAuthResultAnnouncement(view);
 
   useEffect(() => {
@@ -57,6 +57,7 @@ export default function App() {
       uiUrl={config.haku_ui_url}
       launchAvailable={config.launch_routine_url != null}
       view={view}
+      agentEnrollmentId={agentEnrollmentId}
       onNavigate={navigate}
     />
   );

@@ -34,6 +34,7 @@ from haku.console.agents.enrollment import (
     EnrollmentInteractionExpiredError,
     EnrollmentInteractionNotFoundError,
     EnrollmentPage,
+    OperatorAgent,
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
@@ -211,6 +212,41 @@ class PostgresAgentAuthority:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Agent authority clock must return a timezone-aware datetime")
         return now
+
+    async def list_agents(self, *, operator_id: UUID) -> tuple[OperatorAgent, ...]:
+        return await self._database_call(lambda: self._list_agents(operator_id))
+
+    def _list_agents(self, operator_id: UUID) -> tuple[OperatorAgent, ...]:
+        with self._sessions() as session:
+            rows = session.execute(
+                select(Agent, AgentNameReservation.display_name, CredentialBinding)
+                .join(AgentNameReservation, AgentNameReservation.reservation_id == Agent.current_name_reservation_id)
+                .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+                .where(
+                    Agent.owner_operator_id == operator_id, Agent.status.in_((AgentStatus.ACTIVE, AgentStatus.DISABLED))
+                )
+                .order_by(AgentNameReservation.display_name_key, CredentialBinding.generation.desc())
+            ).all()
+
+        agents: list[OperatorAgent] = []
+        seen: set[UUID] = set()
+        for agent, display_name, binding in rows:
+            if agent.agent_id in seen:
+                continue
+            seen.add(agent.agent_id)
+            agents.append(
+                OperatorAgent(
+                    agent_id=agent.agent_id,
+                    display_name=display_name,
+                    status=agent.status,
+                    credential_kind=binding.kind,
+                    credential_status=binding.status,
+                    created_at=agent.created_at,
+                    activated_at=agent.activated_at,
+                    last_seen_at=agent.last_seen_at,
+                )
+            )
+        return tuple(agents)
 
     async def sweep_expired_state(self, *, batch_size: int = _EXPIRY_SWEEP_BATCH_SIZE) -> int:
         """Expire one unlocked batch of stale enrollment and activation state."""

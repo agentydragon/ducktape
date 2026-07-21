@@ -57,6 +57,24 @@ const SCENES = [
     frame: true,
   },
   {
+    name: "agent-enrollment",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    frame: true,
+  },
+  {
+    name: "agent-enrollment-reconnect",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    frame: true,
+  },
+  {
+    name: "agent-enrollment-mobile",
+    viewport: { width: 390, height: 760 },
+    closeApprovals: true,
+    frame: true,
+  },
+  {
     name: "history",
     viewport: { width: 1200, height: 1500 },
     closeApprovals: true,
@@ -179,6 +197,8 @@ try {
       // resolved status. Waiting for these loaders to clear is a no-op on scenes that never had
       // them: `hidden: true` is already satisfied for a selector that was never in the DOM.
       await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
+      await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: 5_000 });
+      await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: 5_000 });
       await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
       const file = `${name}-${colorScheme}.png`;
       const shot = element

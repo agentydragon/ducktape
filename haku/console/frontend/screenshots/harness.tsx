@@ -19,8 +19,19 @@ import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data.ts";
 const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
 
-function ConsoleScene({ view }: { view: ConsoleView }) {
-  return <HakuUiEmbed uiUrl="https://haku-ui.test/" launchAvailable view={view} onNavigate={noopNavigate} />;
+const ENROLLMENT_ID = "10000000-0000-4000-8000-000000000001";
+
+function ConsoleScene({ view, reconnect = false }: { view: ConsoleView; reconnect?: boolean }) {
+  return (
+    <HakuUiEmbed
+      uiUrl="https://haku-ui.test/"
+      launchAvailable
+      view={view}
+      agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
+      agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
+      onNavigate={noopNavigate}
+    />
+  );
 }
 
 const chromeProps: ShellChromeProps = {
@@ -85,6 +96,11 @@ function sceneElement(scene: string) {
       return <OAuthSettingsResultScene status="success" />;
     case "settings-oauth-error":
       return <OAuthSettingsResultScene status="error" />;
+    case "agent-enrollment":
+    case "agent-enrollment-mobile":
+      return <ConsoleScene view="agentEnrollment" />;
+    case "agent-enrollment-reconnect":
+      return <ConsoleScene view="agentEnrollment" reconnect />;
     case "history":
       return <ConsoleScene view="toolCalls" />;
     case "sync-current":
