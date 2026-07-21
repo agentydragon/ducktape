@@ -35,6 +35,33 @@ once dropping to an incremental number, are the tell: nothing is reused between 
 `capacity: 1` serializes, and a PR into `main` fires `bazel` + `validate` + `linkcheck` (push
 and PR each), so ~3 cold jobs queue back-to-back — ~13 min wall for one PR.
 
+## Results so far (landed)
+
+Two changes shipped, both with **zero isolation cost**, measured against live runs:
+
+- **Tier 1 — persistent Bazel cache** (`cluster/k8s/haku-ci/`, ducktape #3467): warms the
+  output base + `--disk_cache` + repo cache across the ephemeral job containers.
+- **Single-cert egress-CA import** (`tools/ci/trust_egress_ca.sh`, haku-state #22): the setup
+  had imported all ~144 certs in the mounted bundle with one `keytool` JVM per cert
+  (~90 s/job); now it imports only the egress-proxy CA (`CN=haku-egress-proxy-root-ca`,
+  `openssl`-filtered) in one call. Applies to `validate` and `bazel` alike (shared
+  `bazel-runner-setup`).
+
+| Job        | Before (cold every run) | After (warm, both fixes) |
+| ---------- | ----------------------- | ------------------------ |
+| `bazel`    | ~500–575 s              | ~59–132 s                |
+| `validate` | ~220 s                  | ~44 s                    |
+
+**Where the remaining `bazel` time goes** (from the workflow's own `--profile` artifact + a
+live `kubectl top`): it is **latency-bound, not resource-bound**. The JVM heap peaks ~435 MB
+of the 6 GiB limit and CPU averages ~1.5–1.9 of its 3 cores (brief peaks only) — so more
+RAM/CPU wouldn't help. The cost is the **serial "load + analyze" phase** (~45 s of bzlmod
+module resolution + Skyframe analysis, single-threaded) plus fixed per-job overhead. That
+analysis phase is exactly what a warm server (below) removes.
+
+A related egress question — could the proxy allow only specific GitHub repos? — was
+investigated separately: <../lessons_learned/2026_07_21_egress_proxy_repo_filtering.md>.
+
 ## Goal / non-goals
 
 **Goal:** a Bazel server reused across PRs, so a no-op-diff `bazel test //...` returns in
@@ -252,6 +279,15 @@ revisit if `haku-ci` ever runs non-Haku-authored code.**
   the `-v /bazel-cache:/root/.cache` job-container mount in `config.yaml`): a
   `local-path-ovh-hdd` PVC mounted into dind and bind-mounted onto every job container's
   `~/.cache`, so the output base + `--disk_cache` + repo cache persist across job containers.
+- **Tier 1.5 — run `validate` + `bazel` in one job/container.** They are separate workflows
+  today, so on a PR each spins up a fresh container and a **cold** Bazel server, re-paying the
+  ~45 s load+analyze twice. Merging them into one job shares the checkout/setup **and one warm
+  server** — `validate`'s `bazel run //tools:validate_state` warms it, and the following
+  `bazel test //...` reuses the resident Skyframe graph. Captures much of Tier 2's analysis win
+  **within a single job, so no cross-PR isolation cost**. Caveat: `validate-state` is
+  deliberately path-**un**filtered (runs on every data commit) while `bazel-ci` is scoped to
+  code/config — so the merged job must still gate the `bazel test/build` steps on changed
+  paths, or data-only commits would start paying for the image build.
 - **Tier 3 — in-cluster `bazel-remote` gRPC cache.** Persistent, LRU-evicting,
   concurrency-safe, survives node moves; honors source-in-cluster (only content-addressed CAS
   blobs go to it, never source). Complements Tier 2 (remote cache for execution, warm server
