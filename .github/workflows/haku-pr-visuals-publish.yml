@@ -3,7 +3,7 @@ name: Publish PR visuals
 on:
   workflow_run:
     workflows: [CI]
-    types: [completed]
+    types: [in_progress, completed]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha }}
@@ -16,8 +16,37 @@ permissions:
   pull-requests: write
 
 jobs:
+  announce:
+    if: >-
+      github.event.action == 'in_progress' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0] != null
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: devel
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - name: Announce visual review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+        run: |
+          bb run //devinfra/pr_visuals:check_run_bin -- \
+            --repository "$GITHUB_REPOSITORY" \
+            --sha "$HEAD_SHA" \
+            --status in_progress \
+            --summary "Bazel CI is running; visual publication will follow." \
+            --details-url "${{ github.event.workflow_run.html_url }}" \
+            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}"
+
   publish:
     if: >-
+      github.event.action == 'completed' &&
       github.event.workflow_run.conclusion == 'success' &&
       (
         (github.event.workflow_run.event == 'pull_request' &&
@@ -77,5 +106,37 @@ jobs:
           fi
           if [ -n "$PR_NUMBER" ]; then
             args+=(--pull-request "$PR_NUMBER")
+            args+=(--check-external-id "pr-visual-review:${{ github.event.workflow_run.id }}")
           fi
           bb run //devinfra/pr_visuals:publisher_bin -- "${args[@]}"
+
+  finalize-ci-failure:
+    if: >-
+      github.event.action == 'completed' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0] != null &&
+      github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: devel
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - name: Finalize visual review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          bb run //devinfra/pr_visuals:check_run_bin -- \
+            --repository "$GITHUB_REPOSITORY" \
+            --sha "$HEAD_SHA" \
+            --status completed \
+            --conclusion "$CI_CONCLUSION" \
+            --summary "Bazel CI concluded $CI_CONCLUSION; visual publication did not run." \
+            --details-url "${{ github.event.workflow_run.html_url }}" \
+            --external-id "pr-visual-review:${{ github.event.workflow_run.id }}"

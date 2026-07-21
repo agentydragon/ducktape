@@ -1,6 +1,19 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "check_run",
+    srcs = ["check_run.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pygithub"],
+)
+
+py_binary(
+    name = "check_run_bin",
+    main_module = "devinfra.pr_visuals.check_run",
+    deps = [":check_run"],
+)
+
+py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
@@ -9,6 +22,7 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":check_run",
         "//util:visual_diff",
         "//util:visual_review",
         "@pypi//boto3",
@@ -16,6 +30,16 @@ py_library(
         "@pypi//pillow",
         "@pypi//pydantic",
         "@pypi//pygithub",
+    ],
+)
+
+py_test(
+    name = "test_check_run",
+    srcs = ["test_check_run.py"],
+    deps = [
+        ":check_run",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

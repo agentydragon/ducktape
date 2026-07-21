@@ -21,6 +21,7 @@ from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, TypeAdapter
 
+from devinfra.pr_visuals.check_run import upsert_check_run
 from util.visual_diff import compare_pngs
 from util.visual_review import MANIFEST_NAME, VisualReviewManifest
 
@@ -635,34 +636,6 @@ def diff_check(review_tests: list[ReviewTest]) -> tuple[Literal["success", "neut
     return ("neutral" if totals.modified + totals.removed else "success", summary)
 
 
-def publish_check_run(
-    *,
-    repository: str,
-    commit_sha: str,
-    conclusion: Literal["success", "failure", "neutral"],
-    summary: str,
-    details_url: str | None,
-    token: str,
-    name: str = "PR visual review",
-) -> None:
-    with Github(auth=Auth.Token(token)) as github:
-        repo = github.get_repo(repository)
-        output: dict[str, str | list[dict[str, str | int]]] = {"title": name, "summary": summary[:65000]}
-        if details_url is None:
-            repo.create_check_run(
-                name=name, head_sha=commit_sha, status="completed", conclusion=conclusion, output=output
-            )
-        else:
-            repo.create_check_run(
-                name=name,
-                head_sha=commit_sha,
-                status="completed",
-                conclusion=conclusion,
-                details_url=details_url,
-                output=output,
-            )
-
-
 def current_workflow_url() -> str | None:
     server = os.environ.get("GITHUB_SERVER_URL")
     repository = os.environ.get("GITHUB_REPOSITORY")
@@ -683,6 +656,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--bucket", required=True)
     result.add_argument("--public-base-url", required=True)
     result.add_argument("--pull-request", type=int)
+    result.add_argument("--check-external-id")
     return result
 
 
@@ -747,9 +721,10 @@ def main() -> None:
         conclusion, details_url = "success", f"{public_url}index.html"
         if (diff := diff_check(review_tests)) is not None:
             diff_conclusion, diff_summary = diff
-            publish_check_run(
+            upsert_check_run(
                 repository=args.repository,
                 commit_sha=args.sha,
+                status="completed",
                 conclusion=diff_conclusion,
                 summary=diff_summary,
                 details_url=details_url,
@@ -765,12 +740,14 @@ def main() -> None:
             upsert_pull_request_comment(
                 repository=args.repository, pull_request=args.pull_request, body=comment_body, token=github_token
             )
-        publish_check_run(
+        upsert_check_run(
             repository=args.repository,
             commit_sha=args.sha,
+            status="completed",
             conclusion=conclusion,
             summary=summary,
             details_url=details_url,
+            external_id=args.check_external_id,
             token=github_token,
         )
 
