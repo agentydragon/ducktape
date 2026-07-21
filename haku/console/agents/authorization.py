@@ -1153,6 +1153,11 @@ class PostgresAgentAuthority:
                         predecessor.ended_at = now
                         predecessor.end_reason = "superseded"
                         predecessor.updated_at = now
+                        # PostgreSQL enforces one active binding per Agent with a partial unique
+                        # index. Flush the predecessor transition before activating its successor;
+                        # SQLAlchemy does not otherwise guarantee UPDATE ordering between two rows
+                        # of the same table.
+                        session.flush()
                     else:
                         agent.status = AgentStatus.ACTIVE
                         agent.activated_at = now

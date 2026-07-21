@@ -435,6 +435,43 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
         assert active_state.agent.status is AgentStatus.ACTIVE
 
 
+async def test_reconnect_activation_revokes_predecessor_before_activating_successor(db_url: str) -> None:
+    harness = _harness(db_url)
+    active = await _create_grant(harness, label="active-reconnect", display_name="Reconnectable", activate=True)
+    request = _request("successful-reconnect")
+    interaction_id, form_token = await _open(harness, request)
+    await harness.authority.decide(
+        interaction_id=interaction_id,
+        browser=harness.browser,
+        interaction_cookie=form_token,
+        decision=ReconnectAgentDecision(form_token=form_token, agent_id=active.actor.agent_id),
+    )
+    replacement = await harness.authority.begin_exchange(
+        correlation=request.correlation,
+        client=request.client,
+        principal=harness.principal,
+        granted_scopes=frozenset({"tools:call"}),
+    )
+    await harness.authority.record_token_family(
+        grant_id=replacement.grant_id,
+        evidence=TokenFamilyEvidence(access_jti="replacement-access", refresh_jti="replacement-refresh"),
+    )
+
+    activated = await harness.authority.activate_for_tool_call(
+        grant_id=replacement.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
+    )
+
+    assert activated.actor == replacement.actor
+    with _orm_session(db_url) as session:
+        active_state = _grant_state(session, active.grant_id)
+        replacement_state = _grant_state(session, replacement.grant_id)
+        assert active_state.binding.status is CredentialBindingStatus.REVOKED
+        assert active_state.binding.end_reason == "superseded"
+        assert replacement_state.binding.status is CredentialBindingStatus.ACTIVE
+        assert replacement_state.binding.supersedes_binding_id == active.actor.binding_id
+        assert replacement_state.agent.status is AgentStatus.ACTIVE
+
+
 async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(db_url: str) -> None:
     harness = _harness(db_url)
     _locked_request, locked_interaction_id = await _allow_create(
