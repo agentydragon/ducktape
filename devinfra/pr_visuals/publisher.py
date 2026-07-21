@@ -483,18 +483,6 @@ def _preview_img(url: str) -> str:
     return f'<img src="{url}" width="260">'
 
 
-def _rounds_to_zero_percent(fraction: float) -> bool:
-    """True when `fraction` displays as "0.0%" at the comment's 1-decimal precision.
-
-    A handful of differing pixels out of a full screenshot (font-hinting/anti-aliasing
-    noise between runs) still classifies as `modified` (exact-pixel, no tolerance — see
-    `compare_pngs`), but showing a before/after/diff table labeled "0.0% changed" reads as
-    self-contradictory noise. Excluded from the Top changes preview, not from the
-    `modified` classification/counts themselves.
-    """
-    return f"{fraction:.1%}" == "0.0%"
-
-
 def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> str:
     """Append up to two modified-asset before/after/diff tables and up to two new-asset
     previews, respecting the byte budget."""
@@ -502,7 +490,7 @@ def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> 
         (asset.changed_fraction or 0.0, test.slug, asset)
         for test in review_tests
         for asset in test.assets
-        if asset.classification == "modified" and not _rounds_to_zero_percent(asset.changed_fraction or 0.0)
+        if asset.classification == "modified"
     ]
     modified.sort(key=lambda item: item[0], reverse=True)
     new = [(test.slug, asset) for test in review_tests for asset in test.assets if asset.classification == "new"]

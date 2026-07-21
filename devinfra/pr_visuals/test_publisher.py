@@ -581,66 +581,6 @@ def test_success_comment_body_shows_both_modified_and_new_previews() -> None:
     assert "tests/s/added.png" in body
 
 
-def test_success_comment_body_excludes_imperceptible_diffs_from_top_changes() -> None:
-    """A handful of differing pixels out of a full screenshot (render noise between runs)
-    still classifies `modified`, but rounds to "0.0% changed" — a before/after/diff table
-    under that label is noise, not signal (github.com/agentydragon/ducktape/pull/3473)."""
-    review_tests = [
-        ReviewTest(
-            target_label="//ex:visuals",
-            slug="s",
-            title="Ex",
-            summary=ClassificationCounts(modified=1, new=1),
-            assets=[
-                ReviewAsset(
-                    path="noisy.png", label="noisy", classification="modified", changed_fraction=1e-6, changed_pixels=1
-                ),
-                ReviewAsset(path="added.png", label="added", classification="new"),
-            ],
-        )
-    ]
-    body = success_comment_body(
-        repository="r",
-        commit_sha="0123456789abcdef0123456789abcdef01234567",
-        url="https://v/commits/sha/",
-        review_tests=review_tests,
-        base_sha="f" * 40,
-    )
-    assert "### Top changes" not in body
-    assert "noisy.png" not in body
-    assert "### New screenshots" in body
-    assert "added.png" in body
-
-
-def test_success_comment_body_keeps_visible_diffs_alongside_imperceptible_ones() -> None:
-    review_tests = [
-        ReviewTest(
-            target_label="//ex:visuals",
-            slug="s",
-            title="Ex",
-            summary=ClassificationCounts(modified=2),
-            assets=[
-                ReviewAsset(
-                    path="noisy.png", label="noisy", classification="modified", changed_fraction=1e-6, changed_pixels=1
-                ),
-                ReviewAsset(
-                    path="real.png", label="real", classification="modified", changed_fraction=0.3, changed_pixels=900
-                ),
-            ],
-        )
-    ]
-    body = success_comment_body(
-        repository="r",
-        commit_sha="0123456789abcdef0123456789abcdef01234567",
-        url="https://v/commits/sha/",
-        review_tests=review_tests,
-        base_sha="f" * 40,
-    )
-    assert "### Top changes" in body
-    assert "real.png" in body
-    assert "noisy.png" not in body
-
-
 def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
     """No diff overlay exists when dimensions changed — the Diff cell is text."""
     review_tests = [
