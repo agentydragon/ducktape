@@ -4,10 +4,16 @@ Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch
 The cluster is intended to be the query surface; individual devices keep local ActivityWatch
 capture and currently push `aw-sync` staging databases through Syncthing.
 
+This directory is the documentation hub for the cluster ActivityWatch project:
+
+- [Importer canary](importer-canary.md): why upstream `aw-sync` ingestion is suspended.
+- [Syncthing conflicts](syncthing-conflicts.md): receiver index-loss and conflict-file RCA.
+- [GNOME Wayland capture](gnome-wayland-capture.md): missing window events on `rugged`.
+
 **Ingestion is not operational.** The importer and its Flux Kustomization are suspended after
 the first live pull canary exposed source mutation, provenance collisions, and already-amplified
 desktop staging data. The central database contains partial canary output and is not canonical.
-See [the importer canary record](../../debug/activitywatch_importer_canary.md).
+See [the importer canary record](importer-canary.md).
 
 No built-in ActivityWatch auth is enabled. Read/query access goes through the
 read-only proxy and, for public access, Authentik.

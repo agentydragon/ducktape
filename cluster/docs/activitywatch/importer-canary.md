@@ -1,5 +1,7 @@
 # ActivityWatch importer canary evidence
 
+[ActivityWatch project overview](README.md).
+
 Captured during the first live pull-only importer canary on 2026-07-21 UTC.
 
 ## Status

@@ -102,7 +102,7 @@ in
         # GNOME Shell extension on GNOME, wlr-foreign-toplevel on wlroots, or xlib on
         # X11. It writes the same aw-watcher-window_<host>/aw-watcher-afk_<host>
         # buckets the stock watchers did, so aw-sync → Syncthing → cluster ingestion
-        # is unchanged. See debug/activitywatch_window_gnome_wayland.md.
+        # is unchanged. See cluster/docs/activitywatch/gnome-wayland-capture.md.
         home.packages = [ pkgs.awatcher ];
 
         # GNOME hosts need the in-shell extension that exports focus on the session

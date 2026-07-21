@@ -1,5 +1,7 @@
 # ActivityWatch Syncthing index-loss conflict evidence
 
+[ActivityWatch project overview](README.md).
+
 Captured before the one-time conflict cleanup on 2026-07-21 UTC.
 
 ## Finding
@@ -18,7 +20,7 @@ converged.
 Later conflicts are not automatically evidence that the index was lost again. The importer
 canary deliberately restored older files on the receive-only receiver, and Syncthing
 correctly preserved those local versions as conflicts when newer peer versions arrived.
-See [the importer canary record](activitywatch_importer_canary.md). Every conflict still
+See [the importer canary record](importer-canary.md). Every conflict still
 stops the importer and requires attribution before deletion.
 
 ## Files preserved in the diagnostic snapshot

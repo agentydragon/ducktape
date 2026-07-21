@@ -9,7 +9,7 @@ notice "3h in X today → that project is hot," and stop nudging things he's cle
 `POST /api/0/query/` through a read-only proxy; the write API is unreachable from agents.
 Credential: the `activitywatch-haku-client-credentials` secret in `haku-sandbox`. Auth is
 a two-step Authentik mint (source JWT → proxy bearer); the generic recipe, secret fields,
-and API gotchas live with the infrastructure doc, <../../../cluster/docs/activitywatch.md>
+and API gotchas live with the infrastructure doc, <../../../cluster/docs/activitywatch/README.md>
 (the same flow serves every agent, each with its own reflected secret). Haku maintains its
 own living helper and usage procedure in its state.
 

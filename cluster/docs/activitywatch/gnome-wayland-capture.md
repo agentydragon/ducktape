@@ -1,5 +1,7 @@
 # ActivityWatch window bucket empty on rugged (GNOME Wayland)
 
+[ActivityWatch project overview](README.md).
+
 Investigation/RCA — 2026-07-07. rugged = ThinkPad, GNOME Shell 49.4, Wayland-only.
 
 ## TL;DR
@@ -147,6 +149,6 @@ Proceed with Option 1. Open implementation details to nail in the plan: the AFK
 bucket-id question (does `awatcher` write `aw-watcher-afk_rugged` or a different id?),
 the systemd-user service unit for `awatcher`, and the extension-enable mechanism via
 home-manager. Capture lives under `nix/home/services/activitywatch.nix`; cluster
-ingestion documented in `cluster/docs/activitywatch.md`. Other GNOME-Wayland hosts
+ingestion is documented in `cluster/docs/activitywatch/README.md`. Other GNOME-Wayland hosts
 (`wyrm2` runs sway → `aw-watcher-window-wayland` would also work there; `iguana`, `atlas`
 if GNOME-Wayland) likely have the same empty-window-bucket issue.

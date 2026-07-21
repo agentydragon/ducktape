@@ -129,7 +129,7 @@ secret flow, NetworkPolicy template, and blueprint tombstone rules.
 Personal activity tracking with local desktop capture, Syncthing transport, and an
 in-cluster query server. There is no public or Nebula route to ActivityWatch; query access
 is constrained by Kubernetes NetworkPolicy and the read-only proxy. Architecture and
-desktop setup: <docs/activitywatch.md>.
+desktop setup: <docs/activitywatch/README.md>.
 
 ## Repository Structure
 
