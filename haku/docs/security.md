@@ -30,6 +30,18 @@ surfaces use Haku's own principal and are scoped to that surface; their canonica
 `haku/base/instructions.md` → _Hard rules_. Haku is **its own principal** everywhere
 (attribution, independent revocation, bounded blast radius).
 
+**Egress fences bound _direct_ exfil, not _laundered_ exfil.** The network proxy stops a
+prompt-injected Haku opening a socket to an arbitrary host; it does **not** stop Haku smuggling
+data through a _legitimately-allowlisted write path_ — a git push, a CI publish, an MCP write. Those
+are bounded not by the proxy but by **where the write lands**: `haku-state` is private
+(operator-only — a commit is not exfil), ducktape is operator-reviewed (trusted; see threat model),
+the haku-ui frontend is CSP/iframe-fenced (_Browser-side exfiltration_, below). So **every new write
+path is evaluated against its destination's trust independently of the egress allowlist** — a path
+that lets Haku-authored content reach a surface an adversary can read _without operator review_
+(a public CI artifact, a public cache, a world-readable bucket) is an exfil channel even when every
+network hop is allowlisted. The browser-exfil section is the worked instance of this principle for
+one channel; the same test applies to any build/publish/write path added to a Haku runtime.
+
 ## Enforcement inventory
 
 | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | What it bounds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Source of truth                                                                                                                                                                                           |

@@ -108,6 +108,18 @@ Anthropic-locked" (A/B) **or** "provider-agnostic, pay each provider directly,
 incl. cheap GLM" (C). You can run both as separate Haku runtimes; you can't
 collapse them into one.
 
+**Beyond billing mode, there is a coverage nuance** (policy/ToS, not technical).
+Running Haku as a **Claude Code web routine (A) is fine — routines are a first-party
+feature of the product**, i.e. a supported use of the subscription; scheduling one is
+not "programmatic use" in the ToS sense. The grey zone is elsewhere: driving the
+subscription-authed `claude` CLI from a **self-hosted Agent-SDK loop** (the A-variant)
+is programmatic use the Max/Pro terms — framed around _non_-programmatic Claude Code —
+may not cover, so check before leaning on it. Managed Agents (B) bill **API rates
+regardless**, so they never draw on the subscription in the first place. Net:
+A-as-routine is defensible; the caution is specifically about self-hosted
+subscription-CLI automation, and it is one more reason C (pay each provider directly,
+no subscription entanglement) is clean if Haku's automation grows beyond routines.
+
 ## Comparison
 
 | Axis                         | A: Claude Code web routine  | B: Managed Agents (self-hosted) | C: provider-agnostic loop                |
