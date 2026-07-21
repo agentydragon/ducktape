@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse
 from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -50,7 +50,12 @@ from haku.console.oauth_token_state import (
     new_oauth_token_state,
     refresh_failure_episode,
 )
-from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at
+from haku.console.oauth_token_support import (
+    OAuthTokenResponseError,
+    parse_token_response,
+    public_base_url,
+    token_expires_at,
+)
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import (
@@ -70,6 +75,8 @@ UNPROVISIONED_DETAIL = "OAuth client not provisioned on this console; see the co
 
 
 class ProviderConnectionStatusBase(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     connection: str
     display_name: str
     provider: ProviderConnectionKind
@@ -209,11 +216,10 @@ async def _exchange_code(
         },
     )
     response = await _post_token(descriptor, data)
-    return await parse_token_response(
-        response,
-        label=f"{descriptor.display_name} token exchange",
-        error=lambda m: HTTPException(status_code=502, detail=m),
-    )
+    try:
+        return await parse_token_response(response, label=f"{descriptor.display_name} token exchange")
+    except OAuthTokenResponseError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 async def _refresh_token(
@@ -221,7 +227,7 @@ async def _refresh_token(
 ) -> OAuthToken:
     data = _token_request_data(descriptor, client, {"grant_type": "refresh_token", "refresh_token": refresh_token})
     response = await _post_token(descriptor, data)
-    return await parse_token_response(response, label=f"{descriptor.display_name} token refresh", error=RuntimeError)
+    return await parse_token_response(response, label=f"{descriptor.display_name} token refresh")
 
 
 def load_provider_clients(config: ConsoleConfigFile) -> dict[str, ProviderOAuthClientConfig]:

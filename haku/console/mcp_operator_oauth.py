@@ -49,7 +49,7 @@ from mcp.shared.auth import (
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from mcp.types import LATEST_PROTOCOL_VERSION
 from prometheus_client import Histogram
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -78,6 +78,7 @@ from haku.console.oauth_token_state import (
     refresh_failure_episode,
 )
 from haku.console.oauth_token_support import (
+    OAuthTokenResponseError,
     parse_token_response,
     public_base_url,
     token_expires_at,
@@ -108,14 +109,11 @@ def _observe_token_request(operation: str, outcome: str, started: float) -> None
     logger.info("MCP OAuth token %s outcome=%s duration_seconds=%.3f", operation, outcome, elapsed)
 
 
-class McpOperatorAuthStatusBase(BaseModel):
-    server_id: str
-    # The operator's human username (preferred_username), for display. Durable association
-    # ownership is keyed internally by canonical Operator UUID, which is not exposed in this API.
-    username: str
+class McpOperatorAuthStateBase(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
 
-class McpOperatorAuthConnected(McpOperatorAuthStatusBase):
+class McpOperatorAuthConnected(McpOperatorAuthStateBase):
     status: Literal["connected"] = "connected"
     connected_at: datetime.datetime
     # None when the linked token declares no expiry (OAuth `expires_in` absent).
@@ -123,7 +121,7 @@ class McpOperatorAuthConnected(McpOperatorAuthStatusBase):
     scope: str | None = None
 
 
-class McpOperatorAuthDegraded(McpOperatorAuthStatusBase):
+class McpOperatorAuthDegraded(McpOperatorAuthStateBase):
     status: Literal["degraded"] = "degraded"
     connected_at: datetime.datetime
     token_expires_at: datetime.datetime | None = None
@@ -131,15 +129,25 @@ class McpOperatorAuthDegraded(McpOperatorAuthStatusBase):
     refresh_failure: OAuthRefreshFailureEpisode
 
 
-class McpOperatorAuthUnconnected(McpOperatorAuthStatusBase):
+class McpOperatorAuthUnconnected(McpOperatorAuthStateBase):
     status: Literal["unconnected"] = "unconnected"
 
 
 # Discriminated on `status`, so the connected-only fields (connected_at/token_expires_at/
 # scope) exist exactly when connected — no "unconnected with a connected_at" nonsense state.
-type McpOperatorAuthStatus = Annotated[
+type McpOperatorAuthState = Annotated[
     McpOperatorAuthConnected | McpOperatorAuthDegraded | McpOperatorAuthUnconnected, Field(discriminator="status")
 ]
+
+
+class McpOperatorAuthStatus(BaseModel):
+    """Stable association identity wrapping its discriminated connection state."""
+
+    server_id: str
+    # The operator's human username (preferred_username), for display. Durable association
+    # ownership is keyed internally by canonical Operator UUID, which is not exposed in this API.
+    username: str
+    state: McpOperatorAuthState
 
 
 class McpOperatorAuthStatusResponse(BaseModel):
@@ -402,23 +410,19 @@ def _oauth_status_from_row(
     server_id: str, username: str, row: McpOperatorOAuthAssociation | None
 ) -> McpOperatorAuthStatus:
     if row is None:
-        return McpOperatorAuthUnconnected(server_id=server_id, username=username)
-    if (failure := refresh_failure_episode(row.token_state)) is not None:
-        return McpOperatorAuthDegraded(
-            server_id=server_id,
-            username=username,
+        state: McpOperatorAuthState = McpOperatorAuthUnconnected()
+    elif (failure := refresh_failure_episode(row.token_state)) is not None:
+        state = McpOperatorAuthDegraded(
             connected_at=row.created_at,
             token_expires_at=row.token_state.token_expires_at,
             scope=row.token_state.scope,
             refresh_failure=failure,
         )
-    return McpOperatorAuthConnected(
-        server_id=server_id,
-        username=username,
-        connected_at=row.created_at,
-        token_expires_at=row.token_state.token_expires_at,
-        scope=row.token_state.scope,
-    )
+    else:
+        state = McpOperatorAuthConnected(
+            connected_at=row.created_at, token_expires_at=row.token_state.token_expires_at, scope=row.token_state.scope
+        )
+    return McpOperatorAuthStatus(server_id=server_id, username=username, state=state)
 
 
 def _metadata_request_headers() -> dict[str, str]:
@@ -631,12 +635,10 @@ async def _exchange_operator_oauth_code(
             ),
         ) from e
     try:
-        token = await parse_token_response(
-            response, label="MCP OAuth token exchange", error=lambda m: HTTPException(status_code=502, detail=m)
-        )
-    except HTTPException:
+        token = await parse_token_response(response, label="MCP OAuth token exchange")
+    except OAuthTokenResponseError as error:
         _observe_token_request("exchange", "rejected", started)
-        raise
+        raise HTTPException(status_code=502, detail=str(error)) from error
     _observe_token_request("exchange", "success", started)
     return token
 
@@ -680,23 +682,19 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
             action=OAuthRefreshFailureAction.RETRYING,
         )
     try:
-        token = await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
-    except RuntimeError as error:
-        try:
-            oauth_error = response.json().get("error")
-        except (ValueError, AttributeError):
-            oauth_error = None
+        token = await parse_token_response(response, label="MCP OAuth token refresh")
+    except OAuthTokenResponseError as error:
         _observe_token_request("refresh", "rejected", started)
         raise OAuthRefreshError(
             str(error),
             kind=(
                 OAuthRefreshFailureKind.OAUTH_REJECTED
-                if response.status_code >= 400
+                if not error.invalid_response
                 else OAuthRefreshFailureKind.INVALID_RESPONSE
             ),
             action=(
                 OAuthRefreshFailureAction.RECONNECT
-                if oauth_error == "invalid_grant"
+                if error.oauth_error == "invalid_grant"
                 else OAuthRefreshFailureAction.OPERATOR_ACTION
             ),
         ) from error
@@ -736,12 +734,14 @@ async def disconnect_mcp_operator_auth(
     oauth_store: OAuthStoreDep,
     event_hub: ConsoleEventHubDep,
     actor: OperatorActorDep,
-) -> McpOperatorAuthUnconnected:
+) -> McpOperatorAuthStatus:
     await csrf_protect.validate_csrf(request)
     operator_id = actor.operator_id
     oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
     await event_hub.broadcast(operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")])
-    return McpOperatorAuthUnconnected(server_id=server_id, username=_operator_username(request))
+    return McpOperatorAuthStatus(
+        server_id=server_id, username=_operator_username(request), state=McpOperatorAuthUnconnected()
+    )
 
 
 @router.get(MCP_OPERATOR_AUTH_CALLBACK_PATH)

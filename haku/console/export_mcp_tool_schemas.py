@@ -368,7 +368,9 @@ async def build_mcp_tool_results_schema() -> dict[str, Any]:
         }
 
     console_tool_properties = {
-        tool_name: _frontend_schema(model.model_json_schema(), f"$.properties.{SERVER_NAME}.properties.{tool_name}")
+        tool_name: _frontend_schema(
+            model.model_json_schema(mode="serialization"), f"$.properties.{SERVER_NAME}.properties.{tool_name}"
+        )
         for tool_name, model in _CONSOLE_NATIVE_RESULT_MODELS.items()
     }
     server_properties[SERVER_NAME] = {

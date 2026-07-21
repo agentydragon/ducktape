@@ -10,6 +10,8 @@ const zMcpServerStatus = mcpToolResultSchema("haku-console", "get_mcp_server_sta
 const zNodeDaemonList = mcpToolResultSchema("haku-console", "list_node_daemons");
 
 export type McpServerConnection = McpServerList["servers"][number];
+export type McpOperatorAuthStatus = Extract<NonNullable<McpServerConnection["connection"]>, { state: unknown }>;
+export type McpOperatorAuthDegraded = Extract<McpOperatorAuthStatus["state"], { status: "degraded" }>;
 export type McpServerProbe = McpServerStatus;
 export type DaemonStatus = NodeDaemonList["daemons"][number];
 

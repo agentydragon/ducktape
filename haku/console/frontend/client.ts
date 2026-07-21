@@ -28,6 +28,7 @@ export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionRe
 type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 export type McpOperatorAuthConnectResponse = components["schemas"]["McpOperatorAuthConnectResponse"];
+export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus"];
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
 export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
 
@@ -125,9 +126,7 @@ export async function connectMcpOperatorAuth(serverId: string): Promise<McpOpera
   return data;
 }
 
-export async function disconnectMcpOperatorAuth(
-  serverId: string
-): Promise<components["schemas"]["McpOperatorAuthUnconnected"]> {
+export async function disconnectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthStatus> {
   const csrfToken = await fetchCsrfToken();
   const { data, error } = await api.DELETE("/api/mcp/operator-auth/{server_id}", {
     params: { path: { server_id: serverId } },

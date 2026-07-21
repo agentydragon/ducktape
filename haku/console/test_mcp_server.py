@@ -36,6 +36,7 @@ from haku.console.mcp_approval import DegradedReflection
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_operator_oauth import (
     McpOperatorAuthConnected,
+    McpOperatorAuthStatus,
     McpOperatorAuthStatusResponse,
     McpOperatorAuthUnconnected,
 )
@@ -761,14 +762,16 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     oauth_statuses = Mock(
         return_value=McpOperatorAuthStatusResponse(
             associations=[
-                McpOperatorAuthConnected(
+                McpOperatorAuthStatus(
                     server_id="expired-remote",
                     username="operator",
-                    connected_at=connected_at,
-                    token_expires_at=expires_at,
-                    scope="openid offline_access",
+                    state=McpOperatorAuthConnected(
+                        connected_at=connected_at, token_expires_at=expires_at, scope="openid offline_access"
+                    ),
                 ),
-                McpOperatorAuthUnconnected(server_id="unconnected-remote", username="operator"),
+                McpOperatorAuthStatus(
+                    server_id="unconnected-remote", username="operator", state=McpOperatorAuthUnconnected()
+                ),
             ]
         )
     )
@@ -820,10 +823,12 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         "connection": {
             "server_id": "expired-remote",
             "username": "operator",
-            "status": "connected",
-            "connected_at": connected_at.isoformat().replace("+00:00", "Z"),
-            "token_expires_at": expires_at.isoformat().replace("+00:00", "Z"),
-            "scope": "openid offline_access",
+            "state": {
+                "status": "connected",
+                "connected_at": connected_at.isoformat().replace("+00:00", "Z"),
+                "token_expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+                "scope": "openid offline_access",
+            },
         },
     }
     assert statuses["unconnected-remote"].model_dump(mode="json") == {
@@ -837,7 +842,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                 "scopes": None,
             },
         },
-        "connection": {"server_id": "unconnected-remote", "username": "operator", "status": "unconnected"},
+        "connection": {"server_id": "unconnected-remote", "username": "operator", "state": {"status": "unconnected"}},
     }
     assert statuses["gmail"].model_dump(mode="json") == {
         "server_id": "gmail",

@@ -11,7 +11,7 @@ from enum import StrEnum
 from uuid import UUID, uuid4
 
 from mcp.shared.auth import OAuthToken
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.database_schema import OAuthTokenState
@@ -51,6 +51,8 @@ class OAuthRefreshFailureDetail(BaseModel):
 
 
 class OAuthRefreshFailureEpisode(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     started_at: datetime.datetime
     initial: OAuthRefreshFailureDetail
     latest: OAuthRefreshFailureDetail

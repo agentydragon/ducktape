@@ -185,26 +185,28 @@ export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
     },
     connection: {
       server_id: "grocy-sf",
-      status: "degraded",
       username: "agentydragon",
-      connected_at: "2026-07-01T09:00:00Z",
-      token_expires_at: "2026-07-17T10:00:00Z",
-      scope: "read write",
-      refresh_failure: {
-        started_at: "2026-07-17T09:59:00Z",
-        initial: {
-          at: "2026-07-17T09:59:00Z",
-          kind: "outcome_unknown",
-          message: "MCP OAuth token refresh timed out after 30 seconds",
+      state: {
+        status: "degraded",
+        connected_at: "2026-07-01T09:00:00Z",
+        token_expires_at: "2026-07-17T10:00:00Z",
+        scope: "read write",
+        refresh_failure: {
+          started_at: "2026-07-17T09:59:00Z",
+          initial: {
+            at: "2026-07-17T09:59:00Z",
+            kind: "outcome_unknown",
+            message: "MCP OAuth token refresh timed out after 30 seconds",
+          },
+          latest: {
+            at: "2026-07-17T09:59:00Z",
+            kind: "outcome_unknown",
+            message: "MCP OAuth token refresh timed out after 30 seconds",
+          },
+          attempts: 1,
+          action: "reconnect",
+          next_retry_at: null,
         },
-        latest: {
-          at: "2026-07-17T09:59:00Z",
-          kind: "outcome_unknown",
-          message: "MCP OAuth token refresh timed out after 30 seconds",
-        },
-        attempts: 1,
-        action: "reconnect",
-        next_retry_at: null,
       },
     },
   },

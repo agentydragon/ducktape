@@ -4,7 +4,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from haku.console.oauth_token_support import parse_token_response, token_request_error_message
+from haku.console.oauth_token_support import OAuthTokenResponseError, parse_token_response, token_request_error_message
 
 
 def test_token_request_timeout_has_a_message_when_httpx_error_does_not() -> None:
@@ -41,8 +41,8 @@ async def test_token_error_preserves_standard_oauth_details_without_tokens() -> 
         },
     )
 
-    with pytest.raises(RuntimeError) as exc_info:
-        await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
+    with pytest.raises(OAuthTokenResponseError) as exc_info:
+        await parse_token_response(response, label="MCP OAuth token refresh")
 
     message = str(exc_info.value)
     assert message == (
@@ -51,13 +51,16 @@ async def test_token_error_preserves_standard_oauth_details_without_tokens() -> 
         '"error_uri":"https://authorization.example/errors/invalid-grant"}'
     )
     assert "must-not-appear" not in message
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.oauth_error == "invalid_grant"
+    assert not exc_info.value.invalid_response
 
 
 async def test_token_error_preserves_bounded_plain_text_detail() -> None:
     response = httpx.Response(502, text="  upstream\nproxy timed out  " + "x" * 600)
 
-    with pytest.raises(RuntimeError) as exc_info:
-        await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
+    with pytest.raises(OAuthTokenResponseError) as exc_info:
+        await parse_token_response(response, label="MCP OAuth token refresh")
 
     message = str(exc_info.value)
     assert message.startswith("MCP OAuth token refresh failed: 502: upstream proxy timed out ")
@@ -67,8 +70,8 @@ async def test_token_error_preserves_bounded_plain_text_detail() -> None:
 async def test_token_error_does_not_dump_unknown_json_fields() -> None:
     response = httpx.Response(400, json={"detail": "contains internal data", "refresh_token": "secret"})
 
-    with pytest.raises(RuntimeError) as exc_info:
-        await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
+    with pytest.raises(OAuthTokenResponseError) as exc_info:
+        await parse_token_response(response, label="MCP OAuth token refresh")
 
     assert str(exc_info.value) == (
         "MCP OAuth token refresh failed: 400: OAuth error response contained no standard error fields"

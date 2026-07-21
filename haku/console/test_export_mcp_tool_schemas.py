@@ -199,6 +199,32 @@ async def test_exports_console_native_status_result_schemas() -> None:
     tools = schema["properties"]["haku-console"]["properties"]
 
     assert list(tools) == ["get_mcp_server_status", "list_mcp_servers", "list_node_daemons"]
+
+    schemas_by_title: dict[str, dict] = {}
+
+    def collect_titled_schemas(value: object) -> None:
+        if isinstance(value, dict):
+            if isinstance(value.get("title"), str):
+                schemas_by_title[value["title"]] = value
+            for child in value.values():
+                collect_titled_schemas(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect_titled_schemas(child)
+
+    collect_titled_schemas(tools["list_mcp_servers"])
+    for title in (
+        "McpOperatorAuthConnected",
+        "McpOperatorAuthDegraded",
+        "McpOperatorAuthUnconnected",
+        "ProviderConnected",
+        "ProviderDegraded",
+        "ProviderUnconnected",
+        "ProviderUnprovisioned",
+    ):
+        assert "status" in schemas_by_title[title]["required"]
+    assert "next_retry_at" in schemas_by_title["OAuthRefreshFailureEpisode"]["required"]
+
     Draft202012Validator(tools["list_mcp_servers"]).validate(
         {
             "servers": [

@@ -109,7 +109,7 @@ class PostgresAuthentikOperatorTokenStore:
         }
         async with httpx.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
             response = await http.post(authentik_token_endpoint_for_issuer(self._issuer), data=data)
-        return await parse_token_response(response, label="Authentik operator token refresh", error=RuntimeError)
+        return await parse_token_response(response, label="Authentik operator token refresh")
 
     async def access_token_for(self, *, operator_id: UUID) -> str | None:
         with self._sessions.begin() as session:

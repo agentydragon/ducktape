@@ -448,11 +448,11 @@ async def test_operator_oauth_timeout_is_persisted_and_not_replayed(
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
     status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
-    assert isinstance(status, McpOperatorAuthDegraded)
-    assert status.refresh_failure.initial.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
-    assert status.refresh_failure.latest.message == "MCP OAuth token refresh timed out after 30 seconds"
-    assert status.refresh_failure.action == OAuthRefreshFailureAction.RECONNECT
-    assert status.refresh_failure.attempts == 1
+    assert isinstance(status.state, McpOperatorAuthDegraded)
+    assert status.state.refresh_failure.initial.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
+    assert status.state.refresh_failure.latest.message == "MCP OAuth token refresh timed out after 30 seconds"
+    assert status.state.refresh_failure.action == OAuthRefreshFailureAction.RECONNECT
+    assert status.state.refresh_failure.attempts == 1
     assert attempts == 1
 
 
@@ -511,7 +511,7 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
 
     assert await oauth_store.access_token_for(server=server, operator_id=operator_id) == "fresh"
     status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
-    assert isinstance(status, McpOperatorAuthConnected)
+    assert isinstance(status.state, McpOperatorAuthConnected)
     assert attempts == 2
 
 

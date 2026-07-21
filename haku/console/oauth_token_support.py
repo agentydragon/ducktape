@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import datetime
 import json
-from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -23,6 +22,16 @@ from haku.console.config import Settings
 REFRESH_SKEW = datetime.timedelta(seconds=60)
 _ERROR_BODY_LIMIT = 512
 _OAUTH_ERROR_FIELDS = ("error", "error_description", "error_uri")
+
+
+class OAuthTokenResponseError(RuntimeError):
+    """A safe, structured token-endpoint rejection or invalid success response."""
+
+    def __init__(self, message: str, *, status_code: int, oauth_error: str | None, invalid_response: bool) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.oauth_error = oauth_error
+        self.invalid_response = invalid_response
 
 
 def token_expires_at(token: OAuthToken, now: datetime.datetime) -> datetime.datetime | None:
@@ -48,18 +57,27 @@ def token_request_error_message(*, label: str, request_error: httpx.RequestError
     return f"{label} request failed: {type(request_error).__name__}{suffix}"
 
 
-async def parse_token_response(
-    response: httpx.Response, *, label: str, error: Callable[[str], Exception]
-) -> OAuthToken:
+async def parse_token_response(response: httpx.Response, *, label: str) -> OAuthToken:
     if response.status_code != 200:
-        raise error(f"{label} failed: {response.status_code}{_oauth_error_detail(response)}")
+        detail, oauth_error = _oauth_error_detail(response)
+        raise OAuthTokenResponseError(
+            f"{label} failed: {response.status_code}{detail}",
+            status_code=response.status_code,
+            oauth_error=oauth_error,
+            invalid_response=False,
+        )
     try:
         return await handle_token_response_scopes(response)
     except ValidationError as e:
-        raise error(f"{label} response was invalid: {e}") from e
+        raise OAuthTokenResponseError(
+            f"{label} response was invalid: {e}",
+            status_code=response.status_code,
+            oauth_error=None,
+            invalid_response=True,
+        ) from e
 
 
-def _oauth_error_detail(response: httpx.Response) -> str:
+def _oauth_error_detail(response: httpx.Response) -> tuple[str, str | None]:
     """Return bounded, useful token-endpoint diagnostics without echoing token fields.
 
     OAuth error responses are normally JSON. Only the RFC error fields are retained from
@@ -71,14 +89,14 @@ def _oauth_error_detail(response: httpx.Response) -> str:
         payload: Any = response.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
         excerpt = " ".join(response.text.split())[:_ERROR_BODY_LIMIT]
-        return f": {excerpt}" if excerpt else ""
+        return (f": {excerpt}" if excerpt else ""), None
 
     if not isinstance(payload, dict):
-        return f": unexpected JSON {type(payload).__name__} response"
+        return f": unexpected JSON {type(payload).__name__} response", None
     oauth_error = {
         field: value for field in _OAUTH_ERROR_FIELDS if isinstance((value := payload.get(field)), str) and value
     }
     if not oauth_error:
-        return ": OAuth error response contained no standard error fields"
+        return ": OAuth error response contained no standard error fields", None
     encoded = json.dumps(oauth_error, ensure_ascii=True, separators=(",", ":"))
-    return f": {encoded[:_ERROR_BODY_LIMIT]}"
+    return f": {encoded[:_ERROR_BODY_LIMIT]}", oauth_error.get("error")
