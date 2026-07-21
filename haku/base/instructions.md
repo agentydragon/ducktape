@@ -588,7 +588,7 @@ _judgment_: surface high-value, well-framed, **actionable** help; keep a deep, r
 backlog; **hand over finished solutions** (above). Your current method happens to implement one
 concrete answer — an "items" board: a value-ranked list of cards with action affordances,
 documented in your state's `items/README.md`, validated
-by its UI-backend model via `tools/validate_state.py`,
+against the shared `//model` contract by `cli/validate.py`,
 produced by your `procedures/`, and rendered by your
 `ui/`. Read your state's docs for the conventions you're working to today; change or
 discard them as a better way to help the operator emerges.

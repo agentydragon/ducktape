@@ -24,11 +24,11 @@ git clone --filter=blob:none --no-checkout "https://haku:${TOKEN}@git.allegedly.
 git -C /tmp/cpap-data checkout main -- STR.EDF   # daily summary — start here
 ```
 
-**Fastest daily-summary path: `tools/cpap_scan.py` in haku-state** — fetches `STR.EDF` via
-the Forgejo raw API (`curl -n`, `haku` user) and parses it with stdlib `struct`, printing
-recent nights + sync freshness. Use it instead of a clone for summaries; clone only for
+**Fastest daily-summary path: `haku read --source cpap` in haku-state** — fetches `STR.EDF`
+via the Forgejo raw API (`urllib` + `~/.netrc`, `haku` user) and parses it with stdlib `struct`,
+printing recent nights + sync freshness. Use it instead of a clone for summaries; clone only for
 waveforms. (Gotcha: the managed env has **no numpy/pandas**, so the skill's
-`examples/parse_str_edf.py` crashes — `cpap_scan.py` is the dependency-free reader.)
+`examples/parse_str_edf.py` crashes — this reader is dependency-free.)
 
 `STR.EDF` is the daily-summary EDF (one record per night): `AHI`, `Leak.50`/`.95`,
 `Duration` (therapy minutes), `MaskOn`/`MaskOff`. Per-night waveforms live under

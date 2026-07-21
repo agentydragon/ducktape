@@ -98,7 +98,7 @@ suggesting. Missing edits = missing the operator's current reality.
 
 Keep an **exact millisecond bookmark**; `edited.since` takes ms. In haku-state it lives
 as the typed `epoch_millis` entry in `memory/bookmarks.md`'s frontmatter ledger — advance
-it **after triaging the sweep** via `tools/bookmark.py advance tana --to <ms>`
+it **after triaging the sweep** via `haku advance tana --to <ms>`
 (tool-written, monotonic), never by hand-editing the ledger.
 
 **`edited.since` alone is not enough — you also need `created.since`.** Typing a _new_
