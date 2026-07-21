@@ -8,8 +8,9 @@ Python validators can impose stricter cross-field rules. Two catalogs are emitte
 by ``main()``'s ``--results`` flag: the argument schemas (``McpToolArguments``) and the
 result schemas (``McpToolResults``).
 
-Beyond the console's own in-process servers (gmail, google_calendar, haku_routine), the result
-catalog includes the console-native reflection tools directly from their Python response models.
+Beyond the console's own in-process servers (gmail, google_calendar, haku_routine, hostexec), the
+result catalog includes the console-native reflection tools directly from their Python response
+models.
 This keeps the trusted frontend's runtime validators identical to the MCP output contract without
 building a database-backed console application or adding an HTTP status endpoint. The exporter
 also reflects the **remote** ``grocy-sf`` server's custom batch tools. grocy-sf runs
@@ -37,7 +38,8 @@ from pydantic import BaseModel
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
-from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from haku.console.config import HostexecConfig
+from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
 from haku.console.node_daemons import DaemonStatusResponse
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
@@ -135,12 +137,17 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # `Any` is intentional at this reflection-only boundary: no collaborator may be
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
     # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
-    # build their own inert client from a None token; only routine needs the inert launcher.
+    # build their own inert client from a None token; routine and hostexec need an inert
+    # launcher/broker respectively. hostexec's `hosts` map is empty — registration only needs
+    # the tool's own schema, never a real host to route to.
     dependency: Any = inert
     servers = {
         server_id: registration.builder(None)
         for server_id, registration in build_in_process_servers(
-            InProcessServerDependencies(routine_launcher=dependency)
+            InProcessServerDependencies(
+                routine_launcher=dependency,
+                hostexec=HostexecServerConfig(config=HostexecConfig(hosts={}), token_endpoint="", broker=dependency),
+            )
         ).items()
     }
     servers[GROCY_SF_SERVER_ID] = build_batch_tools_mcp(

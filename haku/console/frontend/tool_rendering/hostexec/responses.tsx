@@ -1,31 +1,23 @@
-// Result rendering for hostexec's `bash` tool (see requests.tsx for the argument-side widget and
-// the note on why this schema is hand-authored rather than generated). Mirrors `BaseExecResult`
-// (mcp_infra/exec/models.py): a discriminated exit status plus stdout/stderr, each either the full
-// text or a `TruncatedStream` when the process produced more than `max_bytes`.
+// Result rendering for hostexec's `bash` tool (see requests.tsx for the argument-side widget).
+// Mirrors `BaseExecResult` (mcp_infra/exec/models.py): a discriminated exit status plus
+// stdout/stderr, each either the full text or a `TruncatedStream` when the process produced more
+// than `max_bytes`.
 
 import { Group, Stack } from "@mantine/core";
-import { z } from "zod";
+import prettyMs from "pretty-ms";
+import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block.tsx";
+import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewVariant } from "../vocabulary.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
+import { HOSTEXEC_SERVER_ID } from "./requests.tsx";
 
-const zExitStatus = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("timed_out") }),
-  z.object({ kind: z.literal("exited"), exit_code: z.number() }),
-  z.object({ kind: z.literal("killed"), signal: z.number() }),
-]);
-const zExecStream = z.union([z.string(), z.object({ truncated_text: z.string(), total_bytes: z.number() })]);
-const zBashResult = z.object({
-  exit: zExitStatus,
-  stdout: zExecStream,
-  stderr: zExecStream,
-  duration_ms: z.number(),
-});
+const zBashResult = mcpToolResultSchema(HOSTEXEC_SERVER_ID, "bash");
 
 export type BashResult = z.infer<typeof zBashResult>;
-type ExitStatus = z.infer<typeof zExitStatus>;
-type ExecStream = z.infer<typeof zExecStream>;
+type ExitStatus = BashResult["exit"];
+type ExecStream = BashResult["stdout"];
 
 function ExitBadge({ exit }: { exit: ExitStatus }) {
   switch (exit.kind) {
@@ -76,7 +68,7 @@ function BashResultView({ result, variant }: ResultPreviewProps<BashResult>) {
       <Group gap={8}>
         <ExitBadge exit={result.exit} />
         <PreviewText size="xs" c="dimmed">
-          {(result.duration_ms / 1000).toFixed(1)}s
+          {prettyMs(result.duration_ms)}
         </PreviewText>
       </Group>
       <StreamBlock label="stdout" stream={result.stdout} variant={variant} />

@@ -55,10 +55,11 @@ _EXPECTED_TOOLS = {
         "stock_get",
     ),
     "haku_routine": ("launch_routine",),
+    "hostexec": ("bash",),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine")
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine", "hostexec")
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
@@ -141,6 +142,32 @@ async def test_nullable_fastmcp_arguments_remain_nullable() -> None:
     )
     Draft202012Validator(schema["properties"]["google_calendar"]["properties"]["get_event"]).validate(
         {"event_id": "series1"}
+    )
+
+
+async def test_hostexec_schemas_validate() -> None:
+    """hostexec's `bash` tool round-trips through both catalogs: its args (including the omittable
+    `cwd`) and its `BaseExecResult`-shaped result, whose `exit` field is a `kind`-discriminated
+    union (`Field(discriminator="kind")`) — proving that survives `_dereference` cleanly too."""
+    args_schema = (await build_mcp_tool_arguments_schema())["properties"]["hostexec"]["properties"]["bash"]
+    Draft202012Validator(args_schema).validate(
+        {"host": "wyrm2", "run_as": "agentydragon", "cmd": "ls -la", "max_bytes": 1000, "timeout_ms": 5000}
+    )
+    Draft202012Validator(args_schema).validate(
+        {"host": "wyrm2", "run_as": "root", "cmd": "true", "max_bytes": 0, "timeout_ms": 1000, "cwd": "/tmp"}
+    )
+
+    result_schema = (await build_mcp_tool_results_schema())["properties"]["hostexec"]["properties"]["bash"]
+    Draft202012Validator(result_schema).validate(
+        {"exit": {"kind": "exited", "exit_code": 0}, "stdout": "hi", "stderr": "", "duration_ms": 12}
+    )
+    Draft202012Validator(result_schema).validate(
+        {
+            "exit": {"kind": "killed", "signal": 9},
+            "stdout": {"truncated_text": "partial", "total_bytes": 5_000},
+            "stderr": "",
+            "duration_ms": 30_000,
+        }
     )
 
 
