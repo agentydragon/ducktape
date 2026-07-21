@@ -82,8 +82,10 @@ mkdirSync(outDir, { recursive: true });
 // Chromium comes from the BUILD-wired CHROMIUM_HEADLESS_SHELL (hermetic
 // @playwright_browsers build under RBE) or the ambient Playwright browser for
 // a local `bazel run` — both resolved inside launchDeterministicBrowser, matching the same
-// launcher every other visual-test consumer uses. See screenshots/render.mjs and
-// haku/console/debug/pr_visuals_flaky_diffs.md for what this + DISABLE_ANIMATIONS_CSS fix.
+// launcher every other visual-test consumer uses. See
+// ../../../../../util/testing/frontend_visual/README.md for how to verify a scene is
+// deterministic — this + DISABLE_ANIMATIONS_CSS close off rendering-level jitter, not
+// async-load races.
 const browser = await launchDeterministicBrowser();
 const assets = [];
 try {

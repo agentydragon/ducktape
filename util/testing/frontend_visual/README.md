@@ -2,8 +2,15 @@
 
 Shared Puppeteer/Playwright infrastructure for per-scenario visual render-health
 tests (see `visual-test-lib.mjs` for the JS/Puppeteer path used by
-`x/study_casino/frontend` and `props/frontend`, and `frontend_visual.py` for the
-Python/Playwright path used by `x/study_casino/tests` and `finance/augur`).
+`x/study_casino/frontend`, `props/frontend`, and `airlock/frontend`, and
+`frontend_visual.py` for the Python/Playwright path used by `x/study_casino/tests`
+and `finance/augur`). `capture.mjs` holds the lower-level page-prep/capture
+primitives (`prepareDeterministicPage`, `screenshotElement`, `settle`) that
+`visual-test-lib.mjs` and haku console's own multi-scene renderers
+(`haku/console/frontend/screenshots/render.mjs`,
+`haku/console/frontend/tool_rendering/screenshot/render.mjs`) build on — a
+library, not a `main()`, so each caller keeps owning content-loading,
+orchestration, and its own exit code.
 
 There are no checked-in pixel baselines: these tests gate render health (the
 harness loads, the scenario mounts, zero uncaught page errors) and publish the
@@ -36,3 +43,33 @@ If the single component has a real production container that owns its width
 (a dashboard grid cell, a fixed-width panel column), render it inside that
 actual container/class in the harness — not a synthetic hardcoded width — so
 the screenshot tracks the true CSS instead of a number that can drift from it.
+
+## Verifying determinism
+
+A harness "passing" only proves it rendered — it says nothing about whether two
+runs of the identical commit produce identical pixels. A scene that's still
+animating or still waiting on a mocked async fetch at the moment of capture
+produces exactly this: it looks the same to a human but differs by a few pixels
+between runs, showing up as a misleadingly-labeled "X% changed" diff in PR visual
+review. See <https://github.com/agentydragon/ducktape/pull/3478> and
+<https://github.com/agentydragon/ducktape/pull/3481> for three real instances
+(an unguarded Mantine CSS animation, and two mocked-fetch races against a fixed
+settle delay).
+
+To check a harness is actually deterministic, don't just eyeball the PNGs — run
+the target twice with fresh (non-cached) execution and diff BuildBuddy's
+artifact content digests directly, without downloading anything:
+
+```bash
+bbr test --noremote_accept_cached --nocache_test_results //path/to:target   # run 1
+bbr test --noremote_accept_cached --nocache_test_results //path/to:target   # run 2
+bbapi artifact list <invocation-1> --json > /tmp/run1.json
+bbapi artifact list <invocation-2> --json > /tmp/run2.json
+# diff the "uri" field per asset name — identical content hashes to the same blob URI
+```
+
+If they differ, `launchDeterministicBrowser()` + `DISABLE_ANIMATIONS_CSS` (both in
+`launcher.mjs`) close off rendering-level jitter (font rasterization, unguarded
+CSS animations), but not a page that's still loading: `visual-test-lib.mjs` waits
+with `waitUntil: "networkidle0"` for exactly this reason, rather than `"load"`,
+which returns as soon as the initial HTML parses regardless of in-flight fetches.

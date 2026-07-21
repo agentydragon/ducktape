@@ -101,9 +101,9 @@ mkdirSync(outDir, { recursive: true });
 // @playwright_browsers build under RBE) or the ambient Playwright browser for
 // a local `bazel run` — both resolved inside launchDeterministicBrowser. The deterministic flag
 // bundle (font hinting/subpixel positioning, LCD text, Skia runtime opts, swiftshader, …) pins
-// general rasterization, matching the same launcher every other visual-test consumer uses — see
-// haku/console/debug/pr_visuals_flaky_diffs.md for the specific bug this + DISABLE_ANIMATIONS_CSS
-// below fix (an unguarded Mantine `Indicator processing` CSS animation was the actual cause).
+// general rasterization, matching the same launcher every other visual-test consumer uses. This
+// + DISABLE_ANIMATIONS_CSS below closes off rendering-level jitter, not async-load races — see
+// ../../../../util/testing/frontend_visual/README.md for how to verify a scene is deterministic.
 const browser = await launchDeterministicBrowser();
 const assets = [];
 const mockHakuUi = readInput("MOCK_HAKU_UI", "mock_haku_ui.html");
