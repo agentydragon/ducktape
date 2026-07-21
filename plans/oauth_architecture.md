@@ -135,12 +135,12 @@ stays (least-privilege by construction — all `.readonly` scopes).
 
 These do not block H1-H3:
 
-| Lane                             | Work                                                                                                                                                                                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1: typed auth configuration     | Replace optional-heavy incoming/outgoing auth config with role-specific discriminated models and typed scope domains, atomically at each consumer. Keep credentialed-facade and identity-delegation constructors separate.                                |
-| S2: browser OIDC helper          | Extract only genuinely shared Authlib/Starlette relying-party behavior from Haku and Props; migrate Study Casino from username authority to local UUID plus exact `(issuer, subject)`.                                                                    |
-| I1: singular Authentik ownership | Inventory provider/application/controller ownership, resolve the Kagent proxy-vs-OIDC duplicate, assign shared mappings one owner, update `<../cluster/docs/mcp_oauth_authentik_notes.md>` for preregistration/CIMD/DCR preference, and add drift checks. |
-| D1: public-client abuse controls | Add Haku-side enrollment/registration rate limits and transaction quotas if public DCR remains enabled. FastMCP retains redirect/CIMD mechanics and protocol TTLs; Haku retains interaction/activation expiry.                                            |
+| Lane                             | Work                                                                                                                                                                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1: typed auth configuration     | Replace optional-heavy incoming/outgoing auth config with role-specific discriminated models and typed scope domains, atomically at each consumer. Keep credentialed-facade and identity-delegation constructors separate. |
+| S2: browser OIDC helper          | Extract only genuinely shared Authlib/Starlette relying-party behavior from Haku and Props; migrate Study Casino from username authority to local UUID plus exact `(issuer, subject)`.                                     |
+| I1: singular Authentik ownership | Inventory remaining provider/application/controller ownership, assign shared mappings one owner, update `<../cluster/docs/mcp_oauth_authentik_notes.md>` for preregistration/CIMD/DCR preference, and add drift checks.    |
+| D1: public-client abuse controls | Add Haku-side enrollment/registration rate limits and transaction quotas if public DCR remains enabled. FastMCP retains redirect/CIMD mechanics and protocol TTLs; Haku retains interaction/activation expiry.             |
 
 Retiring Airlock's remaining OAuth grants is a separate credential-migration program. Its removed
 MCP proxy and approval queue must not be revived as part of that migration. `<../x/agent_server/>`

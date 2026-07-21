@@ -11,6 +11,10 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
   injected in Gimlet's private build pipeline, not in the published source. Weave GitOps
   (the main alternative with dep graph visualization) has had no stable release since
   2023-12-06. Use Headlamp + `flux` CLI instead.
+- **Kagent** (2026-07-21): Retired after noisy MCP results repeatedly exceeded the z.ai
+  prompt limit and killed sessions. Kagent had no client-side tool-output budget, and its
+  between-turn compaction could not prevent a single turn from overflowing context. See
+  <../archive/2026_07_kagent/README.md>.
 
 ## Suspended Kustomizations
 
@@ -31,8 +35,6 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   `region=hil` should it ever be revived.)
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
-- **kagent**: `kagent-{crds,db,secrets}` — parked 2026-05-08; too fragile (sessions die on
-  large MCP outputs, z.ai error 1261). Resources deleted. See <../k8s/agents/kagent/TODO.md>.
 - **Matrix**: `matrix`, `matrix-{agent-rbac,db,secrets,namespace}` — parked; workload
   manifests are retained on disk, but the Flux Kustomization CRs were removed.
 - **OpenClaw**: `openclaw-{gateway,operator,sandbox}` (+ their `-namespace`/`-secrets`,
@@ -422,8 +424,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       secret uses that path. Move the remaining application providers to Terraform while
       preserving each backend's supported authentication model. Retain identity-aware
       proxy providers for backends without native OIDC; migrate Tandoor and Proxmox to
-      native OIDC. Kagent's redundant forward proxy is tombstoned; remove its cleanup
-      blueprint after the legacy outpost has reconciled absent.
+      native OIDC.
 - [ ] Authentik cache/channels offload: design a Redis-based replacement for the current
       Postgres-backed cache/channels path (`django_postgres_cache`,
       `django_channels_postgres`) without regressing single-node-failure resilience on the

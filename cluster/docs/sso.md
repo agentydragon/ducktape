@@ -92,5 +92,5 @@ Remove the entries after a few reconcile cycles once confirmed clean.
 When migrating a provider from blueprints to Terraform, tombstone only objects that the
 new Terraform resources do not own. If the application slug survives while its protocol
 provider changes, do not tombstone the application: deleting by slug would also delete
-the live Terraform-owned application. The Kagent proxy-to-OIDC migration is the reference
-case in `blueprints/kagent-sso.yaml`.
+the live Terraform-owned application. The completed Kagent proxy-to-OIDC migration is the
+reference case in <../archive/2026_07_kagent/docs/kagent_sso.md>.

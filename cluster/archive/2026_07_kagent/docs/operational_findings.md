@@ -1,7 +1,8 @@
-# kagent — status
+# Kagent operational findings
 
-**Suspended 2026-05-08.** All Flux kustomizations except `kagent-namespace` are
-suspended (app, crds, db, secrets). Namespace and resources deleted from cluster.
+**Suspended 2026-05-08; archived 2026-07-21.** The Flux Kustomizations, active
+Terraform identity, and manifests were removed from the active configuration after the
+namespace and workload resources had been deleted from the cluster.
 Reason: kagent lacks tool-call output truncation/limiting — a
 single MCP call (`kubectl get events`, full pod listings) dumps enough text
 into the event history that the next request exceeds z.ai's per-prompt cap
@@ -40,18 +41,9 @@ cluster-ops use. See the "Tool-output robustness" section in
    `/api/paas/v4` endpoint at PAYG rates, or a different vendor entirely).
 4. Wait for upstream kagent to add a token-budget-aware compaction trigger.
 
-## Decommission (later)
-
-- [ ] **Delete kagent from the cluster** — CRDs, DB (`kagent-db`), secrets, the
-      `devbot` manifests, and the suspended Flux kustomizations — unless kagent
-      fixes tool-output truncation / large-MCP-output handling upstream, or the
-      project becomes active again. The platform is parked and not in use; the
-      manifests are dead weight until/unless that changes. Revisit on each kagent
-      upstream release.
-
 ## See also
 
-- <namespace/namespace.yaml> — PSS dropped to `baseline` (TODO to retighten
+- <../k8s/kagent/namespace/namespace.yaml> — PSS dropped to `baseline` (TODO to retighten
   to `restricted` once upstream agent Deployments set proper securityContext).
 - <../../../../docs/zai_api.md> — z.ai endpoint shapes, including the coding
   plan vs general distinction.

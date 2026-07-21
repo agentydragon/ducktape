@@ -89,9 +89,9 @@ slices over the deployed schema, not another identity migration:
 - **Shared browser OIDC helper:** extract only genuinely common Authlib/Starlette relying-party
   behavior from Haku and Props. Migrate Study Casino away from username authority to a local UUID
   plus exact `(issuer, subject)` identity.
-- **Singular Authentik ownership:** inventory provider/application/controller ownership, resolve
-  duplicate ownership such as Kagent proxy-vs-OIDC, assign shared mappings one controller, update
-  `cluster/docs/mcp_oauth_authentik_notes.md`, and add drift checks.
+- **Singular Authentik ownership:** inventory remaining provider/application/controller ownership,
+  assign shared mappings one controller, update `cluster/docs/mcp_oauth_authentik_notes.md`, and add
+  drift checks.
 
 ## Repo-boundary follow-ups (from the 2026-07-07 state_template retirement)
 
