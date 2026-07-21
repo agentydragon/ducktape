@@ -23,14 +23,11 @@ configMapGenerator:
       - blueprints/google-workspace-mcp-sso.yaml
       - blueprints/plaid-link-sso.yaml
       - blueprints/embedded-outpost.yaml
-      - blueprints/airlock-scope-mappings.yaml
       - blueprints/airlock-sso.yaml
-      - blueprints/claude-code-airlock-oauth2.yaml
       - blueprints/sdr-sso.yaml
       - blueprints/adsb-sso.yaml
       - blueprints/claude-service-account.yaml
       - blueprints/openhands-sso.yaml
       - blueprints/fava-sso.yaml
-      - blueprints/haku-dashboard-sso.yaml
       - blueprints/haku-ui-sso.yaml
     namespace: authentik

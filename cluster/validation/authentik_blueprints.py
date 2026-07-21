@@ -182,7 +182,7 @@ def check_proxy_provider_outpost_assignment(k8s_dir: Path) -> list[str]:
 
     return [
         f"Authentik proxy provider '{name}' is defined but assigned to no outpost. Add it to the "
-        f"embedded outpost's providers in blueprints/embedded-outpost.yaml (see fava/haku-dashboard); "
+        f"embedded outpost's providers in blueprints/embedded-outpost.yaml (see fava); "
         f"otherwise its host 302s to a login flow served on itself and Google SSO fails with "
         f"redirect_uri_mismatch."
         for name in sorted(present - assigned)

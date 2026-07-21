@@ -121,8 +121,9 @@ compliance tracking, and fix plan:
 
 ## SSO (Authentik)
 
-All applications use Authentik SSO via native blueprints. See <docs/sso.md> for
-secret flow, NetworkPolicy template, and blueprint tombstone rules.
+Applications use Authentik through Terraform-managed OIDC/proxy providers and a
+shrinking set of blueprint-managed proxy providers. See <docs/sso.md> for the ownership
+split, secret flow, NetworkPolicy template, and tombstone rules.
 
 ## ActivityWatch
 

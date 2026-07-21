@@ -18,6 +18,5 @@ resources:
   - adsb-httproute.yaml
   - openhands-httproute.yaml
   - fava-httproute.yaml
-  # haku-dashboard retired: haku-console owns its OAuth and is reached by a plain HTTPRoute
-  # in cluster/k8s/haku/console/httproute.yaml (not through the outpost). haku-ui stays.
+  # haku-console owns its OAuth and uses a direct HTTPRoute; haku-ui stays proxied.
   - haku-ui-httproute.yaml

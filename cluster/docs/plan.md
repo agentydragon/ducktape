@@ -416,14 +416,14 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       checkout, real copy lives in `terraform/main/` on wyrm2 after bootstrap - `PG_CONN_STR`: password from SOPS, but ClusterIP lookup needs `kubectl`
       (falls back to `localhost:15432` port-forward)
 
-- [ ] Authentik blueprint secret rotation: blueprints use file content hash to decide
-      whether to re-apply, and `!Env` tags resolve _after_ the hash check, so rotating a
-      secret consumed via `!Env` updates the K8s secret + pod env vars but Authentik's DB
-      never picks it up. Mostly obsolete now that SSO client secrets live in
-      `tf/gitops/sso-providers/` (TF writes the provider directly), but any remaining
-      `!Env`-tagged blueprint values would hit this. Force re-application via Stakater
-      Reloader + a post-start hook clearing `last_applied_hash`, or a CronJob calling the
-      Authentik API.
+- [ ] Finish Authentik provider ownership consolidation
+      ([#987](https://github.com/agentydragon/ducktape/issues/987)). The original
+      blueprint `!Env` secret-rotation incident is resolved: no active provider client
+      secret uses that path. Move the remaining application providers to Terraform while
+      preserving each backend's supported authentication model. Retain identity-aware
+      proxy providers for backends without native OIDC; migrate Tandoor and Proxmox to
+      native OIDC. Kagent's redundant forward proxy is tombstoned; remove its cleanup
+      blueprint after the legacy outpost has reconciled absent.
 - [ ] Authentik cache/channels offload: design a Redis-based replacement for the current
       Postgres-backed cache/channels path (`django_postgres_cache`,
       `django_channels_postgres`) without regressing single-node-failure resilience on the
@@ -529,10 +529,19 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `gmail.compose`, `drive`, `spreadsheets`
 - [ ] Airlock OAuth: add readonly scopes — Photos, Tasks, Slides, Forms
 - [ ] Airlock OAuth: reflect only access tokens (not refresh tokens) to consumer namespaces
-- [ ] Proxmox OIDC auth via Authentik (native OIDC realm in PVE)
+- [ ] Proxmox: configure its native OIDC realm against Authentik and remove the Authentik
+      forward-proxy provider. Retain the nginx transport relay for upstream TLS,
+      reachability, and noVNC/xterm.js WebSockets unless Gateway API is separately proven
+      to replace all three safely.
 - [ ] Proxmox SPICE proxy routing via cluster ingress
-- [ ] Proxmox: switch to direct HTTPRoute after OIDC auth (remove proxy outpost wrapper)
-- [ ] File Browser (scanner): switch to native OAuth2/OIDC
+- [ ] Tandoor: replace trusted-header proxy auth with its native generic OIDC support,
+      preserving account matching, space access, and a documented break-glass login.
+- [ ] OpenClaw: retain the Authentik identity-aware proxy, but adopt OpenClaw's native
+      `trusted-proxy` auth mode with a narrow proxy source and user allowlist.
+- [ ] Google Workspace MCP: decide deliberately whether to adopt its Google-backed OAuth
+      2.1 multi-user mode. Do not treat it as Authentik-native OIDC: v1.14.2 external-provider
+      mode still requires and validates Google access tokens. Keep the Authentik browser
+      gate until the replacement topology is tested end to end.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
 - [ ] Harbor terraform: switch to robot accounts

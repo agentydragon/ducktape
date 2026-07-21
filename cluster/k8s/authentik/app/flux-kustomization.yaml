@@ -31,6 +31,6 @@ spec:
     - name: authentik-namespace
     - name: authentik-db # Wait for CNPG cluster ready and authentik-db-app secret to exist
     - name: authentik-secrets # Admin password, secret key, bootstrap token (SOPS)
-    - name: authentik-sso-secrets # SSO client secrets for blueprint !Env tags
+    - name: authentik-sso-secrets # Supporting identity and Google OAuth inputs
     - name: cert-manager # Wait for cert-manager for TLS certificates
     - name: gateway # Wait for Gateway API for external access

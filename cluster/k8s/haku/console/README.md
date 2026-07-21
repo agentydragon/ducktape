@@ -7,9 +7,7 @@ notes here cover only what's specific to running it in-cluster.
 
 The console authenticates its own surface instead of sitting behind the shared Authentik
 proxy outpost. `httproute.yaml` points `haku.allegedly.works` straight at the console
-Service; the `haku-dashboard` proxy provider is tombstoned in
-`cluster/k8s/authentik/app/blueprints/haku-dashboard-sso.yaml` (delete the tombstone after a
-few reconcile cycles, once it's gone from Authentik) and removed from the embedded outpost.
+Service; the retired `haku-dashboard` proxy provider and its deletion tombstone are gone.
 Two Authentik OAuth2 providers, minted by `tf/gitops/agent-machine-access` (application slugs
 `haku-console` for operator browser login and `haku-console-mcp` for the `/mcp` OIDCProxy
 upstream), write their client secrets + the operator session-signing secret into the

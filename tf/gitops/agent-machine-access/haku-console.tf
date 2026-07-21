@@ -2,9 +2,7 @@
 # haku-console — app-owned OAuth (retires the forward-auth proxy outpost)
 # ============================================================================
 # haku-console (https://haku.allegedly.works) now authenticates its own surface
-# instead of sitting behind the shared Authentik proxy outpost (the
-# `haku-dashboard` proxy provider is tombstoned in
-# cluster/k8s/authentik/app/blueprints/haku-dashboard-sso.yaml). Two OAuth2
+# instead of sitting behind the retired `haku-dashboard` proxy outpost. Two OAuth2
 # providers, both gated to agentydragon by the access group below:
 #   - haku-console-mcp: the upstream confidential client for the console's
 #     embedded FastMCP OIDCProxy, which presents DCR to claude.ai / the `claude`

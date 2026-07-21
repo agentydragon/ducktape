@@ -2,27 +2,25 @@
 
 ## Two provider management patterns
 
-### TF-managed providers (preferred for new providers)
+### TF-managed providers (preferred)
 
-`tf/gitops/sso-providers/` creates `authentik_provider_oauth2` resources directly.
-TF owns the client_secret lifecycle — no Vault, no ESO, no `!Env` drift.
+`tf/gitops/sso-providers/` and app-specific GitOps roots create Authentik providers
+directly. Terraform owns generated client-secret lifecycles and the corresponding
+applications, access policies, and consumer Secrets.
 
 **Secret flow**: TF creates provider → reads `client_secret` → writes `kubernetes_secret`
 in `authentik` namespace → Reflector mirrors to consumer namespace(s).
 
-**Source of truth for which apps currently have SSO**: the `provider_*.tf` files
-under `tf/gitops/sso-providers/` — one file per app. Don't hand-maintain an
-enumeration here; it goes stale as apps are added/removed. `ls tf/gitops/sso-providers/`
-(or grep for `authentik_provider_oauth2`) for the current set.
+There are two current provider sources of truth: search Terraform for
+`authentik_provider_{oauth2,proxy}` and read the blueprint file list in
+`k8s/authentik/app/kustomization.yaml`. Do not hand-maintain an application enumeration
+here; ownership is still being consolidated under
+<https://github.com/agentydragon/ducktape/issues/987>.
 
-Every provider file follows the same shape — an `authentik_provider_oauth2` +
-`authentik_application`, sharing the same `authorization_flow`/`invalidation_flow`,
-`issuer_mode = "per_provider"`, and the same three `openid`/`email`/`profile`
-`property_mappings` — plus a `kubernetes_secret` in the `authentik` namespace with
-Reflector annotations scoping the mirror to the consuming app's namespace. What
-varies per app: the redirect URI (`allowed_redirect_uris`, strict-matched to the
-app's OIDC callback path) and the mirrored secret's key/env-var shape, since each
-app expects its own config format. Compare:
+OIDC provider files normally pair `authentik_provider_oauth2` with
+`authentik_application` and write a `kubernetes_secret` in the `authentik` namespace
+with Reflector annotations scoped to the consumer. Redirect URIs and Secret keys remain
+app-specific. Compare:
 
 - `provider_grafana.tf` — redirect `https://grafana.allegedly.works/login/generic_oauth`;
   secret keys `GF_AUTH_GENERIC_OAUTH_CLIENT_{ID,SECRET}`.
@@ -33,12 +31,17 @@ app expects its own config format. Compare:
   `random_password`-generated `session-secret`, and an `authentik_policy_binding`
   gating login to `data.authentik_group.admins`.
 
-### Blueprint-managed providers (deprecated)
+### Blueprint-managed providers (migration backlog)
 
-Vault was decommissioned 2026-04-19 (see <../archive/2026_04_19_vault_migration.md>) and all SSO
-providers moved to `tf/gitops/sso-providers/`. The `k8s/authentik/app/blueprints/`
-flow no longer pulls client secrets from Vault. If you see a `!Env`-tagged client
-secret in a blueprint, treat it as a bug to migrate, not a pattern to copy.
+Active proxy providers remain under `k8s/authentik/app/blueprints/` while issue #987
+migrates their ownership. These backends still require identity-aware proxy
+authentication; moving them to Terraform must preserve `authentik_provider_proxy`, the
+application policy, embedded-outpost membership, and the backend NetworkPolicy.
+
+Vault was decommissioned 2026-04-19 (see
+<../archive/2026_04_19_vault_migration.md>). No active blueprint consumes a provider
+client secret through `!Env`; reintroducing that pattern would restore the rotation-drift
+bug this migration fixed.
 
 ## Proxy-mode NetworkPolicy (required)
 
@@ -86,6 +89,8 @@ Place absent entries in the app's existing blueprint, or in a dedicated cleanup 
 under `k8s/authentik/app/blueprints/` when the app itself is gone.
 Remove the entries after a few reconcile cycles once confirmed clean.
 
-**Exception**: When migrating a provider from blueprints to TF, use tombstones to delete
-the old blueprint-managed resource, then let TF create a fresh one. The tombstone
-and TF creation can coexist in the same commit.
+When migrating a provider from blueprints to Terraform, tombstone only objects that the
+new Terraform resources do not own. If the application slug survives while its protocol
+provider changes, do not tombstone the application: deleting by slug would also delete
+the live Terraform-owned application. The Kagent proxy-to-OIDC migration is the reference
+case in `blueprints/kagent-sso.yaml`.

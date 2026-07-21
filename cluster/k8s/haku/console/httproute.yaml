@@ -1,6 +1,5 @@
 # Public route for the Haku console. Traffic flows directly: Gateway -> console Service,
-# with NO Authentik forward-auth outpost in front (that proxy provider was retired — see
-# cluster/k8s/authentik/app/blueprints/haku-dashboard-sso.yaml tombstone). The console owns
+# with no Authentik forward-auth outpost in front. The console owns
 # its auth: the operator browser logs in via Authentik OIDC (operator_oidc -> session, guarded
 # by OperatorSessionMiddleware) and agents authenticate to /mcp via MultiAuth (OIDCProxy DCR +
 # static bearer). Single-user access is Authentik's application access policy on the console's
