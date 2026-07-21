@@ -57,7 +57,7 @@ class OAuthRefreshFailureEpisode(BaseModel):
     initial: OAuthRefreshFailureDetail
     latest: OAuthRefreshFailureDetail
     attempts: int
-    action: OAuthRefreshFailureAction
+    resolution: str
     next_retry_at: datetime.datetime | None = None
 
 
@@ -143,7 +143,8 @@ def refresh_failure_episode(state: OAuthTokenState) -> OAuthRefreshFailureEpisod
     assert state.refresh_failure_latest_at is not None
     assert state.refresh_failure_latest_kind is not None
     assert state.refresh_failure_latest_message is not None
-    assert state.refresh_failure_action is not None
+    action = refresh_failure_action(state)
+    assert action is not None
     return OAuthRefreshFailureEpisode(
         started_at=state.refresh_failure_started_at,
         initial=OAuthRefreshFailureDetail(
@@ -157,9 +158,19 @@ def refresh_failure_episode(state: OAuthTokenState) -> OAuthRefreshFailureEpisod
             message=state.refresh_failure_latest_message,
         ),
         attempts=state.refresh_failure_count,
-        action=OAuthRefreshFailureAction(state.refresh_failure_action),
+        resolution={
+            OAuthRefreshFailureAction.RETRYING: "Retry scheduled automatically.",
+            OAuthRefreshFailureAction.RECONNECT: "Reconnect the account before retrying.",
+            OAuthRefreshFailureAction.OPERATOR_ACTION: "Operator action is required before retrying.",
+        }[action],
         next_retry_at=state.refresh_retry_at,
     )
+
+
+def refresh_failure_action(state: OAuthTokenState) -> OAuthRefreshFailureAction | None:
+    if state.refresh_failure_action is None:
+        return None
+    return OAuthRefreshFailureAction(state.refresh_failure_action)
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +224,7 @@ class PostgresOAuthTokenStateStore:
             if not state.refresh_token:
                 return _Missing()
             if (failure := refresh_failure_episode(state)) is not None:
-                if failure.action != OAuthRefreshFailureAction.RETRYING:
+                if refresh_failure_action(state) != OAuthRefreshFailureAction.RETRYING:
                     return _Blocked(failure)
                 if failure.next_retry_at is not None and failure.next_retry_at > now:
                     return _Blocked(failure)

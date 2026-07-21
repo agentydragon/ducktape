@@ -91,19 +91,13 @@ function refreshFailureSummary({
   initial,
   latest,
   attempts,
-  action,
+  resolution,
 }: McpOperatorAuthDegraded["refresh_failure"]): string {
   const failure =
     attempts > 1 && latest.message !== initial.message
       ? `${initial.message}; latest after ${attempts} attempts: ${latest.message}`
       : initial.message;
-  const required =
-    action === "reconnect"
-      ? "Reconnect required"
-      : action === "operator_action"
-        ? "Operator action required"
-        : "Retry scheduled";
-  return `${failure} · ${required}`;
+  return `${failure} · ${resolution}`;
 }
 
 function connectionSummary(server: McpServerConnection): string {

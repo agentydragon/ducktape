@@ -223,7 +223,9 @@ async def test_exports_console_native_status_result_schemas() -> None:
         "ProviderUnprovisioned",
     ):
         assert "status" in schemas_by_title[title]["required"]
-    assert "next_retry_at" in schemas_by_title["OAuthRefreshFailureEpisode"]["required"]
+    refresh_failure_schema = schemas_by_title["OAuthRefreshFailureEpisode"]
+    assert {"resolution", "next_retry_at"} <= set(refresh_failure_schema["required"])
+    assert "action" not in refresh_failure_schema["properties"]
 
     Draft202012Validator(tools["list_mcp_servers"]).validate(
         {

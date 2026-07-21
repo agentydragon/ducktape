@@ -204,7 +204,7 @@ export const SAMPLE_MCP_SERVERS: McpServerConnection[] = [
             message: "MCP OAuth token refresh timed out after 30 seconds",
           },
           attempts: 1,
-          action: "reconnect",
+          resolution: "Reconnect the account before retrying.",
           next_retry_at: null,
         },
       },

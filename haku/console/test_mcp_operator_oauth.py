@@ -451,7 +451,7 @@ async def test_operator_oauth_timeout_is_persisted_and_not_replayed(
     assert isinstance(status.state, McpOperatorAuthDegraded)
     assert status.state.refresh_failure.initial.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
     assert status.state.refresh_failure.latest.message == "MCP OAuth token refresh timed out after 30 seconds"
-    assert status.state.refresh_failure.action == OAuthRefreshFailureAction.RECONNECT
+    assert status.state.refresh_failure.resolution == "Reconnect the account before retrying."
     assert status.state.refresh_failure.attempts == 1
     assert attempts == 1
 
