@@ -17,10 +17,11 @@ and operator-auth flows.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_csrf_protect import CsrfProtect
+from itsdangerous import BadData, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
 from haku.console.config import LaunchRoutineConfig
@@ -30,6 +31,12 @@ from haku.console.tools.routine import LaunchRoutineResult, RoutineLauncher
 Csrf = Annotated[CsrfProtect, Depends()]
 
 router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
+
+# Match fastapi-csrf-protect 1.0.7's cookie serializer so this endpoint can return the
+# raw token paired with an existing HttpOnly cookie instead of invalidating other tabs.
+_CSRF_COOKIE_KEY = "fastapi-csrf-token"
+_CSRF_SERIALIZER_SALT = "fastapi-csrf-token"
+_CSRF_MAX_AGE_SECONDS = 3600
 
 
 class CsrfTokenResponse(BaseModel):
@@ -53,9 +60,20 @@ def _launch_config(settings: SettingsDep) -> LaunchRoutineConfig:
 # Gating those privileged mutations this way stops a cross-site request from riding the
 # operator's Authentik session cookie.
 @router.get("/csrf")
-async def csrf_token(response: Response, csrf_protect: Csrf) -> CsrfTokenResponse:
+async def csrf_token(request: Request, response: Response, csrf_protect: Csrf) -> CsrfTokenResponse:
     # Set the signed cookie on the injected Response (which FastAPI returns) so the
     # body can stay a typed model — the frontend generates its client off this schema.
+    signed = request.cookies.get(_CSRF_COOKIE_KEY)
+    if signed is not None:
+        try:
+            token = URLSafeTimedSerializer(cast(str, request.app.state.csrf_secret), salt=_CSRF_SERIALIZER_SALT).loads(
+                signed, max_age=_CSRF_MAX_AGE_SECONDS
+            )
+        except BadData:
+            pass
+        else:
+            if isinstance(token, str):
+                return CsrfTokenResponse(csrf_token=token)
     token, signed = csrf_protect.generate_csrf_tokens()
     csrf_protect.set_csrf_cookie(signed, response)
     return CsrfTokenResponse(csrf_token=token)

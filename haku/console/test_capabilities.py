@@ -63,6 +63,21 @@ def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
 
 
 @respx.mock
+def test_csrf_token_remains_valid_when_another_tab_fetches_it(cap_client) -> None:
+    first_token = csrf_token(cap_client)
+    first_cookie = cap_client.cookies["fastapi-csrf-token"]
+
+    second_response = cap_client.get("/api/capabilities/csrf")
+
+    assert second_response.json()["csrf_token"] == first_token
+    assert cap_client.cookies["fastapi-csrf-token"] == first_cookie
+    route = respx.post(FIRE_URL).mock(return_value=httpx.Response(200, json={"claude_code_session_url": "ok"}))
+    response = cap_client.post("/api/capabilities/launch-routine", headers={"X-CSRF-Token": first_token})
+    assert response.status_code == 200
+    assert route.called
+
+
+@respx.mock
 def test_launch_routine_forwards_custom_text(cap_client) -> None:
     session_url = "https://claude.ai/code/session_custom"
     route = respx.post(FIRE_URL).mock(

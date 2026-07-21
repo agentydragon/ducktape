@@ -378,6 +378,7 @@ def create_app(
     # with exactly one replica (a token from a different pod's secret would fail
     # validation), so it's a dev/test convenience now, not a real deploy path.
     csrf_secret = settings.csrf_secret.get_secret_value() if settings.csrf_secret else secrets.token_urlsafe(32)
+    app.state.csrf_secret = csrf_secret
     CsrfProtect.load_config(lambda: [("secret_key", csrf_secret), ("token_location", "header")])
 
     @app.exception_handler(CsrfProtectError)

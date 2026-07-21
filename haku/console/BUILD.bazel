@@ -161,6 +161,7 @@ py_library(
         "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
+        "@pypi//itsdangerous",
         "@pypi//pydantic",
     ],
 )
