@@ -198,7 +198,12 @@ export function CodeBlock({
       editable={false}
       extensions={extensions}
       maxHeight="14rem"
-      basicSetup={{ lineNumbers, foldGutter: !!language }}
+      basicSetup={{
+        lineNumbers,
+        foldGutter: !!language,
+        highlightActiveLine: false,
+        highlightActiveLineGutter: false,
+      }}
     />
   );
 }
