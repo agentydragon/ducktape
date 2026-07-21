@@ -1,16 +1,16 @@
 # OAuth browser surfaces
 
-Haku's OAuth and Agent-enrollment browser pages share a visual language, but they do not all share
-one runtime. The ownership boundary follows what must still work when authentication or application
-bootstrap is the thing that failed.
+Haku-owned account-link and Agent-enrollment pages belong to the trusted Console application when
+an Operator session is available. The ownership boundary follows which component holds the
+authority for an action, not whether the Agent being enrolled has connected yet.
 
-| Surface                                                     | Renderer        | Reason                                                                                                                                                           |
-| ----------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider and MCP account-link results                       | Console SPA     | These flows start in an authenticated console, benefit from the shared design system, and can update the original tab through the existing console event stream. |
-| Operator-login failure                                      | Backend HTML    | A working authenticated SPA session cannot be assumed when establishing that session failed.                                                                     |
-| Agent enrollment, continuation, denial, and terminal errors | Backend HTML    | Enrollment is an isolated authorization ceremony with restrictive CSP and must work before the Agent connection exists.                                          |
-| Authentik login and consent                                 | Authentik theme | Authentik owns these documents; Haku templates cannot render them.                                                                                               |
-| Google and upstream-provider consent                        | Provider        | Haku cannot theme third-party authorization pages.                                                                                                               |
+| Surface                                                     | Target renderer       | Reason                                                                                                                                                           |
+| ----------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider and MCP account-link results                       | Console SPA           | These flows start in an authenticated console, benefit from the shared design system, and can update the original tab through the existing console event stream. |
+| Agent enrollment, continuation, denial, and terminal errors | Console SPA, Settings | Haku Console owns Agent authority and the Operator session. Enrollment does not depend on the future Agent connection.                                           |
+| Operator-login failure                                      | Backend HTML          | A working authenticated Operator session cannot be assumed when establishing that session failed.                                                                |
+| Authentik login and consent                                 | Authentik theme       | Authentik owns these documents; Haku templates cannot render them.                                                                                               |
+| Google and upstream-provider consent                        | Provider              | Haku cannot theme third-party authorization pages.                                                                                                               |
 
 ## Account-link result handoff
 
@@ -36,22 +36,35 @@ the explicit unavailable state rather than replaying it.
 Do not move the code exchange into the browser, return tokens to the SPA, or put provider error
 descriptions in query parameters.
 
-## Remaining backend-page consolidation
+## Agent enrollment in Settings
 
-Backend ownership does not imply a different design. The remaining pages should use a shared,
-CSP-nonce-compatible standalone Haku shell with the same surface, border, action, success, and error
-tokens as the SPA. It should support light and dark color schemes without loading the SPA runtime.
+Settings should normally contain an Agents section listing the Operator's authorized Agents.
+Lifecycle state and last-seen activity must remain distinct: Haku cannot infer that an MCP client is
+currently connected merely because its Agent is active or was seen recently.
 
-The intended migration order is:
+The public `/auth/agent-enrollment/<interaction-id>` endpoint remains the protocol entry point. It
+establishes the browser binding and redirects through Operator login when needed, then enters the
+trusted SPA at `/_console/settings/agents/enroll/<interaction-id>`. The browser renders the pending
+create, reconnect, or deny decision within Settings. A local terminal result returns to the normal
+Agents section with an announcement; an allow decision that must continue upstream navigates the
+browser onward through the existing authorization flow.
 
-1. Introduce the shared standalone shell and status-page view model.
-2. Move Agent continuation and denial onto that status page.
-3. Render browser-facing enrollment terminal errors as HTML while leaving protocol and `/api`
-   errors as JSON.
-4. Make the interactive enrollment form inherit the shell and remove its duplicated CSS.
-5. Move operator-login failure onto the same shell, preserving its backend-only retry path.
-6. Align Authentik's separately owned theme where practical; do not attempt to imitate Google or
-   other third-party consent documents.
+The SPA owns presentation only. The backend continues to own the interaction, Operator and browser
+binding, expiry, form/CSRF validation, Agent creation or reconnection, authorization decision, and
+protocol continuation. This trusted Console route does not render inside or disclose enrollment
+state to the sandboxed, cross-origin Haku UI frame.
+
+The current backend-rendered enrollment pages are migration state, not the desired ownership
+boundary. Move their view model and actions behind same-origin Console APIs, add the Agents section
+and enrollment route atomically, then remove the duplicate Jinja enrollment, continuation, and
+denial surfaces.
+
+## Remaining non-SPA surfaces
+
+Operator-login failure remains a small backend-rendered exception because the Operator session it
+would use has failed to establish. Authentik and upstream-provider documents remain owned by their
+respective services; align Authentik's separately owned theme where practical, but do not attempt to
+imitate third-party consent documents.
 
 Every visual state needs screenshot coverage in light and dark themes, including success, failure,
 expired/already-viewed, denial, continuation, and a narrow viewport. Security tests remain separate:
