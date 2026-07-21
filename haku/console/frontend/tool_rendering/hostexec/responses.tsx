@@ -1,5 +1,5 @@
-// Result rendering for `hostexec_run` (see requests.tsx for the argument-side widget and the
-// note on why this schema is hand-authored rather than generated). Mirrors `BaseExecResult`
+// Result rendering for hostexec's `bash` tool (see requests.tsx for the argument-side widget and
+// the note on why this schema is hand-authored rather than generated). Mirrors `BaseExecResult`
 // (mcp_infra/exec/models.py): a discriminated exit status plus stdout/stderr, each either the full
 // text or a `TruncatedStream` when the process produced more than `max_bytes`.
 
@@ -16,14 +16,14 @@ const zExitStatus = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("killed"), signal: z.number() }),
 ]);
 const zExecStream = z.union([z.string(), z.object({ truncated_text: z.string(), total_bytes: z.number() })]);
-const zHostexecRunResult = z.object({
+const zBashResult = z.object({
   exit: zExitStatus,
   stdout: zExecStream,
   stderr: zExecStream,
   duration_ms: z.number(),
 });
 
-export type HostexecRunResult = z.infer<typeof zHostexecRunResult>;
+export type BashResult = z.infer<typeof zBashResult>;
 type ExitStatus = z.infer<typeof zExitStatus>;
 type ExecStream = z.infer<typeof zExecStream>;
 
@@ -70,7 +70,7 @@ function StreamBlock({ label, stream, variant }: { label: string; stream: ExecSt
   );
 }
 
-function HostexecRunResultView({ result, variant }: ResultPreviewProps<HostexecRunResult>) {
+function BashResultView({ result, variant }: ResultPreviewProps<BashResult>) {
   return (
     <Stack gap="xs">
       <Group gap={8}>
@@ -86,5 +86,5 @@ function HostexecRunResultView({ result, variant }: ResultPreviewProps<HostexecR
 }
 
 export const hostexecResultPreviews = {
-  hostexec_run: defineResultPreview(zHostexecRunResult, HostexecRunResultView),
+  bash: defineResultPreview(zBashResult, BashResultView),
 } satisfies Record<string, ToolResultPreview>;

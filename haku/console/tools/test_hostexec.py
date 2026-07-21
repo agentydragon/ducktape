@@ -17,16 +17,16 @@ def _result() -> BaseExecResult:
 async def test_tool_surface() -> None:
     async with Client(build_mcp(Mock())) as client:
         tools = {tool.name for tool in await client.list_tools()}
-    assert tools == {"hostexec_run"}
+    assert tools == {"bash"}
     assert HOSTEXEC_SERVER_ID == "hostexec"
 
 
-async def test_hostexec_run_forwards_cmd_and_returns_result() -> None:
+async def test_bash_forwards_cmd_and_returns_result() -> None:
     client_mock = Mock()
     client_mock.run = AsyncMock(return_value=_result())
     async with Client(build_mcp(client_mock)) as client:
         result = await client.call_tool(
-            "hostexec_run", {"host": "wyrm2", "run_as": "root", "cmd": "ls -la", "max_bytes": 2000, "timeout_ms": 5000}
+            "bash", {"host": "wyrm2", "run_as": "root", "cmd": "ls -la", "max_bytes": 2000, "timeout_ms": 5000}
         )
     assert not result.is_error
     # FastMCP returns the discriminated-union `exit` field as a plain dict in result.data.
@@ -37,13 +37,13 @@ async def test_hostexec_run_forwards_cmd_and_returns_result() -> None:
     )
 
 
-async def test_hostexec_run_rejects_invalid_run_as() -> None:
+async def test_bash_rejects_invalid_run_as() -> None:
     # RunAsUser's pattern forbids spaces/uppercase; the input schema rejects it before the tool runs.
     client_mock = Mock()
     client_mock.run = AsyncMock(return_value=_result())
     async with Client(build_mcp(client_mock)) as client:
         result = await client.call_tool(
-            "hostexec_run",
+            "bash",
             {"host": "wyrm2", "run_as": "Root User", "cmd": "true", "max_bytes": 0, "timeout_ms": 1000},
             raise_on_error=False,
         )
@@ -51,13 +51,13 @@ async def test_hostexec_run_rejects_invalid_run_as() -> None:
     client_mock.run.assert_not_awaited()
 
 
-async def test_hostexec_run_rejects_empty_cmd() -> None:
+async def test_bash_rejects_empty_cmd() -> None:
     # cmd's min_length=1 rejects an empty script before the tool runs.
     client_mock = Mock()
     client_mock.run = AsyncMock(return_value=_result())
     async with Client(build_mcp(client_mock)) as client:
         result = await client.call_tool(
-            "hostexec_run",
+            "bash",
             {"host": "wyrm2", "run_as": "root", "cmd": "", "max_bytes": 0, "timeout_ms": 1000},
             raise_on_error=False,
         )

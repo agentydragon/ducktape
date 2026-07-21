@@ -13,29 +13,27 @@ const VALID_ARGS = {
 };
 
 describe("hostexecPreviews", () => {
-  it("renders hostexec_run in both variants", () => {
+  it("renders bash in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
-      expect(renderPreview(hostexecPreviews.hostexec_run, VALID_ARGS, variant)).not.toBeNull();
+      expect(renderPreview(hostexecPreviews.bash, VALID_ARGS, variant)).not.toBeNull();
     }
   });
 
   it("renders when cwd is omitted", () => {
     const { cwd: _cwd, ...withoutCwd } = VALID_ARGS;
-    expect(renderPreview(hostexecPreviews.hostexec_run, withoutCwd, "detailed")).not.toBeNull();
+    expect(renderPreview(hostexecPreviews.bash, withoutCwd, "detailed")).not.toBeNull();
   });
 
   it("describes the action with the host and run-as user", () => {
-    expect(describeAction(hostexecPreviews.hostexec_run, VALID_ARGS)?.text).toBe(
-      "hostexec: Run on wyrm2 as agentydragon"
-    );
+    expect(describeAction(hostexecPreviews.bash, VALID_ARGS)?.text).toBe("hostexec: Run on wyrm2 as agentydragon");
   });
 
   it("returns null when cmd is empty", () => {
-    expect(renderPreview(hostexecPreviews.hostexec_run, { ...VALID_ARGS, cmd: "" }, "detailed")).toBeNull();
+    expect(renderPreview(hostexecPreviews.bash, { ...VALID_ARGS, cmd: "" }, "detailed")).toBeNull();
   });
 
   it("returns null when args don't match the tool's schema", () => {
     const { host: _host, ...withoutHost } = VALID_ARGS;
-    expect(renderPreview(hostexecPreviews.hostexec_run, withoutHost, "detailed")).toBeNull();
+    expect(renderPreview(hostexecPreviews.bash, withoutHost, "detailed")).toBeNull();
   });
 });

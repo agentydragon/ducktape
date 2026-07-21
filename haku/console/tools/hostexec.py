@@ -1,7 +1,7 @@
 """haku-console's in-process `hostexec` MCP server.
 
 Runs a shell command on an operator machine (`wyrm2`, `rugged`, …) behind haku-console's
-approval queue. Every call is operator-approved by construction — `hostexec_run` is never in
+approval queue. Every call is operator-approved by construction — `bash` is never in
 `UNCONDITIONAL_AUTO_APPROVE` — and executes under the operator's **own Authentik authority**: on
 approval the console mints a short-lived, single-use per-host token, queues it for the configured
 outbound node daemon, and `hostexecd` verifies it before dropping
@@ -46,7 +46,7 @@ def build_mcp(client: HostexecClient) -> FastMCP:
     )
 
     @mcp.tool
-    async def hostexec_run(
+    async def bash(
         host: Annotated[str, Field(description="Target host to run on (e.g. 'wyrm2', 'rugged'). Must be in scope.")],
         run_as: Annotated[
             RunAsUser,

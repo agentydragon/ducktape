@@ -95,7 +95,7 @@ started, and opaque per-execution lease tokens bind renewal/result submission to
 
 ## Security and failure semantics
 
-- `hostexec_run` is never in the unconditional auto-approval policy.
+- `bash` is never in the unconditional auto-approval policy.
 - `cmd` is bash script text, run as `bash -c cmd` — full shell semantics apply (pipes,
   redirects, globs, quoting, `$VAR` expansion). This is intentional: the approving operator
   sees the exact script text before it runs, and the operator-approval gate (not argv

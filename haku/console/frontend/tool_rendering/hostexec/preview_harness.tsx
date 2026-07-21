@@ -10,7 +10,7 @@ const PREVIEW_FIXTURES = [
   {
     title: "Search source for TODOs",
     serverId: "hostexec",
-    toolName: "hostexec_run",
+    toolName: "bash",
     args: {
       host: "wyrm2",
       run_as: "agentydragon",
@@ -29,7 +29,7 @@ const PREVIEW_FIXTURES = [
   {
     title: "Restart haproxy as root",
     serverId: "hostexec",
-    toolName: "hostexec_run",
+    toolName: "bash",
     args: {
       host: "rugged",
       run_as: "root",
@@ -42,7 +42,7 @@ const PREVIEW_FIXTURES = [
   {
     title: "A failing build command",
     serverId: "hostexec",
-    toolName: "hostexec_run",
+    toolName: "bash",
     args: {
       host: "wyrm2",
       run_as: "agentydragon",

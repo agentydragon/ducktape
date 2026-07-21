@@ -1,7 +1,7 @@
 """The `hostexec` wire body between the in-process console tool and `hostexecd`.
 
 Three parties share these shapes:
-- the **agent** calls the `hostexec_run` MCP tool (agent-facing input is the tool's own flat
+- the **agent** calls the `bash` MCP tool (agent-facing input is the tool's own flat
   signature in `haku/console/tools/hostexec.py`; `RunAsUser` below is shared with it);
 - the **console** approves, then token-exchanges the operator's identity for a short-lived,
   per-host Authentik token;
