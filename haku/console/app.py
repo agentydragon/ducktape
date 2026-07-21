@@ -40,6 +40,7 @@ from haku.console import (
     mcp_server,
     node_daemons,
     oauth_association_maintenance,
+    oauth_connection_result,
     oauth_token_state,
     operator_auth,
     provider_connection,
@@ -173,6 +174,9 @@ def create_app(
         provider_definitions=console_config.operator_connection_providers,
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
+    )
+    oauth_connection_result_store = oauth_connection_result.PostgresOAuthConnectionResultStore(
+        db_sessions, operator_identity_store=operator_identity_store
     )
     # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
     # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
@@ -343,6 +347,7 @@ def create_app(
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.provider_connection_store = provider_connection_store
+    app.state.oauth_connection_result_store = oauth_connection_result_store
     app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
@@ -358,7 +363,7 @@ def create_app(
     @app.middleware("http")
     async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
-        # Route-owned HTML responses (Agent enrollment and OAuth completion) carry a stricter,
+        # Route-owned HTML responses (Agent enrollment and operator-login failure) carry a stricter,
         # nonce-bound policy. Preserve it; this default governs the SPA/API surfaces.
         response.headers.setdefault("Content-Security-Policy", csp)
         response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
@@ -391,6 +396,7 @@ def create_app(
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
+    app.include_router(oauth_connection_result.router, dependencies=operator_only)
     app.include_router(node_daemons.operator_router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session or CSRF token.

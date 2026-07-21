@@ -4,16 +4,20 @@
 import "./mock_api.ts";
 
 import { MantineProvider } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import { HakuUiEmbed } from "../haku_ui_embed.tsx";
-import type { ConsoleView } from "../routing.ts";
+import { OAuthResultView } from "../oauth_result_page.tsx";
+import type { ConsoleNavigationView, ConsoleView } from "../routing.ts";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome.tsx";
 import { hakuTheme } from "../theme.ts";
+import { toastError, toastSuccess } from "../toast.ts";
 import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data.ts";
 
 const noop = () => {};
-const noopNavigate = (_view: Exclude<ConsoleView, "notFound">) => {};
+const noopNavigate = (_view: ConsoleNavigationView) => {};
 
 function ConsoleScene({ view }: { view: ConsoleView }) {
   return <HakuUiEmbed uiUrl="https://haku-ui.test/" launchAvailable view={view} onNavigate={noopNavigate} />;
@@ -62,10 +66,25 @@ function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
   );
 }
 
+function OAuthSettingsResultScene({ status }: { status: "success" | "error" }) {
+  useEffect(() => {
+    if (status === "success") {
+      toastSuccess("Connected to grocy-sf", "The MCP account is now available in Haku Console.");
+    } else {
+      toastError("Couldn't connect the MCP account", "The authorization request expired.");
+    }
+  }, [status]);
+  return <ConsoleScene view="settings" />;
+}
+
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
       return <ConsoleScene view="settings" />;
+    case "settings-oauth-success":
+      return <OAuthSettingsResultScene status="success" />;
+    case "settings-oauth-error":
+      return <OAuthSettingsResultScene status="error" />;
     case "history":
       return <ConsoleScene view="toolCalls" />;
     case "sync-current":
@@ -74,6 +93,29 @@ function sceneElement(scene: string) {
       return <IndicatorScene state="syncing" />;
     case "sync-error":
       return <IndicatorScene state="error" />;
+    case "oauth-success":
+    case "oauth-success-mobile":
+      return (
+        <OAuthResultView
+          result={{
+            status: "success",
+            title: "Connected to Google Calendar",
+            message: "The account is now available in Haku Console.",
+          }}
+          onClose={noop}
+        />
+      );
+    case "oauth-error":
+      return (
+        <OAuthResultView
+          result={{
+            status: "error",
+            title: "Couldn't connect the MCP account",
+            message: "The authorization request expired or was superseded by a newer attempt.",
+          }}
+          onClose={noop}
+        />
+      );
     default:
       return <ConsoleScene view="embed" />;
   }
@@ -85,6 +127,7 @@ const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
   <MantineProvider forceColorScheme={colorScheme} theme={hakuTheme}>
+    <Notifications position="top-right" />
     {sceneElement(scene)}
   </MantineProvider>
 );

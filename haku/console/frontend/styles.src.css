@@ -54,6 +54,42 @@
   }
 }
 
+.haku-oauth-result-page {
+  min-height: 100dvh;
+  padding: 1.5rem;
+  background:
+    radial-gradient(
+      circle at top,
+      color-mix(in srgb, var(--mantine-color-hakuSpirit-2) 42%, transparent),
+      transparent 48%
+    ),
+    var(--haku-page-bg);
+}
+
+.haku-oauth-result-card {
+  width: min(100%, 32rem);
+  border-color: var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-oauth-result-eyebrow {
+  color: var(--mantine-color-hakuSpirit-6);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.haku-oauth-result-icon {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.haku-oauth-result-message {
+  max-width: 26rem;
+  overflow-wrap: anywhere;
+}
+
 /* Rendered item markdown (marked → sanitized HTML). Tailwind's typography plugin
    isn't vendored, so the prose elements are styled explicitly here; the container
    carries the `md` class (the inner tags come from dangerouslySetInnerHTML, which

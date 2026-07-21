@@ -26,7 +26,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
@@ -43,7 +43,13 @@ from haku.console.mcp_config import (
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,
 )
-from haku.console.oauth_callback_page import render_oauth_callback_page
+from haku.console.oauth_connection_result import (
+    OAuthConnectionFailed,
+    OAuthConnectionResultStoreDep,
+    OAuthConnectionSucceeded,
+    bounded_result_message,
+    result_redirect,
+)
 from haku.console.oauth_token_state import (
     OAuthRefreshFailureEpisode,
     PostgresOAuthTokenStateStore,
@@ -483,11 +489,6 @@ class PostgresProviderConnectionStore:
         return None
 
 
-def _callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:
-    title = "Account connected" if ok else "Account connection failed"
-    return render_oauth_callback_page(title, message, status_code=status_code)
-
-
 def _store(request: Request) -> PostgresProviderConnectionStore:
     return cast(PostgresProviderConnectionStore, request.app.state.provider_connection_store)
 
@@ -531,23 +532,50 @@ async def disconnect_provider_connection(
 @router.get(PROVIDER_CONNECTION_CALLBACK_PATH)
 async def provider_connection_callback(
     store: ProviderConnectionStoreDep,
+    result_store: OAuthConnectionResultStoreDep,
     event_hub: ConsoleEventHubDep,
     actor: OperatorActorDep,
     state: str | None = None,
     code: str | None = None,
     error: str | None = None,
-) -> HTMLResponse:
-    if error:
-        return _callback_response(False, f"Authorization failed: {error}", status_code=400)
-    if not state or not code:
-        return _callback_response(False, "Callback is missing state or code.", status_code=400)
+) -> RedirectResponse:
     operator_id = actor.operator_id
+    if error:
+        return result_redirect(
+            result_store,
+            operator_id=operator_id,
+            result=OAuthConnectionFailed(
+                title="Couldn't connect the account",
+                message=bounded_result_message(f"Authorization failed: {error}", fallback="Authorization failed."),
+            ),
+        )
+    if not state or not code:
+        return result_redirect(
+            result_store,
+            operator_id=operator_id,
+            result=OAuthConnectionFailed(
+                title="Couldn't connect the account", message="The authorization response was incomplete."
+            ),
+        )
     try:
         status = await store.complete_callback(state=state, code=code, operator_id=operator_id)
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, str) else "Connection failed."
-        return _callback_response(False, detail, status_code=e.status_code)
+        return result_redirect(
+            result_store,
+            operator_id=operator_id,
+            result=OAuthConnectionFailed(
+                title="Couldn't connect the account",
+                message=bounded_result_message(detail, fallback="Connection failed."),
+            ),
+        )
     await event_hub.broadcast(
         operator_id, [OperatorConnectionChangedEvent(connection=status.connection, status="connected")]
     )
-    return _callback_response(True, f"Connected {status.display_name}.")
+    return result_redirect(
+        result_store,
+        operator_id=operator_id,
+        result=OAuthConnectionSucceeded(
+            title=f"Connected to {status.display_name}", message="The account is now available in Haku Console."
+        ),
+    )

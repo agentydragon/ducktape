@@ -9,7 +9,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 import jwt
@@ -221,15 +221,18 @@ async def _approve_downstream_consent(client: httpx.AsyncClient, authorization_u
         response = await client.get(urljoin(str(response.url), response.headers["location"]), follow_redirects=False)
     assert response.status_code == 200, response.text
     assert "Application Access Request" in response.text
-    return await client.post(
+    response = await client.post(
         str(response.url),
         data={
             "txn_id": _hidden_input(response.text, "txn_id"),
             "csrf_token": _hidden_input(response.text, "csrf_token"),
             "action": "approve",
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
+    while response.is_redirect and not response.headers["location"].startswith("/_console/settings"):
+        response = await client.get(urljoin(str(response.url), response.headers["location"]), follow_redirects=False)
+    return response
 
 
 @pytest.fixture(scope="module")
@@ -307,8 +310,14 @@ async def token_chain_harness(
         connected = await operator.post("/api/mcp/operator-auth/grocy-test/connect", headers={"X-CSRF-Token": csrf})
         assert connected.status_code == 200, connected.text
         callback = await _approve_downstream_consent(operator, connected.json()["authorization_url"])
-        assert callback.status_code == 200, callback.text
-        assert "Connected grocy-test" in callback.text
+        assert callback.status_code == 303, callback.text
+        result_id = parse_qs(urlparse(callback.headers["location"]).query)["oauth_result"][0]
+        result = await operator.get(f"/api/oauth-results/{result_id}")
+        assert result.json() == {
+            "status": "success",
+            "title": "Connected to grocy-test",
+            "message": "The MCP account is now available in Haku Console.",
+        }
 
         server_entry = McpServerEntry(
             id="grocy-test",

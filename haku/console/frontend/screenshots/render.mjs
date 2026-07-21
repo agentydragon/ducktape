@@ -41,6 +41,18 @@ const SCENES = [
     frame: true,
   },
   {
+    name: "settings-oauth-success",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    frame: true,
+  },
+  {
+    name: "settings-oauth-error",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    frame: true,
+  },
+  {
     name: "history",
     viewport: { width: 1200, height: 1500 },
     closeApprovals: true,
@@ -50,6 +62,9 @@ const SCENES = [
   { name: "sync-current", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Up to date"]'] },
   { name: "sync-syncing", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Syncing"]'] },
   { name: "sync-error", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Sync error"]'] },
+  { name: "oauth-success", viewport: { width: 900, height: 700 } },
+  { name: "oauth-error", viewport: { width: 900, height: 700 } },
+  { name: "oauth-success-mobile", viewport: { width: 390, height: 760 } },
 ];
 const COLOR_SCHEMES = ["light", "dark"];
 

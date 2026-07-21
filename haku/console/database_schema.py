@@ -737,6 +737,33 @@ class ProviderConnectionFlow(Base):
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class OAuthConnectionResult(Base):
+    """A short-lived, single-use browser handoff after an account-link callback.
+
+    The browser receives only the opaque ``result_id``. The outcome stays server-side, is
+    bound to the Operator who started the flow, and is consumed by the trusted console SPA.
+    """
+
+    __tablename__ = "oauth_connection_results"
+    __table_args__ = (
+        CheckConstraint("status IN ('success', 'error')", name="ck_oauth_connection_results_status"),
+        CheckConstraint("btrim(title) <> ''", name="ck_oauth_connection_results_title_nonempty"),
+        CheckConstraint("btrim(message) <> ''", name="ck_oauth_connection_results_message_nonempty"),
+        Index("idx_oauth_connection_results_operator", "operator_id"),
+        Index("idx_oauth_connection_results_expires_at", "expires_at"),
+    )
+
+    result_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class OperatorAuthentikToken(Base):
     """The acting Operator's own Authentik OAuth token, captured at browser login (offline_access).
 

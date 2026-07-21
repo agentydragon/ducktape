@@ -25,7 +25,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.client.auth.utils import (
@@ -67,7 +67,13 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
     _server_entry,
 )
-from haku.console.oauth_callback_page import render_oauth_callback_page
+from haku.console.oauth_connection_result import (
+    OAuthConnectionFailed,
+    OAuthConnectionResultStoreDep,
+    OAuthConnectionSucceeded,
+    bounded_result_message,
+    result_redirect,
+)
 from haku.console.oauth_token_state import (
     OAuthRefreshError,
     OAuthRefreshFailureAction,
@@ -702,11 +708,6 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
     return token
 
 
-def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:
-    title = "MCP account connected" if ok else "MCP account connection failed"
-    return render_oauth_callback_page(title, message, status_code=status_code)
-
-
 @router.post("/api/mcp/operator-auth/{server_id}/connect")
 async def connect_mcp_operator_auth(
     server_id: str,
@@ -748,25 +749,58 @@ async def disconnect_mcp_operator_auth(
 async def mcp_operator_auth_callback(
     request: Request,
     oauth_store: OAuthStoreDep,
+    result_store: OAuthConnectionResultStoreDep,
     event_hub: ConsoleEventHubDep,
     actor: OperatorActorDep,
     state: str | None = None,
     code: str | None = None,
     error: str | None = None,
-) -> HTMLResponse:
-    if error:
-        return _oauth_callback_response(False, f"MCP OAuth authorization failed: {error}", status_code=400)
-    if not state or not code:
-        return _oauth_callback_response(False, "MCP OAuth callback is missing state or code.", status_code=400)
+) -> RedirectResponse:
     operator_id = actor.operator_id
+    if error:
+        return result_redirect(
+            result_store,
+            operator_id=operator_id,
+            result=OAuthConnectionFailed(
+                title="Couldn't connect the MCP account",
+                message=bounded_result_message(
+                    f"MCP authorization failed: {error}", fallback="MCP authorization failed."
+                ),
+            ),
+            destination="settings",
+        )
+    if not state or not code:
+        return result_redirect(
+            result_store,
+            operator_id=operator_id,
+            result=OAuthConnectionFailed(
+                title="Couldn't connect the MCP account", message="The authorization response was incomplete."
+            ),
+            destination="settings",
+        )
     try:
         status = await oauth_store.complete_callback(
             state=state, code=code, operator_id=operator_id, username=_operator_username(request)
         )
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, str) else "MCP OAuth callback failed."
-        return _oauth_callback_response(False, detail, status_code=e.status_code)
+        return result_redirect(
+            result_store,
+            operator_id=operator_id,
+            result=OAuthConnectionFailed(
+                title="Couldn't connect the MCP account",
+                message=bounded_result_message(detail, fallback="MCP OAuth callback failed."),
+            ),
+            destination="settings",
+        )
     await event_hub.broadcast(
         operator_id, [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
     )
-    return _oauth_callback_response(True, f"Connected {status.server_id} for {_operator_username(request)}.")
+    return result_redirect(
+        result_store,
+        operator_id=operator_id,
+        result=OAuthConnectionSucceeded(
+            title=f"Connected to {status.server_id}", message="The MCP account is now available in Haku Console."
+        ),
+        destination="settings",
+    )

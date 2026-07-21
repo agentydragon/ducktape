@@ -31,7 +31,7 @@ import {
   SyncErrorIcon,
 } from "./icons.tsx";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import type { ConsoleView } from "./routing.ts";
+import type { ConsoleNavigationView, ConsoleView } from "./routing.ts";
 import { SUCCESS_COLOR } from "./theme.ts";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import type { LiveStatus } from "./console_events.ts";
@@ -55,7 +55,7 @@ export interface ShellChromeProps {
   onDenyScreenshot: (approval: ScreenshotApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
   view: ConsoleView;
-  onNavigate: (view: Exclude<ConsoleView, "notFound">) => void;
+  onNavigate: (view: ConsoleNavigationView) => void;
   // Live tool-call WebSocket health: drives the sync-status icon that is always visible (as an
   // ok-sync indicator) and the clickable panel that explains the current state.
   liveStatus: LiveStatus;

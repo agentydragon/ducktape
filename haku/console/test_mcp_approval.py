@@ -547,13 +547,15 @@ def test_operator_oauth_association_emits_console_events(
         assert events.receive_json() == {"event_type": "hello"}
         started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
-        callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
+        callback = client.get(
+            "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}, follow_redirects=False
+        )
         association_event = events.receive_json()
         disconnected = client.delete("/api/mcp/operator-auth/grocy-sf", headers={"X-CSRF-Token": csrf_token(client)})
         disassociation_event = events.receive_json()
 
-    assert callback.status_code == 200, callback.text
-    assert "BroadcastChannel" not in callback.text
+    assert callback.status_code == 303, callback.text
+    assert callback.headers["location"].startswith("/_console/settings?oauth_result=")
     assert association_event == {
         "event_type": "mcp_operator_auth_changed",
         "server_id": "grocy-sf",
@@ -580,10 +582,12 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
         assert auth_query["client_id"] == ["preregistered-client"]
 
         callback = client.get(
-            "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
+            "/api/mcp/operator-auth/callback",
+            params={"state": auth_query["state"][0], "code": "operator-code"},
+            follow_redirects=False,
         )
 
-    assert callback.status_code == 200, callback.text
+    assert callback.status_code == 303, callback.text
 
 
 def test_operator_oauth_callback_is_bound_to_flow_operator(
@@ -607,14 +611,22 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
 
         wrong_operator = operator_b.get(
-            "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}
+            "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}, follow_redirects=False
         )
-        completed = operator_a.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
+        wrong_result_id = parse_qs(urlparse(wrong_operator.headers["location"]).query)["oauth_result"][0]
+        wrong_result = operator_b.get(f"/api/oauth-results/{wrong_result_id}")
+        completed = operator_a.get(
+            "/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"}, follow_redirects=False
+        )
 
-    assert wrong_operator.status_code == 403
-    assert "different operator" in wrong_operator.text
+    assert wrong_operator.status_code == 303
+    assert wrong_result.json() == {
+        "status": "error",
+        "title": "Couldn't connect the MCP account",
+        "message": "OAuth flow belongs to a different operator",
+    }
     # A mismatched session does not consume the flow: its owner can still complete it.
-    assert completed.status_code == 200, completed.text
+    assert completed.status_code == 303, completed.text
 
 
 def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
@@ -816,9 +828,11 @@ def test_operator_oauth_association_drives_approved_tool_execution(
         assert auth_query["code_challenge_method"] == ["S256"]
 
         callback = client.get(
-            "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
+            "/api/mcp/operator-auth/callback",
+            params={"state": auth_query["state"][0], "code": "operator-code"},
+            follow_redirects=False,
         )
-        assert callback.status_code == 200, callback.text
+        assert callback.status_code == 303, callback.text
 
         reconnect = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         removed_start = client.post(

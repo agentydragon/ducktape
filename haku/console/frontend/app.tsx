@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 
 import { type ConfigResponse, fetchConfig } from "./client.ts";
 import { HakuUiEmbed } from "./haku_ui_embed.tsx";
+import { OAuthResultPage } from "./oauth_result_page.tsx";
+import { useOAuthResultAnnouncement } from "./oauth_result_announcement.ts";
 import { useConsoleView } from "./routing.ts";
 
 // The console is now just the trusted outer shell: a full-page frame for Haku's own UI
@@ -14,7 +16,8 @@ import { useConsoleView } from "./routing.ts";
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, navigate } = useConsoleView();
+  const { view, oauthResultId, navigate } = useConsoleView();
+  useOAuthResultAnnouncement(view);
 
   useEffect(() => {
     let alive = true;
@@ -29,6 +32,8 @@ export default function App() {
       alive = false;
     };
   }, []);
+
+  if (view === "oauthResult" && oauthResultId !== null) return <OAuthResultPage resultId={oauthResultId} />;
 
   // The initial config load is the one thing rendered by the shell itself; a failure
   // leaves nothing to frame, so it gets a persistent page-level message.

@@ -1,12 +1,8 @@
-"""The backend-served OAuth callback outcome page.
+"""Backend fallback for operator-login callback failures.
 
-Shared by the console's OAuth connection flows: each redirects the browser straight to a
-backend callback endpoint that runs the code→token exchange, then renders this minimal page to
-report the outcome; only the title differs per flow. The markup lives in a sibling Jinja
-template (loaded once at import) so it stays lintable rather than a Python string blob.
-
-TODO: make this a SPA-style page instead of a backend-served .html template — have the
-callback run the token exchange, then redirect to a frontend route that renders the outcome.
+Account-link callbacks hand their results to the SPA; operator login cannot assume that the SPA
+has a working authenticated session, so its failure and retry page remains backend-rendered. See
+``docs/oauth_browser_surfaces.md`` for the ownership boundary and consolidation plan.
 """
 
 from __future__ import annotations

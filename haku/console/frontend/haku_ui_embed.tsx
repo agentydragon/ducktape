@@ -23,6 +23,7 @@ import {
   CONSOLE_ROOT_PATH,
   rememberEmbedPath,
   rememberedEmbedPath,
+  type ConsoleNavigationView,
   type ConsoleView,
   viewForPathname,
 } from "./routing.ts";
@@ -82,7 +83,7 @@ export function HakuUiEmbed({
   uiUrl: string;
   launchAvailable: boolean;
   view: ConsoleView;
-  onNavigate: (view: Exclude<ConsoleView, "notFound">) => void;
+  onNavigate: (view: ConsoleNavigationView) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const viewRef = useRef(view);

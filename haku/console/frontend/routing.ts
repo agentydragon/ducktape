@@ -5,15 +5,27 @@ import { useCallback, useEffect, useState } from "react";
 export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
 export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
+export const OAUTH_RESULT_PATH_PREFIX = `${CONSOLE_ROOT_PATH}/oauth-result`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleView = "embed" | "settings" | "toolCalls" | "notFound";
+export type ConsoleNavigationView = "embed" | "settings" | "toolCalls";
+export type ConsoleView = ConsoleNavigationView | "oauthResult" | "notFound";
+
+const OAUTH_RESULT_PATH = new RegExp(
+  `^${OAUTH_RESULT_PATH_PREFIX}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
+  "i"
+);
+
+export function oauthResultIdForPathname(pathname: string): string | null {
+  return OAUTH_RESULT_PATH.exec(pathname)?.[1] ?? null;
+}
 
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
   if (pathname === SETTINGS_PATH) return "settings";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
+  if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
   return "embed";
 }
@@ -45,7 +57,7 @@ export function rememberEmbedPath(path: string): void {
   }
 }
 
-function pathForView(view: Exclude<ConsoleView, "notFound">): string {
+function pathForView(view: ConsoleNavigationView): string {
   if (view === "settings") return SETTINGS_PATH;
   if (view === "toolCalls") return TOOL_CALLS_PATH;
   return rememberedEmbedPath();
@@ -53,7 +65,8 @@ function pathForView(view: Exclude<ConsoleView, "notFound">): string {
 
 export function useConsoleView(): {
   view: ConsoleView;
-  navigate: (view: Exclude<ConsoleView, "notFound">) => void;
+  oauthResultId: string | null;
+  navigate: (view: ConsoleNavigationView) => void;
 } {
   const [pathname, setPathname] = useState(() => window.location.pathname);
 
@@ -68,7 +81,7 @@ export function useConsoleView(): {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((next: Exclude<ConsoleView, "notFound">) => {
+  const navigate = useCallback((next: ConsoleNavigationView) => {
     if (
       viewForPathname(window.location.pathname) === "embed" &&
       !window.location.pathname.startsWith(CONSOLE_ROOT_PATH)
@@ -81,5 +94,5 @@ export function useConsoleView(): {
     setPathname(path);
   }, []);
 
-  return { view: viewForPathname(pathname), navigate };
+  return { view: viewForPathname(pathname), oauthResultId: oauthResultIdForPathname(pathname), navigate };
 }

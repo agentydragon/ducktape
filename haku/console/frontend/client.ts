@@ -31,6 +31,9 @@ export type McpOperatorAuthConnectResponse = components["schemas"]["McpOperatorA
 export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus"];
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
 export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
+export type OAuthConnectionResult =
+  | components["schemas"]["OAuthConnectionSucceeded"]
+  | components["schemas"]["OAuthConnectionFailed"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason rather
 // than a generic message, falling back when the body isn't shaped that way. Exported
@@ -52,6 +55,14 @@ export async function fetchConfig(): Promise<ConfigResponse> {
 export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {
   const { data, error } = await api.GET("/api/deployment");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load deployment information"));
+  return data;
+}
+
+export async function consumeOAuthConnectionResult(resultId: string): Promise<OAuthConnectionResult> {
+  const { data, error } = await api.GET("/api/oauth-results/{result_id}", {
+    params: { path: { result_id: resultId } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load the connection result"));
   return data;
 }
 
