@@ -264,7 +264,7 @@ js_library(
     srcs = ["shell_lang.ts"],
     deps = [
         "//:node_modules/@codemirror/language",
-        "//:node_modules/@lezer/highlight",
+        "//:node_modules/@codemirror/legacy-modes",
     ],
 )
 
