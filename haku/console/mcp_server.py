@@ -292,31 +292,6 @@ def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
-def _output_schema(upstream_output_schema: dict[str, Any] | None) -> dict[str, Any] | None:
-    """A truthful output schema: any proxied call — passthrough or approval-request alike — can
-    return either the upstream tool's own result or, when execution outlasts
-    ``wait_for_approval_ms``, the pending-approval promise (`ToolCallPromise`, see
-    `_record_to_result`). Only meaningful when the upstream declares its own output schema;
-    otherwise there is nothing to narrow beyond "anything", so declaring none is more honest than
-    inventing a promise-only schema that would wrongly reject the upstream shape.
-
-    ``$ref``s are JSON pointers resolved against the document root, so each branch's own
-    ``$defs`` has to be hoisted to the combined schema's root rather than left nested under
-    ``oneOf`` (where the pointer would dangle). ``ToolCallPromise`` is the only source of
-    defs here; an upstream schema defining a same-named def is an unreviewed-but-unlikely
-    collision, not something this display-only schema needs to guard against.
-    """
-    if upstream_output_schema is None:
-        return None
-    upstream = copy.deepcopy(upstream_output_schema)
-    promise = ToolCallPromise.model_json_schema()
-    defs = {**upstream.pop("$defs", {}), **promise.pop("$defs", {})}
-    combined: dict[str, Any] = {"oneOf": [upstream, promise]}
-    if defs:
-        combined["$defs"] = defs
-    return combined
-
-
 def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     """The approval-request envelope schema: `ApprovalRequestEnvelope`'s generated schema with the
     ``input`` property replaced by the upstream tool's own schema (nested unchanged, so its fields
@@ -462,7 +437,13 @@ def _build_proxy_tool(
         title=title,
         description=description,
         parameters=parameters,
-        output_schema=_output_schema(tool.outputSchema),
+        # TODO: proxied tools intentionally declare no output schema. A call can return either the
+        # upstream result or, when execution outlasts `wait_for_approval_ms`, a `ToolCallPromise`;
+        # modeling that union as a top-level `oneOf` is rejected by claude.ai, which requires
+        # `outputSchema.type == "object"` (anthropics/claude-ai-mcp#400). outputSchema is optional
+        # in MCP, so omitting it is conformant; the promise behavior is described in the tool
+        # description. Restore a single conformant object shape if a client needs structured typing.
+        output_schema=None,
         # Icons are opaque display assets (URLs/data URIs) — no server identity to prefix, so they
         # propagate unchanged, unlike the textual name/title above.
         icons=tool.icons,
