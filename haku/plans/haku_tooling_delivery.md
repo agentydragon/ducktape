@@ -74,7 +74,10 @@ session. Use add_repo to request access."}` (the Anthropic `documentation_url` o
    tarball URLs all 403. Bzlmod, though, resolves modules from the Bazel Central Registry, whose
    `source.json` points at exactly those tarball paths — so default resolution hits the 403s.
    Forcing bazel onto git means a **per-module `git_override` across the whole transitive closure**
-   (each pinned to a hand-derived commit matching its BCR version, re-derived on every bump);
+   (each pinned to a hand-derived commit matching its BCR version, re-derived on every bump) — and
+   genuinely the _whole_ closure: overrides are **root-only and don't recurse** (overriding a direct
+   dep still lets _its_ deps resolve from BCR → 403), and with `--lockfile_mode=off` that transitive
+   set isn't even enumerated in-repo to work from;
    there is **no global "fetch via git" switch** (`--experimental_downloader_config` only rewrites
    one http URL to another, it can't switch protocol). See the option in _Points explored_ — it's
    horrible but real.
@@ -87,6 +90,16 @@ session. Use add_repo to request access."}` (the Anthropic `documentation_url` o
 freshness}` targets exist for CI. If bazel should _produce_ the shipped artifact, the shape is
    "**`bazel build` in CI → package the self-contained `py_binary` runfiles → ship via the
    cache**" — the same deliver-a-prebuilt-artifact family as the Nix closure, not bazel-at-agent-time.
+
+   **Why remote cache/RBE doesn't rescue local `bazel run` either, and why the gate won't lift.**
+   External-dep fetches run in **repository rules on the bazel client**, not as remotable actions —
+   so a remote _cache_, and even RBE with a _local_ client, still fetch the closure into the gated
+   container. The fetch only leaves the container by routing it through a remote that has egress —
+   moving the whole bazel **client** off-box (BuildBuddy Remote Bazel, which `bbr` wraps) or
+   delegating downloads via the Remote Asset API — i.e. the remote-runner/CI shape, not agent-runtime
+   local `bazel run`. And the gate is deliberate, not a transient: the release-asset/App scope holds
+   _regardless of the environment's network-access level_, and the ask to let CCR read public repos
+   without an App install / `add_repo` was **closed as not planned** (anthropics/claude-code#57641).
 
 3. **The Nix closure is the existing tool-delivery mechanism under the tight fence.**
    `fastmcp`/`tea`/`himalaya` reach PATH via `.#agent-haku`, installed by
