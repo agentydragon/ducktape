@@ -11,6 +11,7 @@ from haku.console.auto_approval import UNCONDITIONAL_AUTO_APPROVAL_ID, SchemaDen
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.gmail import build_mcp
 from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
+from haku.console.tools.sandbox import build_mcp as build_sandbox_mcp
 
 TEST_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000001")
 AGENT_ACTOR = AgentActor(
@@ -55,6 +56,19 @@ async def _calendar_decision(tool_name: str, arguments: dict) -> tuple[str | Non
         label_prefix="haku/",
         gmail=None,
         mcp=build_calendar_mcp(calendar),
+    )
+
+
+async def _sandbox_decision(tool_name: str, arguments: dict) -> tuple[str | None, str | None] | SchemaDenial:
+    sandbox = Mock()
+    return await auto_approve_tool_call(
+        actor=AGENT_ACTOR,
+        server_id="haku_sandbox",
+        tool_name=tool_name,
+        arguments=arguments,
+        label_prefix="haku/",
+        gmail=None,
+        mcp=build_sandbox_mcp(sandbox),
     )
 
 
@@ -123,6 +137,27 @@ async def test_calendar_read_with_invalid_arguments_is_auto_denied() -> None:
     assert isinstance(denial, SchemaDenial)
     assert denial.evaluation == "denied: arguments failed the registered tool schema"
     assert "251" in denial.reason  # the concrete validation error reaches the caller
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("reserve", {}),
+        ("info", {"handle": "hs-abc12"}),
+        ("exec", {"handle": "hs-abc12", "cmd": ["true"], "timeout_ms": 5000}),
+    ],
+)
+async def test_haku_sandbox_tools_are_auto_approved(tool_name: str, arguments: dict) -> None:
+    policy_id, evaluation = _approval(await _sandbox_decision(tool_name, arguments))
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+async def test_haku_sandbox_invalid_arguments_are_auto_denied() -> None:
+    denial = await _sandbox_decision("exec", {"handle": "bad", "cmd": ["true"], "timeout_ms": 5000})
+    assert isinstance(denial, SchemaDenial)
+    assert "bad" in denial.reason
 
 
 async def test_read_with_unknown_argument_is_auto_denied() -> None:

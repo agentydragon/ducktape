@@ -4,7 +4,7 @@ metadata:
   name: haku-state-workloads
   namespace: flux-system
   annotations:
-    description: "Reconciles Haku-authored workload manifests (haku-state k8s/) into haku-sandbox. Impersonates the constrained haku-state-reconciler SA, so it may apply only what that SA's Role allows (Deployments/Services/ConfigMaps/Jobs/CronJobs/PVCs in haku-sandbox — no Secrets, no routes). Until Haku seeds k8s/ this is NotReady (path not found); that is expected pre-first-run."
+    description: "Reconciles Haku-authored workload manifests (haku-state k8s/) into haku-sandbox. Impersonates the constrained haku-state-reconciler SA, so it may apply only what that SA's Role allows (workloads plus agent-sandbox templates/warm pools, but no runtime claims, Secrets, or routes). Until Haku seeds k8s/ this is NotReady (path not found); that is expected pre-first-run."
 spec:
   interval: 5m
   retryInterval: 1m

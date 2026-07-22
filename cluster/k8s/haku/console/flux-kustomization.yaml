@@ -21,6 +21,7 @@ spec:
     - name: haku-console-namespace # the console's own trusted namespace (not haku-sandbox)
     - name: haku-console-db # distributed approval ledger
     - name: haku-state # provisions the shared haku-ui/backend -> haku-console MCP static-Agent token
+    - name: haku-sandbox-mcp-access # dedicated projected-token SA + namespaced RBAC
     - name: gateway
     - name: authentik
     # TF mints the console's Authentik OAuth2 providers + the haku-console-oidc Secret

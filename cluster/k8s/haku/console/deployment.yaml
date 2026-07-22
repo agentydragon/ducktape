@@ -15,8 +15,9 @@
 # secrets/logs or patch it) and outside the haku-egress-proxy egress fence (which keys
 # on the haku-sandbox namespace) — so it gets ordinary egress and can later hold
 # secrets Haku may not read. See haku/PLAN.md → "The agent-authored console". It
-# still runs locked down (uid/gid 1000, non-root, no service-account token, all
-# capabilities dropped). readOnlyRootFilesystem is intentionally NOT set: the aspect
+# still runs locked down (uid/gid 1000, non-root, an explicit narrowly-scoped agent-sandbox
+# token projected only into the server container, all capabilities dropped).
+# readOnlyRootFilesystem is intentionally NOT set: the aspect
 # py_binary launcher materializes its venv on the rootfs at startup (same as
 # grocy-mcp), so the root fs must be writable.
 apiVersion: apps/v1
@@ -46,6 +47,7 @@ spec:
       labels:
         app.kubernetes.io/name: haku-console
     spec:
+      serviceAccountName: haku-console-sandbox
       automountServiceAccountToken: false
       # Don't inject the kubelet's {SVCNAME}_* service-link env vars: the haku-console
       # Service's HAKU_CONSOLE_PORT=tcp://<clusterIP>:8080 collides with the app's
@@ -276,6 +278,12 @@ spec:
             - name: config
               mountPath: /etc/haku-console/config
               readOnly: true
+            # Explicit projection rather than automount: only reviewed server code can reach the
+            # Kubernetes credential; the nginx sidecar below has no mount. RBAC is in
+            # ../sandbox-mcp/ and permits only claim orchestration + pod exec in haku-sandbox.
+            - name: kubernetes-api-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -328,5 +336,22 @@ spec:
         - name: config
           configMap:
             name: haku-console-config
+        - name: kubernetes-api-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
         - name: nginx-conf
           emptyDir: {}

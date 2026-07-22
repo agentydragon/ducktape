@@ -137,7 +137,8 @@ Discovery is request-local: either principal sees remote servers connected by it
 Operator, plus shared configured/in-process servers. For Agents, that surface is divided into two
 buckets:
 tools the policy **unconditionally**
-auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read tools —
+auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read tools, and the
+bounded `haku_sandbox` reserve/exec/info capability —
 `search_nodes`, `read_node`, `get_children`, `open_node`, `list_tags`, `list_workspaces`,
 `get_tag_schema`, plus the idempotent `get_or_create_calendar_node`, and postscanmail-mcp
 reads) appear as
@@ -300,6 +301,19 @@ MCP servers from `@mcp.tool`-decorated functions:
   ordinary approval-gated tool call rather than a bespoke capability. It uses the
   `haku-routine-launch-token` secret (`HAKU_CONSOLE_LAUNCH_ROUTINE__*`), not the Google grant, and
   supersedes the launch-routine capability tier above (kept during the haku-ui transition).
+- **`haku_sandbox`** (`haku.console.tools.sandbox` + `sandbox_kubernetes`): `reserve` checks out a
+  short `SandboxClaim` handle from the Haku-only `haku-bash` warm pool, `exec` runs one direct argv
+  command with a hard five-minute cap, and `info` reports claim/Sandbox/Pod health. All three are
+  transparent auto-approved tools for authenticated Agents. Claims have an eight-hour sliding
+  `shutdownTime`; exec renews it before and after every command. `shutdownPolicy: Retain` deletes
+  the Sandbox/Pod at expiry but preserves the claim's `ClaimExpired` condition, and a Kyverno
+  policy removes those labeled tombstones seven days later. The implementation has no dependency
+  on the existing `ws` tool/state. A dedicated `haku-console-sandbox` ServiceAccount is explicitly
+  projected only into the server container and can manage claims, read controller-owned
+  Sandbox/Pod state, and use `pods/exec` only in `haku-sandbox`; it cannot create arbitrary Pods or
+  alter the pool/template. Haku's own OIDC identity separately has direct claim CRUD for kubectl
+  parity. The `SandboxTemplate`/`SandboxWarmPool` are haku-state-owned; the exact V1 follow-up (and
+  deferred claim-time startup hook) is in `haku/TODO.md`.
 
 The `gmail` and `google_calendar` servers execute as the **acting Operator's own Google
 account**: each call resolves that Operator's per-Operator Google access token from the

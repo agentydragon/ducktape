@@ -20,3 +20,4 @@ spec:
     # haku-state-git-write Secret (now also reflected into flux-system for the
     # GitRepository's basic auth).
     - name: haku-state
+    - name: agent-sandbox-controller # haku-state may declare SandboxTemplate/SandboxWarmPool

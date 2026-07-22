@@ -36,3 +36,22 @@ rules:
       - jobs
       - cronjobs
     verbs: ["*"]
+
+  # Direct kubectl parity for the semantic haku_sandbox MCP tools: Haku may create/renew/delete
+  # claims with its own OIDC identity and inspect what the controller assigned. Pool/template
+  # definitions stay GitOps-owned by haku-state; Sandboxes stay controller-owned.
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources:
+      - sandboxclaims
+    verbs: ["*"]
+
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources:
+      - sandboxtemplates
+      - sandboxwarmpools
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["agents.x-k8s.io"]
+    resources:
+      - sandboxes
+    verbs: ["get", "list", "watch"]

@@ -12,6 +12,7 @@ from fastmcp import FastMCP
 
 from haku.console.tool_call_actor import AgentActor, ToolCallActor
 from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
+from haku.console.tools.sandbox import HAKU_SANDBOX_SERVER_ID, HAKU_SANDBOX_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,9 @@ UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     OSM_SERVER_ID: OSM_AUTO_APPROVE_TOOLS,
     POSTSCANMAIL_SERVER_ID: POSTSCANMAIL_READ_TOOLS,
     HOME_ASSISTANT_SERVER_ID: HOME_ASSISTANT_READ_TOOLS,
+    # This server is the reviewed least-privilege boundary: all three tools are intentionally
+    # available to every authenticated Agent without entering the operator approval queue.
+    HAKU_SANDBOX_SERVER_ID: HAKU_SANDBOX_TOOLS,
 }
 
 
@@ -274,8 +278,9 @@ async def auto_approve_tool_call(
 
     Applies to any authenticated agent (a static MCP bearer or an MCP OAuth client); interactive
     operator-browser calls never auto-approve. Unconditionally
-    allowlisted read-only/safe operations (Gmail/Calendar/Grocy reads, tana `get_or_create_calendar_node`)
-    approve regardless of arguments; gmail label mutations approve only when scoped to ``label_prefix``.
+    allowlisted read-only/safe operations (Gmail/Calendar/Grocy reads, tana `get_or_create_calendar_node`,
+    and the least-privilege haku_sandbox capability) approve regardless of arguments; gmail label
+    mutations approve only when scoped to ``label_prefix``.
     Arguments that fail an owned in-process schema return `SchemaDenial` (terminal auto-denial);
     any console-side schema, lookup, or policy error is logged and fails closed to manual review.
     """

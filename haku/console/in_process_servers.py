@@ -2,8 +2,9 @@
 
 The registry holds *builders* (`InProcessServers`): the gmail/google_calendar servers are
 built per execution from the acting Operator's Google access token, hostexec from the acting
-Operator's Authentik access token (bound by argument, no ambient state), while routine is
-credential-free. See `mcp_config.InProcessServerBuilder`.
+Operator's Authentik access token (bound by argument, no ambient state), while routine and the
+least-privilege Kubernetes sandbox client are credential-free at the MCP layer. See
+`mcp_config.InProcessServerBuilder`.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.routine as routine_tools
+import haku.console.tools.sandbox as sandbox_tools
 from haku.console.config import HostexecConfig
 from haku.console.mcp_config import (
     InProcessCredentialKind,
@@ -39,12 +41,13 @@ class HostexecServerConfig:
 class InProcessServerDependencies:
     """Runtime collaborators for the in-process servers.
 
-    gmail/google_calendar need none (built per call from the acting Operator's token); routine is
-    registered only when its launcher is configured; hostexec only when its config is set.
+    gmail/google_calendar need none (built per call from the acting Operator's token); routine,
+    hostexec, and agent_sandbox are registered only when their collaborators are configured.
     """
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
     hostexec: HostexecServerConfig | None = None
+    agent_sandbox: sandbox_tools.AgentSandboxClient | None = None
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
@@ -83,5 +86,9 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
                 )
             ),
             credential_kind=InProcessCredentialKind.OPERATOR_LOGIN_IDENTITY,
+        )
+    if dependencies.agent_sandbox is not None:
+        servers[sandbox_tools.HAKU_SANDBOX_SERVER_ID] = const_in_process_server(
+            sandbox_tools.build_mcp(dependencies.agent_sandbox)
         )
     return servers

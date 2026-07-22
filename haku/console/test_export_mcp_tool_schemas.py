@@ -55,11 +55,12 @@ _EXPECTED_TOOLS = {
         "stock_get",
     ),
     "haku_routine": ("launch_routine",),
+    "haku_sandbox": ("exec", "info", "reserve"),
     "hostexec": ("bash",),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine", "hostexec")
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine", "haku_sandbox", "hostexec")
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
@@ -167,6 +168,38 @@ async def test_hostexec_schemas_validate() -> None:
             "stdout": {"truncated_text": "partial", "total_bytes": 5_000},
             "stderr": "",
             "duration_ms": 30_000,
+        }
+    )
+
+
+async def test_haku_sandbox_schemas_validate() -> None:
+    args = (await build_mcp_tool_arguments_schema())["properties"]["haku_sandbox"]["properties"]
+    Draft202012Validator(args["reserve"]).validate({})
+    Draft202012Validator(args["info"]).validate({"handle": "hs-abc12"})
+    Draft202012Validator(args["exec"]).validate(
+        {"handle": "hs-abc12", "cmd": ["bash", "-lc", "echo ok"], "timeout_ms": 5000}
+    )
+
+    results = (await build_mcp_tool_results_schema())["properties"]["haku_sandbox"]["properties"]
+    Draft202012Validator(results["info"]).validate(
+        {
+            "handle": "hs-abc12",
+            "state": "expired",
+            "healthy": False,
+            "expires_at": "2026-07-22T20:00:00Z",
+            "sandbox_name": None,
+            "pod_name": None,
+            "reason": "ClaimExpired",
+            "message": "lease expired",
+        }
+    )
+    Draft202012Validator(results["exec"]).validate(
+        {
+            "exit": {"kind": "exited", "exit_code": 0},
+            "stdout": "ok",
+            "stderr": "",
+            "duration_ms": 4,
+            "expires_at": "2026-07-22T20:00:00Z",
         }
     )
 
