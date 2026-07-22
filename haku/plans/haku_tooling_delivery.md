@@ -46,6 +46,13 @@ session. Use add_repo to request access."}`. `github.com` main, `raw.githubuserc
      blocking `codeload` while leaving raw git-protocol to `github.com` wide open is not a security
      boundary (anything the tarball holds, `git clone` also serves) — it reads as an artifact of
      _where_ the App-scope check happens to sit, not a deliberate "gate third-party deps" policy.
+     **Independent confirmation that this is a distinct layer, not egress policy:** the container's
+     own agent-egress proxy reports `"selective": false` at `$HTTPS_PROXY/__agentproxy/status`
+     (any-domain mode — see `/root/.ccr/README.md`), so the generic egress proxy is _not_
+     host-filtering; the `codeload` 403 therefore cannot originate there and must be the GitHub-App
+     scope check. (Caveat: `selective:false` is loosened-container state and would flip when the
+     operator re-tightens fence (a) — but the App-scope layer that gates `codeload` is orthogonal to
+     that and stays regardless.)
      It is `add_repo`-extensible, but bazel pulls **dozens** of transitive third-party dep repos
      (rules_python, rules_cc, bazel-skylib, apple_support, …), re-chased on every bump —
      impractical. (CA trust is a **non-issue** here: per `/root/.ccr/README.md`, bazel reads a
