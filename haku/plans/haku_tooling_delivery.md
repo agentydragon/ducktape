@@ -39,20 +39,29 @@ wrapper for its interpreter + `site-packages`). That works, but is the "which py
      `http_archive` from github **release / `/archive/` / `codeload`** URLs, and those paths are
      gated by **Claude Code's GitHub-App repository-access scope** — _not_ a CDN or egress block:
      the proxy returns `{"message":"GitHub access to this repository is not enabled for this
-session. Use add_repo to request access."}`. `github.com` main, `raw.githubusercontent.com`,
-     and `git clone` / `git ls-remote` of _any_ public repo all work (200); only the App-mediated
-     **download** paths — the ones routing through GitHub's authenticated codeload / `/archive/` /
-     releases surfaces — enforce the per-repo scope. **The split makes no coherent egress sense:**
-     blocking `codeload` while leaving raw git-protocol to `github.com` wide open is not a security
-     boundary (anything the tarball holds, `git clone` also serves) — it reads as an artifact of
-     _where_ the App-scope check happens to sit, not a deliberate "gate third-party deps" policy.
+session. Use add_repo to request access."}` (the Anthropic `documentation_url` on it confirms the
+     App layer, not GitHub). The gate keys on the **repo's** App scope, not the path type: the
+     _same_ `codeload` URL returns 200 for an in-scope repo (`agentydragon/ducktape` → a 137 MB
+     tarball) but 403 for an out-of-scope one. It is **not** confined to download surfaces either —
+     a non-`add_repo`'d repo's plain **HTML page** (`github.com/<owner>/<repo>`) 403s too, and the
+     bare root `https://github.com/` returns **400** `Request path could not be canonicalized` (the
+     App-proxy can't map `/` to a repo). What stays un-gated for _any_ public repo is
+     `raw.githubusercontent.com` and the **git protocol** — the latter only because git is rewritten
+     via `insteadOf` onto a **separate** in-container git proxy that never runs the App-scope check,
+     _not_ because `github.com`-over-HTTPS distinguishes git from tarballs. **The split still makes
+     no coherent egress sense:** for an out-of-scope repo the App-mediated HTTPS paths (HTML,
+     `/archive/`, `codeload`, `releases`) 403 while the git proxy and `raw` hand back that same
+     repo's every byte (a shallow `git clone` of a 403'd repo returns the full tree) — an artifact
+     of _where_ the App-scope check sits, not a deliberate "gate third-party deps" policy.
      **Independent confirmation that this is a distinct layer, not egress policy:** the container's
      own agent-egress proxy reports `"selective": false` at `$HTTPS_PROXY/__agentproxy/status`
      (any-domain mode — see `/root/.ccr/README.md`), so the generic egress proxy is _not_
      host-filtering; the `codeload` 403 therefore cannot originate there and must be the GitHub-App
-     scope check. (Caveat: `selective:false` is loosened-container state and would flip when the
-     operator re-tightens fence (a) — but the App-scope layer that gates `codeload` is orthogonal to
-     that and stays regardless.)
+     scope check. **Re-validated 2026-07-22 in a fresh session** — arbitrary non-GitHub hosts
+     (`example.com`, `wikipedia.org`, `pypi.org`) all return 200, so egress is genuinely open and
+     the 403 is not a stale artifact of a previously-tightened fence. (Caveat: `selective:false` is
+     loosened-container state and would flip when the operator re-tightens fence (a) — but the
+     App-scope layer that gates `codeload` is orthogonal to that and stays regardless.)
      It is `add_repo`-extensible, but bazel pulls **dozens** of transitive third-party dep repos
      (rules_python, rules_cc, bazel-skylib, apple_support, …), re-chased on every bump —
      impractical. (CA trust is a **non-issue** here: per `/root/.ccr/README.md`, bazel reads a
