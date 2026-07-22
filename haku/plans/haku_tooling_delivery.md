@@ -40,16 +40,32 @@ wrapper for its interpreter + `site-packages`). That works, but is the "which py
      gated by **Claude Code's GitHub-App repository-access scope** — _not_ a CDN or egress block:
      the proxy returns `{"message":"GitHub access to this repository is not enabled for this
 session. Use add_repo to request access."}`. `github.com` main, `raw.githubusercontent.com`,
-     and `git clone` of _any_ public repo all work (200); only the App-mediated **download** paths
-     enforce the per-repo scope. It is `add_repo`-extensible, but bazel pulls **dozens** of
-     transitive third-party dep repos (rules_python, rules_cc, bazel-skylib, apple_support, …),
-     re-chased on every bump — impractical. (CA trust is a **non-issue** here: per
-     `/root/.ccr/README.md`, bazel reads a managed block in `/etc/bazel.bazelrc`, not
-     `JAVA_TOOL_OPTIONS` — the `WARNING: ignoring JAVA_TOOL_OPTIONS` is a red herring.)
+     and `git clone` / `git ls-remote` of _any_ public repo all work (200); only the App-mediated
+     **download** paths — the ones routing through GitHub's authenticated codeload / `/archive/` /
+     releases surfaces — enforce the per-repo scope. **The split makes no coherent egress sense:**
+     blocking `codeload` while leaving raw git-protocol to `github.com` wide open is not a security
+     boundary (anything the tarball holds, `git clone` also serves) — it reads as an artifact of
+     _where_ the App-scope check happens to sit, not a deliberate "gate third-party deps" policy.
+     It is `add_repo`-extensible, but bazel pulls **dozens** of transitive third-party dep repos
+     (rules_python, rules_cc, bazel-skylib, apple_support, …), re-chased on every bump —
+     impractical. (CA trust is a **non-issue** here: per `/root/.ccr/README.md`, bazel reads a
+     managed block in `/etc/bazel.bazelrc`, not `JAVA_TOOL_OPTIONS` — the `WARNING: ignoring
+     JAVA_TOOL_OPTIONS` is a red herring.)
 
-   **No practical fetch trick fixes this.** Every way to feed bazel its deps off-cluster
-   (`bazel vendor`, a shipped `--distdir`, or tunnelling fetches through the cluster) means
-   delivering bazel's **entire external dependency closure** just to run a small python CLI —
+   **The git protocol is the one open fetch path — but bazel won't use it without per-module
+   overrides.** Reconfirmed 2026-07-22: `git ls-remote bazelbuild/bazel-skylib` (never
+   `add_repo`'d) returns `HEAD`, while that same repo's `archive`/`codeload`/`releases/download`
+   tarball URLs all 403. Bzlmod, though, resolves modules from the Bazel Central Registry, whose
+   `source.json` points at exactly those tarball paths — so default resolution hits the 403s.
+   Forcing bazel onto git means a **per-module `git_override` across the whole transitive closure**
+   (each pinned to a hand-derived commit matching its BCR version, re-derived on every bump);
+   there is **no global "fetch via git" switch** (`--experimental_downloader_config` only rewrites
+   one http URL to another, it can't switch protocol). See the option in _Points explored_ — it's
+   horrible but real.
+
+   **And it doesn't matter which fetch path wins.** Every off-cluster route (`bazel vendor`, a
+   shipped `--distdir`, `git_override`-the-closure, or tunnelling fetches through the cluster) still
+   delivers bazel's **entire external dependency closure** just to run a small python CLI —
    strictly more overhead than shipping the python itself. **Bazel is the wrong tool for
    _running_ the CLI**; it's a CI build/test tool (works in-cluster). `//cli:{bookmark,validate,
 freshness}` targets exist for CI. If bazel should _produce_ the shipped artifact, the shape is
@@ -123,6 +139,17 @@ state; …) — treat this as scaffolding to extend.
   in-cluster, so source stays self-managed in haku-state. Still needs an in-cluster build+push
   path, and the artifact bundles its own interpreter (heavier than the closure, which shares the
   one `fastmcp` python) — but it reuses the `//cli:*` targets that already exist for CI.
+- **`git_override` the entire transitive closure onto the git protocol** (haku-state
+  `MODULE.bazel`) so `bazel run` works off-cluster despite the codeload 403s. The git protocol is
+  the only un-gated fetch path (constraint 2), so this is the _sole_ way to make bazel fetch its
+  deps off-cluster without `add_repo`. **Horrible but real, documented for completeness:** a
+  hand-maintained `git_override` per module (dozens — rules*python, rules_cc, bazel-skylib,
+  platforms, protobuf, abseil, …), each pinned to a commit matching its BCR version and re-derived
+  on every bump, forfeiting bzlmod's version resolution. Committed config beats per-session
+  `add_repo` on recurrence, but it's fragile busywork — and it \_still* ships bazel's whole external
+  closure to run a small CLI (constraint 2's "doesn't matter which fetch path wins"), so it buys
+  nothing over shipping the python directly. Not recommended; recorded so the option isn't
+  re-derived.
 
 ## Adjacent open axes (documented elsewhere, noted so this decision stays coherent with them)
 
