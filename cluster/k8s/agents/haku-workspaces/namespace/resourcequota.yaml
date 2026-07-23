@@ -1,0 +1,20 @@
+# Haku sandbox pool. Each workspace runs a LOCAL Bazel build of haku-state (no RBE —
+# haku-state's .bazelrc is --spawn_strategy=local, source never leaves the cluster), so
+# a claimed pod is sized for a real local build (~cpu 3 / 6Gi, matching the haku-ci
+# runner) rather than the thin exec target the agent-workspaces lane assumes.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: haku-workspaces-quota
+  namespace: haku-workspaces
+spec:
+  hard:
+    requests.cpu: "6"
+    requests.memory: 12Gi
+    limits.cpu: "12"
+    limits.memory: 24Gi
+    pods: "6"
+    services: "6"
+    configmaps: "12"
+    persistentvolumeclaims: "8"
+    requests.storage: 120Gi
