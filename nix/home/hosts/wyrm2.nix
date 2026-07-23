@@ -62,6 +62,15 @@
     sopsFile = ../../../secrets/shared/zai.yaml;
   };
 
+  # Keep GNOME's cursor selection declarative. Unmanaged dconf values can
+  # otherwise override the installed theme with an invalid empty name/size.
+  # TODO(cursor-dconf): Remove this override if the writer of those invalid
+  # values is identified and fixed at the source.
+  dconf.settings."org/gnome/desktop/interface" = {
+    cursor-theme = "Adwaita";
+    cursor-size = 24;
+  };
+
   # Steam defaults "GPU accelerated rendering in web views" OFF on NVIDIA +
   # Wayland (Valve driver-detection bug, ValveSoftware/steam-for-linux#13151).
   # That forces the Big Picture web UI (CEF) to rasterize on the CPU — ~5 FPS
