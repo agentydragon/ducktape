@@ -2,6 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ducktape-write-source.yaml
+  - haku-sandbox-mcp-image-repository.yaml
+  - haku-sandbox-mcp-image-policy.yaml
   - props-backend-image-repository.yaml
   - props-backend-image-policy.yaml
   - props-llm-proxy-image-repository.yaml

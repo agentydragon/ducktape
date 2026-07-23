@@ -1,0 +1,16 @@
+# Bind the claim/exec Role (in haku-workspaces) to the MCP's ServiceAccount
+# (in haku-sandbox-mcp). Cross-namespace: the subject SA lives in the MCP's own
+# namespace, the Role + RoleBinding live in the pool namespace it operates on.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-sandbox-mcp
+  namespace: haku-workspaces
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-sandbox-mcp
+subjects:
+  - kind: ServiceAccount
+    name: haku-sandbox-mcp
+    namespace: haku-sandbox-mcp

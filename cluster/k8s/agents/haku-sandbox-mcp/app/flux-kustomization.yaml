@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-sandbox-mcp-app
+  namespace: flux-system
+  annotations:
+    description: Sandbox-provisioning MCP server (haku/sandbox_mcp) + its claim/exec RBAC into haku-workspaces. Fronted by haku-console (register separately — operator perimeter).
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  path: ./cluster/k8s/agents/haku-sandbox-mcp/app
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: haku-sandbox-mcp-namespace
+    - name: haku-workspaces-app # the pool (+ its namespace) the Role/claims target
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: haku-sandbox-mcp
+      namespace: haku-sandbox-mcp

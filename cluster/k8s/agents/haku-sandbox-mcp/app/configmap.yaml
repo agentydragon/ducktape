@@ -1,0 +1,42 @@
+# Non-secret runtime config for haku/sandbox_mcp (EnvironmentConfig, extra=forbid),
+# mounted as a file; HAKU_SANDBOX_MCP_CONFIG_FILE points the server at it.
+# The bearer token is NOT here — it's the SOPS Secret (bearer.sops.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-sandbox-mcp-config
+  namespace: haku-sandbox-mcp
+data:
+  config.yaml: |
+    sandbox:
+      # The Haku sandbox pool this MCP hands out (cluster/k8s/agents/haku-workspaces/).
+      namespace: haku-workspaces
+      warm_pool: haku
+      container: workspace
+      default_cwd: /workspace/haku-state
+      # initial_ttl must exceed provisioning_timeout + bootstrap.timeout; exec
+      # extension must be >= max_exec_timeout (validated by the server).
+      initial_ttl_seconds: 28800
+      exec_ttl_extension_seconds: 7200
+      provisioning_timeout_seconds: 600
+      max_exec_timeout_seconds: 300
+      max_output_bytes: 100000
+    bootstrap:
+      cwd: /workspace
+      timeout_seconds: 300
+      # Reviewed, runs once per claim: trust the egress CA at the JVM level + wire
+      # git creds (haku-sandbox-setup.sh, baked in the builder image), then sync
+      # haku-state so `bazel run //cli:...` works. Branch is main (haku-state's
+      # default), not master.
+      script: |
+        set -euo pipefail
+        /usr/local/bin/haku-sandbox-setup.sh
+        repo=/workspace/haku-state
+        url=http://forgejo-http.forgejo:3000/haku/haku-state.git
+        if [ -d "$repo/.git" ]; then
+          git -C "$repo" fetch --prune origin main
+          git -C "$repo" checkout -B main origin/main
+          git -C "$repo" reset --hard origin/main
+        else
+          git clone --branch main --single-branch "$url" "$repo"
+        fi

@@ -1,0 +1,23 @@
+# The exact API access the sandbox-provisioning MCP needs, scoped to the pool
+# namespace (derived from haku/sandbox_mcp/kubernetes_client.py): create/adopt +
+# GC SandboxClaims, read the assigned Sandbox + Pod, and open exec sessions. No
+# secrets, no other verbs. Lives in haku-workspaces (where the claims/pods are);
+# bound to the MCP's SA by rolebinding.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: haku-sandbox-mcp
+  namespace: haku-workspaces
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["create", "get", "list", "patch", "delete"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]

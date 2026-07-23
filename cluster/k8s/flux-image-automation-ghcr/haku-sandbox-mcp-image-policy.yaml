@@ -1,0 +1,13 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: haku-sandbox-mcp
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: haku-sandbox-mcp
+  filterTags:
+    pattern: "^devel-[0-9]{14}-[0-9a-f]{7}$"
+  policy:
+    alphabetical:
+      order: asc

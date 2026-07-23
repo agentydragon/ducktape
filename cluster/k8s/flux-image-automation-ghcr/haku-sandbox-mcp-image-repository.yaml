@@ -1,0 +1,8 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: haku-sandbox-mcp
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/haku-sandbox-mcp
+  interval: 5m

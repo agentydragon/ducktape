@@ -61,6 +61,10 @@ resources:
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
+  - agents/haku-workspaces/namespace/flux-kustomization.yaml # Haku sandbox pool (exec target for the sandbox-provisioning MCP)
+  - agents/haku-workspaces/app/flux-kustomization.yaml
+  - agents/haku-sandbox-mcp/namespace/flux-kustomization.yaml # the sandbox-provisioning MCP server
+  - agents/haku-sandbox-mcp/app/flux-kustomization.yaml
   - agents/airlock/agent-rbac/flux-kustomization.yaml
   - agents/tana-mcp/agent-rbac/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
