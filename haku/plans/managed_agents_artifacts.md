@@ -138,8 +138,8 @@ ns=haku-sandbox
 python3 /opt/haku/kubeconfig.py --write "$HOME/.kube/config"
 
 # 2. git auth for the state repo, off any command line.
-u=$(kubectl -n "$ns" get secret haku-state-git-write -o jsonpath='{.data.username}' | base64 -d)
-p=$(kubectl -n "$ns" get secret haku-state-git-write -o jsonpath='{.data.password}' | base64 -d)
+u=$(kubectl -n "$ns" get secret haku-forgejo-git -o jsonpath='{.data.username}' | base64 -d)
+p=$(kubectl -n "$ns" get secret haku-forgejo-git -o jsonpath='{.data.password}' | base64 -d)
 umask 077
 printf 'machine git.allegedly.works login %s password %s\n' "$u" "$p" >"$HOME/.netrc"
 

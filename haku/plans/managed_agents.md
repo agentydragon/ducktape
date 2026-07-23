@@ -131,7 +131,7 @@ as a single endpoint.
    (egress is yours, so there's nowhere for Anthropic to substitute the secret).
    That's fine: the secrets Haku's **bash** tools need — the `haku` kubeconfig/JWT,
    the Plaid `plaid-mcp-db-readonly` DSN, the `google-access-token`, the
-   `haku-state-git-write` creds — stay materialized **in-container from
+   `haku-forgejo-git` creds — stay materialized **in-container from
    `haku-sandbox` k8s secrets at bootstrap**, exactly as `bootstrap.sh` does now.
 
 Clean rule: **MCP auth → vaults; everything bash reaches → in-container k8s

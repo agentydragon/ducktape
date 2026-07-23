@@ -68,17 +68,17 @@ spec:
             - name: HAKU_STATE_REPO_URL
               valueFrom:
                 secretKeyRef:
-                  name: haku-state-git-write
+                  name: haku-forgejo-git
                   key: repo_url
             - name: HAKU_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: haku-state-git-write
+                  name: haku-forgejo-git
                   key: username
             - name: HAKU_GIT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: haku-state-git-write
+                  name: haku-forgejo-git
                   key: password
             # .netrc machine line for git auth. Must match the host in the clone
             # URLs below — both repos are reached via the in-cluster Forgejo

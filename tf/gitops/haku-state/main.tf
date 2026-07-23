@@ -103,11 +103,11 @@ resource "forgejo_collaborator" "claude" {
 # The haku-sandbox namespace is created by its own Flux kustomization (the wrapping
 # forgejo/haku-state Kustomization dependsOn it); flux-system always exists. This
 # resource retries until each namespace exists.
-resource "kubernetes_secret" "haku_state_git_write" {
+resource "kubernetes_secret" "haku_forgejo_git" {
   for_each = toset(["haku-sandbox", "flux-system"])
 
   metadata {
-    name      = "haku-state-git-write"
+    name      = "haku-forgejo-git"
     namespace = each.value
   }
 
@@ -116,6 +116,16 @@ resource "kubernetes_secret" "haku_state_git_write" {
     password = random_password.haku.result
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.haku.login}/${forgejo_repository.state.name}.git"
   }
+}
+
+# Renamed from haku-state-git-write (2026-07-23): this is the haku Forgejo *account*
+# credential (login + password), not a haku-state-specific write token — it authenticates
+# every repo the haku user can reach (haku-state r/w, the ducktape mirror r/o, …). The
+# metadata.name change replaces the Secret objects, but the value is stable (derived from
+# random_password.haku), so no credential rotation.
+moved {
+  from = kubernetes_secret.haku_state_git_write
+  to   = kubernetes_secret.haku_forgejo_git
 }
 
 resource "random_password" "haku_console_agent_api" {

@@ -239,7 +239,7 @@ generated Docker auth config, not at the registry being globally down.
 
 ## haku-state CI And UI Rollout
 
-For `haku/haku-state`, the useful read credential is `haku-state-git-write` from
+For `haku/haku-state`, the useful read credential is `haku-forgejo-git` from
 `haku-sandbox`. Use it for API reads; do not use scratch tokens.
 
 Distinguish the two CI surfaces:

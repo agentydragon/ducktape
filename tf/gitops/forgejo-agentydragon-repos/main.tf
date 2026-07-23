@@ -207,7 +207,7 @@ resource "kubernetes_secret" "forgejo_token_mint" {
 
 # --- haku read collaboration ---
 # Read-only access lets Haku clone these in-cluster source mirrors with its
-# existing haku-state-git-write basic-auth credential.
+# existing haku-forgejo-git basic-auth credential.
 resource "forgejo_collaborator" "haku_ducktape_read" {
   repository_id = forgejo_repository.ducktape.id
   user          = data.forgejo_user.haku.login

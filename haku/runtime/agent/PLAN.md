@@ -83,7 +83,7 @@ infinity`), and `bbr build` then GHCR push plus Flux.
   can exec — reuses the existing `haku` RBAC.
 - **Valkey** with **AOF (`appendonly yes`, `everysec`) on a PVC** for durable history;
   `HAKU_REDIS_URL` points at its Service. (Or reuse an existing durable Valkey.)
-- **Secrets**: `HAKU_REDIS_URL`, the LiteLLM virtual key, `haku-state-git-write`, the
+- **Secrets**: `HAKU_REDIS_URL`, the LiteLLM virtual key, `haku-forgejo-git`, the
   `haku-k8s` JWT, each source's MCP token.
 - **Trigger**: Forgejo webhook on `haku-state` to `POST /wake` (plus optional
   `HAKU_WAKE_INTERVAL_SECONDS` tick).

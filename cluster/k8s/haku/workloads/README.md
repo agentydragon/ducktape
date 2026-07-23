@@ -23,7 +23,7 @@ applies a strict subset of what Haku itself already could.
 **Trust posture (flagged for review).** This points cluster Flux at a repo Haku can
 write. The kustomize-controller will build agent-authored kustomize; the impersonation
 SA + `targetNamespace` pin + `prune` + the Kyverno route-deny are what bound the blast
-radius. Basic-auth uses the existing `haku-state-git-write` Secret (the only creds; the
+radius. Basic-auth uses the existing `haku-forgejo-git` Secret (the only creds; the
 `haku` Forgejo user is r/w on its own repo — there is no separate read principal). A
 read-only deploy key would be tighter; deferred.
 

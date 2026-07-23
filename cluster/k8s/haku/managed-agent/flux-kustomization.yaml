@@ -28,5 +28,5 @@ spec:
     - name: external-secrets-config # provides the claude-sandbox SecretStore
     - name: haku-namespace
     - name: haku-rbac
-    - name: haku-state # provides the haku-state-git-write secret in haku-sandbox
+    - name: haku-state # provides the haku-forgejo-git secret in haku-sandbox
     - name: haku-egress-proxy # injects the egress proxy + CA the worker imports

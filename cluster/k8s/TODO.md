@@ -193,7 +193,7 @@ The `cluster/k8s/haku/workloads/` Flux pipe and the `haku-ui.allegedly.works`
 Authentik route work; these tighten them (operator-approved as follow-ups):
 
 - [ ] **Read-only deploy key for the `haku-state` GitRepository.** The pipe's
-      `GitRepository` reuses the r/w `haku-state-git-write` Secret for basic auth
+      `GitRepository` reuses the r/w `haku-forgejo-git` Secret for basic auth
       (Flux only pulls, but the cred is read/write — there's no separate read
       principal on the repo). Mint a read-only Forgejo deploy key for `haku-state`
       and point the GitRepository's `secretRef` at it instead.

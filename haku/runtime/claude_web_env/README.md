@@ -34,7 +34,7 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 - `profile.yaml` — the claude-hook profile. Sets the `K8S_*` overrides (→ group
   `haku` / `haku-sandbox`) and runs `bootstrap.sh` as its background command.
 - `bootstrap.sh` — profile background command: materializes `~/.kube/config`
-  from the haku JWT, writes `~/.netrc` from the `haku-state-git-write` secret,
+  from the haku JWT, writes `~/.netrc` from the `haku-forgejo-git` secret,
   writes `~/.config/tea/config.yml` from `haku-forgejo-tea` when the rotator has
   published it, and clones `haku-state` into `~/haku-state`.
 - `tea` is present in the installed closure and logs in from the

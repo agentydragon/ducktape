@@ -4,7 +4,7 @@
 # Single profile background command (after_env, so K8S_* exports are in scope):
 #   1. Materialize ~/.kube/config from the SOPS-encrypted haku JWT. This is the
 #      one and only place the kubeconfig is built — no second writer to race.
-#   2. Read the haku-state-git-write secret from haku-sandbox and write a
+#   2. Read the haku-forgejo-git secret from haku-sandbox and write a
 #      ~/.netrc so git needs no inline credentials.
 #   3. Read haku-forgejo-tea from haku-sandbox and write tea's config when the
 #      token rotator has published it.
@@ -41,8 +41,8 @@ ns=haku-sandbox
 
 python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
 
-u=$(kubectl -n "$ns" get secret haku-state-git-write -o jsonpath='{.data.username}' | base64 -d)
-p=$(kubectl -n "$ns" get secret haku-state-git-write -o jsonpath='{.data.password}' | base64 -d)
+u=$(kubectl -n "$ns" get secret haku-forgejo-git -o jsonpath='{.data.username}' | base64 -d)
+p=$(kubectl -n "$ns" get secret haku-forgejo-git -o jsonpath='{.data.password}' | base64 -d)
 
 umask 077
 printf 'machine git.allegedly.works login %s password %s\n' "$u" "$p" >~/.netrc

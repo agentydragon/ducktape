@@ -340,7 +340,7 @@ can do something, grep for your group and read the referenced role.
 
 | Purpose                         | Secret                                  | Key fields                                                                                                                                    |
 | ------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| State repo (write)              | `haku-state-git-write`                  | `username`, `password`, `repo_url`                                                                                                            |
+| State repo (write)              | `haku-forgejo-git`                      | `username`, `password`, `repo_url`                                                                                                            |
 | Forgejo API / `tea` (write)     | `haku-forgejo-tea`                      | `config.yml` for `~/.config/tea/config.yml`; raw `token` for debugging                                                                        |
 | Console MCP (tool request/read) | `haku-console-agent-api`                | `token` (MCP calls only; does not approve calls)                                                                                              |
 | Plaid Postgres (read-only)      | `plaid-mcp-db-readonly`                 | `DATABASE_URL` (+ `username`/`password`/…)                                                                                                    |
@@ -389,14 +389,14 @@ closure (no `fastmcp`). If `fastmcp` is not on your `PATH`, **do not skip the so
 _Environment self-check_). Working-but-degraded beats silently blind.
 
 If your runtime didn't already clone state for you, clone it yourself with the
-`haku-state-git-write` secret over the **public** `git.allegedly.works` host
+`haku-forgejo-git` secret over the **public** `git.allegedly.works` host
 (your home runs on Anthropic infra and can't resolve the cluster-internal
 `forgejo-http.forgejo` in the secret's `repo_url`; a pod you launch _inside_
 `haku-sandbox` would use the internal host):
 
 ```sh
-u=$(kubectl get secret haku-state-git-write -o jsonpath='{.data.username}' | base64 -d)
-p=$(kubectl get secret haku-state-git-write -o jsonpath='{.data.password}' | base64 -d)
+u=$(kubectl get secret haku-forgejo-git -o jsonpath='{.data.username}' | base64 -d)
+p=$(kubectl get secret haku-forgejo-git -o jsonpath='{.data.password}' | base64 -d)
 git clone "https://${u}:${p}@git.allegedly.works/haku/haku-state.git" ~/haku-state
 git -C ~/haku-state config user.name haku
 git -C ~/haku-state config user.email haku@allegedly.works

@@ -14,7 +14,7 @@ spec:
     kind: GitRepository
     name: flux-system
   # Wait for the Terraform apply (creates the Forgejo repo + service user + the
-  # haku-state-git-write Secret) so scan runs can depend on it.
+  # haku-forgejo-git Secret) so scan runs can depend on it.
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform

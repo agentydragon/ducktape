@@ -17,6 +17,6 @@ spec:
     name: flux-system
   dependsOn:
     # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
-    # haku-state-git-write Secret (now also reflected into flux-system for the
+    # haku-forgejo-git Secret (now also reflected into flux-system for the
     # GitRepository's basic auth).
     - name: haku-state
