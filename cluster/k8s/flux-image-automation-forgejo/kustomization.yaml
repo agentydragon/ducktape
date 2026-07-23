@@ -3,8 +3,8 @@ kind: Kustomization
 resources:
   - agent-workspace-image-repository.yaml
   - agent-workspace-image-policy.yaml
-  - haku-sandbox-builder-image-repository.yaml
-  - haku-sandbox-builder-image-policy.yaml
+  - haku-sandbox-image-repository.yaml
+  - haku-sandbox-image-policy.yaml
   - codex-pod-image-repository.yaml
   - codex-pod-image-policy.yaml
   - grocy-user-perms-provisioner-image-repository.yaml

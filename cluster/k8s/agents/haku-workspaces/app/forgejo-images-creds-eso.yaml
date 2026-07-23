@@ -1,5 +1,5 @@
 # Mirror the ducktape-ci Forgejo registry pull credential into haku-workspaces so
-# the Haku sandbox pods can pull the builder image from the private registry.
+# the Haku sandbox pods can pull the sandbox image from the private registry.
 # Reflects the source secret's ready-made .dockerconfigjson verbatim and only
 # stamps the type on top (no reassembly, no hardcoded host); sources the
 # reflector-mirrored copy in flux-system, so it needs no change to

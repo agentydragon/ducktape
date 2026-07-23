@@ -3,7 +3,7 @@
 # `bazel run //cli:...` / `bazel test //...` in here THROUGH the MCP, against a
 # git-synced haku-state checkout. It does NOT run the agent loop. haku-state
 # builds locally (no BuildBuddy/RBE — source never leaves the cluster), so the
-# image is the local toolchain (../builder-image/).
+# image is the local toolchain (../image/).
 #
 # Trust model (see haku/docs/security.md + haku-state improvements/
 # sandbox-provisioning-mcp.md): this pod spec is operator-owned in a namespace
@@ -52,7 +52,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workspace
-          image: git.allegedly.works/ducktape-ci/haku-sandbox-builder:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-sandbox-builder"}
+          image: git.allegedly.works/ducktape-ci/haku-sandbox-image:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-sandbox-image"}
           command: ["sleep", "infinity"]
           workingDir: /workspace
           securityContext:

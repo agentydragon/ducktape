@@ -1,4 +1,4 @@
-# Haku sandbox builder image — the toolchain the sandbox-provisioning MCP hands out.
+# Haku sandbox image — the toolchain the sandbox-provisioning MCP hands out.
 #
 # This is an in-cluster EXEC TARGET, not an agent-loop runtime: the agent execs
 # `bazel run //cli:...` / `bazel test //...` in here (through the MCP) against a
@@ -11,7 +11,7 @@
 # NO docker (bazel's //ui:image uses hermetic rules_oci), NO browser/Rust/GHC deps.
 # Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel.
 #
-# Built by ducktape CI (.github/workflows/haku-sandbox-builder-image.yml) and
+# Built by ducktape CI (.github/workflows/haku-sandbox-image.yml) and
 # pushed to the Forgejo registry — a trusted, operator-reviewed substrate. Haku's
 # method rides in only as the haku-state checkout, run via `bazel run`, bounded by
 # the pod's operator-owned creds/egress/RBAC (see cluster/docs security model).

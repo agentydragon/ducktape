@@ -12,7 +12,7 @@
 #      bazel-install-base hunting.)
 #   2. Git credentials for the in-cluster Forgejo, from env wired by the
 #      SandboxTemplate (never baked into the image): the single haku-account
-#      credential HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD (the haku-state-git-write
+#      credential HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD (the haku-forgejo-git
 #      secret, owned by tf/gitops/haku-state, never hand-minted). One .netrc line
 #      authenticates BOTH forgejo-http.forgejo fetches — the ducktape_haku
 #      git_override during bzlmod resolution on every bazel invocation, and the
@@ -50,7 +50,7 @@ fi
 
 # --- 2. Git credentials for the in-cluster Forgejo ------------------------------
 # One haku-account credential (HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD from the
-# haku-state-git-write secret) authenticates BOTH forgejo-http.forgejo fetches —
+# haku-forgejo-git secret) authenticates BOTH forgejo-http.forgejo fetches —
 # the ducktape_haku module git_override and the haku-state clone. .netrc matches
 # on host (ignoring the :3000 port), so one machine line covers every repo there.
 umask 077
