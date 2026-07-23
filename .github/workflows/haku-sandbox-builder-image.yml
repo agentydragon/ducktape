@@ -1,0 +1,48 @@
+# Build and push the Haku sandbox builder image (bazelisk + JDK + git toolchain,
+# no nix/docker/RBE) to the Forgejo OCI registry
+# (git.allegedly.works/ducktape-ci/haku-sandbox-builder) — not GHCR, so the pull
+# credential is provisioned in code (tf/gitops/forgejo-images) rather than a
+# manual GHCR "make public" click. Consumed by the Haku SandboxTemplate in
+# cluster/k8s/agents/haku-workspaces/. Mirrors agent-workspace-image.yml.
+name: Haku Sandbox Builder Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "cluster/k8s/agents/haku-workspaces/builder-image/**"
+      - ".github/workflows/haku-sandbox-builder-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: haku-sandbox-builder-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: git.allegedly.works/ducktape-ci/haku-sandbox-builder
+    steps:
+      - uses: actions/checkout@v6
+
+      # Decrypts secrets/ci/* → exports FORGEJO_IMAGES_{USERNAME,PASSWORD}.
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Login to Forgejo registry
+        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Build and push
+        run: |
+          TS=$(date -u +%Y%m%d%H%M%S)
+          REF="$IMAGE:${GITHUB_REF_NAME}-${TS}-${GITHUB_SHA:0:7}"
+          docker build -t "$REF" cluster/k8s/agents/haku-workspaces/builder-image
+          docker push "$REF"
+          echo "pushed \`$REF\`" >> "$GITHUB_STEP_SUMMARY"
