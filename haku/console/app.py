@@ -64,7 +64,6 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
-from haku.console.tools.sandbox_kubernetes import InClusterAgentSandboxClient
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -249,9 +248,6 @@ def create_app(
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
-    managed_agent_sandbox = (
-        InClusterAgentSandboxClient(console_config.agent_sandbox) if console_config.agent_sandbox is not None else None
-    )
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -264,11 +260,7 @@ def create_app(
                 broker=node_daemon_service,
             )
         in_process_servers = build_in_process_servers(
-            InProcessServerDependencies(
-                routine_launcher=routine_launcher,
-                hostexec=hostexec_server,
-                agent_sandbox=managed_agent_sandbox,
-            )
+            InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
     if tool_call_executor is None:
@@ -334,8 +326,6 @@ def create_app(
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
                 await console_event_hub.aclose()
-                if managed_agent_sandbox is not None:
-                    await managed_agent_sandbox.aclose()
 
     # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even
     # though the operational MCP/OAuth handlers remain isolated under /mcp. FastMCP cannot infer an

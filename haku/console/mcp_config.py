@@ -22,7 +22,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.config import AgentSandboxConfig, HostexecConfig, NodeDaemonsConfig, Settings
+from haku.console.config import HostexecConfig, NodeDaemonsConfig, Settings
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -131,8 +131,7 @@ class StaticBearerAuth(BaseModel):
 
 class NoCredential(BaseModel):
     """No backend credential: an in-process server that carries its own (e.g. `haku_routine`, which
-    holds the launch-routine secret), uses a scoped workload identity (`haku_sandbox`), or otherwise
-    needs none."""
+    holds the launch-routine secret) or otherwise needs none."""
 
     kind: Literal["none"] = "none"
 
@@ -213,9 +212,6 @@ class ConsoleConfigFile(BaseModel):
     # → the server is not offered, no offline_access is requested at operator login, and no operator
     # Authentik token is persisted (nothing would read it).
     hostexec: HostexecConfig | None = None
-    # Non-secret topology for the autonomous Kubernetes-backed sandbox tools. Unset means the
-    # in-process server is not registered and no Kubernetes client is constructed.
-    agent_sandbox: AgentSandboxConfig | None = None
     node_daemons: NodeDaemonsConfig | None = None
 
     @model_validator(mode="after")

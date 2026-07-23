@@ -8,9 +8,9 @@ Python validators can impose stricter cross-field rules. Two catalogs are emitte
 by ``main()``'s ``--results`` flag: the argument schemas (``McpToolArguments``) and the
 result schemas (``McpToolResults``).
 
-Beyond the console's own in-process servers (gmail, google_calendar, haku_routine, haku_sandbox,
-hostexec), the result catalog includes the console-native reflection tools directly from their
-Python response models.
+Beyond the console's own in-process servers (gmail, google_calendar, haku_routine, hostexec), the
+result catalog includes the console-native reflection tools directly from their Python response
+models.
 This keeps the trusted frontend's runtime validators identical to the MCP output contract without
 building a database-backed console application or adding an HTTP status endpoint. The exporter
 also reflects the **remote** ``grocy-sf`` server's custom batch tools. grocy-sf runs
@@ -138,9 +138,8 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
     # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
     # build their own inert client from a None token; routine and hostexec need an inert
-    # launcher/broker respectively, and haku_sandbox needs an inert lifecycle client. hostexec's
-    # `hosts` map is empty — registration only needs the tool's own schema, never a real host to
-    # route to.
+    # launcher/broker respectively. hostexec's `hosts` map is empty — registration only needs
+    # the tool's own schema, never a real host to route to.
     dependency: Any = inert
     servers = {
         server_id: registration.builder(None)
@@ -148,7 +147,6 @@ def build_schema_servers() -> dict[str, FastMCP]:
             InProcessServerDependencies(
                 routine_launcher=dependency,
                 hostexec=HostexecServerConfig(config=HostexecConfig(hosts={}), token_endpoint="", broker=dependency),
-                agent_sandbox=dependency,
             )
         ).items()
     }

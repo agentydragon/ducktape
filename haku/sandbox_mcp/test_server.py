@@ -1,0 +1,115 @@
+"""Tool-surface tests for the standalone sandbox MCP server."""
+
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, Mock
+
+import pytest_bazel
+from fastmcp import Client
+from mcp.types import Tool
+
+from haku.sandbox_mcp.config import EnvironmentConfig
+from haku.sandbox_mcp.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage
+from haku.sandbox_mcp.server import build_mcp
+from mcp_infra.exec.models import Exited
+
+NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+
+
+def _environment() -> EnvironmentConfig:
+    return EnvironmentConfig.model_validate(
+        {
+            "sandbox": {
+                "namespace": "agent-workspaces",
+                "warm_pool": "haku",
+                "container": "workspace",
+                "default_cwd": "/workspace/haku-state",
+                "initial_ttl_seconds": 28_800,
+                "exec_ttl_extension_seconds": 7_200,
+                "provisioning_timeout_seconds": 600,
+                "max_exec_timeout_seconds": 300,
+                "max_output_bytes": 100_000,
+            },
+            "bootstrap": {"cwd": "/workspace", "timeout_seconds": 300, "script": "echo ready"},
+        }
+    )
+
+
+def _info(name: str = "task-one") -> SandboxInfo:
+    return SandboxInfo(
+        name=name,
+        state="ready",
+        healthy=True,
+        expires_at=NOW,
+        bootstrap_state="succeeded",
+        sandbox_name="haku-abcde",
+        pod_name="haku-abcde",
+    )
+
+
+def _client() -> Mock:
+    client = Mock()
+    client.provision = AsyncMock(return_value=_info())
+    client.execute = AsyncMock(
+        return_value=SandboxExecResult(
+            exit=Exited(exit_code=0), stdout="ok\n", stderr="", duration_seconds=0.25, expires_at=NOW
+        )
+    )
+    client.info = AsyncMock(return_value=_info())
+    client.list = AsyncMock(return_value=SandboxListPage(sandboxes=[_info()]))
+    client.dispose = AsyncMock(return_value=DisposeSandboxResult(name="task-one", deleted=True))
+    return client
+
+
+async def _tools(client: Mock) -> dict[str, Tool]:
+    async with Client(build_mcp(client, _environment())) as mcp_client:
+        return {tool.name: tool for tool in await mcp_client.list_tools()}
+
+
+async def test_tool_surface_and_annotations() -> None:
+    tools = await _tools(_client())
+
+    assert set(tools) == {"provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"}
+    assert tools["get_sandbox_info"].annotations is not None
+    assert tools["get_sandbox_info"].annotations.readOnlyHint
+    assert tools["list_sandboxes"].annotations is not None
+    assert tools["list_sandboxes"].annotations.readOnlyHint
+    assert tools["provision_sandbox"].annotations is not None
+    assert tools["provision_sandbox"].annotations.idempotentHint
+    assert tools["dispose_sandbox"].annotations is not None
+    assert tools["dispose_sandbox"].annotations.destructiveHint
+
+
+async def test_provision_has_no_profile_or_ttl_parameter() -> None:
+    tools = await _tools(_client())
+    properties = tools["provision_sandbox"].inputSchema["properties"]
+
+    assert set(properties) == {"name"}
+
+
+async def test_exec_dispatches_bash_inputs_in_seconds() -> None:
+    client = _client()
+    async with Client(build_mcp(client, _environment())) as mcp_client:
+        result = await mcp_client.call_tool(
+            "exec_sandbox",
+            {
+                "name": "task-one",
+                "script": "git status --short",
+                "cwd": "/workspace/haku-state",
+                "timeout_seconds": 30,
+                "max_output_bytes": 4096,
+            },
+        )
+
+    assert not result.is_error
+    assert result.data.duration_seconds == 0.25
+    client.execute.assert_awaited_once_with(
+        name="task-one",
+        script="git status --short",
+        cwd="/workspace/haku-state",
+        timeout_seconds=30,
+        max_output_bytes=4096,
+    )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

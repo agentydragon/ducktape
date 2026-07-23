@@ -77,7 +77,6 @@ py_library(
         "//haku/console/tools:hostexec_client",
         "//haku/console/tools:hostexec_token",
         "//haku/console/tools:routine",
-        "//haku/console/tools:sandbox",
     ],
 )
 
@@ -439,7 +438,6 @@ py_library(
     deps = [
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",
-        "//haku/console/tools:sandbox",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
     ],
@@ -505,7 +503,6 @@ py_test(
         "//gmail_api:labels",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
-        "//haku/console/tools:sandbox",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Pytest async auto mode is configured by the root conftest hooks.
@@ -784,7 +781,6 @@ py_library(
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:routine",
-        "//haku/console/tools:sandbox_kubernetes",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",

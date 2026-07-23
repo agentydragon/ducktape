@@ -166,17 +166,6 @@ mcp:
         kind: in_process
         credential:
           kind: none
-    # `haku_sandbox` (haku/console/tools/sandbox*.py): semantic wrappers around the
-    # agent-sandbox v0.5.1 CRDs. reserve checks out a retained SandboxClaim from the dedicated
-    # haku-bash warm pool; exec renews its lease before and after a bounded pod exec; info exposes
-    # Ready/unhealthy/ClaimExpired state. All three are deliberately auto-approved in
-    # haku/console/auto_approval.py. The projected haku-console-sandbox ServiceAccount token is
-    # mounted only in the server container; this does not use the existing ws tool.
-    - id: haku_sandbox
-      backend:
-        kind: in_process
-        credential:
-          kind: none
     # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
     # operator machine (wyrm2/rugged) under the operator's OWN Authentik identity. There
     # is no standing credential: `operator_login_identity` makes each call resolve the acting
@@ -203,15 +192,6 @@ hostexec:
     rugged:
       daemon_id: rugged
       audience_client_id: hostexec-rugged
-# Non-secret topology for the Kubernetes-backed haku_sandbox server. The matching SandboxTemplate
-# and SandboxWarmPool are intentionally haku-state-owned; see haku/TODO.md for the exact follow-up.
-agent_sandbox:
-  namespace: haku-sandbox
-  warm_pool: haku-bash
-  container: sandbox
-  lease_seconds: 28800
-  reserve_timeout_seconds: 120
-  poll_interval_seconds: 0.5
 node_daemons:
   daemons:
     wyrm2:

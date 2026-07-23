@@ -154,37 +154,6 @@ new **free/autonomous** write tools: capabilities Haku may exercise without per-
 approval because the server-side boundary makes them safe by construction. Wiring one on is still a
 doctrine change, not just a config line.
 
-### haku-state follow-up: seed the `haku-bash` sandbox pool
-
-The ducktape side of `haku_sandbox/{reserve,exec,info}` is intentionally complete without putting
-Haku-authored workloads in this repository. Before enabling live calls, make this follow-up PR in
-`haku-state` (Flux already has the narrowly-scoped template/pool RBAC in ducktape):
-
-- [ ] Add `k8s/sandbox/sandboxtemplate-haku-bash.yaml` with
-  `apiVersion: extensions.agents.x-k8s.io/v1beta1`, `kind: SandboxTemplate`, and
-  `metadata.name: haku-bash`. Set `spec.networkPolicyManagement: Unmanaged` so the existing
-  `haku-sandbox` egress perimeter remains authoritative. Its pod template must have one container
-  named `sandbox`, use a pinned Debian/bash image that includes GNU `/usr/bin/timeout`, run
-  `sleep infinity`, set `workingDir: /workspace`, disable ServiceAccount-token automounting,
-  drop all capabilities, and provide bounded requests/limits. Mount writable `/workspace` (a small
-  SeaweedFS RWO volume via `volumeClaimTemplates`, preferred so state survives a pod recreation)
-  and `/tmp`; the rest may stay read-only.
-- [ ] Add `k8s/sandbox/sandboxwarmpool-haku-bash.yaml` with
-  `apiVersion: extensions.agents.x-k8s.io/v1beta1`, `kind: SandboxWarmPool`,
-  `metadata.name: haku-bash`, `spec.replicas: 1`, `updateStrategy.type: Recreate`, and
-  `sandboxTemplateRef.name: haku-bash`. This is a new Haku-only pool; do not point the tools at the
-  operator's `agent-workspaces` pools.
-- [ ] Add both resources to haku-state's `k8s/kustomization.yaml`. Do **not** commit runtime
-  `SandboxClaim`s there: Flux inventory/prune must own only the template and warm-pool capacity;
-  haku-console owns live claims.
-- [ ] After both repos reconcile, smoke-test `haku_sandbox/reserve`, then
-  `haku_sandbox/exec` with `{"cmd":["bash","-lc","echo ok"],"timeout_ms":10000}`, and verify
-  `info` reports `ready` plus an eight-hour deadline. Patch a test claim's deadline into the past
-  and verify it becomes `expired` (not immediately `not_found`) while its Pod/Sandbox disappear.
-- [ ] V2 only: add an optional claim-time startup hook (for example, refresh a checkout) and do not
-  report the handle ready until it succeeds. V1 deliberately skips this optimization; callers can
-  run setup as their first `exec`, and every exec already renews the lease before and after work.
-
 ## Wiring / hardening
 
 - **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces

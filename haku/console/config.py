@@ -181,24 +181,6 @@ class HostexecConfig(BaseModel):
     exchange_scope: str = "openid groups"
 
 
-class AgentSandboxConfig(BaseModel):
-    """The Kubernetes-backed ``haku_sandbox`` in-process MCP server.
-
-    This is non-secret deployment topology. The console authenticates with its explicitly
-    projected ServiceAccount token; the namespace and warm-pool names merely constrain which
-    objects the reviewed client will accept as handles.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    namespace: str = Field(min_length=1, max_length=63, pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
-    warm_pool: str = Field(min_length=1, max_length=63, pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
-    container: str = Field(min_length=1, max_length=63, pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
-    lease_seconds: int = Field(default=8 * 60 * 60, ge=10 * 60, le=24 * 60 * 60)
-    reserve_timeout_seconds: int = Field(default=120, ge=10, le=10 * 60)
-    poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=5.0)
-
-
 class NodeDaemonDefinition(BaseModel):
     """One outbound node daemon and the secret slot used to authenticate it."""
 

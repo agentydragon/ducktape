@@ -124,60 +124,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "sandbox",
-    srcs = ["sandbox.py"],
-    visibility = ["//haku/console:__subpackages__"],
-    deps = [
-        "//mcp_infra/exec:models",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "sandbox_kubernetes",
-    srcs = ["sandbox_kubernetes.py"],
-    visibility = ["//haku/console:__subpackages__"],
-    deps = [
-        ":sandbox",
-        "//haku/console:config",
-        "//mcp_infra/exec:models",
-        "@pypi//aiohttp",
-        "@pypi//fastmcp_slim",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_sandbox",
-    srcs = ["test_sandbox.py"],
-    deps = [
-        ":sandbox",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//mcp_infra/exec:models",
-        "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_sandbox_kubernetes",
-    srcs = ["test_sandbox_kubernetes.py"],
-    deps = [
-        ":sandbox_kubernetes",
-        "//:conftest",
-        "//haku/console:config",
-        "//haku/console:conftest",
-        "//mcp_infra/exec:models",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest_bazel",
-        "@pypi//pytest_asyncio",
-    ],
-)
-
 py_test(
     name = "test_hostexec_client",
     srcs = ["test_hostexec_client.py"],

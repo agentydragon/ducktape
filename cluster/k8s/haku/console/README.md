@@ -101,20 +101,6 @@ So every tool call here runs with full cluster-admin once approved; the operator
 click in trusted console chrome is the only gate. See `haku/docs/security.md` for the
 enforcement-inventory entry.
 
-## Autonomous `haku_sandbox` MCP tools
-
-The in-process `haku_sandbox` server is intentionally available to authenticated Agents without
-approval. Its dedicated ServiceAccount and namespaced Role live in `../sandbox-mcp/`; the token is
-projected at the standard in-cluster path only in the Python server container, never the nginx
-sidecar. The code accepts only labeled claims for the configured `haku-bash` pool and exposes three
-semantic operations (`reserve`, bounded `exec`, and `info`) instead of generic Kubernetes verbs.
-
-The pool itself does not live in ducktape: haku-state owns the `SandboxTemplate` and
-`SandboxWarmPool` through its constrained Flux reconciler. Follow the concrete checklist in
-`haku/TODO.md` before expecting reserve to succeed. V1 has no startup hook; setup is an ordinary
-first exec. Retained expired claims remain inspectable for seven days, after which
-`haku-sandbox-claim-tombstones` removes them.
-
 ## Tana backend credential
 
 `tana-rw` uses the cluster-internal Tana MCP endpoint with a static bearer held by the Console
