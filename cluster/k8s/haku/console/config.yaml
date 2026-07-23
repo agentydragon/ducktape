@@ -53,6 +53,17 @@ mcp:
         auth:
           kind: static_bearer
           bearer_token_secret: tana-account-pat
+    - id: sandbox-mcp
+      backend:
+        kind: remote_mcp
+        # Cluster-internal Haku sandbox provisioner (haku/sandbox_mcp). The static bearer lives
+        # only in haku-console (reflected from haku-sandbox-mcp); inner Haku agents get proxied
+        # provision/exec/dispose tool schemas + results, never the bearer. No auto-approval entry:
+        # every tool (esp. exec_sandbox = arbitrary bash in the box) defaults to operator approval.
+        url: http://haku-sandbox-mcp.haku-sandbox-mcp.svc.cluster.local:8765/mcp
+        auth:
+          kind: static_bearer
+          bearer_token_secret: sandbox-mcp-bearer
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
     # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade / ibkr-mcp, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,

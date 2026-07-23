@@ -104,6 +104,13 @@ spec:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat
                   key: token
+            # sandbox-mcp static bearer — the SAME token the MCP validates, reflected from
+            # haku-sandbox-mcp/haku-sandbox-mcp-bearer into this namespace (emberstack reflector).
+            - name: HAKU_CONSOLE_MCP_CREDENTIAL_SANDBOX_MCP_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: haku-sandbox-mcp-bearer
+                  key: bearer-token
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:

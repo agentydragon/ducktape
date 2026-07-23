@@ -1,37 +1,43 @@
 # StaticBearerGuard token for the sandbox-provisioning MCP's /mcp mount. Minted
-# fresh (agents may author a SOPS Secret by encrypting to the rule's public keys;
-# see cluster/AGENTS.md "Annotating a SOPS-encrypted Secret"). haku-console must
-# present the SAME token as HAKU_CONSOLE_MCP_CREDENTIAL_SANDBOX_MCP_BEARER — see
-# the PR's operator checklist for the console-side registration.
+# fresh in this repo (agents may author a SOPS Secret by encrypting to the rule's
+# public keys; see cluster/AGENTS.md "Annotating a SOPS-encrypted Secret"). The
+# emberstack reflector mirrors it into haku-console so the console presents the
+# SAME token (HAKU_CONSOLE_MCP_CREDENTIAL_SANDBOX_MCP_BEARER) when it calls this
+# MCP — one source of truth, no drift (same pattern as tana's account PAT).
 apiVersion: v1
 kind: Secret
 metadata:
     name: haku-sandbox-mcp-bearer
     namespace: haku-sandbox-mcp
+    annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
 type: Opaque
 stringData:
-    bearer-token: ENC[AES256_GCM,data:qabsaYzVWrjgkUQDvwlVttUopGUANSEC1/bUrOHPMrkvtVVTbvnYq5LIMnawyTQZg6r6kTz4PLhHZZW/jf6Dtg==,iv:q3I/GRxV3e+AW1jvlAlMwEqu3mcqh/8GgxhIpMX4PD8=,tag:0t+/Sfw+MPpG2mLyzYTTlA==,type:str]
+    bearer-token: ENC[AES256_GCM,data:Zlx7HmbN+XNfam1AxR4ByajAmImsb2XcHJL3K0Wg6pa1dUJQpM2grPiIJjh1kgiTWACJKCkAfVlAqtziMqPQ8Q==,iv:vCP0QdrpOEPm/+wO7Q1HgoIas6iOokLkWqyR7jMhQ50=,tag:8nVnMMG1aTkIJcv9Q/a51w==,type:str]
 sops:
     age:
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIbVgvTUIwUEJpelNQcW1r
-            eDBCcUg0YmVxZHVvclduUTNlaStQaEVyK2pvCk9KbkVxaFpHaXA4UXV3Q1UxRmpX
-            UnJsQ29NMmtUWUNxdG9EVEl1ZWpzaGMKLS0tIHc5dkFhY3ZncU50UVdtVHEreENi
-            VjVLN1UrZGZjYlJLM2h0SHUyVC84STgKMvGcVES48wcnIkRtcv5BA/JWPw//HPnB
-            nJF1wJytt3EhJoPrOlpGoNTxn3zBKWaPCKJhrAfftYuwpA6HJOIBqQ==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxTVhqbng2Tkg1RzA4anZB
+            MlM1UnhGN0k2Vi9FOWhMZmNRMmJ0N0gzOUFvCk5PVTVqekMrSkJLK3VjR3ArYTdZ
+            YWEvN1dJMWlJYXNwSk1xbG8weWVXU0kKLS0tIHVIak9tZ2lmcXliTTN0V2xJRXcv
+            WEhZYTlRN0M1V200ZHpHaWxiQXlCdUUKQMe0GbGcdnhQCKKLDs4zaFFIfsTi96cD
+            hejFpjax2NRevALz35P/Izo4VCHWCZRsNW+d0mT6U35rJkYurI8HDA==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFZEtndHgxU0l4RHpMeFZK
-            angvVzQvMWp1ZlUyNit6YURWeE1GVmYrcGhVCkJyTzZweHNiNzJIYVRLTnpUUFRx
-            YmpyVVNJblZ3QXdjTEtKNjIySnprSTAKLS0tIHlrS3JSZUJLNStLckV0dkpZby9D
-            cWpHaHRzZFFzT1dzOFJMOVRMYkhJTXMKZsXe6swC5/dBSEbgNGAZ+Wd+W1z5r9rq
-            t3+LuzVwDV5TT+KC48cf2ITCz89UpfWtEtElaXoK6qSF4TcECML1Fw==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYOUVYN1RhbUdZVS9hMDBP
+            VHhGcE1VWFVjeFlyTTdOakhhU00wakc5TUFrCnVNVFR3bmQ4MHk4V1pSbjh4QXUr
+            NnJwYUs3bklGSmlwZ2JuYnpRWit6L2cKLS0tIERqZEUxaXQwQW03MEJRT0dSa3dW
+            b3UrNCswelFSM0tLRFJHR0xQNk1uOEUK/Ab38NYOns/plvFK/OYK+AKyscABY4A2
+            /PYDF7Rs/+p6N81/E+dnoiIocvfeO6q9VBHjS5TJfgmNDteARygwqA==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-07-23T06:49:31Z"
-    mac: ENC[AES256_GCM,data:t3BthIt5NaZQyu+/+spguQgh2muqC9AixCnX2JsRRSYMuc0hN3c6SHujkCwE710Dx2TudxiIC6Vsx7NlkDqyY9wLysqNMBviQ5mp5ArSO75mRuIU4zWhHMDK0o3VJajvALiIj7hUlJ159GPrjSj6McjP/lxU5zPkE5IWFl0kOdw=,iv:rQMYak5OOKhh39s2qPlRPpBCYfHTpfM0mMDGhfkj6Pc=,tag:TI7tCA7vzvVOfOx2qAleQQ==,type:str]
+    lastmodified: "2026-07-23T07:24:25Z"
+    mac: ENC[AES256_GCM,data:A1oXFfrqS+p9H54zEdYycoM8O9Lx9KM8BNLwFsFRxMEgg5AFc2YD5l2bf6d5q3NbRn80zgWrzH8OJaWbjuJ9N5m1TyN8QF9qaqGbRSpedJPVFdMMsr1NFh4OMah7aL8KfdVHZswxnV34E06CxENVZQ0EDTPExXdRllpkMky7sj0=,iv:1bWXILWoPstP3uzqI7jj4suBz9WENOhpH0WIZT8FzYY=,tag:j4zC9hUIGrhZO9Rwrt+cyA==,type:str]
     version: 3.13.2
