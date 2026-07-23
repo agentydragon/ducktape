@@ -1,4 +1,4 @@
-# Allow proxy clients (haku-sandbox + haku-ci) to reach the egress proxy (port 8080)
+# Allow proxy clients (haku-sandbox + haku-ci + haku-workspaces) to reach the egress proxy (port 8080)
 # and the Authentik outpost to reach the mitmweb UI (port 8081) for proxy auth.
 # haku-ci was rehomed onto this proxy (cluster/k8s/haku-ci) as a client but its ingress
 # was missed — without it the runner/dind get `proxyconnect ... i/o timeout` on every
@@ -20,6 +20,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: haku-ci
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-workspaces
       ports:
         - port: 8080
           protocol: TCP

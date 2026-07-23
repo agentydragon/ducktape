@@ -4,3 +4,4 @@ resources:
   - namespace.yaml
   - resourcequota.yaml
   - limitrange.yaml
+  - ccnp-force-proxy-egress.yaml

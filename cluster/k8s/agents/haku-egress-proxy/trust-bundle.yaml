@@ -27,3 +27,4 @@ spec:
           values:
             - haku-sandbox
             - haku-ci
+            - haku-workspaces

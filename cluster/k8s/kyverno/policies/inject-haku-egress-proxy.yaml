@@ -46,7 +46,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [haku-sandbox]
+              namespaces: [haku-sandbox, haku-workspaces]
               operations: [CREATE]
       mutate:
         patchesJson6902: |-
@@ -62,7 +62,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [haku-sandbox]
+              namespaces: [haku-sandbox, haku-workspaces]
               operations: [CREATE]
       mutate:
         foreach:
@@ -115,7 +115,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [haku-sandbox]
+              namespaces: [haku-sandbox, haku-workspaces]
               operations: [CREATE]
       preconditions:
         any:
