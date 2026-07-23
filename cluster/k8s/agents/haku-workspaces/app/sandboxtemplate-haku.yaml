@@ -34,8 +34,15 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
-      # The pod needs no Kubernetes API — the MCP holds the claim/exec RBAC.
-      automountServiceAccountToken: false
+      # Haku's own k8s identity so `kubectl` works out of the box in the box —
+      # Haku operates its normal compute in haku-sandbox from here. The SA is
+      # bound to haku-sandbox-admin (haku-sandbox CRUD), the same grant the
+      # managed-agent worker gets; it holds NOTHING in haku-workspaces, so the
+      # box still can't edit this template or create claims (the pool namespace
+      # stays Haku-no-write; the MCP owns claim/exec RBAC). cluster-diagnostics
+      # read is a follow-up, like the managed-agent.
+      serviceAccountName: haku-workspace
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -53,21 +60,23 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            # Forgejo tokens for the in-cluster git fetches the bazel build needs
-            # (ducktape_haku module git_override on every invocation; haku-state
-            # clone). Owned + reflected by tf/gitops/haku-state — never baked into
-            # the image, never hand-minted. Consumed by the per-claim
-            # haku-sandbox-setup.sh (baked in the image), run by the MCP bootstrap.
-            - name: DUCKTAPE_MIRROR_READ_TOKEN
+            # The haku Forgejo account credential — ONE cred for BOTH in-cluster
+            # git fetches (the ducktape_haku module git_override on every bazel
+            # invocation + the haku-state clone), both over forgejo-http.forgejo.
+            # The haku account can read both repos, so a single .netrc line covers
+            # them. Same secret the managed-agent worker uses; minted into this
+            # namespace by tf/gitops/haku-state (never baked, never hand-minted).
+            # The per-claim haku-sandbox-setup.sh writes it into ~/.netrc.
+            - name: HAKU_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: haku-sandbox-git-tokens
-                  key: ducktape-mirror-read-token
-            - name: HAKU_STATE_READ_TOKEN
+                  name: haku-forgejo-git
+                  key: username
+            - name: HAKU_GIT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: haku-sandbox-git-tokens
-                  key: haku-state-read-token
+                  name: haku-forgejo-git
+                  key: password
           resources:
             requests:
               cpu: "1"

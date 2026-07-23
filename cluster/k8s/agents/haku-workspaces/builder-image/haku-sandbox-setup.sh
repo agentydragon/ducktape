@@ -10,13 +10,13 @@
 #      mounted by the Kyverno egress injection at $EGRESS_CA. (Adapted from
 #      haku-state tools/ci/trust_egress_ca.sh; keytool is baked here, so no
 #      bazel-install-base hunting.)
-#   2. Git credentials for the in-cluster Forgejo, from env secrets wired by the
-#      SandboxTemplate (never baked into the image):
-#        - DUCKTAPE_MIRROR_READ_TOKEN: the ducktape_haku git_override fetches
-#          http://forgejo-http.forgejo:3000/haku/ducktape.git during bzlmod
-#          resolution on EVERY bazel invocation.
-#        - HAKU_STATE_READ_TOKEN: to clone/pull haku-state itself.
-#      Both are Forgejo tokens owned by tf/gitops/haku-state (never hand-minted).
+#   2. Git credentials for the in-cluster Forgejo, from env wired by the
+#      SandboxTemplate (never baked into the image): the single haku-account
+#      credential HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD (the haku-state-git-write
+#      secret, owned by tf/gitops/haku-state, never hand-minted). One .netrc line
+#      authenticates BOTH forgejo-http.forgejo fetches — the ducktape_haku
+#      git_override during bzlmod resolution on every bazel invocation, and the
+#      haku-state clone/pull.
 set -euo pipefail
 
 bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
@@ -49,14 +49,15 @@ else
 fi
 
 # --- 2. Git credentials for the in-cluster Forgejo ------------------------------
-git config --global credential.helper store
-: >"$HOME/.git-credentials"
-chmod 600 "$HOME/.git-credentials"
-if [ -n "${DUCKTAPE_MIRROR_READ_TOKEN:-}" ]; then
-  printf 'http://haku:%s@forgejo-http.forgejo:3000\n' "$DUCKTAPE_MIRROR_READ_TOKEN" >>"$HOME/.git-credentials"
-fi
-if [ -n "${HAKU_STATE_READ_TOKEN:-}" ]; then
-  printf 'http://haku:%s@forgejo-http.forgejo:3000\n' "$HAKU_STATE_READ_TOKEN" >>"$HOME/.git-credentials"
-fi
+# One haku-account credential (HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD from the
+# haku-state-git-write secret) authenticates BOTH forgejo-http.forgejo fetches —
+# the ducktape_haku module git_override and the haku-state clone. .netrc matches
+# on host (ignoring the :3000 port), so one machine line covers every repo there.
+umask 077
+cat >"$HOME/.netrc" <<NETRC
+machine forgejo-http.forgejo
+login ${HAKU_GIT_USERNAME:?HAKU_GIT_USERNAME unset}
+password ${HAKU_GIT_PASSWORD:?HAKU_GIT_PASSWORD unset}
+NETRC
 
 echo "haku-sandbox-setup: ready"

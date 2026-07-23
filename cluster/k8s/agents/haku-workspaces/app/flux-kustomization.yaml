@@ -22,3 +22,4 @@ spec:
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
     - name: external-secrets-config # ClusterSecretStore + CRDs for the ESO
     - name: forgejo-images # mints the source forgejo-images-creds the ESO reflects
+    - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
