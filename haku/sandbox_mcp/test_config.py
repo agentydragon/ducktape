@@ -1,6 +1,8 @@
 """Configuration tests for the single-environment sandbox MCP server."""
 
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -8,31 +10,29 @@ from pydantic import ValidationError
 
 from haku.sandbox_mcp.config import EnvironmentConfig, ServerSettings
 
-
-def _raw() -> dict:
-    return {
-        "sandbox": {
-            "namespace": "agent-workspaces",
-            "warm_pool": "haku",
-            "container": "workspace",
-            "default_cwd": "/workspace/haku-state",
-            "initial_ttl_seconds": 28_800,
-            "exec_ttl_extension_seconds": 7_200,
-            "provisioning_timeout_seconds": 600,
-            "max_exec_timeout_seconds": 300,
-            "max_output_bytes": 100_000,
-        },
-        "bootstrap": {
-            "cwd": "/workspace",
-            "timeout_seconds": 300,
-            "script": "git clone http://forgejo/haku/haku-state.git",
-        },
-    }
+RAW_CONFIG: dict[str, Any] = {
+    "sandbox": {
+        "namespace": "agent-workspaces",
+        "warm_pool": "haku",
+        "container": "workspace",
+        "default_cwd": "/workspace/haku-state",
+        "initial_ttl_seconds": 28_800,
+        "exec_ttl_extension_seconds": 7_200,
+        "provisioning_timeout_seconds": 600,
+        "max_exec_timeout_seconds": 300,
+        "max_output_bytes": 100_000,
+    },
+    "bootstrap": {
+        "cwd": "/workspace",
+        "timeout_seconds": 300,
+        "script": "git clone http://forgejo/haku/haku-state.git",
+    },
+}
 
 
 def test_environment_uses_seconds_and_has_stable_contract_hash() -> None:
-    first = EnvironmentConfig.model_validate(_raw())
-    second = EnvironmentConfig.model_validate(_raw())
+    first = EnvironmentConfig.model_validate(RAW_CONFIG)
+    second = EnvironmentConfig.model_validate(RAW_CONFIG)
 
     assert first.sandbox.initial_ttl_seconds == 28_800
     assert first.contract_hash == second.contract_hash
@@ -40,15 +40,15 @@ def test_environment_uses_seconds_and_has_stable_contract_hash() -> None:
 
 
 def test_contract_hash_changes_with_bootstrap() -> None:
-    first = EnvironmentConfig.model_validate(_raw())
-    changed = _raw()
+    first = EnvironmentConfig.model_validate(RAW_CONFIG)
+    changed = deepcopy(RAW_CONFIG)
     changed["bootstrap"]["script"] = "echo changed"
 
     assert first.contract_hash != EnvironmentConfig.model_validate(changed).contract_hash
 
 
 def test_initial_ttl_must_cover_provisioning_and_bootstrap() -> None:
-    raw = _raw()
+    raw = deepcopy(RAW_CONFIG)
     raw["sandbox"]["initial_ttl_seconds"] = 900
 
     with pytest.raises(ValidationError, match="must exceed provisioning_timeout_seconds"):
@@ -56,7 +56,7 @@ def test_initial_ttl_must_cover_provisioning_and_bootstrap() -> None:
 
 
 def test_exec_extension_must_cover_longest_exec() -> None:
-    raw = _raw()
+    raw = deepcopy(RAW_CONFIG)
     raw["sandbox"]["exec_ttl_extension_seconds"] = 299
 
     with pytest.raises(ValidationError, match="must be at least"):

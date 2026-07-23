@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -30,6 +31,10 @@ from haku.sandbox_mcp.kubernetes_client import (
 from mcp_infra.exec.models import Exited
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+SANDBOX: dict[str, Any] = {
+    "metadata": {"name": "haku-abcde", "annotations": {POD_NAME_ANNOTATION: "pod-abcde"}},
+    "status": {"conditions": [{"type": "Ready", "status": "True", "reason": "Ready"}]},
+}
 
 
 @pytest.fixture
@@ -81,13 +86,6 @@ def _claim(
     }
 
 
-def _sandbox() -> dict:
-    return {
-        "metadata": {"name": "haku-abcde", "annotations": {POD_NAME_ANNOTATION: "pod-abcde"}},
-        "status": {"conditions": [{"type": "Ready", "status": "True", "reason": "Ready"}]},
-    }
-
-
 def _pod(*, ready: bool = True) -> SimpleNamespace:
     return SimpleNamespace(
         status=SimpleNamespace(phase="Running", container_statuses=[SimpleNamespace(name="workspace", ready=ready)])
@@ -111,7 +109,7 @@ def _route_get(claim: dict):
         if (group, plural, name) == (CLAIM_GROUP, CLAIMS_PLURAL, "task-one"):
             return claim
         if (group, plural, name) == (SANDBOX_GROUP, SANDBOXES_PLURAL, "haku-abcde"):
-            return _sandbox()
+            return SANDBOX
         raise AssertionError((group, plural, name))
 
     return get
