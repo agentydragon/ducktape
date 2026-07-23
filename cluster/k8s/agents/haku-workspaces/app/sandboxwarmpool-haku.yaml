@@ -1,0 +1,15 @@
+# One pre-warmed Haku sandbox so a SandboxClaim (from the sandbox-provisioning
+# MCP) is ready in seconds instead of a cold image pull + PVC bind. Costs one
+# idle pod (1 cpu / 2Gi requests) inside the namespace quota; bump replicas only
+# if claims routinely outpace warmup.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
+metadata:
+  name: haku
+  namespace: haku-workspaces
+spec:
+  replicas: 1
+  updateStrategy:
+    type: Recreate
+  sandboxTemplateRef:
+    name: haku

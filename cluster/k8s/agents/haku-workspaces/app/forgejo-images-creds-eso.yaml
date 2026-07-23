@@ -1,0 +1,25 @@
+# Mirror the ducktape-ci Forgejo registry pull credential into haku-workspaces so
+# the Haku sandbox pods can pull the builder image from the private registry.
+# Reflects the source secret's ready-made .dockerconfigjson verbatim and only
+# stamps the type on top (no reassembly, no hardcoded host); sources the
+# reflector-mirrored copy in flux-system, so it needs no change to
+# registry-creds.sops.yaml's allowlist (which would require the cluster SOPS age
+# key). Same pattern as cluster/k8s/agents/osm-mcp/app/forgejo-images-creds-eso.yaml.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: haku-workspaces
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-flux-system-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: forgejo-images-creds
+    template:
+      type: kubernetes.io/dockerconfigjson
+      mergePolicy: Merge
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds

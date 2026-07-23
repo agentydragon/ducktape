@@ -1,0 +1,24 @@
+# Same 7-day backstop as the agent-workspaces janitor: a Sandbox/SandboxClaim
+# whose owner forgot shutdownTime would otherwise pin quota forever. Reaping is
+# at the CR level (the controller recreates a Sandbox's pod, so a pod-level
+# janitor just churns). Warm-pool sandboxes reaped at 7d are recreated by the
+# pool — a harmless periodic refresh. Delete RBAC is the shared
+# kyverno/policies/clusterrole-cleanup-controller-sandboxes.yaml (cluster-wide).
+apiVersion: kyverno.io/v2
+kind: CleanupPolicy
+metadata:
+  name: haku-workspace-janitor
+  namespace: haku-workspaces
+spec:
+  schedule: "45 * * * *"
+  match:
+    any:
+      - resources:
+          kinds:
+            - agents.x-k8s.io/v1beta1/Sandbox
+            - extensions.agents.x-k8s.io/v1beta1/SandboxClaim
+  conditions:
+    all:
+      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
+        operator: GreaterThan
+        value: 168h

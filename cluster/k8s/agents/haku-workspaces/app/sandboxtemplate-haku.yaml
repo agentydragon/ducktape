@@ -1,0 +1,91 @@
+# The Haku sandbox: an in-cluster EXEC TARGET the sandbox-provisioning MCP hands
+# out. The agent (Claude Code web / claude.ai / a managed agent) execs
+# `bazel run //cli:...` / `bazel test //...` in here THROUGH the MCP, against a
+# git-synced haku-state checkout. It does NOT run the agent loop. haku-state
+# builds locally (no BuildBuddy/RBE — source never leaves the cluster), so the
+# image is the local toolchain (../builder-image/).
+#
+# Trust model (see haku/docs/security.md + haku-state improvements/
+# sandbox-provisioning-mcp.md): this pod spec is operator-owned in a namespace
+# Haku cannot write to, so Haku can't edit securityContext/mounts/SA/egress or
+# create claims directly — the primary control. The image being trusted is
+# defense-in-depth on top. Egress is the SAME fenced allowlist as haku-sandbox
+# (the shared haku-egress-proxy; this namespace is opted into the Kyverno
+# injection + Cilium force-proxy CCNP), so Unmanaged here = the namespace policy
+# governs (NOT open egress).
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: haku
+  namespace: haku-workspaces
+spec:
+  # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy
+  # that would fight the haku-egress-proxy fence applied at the namespace level.
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-sandbox
+    spec:
+      # Controller defaults DNS to public resolvers only; restore cluster DNS so
+      # forgejo-http.forgejo (module fetch + haku-state clone) resolves.
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      # The pod needs no Kubernetes API — the MCP holds the claim/exec RBAC.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workspace
+          image: git.allegedly.works/ducktape-ci/haku-sandbox-builder:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-sandbox-builder"}
+          command: ["sleep", "infinity"]
+          workingDir: /workspace
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # Forgejo tokens for the in-cluster git fetches the bazel build needs
+            # (ducktape_haku module git_override on every invocation; haku-state
+            # clone). Owned + reflected by tf/gitops/haku-state — never baked into
+            # the image, never hand-minted. Consumed by the per-claim
+            # haku-sandbox-setup.sh (baked in the image), run by the MCP bootstrap.
+            - name: DUCKTAPE_MIRROR_READ_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-sandbox-git-tokens
+                  key: ducktape-mirror-read-token
+            - name: HAKU_STATE_READ_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-sandbox-git-tokens
+                  key: haku-state-read-token
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "3"
+              memory: 6Gi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+  volumeClaimTemplatesPolicy: Overrides
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        # No default StorageClass in this cluster — must be explicit.
+        storageClassName: seaweedfs-ovh
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 30Gi
