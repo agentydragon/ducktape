@@ -8,9 +8,10 @@ import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from types import TracebackType
+from typing import Any, Protocol, TypeGuard, cast
 
-from aiohttp import WSMsgType
+from aiohttp import WSMessage, WSMsgType
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, ApiException, Configuration, CoreV1Api, CustomObjectsApi
@@ -81,6 +82,68 @@ class ExecRunner(Protocol):
     ) -> CommandResult: ...
 
 
+class _ExecWebSocket(Protocol):
+    async def receive(self) -> WSMessage: ...
+
+    def exception(self) -> BaseException | None: ...
+
+
+class _ExecWebSocketContext(Protocol):
+    async def __aenter__(self) -> _ExecWebSocket: ...
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
+    ) -> bool | None: ...
+
+
+class _PodExecClient(Protocol):
+    async def connect_get_namespaced_pod_exec(
+        self,
+        name: str,
+        namespace: str,
+        *,
+        command: list[str],
+        container: str,
+        stderr: bool,
+        stdin: bool,
+        stdout: bool,
+        tty: bool,
+        _preload_content: bool,
+    ) -> _ExecWebSocketContext: ...
+
+
+class CustomObjectsClient(Protocol):
+    """Typed subset of the generated dynamic custom-object API used here."""
+
+    async def list_namespaced_custom_object(
+        self,
+        group: str,
+        version: str,
+        namespace: str,
+        plural: str,
+        *,
+        label_selector: str = ...,
+        limit: int = ...,
+        _continue: str = ...,
+    ) -> dict[str, Any]: ...
+
+    async def create_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+    async def get_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str
+    ) -> dict[str, Any]: ...
+
+    async def patch_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+    ) -> object: ...
+
+    async def delete_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str, *, body: k8s_client.V1DeleteOptions
+    ) -> object: ...
+
+
 @dataclass(slots=True)
 class _Capture:
     limit: int
@@ -136,7 +199,7 @@ class KubernetesWebSocketExecRunner:
         try:
             async with asyncio.timeout(timeout_seconds + 15):
                 async with WsApiClient(configuration=self._configuration) as ws_api:
-                    core_v1 = k8s_client.CoreV1Api(api_client=ws_api)
+                    core_v1 = cast(_PodExecClient, k8s_client.CoreV1Api(api_client=ws_api))
                     websocket = await core_v1.connect_get_namespaced_pod_exec(
                         pod_name,
                         namespace,
@@ -183,6 +246,7 @@ class KubernetesWebSocketExecRunner:
         except (KeyError, TypeError, ValueError) as error:
             raise ToolError("Kubernetes exec returned a malformed command status frame") from error
 
+        exit_status: Exited | TimedOut | Killed
         if exit_code == 124:
             exit_status = TimedOut()
         elif exit_code >= 128:
@@ -202,7 +266,7 @@ class KubernetesSandboxClient:
         environment: EnvironmentConfig,
         *,
         api_client: ApiClient,
-        custom_objects: CustomObjectsApi,
+        custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
         exec_runner: ExecRunner,
         now: Callable[[], datetime] | None = None,
@@ -231,17 +295,15 @@ class KubernetesSandboxClient:
         deadline = asyncio.get_running_loop().time() + self._environment.sandbox.provisioning_timeout_seconds
         while True:
             info = await self.info(name)
-            if info.state == "ready":
-                return info
-            if info.state == "bootstrap_failed":
-                return await self._run_bootstrap(name, info)
             if info.state == "stale_config":
                 raise ToolError(
                     f"sandbox {name!r} was created with different server configuration; dispose and recreate it"
                 )
             if info.state == "unhealthy" and info.reason in _FATAL_ALLOCATION_REASONS:
                 raise ToolError(f"sandbox {name!r} provisioning failed: {info.reason}: {info.message or ''}".rstrip())
-            if info.pod_name is not None and info.healthy and info.bootstrap_state in {"pending", "failed"}:
+            if info.state == "ready" and info.bootstrap_state in {"succeeded", "failed"}:
+                return info
+            if info.state == "ready" and info.bootstrap_state == "pending":
                 return await self._run_bootstrap(name, info)
             if asyncio.get_running_loop().time() >= deadline:
                 return info
@@ -261,10 +323,11 @@ class KubernetesSandboxClient:
             )
         expires_at = await self._renew(name)
         info = await self.info(name)
-        if info.state not in {"ready", "bootstrap_failed"} or info.pod_name is None:
+        if info.state != "ready" or info.bootstrap_state not in {"succeeded", "failed"} or info.pod_name is None:
             raise ToolError(
                 f"sandbox {name!r} cannot execute commands (state={info.state}, "
-                f"reason={info.reason or 'unknown'}); call get_sandbox_info"
+                f"bootstrap_state={info.bootstrap_state}, reason={info.reason or 'unknown'}); "
+                "call get_sandbox_info"
             )
         result = await self._exec_runner.run(
             pod_name=info.pod_name,
@@ -318,7 +381,7 @@ class KubernetesSandboxClient:
         message = _condition_text(claim_ready, "message")
         sandbox_name = _nested_string(claim, "status", "sandbox", "name")
         if sandbox_name is None:
-            state = "unhealthy" if reason in _FATAL_ALLOCATION_REASONS else "provisioning"
+            state: SandboxState = "unhealthy" if reason in _FATAL_ALLOCATION_REASONS else "provisioning"
             return _info(
                 name, state, expires_at, bootstrap_state, created_at=created_at, reason=reason, message=message
             )
@@ -371,15 +434,9 @@ class KubernetesSandboxClient:
                 reason=reason or _condition_text(sandbox_ready, "reason") or "PodNotReady",
                 message=message or "The claim, Sandbox, or target container is not ready.",
             )
-        state = {
-            "pending": "provisioning",
-            "running": "bootstrapping",
-            "succeeded": "ready",
-            "failed": "bootstrap_failed",
-        }[bootstrap_state]
         return _info(
             name,
-            state,
+            "ready",
             expires_at,
             bootstrap_state,
             created_at=created_at,
@@ -394,14 +451,11 @@ class KubernetesSandboxClient:
         if not 1 <= limit <= 100:
             raise ToolError("limit must be between 1 and 100")
         try:
+            list_kwargs: dict[str, Any] = {"label_selector": f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}", "limit": limit}
+            if continue_token is not None:
+                list_kwargs["_continue"] = continue_token
             page = await self._custom_objects.list_namespaced_custom_object(
-                CLAIM_GROUP,
-                API_VERSION,
-                self._environment.sandbox.namespace,
-                CLAIMS_PLURAL,
-                label_selector=f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}",
-                limit=limit,
-                _continue=continue_token,
+                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, **list_kwargs
             )
         except ApiException as error:
             raise ToolError(_api_error("list sandbox claims", error)) from error
@@ -492,7 +546,7 @@ class KubernetesSandboxClient:
         if not succeeded:
             raise ToolError(
                 f"sandbox {name!r} bootstrap failed ({_exit_summary(result)}); the claim was retained. "
-                "Call get_sandbox_info, exec_sandbox for diagnosis, provision_sandbox to retry, or dispose_sandbox."
+                "Call get_sandbox_info, exec_sandbox for diagnosis, or dispose_sandbox and provision a fresh claim."
             )
         return await self.info(name)
 
@@ -580,11 +634,11 @@ class KubernetesSandboxClient:
             )
 
     def _bootstrap_state(self, claim: dict[str, Any]) -> BootstrapState:
-        """Treat an interrupted bootstrap as retryable after its execution budget."""
+        """Treat an interrupted bootstrap as failed after its execution budget."""
 
         annotations = claim.get("metadata", {}).get("annotations", {}) or {}
-        raw = annotations.get(BOOTSTRAP_STATE_ANNOTATION, "pending")
-        if raw not in {"pending", "running", "succeeded", "failed"}:
+        raw = str(annotations.get(BOOTSTRAP_STATE_ANNOTATION, "pending"))
+        if not _is_bootstrap_state(raw):
             raise ToolError(f"sandbox claim has invalid bootstrap state {raw!r}")
         if raw != "running":
             return raw
@@ -592,8 +646,8 @@ class KubernetesSandboxClient:
         if not started_raw:
             return "failed"
         started_at = _parse_timestamp(str(started_raw), f"annotation {BOOTSTRAP_STARTED_AT_ANNOTATION}")
-        retry_at = started_at + timedelta(seconds=self._environment.bootstrap.timeout_seconds + 15)
-        return "failed" if self._now() >= retry_at else "running"
+        failure_at = started_at + timedelta(seconds=self._environment.bootstrap.timeout_seconds + 15)
+        return "failed" if self._now() >= failure_at else "running"
 
 
 class InClusterSandboxClient:
@@ -618,7 +672,7 @@ class InClusterSandboxClient:
                 self._client = KubernetesSandboxClient(
                     self._environment,
                     api_client=api_client,
-                    custom_objects=CustomObjectsApi(api_client),
+                    custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api_client)),
                     core_v1=CoreV1Api(api_client),
                     exec_runner=KubernetesWebSocketExecRunner(configuration),
                 )
@@ -654,9 +708,13 @@ class InClusterSandboxClient:
 
 def _condition(resource: dict[str, Any], condition_type: str) -> dict[str, Any] | None:
     for condition in resource.get("status", {}).get("conditions", []) or []:
-        if condition.get("type") == condition_type:
-            return condition
+        if isinstance(condition, dict) and condition.get("type") == condition_type:
+            return {str(key): value for key, value in condition.items()}
     return None
+
+
+def _is_bootstrap_state(value: str) -> TypeGuard[BootstrapState]:
+    return value in {"pending", "running", "succeeded", "failed"}
 
 
 def _condition_text(condition: dict[str, Any] | None, key: str) -> str | None:

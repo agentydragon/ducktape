@@ -32,7 +32,8 @@ from mcp_infra.exec.models import Exited
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
 
 
-def _environment() -> EnvironmentConfig:
+@pytest.fixture
+def environment() -> EnvironmentConfig:
     return EnvironmentConfig.model_validate(
         {
             "sandbox": {
@@ -116,8 +117,7 @@ def _route_get(claim: dict):
     return get
 
 
-async def test_provision_creates_named_delete_claim_and_adopts_ready_result() -> None:
-    environment = _environment()
+async def test_provision_creates_named_delete_claim_and_adopts_ready_result(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=8))
     custom = Mock()
     custom.create_namespaced_custom_object = AsyncMock(return_value=claim)
@@ -135,8 +135,7 @@ async def test_provision_creates_named_delete_claim_and_adopts_ready_result() ->
     assert body["metadata"]["annotations"][CONFIG_HASH_ANNOTATION] == environment.contract_hash
 
 
-async def test_provision_adopts_matching_claim_after_create_conflict() -> None:
-    environment = _environment()
+async def test_provision_adopts_matching_claim_after_create_conflict(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=8))
     custom = Mock()
     custom.create_namespaced_custom_object = AsyncMock(side_effect=ApiException(status=409))
@@ -149,8 +148,7 @@ async def test_provision_adopts_matching_claim_after_create_conflict() -> None:
     assert result.state == "ready"
 
 
-async def test_changed_configuration_is_visible_but_cannot_execute() -> None:
-    environment = _environment()
+async def test_changed_configuration_is_visible_but_cannot_execute(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=8), contract_hash="old")
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -163,8 +161,7 @@ async def test_changed_configuration_is_visible_but_cannot_execute() -> None:
         await client.execute(name="task-one", script="true", cwd=None, timeout_seconds=1, max_output_bytes=100)
 
 
-async def test_exec_renews_near_deadline_before_running() -> None:
-    environment = _environment()
+async def test_exec_renews_near_deadline_before_running(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(minutes=5))
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -193,8 +190,7 @@ async def test_exec_renews_near_deadline_before_running() -> None:
     assert result.expires_at == NOW + timedelta(hours=2)
 
 
-async def test_exec_does_not_shorten_later_deadline() -> None:
-    environment = _environment()
+async def test_exec_does_not_shorten_later_deadline(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6))
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -212,8 +208,7 @@ async def test_exec_does_not_shorten_later_deadline() -> None:
     assert result.expires_at == NOW + timedelta(hours=6)
 
 
-async def test_exec_is_available_for_bootstrap_diagnostics() -> None:
-    environment = _environment()
+async def test_exec_is_available_for_bootstrap_diagnostics(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6), bootstrap_state="failed")
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -231,8 +226,7 @@ async def test_exec_is_available_for_bootstrap_diagnostics() -> None:
     runner.run.assert_awaited_once()
 
 
-async def test_interrupted_bootstrap_becomes_retryable() -> None:
-    environment = _environment()
+async def test_interrupted_bootstrap_becomes_failed(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(hours=6), bootstrap_state="running")
     claim["metadata"]["annotations"][BOOTSTRAP_STARTED_AT_ANNOTATION] = (NOW - timedelta(minutes=1)).isoformat()
     custom = Mock()
@@ -242,12 +236,28 @@ async def test_interrupted_bootstrap_becomes_retryable() -> None:
 
     info = await _client(environment, custom, core, Mock()).info("task-one")
 
-    assert info.state == "bootstrap_failed"
+    assert info.state == "ready"
     assert info.bootstrap_state == "failed"
 
 
-async def test_renewal_failure_prevents_exec() -> None:
-    environment = _environment()
+async def test_provision_does_not_retry_failed_bootstrap(environment: EnvironmentConfig) -> None:
+    claim = _claim(environment, deadline=NOW + timedelta(hours=6), bootstrap_state="failed")
+    custom = Mock()
+    custom.create_namespaced_custom_object = AsyncMock(side_effect=ApiException(status=409))
+    custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
+    core = Mock()
+    core.read_namespaced_pod = AsyncMock(return_value=_pod())
+    runner = Mock()
+    runner.run = AsyncMock()
+
+    info = await _client(environment, custom, core, runner).provision("task-one")
+
+    assert info.state == "ready"
+    assert info.bootstrap_state == "failed"
+    runner.run.assert_not_awaited()
+
+
+async def test_renewal_failure_prevents_exec(environment: EnvironmentConfig) -> None:
     claim = _claim(environment, deadline=NOW + timedelta(minutes=5))
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=_route_get(claim))
@@ -263,8 +273,7 @@ async def test_renewal_failure_prevents_exec() -> None:
     runner.run.assert_not_awaited()
 
 
-async def test_dispose_is_idempotent() -> None:
-    environment = _environment()
+async def test_dispose_is_idempotent(environment: EnvironmentConfig) -> None:
     custom = Mock()
     custom.get_namespaced_custom_object = AsyncMock(side_effect=ApiException(status=404))
 

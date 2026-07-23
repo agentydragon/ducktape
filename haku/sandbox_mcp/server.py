@@ -97,9 +97,10 @@ def build_mcp(client: SandboxClient, environment: EnvironmentConfig) -> FastMCP:
         """Create or resume a named sandbox and run its configured bootstrap.
 
         Use this before executing work. The call waits for Agent Sandbox allocation, Pod readiness,
-        and bootstrap, but may return a nonterminal ``provisioning`` or ``bootstrapping`` state if
-        the configured wait budget expires; call ``get_sandbox_info`` or retry this idempotent tool.
-        A same-named foreign or stale-configuration claim is rejected with disposal guidance.
+        and bootstrap, but may return ``state=provisioning`` or ``state=ready`` with
+        ``bootstrap_state=running`` if the configured wait budget expires; call
+        ``get_sandbox_info`` or retry this idempotent tool. A same-named foreign or
+        stale-configuration claim is rejected with disposal guidance.
         """
 
         return await client.provision(name)
@@ -114,11 +115,12 @@ def build_mcp(client: SandboxClient, environment: EnvironmentConfig) -> FastMCP:
     ) -> SandboxExecResult:
         """Run one bounded Bash script in a ready sandbox.
 
-        Use this after ``provision_sandbox`` reports ``ready``, or to diagnose a
-        ``bootstrap_failed`` sandbox. Before starting the command the server confirms at least the
-        configured TTL extension remains; if renewal fails, no command runs. The result includes
-        exit status, bounded stdout/stderr, duration in seconds, and the confirmed deadline. A
-        nonzero exit is a normal result, not an MCP transport error.
+        Use this after ``provision_sandbox`` reports ``state=ready`` and
+        ``bootstrap_state=succeeded``, or to diagnose ``bootstrap_state=failed``. Before starting
+        the command the server confirms at least the configured TTL extension remains; if renewal
+        fails, no command runs. The result includes exit status, bounded stdout/stderr, duration in
+        seconds, and the confirmed deadline. A nonzero exit is a normal result, not an MCP
+        transport error.
         """
 
         return await client.execute(

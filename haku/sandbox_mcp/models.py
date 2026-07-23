@@ -22,9 +22,7 @@ SandboxName = Annotated[
     ),
 ]
 
-SandboxState = Literal[
-    "provisioning", "bootstrapping", "ready", "bootstrap_failed", "unhealthy", "expired", "stale_config"
-]
+SandboxState = Literal["provisioning", "ready", "unhealthy", "expired", "stale_config"]
 BootstrapState = Literal["pending", "running", "succeeded", "failed"]
 
 

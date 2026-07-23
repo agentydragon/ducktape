@@ -5,8 +5,8 @@
 The common path is two calls: `provision_sandbox(name)` creates or resumes a
 named environment and completes its reviewed bootstrap, then
 `exec_sandbox(name, ...)` performs work. Provisioning can return a nonterminal
-state when Kubernetes takes longer than the configured wait; the caller polls
-`get_sandbox_info` or retries provisioning.
+resource or bootstrap state when Kubernetes takes longer than the configured
+wait; the caller polls `get_sandbox_info` or retries provisioning.
 
 `list_sandboxes` discovers existing names with bounded Kubernetes pagination.
 `dispose_sandbox` is the explicit cleanup/undo operation.
@@ -23,6 +23,8 @@ state when Kubernetes takes longer than the configured wait; the caller polls
 
 All time quantities use seconds. Every exec first confirms a deadline at least
 the configured extension into the future; a renewal failure prevents execution.
+`state` reports claim/Sandbox/Pod readiness, while `bootstrap_state` reports the
+bootstrap lifecycle directly; the two are not collapsed into a synthetic state.
 
 ## Retry and failure behavior
 
@@ -31,12 +33,13 @@ claim bearing the current environment contract hash. Configuration drift is
 visible through read tools but blocks provisioning and execution until the
 claim is disposed and recreated.
 
-Bootstrap scripts are reviewed and must be idempotent. Failure leaves the claim
-available for inspection, diagnostic exec, retry, or disposal. Expected
-Kubernetes and lifecycle failures are actionable MCP errors; unexpected
-exceptions remain server errors. A bootstrap left marked running after its
-configured timeout plus the exec transport grace period is treated as failed
-and may be retried.
+Bootstrap scripts are reviewed and run once per claim. Failure leaves the claim
+available for inspection, diagnostic exec, or disposal, but provisioning never
+reruns the bootstrap. Retrying requires disposing and provisioning a fresh
+claim. Expected Kubernetes and lifecycle failures are actionable MCP errors;
+unexpected exceptions remain server errors. A bootstrap left marked running
+after its configured timeout plus the exec transport grace period is treated
+as failed.
 
 ## Safety audit
 
