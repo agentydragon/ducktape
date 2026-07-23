@@ -14,13 +14,23 @@ sandbox:
 bootstrap:
   cwd: /workspace
   timeout_seconds: 300
-  # Reviewed, runs once per claim: trust the egress CA at the JVM level + wire
-  # git creds (haku-sandbox-setup.sh, baked in the sandbox image), then sync
-  # haku-state so `bazel run //cli:...` works. Branch is main (haku-state's
-  # default), not master.
+  # Reviewed, runs once per claim: (1) trust the egress CA at the JVM level — the one
+  # image-coupled step, the baked haku-sandbox-setup.sh (needs keytool); then all the
+  # git, here so it changes without an image rebuild: (2) write the .netrc from the
+  # pod's HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD (the haku-forgejo-git secret, via the
+  # SandboxTemplate) — one line covers BOTH forgejo-http.forgejo fetches (the
+  # ducktape_haku git_override on every bazel invocation + this clone); (3) sync
+  # haku-state so `bazel run //cli:...` works. Branch is main (haku-state's default),
+  # not master.
   script: |
     set -euo pipefail
     /usr/local/bin/haku-sandbox-setup.sh
+    umask 077
+    cat >"$HOME/.netrc" <<NETRC
+    machine forgejo-http.forgejo
+    login ${HAKU_GIT_USERNAME:?HAKU_GIT_USERNAME unset}
+    password ${HAKU_GIT_PASSWORD:?HAKU_GIT_PASSWORD unset}
+    NETRC
     repo=/workspace/haku-state
     url=http://forgejo-http.forgejo:3000/haku/haku-state.git
     if [ -d "$repo/.git" ]; then

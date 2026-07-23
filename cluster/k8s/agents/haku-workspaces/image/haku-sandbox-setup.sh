@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
-# Per-claim runtime setup for a Haku sandbox, invoked by the sandbox-provisioning
-# MCP's bootstrap script (post-adoption) before any `bazel` exec. Idempotent.
+# Trust the egress-proxy ssl-bump CA at the JVM level, for a Haku sandbox. Invoked
+# by the sandbox-provisioning MCP's bootstrap (post-adoption) before any `bazel`.
+# Idempotent.
 #
-# Two things the baked image can't carry because they're cluster-runtime material:
-#   1. Trust the egress-proxy ssl-bump CA at the JVM level. Bazel's downloader runs
-#      in the server JVM, which validates against a Java KeyStore and ignores
-#      SSL_CERT_FILE. The proxy bumps every host, so a store holding only the egress
-#      CA validates bcr.bazel.build / GitHub / npm / PyPI alike. The CA bundle is
-#      mounted by the Kyverno egress injection at $EGRESS_CA. (Adapted from
-#      haku-state tools/ci/trust_egress_ca.sh; keytool is baked here, so no
-#      bazel-install-base hunting.)
-#   2. Git credentials for the in-cluster Forgejo, from env wired by the
-#      SandboxTemplate (never baked into the image): the single haku-account
-#      credential HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD (the haku-forgejo-git
-#      secret, owned by tf/gitops/haku-state, never hand-minted). One .netrc line
-#      authenticates BOTH forgejo-http.forgejo fetches — the ducktape_haku
-#      git_override during bzlmod resolution on every bazel invocation, and the
-#      haku-state clone/pull.
+# This is the ONE piece of per-claim setup that must be baked into the image: it
+# shells out to the baked `keytool`. Everything git (the .netrc + the haku-state
+# clone) is image-independent and lives in the MCP bootstrap.script instead, so it
+# can change without an image rebuild.
+#
+# Why the JVM store: Bazel's downloader runs in the server JVM, which validates
+# against a Java KeyStore and ignores SSL_CERT_FILE. The proxy bumps every host, so
+# a store holding only the egress CA validates bcr.bazel.build / GitHub / npm / PyPI
+# alike. The CA bundle is mounted by the Kyverno egress injection at $EGRESS_CA.
+# (Adapted from haku-state tools/ci/trust_egress_ca.sh.)
 set -euo pipefail
 
 bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
@@ -24,7 +20,6 @@ store="$HOME/egress-truststore.p12"
 pass="changeit"
 egress_cn="haku-egress-proxy-root-ca"
 
-# --- 1. JVM truststore for the Bazel downloader ---------------------------------
 if [ -r "$bundle" ]; then
   tmp="$(mktemp -d)"
   csplit -sz -f "$tmp/c" -b '%02d.pem' "$bundle" '/-----BEGIN CERTIFICATE-----/' '{*}'
@@ -48,16 +43,4 @@ else
   echo "haku-sandbox-setup: egress CA bundle not found at $bundle — bazel fetches may fail TLS" >&2
 fi
 
-# --- 2. Git credentials for the in-cluster Forgejo ------------------------------
-# One haku-account credential (HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD from the
-# haku-forgejo-git secret) authenticates BOTH forgejo-http.forgejo fetches —
-# the ducktape_haku module git_override and the haku-state clone. .netrc matches
-# on host (ignoring the :3000 port), so one machine line covers every repo there.
-umask 077
-cat >"$HOME/.netrc" <<NETRC
-machine forgejo-http.forgejo
-login ${HAKU_GIT_USERNAME:?HAKU_GIT_USERNAME unset}
-password ${HAKU_GIT_PASSWORD:?HAKU_GIT_PASSWORD unset}
-NETRC
-
-echo "haku-sandbox-setup: ready"
+echo "haku-sandbox-setup: egress CA trusted"
