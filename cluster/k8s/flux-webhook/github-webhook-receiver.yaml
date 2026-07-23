@@ -66,6 +66,9 @@ spec:
       name: haku-zone-worker
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: haku-sandbox-mcp
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: openclaw-matrix
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
