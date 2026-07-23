@@ -104,10 +104,10 @@ resource "forgejo_collaborator" "claude" {
 # forgejo/haku-state Kustomization dependsOn it); flux-system always exists. This
 # resource retries until each namespace exists.
 resource "kubernetes_secret" "haku_forgejo_git" {
-  # haku-workspaces: the Haku sandbox pods use this one haku-account credential
-  # for both in-cluster git fetches (ducktape_haku module git_override +
-  # haku-state clone) — see cluster/k8s/agents/haku-workspaces.
-  for_each = toset(["haku-sandbox", "flux-system", "haku-workspaces"])
+  # haku-sandbox already covers the Haku sandbox pods: the pool lives IN haku-sandbox
+  # (cluster/k8s/haku/workspaces/) and the box uses this one haku-account credential for
+  # both in-cluster git fetches (ducktape_haku module git_override + haku-state clone).
+  for_each = toset(["haku-sandbox", "flux-system"])
 
   metadata {
     name      = "haku-forgejo-git"

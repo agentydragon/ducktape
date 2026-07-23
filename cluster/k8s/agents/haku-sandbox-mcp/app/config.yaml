@@ -1,6 +1,7 @@
 sandbox:
-  # The Haku sandbox pool this MCP hands out (cluster/k8s/agents/haku-workspaces/).
-  namespace: haku-workspaces
+  # The Haku sandbox pool this MCP hands out (cluster/k8s/haku/workspaces/, in the
+  # haku-sandbox namespace).
+  namespace: haku-sandbox
   warm_pool: haku
   container: workspace
   default_cwd: /workspace/haku-state

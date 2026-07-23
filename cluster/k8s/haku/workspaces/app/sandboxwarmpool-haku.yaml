@@ -6,7 +6,7 @@ apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxWarmPool
 metadata:
   name: haku
-  namespace: haku-workspaces
+  namespace: haku-sandbox
 spec:
   replicas: 1
   updateStrategy:

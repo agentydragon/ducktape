@@ -1,15 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-workspaces-app
+  name: haku-workspaces
   namespace: flux-system
   annotations:
-    description: Haku sandbox template + warm pool in haku-workspaces (in-cluster exec target handed out by the sandbox-provisioning MCP). See haku/sandbox_mcp/README.md.
+    description: Haku sandbox template + warm pool in haku-sandbox (in-cluster exec target handed out by the sandbox-provisioning MCP). See haku/sandbox_mcp/README.md.
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
-  path: ./cluster/k8s/agents/haku-workspaces/app
+  path: ./cluster/k8s/haku/workspaces/app
   prune: true
   wait: true
   sourceRef:
@@ -17,9 +17,8 @@ spec:
     name: flux-system
   dependsOn:
     - name: agent-sandbox-controller # shared CRDs + controller
-    - name: haku-workspaces-namespace
-    - name: haku-egress-proxy # the fence this namespace is opted into
+    - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
+    - name: haku-egress-proxy # the fence haku-sandbox is opted into
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
     - name: external-secrets-config # ClusterSecretStore + CRDs for the ESO
     - name: forgejo-images # mints the source forgejo-images-creds the ESO reflects
-    - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs

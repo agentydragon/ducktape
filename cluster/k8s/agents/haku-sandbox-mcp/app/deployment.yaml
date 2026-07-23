@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-sandbox-mcp
   annotations:
-    description: "Sandbox-provisioning MCP (haku/sandbox_mcp). Claims a warm Haku sandbox in haku-workspaces, bootstraps it, runs bounded bash via pods/exec, and disposes it. StaticBearerGuard on /mcp; cluster-internal, fronted by haku-console. Its SA holds the claim/exec RBAC into haku-workspaces."
+    description: "Sandbox-provisioning MCP (haku/sandbox_mcp). Claims a warm Haku sandbox in haku-sandbox, bootstraps it, runs bounded bash via pods/exec, and disposes it. StaticBearerGuard on /mcp; cluster-internal, fronted by haku-console. Its SA holds the claim/exec RBAC into haku-sandbox."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -20,7 +20,7 @@ spec:
     spec:
       serviceAccountName: haku-sandbox-mcp
       # The server loads its Kubernetes identity from this token (manages claims
-      # + pods/exec in haku-workspaces).
+      # + pods/exec in haku-sandbox).
       automountServiceAccountToken: true
       enableServiceLinks: false
       securityContext:

@@ -61,8 +61,6 @@ resources:
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
-  - agents/haku-workspaces/namespace/flux-kustomization.yaml # Haku sandbox pool (exec target for the sandbox-provisioning MCP)
-  - agents/haku-workspaces/app/flux-kustomization.yaml
   - agents/haku-sandbox-mcp/namespace/flux-kustomization.yaml # the sandbox-provisioning MCP server
   - agents/haku-sandbox-mcp/app/flux-kustomization.yaml
   - agents/airlock/agent-rbac/flux-kustomization.yaml
@@ -241,6 +239,7 @@ resources:
   - haku/mailbox/db/flux-kustomization.yaml # CNPG store for the Stalwart mailserver
   - haku/mailbox/app/flux-kustomization.yaml # Stalwart: haku's mailbox (haku@allegedly.works)
   - haku/managed-agent/flux-kustomization.yaml # self-hosted Managed Agents worker (Runtime B)
+  - haku/workspaces/app/flux-kustomization.yaml # Haku sandbox warm pool in haku-sandbox (exec target for the sandbox-provisioning MCP)
   - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
   # (self-hosted agent is provisioned imperatively via `ant`, not TF — the provider has no
   #  self_hosted support; see haku/runtime/managed_agent/self_hosted/README.md)

@@ -3,14 +3,14 @@
 # (git.allegedly.works/ducktape-ci/haku-sandbox-image) — not GHCR, so the pull
 # credential is provisioned in code (tf/gitops/forgejo-images) rather than a
 # manual GHCR "make public" click. Consumed by the Haku SandboxTemplate in
-# cluster/k8s/agents/haku-workspaces/. Mirrors agent-workspace-image.yml.
+# cluster/k8s/haku/workspaces/. Mirrors agent-workspace-image.yml.
 name: Haku Sandbox Image
 
 on:
   push:
     branches: [devel]
     paths:
-      - "cluster/k8s/agents/haku-workspaces/image/**"
+      - "cluster/k8s/haku/workspaces/image/**"
       - ".github/workflows/haku-sandbox-image.yml"
   workflow_dispatch:
 
@@ -43,6 +43,6 @@ jobs:
         run: |
           TS=$(date -u +%Y%m%d%H%M%S)
           REF="$IMAGE:${GITHUB_REF_NAME}-${TS}-${GITHUB_SHA:0:7}"
-          docker build -t "$REF" cluster/k8s/agents/haku-workspaces/image
+          docker build -t "$REF" cluster/k8s/haku/workspaces/image
           docker push "$REF"
           echo "pushed \`$REF\`" >> "$GITHUB_STEP_SUMMARY"

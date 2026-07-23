@@ -8,7 +8,7 @@ apiVersion: kyverno.io/v2
 kind: CleanupPolicy
 metadata:
   name: haku-workspace-janitor
-  namespace: haku-workspaces
+  namespace: haku-sandbox
 spec:
   schedule: "45 * * * *"
   match:

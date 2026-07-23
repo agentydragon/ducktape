@@ -6,21 +6,26 @@
 # image is the local toolchain (../image/).
 #
 # Trust model (see haku/docs/security.md + haku-state improvements/
-# sandbox-provisioning-mcp.md): this pod spec is operator-owned in a namespace
-# Haku cannot write to, so Haku can't edit securityContext/mounts/SA/egress or
-# create claims directly — the primary control. The image being trusted is
-# defense-in-depth on top. Egress is the SAME fenced allowlist as haku-sandbox
-# (the shared haku-egress-proxy; this namespace is opted into the Kyverno
-# injection + Cilium force-proxy CCNP), so Unmanaged here = the namespace policy
-# governs (NOT open egress).
+# sandbox-provisioning-mcp.md): the pool lives IN haku-sandbox, where Haku already has
+# full CRUD — so Haku CAN edit this template and create pods/claims directly. That's
+# safe because the network fence does NOT rest on pod-spec or namespace write-isolation:
+# it's the cluster-scoped haku-sandbox-force-proxy CCNP (selects the namespace, enforced
+# at the Cilium datapath) + the cluster-default baseline PodSecurity (forbids
+# hostNetwork/hostPort/host*), both OUTSIDE Haku's RBAC (its haku-sandbox-admin Role has
+# no cilium/networkpolicy/PSS verbs). Every pod in haku-sandbox is force-proxied and
+# baseline-confined regardless of who wrote it, so Haku can't craft an un-fenced pod; and
+# a Haku direct-exec ≈ the arbitrary bash exec_sandbox already grants. The MCP approval
+# gate still governs the one party it must — the kubeconfig-less external harness (a plain
+# claude.ai chat), which can only reach the box THROUGH the MCP.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
   name: haku
-  namespace: haku-workspaces
+  namespace: haku-sandbox
 spec:
   # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy
-  # that would fight the haku-egress-proxy fence applied at the namespace level.
+  # that would fight the haku-egress-proxy fence applied at the namespace level
+  # (the existing haku-sandbox-force-proxy CCNP).
   networkPolicyManagement: Unmanaged
   podTemplate:
     metadata:
@@ -34,13 +39,11 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
-      # Haku's own k8s identity so `kubectl` works out of the box in the box —
-      # Haku operates its normal compute in haku-sandbox from here. The SA is
-      # bound to haku-sandbox-admin (haku-sandbox CRUD), the same grant the
-      # managed-agent worker gets; it holds NOTHING in haku-workspaces, so the
-      # box still can't edit this template or create claims (the pool namespace
-      # stays Haku-no-write; the MCP owns claim/exec RBAC). cluster-diagnostics
-      # read is a follow-up, like the managed-agent.
+      # Haku's own k8s identity so `kubectl` works out of the box in the box — Haku
+      # operates its normal compute in haku-sandbox from here. The dedicated
+      # haku-workspace SA is bound to haku-sandbox-admin (haku-sandbox CRUD), the same
+      # pattern as the haku-managed-agent worker. cluster-diagnostics read is a
+      # follow-up, like the managed-agent.
       serviceAccountName: haku-workspace
       automountServiceAccountToken: true
       securityContext:

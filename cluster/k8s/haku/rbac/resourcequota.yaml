@@ -1,3 +1,10 @@
+# Shared by everything in haku-sandbox: the scanner CronJob, the managed-agent worker,
+# haku-ui, AND the sandbox warm pool (cluster/k8s/haku/workspaces/) — a claimed box runs a
+# LOCAL Bazel build of haku-state (no RBE; --spawn_strategy=local), so it's sized like the
+# haku-ci runner (req 1 / limit 3 CPU, 2/6Gi) rather than a thin exec target. The pool
+# folding in is why this is bigger than a plain agent namespace; bump further only if warm
+# replicas or concurrent claims grow. The LimitRange (max pod 4 CPU / 8Gi) still caps any
+# single pod.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -5,12 +12,12 @@ metadata:
   namespace: haku-sandbox
 spec:
   hard:
-    requests.cpu: "4"
-    requests.memory: 8Gi
-    limits.cpu: "4"
-    limits.memory: 8Gi
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
     pods: "20"
     services: "15"
     configmaps: "30"
-    persistentvolumeclaims: "15"
-    requests.storage: 20Gi
+    persistentvolumeclaims: "18"
+    requests.storage: 140Gi

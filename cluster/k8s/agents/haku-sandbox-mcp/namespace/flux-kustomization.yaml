@@ -4,7 +4,7 @@ metadata:
   name: haku-sandbox-mcp-namespace
   namespace: flux-system
   annotations:
-    description: Namespace for the sandbox-provisioning MCP server (haku/sandbox_mcp) that hands out Haku sandboxes in haku-workspaces.
+    description: Namespace for the sandbox-provisioning MCP server (haku/sandbox_mcp) that hands out Haku sandboxes in haku-sandbox.
 spec:
   retryInterval: 1m
   interval: 10m
