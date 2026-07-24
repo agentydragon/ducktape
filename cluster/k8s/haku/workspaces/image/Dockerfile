@@ -9,7 +9,11 @@
 # Deliberately minimal (cf. haku/plans/ci_warm_bazel_server.md "Builder image"):
 # bazelisk + a JDK (keytool + the Bazel server JVM) + git/curl/openssl. NO nix,
 # NO docker (bazel's //ui:image uses hermetic rules_oci), NO browser/Rust/GHC deps.
-# Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel.
+# Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel, but the
+# C/C++ toolchain is NOT: haku-state's cc rules resolve through Bazel's local_config_cc
+# autoconf, which probes for a system gcc/g++. So build-essential is baked in — without
+# it any target that pulls the cc toolchain (e.g. //cli:bookmark) fails analysis with
+# "Cannot find gcc or CC".
 #
 # Built by ducktape CI (.github/workflows/haku-sandbox-image.yml) and
 # pushed to the Forgejo registry — a trusted, operator-reviewed substrate. Haku's
@@ -21,6 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git openssl \
       default-jre-headless \
+      build-essential \
       procps less \
     && rm -rf /var/lib/apt/lists/*
 
