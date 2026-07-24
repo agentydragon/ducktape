@@ -72,12 +72,15 @@ resource "forgejo_branch_protection" "state_main" {
   enable_push         = true
   enable_status_check = true
   # Context format observed live: "<workflow> / <job> (<event>)".
-  # State validation (validate_state + freshness_lint) folded into the bazel-ci `bazel`
-  # job so it reuses that job's warm Bazel server instead of paying a second cold
-  # load+analyze in its own container (haku-state .forgejo/workflows/bazel-ci.yaml); the
-  # standalone validate-state workflow was retired, so its context is gone from this list.
+  # bazel-ci's `validate` and `image` are deliberately separate jobs (haku-state
+  # .forgejo/workflows/bazel-ci.yaml) so a data-only bad commit can never strand a
+  # code image build. Both are required here so a PR can't merge without either
+  # gate green — this list drifted out of sync with that split (2026-07-22, PR #37)
+  # until a stuck PR #38 (2026-07-24) surfaced it: the stale `bazel-ci / bazel`
+  # context could never be satisfied again, so no PR could auto-merge.
   status_check_contexts = [
-    "bazel-ci / bazel (pull_request)",
+    "bazel-ci / validate (pull_request)",
+    "bazel-ci / image (pull_request)",
     "linkcheck / linkcheck (pull_request)",
   ]
 }
