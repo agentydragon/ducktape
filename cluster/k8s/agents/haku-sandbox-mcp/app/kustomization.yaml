@@ -5,14 +5,18 @@ kind: Kustomization
 # the config ConfigMap is namespaceless and Flux fails to apply it. The hand-written
 # resources already set this same namespace (incl. bearer.sops.yaml, so the transform is a
 # no-op on the SOPS secret — no MAC change).
+#
+# Because this transformer rewrites the namespace of EVERY resource here, this kustomization
+# must contain only haku-sandbox-mcp-namespace resources. The MCP's claim/exec Role +
+# RoleBinding target the haku-sandbox namespace, so they live in the pool kustomization
+# (cluster/k8s/haku/workspaces/app/) instead — the transformer here would otherwise clobber
+# them into haku-sandbox-mcp and the SA would get 403 on SandboxClaims.
 namespace: haku-sandbox-mcp
 resources:
   - serviceaccount.yaml
   - bearer.sops.yaml
   - deployment.yaml
   - service.yaml
-  - role.yaml
-  - rolebinding.yaml
   - networkpolicy.yaml
 # The server's runtime config lives in a native config.yaml (with the reviewed
 # per-claim bootstrap script) generated into the ConfigMap, not inlined here.

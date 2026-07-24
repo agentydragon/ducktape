@@ -4,7 +4,7 @@ metadata:
   name: haku-sandbox-mcp-app
   namespace: flux-system
   annotations:
-    description: Sandbox-provisioning MCP server (haku/sandbox_mcp) + its claim/exec RBAC into haku-sandbox. Fronted by haku-console (register separately — operator perimeter).
+    description: Sandbox-provisioning MCP server (haku/sandbox_mcp). Its claim/exec RBAC into haku-sandbox lives in the pool kustomization (haku/workspaces/app). Fronted by haku-console (register separately — operator perimeter).
 spec:
   retryInterval: 1m
   interval: 10m

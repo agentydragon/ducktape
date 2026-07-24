@@ -1,8 +1,10 @@
 # The exact API access the sandbox-provisioning MCP needs, scoped to the pool
 # namespace (derived from haku/sandbox_mcp/kubernetes_client.py): create/adopt +
 # GC SandboxClaims, read the assigned Sandbox + Pod, and open exec sessions. No
-# secrets, no other verbs. Lives in haku-sandbox (where the claims/pods are);
-# bound to the MCP's SA by rolebinding.yaml.
+# secrets, no other verbs. Lives in haku-sandbox (where the claims/pods are), applied
+# by this pool kustomization; bound to the MCP's SA by haku-sandbox-mcp-rolebinding.yaml.
+# NOT in the MCP app kustomization — its namespace transformer would rewrite this to
+# haku-sandbox-mcp and the MCP SA would get 403 on SandboxClaims.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

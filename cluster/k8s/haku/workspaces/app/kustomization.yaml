@@ -5,3 +5,9 @@ resources:
   - sandboxtemplate-haku.yaml
   - sandboxwarmpool-haku.yaml
   - cleanuppolicy-haku-janitor.yaml
+  # The sandbox-provisioning MCP's claim/exec access INTO this (haku-sandbox) namespace.
+  # Lives here, not in the MCP app kustomization, because that one has a
+  # `namespace: haku-sandbox-mcp` transformer that would rewrite these to the wrong
+  # namespace. This kustomization has no transformer, so they keep namespace: haku-sandbox.
+  - haku-sandbox-mcp-role.yaml
+  - haku-sandbox-mcp-rolebinding.yaml
