@@ -22,6 +22,7 @@ import { Field } from "./field.tsx";
 import {
   CameraIcon,
   ChecklistIcon,
+  ClockIcon,
   CloseIcon,
   HistoryIcon,
   HomeIcon,
@@ -77,6 +78,12 @@ export interface ShellChromeProps {
   screenshotGranted: boolean;
   sharingScreen: boolean;
   onWithdrawScreenshot: () => void;
+  // The current session's absolute deadline (null until `/auth/me` answers). The rail surfaces it
+  // only once it is close, so the operator can re-authenticate deliberately instead of being
+  // bounced to Authentik by whichever background request happens to fail first.
+  sessionExpiresAt: Date | null;
+  sessionExpiringSoon: boolean;
+  onReauthenticate: () => void;
 }
 
 // zIndex maxed so the shell chrome (toolbar + panels) sits above the full-page iframe.
@@ -164,6 +171,35 @@ function ScreenshotPanel({ sharing, onWithdraw }: { sharing: boolean; onWithdraw
         </Text>
         <Button size="compact-sm" variant="light" color="red" fullWidth onClick={onWithdraw}>
           {sharing ? "Stop & withdraw" : "Withdraw"}
+        </Button>
+      </Stack>
+    </section>
+  );
+}
+
+// The session panel: opened from the hourglass toggle, which appears only once the operator
+// session is close to its absolute deadline. The console cannot extend that deadline, so the
+// panel's job is to make re-authentication a deliberate gesture — a tab that runs out mid-task
+// navigates itself to Authentik and takes the framed Haku UI's unsaved state with it.
+function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReauthenticate: () => void }) {
+  const expiry = formatTimestamp(expiresAt.toISOString());
+  return (
+    <section className="haku-shell-card haku-shell-side-panel" aria-label="Console session">
+      <Stack gap="xs">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Text fw={600} size="sm">
+            Console session
+          </Text>
+          <Badge color="orange" variant="light" title={expiry.title}>
+            Ends {expiry.text}
+          </Badge>
+        </Group>
+        <Text size="xs" c="dimmed">
+          Console sessions last an hour and cannot be extended. Re-authenticating reloads this tab — anything unsaved in
+          Haku's UI is lost either way, so pick a good moment.
+        </Text>
+        <Button size="compact-sm" variant="light" color="orange" fullWidth onClick={onReauthenticate}>
+          Re-authenticate now
         </Button>
       </Stack>
     </section>
@@ -586,7 +622,7 @@ function RailButton({
   );
 }
 
-export type IndicatorPanel = "location" | "screenshot" | "sync-status";
+export type IndicatorPanel = "location" | "screenshot" | "sync-status" | "session";
 
 // Trusted chrome lives in a real left-hand layout rail. Page navigation is independent from the
 // approvals drawer, while the three compact indicator popovers are mutually exclusive.
@@ -602,6 +638,9 @@ export function ShellChrome(props: ShellChromeProps) {
     screenshotGranted,
     sharingScreen,
     onWithdrawScreenshot,
+    sessionExpiresAt,
+    sessionExpiringSoon,
+    onReauthenticate,
   } = props;
   const [openIndicator, setOpenIndicator] = useState<IndicatorPanel | null>(null);
   const pendingCount =
@@ -609,10 +648,14 @@ export function ShellChrome(props: ShellChromeProps) {
   const currentSyncState = syncState(liveStatus, syncError, props.syncing);
 
   useEffect(() => {
-    if ((openIndicator === "location" && !geoGranted) || (openIndicator === "screenshot" && !screenshotGranted)) {
+    if (
+      (openIndicator === "location" && !geoGranted) ||
+      (openIndicator === "screenshot" && !screenshotGranted) ||
+      (openIndicator === "session" && !sessionExpiringSoon)
+    ) {
       setOpenIndicator(null);
     }
-  }, [geoGranted, openIndicator, screenshotGranted]);
+  }, [geoGranted, openIndicator, screenshotGranted, sessionExpiringSoon]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -693,6 +736,16 @@ export function ShellChrome(props: ShellChromeProps) {
               </RailButton>
             </Indicator>
           )}
+          {sessionExpiringSoon && sessionExpiresAt !== null && (
+            <RailButton
+              open={openIndicator === "session"}
+              label="Session expiring soon"
+              color="orange"
+              onClick={() => toggleIndicator("session")}
+            >
+              <ClockIcon />
+            </RailButton>
+          )}
           {screenshotGranted && (
             <Indicator color="green" size={10} offset={5} processing disabled={!sharingScreen} withBorder>
               <RailButton
@@ -720,6 +773,9 @@ export function ShellChrome(props: ShellChromeProps) {
             )}
             {openIndicator === "screenshot" && screenshotGranted && (
               <ScreenshotPanel sharing={sharingScreen} onWithdraw={onWithdrawScreenshot} />
+            )}
+            {openIndicator === "session" && sessionExpiresAt !== null && (
+              <SessionPanel expiresAt={sessionExpiresAt} onReauthenticate={onReauthenticate} />
             )}
           </div>
         )}

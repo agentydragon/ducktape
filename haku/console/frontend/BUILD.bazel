@@ -166,7 +166,19 @@ js_library(
 js_library(
     name = "console_events",
     srcs = ["console_events.ts"],
-    deps = ["//:node_modules/react"],
+    deps = [
+        ":operator_login",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "operator_session",
+    srcs = ["operator_session.ts"],
+    deps = [
+        ":client",
+        "//:node_modules/react",
+    ],
 )
 
 js_library(
@@ -456,6 +468,8 @@ js_library(
         ":geolocation_grant",
         ":link",
         ":open_external",
+        ":operator_login",
+        ":operator_session",
         ":routing",
         ":screenshot_capture",
         ":screenshot_grant",

@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
+import { redirectToOperatorLogin } from "./operator_login.ts";
+
+// The one close the shell acts on instead of reconnecting: the operator session reached its
+// absolute deadline, so every reconnect would be refused until the browser re-authenticates.
+// Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../console_events.py.
+const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
+
 // The live channel's health, surfaced so the shell can show when it's broken (a dead socket
 // means the approvals panel only updates on reload — the operator must be told, not left
 // silently stale). `connecting` is the pre-open grace state (no alarm during the handshake);
@@ -68,8 +75,14 @@ export function useConsoleEvents(onEvent: (event: ConsoleEvent) => void): LiveSt
       };
       // onerror always precedes onclose; let onclose drive the state + reconnect so both a
       // failed handshake and a dropped connection funnel through one path.
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (closed) return;
+        // An expired session is not a channel outage: reconnecting would just be refused, and a
+        // crossed-wifi indicator would blame the network for an auth problem.
+        if (event.code === OPERATOR_SESSION_EXPIRED_CLOSE_CODE) {
+          redirectToOperatorLogin();
+          return;
+        }
         setStatus("offline");
         sync(); // one REST refetch so a momentary blip still refreshes the view
         reconnectTimer = window.setTimeout(connect, backoffMs);

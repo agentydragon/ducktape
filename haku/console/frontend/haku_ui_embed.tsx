@@ -34,6 +34,8 @@ import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_
 import { toastError, toastSuccess } from "./toast.ts";
 import { useToolCallDecision } from "./tool_call_decision.ts";
 import { useConsoleEvents } from "./console_events.ts";
+import { redirectToOperatorLogin } from "./operator_login.ts";
+import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session.ts";
 import { ToolCallsPage } from "./tool_calls_page.tsx";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
@@ -324,6 +326,11 @@ export function HakuUiEmbed({
   // drives the shell's live-channel warning when the socket is down.
   const liveStatus = useConsoleEvents(refreshToolApprovals);
 
+  // The session's absolute deadline, surfaced in the rail once it is near. Expiry is otherwise
+  // invisible until a background request 401s and navigates the tab away mid-task.
+  const sessionExpiresAt = useOperatorSessionDeadline();
+  const sessionExpiringSoon = useSessionExpiringSoon(sessionExpiresAt);
+
   // Tear down any live browser watches / capture stream if the console unmounts.
   useEffect(() => () => void watcher.stopAll(), [watcher]);
   useEffect(() => () => screenshotSession.stop(), [screenshotSession]);
@@ -553,6 +560,9 @@ export function HakuUiEmbed({
         screenshotGranted={screenshotGranted}
         sharingScreen={sharingScreen}
         onWithdrawScreenshot={withdrawScreenshot}
+        sessionExpiresAt={sessionExpiresAt}
+        sessionExpiringSoon={sessionExpiringSoon}
+        onReauthenticate={() => redirectToOperatorLogin()}
         pendingApprovals={toolApprovals}
         geolocationApprovals={geolocationApprovals}
         screenshotApprovals={screenshotApprovals}

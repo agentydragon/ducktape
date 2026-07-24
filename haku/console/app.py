@@ -39,6 +39,7 @@ from haku.console import (
     oauth_connection_result,
     oauth_token_state,
     operator_auth,
+    operator_login_flow,
     provider_connection,
     tool_call_service,
 )
@@ -149,6 +150,7 @@ def create_app(
     db_engine = create_engine(database_url, pool_pre_ping=True)
     db_sessions = sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
+    operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
     oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
@@ -340,6 +342,7 @@ def create_app(
     app.state.hostexec_enabled = hostexec_config is not None
     app.state.agent_enrollment_service = agent_authority
     app.state.operator_identity_store = operator_identity_store
+    app.state.operator_login_flows = operator_login_flows
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
     app.state.provider_connection_store = provider_connection_store
@@ -402,7 +405,7 @@ def create_app(
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.
     app.state.operator_oauth = operator_auth.build_oauth(
-        settings.operator_oidc, offline_access=hostexec_config is not None
+        settings.operator_oidc, login_flows=operator_login_flows, offline_access=hostexec_config is not None
     )
     app.include_router(operator_auth.router)
     app.add_middleware(

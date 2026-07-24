@@ -61,6 +61,9 @@ const chromeProps: ShellChromeProps = {
   screenshotGranted: true,
   sharingScreen: true,
   onWithdrawScreenshot: noop,
+  sessionExpiresAt: null,
+  sessionExpiringSoon: false,
+  onReauthenticate: noop,
 };
 
 function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
@@ -72,6 +75,16 @@ function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
         syncError={state === "error" ? "Unauthorized" : null}
         syncing={state === "syncing"}
       />
+      <main className="haku-shell-content" />
+    </div>
+  );
+}
+
+// The rail's session warning, which only appears inside the last few minutes of the session.
+function SessionExpiringScene() {
+  return (
+    <div className="haku-console-shell">
+      <ShellChrome {...chromeProps} sessionExpiresAt={new Date(Date.now() + 4 * 60_000)} sessionExpiringSoon />
       <main className="haku-shell-content" />
     </div>
   );
@@ -110,6 +123,8 @@ function sceneElement(scene: string) {
       return <IndicatorScene state="syncing" />;
     case "sync-error":
       return <IndicatorScene state="error" />;
+    case "session-expiring":
+      return <SessionExpiringScene />;
     case "oauth-success":
     case "oauth-success-mobile":
       return (

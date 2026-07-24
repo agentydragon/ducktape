@@ -10,9 +10,10 @@ OIDC configuration is mandatory; there is no unauthenticated development mode.
 
 from __future__ import annotations
 
+import asyncio
+import datetime
 import time
 from pathlib import Path
-from uuid import UUID
 
 import httpx
 import pytest
@@ -22,7 +23,7 @@ from fastapi.routing import APIRoute
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import create_engine, func, select
 
-from haku.console import operator_auth
+from haku.console import operator_auth, operator_login_flow
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import TEST_OPERATOR_OIDC, console_settings
@@ -174,6 +175,57 @@ async def test_credential_matrix_through_real_app(
             assert (await operator.get("/api/config")).status_code == 200
 
 
+async def test_two_console_tabs_can_log_in_at_once(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every open tab loses its session at the same moment (one absolute deadline), so they bounce
+    to /auth/login together. Neither attempt may strand the other: with authlib's session-backed
+    state each new authorization request evicts the last, and the loser's callback dies on
+    "expired or was superseded"."""
+    monkeypatch.setenv(_AGENT_TOKEN_ENV, AGENT_TOKEN)
+    monkeypatch.setenv(_AGENT_OPERATOR_ENV, _OPERATOR_SUBJECT)
+
+    private_key, public_key = generate_rsa_keypair()
+    idp_port, console_port = pick_free_port(), pick_free_port()
+    idp_url, console_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{console_port}"
+    idp = build_mock_oidc_app(
+        issuer_url=idp_url,
+        private_key=private_key,
+        public_key=public_key,
+        subject=_OPERATOR_SUBJECT,
+        extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
+    )
+    settings = console_settings(
+        migrated_db_url,
+        haku_ui_url="about:blank",
+        config_file=_static_agent_config(tmp_path),
+        public_base_url=console_url,
+        operator_oidc=OperatorOidcConfig(
+            issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
+        ),
+    )
+    app = create_app(settings)
+
+    async with (
+        serve_app(idp, port=idp_port),
+        serve_app(app, port=console_port),
+        # One client is one browser: both tabs share a cookie jar, and both requests are built
+        # from the same snapshot of it.
+        httpx.AsyncClient(base_url=console_url) as browser,
+    ):
+        settings_tab, history_tab = await asyncio.gather(
+            browser.get("/auth/login", params={"return_to": "/_console/settings"}),
+            browser.get("/auth/login", params={"return_to": "/_console/tool-calls"}),
+        )
+
+        for tab, expected_return_to in ((settings_tab, "/_console/settings"), (history_tab, "/_console/tool-calls")):
+            landed = await browser.get(tab.headers["location"], follow_redirects=False)
+            finished = await browser.get(landed.headers["location"], follow_redirects=False)
+            assert finished.status_code == 303, finished.text
+            assert finished.headers["location"] == expected_return_to
+        assert (await browser.get("/auth/me")).status_code == 200
+
+
 def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
     with make_client() as client:
         assert client.get("/api/tool-calls").status_code == 401
@@ -247,27 +299,46 @@ def test_successful_login_cookie_has_one_hour_max_age(make_client) -> None:
     assert "Max-Age=3600" in response.headers["set-cookie"]
 
 
-def test_state_mismatch_renders_a_retryable_html_error(make_client) -> None:
-    with make_client() as client:
-        client.app.state.operator_oauth = _MismatchingStateOAuth()
-        response = client.get("/auth/callback")
+def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-browser-binding") -> str:
+    """A pending flow with its binding cookie — the stubbed OAuth clients never create one."""
+    state = "seeded-login-state"
+    client.app.state.operator_login_flows.start(
+        state=state,
+        browser_binding=binding,
+        return_to=return_to,
+        data={"redirect_uri": "https://haku.test/auth/callback"},
+    )
+    client.cookies.set(operator_login_flow.binding_cookie_name(state), binding)
+    return state
 
-    assert response.status_code == 401
-    assert response.headers["content-type"].startswith("text/html")
-    assert response.headers["Cache-Control"] == "no-store"
-    assert "expired or was superseded" in response.text
-    assert '<a href="/auth/login">Retry login</a>' in response.text
 
-
-def test_callback_returns_to_exact_local_agent_enrollment_interaction(make_operator_client) -> None:
-    interaction_id = UUID("d9377996-7f17-4dcb-a746-3f401e0b1413")
-    return_to = f"/auth/agent-enrollment/{interaction_id}?browser_nonce=opaque-value"
-    with make_operator_client(operator_return_to=return_to) as client:
+@pytest.mark.parametrize(
+    "return_to",
+    [
+        "/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413?browser_nonce=opaque-value",
+        "/_console/tool-calls",
+        "/_console/settings",
+        "/threads/42?reply=1",
+        "/",
+    ],
+)
+def test_callback_returns_to_the_page_the_login_started_from(make_operator_client, return_to: str) -> None:
+    with make_operator_client() as client:
+        state = _seed_login_flow(client, return_to=return_to)
         client.app.state.operator_oauth = _MatchingIssuerOAuth()
-        response = client.get("/auth/callback", follow_redirects=False)
+        response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
 
     assert response.status_code == 303
     assert response.headers["location"] == return_to
+
+
+def test_callback_without_a_continuation_returns_to_the_root(make_operator_client) -> None:
+    with make_operator_client() as client:
+        state = _seed_login_flow(client, return_to=None)
+        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
+
+    assert response.headers["location"] == "/"
 
 
 @pytest.mark.parametrize(
@@ -276,16 +347,68 @@ def test_callback_returns_to_exact_local_agent_enrollment_interaction(make_opera
         "https://attacker.example/",
         "//attacker.example/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413",
         "/auth/agent-enrollment/not-a-uuid",
+        "/auth/login",
         "/api/config",
+        "/mcp",
+        "/healthz",
+        "/.well-known/oauth-authorization-server",
+        # A browser normalizes the backslash to a slash, making this protocol-relative.
+        "/\\attacker.example/",
         "/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413#fragment",
     ],
 )
-def test_login_rejects_non_enrollment_continuations(make_client, return_to: str) -> None:
+def test_login_rejects_continuations_that_are_not_console_pages(make_client, return_to: str) -> None:
     with make_client() as client:
         response = client.get("/auth/login", params={"return_to": return_to})
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid operator login continuation"
+
+
+def test_a_login_started_by_another_browser_is_refused(make_operator_client) -> None:
+    """RFC 6749 §10.12: possessing a `state` is not enough — the browser must have started it.
+
+    Restarting cannot fix this outcome, so it explains rather than bouncing."""
+    with make_operator_client() as client:
+        state = _seed_login_flow(client, return_to="/_console/settings", binding="the-secret-that-started-it")
+        client.cookies.set(operator_login_flow.binding_cookie_name(state), "some-other-browsers-guess")
+        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
+
+        assert response.status_code == 401
+        assert "started in a different browser" in response.text
+        # The flow is spent either way, so it cannot be replayed.
+        assert client.app.state.operator_login_flows.pending_login(state) is None
+
+
+def test_a_stale_attempt_restarts_the_login_once_then_explains(make_client) -> None:
+    """A superseded or expired attempt is ordinary — every tab bounces to login at the same time —
+    so the first one restarts itself instead of dead-ending on a page the operator must click."""
+    with make_client() as client:
+        client.app.state.operator_oauth = _MismatchingStateOAuth()
+
+        restarted = client.get("/auth/callback", follow_redirects=False)
+        assert restarted.status_code == 303
+        assert restarted.headers["location"] == "/auth/login"
+
+        # The marker cookie the restart set is what stops the second failure from looping.
+        gave_up = client.get("/auth/callback", follow_redirects=False)
+        assert gave_up.status_code == 401
+        assert gave_up.headers["content-type"].startswith("text/html")
+        assert gave_up.headers["Cache-Control"] == "no-store"
+        assert "expired or was superseded" in gave_up.text
+        assert '<a href="/auth/login">Retry login</a>' in gave_up.text
+
+
+def test_me_reports_the_absolute_reauthentication_deadline(make_operator_client) -> None:
+    deadline = int(time.time()) + 900
+    with make_operator_client(operator_session_expires_at=deadline) as client:
+        me = client.get("/auth/me")
+
+    assert me.status_code == 200
+    assert datetime.datetime.fromisoformat(me.json()["expires_at"]) == datetime.datetime.fromtimestamp(
+        deadline, tz=datetime.UTC
+    )
 
 
 @pytest.mark.parametrize("oauth", [_MismatchedIssuerOAuth(), _MissingIssuerOAuth()])

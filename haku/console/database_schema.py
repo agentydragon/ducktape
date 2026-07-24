@@ -764,6 +764,36 @@ class OAuthConnectionResult(Base):
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class OperatorLoginFlow(Base):
+    """Short-lived authorization-code flow state for one pending operator browser login.
+
+    Pre-authentication, so unlike every other flow table this one has no Operator: the row exists
+    before any identity is known. It lives here rather than in the session cookie because authlib's
+    session-backed state keeps exactly **one** pending login per browser — it clears every prior
+    ``_state_<name>_*`` entry whenever it stores a new one — so a second console tab starting a
+    login would strand the first one on "expired or was superseded". One row per attempt lets any
+    number of tabs authenticate independently.
+
+    ``browser_binding`` is the user-agent binding RFC 6749 §10.12 asks for: a secret handed to the
+    browser in a cookie named after this flow's ``state``, so concurrent attempts cannot overwrite
+    each other's. ``return_to`` rides the flow rather than the session for the same reason — it is
+    *this* attempt's destination, not the browser's.
+    """
+
+    __tablename__ = "operator_login_flows"
+    __table_args__ = (
+        CheckConstraint("btrim(browser_binding) <> ''", name="ck_operator_login_flows_browser_binding_nonempty"),
+        Index("idx_operator_login_flows_expires_at", "expires_at"),
+    )
+
+    state: Mapped[str] = mapped_column(Text, primary_key=True)
+    browser_binding: Mapped[str] = mapped_column(Text, nullable=False)
+    return_to: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class OperatorAuthentikToken(Base):
     """The acting Operator's own Authentik OAuth token, captured at browser login (offline_access).
 

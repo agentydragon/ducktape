@@ -302,7 +302,7 @@ async def token_chain_harness(
         await operator.get("/auth/login")
         me = await operator.get("/auth/me")
         assert me.status_code == 200, me.text
-        assert me.json() == {"username": _OPERATOR_USERNAME}
+        assert me.json()["username"] == _OPERATOR_USERNAME
 
         connected = await operator.post("/api/mcp/operator-auth/grocy-test/connect")
         assert connected.status_code == 200, connected.text

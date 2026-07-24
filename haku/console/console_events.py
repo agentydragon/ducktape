@@ -19,6 +19,12 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["console-events"])
 
+# An application close code (the 4000-4999 range) for the one outcome the shell must act on rather
+# than retry: the operator session reached its absolute deadline. Everything else that closes a
+# socket is a transport or authority problem the client should back off and reconnect through.
+# Mirrored in frontend/console_events.ts.
+OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001
+
 
 class McpOperatorAuthChangedEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -292,6 +298,12 @@ async def console_events_ws(websocket: WebSocket, actor: operator_auth.OperatorA
         while True:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(websocket.receive_text(), timeout=hub._SESSION_REVALIDATION_SECONDS)
+            # Expiry is the ordinary case and needs no database round trip: the deadline is signed
+            # into the cookie. The shell re-authenticates on this code instead of showing the
+            # channel as merely offline.
+            if operator_auth.signed_operator_session(websocket) is None:
+                await websocket.close(code=OPERATOR_SESSION_EXPIRED_CLOSE_CODE, reason="operator session expired")
+                return
             if await asyncio.to_thread(operator_auth.operator_session, websocket) is None:
                 await websocket.close(code=1008, reason="operator is disabled or missing")
                 return

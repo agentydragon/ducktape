@@ -142,6 +142,16 @@ Worth recording so a future change does not undo it:
 - Account-link OAuth flows already keep their flow state server-side, which is exactly the pattern
   F1 needs.
 
+## Status
+
+F1/F1b, F2, F3, F4 and F5 were fixed in the same change that added this note; the recommendations
+below are what was implemented. F6 (no sign-out affordance) is untouched.
+
+While implementing, F1 turned out to be **worse than the reproduction above shows**: authlib's
+Starlette integration clears every prior `_state_<name>_*` entry each time it stores a new one, so a
+second tab strands the first one _without_ any race at all. The Postgres-backed flow table removes
+the whole class.
+
 ## Recommended fixes, in order
 
 1. **Move login flow state to Postgres** (fixes F1 and F1b, and F5). Subclass authlib's

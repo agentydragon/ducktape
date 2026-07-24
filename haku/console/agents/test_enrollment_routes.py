@@ -42,7 +42,11 @@ NOW = datetime.datetime(2026, 7, 20, 12, 0, tzinfo=datetime.UTC)
 
 def _session() -> OperatorSession:
     return OperatorSession(
-        operator_id=OPERATOR_ID, identity_id=IDENTITY_ID, username="Rai", browser_session_id="browser-session"
+        operator_id=OPERATOR_ID,
+        identity_id=IDENTITY_ID,
+        username="Rai",
+        browser_session_id="browser-session",
+        expires_at=NOW + datetime.timedelta(hours=1),
     )
 
 

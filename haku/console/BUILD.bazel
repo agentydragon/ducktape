@@ -535,6 +535,16 @@ py_library(
 )
 
 py_library(
+    name = "operator_login_flow",
+    srcs = ["operator_login_flow.py"],
+    deps = [
+        ":database_schema",
+        "@pypi//authlib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "operator_auth",
     srcs = ["operator_auth.py"],
     deps = [
@@ -543,6 +553,7 @@ py_library(
         ":oauth_callback_page",
         ":operator_identity",
         ":operator_identity_store",
+        ":operator_login_flow",
         ":tool_call_actor",
         "@pypi//authlib",
         "@pypi//fastapi",
@@ -647,6 +658,7 @@ py_test(
         ":config",
         ":conftest",
         ":database_schema",
+        ":operator_login_flow",
         "//:conftest",
         "//util:net",
         "//util/testing:asgi",
@@ -1025,6 +1037,7 @@ py_test(
         ":app",
         ":config",
         ":conftest",
+        ":console_events",
         ":database_migrate",
         ":database_schema",
         ":mcp_approval",

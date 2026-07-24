@@ -22,6 +22,7 @@ api.use({
 });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
+export type OperatorResponse = components["schemas"]["OperatorResponse"];
 export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
 export type ApprovalDecisionResponse = components["schemas"]["ApprovalDecisionResponse"];
@@ -58,6 +59,13 @@ export function errorDetail(error: unknown, fallback: string): string {
 export async function fetchConfig(): Promise<ConfigResponse> {
   const { data, error } = await api.GET("/api/config");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load config"));
+  return data;
+}
+
+/** The signed-in operator and the absolute deadline their session stops being accepted at. */
+export async function fetchOperator(): Promise<OperatorResponse> {
+  const { data, error } = await api.GET("/auth/me");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load the operator session"));
   return data;
 }
 

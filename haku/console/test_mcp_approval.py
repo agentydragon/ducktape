@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +28,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.websockets import WebSocketDisconnect
 
+from haku.console import console_events, operator_auth
 from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.agents.models import (
     AgentStatus,
@@ -1268,6 +1270,26 @@ def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
     assert {event["tool_call_id"] for event in received_b} == expected_b
     assert expected_a.isdisjoint({event["tool_call_id"] for event in received_b})
     assert expected_b.isdisjoint({event["tool_call_id"] for event in received_a})
+
+
+def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
+    make_operator_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expiry gets its own close code so the shell re-authenticates instead of showing the live
+    channel as merely offline and retrying a handshake that can only be refused."""
+    deadline = int(time.time()) + 300
+    with (
+        make_operator_client(operator_session_expires_at=deadline) as client,
+        client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws,
+    ):
+        assert ws.receive_json() == {"event_type": "hello"}
+        monkeypatch.setattr(operator_auth.time, "time", lambda: deadline + 1)
+        # Any client frame wakes the socket's revalidation ahead of its idle tick.
+        ws.send_text("ping")
+        with pytest.raises(WebSocketDisconnect) as disconnected:
+            ws.receive_json()
+
+    assert disconnected.value.code == console_events.OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 
 
 def test_websocket_rejects_cross_origin(make_operator_client) -> None:

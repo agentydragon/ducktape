@@ -7,25 +7,28 @@ Origin check) or an Agent credential through MultiAuth's OIDCProxy/static-bearer
 `require_operator` guards the entire browser API (approvals, decisions, audit history, and account
 linking) with a DB-revalidated canonical Operator session.
 
-The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`.
+The static SPA (served by nginx) stays public; on a 401 the frontend redirects to `/auth/login`,
+carrying the page it was on as `return_to` so re-authenticating does not lose the operator's place.
+Pending logins live in Postgres, not the session cookie — see `operator_login_flow.py`.
 `/mcp`, `/healthz`, and `/auth/*` are not under `/api/` and carry their own admission rules.
 """
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import secrets
 import time
 from dataclasses import dataclass
 from typing import Annotated, Any, cast
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
@@ -33,22 +36,57 @@ from haku.console.config import OperatorOidcConfig, Settings
 from haku.console.oauth_callback_page import render_oauth_callback_page
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.operator_login_flow import (
+    FLOW_LIFETIME_SECONDS,
+    LOGIN_COOKIE_PATH,
+    LoginFlowOAuth,
+    PostgresOperatorLoginFlowStore,
+    binding_cookie_name,
+    new_browser_binding,
+)
 from haku.console.tool_call_actor import OperatorActor
 
 logger = logging.getLogger(__name__)
 
 AUTHENTIK_CLIENT_NAME = "authentik"
 SESSION_USER_KEY = "operator"
-SESSION_RETURN_TO_KEY = "operator_return_to"
 OPERATOR_SESSION_MAX_AGE_SECONDS = 60 * 60
 _AGENT_ENROLLMENT_PATH_PREFIX = "/auth/agent-enrollment/"
 _MAX_RETURN_TO_LENGTH = 2048
+# Every top-level prefix the backend serves. A continuation must name a page the operator can be
+# returned to, so none of these qualify (`/auth/` has one exception, the enrollment interaction).
+_BACKEND_PATH_PREFIXES = ("/api/", "/auth/", "/mcp", "/healthz", "/.well-known/")
+# One automatic restart after a stale or superseded attempt, tracked in its own short-lived cookie
+# so the marker cannot be lost to (or evict) anything else the browser holds.
+LOGIN_RETRY_COOKIE_NAME = "haku_console_login_retry"
+_LOGIN_RETRY_COOKIE_MAX_AGE_SECONDS = 120
 
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
 
 
 class OperatorResponse(BaseModel):
     username: str
+    expires_at: datetime.datetime = Field(
+        description="Absolute deadline after which this session stops being accepted. The shell "
+        "warns shortly before it, so re-authentication is an expected gesture rather than a "
+        "background request failure."
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SignedOperatorSession:
+    """What the session cookie claims: well-formed, correctly signed, and inside its deadline.
+
+    Distinct from `OperatorSession`, which is that claim *after* the database has confirmed the
+    identity is still active. The event socket needs the difference — an expired cookie means
+    "re-authenticate", a rejected identity means "this Operator is gone".
+    """
+
+    operator_id: UUID
+    identity_id: UUID
+    username: str
+    browser_session_id: str
+    expires_at: datetime.datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,16 +95,22 @@ class OperatorSession:
     identity_id: UUID
     username: str
     browser_session_id: str
+    expires_at: datetime.datetime
 
 
-def build_oauth(config: OperatorOidcConfig, *, offline_access: bool = False) -> OAuth:
+def build_oauth(
+    config: OperatorOidcConfig, *, login_flows: PostgresOperatorLoginFlowStore, offline_access: bool = False
+) -> OAuth:
     """Build an authlib OAuth registry with the Authentik provider registered.
 
     `offline_access` adds that scope so Authentik returns a refresh token — requested only when the
     console persists the operator's token for hostexec (no needless credential otherwise).
+
+    Each pending authorization request lives in `login_flows`, which authlib reaches through the
+    registry's cache slot — see `operator_login_flow.py` for why it is not in the session cookie.
     """
     scope = "openid email profile offline_access" if offline_access else "openid email profile"
-    oauth = OAuth()
+    oauth = LoginFlowOAuth(cache=login_flows)
     oauth.register(
         name=AUTHENTIK_CLIENT_NAME,
         client_id=config.client_id,
@@ -81,10 +125,15 @@ def _identity_store(conn: HTTPConnection) -> PostgresOperatorIdentityStore:
     return cast(PostgresOperatorIdentityStore, conn.app.state.operator_identity_store)
 
 
-def operator_session(
-    conn: HTTPConnection, *, identity_store: PostgresOperatorIdentityStore | None = None
-) -> OperatorSession | None:
-    """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
+def _login_flows(conn: HTTPConnection) -> PostgresOperatorLoginFlowStore:
+    return cast(PostgresOperatorLoginFlowStore, conn.app.state.operator_login_flows)
+
+
+def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | None:
+    """The cookie's operator payload, or ``None`` when absent, malformed, or past its deadline.
+
+    Pure cookie inspection — no database. Callers that need live authority use `operator_session`.
+    """
     if "session" not in conn.scope:
         return None
     raw = conn.session.get(SESSION_USER_KEY)
@@ -104,15 +153,32 @@ def operator_session(
     expires_at = raw.get("expires_at")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(time.time()):
         return None
+    return SignedOperatorSession(
+        operator_id=operator_id,
+        identity_id=identity_id,
+        username=username,
+        browser_session_id=browser_session_id,
+        expires_at=datetime.datetime.fromtimestamp(expires_at, tz=datetime.UTC),
+    )
+
+
+def operator_session(
+    conn: HTTPConnection, *, identity_store: PostgresOperatorIdentityStore | None = None
+) -> OperatorSession | None:
+    """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
+    signed = signed_operator_session(conn)
+    if signed is None:
+        return None
     store = identity_store if identity_store is not None else _identity_store(conn)
-    identity = store.resolve_active_session(operator_id=operator_id, identity_id=identity_id)
+    identity = store.resolve_active_session(operator_id=signed.operator_id, identity_id=signed.identity_id)
     if identity is None:
         return None
     return OperatorSession(
         operator_id=identity.operator_id,
         identity_id=identity.identity_id,
-        username=username,
-        browser_session_id=browser_session_id,
+        username=signed.username,
+        browser_session_id=signed.browser_session_id,
+        expires_at=signed.expires_at,
     )
 
 
@@ -144,33 +210,115 @@ def _redirect_uri(request: Request) -> str:
     return f"{base}/auth/callback"
 
 
-def _validated_enrollment_return_to(value: str) -> str:
-    """Accept only a local enrollment-interaction URL, never a general redirect target."""
+def _is_enrollment_interaction_path(path: str) -> bool:
+    if not path.startswith(_AGENT_ENROLLMENT_PATH_PREFIX):
+        return False
+    try:
+        UUID(path.removeprefix(_AGENT_ENROLLMENT_PATH_PREFIX))
+    except ValueError:
+        return False
+    return True
+
+
+def _validated_return_to(value: str) -> str:
+    """Accept a local console page to continue to, never a general redirect target.
+
+    Two shapes qualify: the agent-enrollment interaction the enrollment entry point sends the
+    browser through, and any SPA path — so a tab that re-authenticates comes back where it was
+    instead of at the root. Backslashes are refused outright because browsers normalize them to
+    slashes, which would turn `/\\evil.example` into a protocol-relative URL after this check.
+    """
     if len(value) > _MAX_RETURN_TO_LENGTH or any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise HTTPException(status_code=400, detail="invalid operator login continuation")
-    parsed = urlsplit(value)
-    if parsed.scheme or parsed.netloc or parsed.fragment or not parsed.path.startswith(_AGENT_ENROLLMENT_PATH_PREFIX):
+    if "\\" in value:
         raise HTTPException(status_code=400, detail="invalid operator login continuation")
-    interaction_id = parsed.path.removeprefix(_AGENT_ENROLLMENT_PATH_PREFIX)
-    try:
-        UUID(interaction_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="invalid operator login continuation") from None
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.fragment or not parsed.path.startswith("/"):
+        raise HTTPException(status_code=400, detail="invalid operator login continuation")
+    if parsed.path.startswith(_BACKEND_PATH_PREFIXES) and not _is_enrollment_interaction_path(parsed.path):
+        raise HTTPException(status_code=400, detail="invalid operator login continuation")
     return urlunsplit(("", "", parsed.path, parsed.query, ""))
 
 
+def _secure_cookies(request: Request) -> bool:
+    settings = cast(Settings, request.app.state.settings)
+    return settings.public_base_url.startswith("https://")
+
+
 @router.get("/login")
-async def login(request: Request, return_to: str | None = None) -> RedirectResponse:
-    if return_to is not None:
-        request.session[SESSION_RETURN_TO_KEY] = _validated_enrollment_return_to(return_to)
-    else:
-        request.session.pop(SESSION_RETURN_TO_KEY, None)
+async def login(request: Request, return_to: str | None = None) -> Response:
+    # One flow row per attempt, with its own binding cookie. Nothing about a pending login touches
+    # the session cookie, so any number of console tabs can be mid-login at once.
+    state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    browser_binding = new_browser_binding()
+    redirect_uri = _redirect_uri(request)
+    await asyncio.to_thread(
+        _login_flows(request).start,
+        state=state,
+        browser_binding=browser_binding,
+        return_to=None if return_to is None else _validated_return_to(return_to),
+        data={"redirect_uri": redirect_uri, "nonce": nonce},
+    )
     client = cast(OAuth, request.app.state.operator_oauth).create_client(AUTHENTIK_CLIENT_NAME)
-    return cast(RedirectResponse, await client.authorize_redirect(request, _redirect_uri(request)))
+    response = cast(RedirectResponse, await client.authorize_redirect(request, redirect_uri, state=state, nonce=nonce))
+    response.set_cookie(
+        binding_cookie_name(state),
+        browser_binding,
+        max_age=FLOW_LIFETIME_SECONDS,
+        path=LOGIN_COOKIE_PATH,
+        httponly=True,
+        samesite="lax",
+        secure=_secure_cookies(request),
+    )
+    return response
+
+
+def _login_failed(request: Request, message: str, *, retry: bool, return_to: str | None) -> Response:
+    """A stale or superseded attempt is the ordinary case, not an error the operator should have to
+    click through, so `retry` restarts the login once — bounded by a marker cookie. Callers pass
+    `retry=False` for the outcomes a restart cannot fix, so neither can loop.
+    """
+    if retry and request.cookies.get(LOGIN_RETRY_COOKIE_NAME) is None:
+        query = f"?{urlencode({'return_to': return_to})}" if return_to is not None else ""
+        restarted = RedirectResponse(url=f"/auth/login{query}", status_code=303)
+        restarted.set_cookie(
+            LOGIN_RETRY_COOKIE_NAME,
+            "1",
+            max_age=_LOGIN_RETRY_COOKIE_MAX_AGE_SECONDS,
+            path=LOGIN_COOKIE_PATH,
+            httponly=True,
+            samesite="lax",
+            secure=_secure_cookies(request),
+        )
+        return restarted
+    failed = render_oauth_callback_page(
+        "Operator login failed", message, status_code=401, action_url="/auth/login", action_label="Retry login"
+    )
+    failed.delete_cookie(LOGIN_RETRY_COOKIE_NAME, path=LOGIN_COOKIE_PATH)
+    return failed
 
 
 @router.get("/callback")
 async def callback(request: Request) -> Response:
+    flows = _login_flows(request)
+    state = request.query_params.get("state")
+    pending = await asyncio.to_thread(flows.pending_login, state) if state is not None else None
+    if (
+        state is not None
+        and pending is not None
+        and not pending.started_by(request.cookies.get(binding_cookie_name(state)))
+    ):
+        # RFC 6749 §10.12: the browser finishing an authorization must be the one that started it.
+        # Restarting cannot help — either this browser never held the flow, or it is not keeping
+        # cookies at all, and a fresh attempt would land here again.
+        await asyncio.to_thread(flows.discard, state)
+        logger.info("operator browser login rejected: the flow was not started by this browser")
+        return _login_failed(
+            request,
+            "This login attempt was started in a different browser, or this browser is not keeping cookies.",
+            retry=False,
+            return_to=None,
+        )
     client = cast(OAuth, request.app.state.operator_oauth).create_client(AUTHENTIK_CLIENT_NAME)
     try:
         token = await client.authorize_access_token(request)
@@ -181,9 +329,7 @@ async def callback(request: Request) -> Response:
             if e.error == "mismatching_state"
             else f"The identity provider rejected this login attempt ({e.error})."
         )
-        return render_oauth_callback_page(
-            "Operator login failed", message, status_code=401, action_url="/auth/login", action_label="Retry login"
-        )
+        return _login_failed(request, message, retry=True, return_to=pending.return_to if pending is not None else None)
     # Authlib verifies the authorization response and ID-token/userinfo claims against discovered
     # provider metadata. Pin that verified issuer back to Haku's configured trust input explicitly:
     # discovery at a configured URL must not be able to substitute a different issuer.
@@ -214,9 +360,9 @@ async def callback(request: Request) -> Response:
         # Enrollment interactions bind to this random browser session, not merely to possession of
         # a server-generated form nonce or to the Operator identity shared across browser devices.
         "browser_session_id": secrets.token_urlsafe(32),
-        # SessionMiddleware refreshes its cookie timestamp whenever it serializes the session. Keep
-        # an independently signed absolute deadline so an active browser cannot turn the cookie
-        # into a sliding authorization that outlives Authentik reauthentication indefinitely.
+        # An absolute deadline signed into the payload itself, so the authorization cannot outlive
+        # Authentik reauthentication however the cookie's own lifetime is managed. `/auth/me`
+        # reports it, so the shell can warn instead of letting a background request fail.
         "expires_at": int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS,
     }
     # Persist the operator's own Authentik token for hostexec (offline_access grants a refresh
@@ -225,9 +371,15 @@ async def callback(request: Request) -> Response:
     if request.app.state.hostexec_enabled:
         _persist_operator_authentik_token(request, identity.operator_id, token)
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
-    raw_return_to = request.session.pop(SESSION_RETURN_TO_KEY, None)
-    return_to = _validated_enrollment_return_to(raw_return_to) if isinstance(raw_return_to, str) else "/"
-    return RedirectResponse(url=return_to, status_code=303)
+    # The continuation rides the flow, not the session: it is this attempt's destination, so a
+    # second tab logging in cannot redirect the first one somewhere it never asked to go.
+    return_to = pending.return_to if pending is not None and pending.return_to is not None else "/"
+    response = RedirectResponse(url=return_to, status_code=303)
+    if state is not None:
+        response.delete_cookie(binding_cookie_name(state), path=LOGIN_COOKIE_PATH)
+    if request.cookies.get(LOGIN_RETRY_COOKIE_NAME) is not None:
+        response.delete_cookie(LOGIN_RETRY_COOKIE_NAME, path=LOGIN_COOKIE_PATH)
+    return response
 
 
 def _persist_operator_authentik_token(request: Request, operator_id: UUID, token: dict[str, Any]) -> None:
@@ -268,7 +420,7 @@ async def me(request: Request) -> OperatorResponse:
     session = operator_session(request)
     if session is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return OperatorResponse(username=session.username)
+    return OperatorResponse(username=session.username, expires_at=session.expires_at)
 
 
 def _operator_actor(conn: HTTPConnection) -> OperatorActor:

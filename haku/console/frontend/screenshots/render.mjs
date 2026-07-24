@@ -93,6 +93,11 @@ const SCENES = [
   { name: "sync-current", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Up to date"]'] },
   { name: "sync-syncing", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Syncing"]'] },
   { name: "sync-error", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Sync error"]'] },
+  {
+    name: "session-expiring",
+    viewport: { width: 600, height: 420 },
+    clicks: ['[aria-label="Session expiring soon"]'],
+  },
   { name: "oauth-success", viewport: { width: 900, height: 700 } },
   { name: "oauth-error", viewport: { width: 900, height: 700 } },
   { name: "oauth-success-mobile", viewport: { width: 390, height: 760 } },

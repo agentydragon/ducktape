@@ -345,7 +345,10 @@ chrome: a checklist button — badged with a callout light when a tool call is a
 toggles the approval queue panel (with a link to the full-page past-tool-calls history); a gear
 toggles the Settings panel (MCP account connect/reconnect/disconnect); a location-sharing pin
 (shown only while consent is held, with a live indicator when location is actively read) toggles
-a stop/withdraw panel; and a crossed-wifi button appears when the live event socket is down.
+a stop/withdraw panel; a clock button appears in the last few minutes of the operator session,
+opening a re-authenticate panel; and a crossed-wifi button appears when the live event socket is
+down (an expired session closes that socket with its own code, `4001`, so the shell re-authenticates
+instead of reporting a channel outage).
 These controls behave as deselectable tabs, so at most one panel is open.
 See <docs/containment.md>.
 
@@ -429,6 +432,19 @@ standard `/.well-known/oauth-*` paths; the two clients' credentials, sessions, a
 routes remain separate.
 The console refuses to start without operator OIDC or with no `/mcp` credential at all (no static
 agent and no `mcp_oauth`).
+
+The operator session carries an **absolute one-hour deadline** signed into the cookie payload; it
+never slides, and `GET /auth/me` reports it so the shell can warn before it rather than letting a
+background request 401 and navigate the tab away. Each pending login is a row in
+`operator_login_flows` (`operator_login_flow.py`) rather than session-cookie state — deviation from
+stock authlib, whose Starlette integration keeps one pending authorization per browser and so
+strands every console tab but the last whenever they re-authenticate together. Its user-agent
+binding is preserved per flow: a secret in a cookie **named after that flow's `state`**, so
+concurrent attempts cannot overwrite each other. A stale or superseded callback restarts the login
+once by itself (bounded by a marker cookie) instead of dead-ending, and both `/auth/login` and the
+frontend's 401 redirect carry a `return_to` — any local console page — so re-authenticating comes
+back to the view the operator was on.
+
 Both OAuth2 providers and their client secrets
 (the `haku-console-oidc` Secret) are minted by `tf/gitops/agent-machine-access`; single-user
 access is Authentik's application access policy.

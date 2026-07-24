@@ -88,6 +88,11 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
+  // Far enough out that the shell's session warning stays hidden; `session-expiring` drives the
+  // warned state through ShellChrome props instead, so every other scene renders the calm rail.
+  if (url.includes("/auth/me")) {
+    return jsonResponse({ username: "agentydragon", expires_at: "2126-07-20T21:00:00Z" });
+  }
   if (url.includes("/api/approvals/pending")) return jsonResponse({ approvals: SAMPLE_PENDING });
   const mcpResponse = await mockOperatorMcpFetch(input, init, url, {
     ...GOOGLE_CALENDAR_MCP_FIXTURES,
