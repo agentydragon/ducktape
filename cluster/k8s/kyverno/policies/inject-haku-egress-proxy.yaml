@@ -23,6 +23,14 @@
 # is still bounded by Cilium's cluster-only egress rule, not free internet
 # access. Include both wildcard and suffix forms because NO_PROXY matching
 # differs across curl, Go, Python, node, and git.
+#
+# Keep *.forgejo out of the proxy path too, for a different reason: the sandbox
+# clones haku-state and bazel's ducktape_haku git_override fetches from
+# forgejo-http.forgejo. Git smart-HTTP streams the pack chunked (no
+# Content-Length), so the proxy's stream_large_bodies can't tell it is large and
+# buffers the whole response. forgejo is an internal service reachable directly
+# under Cilium's cluster-only egress rule, so bypass the proxy for it; the .netrc
+# host stays forgejo-http.forgejo, so auth is unchanged.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -82,7 +90,7 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc.cluster.local,10.0.0.0/8"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -140,7 +148,7 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc.cluster.local,10.0.0.0/8"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:

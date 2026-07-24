@@ -23,6 +23,12 @@ bootstrap:
   # ducktape_haku git_override on every bazel invocation + this clone); (3) sync
   # haku-state so `bazel run //cli:...` works. Branch is main (haku-state's default),
   # not master.
+  #
+  # The clone/fetch are --depth 1: forgejo's full-history pack generation is the
+  # dominant cost (a full clone runs minutes even with the egress proxy bypassed;
+  # a shallow clone is ~9s), and the sandbox only builds/runs the HEAD checkout —
+  # it needs no history. Deviation: if a build step ever needs git history/tags
+  # (e.g. `git describe` version stamping), deepen the fetch here.
   script: |
     set -euo pipefail
     /usr/local/bin/haku-sandbox-setup.sh
@@ -35,9 +41,9 @@ bootstrap:
     repo=/workspace/haku-state
     url=http://forgejo-http.forgejo:3000/haku/haku-state.git
     if [ -d "$repo/.git" ]; then
-      git -C "$repo" fetch --prune origin main
+      git -C "$repo" fetch --depth 1 --prune origin main
       git -C "$repo" checkout -B main origin/main
       git -C "$repo" reset --hard origin/main
     else
-      git clone --branch main --single-branch "$url" "$repo"
+      git clone --depth 1 --branch main --single-branch "$url" "$repo"
     fi
