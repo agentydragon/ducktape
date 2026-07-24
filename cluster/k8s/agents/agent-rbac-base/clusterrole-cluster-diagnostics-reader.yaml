@@ -82,6 +82,17 @@ rules:
       - clusterroles
       - clusterrolebindings
     verbs: ["get", "list", "watch"]
+  # SubjectAccessReview / LocalSubjectAccessReview answer "could <subject> do <action>?" directly
+  # from the apiserver's authorizer — the authoritative complement to reading the Role/binding graph
+  # above (e.g. "why is this ServiceAccount's pods/exec denied?"). Unlike create on nodes/proxy
+  # below, this "create" grants nothing: a review persists no object and changes no state — it is a
+  # read-only authorization probe. It reveals only what the RBAC objects readable above already
+  # imply, so it stays secret-free and adds no ability to act.
+  - apiGroups: ["authorization.k8s.io"]
+    resources:
+      - subjectaccessreviews
+      - localsubjectaccessreviews
+    verbs: ["create"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources:
       - mutatingwebhookconfigurations
