@@ -81,6 +81,15 @@ const SCENES = [
     clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
     frame: true,
   },
+  {
+    // Toggling "Show auto-approved" reveals the unconditionally-auto-approved sample row that
+    // the default "history" scene above hides.
+    name: "history-auto-approved",
+    viewport: { width: 1200, height: 1500 },
+    closeApprovals: true,
+    clicks: ['[aria-label="Show auto-approved"]'],
+    frame: true,
+  },
   { name: "sync-current", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Up to date"]'] },
   { name: "sync-syncing", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Syncing"]'] },
   { name: "sync-error", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Sync error"]'] },

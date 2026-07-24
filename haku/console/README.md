@@ -358,6 +358,11 @@ shell renders the history view instead of the iframe when the reserved path matc
 newest calls survive the query's limit. Production's nginx already serves the SPA for any
 non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work locally too.
 
+The view fetches the full ledger page and then filters it client-side: a "Show auto-approved"
+checkbox (unchecked by default) hides calls whose `approval_policy_id` is set, so the routine,
+unconditionally auto-approved traffic (Gmail/Calendar reads, etc.) doesn't bury the calls an
+operator actually had to decide on.
+
 ## Layout
 
 | Path                               | Role                                                                                                                                                                                                                                                                   |

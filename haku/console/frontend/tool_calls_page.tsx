@@ -1,7 +1,7 @@
-import { Button, Group, Loader, Text } from "@mantine/core";
+import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
-import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
+import { approvalDisplayFields, isAutoApproved, statusColor, terminalStatusLabel } from "./approval_state.ts";
 import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ToolCallCard } from "./tool_call_card.tsx";
@@ -54,6 +54,9 @@ export function ToolCallsPage() {
   const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Auto-approved calls are Haku's routine background traffic; hiding them by default keeps the
+  // ledger scannable for the calls an operator actually had to weigh in on.
+  const [showAutoApproved, setShowAutoApproved] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -76,21 +79,33 @@ export function ToolCallsPage() {
 
   const decisions = useToolCallDecision({ onSettled: load });
 
+  const visibleRecords = records?.filter((record) => showAutoApproved || !isAutoApproved(record)) ?? null;
+  const hiddenCount = records && visibleRecords ? records.length - visibleRecords.length : 0;
+
   return (
     <div className="haku-page">
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Group gap="xs" wrap="nowrap" align="center">
             <Text fw={700}>Past tool calls</Text>
-            {records && (
+            {visibleRecords && (
               <Text size="sm" c="dimmed">
-                {records.length}
+                {visibleRecords.length}
               </Text>
             )}
           </Group>
-          <Button size="xs" variant="light" loading={loading} onClick={load}>
-            Refresh
-          </Button>
+          <Group gap="sm" wrap="nowrap" align="center">
+            <Checkbox
+              size="xs"
+              label="Show auto-approved"
+              aria-label="Show auto-approved"
+              checked={showAutoApproved}
+              onChange={(event) => setShowAutoApproved(event.currentTarget.checked)}
+            />
+            <Button size="xs" variant="light" loading={loading} onClick={load}>
+              Refresh
+            </Button>
+          </Group>
         </div>
       </header>
       <div className="haku-page-scroll">
@@ -105,14 +120,16 @@ export function ToolCallsPage() {
               <Loader />
             </Group>
           )}
-          {records && records.length === 0 && (
+          {visibleRecords && visibleRecords.length === 0 && (
             <section className="haku-shell-card">
               <Text size="sm" c="dimmed">
-                No tool calls recorded yet.
+                {records && records.length > 0
+                  ? "All recent tool calls were auto-approved."
+                  : "No tool calls recorded yet."}
               </Text>
             </section>
           )}
-          {records?.map((record) => (
+          {visibleRecords?.map((record) => (
             <ToolCallRow
               key={record.tool_call_id}
               record={record}
@@ -121,6 +138,11 @@ export function ToolCallsPage() {
               onDeny={(reason) => void decisions.deny(record, reason)}
             />
           ))}
+          {!showAutoApproved && hiddenCount > 0 && (
+            <Text size="xs" c="dimmed" ta="center">
+              {hiddenCount} auto-approved {hiddenCount === 1 ? "call" : "calls"} hidden.
+            </Text>
+          )}
           {records && records.length === HISTORY_LIMIT && (
             <Text size="xs" c="dimmed" ta="center">
               Showing the {HISTORY_LIMIT} most recent tool calls.

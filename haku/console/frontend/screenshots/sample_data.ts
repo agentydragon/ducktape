@@ -128,6 +128,20 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     caller: { kind: "operator" },
     arguments: KUBECTL_HISTORY_FIXTURE.args,
   }),
+  // Unconditionally auto-approved (no operator decision) — exercises the history view's
+  // "Show auto-approved" filter, which hides this row by default.
+  toolCall({
+    tool_call_id: "tc_4",
+    server_id: "gmail",
+    tool_name: "labels_list",
+    title: "List Gmail labels",
+    status: "ok",
+    rationale: "Checking for an existing haku/ label before filing this thread.",
+    result: callToolResult({ labels: [{ id: "Label_1", name: "haku/receipts" }] }),
+    approval_policy_id: "unconditional_v1",
+    auto_approval_evaluation: "approved: gmail/labels_list is allowlisted read-only/safe",
+    arguments: {},
+  }),
 ];
 
 export const SAMPLE_PENDING: ToolCallRecord[] = [

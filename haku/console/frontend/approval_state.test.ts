@@ -4,6 +4,7 @@ import {
   approvalDisplayFields,
   approvalQueueItems,
   geolocationApprovalQueueId,
+  isAutoApproved,
   makeRecentToolCall,
   recentToolCallCountdown,
   screenshotApprovalQueueId,
@@ -111,6 +112,12 @@ describe("approval queue state", () => {
     );
     expect(fields.approvalPolicyId).toBe("v1");
     expect(fields.autoApprovalEvaluation).toBe("approved: Gmail search/read operation");
+  });
+
+  it("treats a call as auto-approved exactly when it carries an approval policy id", () => {
+    expect(isAutoApproved(toolCallRecord({ approval_policy_id: "unconditional_v1" }))).toBe(true);
+    expect(isAutoApproved(toolCallRecord({ approval_policy_id: null }))).toBe(false);
+    expect(isAutoApproved(toolCallRecord())).toBe(false);
   });
 
   it("keeps terminal results only as short-lived recent feedback", () => {
