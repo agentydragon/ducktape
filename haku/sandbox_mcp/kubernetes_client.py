@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any, Protocol, TypeGuard, cast
 
-from aiohttp import WSMessage, WSMsgType
+from aiohttp import WSMessage, WSMsgType, WSServerHandshakeError
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, ApiException, Configuration, CoreV1Api, CustomObjectsApi
@@ -236,6 +236,8 @@ class KubernetesWebSocketExecRunner:
             return CommandResult(
                 exit=TimedOut(), stdout=stdout.render(), stderr=stderr.render(), duration_seconds=loop.time() - started
             )
+        except WSServerHandshakeError as error:
+            raise ToolError(_exec_handshake_error(error.status, error.message)) from error
         except ApiException as error:
             raise ToolError(_api_error("execute the sandbox command", error)) from error
 
@@ -805,3 +807,24 @@ def _exit_summary(result: CommandResult) -> str:
 def _api_error(action: str, error: ApiException) -> str:
     reason = f": {error.reason}" if error.reason else ""
     return f"Kubernetes could not {action} (HTTP {error.status or 'unknown'}{reason})"
+
+
+def _exec_handshake_error(status: int, message: str) -> str:
+    """Translate an opaque exec WebSocket handshake rejection into an actionable message.
+
+    aiohttp surfaces a bare ``WSServerHandshakeError`` ("invalid response status") that hides
+    the apiserver's reason, so name the most likely cause per HTTP status.
+    """
+    detail = f"HTTP {status}" + (f" {message}" if message else "")
+    match status:
+        case 403:
+            cause = (
+                "the sandbox MCP ServiceAccount lacks `get pods/exec` in the sandbox namespace — "
+                "kubernetes_asyncio opens exec with an HTTP GET, so it needs the `get` verb "
+                "(kubectl POSTs and needs `create`)"
+            )
+        case 401:
+            cause = "the ServiceAccount token was rejected"
+        case _:
+            cause = "check that the sandbox pod exists and its target container is ready"
+    return f"Kubernetes rejected the exec WebSocket handshake ({detail}); {cause}"

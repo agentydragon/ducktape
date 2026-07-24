@@ -20,6 +20,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get"]
+  # `get` (not just `create`) is required: the MCP execs via kubernetes_asyncio,
+  # whose helper (connect_get_namespaced_pod_exec) opens the stream with an HTTP
+  # GET, so the apiserver authorizes it as `get pods/exec`. kubectl/client-go POST
+  # and need `create`; keep both so either handshake style works.
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["get", "create"]
