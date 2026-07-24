@@ -301,6 +301,24 @@ async def test_postscanmail_writes_stay_manual(tool_name: str) -> None:
     )
 
 
+@pytest.mark.parametrize("tool_name", ["provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes"])
+async def test_sandbox_mcp_provision_exec_and_reads_auto_approve(tool_name: str) -> None:
+    # Unlike every other server, the auto-approved sandbox-mcp tools include the powerful
+    # provision/exec (not just reads) — the operator-directed tap-free path for Haku's own box.
+    policy_id, evaluation = await _remote_decision("sandbox-mcp", tool_name, {})
+    assert policy_id == UNCONDITIONAL_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "allowlisted" in evaluation
+
+
+async def test_sandbox_mcp_dispose_stays_manual() -> None:
+    # The destructive claim delete stays operator-gated even though provision/exec auto-approve.
+    assert await _remote_decision("sandbox-mcp", "dispose_sandbox", {}) == (
+        None,
+        "manual: sandbox-mcp/dispose_sandbox is not auto-approved",
+    )
+
+
 async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:
     gmail = Mock()
     gmail.labels_get.side_effect = RuntimeError("gmail unavailable")

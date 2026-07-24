@@ -211,6 +211,18 @@ HOME_ASSISTANT_READ_TOOLS = frozenset(
     }
 )
 
+# haku/sandbox_mcp — the in-cluster Haku sandbox provisioner. Unlike every other server here, the
+# auto-approved tools are the POWERFUL ones (claim a box, run arbitrary bash in it), not a read-only
+# subset. Operator directive (2026-07-24): provision_sandbox + exec_sandbox auto-approve so Haku
+# drives its own sandbox tap-free; the two read tools (get_sandbox_info, list_sandboxes) come along
+# because the provision→poll→exec loop needs them and they are strictly weaker than exec. This is
+# not a new escalation for the Haku agent: it already holds full CRUD + pods/exec in haku-sandbox via
+# its own ServiceAccount, so exec_sandbox ≈ a direct `kubectl exec` it can already run — the MCP
+# approval gate only ever governed a kubeconfig-less external harness reaching the box through the
+# console. dispose_sandbox (destructive claim delete) stays operator-gated.
+SANDBOX_MCP_SERVER_ID = "sandbox-mcp"
+SANDBOX_MCP_AUTO_APPROVE_TOOLS = frozenset({"provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes"})
+
 # (server_id -> tools) auto-approved for any authenticated agent regardless of arguments. Drives the
 # MCP server's transparent pass-through bucket. Argument-conditional approvals
 # (GMAIL_CONDITIONAL_TOOLS) are deliberately excluded — those still route through the request_
@@ -224,6 +236,7 @@ UNCONDITIONAL_AUTO_APPROVE: dict[str, frozenset[str]] = {
     OSM_SERVER_ID: OSM_AUTO_APPROVE_TOOLS,
     POSTSCANMAIL_SERVER_ID: POSTSCANMAIL_READ_TOOLS,
     HOME_ASSISTANT_SERVER_ID: HOME_ASSISTANT_READ_TOOLS,
+    SANDBOX_MCP_SERVER_ID: SANDBOX_MCP_AUTO_APPROVE_TOOLS,
 }
 
 
