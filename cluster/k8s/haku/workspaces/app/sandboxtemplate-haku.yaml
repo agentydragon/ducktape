@@ -39,12 +39,11 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
-      # Haku's own k8s identity so `kubectl` works out of the box in the box — Haku
-      # operates its normal compute in haku-sandbox from here. The dedicated
-      # haku-workspace SA is bound to haku-sandbox-admin (haku-sandbox CRUD), the same
-      # pattern as the haku-managed-agent worker. cluster-diagnostics read is a
-      # follow-up, like the managed-agent.
-      serviceAccountName: haku-workspace
+      # Haku's own k8s identity so `kubectl` works out of the box — Haku operates its
+      # normal compute in haku-sandbox from here. The shared `haku` SA
+      # (cluster/k8s/haku/rbac/serviceaccount-haku.yaml) is bound to haku-sandbox-admin
+      # and is the same identity the managed-agent worker runs as.
+      serviceAccountName: haku
       automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true

@@ -19,7 +19,9 @@ spec:
       labels:
         app.kubernetes.io/name: haku-managed-agent
     spec:
-      serviceAccountName: haku-managed-agent
+      # Shared Haku compute identity (cluster/k8s/haku/rbac/serviceaccount-haku.yaml),
+      # the same SA the sandbox exec-target pods run as.
+      serviceAccountName: haku
       # The worker's `bash` tool runs `kubectl` with this SA's in-cluster token.
       automountServiceAccountToken: true
       enableServiceLinks: false

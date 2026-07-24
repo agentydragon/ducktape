@@ -1,0 +1,15 @@
+# Bind Haku's shared compute identity (the `haku` SA) to haku-sandbox-admin — full CRUD in
+# haku-sandbox. Used by the sandbox exec-target pods and the managed-agent worker alike.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku
+  namespace: haku-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: haku-sandbox-admin # cluster/k8s/haku/rbac/role.yaml
+subjects:
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
