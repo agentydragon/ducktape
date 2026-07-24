@@ -217,15 +217,25 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
         )
 
 
-async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -> None:
+@pytest.fixture
+async def agent_client(harness: _Harness) -> AsyncGenerator[Client]:
+    """The common case: a client connected and authenticated as the sole static `Haku` agent.
+    Tests that need a different or additional token (comparing multiple agents) open their own
+    `Client(...)` instead of using this fixture."""
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        tools = {t.name: t for t in await client.list_tools()}
-        daemon_status = await client.call_tool("list_node_daemons", {})
+        yield client
+
+
+async def test_tool_surface_splits_pass_through_and_request(agent_client: Client) -> None:
+    tools = {t.name: t for t in await agent_client.list_tools()}
+    daemon_status = await agent_client.call_tool("list_node_daemons", {})
 
     # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
     assert "gmail__labels_list" in tools
     assert "input" not in tools["gmail__labels_list"].inputSchema.get("properties", {})
-    assert tools["gmail__labels_list"].meta[MCP_TOOL_META_KEY] == {
+    gmail_read_meta = tools["gmail__labels_list"].meta
+    assert gmail_read_meta is not None
+    assert gmail_read_meta[MCP_TOOL_META_KEY] == {
         "server_id": "gmail",
         "upstream_tool_name": "labels_list",
         "approval_mode": "passthrough",
@@ -243,7 +253,9 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
     envelope = tools["gmail__drafts_create"].inputSchema
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_approval_ms"}
-    assert tools["gmail__drafts_create"].meta[MCP_TOOL_META_KEY] == {
+    gmail_write_meta = tools["gmail__drafts_create"].meta
+    assert gmail_write_meta is not None
+    assert gmail_write_meta[MCP_TOOL_META_KEY] == {
         "server_id": "gmail",
         "upstream_tool_name": "drafts_create",
         "approval_mode": "approval_required",
@@ -276,7 +288,9 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
         assert ann.readOnlyHint is True
         assert ann.openWorldHint is False
     # The promise preamble is in the envelope tool's description.
-    assert "operator-approval queue" in tools["gmail__drafts_create"].description
+    gmail_write_description = tools["gmail__drafts_create"].description
+    assert gmail_write_description is not None
+    assert "operator-approval queue" in gmail_write_description
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
     # prefix supplies "calendar", so no tool repeats it in the local name.
     assert "google_calendar__get_event" in tools
@@ -327,9 +341,8 @@ async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> 
         assert "gmail__labels_list" in listed.text
 
 
-async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harness) -> None:
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        result = await client.call_tool("gmail__labels_list", {})
+async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harness, agent_client: Client) -> None:
+    result = await agent_client.call_tool("gmail__labels_list", {})
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
@@ -344,23 +357,18 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
     assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": calls[0].tool_call_id}
 
 
-async def test_list_tool_calls_tool_filters_by_auto_approved(harness: _Harness) -> None:
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        await client.call_tool("gmail__labels_list", {})
-        promise = await client.call_tool(
-            "gmail__drafts_create",
-            {
-                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
-                "rationale": "test",
-                "wait_for_approval_ms": 0,
-            },
-        )
-        assert promise.structured_content is not None
-        manual_id = promise.structured_content["tool_call_id"]
+async def test_list_tool_calls_tool_filters_by_auto_approved(agent_client: Client) -> None:
+    await agent_client.call_tool("gmail__labels_list", {})
+    promise = await agent_client.call_tool(
+        "gmail__drafts_create",
+        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_approval_ms": 0},
+    )
+    assert promise.structured_content is not None
+    manual_id = promise.structured_content["tool_call_id"]
 
-        hidden = await client.call_tool("list_tool_calls", {"auto_approved": False})
-        shown_only = await client.call_tool("list_tool_calls", {"auto_approved": True})
-        unfiltered = await client.call_tool("list_tool_calls", {})
+    hidden = await agent_client.call_tool("list_tool_calls", {"auto_approved": False})
+    shown_only = await agent_client.call_tool("list_tool_calls", {"auto_approved": True})
+    unfiltered = await agent_client.call_tool("list_tool_calls", {})
 
     def call_ids(result: Any) -> list[str]:
         assert result.structured_content is not None
@@ -374,12 +382,11 @@ async def test_list_tool_calls_tool_filters_by_auto_approved(harness: _Harness) 
     assert set(call_ids(unfiltered)) == {manual_id, *shown_ids}
 
 
-async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness) -> None:
+async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness, agent_client: Client) -> None:
     """A schema-invalid call on an owned in-process server is born-denied: the caller gets the
     validation error immediately and nothing enters the approval queue (operator, 2026-07-16)."""
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        with pytest.raises(ToolError, match="single_events"):
-            await client.call_tool("google_calendar__list_events", {"single_events": True})
+    with pytest.raises(ToolError, match="single_events"):
+        await agent_client.call_tool("google_calendar__list_events", {"single_events": True})
 
     operator = OperatorActor(operator_id=harness.operator_id)
     calls = harness.tool_calls.list_tool_calls(actor=operator)
@@ -391,9 +398,8 @@ async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness
     assert harness.tool_calls.pending_approvals(actor=operator) == []
 
 
-async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> None:
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        result = await client.call_tool("google_calendar__get_event", {"event_id": "series1"})
+async def test_calendar_read_is_transparent_and_audited(harness: _Harness, agent_client: Client) -> None:
+    result = await agent_client.call_tool("google_calendar__get_event", {"event_id": "series1"})
 
     assert result.structured_content is not None
     assert result.structured_content["event_id"] == "series1"
@@ -403,34 +409,31 @@ async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> No
     assert calls[0].tool_name == "get_event"
 
 
-async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) -> None:
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        result = await client.call_tool(
-            "gmail__drafts_create",
-            {
-                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
-                "rationale": "test",
-                "wait_for_approval_ms": 0,
-            },
-        )
-        promise = result.structured_content
-        assert promise is not None
-        assert promise["status"] == ToolCallStatus.PENDING_APPROVAL
-        tool_call_id = promise["tool_call_id"]
-        assert result.meta is not None
-        assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": tool_call_id}
-        assert tool_call_id.startswith("tc_")
-        assert promise["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+async def test_request_tool_returns_promise_with_deep_link(agent_client: Client) -> None:
+    result = await agent_client.call_tool(
+        "gmail__drafts_create",
+        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_approval_ms": 0},
+    )
+    promise = result.structured_content
+    assert promise is not None
+    assert promise["status"] == ToolCallStatus.PENDING_APPROVAL
+    tool_call_id = promise["tool_call_id"]
+    assert result.meta is not None
+    assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": tool_call_id}
+    assert tool_call_id.startswith("tc_")
+    assert promise["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
 
-        got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
-        view = got.structured_content
-        assert view is not None
-        assert view["call"]["status"] == ToolCallStatus.PENDING_APPROVAL
-        assert view["call"]["tool_name"] == "drafts_create"
-        assert view["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+    got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+    view = got.structured_content
+    assert view is not None
+    assert view["call"]["status"] == ToolCallStatus.PENDING_APPROVAL
+    assert view["call"]["tool_name"] == "drafts_create"
+    assert view["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
 
 
-async def test_request_tool_preserves_explicit_zero_wait(harness: _Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_request_tool_preserves_explicit_zero_wait(
+    harness: _Harness, agent_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
     submitted_waits: list[int] = []
 
     async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
@@ -439,24 +442,22 @@ async def test_request_tool_preserves_explicit_zero_wait(harness: _Harness, monk
         raise ToolCallNotFoundError("captured request")
 
     monkeypatch.setattr(harness.tool_calls, "submit_and_wait", capture_request)
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        with pytest.raises(ToolError, match="captured request"):
-            await client.call_tool(
-                "gmail__drafts_create",
-                {
-                    "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
-                    "rationale": "test",
-                    "wait_for_approval_ms": 0,
-                },
-            )
+    with pytest.raises(ToolError, match="captured request"):
+        await agent_client.call_tool(
+            "gmail__drafts_create",
+            {
+                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+                "rationale": "test",
+                "wait_for_approval_ms": 0,
+            },
+        )
 
     assert submitted_waits == [0]
 
 
-async def test_get_tool_call_missing_raises(harness: _Harness) -> None:
-    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        with pytest.raises(ToolError, match="not found"):
-            await client.call_tool("get_tool_call", {"tool_call_id": "tc_does_not_exist"})
+async def test_get_tool_call_missing_raises(agent_client: Client) -> None:
+    with pytest.raises(ToolError, match="not found"):
+        await agent_client.call_tool("get_tool_call", {"tool_call_id": "tc_does_not_exist"})
 
 
 async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None:
