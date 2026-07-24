@@ -16,6 +16,9 @@ live, with no image rebuild.
   continuity, and that it maintains its own UI and procedures. **Item-agnostic** — no item
   schema, no board spec; how Haku presents what it surfaces is its own implementation, in
   its state. Haku reads this as itself at run time.
+- `tool_calling.md` — when to submit a haku-console tool-call request directly during a run versus
+  hold back and surface a proposal first, and which tools are always free to call regardless
+  (unconditionally auto-approved, or your own `haku-sandbox`/`haku-state`).
 - The **security model** (threat model, enforcement inventory, invariants) lives in
   <../docs/security.md> — not in base, since it spans console and cluster wiring too.
 - `AGENTS.md` — instructions for agents that **edit** this directory (not
