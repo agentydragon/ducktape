@@ -123,14 +123,6 @@ export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplay
   };
 }
 
-// A call carries `approval_policy_id` only when the reviewed auto-approval decision let it
-// through at submission time (mcp_approval.py's `submit`); manual and auto-denied calls leave it
-// null. It never changes after that, so this reads the ledger's own record of what happened
-// rather than re-deriving it from status.
-export function isAutoApproved(record: ToolCallRecord): boolean {
-  return record.approval_policy_id != null;
-}
-
 export function recentToolCallTtlMs(status: ToolCallRecord["status"]): number | null {
   if (status === "ok" || status === "denied") return RECENT_OK_TTL_MS;
   if (status === "error") return RECENT_ERROR_TTL_MS;

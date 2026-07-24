@@ -103,7 +103,8 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
   wakes the shell to refresh.
 - `POST /api/tool-calls/{tool_call_id}/decision` — exact-Origin-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
-  The list endpoint accepts repeated `status` filters and a datetime `since` filter on `updated_at`.
+  The list endpoint accepts repeated `status` filters, a datetime `since` filter on `updated_at`,
+  and an `auto_approved` filter on whether the call carries an `approval_policy_id`.
 - MCP `list_node_daemons` — shared Agent/console heartbeat-derived state for configured execution
   daemons (`connected`, `busy`, `stale`, or `offline`). The Settings panel refreshes it every ten
   seconds through MCP. The separately authenticated `/api/node-daemons/v1/*` machine API lets daemons
@@ -358,10 +359,14 @@ shell renders the history view instead of the iframe when the reserved path matc
 newest calls survive the query's limit. Production's nginx already serves the SPA for any
 non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work locally too.
 
-The view fetches the full ledger page and then filters it client-side: a "Show auto-approved"
-checkbox (unchecked by default) hides calls whose `approval_policy_id` is set, so the routine,
-unconditionally auto-approved traffic (Gmail/Calendar reads, etc.) doesn't bury the calls an
-operator actually had to decide on.
+A "Show auto-approved" checkbox (unchecked by default) toggles the `auto_approved` query param on
+that request, so the routine, unconditionally auto-approved traffic (Gmail/Calendar reads, etc.)
+doesn't bury the calls an operator actually had to decide on. The filter runs server-side (`WHERE
+approval_policy_id IS NULL`, in `PostgresToolCallLedger.list_tool_calls`) rather than over-fetching
+and discarding client-side, so it doesn't starve the page of older manual calls once auto-approved
+traffic fills the `HISTORY_LIMIT` window. The same `auto_approved` parameter is threaded through
+`ToolCallApplicationService.list_tool_calls` to the agent-facing MCP `list_tool_calls` tool
+(`mcp_server.py`), so an agent reviewing its own call history can filter the same way.
 
 ## Layout
 

@@ -1,7 +1,7 @@
 import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
-import { approvalDisplayFields, isAutoApproved, statusColor, terminalStatusLabel } from "./approval_state.ts";
+import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
 import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ToolCallCard } from "./tool_call_card.tsx";
@@ -55,12 +55,15 @@ export function ToolCallsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Auto-approved calls are Haku's routine background traffic; hiding them by default keeps the
-  // ledger scannable for the calls an operator actually had to weigh in on.
+  // ledger scannable for the calls an operator actually had to weigh in on. The server does the
+  // filtering (GET /api/tool-calls?auto_approved=false), so toggling this refetches rather than
+  // reslicing an already-capped page — otherwise auto-approved traffic filling the HISTORY_LIMIT
+  // window would hide older manual calls the client never even fetched.
   const [showAutoApproved, setShowAutoApproved] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback((showAutoApprovedNow: boolean) => {
     setLoading(true);
-    fetchToolCalls(HISTORY_LIMIT).then(
+    fetchToolCalls(HISTORY_LIMIT, showAutoApprovedNow).then(
       (calls) => {
         setRecords(calls);
         setError(null);
@@ -75,12 +78,9 @@ export function ToolCallsPage() {
 
   // Live: initial load on mount plus a refetch whenever a tool call is submitted, approved,
   // denied, or finishes anywhere — the same WS signal the approvals panel uses.
-  useConsoleEvents(load);
+  useConsoleEvents(() => load(showAutoApproved));
 
-  const decisions = useToolCallDecision({ onSettled: load });
-
-  const visibleRecords = records?.filter((record) => showAutoApproved || !isAutoApproved(record)) ?? null;
-  const hiddenCount = records && visibleRecords ? records.length - visibleRecords.length : 0;
+  const decisions = useToolCallDecision({ onSettled: () => load(showAutoApproved) });
 
   return (
     <div className="haku-page">
@@ -88,9 +88,9 @@ export function ToolCallsPage() {
         <div className="haku-page-bar">
           <Group gap="xs" wrap="nowrap" align="center">
             <Text fw={700}>Past tool calls</Text>
-            {visibleRecords && (
+            {records && (
               <Text size="sm" c="dimmed">
-                {visibleRecords.length}
+                {records.length}
               </Text>
             )}
           </Group>
@@ -100,9 +100,13 @@ export function ToolCallsPage() {
               label="Show auto-approved"
               aria-label="Show auto-approved"
               checked={showAutoApproved}
-              onChange={(event) => setShowAutoApproved(event.currentTarget.checked)}
+              onChange={(event) => {
+                const checked = event.currentTarget.checked;
+                setShowAutoApproved(checked);
+                load(checked);
+              }}
             />
-            <Button size="xs" variant="light" loading={loading} onClick={load}>
+            <Button size="xs" variant="light" loading={loading} onClick={() => load(showAutoApproved)}>
               Refresh
             </Button>
           </Group>
@@ -120,16 +124,16 @@ export function ToolCallsPage() {
               <Loader />
             </Group>
           )}
-          {visibleRecords && visibleRecords.length === 0 && (
+          {records && records.length === 0 && (
             <section className="haku-shell-card">
               <Text size="sm" c="dimmed">
-                {records && records.length > 0
-                  ? "All recent tool calls were auto-approved."
-                  : "No tool calls recorded yet."}
+                {showAutoApproved
+                  ? "No tool calls recorded yet."
+                  : "No matching tool calls — auto-approved calls are hidden."}
               </Text>
             </section>
           )}
-          {visibleRecords?.map((record) => (
+          {records?.map((record) => (
             <ToolCallRow
               key={record.tool_call_id}
               record={record}
@@ -138,11 +142,6 @@ export function ToolCallsPage() {
               onDeny={(reason) => void decisions.deny(record, reason)}
             />
           ))}
-          {!showAutoApproved && hiddenCount > 0 && (
-            <Text size="xs" c="dimmed" ta="center">
-              {hiddenCount} auto-approved {hiddenCount === 1 ? "call" : "calls"} hidden.
-            </Text>
-          )}
           {records && records.length === HISTORY_LIMIT && (
             <Text size="xs" c="dimmed" ta="center">
               Showing the {HISTORY_LIMIT} most recent tool calls.

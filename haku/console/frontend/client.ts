@@ -117,10 +117,12 @@ export async function fetchPendingApprovals(): Promise<ToolCallRecord[]> {
 }
 
 // The full tool-call audit ledger for the history view: newest first, so `limit` keeps
-// the most recent calls when the ledger has grown past it.
-export async function fetchToolCalls(limit: number): Promise<ToolCallRecord[]> {
+// the most recent calls when the ledger has grown past it. `showAutoApproved` false asks the
+// server to filter out auto-approved calls (rather than over-fetching and discarding client-side,
+// which would starve the page of older manual calls once auto-approved traffic fills the window).
+export async function fetchToolCalls(limit: number, showAutoApproved: boolean): Promise<ToolCallRecord[]> {
   const { data, error } = await api.GET("/api/tool-calls", {
-    params: { query: { newest_first: true, limit } },
+    params: { query: { newest_first: true, limit, auto_approved: showAutoApproved ? undefined : false } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load tool calls"));
   return data.tool_calls ?? [];

@@ -344,6 +344,36 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
     assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": calls[0].tool_call_id}
 
 
+async def test_list_tool_calls_tool_filters_by_auto_approved(harness: _Harness) -> None:
+    async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
+        await client.call_tool("gmail__labels_list", {})
+        promise = await client.call_tool(
+            "gmail__drafts_create",
+            {
+                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+                "rationale": "test",
+                "wait_for_approval_ms": 0,
+            },
+        )
+        assert promise.structured_content is not None
+        manual_id = promise.structured_content["tool_call_id"]
+
+        hidden = await client.call_tool("list_tool_calls", {"auto_approved": False})
+        shown_only = await client.call_tool("list_tool_calls", {"auto_approved": True})
+        unfiltered = await client.call_tool("list_tool_calls", {})
+
+    def call_ids(result: Any) -> list[str]:
+        assert result.structured_content is not None
+        return [view["call"]["tool_call_id"] for view in result.structured_content["result"]]
+
+    hidden_ids = call_ids(hidden)
+    shown_ids = call_ids(shown_only)
+    assert hidden_ids == [manual_id]
+    assert len(shown_ids) == 1
+    assert shown_ids != [manual_id]
+    assert set(call_ids(unfiltered)) == {manual_id, *shown_ids}
+
+
 async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness) -> None:
     """A schema-invalid call on an owned in-process server is born-denied: the caller gets the
     validation error immediately and nothing enters the approval queue (operator, 2026-07-16)."""

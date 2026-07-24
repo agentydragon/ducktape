@@ -106,7 +106,16 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     list_node_daemons: () => ({ daemons: SAMPLE_DAEMONS }),
   });
   if (mcpResponse !== null) return mcpResponse;
-  if (url.includes("/api/tool-calls")) return jsonResponse({ tool_calls: SAMPLE_TOOL_CALLS });
+  if (url.includes("/api/tool-calls")) {
+    // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp_approval.py)
+    // so the history screenshot scenes exercise the same request the frontend actually sends.
+    const autoApproved = new URLSearchParams(url.split("?")[1] ?? "").get("auto_approved");
+    const toolCalls =
+      autoApproved === null
+        ? SAMPLE_TOOL_CALLS
+        : SAMPLE_TOOL_CALLS.filter((call) => (call.approval_policy_id != null) === (autoApproved === "true"));
+    return jsonResponse({ tool_calls: toolCalls });
+  }
   if (realFetch) return realFetch(input, init);
   return jsonResponse({});
 }) as typeof fetch;

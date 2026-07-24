@@ -267,6 +267,7 @@ class PostgresToolCallLedger:
         actor: ToolCallActor,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = False,
     ) -> list[ToolCallRecord]:
@@ -276,6 +277,12 @@ class PostgresToolCallLedger:
                 stmt = stmt.where(McpToolCall.updated_at > since)
             if statuses:
                 stmt = stmt.where(McpToolCall.status.in_(statuses))
+            if auto_approved is not None:
+                # A call carries `approval_policy_id` only when the reviewed auto-approval
+                # decision let it through at submission time (`submit`, below); it is never set
+                # or cleared afterward.
+                condition = McpToolCall.approval_policy_id.isnot(None)
+                stmt = stmt.where(condition if auto_approved else ~condition)
             # `newest_first` makes `limit` keep the most recent calls (the audit/history
             # view wants those); the default ascending order stays the queue-friendly
             # oldest-first for pending-approval reads.
@@ -727,12 +734,18 @@ async def list_tool_calls(
     actor: OperatorActorDep,
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
     since: datetime.datetime | None = None,
+    auto_approved: bool | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     newest_first: bool = False,
 ) -> ToolCallListResponse:
     return ToolCallListResponse(
         tool_calls=service.list_tool_calls(
-            actor=actor, statuses=status, since=since, limit=limit, newest_first=newest_first
+            actor=actor,
+            statuses=status,
+            since=since,
+            auto_approved=auto_approved,
+            limit=limit,
+            newest_first=newest_first,
         )
     )
 

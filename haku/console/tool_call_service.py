@@ -65,6 +65,7 @@ class ToolCallRepository(Protocol):
         actor: ToolCallActor,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = False,
     ) -> list[ToolCallRecord]: ...
@@ -309,12 +310,18 @@ class ToolCallApplicationService:
         actor: ToolCallActor,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = False,
     ) -> list[ToolCallRecord]:
         actor = self._require_actor(actor)
         return self._repository.list_tool_calls(
-            actor=actor, statuses=statuses, since=since, limit=limit, newest_first=newest_first
+            actor=actor,
+            statuses=statuses,
+            since=since,
+            auto_approved=auto_approved,
+            limit=limit,
+            newest_first=newest_first,
         )
 
     def pending_approvals(self, *, actor: ToolCallActor) -> list[ToolCallRecord]:

@@ -729,6 +729,45 @@ def test_operator_gmail_labels_list_stays_pending(
     assert record["auto_approval_evaluation"] is None
 
 
+def test_list_tool_calls_filters_by_auto_approved(
+    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock, echoing_executor: EchoingExecutor
+) -> None:
+    with (
+        make_client(
+            config_file=gmail_config_file,
+            gmail_client=gmail_client,
+            in_process_servers={"gmail": _operator_connection_server(build_gmail_mcp(gmail_client))},
+            tool_call_executor=echoing_executor,
+        ) as client,
+        make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
+    ):
+        client.app.state.provider_connection_store.access_token_for = AsyncMock(return_value="operator-token")
+        agent = _static_agent_actor(client, "tool-token")
+        auto = _submit_request(
+            client,
+            SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
+            actor=agent,
+        )
+        manual = _submit_request(
+            client,
+            SubmitToolCallRequest(
+                server_id="gmail",
+                tool_name="drafts_create",
+                arguments={"to": ["a@b.test"], "subject": "s", "body": "b"},
+                wait_for_ms=0,
+            ),
+            actor=agent,
+        )
+
+        hidden = operator.get("/api/tool-calls", params={"auto_approved": "false"}).json()["tool_calls"]
+        shown_only = operator.get("/api/tool-calls", params={"auto_approved": "true"}).json()["tool_calls"]
+        unfiltered = operator.get("/api/tool-calls").json()["tool_calls"]
+
+    assert [c["tool_call_id"] for c in hidden] == [manual["tool_call_id"]]
+    assert [c["tool_call_id"] for c in shown_only] == [auto["tool_call_id"]]
+    assert {c["tool_call_id"] for c in unfiltered} == {manual["tool_call_id"], auto["tool_call_id"]}
+
+
 def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:

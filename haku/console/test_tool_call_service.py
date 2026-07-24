@@ -582,6 +582,23 @@ async def test_unknown_server_is_a_transport_independent_not_found(
     assert service.list_tool_calls(actor=actor) == []
 
 
+async def test_list_tool_calls_filters_by_auto_approved(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    actor = actors["aa1"]
+    manual = await service.submit_and_wait(req=_request(owner="manual"), actor=actor)
+
+    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+    auto = await service.submit_and_wait(req=_request(owner="auto"), actor=actor)
+
+    operator = actors["oa"]
+    assert [r.tool_call_id for r in service.list_tool_calls(actor=operator, auto_approved=False)] == [
+        manual.tool_call_id
+    ]
+    assert [r.tool_call_id for r in service.list_tool_calls(actor=operator, auto_approved=True)] == [auto.tool_call_id]
+    assert {r.tool_call_id for r in service.list_tool_calls(actor=operator)} == {manual.tool_call_id, auto.tool_call_id}
+
+
 async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
     migrated_db_url: str,
     tmp_path: Path,

@@ -695,13 +695,21 @@ def build_console_mcp(
     async def list_tool_calls(
         status: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
+        auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = True,
         actor: ToolCallActor = current_actor_dependency,
     ) -> list[ToolCallView]:
-        """List recent tool calls (newest first by default), optionally filtered by status/since."""
+        """List recent tool calls (newest first by default), optionally filtered by status/since/
+        auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that
+        went through manual or no approval; omitted: no filter)."""
         records = context.tool_calls.list_tool_calls(
-            actor=actor, statuses=status, since=since, limit=limit, newest_first=newest_first
+            actor=actor,
+            statuses=status,
+            since=since,
+            auto_approved=auto_approved,
+            limit=limit,
+            newest_first=newest_first,
         )
         return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in records]
 
