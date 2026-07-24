@@ -11,7 +11,7 @@ expect a write to complete without a human clicking approve.
 
 ## Reaching it
 
-haku-console proxies the grocy-sf MCP server (tools get a `grocy_sf_` prefix). Reach
+haku-console proxies the grocy-sf MCP server (tools get a `grocy_sf__` prefix). Reach
 it however your runtime wires it: managed sessions expose the tools directly as
 in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
 (<mcp_over_http.md>) with the `haku-console-agent-api` bearer from `haku-sandbox`,
@@ -19,7 +19,7 @@ same as the Gmail/Calendar/osm/Tana console tools.
 
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
-fastmcp call https://haku.allegedly.works/mcp grocy_sf_stock_get \
+fastmcp call https://haku.allegedly.works/mcp grocy_sf__stock_get \
   --auth "$TOKEN" --transport http --json
 ```
 

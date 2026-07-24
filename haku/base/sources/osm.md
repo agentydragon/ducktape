@@ -17,11 +17,11 @@ approval-queue noise, unlike Grocy/Gmail's partial allowlists.
 Reach it however your runtime wires it: managed sessions expose the tools directly as
 in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
 (<mcp_over_http.md>) with the `haku-console-agent-api` bearer from `haku-sandbox`,
-same as the Gmail/Calendar console tools. Tool names get an `osm` prefix, e.g.:
+same as the Gmail/Calendar console tools. Tool names get an `osm__` prefix, e.g.:
 
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
-fastmcp call https://haku.allegedly.works/mcp osm_geocode_address \
+fastmcp call https://haku.allegedly.works/mcp osm__geocode_address \
   --input-json '{"address":"1600 Amphitheatre Parkway, Mountain View, CA"}' \
   --auth "$TOKEN" --transport http
 ```
@@ -41,8 +41,8 @@ fastmcp call https://haku.allegedly.works/mcp osm_geocode_address \
   **`polyline_encode`/`polyline_decode`**, **`enrich_emissions`** — small geometry/format
   utilities for composing the above.
 - **`osm_query_bbox`** / **`filter_tags`** — raw Overpass queries against a bounding box,
-  for anything the higher-level tools don't cover (remember the `osm_` MCP-tool prefix
-  makes the query tool itself `osm_osm_query_bbox`).
+  for anything the higher-level tools don't cover (remember the `osm__` MCP-tool prefix
+  makes the query tool itself `osm__osm_query_bbox`).
 - **`get_map_image`** — a rendered map image, for visual context.
 
 Nominatim/OSRM's own usage policies (rate limits, no bulk geocoding) are enforced

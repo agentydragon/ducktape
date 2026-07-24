@@ -1,4 +1,4 @@
-# Shared by everything in haku-sandbox: the scanner CronJob, the managed-agent worker,
+# Shared by everything in haku-sandbox: the managed-agent worker,
 # haku-ui, AND the sandbox warm pool (cluster/k8s/haku/workspaces/) — a claimed box runs a
 # LOCAL Bazel build of haku-state (no RBE; --spawn_strategy=local), so it's sized like the
 # haku-ci runner (req 1 / limit 3 CPU, 2/6Gi) rather than a thin exec target. The pool

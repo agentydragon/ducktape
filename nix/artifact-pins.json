@@ -137,8 +137,8 @@
       "sha256": "fsy7mhfDo7JFUm1Rf2abTxPYHlAEISJO6L2+uTlJIS0="
     },
     "skill-forgejo": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forgejo-230416e90ead/forgejo.skill",
-      "sha256": "IwQW6Q6tSIwIpWPCqf3GvO3N3//flKFpsglTEQl0wik="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forgejo-d12917d13b8b/forgejo.skill",
+      "sha256": "0SkX0TuL0kOeqm4L3Ucl1xuL0LE+BeDe9nZD/eLqzgc="
     },
     "skill-freecad": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-5465584d887e/freecad.skill",

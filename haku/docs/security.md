@@ -22,8 +22,8 @@ lives at the linked sources — this doc is the index and the contract, per the 
 ## Doctrine
 
 **The container is the trust boundary**: enforcement at
-the credential / RBAC / network / proxy perimeter, never by in-agent permission rules — the
-scanner runs `--dangerously-skip-permissions` _because_ the perimeter is what limits it.
+the credential / RBAC / network / proxy perimeter, never by in-agent permission rules — Haku's
+runtimes run `--dangerously-skip-permissions` _because_ the perimeter is what limits it.
 Operator-owned sources are read-only by construction, in order of preference: (1) scope the
 upstream credential, (2) front with a read-only MCP facade, (3) lock egress. Haku-owned write
 surfaces use Haku's own principal and are scoped to that surface; their canonical inventory is
