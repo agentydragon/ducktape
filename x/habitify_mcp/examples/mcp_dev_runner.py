@@ -1,6 +1,6 @@
 """Test the Habitify MCP server using mcp dev.
 
-Usage: bazel run //llm/mcp/habitify:test_mcp_dev -- [--api-key KEY] [--debug]
+Usage: bazel run //x/habitify_mcp:test_mcp_dev -- [--api-key KEY] [--debug]
 
 Creates a mock server file for the MCP dev command to test tools
 in a debug environment without full Claude Desktop installation.
@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from llm.mcp.habitify.utils.cli_utils import get_api_key_from_param_or_env
+from x.habitify_mcp.utils.cli_utils import get_api_key_from_param_or_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
 SERVER_TEMPLATE = """
 import os
 import logging
-from llm.mcp.habitify.server import create_habitify
+from x.habitify_mcp.server import create_habitify
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

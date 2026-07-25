@@ -2,9 +2,9 @@
 
 from datetime import UTC, datetime
 
-from llm.mcp.habitify.habitify_client import HabitifyClient, HabitifyError
-from llm.mcp.habitify.types import HabitResult, HabitsResult, LogResult, Status, StatusResult
-from llm.mcp.habitify.utils.habit_resolver import resolve_habit
+from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
+from x.habitify_mcp.types import HabitResult, HabitsResult, LogResult, Status, StatusResult
+from x.habitify_mcp.utils.habit_resolver import resolve_habit
 
 
 def _require_habit_identifier(*, id: str | None, name: str | None, action: str = "use") -> None:

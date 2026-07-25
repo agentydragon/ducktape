@@ -14,8 +14,8 @@ from typing import Any, cast
 import httpx
 from dotenv import load_dotenv
 
-from llm.mcp.habitify.types import Area, Habit, HabitStatus, Status
-from llm.mcp.habitify.utils.date_utils import format_date_for_api
+from x.habitify_mcp.types import Area, Habit, HabitStatus, Status
+from x.habitify_mcp.utils.date_utils import format_date_for_api
 
 logger = logging.getLogger("habitify.client")
 

@@ -134,7 +134,6 @@ known-first-party = [
     "util",
     "agent_core",
     "cpap",
-    "x",
     "props",
     "difftree",
     "ducktape_llm_common",
@@ -145,9 +144,7 @@ known-first-party = [
     "gmail_archiver",
     "gnome",
     "grocy_mcp",
-    "habitify",
     "homeassistant",
-    "ibkr_mcp",
     "inop",
     "inventree_utils",
     "laser",
@@ -176,6 +173,7 @@ known-first-party = [
     "plaid_utils",
     "skills",
     "third_party",
+    "x",
 ]
 combine-as-imports = true
 # Compatible with format.skip-magic-trailing-comma

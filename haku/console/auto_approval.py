@@ -110,7 +110,7 @@ TANA_AUTO_APPROVE_TOOLS = frozenset(
 )
 
 # ibkr's entire surface is read-only by construction — the server reflects no order/trade routes
-# (ibkr_mcp/route_policy.py), so every tool auto-approves. The market-data/secdef/scanner tools and
+# (x/ibkr_mcp/route_policy.py), so every tool auto-approves. The market-data/secdef/scanner tools and
 # `session_status` are pure reads; `request_reauth` only fires the IBKR Mobile 2FA push, which does
 # nothing without the operator's phone tap.
 IBKR_AUTO_APPROVE_TOOLS = frozenset(

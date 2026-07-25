@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from ibkr_mcp.mcp_types import ServerSettings
 from mcp_infra.persistence import PostgresPersistence, ValkeyPersistence
+from x.ibkr_mcp.mcp_types import ServerSettings
 
 
 def test_defaults_are_localhost_gateway_no_auth() -> None:

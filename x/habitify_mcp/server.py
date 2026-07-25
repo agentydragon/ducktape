@@ -4,10 +4,10 @@ from datetime import datetime
 
 from fastmcp import Context, FastMCP
 
-from llm.mcp.habitify import tools
-from llm.mcp.habitify.context import CLIENT_KEY, make_lifespan
-from llm.mcp.habitify.habitify_client import HabitifyClient
-from llm.mcp.habitify.types import HabitResult, HabitsResult, LogResult, Status, StatusResult
+from x.habitify_mcp import tools
+from x.habitify_mcp.context import CLIENT_KEY, make_lifespan
+from x.habitify_mcp.habitify_client import HabitifyClient
+from x.habitify_mcp.types import HabitResult, HabitsResult, LogResult, Status, StatusResult
 
 
 def create_habitify(api_key: str | None = None) -> FastMCP:

@@ -5,8 +5,8 @@ CLI-specific utility functions.
 import typer
 from rich.console import Console
 
-from llm.mcp.habitify.config import load_api_key
-from llm.mcp.habitify.habitify_client import HabitifyClient, HabitifyError
+from x.habitify_mcp.config import load_api_key
+from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
 
 STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
 

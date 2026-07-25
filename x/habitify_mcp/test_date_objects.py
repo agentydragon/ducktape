@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest_bazel
 
-from llm.mcp.habitify.types import Status
+from x.habitify_mcp.types import Status
 
 
 async def test_check_habit_status_returns_datetime_object(client):

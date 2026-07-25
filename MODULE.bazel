@@ -670,11 +670,11 @@ http_file(
     urls = ["https://raw.githubusercontent.com/grocy/grocy/v4.6.0/grocy.openapi.json"],
 )
 
-# IBKR Client Portal Web API spec (Swagger 2.0). `//ibkr_mcp:ibkr_openapi_fixed`
+# IBKR Client Portal Web API spec (Swagger 2.0). `//x/ibkr_mcp:ibkr_openapi_fixed`
 # filters it to the read-only allowlist and transcodes it to OpenAPI 3.1 at build
-# time (see ibkr_mcp/spec_fixup.py). The authoritative spec is whatever the running
+# time (see x/ibkr_mcp/spec_fixup.py). The authoritative spec is whatever the running
 # Client Portal Gateway serves; this pinned mirror is the starting point — refresh
-# it from the gateway's own spec dump (ibkr_mcp/README.md) and update the sha256.
+# it from the gateway's own spec dump (x/ibkr_mcp/README.md) and update the sha256.
 http_file(
     name = "ibkr_cpapi_openapi_spec",
     downloaded_file_path = "ibkr.openapi.json",

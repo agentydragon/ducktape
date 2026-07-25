@@ -13,8 +13,8 @@ import json
 
 import pytest_bazel
 
-from ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
 from util.bazel.runfiles import get_required_path
+from x.ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
 
 EXPECTED_TOOL_NAMES = {
     "market_data_snapshot",
@@ -54,7 +54,7 @@ def test_no_trading_or_account_routes_on_allowlist() -> None:
 
 
 def test_generated_spec_contains_exactly_the_allowlist() -> None:
-    spec = json.loads(get_required_path("_main/ibkr_mcp/ibkr.openapi.fixed.json").read_text())
+    spec = json.loads(get_required_path("_main/x/ibkr_mcp/ibkr.openapi.fixed.json").read_text())
     generated = {(method.upper(), path) for path, ops in spec["paths"].items() for method in ops}
     assert generated == set(READ_ONLY_OPERATIONS)
 

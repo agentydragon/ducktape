@@ -1,7 +1,7 @@
 """Utility to resolve a habit by name or ID."""
 
-from llm.mcp.habitify.habitify_client import HabitifyClient, HabitifyError
-from llm.mcp.habitify.types import ResolvedHabit
+from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
+from x.habitify_mcp.types import ResolvedHabit
 
 
 async def resolve_habit(client: HabitifyClient, id: str | None = None, name: str | None = None) -> ResolvedHabit:

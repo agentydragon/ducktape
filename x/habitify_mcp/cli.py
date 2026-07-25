@@ -17,11 +17,11 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from llm.mcp import habitify
-from llm.mcp.habitify.habitify_client import HabitifyClient, HabitifyError
-from llm.mcp.habitify.server import create_habitify
-from llm.mcp.habitify.types import Status
-from llm.mcp.habitify.utils.cli_utils import (
+from x import habitify_mcp
+from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
+from x.habitify_mcp.server import create_habitify
+from x.habitify_mcp.types import Status
+from x.habitify_mcp.utils.cli_utils import (
     format_rich_status,
     get_api_key_from_param_or_env,
     get_status_color,
@@ -144,7 +144,7 @@ def install(
         raise typer.Exit(code=1)
 
     # Get full path to the server module
-    server_path = Path(habitify.__file__).parent
+    server_path = Path(habitify_mcp.__file__).parent
     server_module = f"{server_path}/server.py:create_habitify"
 
     # Build the command

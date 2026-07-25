@@ -92,7 +92,7 @@ out-of-band — no server can press it.
 
 ## The OpenAPI spec
 
-Pinned in <../MODULE.bazel> as the `ibkr_cpapi_openapi_spec` `http_file` (a
+Pinned in <../../MODULE.bazel> as the `ibkr_cpapi_openapi_spec` `http_file` (a
 Swagger 2.0 mirror of IBKR's Client Portal Web API). The authoritative spec is
 whatever the running gateway serves; refresh by dumping the gateway's own spec,
 re-pinning the URL + sha256, and re-running the tests — `spec_fixup` re-filters
@@ -100,21 +100,21 @@ and re-transcodes it.
 
 ## Deploying
 
-- **Image** — `//ibkr_mcp:server_image` → `git.allegedly.works/ducktape-ci/ibkr-mcp`
+- **Image** — `//x/ibkr_mcp:server_image` → `git.allegedly.works/ducktape-ci/ibkr-mcp`
   (private Forgejo registry; `registry: forgejo` in `push-images.yml`). Flux image
-  automation (<../cluster/k8s/flux-image-automation-forgejo/>) rolls new `devel-*`
+  automation (<../../cluster/k8s/flux-image-automation-forgejo/>) rolls new `devel-*`
   tags out. The pod pulls with a `forgejo-images-creds` dockerconfigjson that ESO
   mirrors into the `ibkr` namespace from flux-system
-  (<../cluster/k8s/ibkr/forgejo-images-creds-eso.yaml>; there's a TODO there to
+  (<../../cluster/k8s/ibkr/forgejo-images-creds-eso.yaml>; there's a TODO there to
   reconsider the reflector once its sops allowlist can be edited).
-- **k8s / Flux** — <../cluster/k8s/ibkr/>: the two-container pod (IBeam gateway +
+- **k8s / Flux** — <../../cluster/k8s/ibkr/>: the two-container pod (IBeam gateway +
   this server), Service, HTTPRoute, a CNPG Postgres cluster (OAuth state), and the
   `ibkr-paper-trading-credentials` Secret, applied by the `ibkr-mcp` Flux
   Kustomization.
-- **Terraform** — <../tf/gitops/agent-machine-access/ibkr-mcp.tf>: the Authentik
+- **Terraform** — <../../tf/gitops/agent-machine-access/ibkr-mcp.tf>: the Authentik
   OAuth2 provider/application restricted to agentydragon, and the `ibkr-mcp-oidc`
   Secret the pod reads.
-- **Haku** — the `interactive_brokers` entry in <../cluster/k8s/haku/console/config.yaml>.
+- **Haku** — the `interactive_brokers` entry in <../../cluster/k8s/haku/console/config.yaml>.
 
 ## Status
 

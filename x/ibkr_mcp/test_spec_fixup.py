@@ -8,9 +8,9 @@ import json
 
 import pytest_bazel
 
-from ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
-from ibkr_mcp.spec_fixup import _convert_operation, _convert_parameter, _reachable_definitions, _rewrite_refs
 from util.bazel.runfiles import get_required_path
+from x.ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
+from x.ibkr_mcp.spec_fixup import _convert_operation, _convert_parameter, _reachable_definitions, _rewrite_refs
 
 
 def test_rewrite_refs_repoints_definitions() -> None:
@@ -60,7 +60,7 @@ def test_reachable_definitions_is_transitive() -> None:
 
 
 def test_generated_spec_is_valid_openapi_31() -> None:
-    spec = json.loads(get_required_path("_main/ibkr_mcp/ibkr.openapi.fixed.json").read_text())
+    spec = json.loads(get_required_path("_main/x/ibkr_mcp/ibkr.openapi.fixed.json").read_text())
     assert spec["openapi"] == "3.1.0"
     assert set(spec["paths"]) == {path for _, path in READ_ONLY_OPERATIONS}
     # No leftover Swagger 2.0 definition refs anywhere in the document.

@@ -20,7 +20,7 @@ py_library(
 
 py_binary(
     name = "spec_fixup",
-    main_module = "ibkr_mcp.spec_fixup",
+    main_module = "x.ibkr_mcp.spec_fixup",
     deps = [":spec_fixup_lib"],
 )
 
@@ -67,7 +67,7 @@ py_library(
 
 py_binary(
     name = "server_cli",
-    main_module = "ibkr_mcp.server",
+    main_module = "x.ibkr_mcp.server",
     deps = [":server"],
 )
 

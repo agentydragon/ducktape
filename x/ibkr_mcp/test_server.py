@@ -13,9 +13,9 @@ import respx
 from fastmcp import Client, FastMCP
 from prometheus_client import REGISTRY
 
-from ibkr_mcp.mcp_types import ServerSettings
-from ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
-from ibkr_mcp.server import build_mcp, record_tool_count
+from x.ibkr_mcp.mcp_types import ServerSettings
+from x.ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
+from x.ibkr_mcp.server import build_mcp, record_tool_count
 
 _EXPECTED_NAMES = {spec.name for spec in READ_ONLY_OPERATIONS.values()}
 _GATEWAY = "https://gw.test/v1/api"

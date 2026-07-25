@@ -11,7 +11,7 @@ is read-only by construction.
 Front-door auth (claude.ai / Claude Code users, plus Haku's machine JWT) is the
 same Authentik ``OIDCProxy`` + ``direct_jwt_trusts`` pattern as <../grocy_mcp/>.
 
-See <ibkr_mcp/README.md> for the architecture and the free-tier / weekly-reauth
+See <README.md> for the architecture and the free-tier / weekly-reauth
 flow.
 """
 
@@ -37,11 +37,11 @@ from fastmcp.server.providers.openapi import (
 from fastmcp.utilities.openapi import HTTPRoute
 from prometheus_client import Gauge, start_http_server
 
-from ibkr_mcp.mcp_types import ServerSettings
-from ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
 from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.persistence import build_client_storage
 from util.bazel.runfiles import get_required_path
+from x.ibkr_mcp.mcp_types import ServerSettings
+from x.ibkr_mcp.route_policy import READ_ONLY_OPERATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ _INSTRUCTIONS = (
 
 def _load_openapi_spec() -> dict[str, object]:
     """Return the read-only OpenAPI 3.1 spec produced by the `ibkr_openapi_fixed` genrule."""
-    spec_path = get_required_path("_main/ibkr_mcp/ibkr.openapi.fixed.json")
+    spec_path = get_required_path("_main/x/ibkr_mcp/ibkr.openapi.fixed.json")
     result: dict[str, object] = json.loads(spec_path.read_text())
     return result
 

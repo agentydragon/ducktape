@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ibkr_mcp.route_policy import READ_ONLY_OPERATIONS, tool_spec
+from x.ibkr_mcp.route_policy import READ_ONLY_OPERATIONS, tool_spec
 
 _DEFS_PREFIX = "#/definitions/"
 

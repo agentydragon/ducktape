@@ -1,14 +1,14 @@
 """Run the Habitify MCP server.
 
-Usage: bazel run //llm/mcp/habitify:run_server -- [--transport stdio|sse] [--port PORT]
+Usage: bazel run //x/habitify_mcp:run_server -- [--transport stdio|sse] [--port PORT]
 """
 
 import argparse
 import logging
 import sys
 
-from llm.mcp.habitify.server import create_habitify
-from llm.mcp.habitify.utils.cli_utils import get_api_key_from_param_or_env
+from x.habitify_mcp.server import create_habitify
+from x.habitify_mcp.utils.cli_utils import get_api_key_from_param_or_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

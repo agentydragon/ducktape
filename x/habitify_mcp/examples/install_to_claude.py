@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Add the parent directory to the path so we can import the server
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from llm.mcp.habitify.config import get_api_base_url, load_api_key
+from x.habitify_mcp.config import get_api_base_url, load_api_key
 
 # Load API key from environment
 api_key = load_api_key(exit_on_missing=True)

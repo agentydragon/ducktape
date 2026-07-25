@@ -12,8 +12,8 @@ import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
 
-from llm.mcp.habitify.habitify_client import HabitifyError
-from llm.mcp.habitify.types import Area, Habit, HabitStatus, Status
+from x.habitify_mcp.habitify_client import HabitifyError
+from x.habitify_mcp.types import Area, Habit, HabitStatus, Status
 
 
 async def test_get_habits(client, mock_async_response, patch_client_method):
