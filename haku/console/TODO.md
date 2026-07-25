@@ -91,3 +91,20 @@ is specified in <../../plans/oauth_architecture.md>. The next product slices are
 - **Per-tool-call deep link** — a `/tool-calls/<id>` SPA route (`routing.ts` +
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
+
+## Operator browser auth — parked remainders
+
+From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #3516/#3519 except for:
+
+- **A background 401 still navigates the tab** (audit F3). Expiry is now announced beforehand and
+  re-authentication returns to the same page, but the redirect itself is still fired by whichever
+  poll happens to fail first, and the top-level navigation discards whatever is unsaved in the
+  framed haku-ui. The alternative is an explicit "session expired — sign in" state the operator
+  clicks, so the frame survives until they choose. Superseded entirely if session renewal lands
+  (<plans/operator_session_renewal.md>).
+- **No sign-out affordance** (audit F6). `/auth/logout` exists and is exact-Origin gated, but
+  nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
+  manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
+- **Three surfaces still render a 401's error text while redirecting** (audit F7).
+  `tool_calls_page.tsx`, `agent_enrollment_panel.tsx` and `settings_panel.tsx` need the same
+  `operatorLoginRedirectStarted()` guard `app.tsx` has, or one shared helper for all four.

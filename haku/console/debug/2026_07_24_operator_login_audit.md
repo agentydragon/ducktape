@@ -25,13 +25,19 @@ IdP from `util.testing.mock_oidc`, served over real sockets); the probe output i
 5. The tab that does re-authenticate comes back at `/`, having lost whichever view it was on (F2),
    and the top-level navigation destroyed the framed haku-ui's state along the way (F3).
 
-## F1 — Concurrent login attempts clobber each other's OAuth state (confirmed)
+## F1 — A second login attempt evicts the first (confirmed)
 
 `build_oauth` uses authlib's Starlette integration, which keeps pending-login state in the signed
-session cookie as `_state_authentik_<state>`. Starlette's `SessionMiddleware` serializes the whole
-session **snapshot it read at request start** into a `Set-Cookie` on every modifying response. Two
-`/auth/login` requests in flight at once both read the same snapshot, so the second `Set-Cookie` to
-land silently drops the first request's state.
+session cookie as `_state_authentik_<state>`. Its `set_state_data` **clears every prior
+`_state_<name>_*` entry each time it stores a new one** ("clear old state data to avoid session size
+growing"). One browser therefore holds exactly one pending login: the moment a second console tab
+starts one, the first tab's callback is doomed to `mismatching_state`.
+
+No concurrency is required for that. Starlette's `SessionMiddleware` adds a second, narrower path to
+the same outcome — it serializes the whole session **snapshot it read at request start**, so two
+`/auth/login` responses in flight at once also lose one of the two writes. The reproduction below
+exercises that concurrent variant, which is how the bug was first found; the unconditional eviction
+above is the general case, and was only identified while implementing the fix.
 
 Reproduced with one cookie jar and two overlapping `/auth/login` calls (two tabs of one browser):
 
@@ -127,6 +133,23 @@ The endpoint exists and is correctly exact-Origin gated, but nothing in the SPA 
 no sign-out affordance. It also clears only the console session, not the Authentik SSO session, so a
 manual logout would silently re-login on the next 401.
 
+## F7 — The 401 redirect paints an error on its way out (found in production, after the fixes)
+
+Not part of the original audit; it surfaced the day after. The audit missed it because every finding
+above was reasoned about server-side.
+
+Opening the console with an expired session showed a full-page red _"Failed to load: no active
+authenticated operator on the request"_ before the redirect took effect. `location.replace` only
+_schedules_ a navigation, so the document keeps running: `client.ts`'s interceptor starts the login
+flow, `fetchConfig` then rejects with the API's own `detail` string, and `App` paints its page-level
+error before the browser tears the page down.
+
+Fixed by exposing the existing one-flow-per-document latch (`operatorLoginRedirectStarted()`) so
+`App` holds its loader through the handover. The lesson generalizes past that one surface: **an
+error rendered from the request that triggered its own redirect is noise**, and three other surfaces
+(`tool_calls_page.tsx`, `agent_enrollment_panel.tsx`, `settings_panel.tsx`) still have that shape —
+less visibly, since they render inside a shell that still looks like the console.
+
 ## What is solid
 
 Worth recording so a future change does not undo it:
@@ -144,13 +167,12 @@ Worth recording so a future change does not undo it:
 
 ## Status
 
-F1/F1b, F2, F3, F4 and F5 were fixed in the same change that added this note; the recommendations
-below are what was implemented. F6 (no sign-out affordance) is untouched.
+F1, F1b, F2, F4 and F5 are fixed (#3516). F7 is fixed (#3519). **F3 is only partly fixed** — the
+shell now warns before the deadline and re-authentication returns the operator to the page they were
+on, but a background 401 still navigates the tab by itself, still discarding the framed haku-ui's
+unsaved state. F6 is untouched. Both remainders are parked in <../TODO.md>.
 
-While implementing, F1 turned out to be **worse than the reproduction above shows**: authlib's
-Starlette integration clears every prior `_state_<name>_*` entry each time it stores a new one, so a
-second tab strands the first one _without_ any race at all. The Postgres-backed flow table removes
-the whole class.
+The recommendations below are what was implemented, except as noted above.
 
 ## Recommended fixes, in order
 
