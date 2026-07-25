@@ -31,6 +31,10 @@ jobs:
         with:
           package: citools
 
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
       - name: Announce visual review
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -125,6 +129,10 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         with:
           package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Finalize visual review
         env:
