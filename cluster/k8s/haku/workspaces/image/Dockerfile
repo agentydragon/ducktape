@@ -13,6 +13,10 @@
 # in haku-sandbox) and haku-state's run plumbing shells out to it — tools/ci_wait.sh
 # reads the Forgejo password from a Secret, tools/plaid_q.sh runs the query pod, and
 # cli/k8s_secrets.py backs `haku console`. Without it those all fail at their first line.
+# python3-minimal likewise: tools/ci_wait.sh parses the Forgejo runs API with an inline
+# python3 snippet, and its absence produced a FALSE GREEN (empty parse -> every `[ ]`
+# integer test errors -> fall through to "all runs green", exit 0) until haku-state PR #41
+# guarded it. Stdlib only — the run's own python deps come from Bazel, never from here.
 # Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel, but the
 # C/C++ toolchain is NOT: haku-state's cc rules resolve through Bazel's local_config_cc
 # autoconf, which probes for a system gcc/g++. So build-essential is baked in — without
@@ -31,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       default-jre-headless \
       build-essential \
       procps less \
+      python3-minimal \
     && rm -rf /var/lib/apt/lists/*
 
 # bazelisk pin matches haku-state's CI runner (.forgejo/actions/bazel-runner-setup):

@@ -41,18 +41,19 @@ is the same command CI runs.
 **Does not work / needs a workaround** (rows marked _fixed here_ are addressed by this PR or
 the companion haku-state PR):
 
-| Gap                                                                                    | Effect                                                                                      | Fix                                                                                                                                         |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| No git identity in the image _(fixed here)_                                            | first `git commit` dies "Author identity unknown"                                           | one `git config` pair in the baked `haku-sandbox-setup.sh`                                                                                  |
-| No `kubectl` _(fixed here)_                                                            | `tools/ci_wait.sh` and `tools/plaid_q.sh` both fail at line 1 of work                       | bake `kubectl` into the image; `ci_wait.sh` can also just prefer `$HAKU_GIT_PASSWORD` (already in the pod env) over the kubectl secret read |
-| No `python3` / Nix closure, and `cli/main.py` has **no Bazel target** _(fixed here)_   | `haku read --all` and the gmail/tana/console/plaid/location scanners are unavailable        | give `cli/main.py` a `py_binary` (below)                                                                                                    |
-| `@pypi//fastmcp_slim` lacks the `[client]` extra _(fixed here)_                        | `from fastmcp import Client` → ImportError, so no console-MCP client                        | add the client extra to `ui/backend/requirements.txt`, or a second pip hub for the CLI                                                      |
-| `cli/k8s_secrets.py` shells to `kubectl` for the console bearer _(fixed here)_         | console client can't authenticate even with fastmcp                                         | inject `HAKU_CONSOLE_TOKEN` via `secretKeyRef` in the SandboxTemplate (`console.py` already prefers the env var)                            |
-| `.netrc` has only `forgejo-http.forgejo` _(fixed here)_                                | the CLI's REST readers hit the public host unauthenticated — `haku read --source cpap` 404s | write both machines in `haku-sandbox-setup.sh`                                                                                              |
-| `NO_PROXY` covers `.svc.cluster.local` but not `kubernetes.default.svc` _(fixed here)_ | the short API hostname is thrown at the egress proxy and hangs                              | extend `NO_PROXY` (suffix matching is literal — the short form never matched the FQDN suffix)                                               |
-| `tools/validate_local.sh` is Nix-closure-only                                          | exits 2 in-sandbox; `push_state.sh` degrades to "rely on CI"                                | prefer `bazel run //cli:{validate,freshness}` when `bazel` is on PATH                                                                       |
-| haku-state is cloned `--depth 1`                                                       | fine today; a rebase against a moved `origin/main` is untested shallow                      | deepen on demand in `push_state.sh`, or drop to `--depth 50`                                                                                |
-| The in-cluster ducktape mirror lagged real `devel`                                     | base-sync from inside the sandbox would compare against a stale HEAD                        | keep base-sync on the harness-side ducktape checkout, or check the mirror's freshness first                                                 |
+| Gap                                                                                    | Effect                                                                                                                                                                                       | Fix                                                                                                                                         |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| No git identity in the image _(fixed here)_                                            | first `git commit` dies "Author identity unknown"                                                                                                                                            | one `git config` pair in the baked `haku-sandbox-setup.sh`                                                                                  |
+| No `kubectl` _(fixed here)_                                                            | `tools/ci_wait.sh` and `tools/plaid_q.sh` both fail at line 1 of work                                                                                                                        | bake `kubectl` into the image; `ci_wait.sh` can also just prefer `$HAKU_GIT_PASSWORD` (already in the pod env) over the kubectl secret read |
+| No `python3` / Nix closure, and `cli/main.py` has **no Bazel target** _(fixed here)_   | `haku read --all` and the gmail/tana/console/plaid/location scanners are unavailable                                                                                                         | give `cli/main.py` a `py_binary` (below)                                                                                                    |
+| `@pypi//fastmcp_slim` lacks the `[client]` extra _(fixed here)_                        | `from fastmcp import Client` → ImportError, so no console-MCP client                                                                                                                         | add the client extra to `ui/backend/requirements.txt`, or a second pip hub for the CLI                                                      |
+| `cli/k8s_secrets.py` shells to `kubectl` for the console bearer _(fixed here)_         | console client can't authenticate even with fastmcp                                                                                                                                          | inject `HAKU_CONSOLE_TOKEN` via `secretKeyRef` in the SandboxTemplate (`console.py` already prefers the env var)                            |
+| `.netrc` has only `forgejo-http.forgejo` _(fixed here)_                                | the CLI's REST readers hit the public host unauthenticated — `haku read --source cpap` 404s                                                                                                  | write both machines in `haku-sandbox-setup.sh`                                                                                              |
+| `NO_PROXY` covers `.svc.cluster.local` but not `kubernetes.default.svc` _(fixed here)_ | the short API hostname is thrown at the egress proxy and hangs                                                                                                                               | extend `NO_PROXY` (suffix matching is literal — the short form never matched the FQDN suffix)                                               |
+| `tools/validate_local.sh` is Nix-closure-only _(fixed, haku-state #41)_                | exits 2 in-sandbox; `push_state.sh` degrades to "rely on CI"                                                                                                                                 | prefer `bazel run //cli:{validate,freshness}` when `bazel` is on PATH                                                                       |
+| `tools/ci_wait.sh` reported a FALSE GREEN _(fixed, haku-state #41 + python3 here)_     | its `python3` run-status parse was absent, so every `[ ]` integer test errored and control fell through to "all runs green", exit 0 — the end-of-run CI gate passing while verifying nothing | guard the parse and exit 2; put `python3-minimal` back in the image so it is functional, not just loud                                      |
+| haku-state is cloned `--depth 1`                                                       | fine today; a rebase against a moved `origin/main` is untested shallow                                                                                                                       | deepen on demand in `push_state.sh`, or drop to `--depth 50`                                                                                |
+| The in-cluster ducktape mirror lagged real `devel`                                     | base-sync from inside the sandbox would compare against a stale HEAD                                                                                                                         | keep base-sync on the harness-side ducktape checkout, or check the mirror's freshness first                                                 |
 
 **Two hard ceilings, neither fixable in haku-state:**
 
@@ -200,3 +201,36 @@ and `haku-sandbox-mcp` is a single replica).
   queue, not through `exec_sandbox`.
 - Runtime choice (A/B/C). This is orthogonal — every runtime in
   [runtime_options.md](runtime_options.md) gains the same execution surface.
+
+## Build the image with Nix instead of a Dockerfile
+
+Operator preference (2026-07-24), and there is directly applicable prior art:
+<../../x/codex_pod_image/> builds a **Kubernetes pod** image purely from Nix — a
+`dockerTools` archive, tool set as one `buildEnv` on `/bin`, home-manager files baked in,
+non-root UID 1000, no runtime bootstrap script, pushed by CI with `skopeo copy
+docker-archive:` and rolled by Flux image automation. That is the same shape the Haku
+sandbox image needs, and it would dissolve the recurring "the image is missing X" class of
+bug this plan keeps hitting (`kubectl`, `python3`, `jq`, …): the tool list becomes one Nix
+attribute set instead of an `apt-get install` line nobody revisits. It also brings `tini` as
+PID 1, which would reap the exec zombies noted above.
+
+**The one real risk, and it is specific to this image.** <../../x/nix_rbe_image/README.md>
+records why the Nix approach was abandoned for the RBE worker: NixOS glibc has nix-store
+paths compiled into its library search path, so **dynamically-linked binaries downloaded at
+runtime cannot find `libstdc++.so.6`** — and it names exactly the two this image lives on,
+"Bazel from bazelisk" and "python-build-standalone". This sandbox's whole job is bazelisk
+fetching Bazel (which runs a bundled JDK) and `rules_python` fetching a hermetic CPython, so
+it is the worst case for that failure mode, not an incidental user of it.
+
+What makes it plausible here anyway: the RBE blocker was that **BuildBuddy's Firecracker
+goinit never runs the container's `/init`**, so nix-ld's env (`NIX_LD`,
+`NIX_LD_LIBRARY_PATH`) never gets set and systemd-based activation never happens. A
+`SandboxTemplate` pod has no such constraint — we own the pod spec and can set those env
+vars declaratively, the same way `HAKU_GIT_*` and `HAKU_CONSOLE_TOKEN` are set today. So the
+thing that killed it for RBE does not obviously apply.
+
+Sequence, before committing to it: build the Nix image, run `bazel build //cli:validate` and
+`bazel test //...` inside it, and confirm the bazelisk-downloaded Bazel and the hermetic
+CPython both start. If they do, the rest is mechanical (flake attribute + a CI job mirroring
+`codex-pod-image`'s push). If they do not, `nix-ld` via pod env is the next thing to try, and
+the current Dockerfile stays — it is not costing much beyond the occasional missing tool.
