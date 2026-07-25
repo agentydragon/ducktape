@@ -7,8 +7,12 @@
 # cluster), so this image bakes the full local toolchain, not an RBE client.
 #
 # Deliberately minimal (cf. haku/plans/ci_warm_bazel_server.md "Builder image"):
-# bazelisk + a JDK (keytool + the Bazel server JVM) + git/curl/openssl. NO nix,
-# NO docker (bazel's //ui:image uses hermetic rules_oci), NO browser/Rust/GHC deps.
+# bazelisk + a JDK (keytool + the Bazel server JVM) + git/curl/openssl + kubectl. NO
+# nix, NO docker (bazel's //ui:image uses hermetic rules_oci), NO browser/Rust/GHC deps.
+# kubectl earns its place because the pod runs as the `haku` ServiceAccount (full CRUD
+# in haku-sandbox) and haku-state's run plumbing shells out to it — tools/ci_wait.sh
+# reads the Forgejo password from a Secret, tools/plaid_q.sh runs the query pod, and
+# cli/k8s_secrets.py backs `haku console`. Without it those all fail at their first line.
 # Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel, but the
 # C/C++ toolchain is NOT: haku-state's cc rules resolve through Bazel's local_config_cc
 # autoconf, which probes for a system gcc/g++. So build-essential is baked in — without
@@ -35,6 +39,14 @@ ARG BAZELISK_VERSION=v1.25.0
 RUN curl -fsSL -o /usr/local/bin/bazel \
       "https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-amd64" \
     && chmod +x /usr/local/bin/bazel
+
+# kubectl pinned to the cluster's control-plane minor (1.35.x); the ±1-minor skew policy
+# also covers the 1.36 worker nodes. Bump when the control plane moves.
+ARG KUBECTL_VERSION=v1.35.1
+RUN curl -fsSL -o /usr/local/bin/kubectl \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl \
+    && kubectl version --client
 
 COPY haku-sandbox-setup.sh /usr/local/bin/haku-sandbox-setup.sh
 RUN chmod +x /usr/local/bin/haku-sandbox-setup.sh

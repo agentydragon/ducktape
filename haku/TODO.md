@@ -221,6 +221,13 @@ the runtimes differ in where the sandbox runs — see
   old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from
   `haku-state` for replayability.
+- **Harmonize the Forgejo host** — the same Forgejo is reached under two names and
+  every consumer has to know which: `forgejo-http.forgejo` in-cluster (git clones,
+  the `ducktape_haku` bzlmod `git_override`) and `git.allegedly.works` publicly
+  (the CLI's REST readers, `tools/ci_wait.sh`). Credentials, `.netrc` entries, and
+  `NO_PROXY` all have to be written twice, and a missing second entry fails as a
+  bare 404 (`haku read --source cpap` in the sandbox, 2026-07-24). Pick one name
+  that resolves both inside and outside the cluster and collapse the duplication.
 - **tier-2 execution** — haku-owned execution behind stronger gating, only if
   handoff-via-prompt proves too slow for routine actions.
 - **Precise effort/cost model** — today effort budgeting is a rough heuristic

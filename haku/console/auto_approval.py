@@ -219,9 +219,14 @@ HOME_ASSISTANT_READ_TOOLS = frozenset(
 # not a new escalation for the Haku agent: it already holds full CRUD + pods/exec in haku-sandbox via
 # its own ServiceAccount, so exec_sandbox ≈ a direct `kubectl exec` it can already run — the MCP
 # approval gate only ever governed a kubeconfig-less external harness reaching the box through the
-# console. dispose_sandbox (destructive claim delete) stays operator-gated.
+# console. dispose_sandbox comes along too (operator directive 2026-07-24): the claim it deletes is
+# Haku's own ephemeral box, holding nothing but a re-clonable haku-state checkout and a rebuildable
+# Bazel cache, and gating it only ever stranded claims against the namespace quota — a sandbox Haku
+# can create tap-free it must be able to release tap-free.
 SANDBOX_MCP_SERVER_ID = "sandbox-mcp"
-SANDBOX_MCP_AUTO_APPROVE_TOOLS = frozenset({"provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes"})
+SANDBOX_MCP_AUTO_APPROVE_TOOLS = frozenset(
+    {"provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"}
+)
 
 # (server_id -> tools) auto-approved for any authenticated agent regardless of arguments. Drives the
 # MCP server's transparent pass-through bucket. Argument-conditional approvals

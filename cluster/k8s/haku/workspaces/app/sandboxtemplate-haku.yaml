@@ -79,6 +79,17 @@ spec:
                 secretKeyRef:
                   name: haku-forgejo-git
                   key: password
+            # The haku-console agent bearer, so the CLI's console-MCP client
+            # (`cli/console.py`, which prefers this env var over a kubectl secret
+            # read) authenticates with no kubectl and no per-run token fetch —
+            # `bazel run //cli:haku -- read --all` works out of the box. Same
+            # credential the agent already drives the console with; keeping it on
+            # the pod env grants no authority the sandbox lacked.
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-agent-api
+                  key: token
           resources:
             requests:
               cpu: "1"
