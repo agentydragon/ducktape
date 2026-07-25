@@ -13,3 +13,13 @@ export function redirectToOperatorLogin(location: LoginLocation = window.locatio
   const returnTo = encodeURIComponent(`${location.pathname}${location.search}`);
   location.replace(`/auth/login?return_to=${returnTo}`);
 }
+
+/** Whether this document is already on its way to the login flow.
+ *
+ * `location.replace` schedules a navigation; it does not stop the current document, so queued
+ * promise callbacks still run and can paint. A surface that would report the failure of the very
+ * request that triggered the redirect should stay quiet instead — the operator is about to be
+ * signed back in, and a red error page in the meantime reads as a broken console. */
+export function operatorLoginRedirectStarted(): boolean {
+  return redirectStarted;
+}

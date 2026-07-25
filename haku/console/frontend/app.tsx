@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { type ConfigResponse, fetchConfig } from "./client.ts";
 import { HakuUiEmbed } from "./haku_ui_embed.tsx";
+import { operatorLoginRedirectStarted } from "./operator_login.ts";
 import { OAuthResultPage } from "./oauth_result_page.tsx";
 import { useOAuthResultAnnouncement } from "./oauth_result_announcement.ts";
 import { useConsoleView } from "./routing.ts";
@@ -26,7 +27,10 @@ export default function App() {
         if (alive) setConfig(c);
       })
       .catch((e: unknown) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
+        // A 401 already started the login redirect (client.ts). This document is about to be
+        // replaced, so surfacing its own 401 would only flash "no active authenticated operator
+        // on the request" at an operator who is being signed straight back in.
+        if (alive && !operatorLoginRedirectStarted()) setError(e instanceof Error ? e.message : String(e));
       });
     return () => {
       alive = false;
@@ -36,7 +40,8 @@ export default function App() {
   if (view === "oauthResult" && oauthResultId !== null) return <OAuthResultPage resultId={oauthResultId} />;
 
   // The initial config load is the one thing rendered by the shell itself; a failure
-  // leaves nothing to frame, so it gets a persistent page-level message.
+  // leaves nothing to frame, so it gets a persistent page-level message — except while the
+  // login redirect below is in flight, where the loader carries the handover instead.
   if (error)
     return (
       <Text c="red" className="mx-auto max-w-3xl p-4">

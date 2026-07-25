@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { redirectToOperatorLogin } from "./operator_login.ts";
+import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login.ts";
 
 describe("redirectToOperatorLogin", () => {
   it("carries the current console page and query as the continuation", async () => {
@@ -15,6 +15,28 @@ describe("redirectToOperatorLogin", () => {
     expect(replace).toHaveBeenCalledWith("/auth/login?return_to=%2F_console%2Ftool-calls%3Fshow%3Dall");
   });
 
+  it("reports that the document is leaving, so surfaces can hold their error state", async () => {
+    vi.resetModules();
+    const { redirectToOperatorLogin: redirect, operatorLoginRedirectStarted: started } =
+      await import("./operator_login.ts");
+
+    expect(started()).toBe(false);
+    redirect({ pathname: "/", search: "", replace: vi.fn() });
+    expect(started()).toBe(true);
+  });
+
+  it("stays quiet on the login pages themselves, so nothing suppresses their own errors", async () => {
+    vi.resetModules();
+    const { redirectToOperatorLogin: redirect, operatorLoginRedirectStarted: started } =
+      await import("./operator_login.ts");
+    const replace = vi.fn();
+
+    redirect({ pathname: "/auth/callback", search: "?state=abc", replace });
+
+    expect(replace).not.toHaveBeenCalled();
+    expect(started()).toBe(false);
+  });
+
   it("starts only one login flow when requests fail concurrently", () => {
     const replace = vi.fn();
     const location = { pathname: "/", search: "", replace };
@@ -24,5 +46,6 @@ describe("redirectToOperatorLogin", () => {
 
     expect(replace).toHaveBeenCalledOnce();
     expect(replace).toHaveBeenCalledWith("/auth/login?return_to=%2F");
+    expect(operatorLoginRedirectStarted()).toBe(true);
   });
 });
