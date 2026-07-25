@@ -37,8 +37,15 @@ spec:
       dnsPolicy: ClusterFirst
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/region: hil
+      # No region nodeSelector: any always-on node (hil/home/proxmox) is fine now that
+      # /workspace is an emptyDir (below) rather than a region-pinned PVC. Roaming nodes
+      # (iguana, rugged) stay excluded on their own via their existing
+      # `node-role.kubernetes.io/roaming=true:NoSchedule` taint — no explicit exclusion
+      # needed here.
+      # TODO(operator, 2026-07-25): roaming nodes are often offline (see cluster/README.md
+      # Node Types), so scheduling a sandbox there needs more thought (claim durability
+      # across a node going away mid-session, re-provisioning UX) before adding the
+      # toleration that would let a claim land on one. Not done as part of this change.
       # Haku's own k8s identity so `kubectl` works out of the box — Haku operates its
       # normal compute in haku-sandbox from here. The shared `haku` SA
       # (cluster/k8s/haku/rbac/serviceaccount-haku.yaml) is bound to haku-sandbox-admin
@@ -100,14 +107,15 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
-  volumeClaimTemplatesPolicy: Overrides
-  volumeClaimTemplates:
-    - metadata:
-        name: workspace
-      spec:
-        # No default StorageClass in this cluster — must be explicit.
-        storageClassName: seaweedfs-ovh
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 30Gi
+      # emptyDir, not a PVC: /workspace only ever holds a shallow (--depth 1) haku-state
+      # git checkout, which haku-sandbox-setup.sh unconditionally fetch+reset --hard's on
+      # every claim anyway — nothing here needs to survive a pod restart. Was a 30Gi
+      # seaweedfs-ovh PVC; that added PVC provisioning/binding latency and made /workspace
+      # a network filesystem for no benefit (Bazel's project-file scan intermittently
+      # ENOENTs against SeaweedFS — see haku/plans/sandbox_run_runtime.md's "cold/warm
+      # build cost" probe notes). sizeLimit kept at the same 30Gi ceiling as the old PVC
+      # request.
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 30Gi
