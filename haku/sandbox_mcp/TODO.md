@@ -48,3 +48,30 @@ answering. The agent's only recourse is to guess from the recent deploy.
   had moved to calling a script the running image did not yet contain).
 - `list_sandboxes` should mark stale-contract claims so the agent can see the situation
   without a per-claim probe.
+
+### A `warnings` field: "this pod is running a stale spec"
+
+The shape both of the above want is a **non-fatal warning list** on the read tools, not a
+refusal and not a new synthetic state. `get_sandbox_info` (and a compact form in
+`list_sandboxes`) should carry something like `warnings: ["pod image
+…043101-57961d1 is behind the template's …052952-ad87431", "claim contract hash predates
+the server's current config"]` — the claim stays usable, and the agent decides whether the
+skew matters for what it is about to do.
+
+**Image skew is a real case, not a hypothetical, and it is separate from contract drift.**
+Observed 2026-07-25: Flux rolled a new `haku-sandbox-image` pin, and every pod _created_
+after that used it — but the pool's already-idle warm pod was **not** recycled, and a claim
+made three minutes after the bump adopted it, still on the previous image. Meanwhile
+`get_sandbox_info` reported `state: ready, bootstrap_state: succeeded` with nothing to
+suggest the box was a version behind. The convergence is by turnover — pods age out and
+claims expire — so it is correct within a claim TTL, but silent throughout.
+
+Note the two skews need different treatment, which is the argument for a warning list over
+a single boolean:
+
+- **Claimed pods keeping their image is correct.** Yanking a box mid-run to roll an image
+  would be worse than the skew. Warn, never act.
+- **An idle warm pod being handed out stale is arguably a pool bug**, not just a reporting
+  gap — `updateStrategy: Recreate` on the `SandboxWarmPool` did not replace it when the
+  template changed. Worth checking whether the upstream controller intends to, before
+  building anything on the assumption that a fresh claim implies a fresh spec.
