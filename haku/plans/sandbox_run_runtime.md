@@ -41,18 +41,18 @@ is the same command CI runs.
 **Does not work / needs a workaround** (rows marked _fixed here_ are addressed by this PR or
 the companion haku-state PR):
 
-| Gap                                                                                  | Effect                                                                                      | Fix                                                                                                                                         |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| No git identity in the image _(fixed here)_                                          | first `git commit` dies "Author identity unknown"                                           | one `git config` pair in the MCP `bootstrap.script`                                                                                         |
-| No `kubectl` _(fixed here)_                                                          | `tools/ci_wait.sh` and `tools/plaid_q.sh` both fail at line 1 of work                       | bake `kubectl` into the image; `ci_wait.sh` can also just prefer `$HAKU_GIT_PASSWORD` (already in the pod env) over the kubectl secret read |
-| No `python3` / Nix closure, and `cli/main.py` has **no Bazel target** _(fixed here)_ | `haku read --all` and the gmail/tana/console/plaid/location scanners are unavailable        | give `cli/main.py` a `py_binary` (below)                                                                                                    |
-| `@pypi//fastmcp_slim` lacks the `[client]` extra _(fixed here)_                      | `from fastmcp import Client` → ImportError, so no console-MCP client                        | add the client extra to `ui/backend/requirements.txt`, or a second pip hub for the CLI                                                      |
-| `cli/k8s_secrets.py` shells to `kubectl` for the console bearer _(fixed here)_       | console client can't authenticate even with fastmcp                                         | inject `HAKU_CONSOLE_TOKEN` via `secretKeyRef` in the SandboxTemplate (`console.py` already prefers the env var)                            |
-| `.netrc` has only `forgejo-http.forgejo` _(fixed here)_                              | the CLI's REST readers hit the public host unauthenticated — `haku read --source cpap` 404s | write both machines in the MCP `bootstrap.script`                                                                                           |
-| `NO_PROXY` covers `.svc.cluster.local` but not `kubernetes.default.svc`              | the short API hostname is thrown at the egress proxy and hangs                              | use the FQDN, or extend `NO_PROXY`                                                                                                          |
-| `tools/validate_local.sh` is Nix-closure-only                                        | exits 2 in-sandbox; `push_state.sh` degrades to "rely on CI"                                | prefer `bazel run //cli:{validate,freshness}` when `bazel` is on PATH                                                                       |
-| haku-state is cloned `--depth 1`                                                     | fine today; a rebase against a moved `origin/main` is untested shallow                      | deepen on demand in `push_state.sh`, or drop to `--depth 50`                                                                                |
-| The in-cluster ducktape mirror lagged real `devel`                                   | base-sync from inside the sandbox would compare against a stale HEAD                        | keep base-sync on the harness-side ducktape checkout, or check the mirror's freshness first                                                 |
+| Gap                                                                                    | Effect                                                                                      | Fix                                                                                                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| No git identity in the image _(fixed here)_                                            | first `git commit` dies "Author identity unknown"                                           | one `git config` pair in the baked `haku-sandbox-setup.sh`                                                                                  |
+| No `kubectl` _(fixed here)_                                                            | `tools/ci_wait.sh` and `tools/plaid_q.sh` both fail at line 1 of work                       | bake `kubectl` into the image; `ci_wait.sh` can also just prefer `$HAKU_GIT_PASSWORD` (already in the pod env) over the kubectl secret read |
+| No `python3` / Nix closure, and `cli/main.py` has **no Bazel target** _(fixed here)_   | `haku read --all` and the gmail/tana/console/plaid/location scanners are unavailable        | give `cli/main.py` a `py_binary` (below)                                                                                                    |
+| `@pypi//fastmcp_slim` lacks the `[client]` extra _(fixed here)_                        | `from fastmcp import Client` → ImportError, so no console-MCP client                        | add the client extra to `ui/backend/requirements.txt`, or a second pip hub for the CLI                                                      |
+| `cli/k8s_secrets.py` shells to `kubectl` for the console bearer _(fixed here)_         | console client can't authenticate even with fastmcp                                         | inject `HAKU_CONSOLE_TOKEN` via `secretKeyRef` in the SandboxTemplate (`console.py` already prefers the env var)                            |
+| `.netrc` has only `forgejo-http.forgejo` _(fixed here)_                                | the CLI's REST readers hit the public host unauthenticated — `haku read --source cpap` 404s | write both machines in `haku-sandbox-setup.sh`                                                                                              |
+| `NO_PROXY` covers `.svc.cluster.local` but not `kubernetes.default.svc` _(fixed here)_ | the short API hostname is thrown at the egress proxy and hangs                              | extend `NO_PROXY` (suffix matching is literal — the short form never matched the FQDN suffix)                                               |
+| `tools/validate_local.sh` is Nix-closure-only                                          | exits 2 in-sandbox; `push_state.sh` degrades to "rely on CI"                                | prefer `bazel run //cli:{validate,freshness}` when `bazel` is on PATH                                                                       |
+| haku-state is cloned `--depth 1`                                                       | fine today; a rebase against a moved `origin/main` is untested shallow                      | deepen on demand in `push_state.sh`, or drop to `--depth 50`                                                                                |
+| The in-cluster ducktape mirror lagged real `devel`                                     | base-sync from inside the sandbox would compare against a stale HEAD                        | keep base-sync on the harness-side ducktape checkout, or check the mirror's freshness first                                                 |
 
 **Two hard ceilings, neither fixable in haku-state:**
 
@@ -116,17 +116,26 @@ heavy in-place editing across many items.
 
 ### Phase 0 — close the cheap gaps — **LANDED in this PR**
 
-1. `cluster/k8s/agents/haku-sandbox-mcp/app/config.yaml` → `bootstrap.script`: the commit
-   identity (`git config --global user.{name,email}`), and a **second `.netrc` machine** for
-   the public `git.allegedly.works` — the live scan below 404'd on `haku read --source cpap`
-   because only the in-cluster `forgejo-http.forgejo` was authenticated. Both are bootstrap,
-   not image, so they apply on the next claim with no rebuild.
-2. `cluster/k8s/haku/workspaces/image/Dockerfile`: `kubectl`, pinned to the control-plane
+1. The per-claim bootstrap gains the commit identity (`git config --global user.{name,email}`)
+   and a **second `.netrc` machine** for the public `git.allegedly.works` — the live scan
+   below 404'd on `haku read --source cpap` because only the in-cluster
+   `forgejo-http.forgejo` was authenticated. In the same pass the bootstrap moves out of the
+   MCP's config YAML and into the image's `haku-sandbox-setup.sh`, which already held the
+   egress-CA half: a 25-line bash blob in YAML is what STYLE.md forbids, and in the script
+   `shfmt`/`shellcheck` lint it. Deviation: changing bootstrap behavior now costs an image
+   rebuild + rollout rather than a ConfigMap edit — accepted because the MCP's environment
+   contract hash never covered the image tag anyway (`haku/sandbox_mcp/config.py`), so no
+   drift detection is lost.
+2. `cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml`: add `.svc` and
+   `kubernetes.default.svc` to `NO_PROXY`. Suffix matching is literal, so the short
+   in-cluster apiserver name — the one every client library builds by default — never
+   matched the `.svc.cluster.local` entry and hung against the proxy.
+3. `cluster/k8s/haku/workspaces/image/Dockerfile`: `kubectl`, pinned to the control-plane
    minor. Unblocks `ci_wait.sh`/`plaid_q.sh` and `cli/k8s_secrets.py`.
-3. `cluster/k8s/haku/workspaces/app/sandboxtemplate-haku.yaml`: `HAKU_CONSOLE_TOKEN` from the
+4. `cluster/k8s/haku/workspaces/app/sandboxtemplate-haku.yaml`: `HAKU_CONSOLE_TOKEN` from the
    `haku-console-agent-api` secret via `secretKeyRef`, mirroring the `HAKU_GIT_*` pair — so
    the CLI's console client authenticates with no kubectl and no per-run token fetch.
-4. Still open, haku-state (**Forgejo PR**, not a direct push — `procedures/code_changes.md`):
+5. Still open, haku-state (**Forgejo PR**, not a direct push — `procedures/code_changes.md`):
    `tools/validate_local.sh` prefers `bazel run //cli:validate` + `//cli:freshness` when
    `bazel` is on PATH, keeping the Nix path as fallback; `tools/ci_wait.sh` uses
    `$HAKU_GIT_PASSWORD` when set instead of the kubectl secret read.

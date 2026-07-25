@@ -31,6 +31,13 @@
 # buffers the whole response. forgejo is an internal service reachable directly
 # under Cilium's cluster-only egress rule, so bypass the proxy for it; the .netrc
 # host stays forgejo-http.forgejo, so auth is unchanged.
+#
+# `.svc` and `kubernetes.default.svc` are listed alongside `.svc.cluster.local`
+# because suffix matching is literal: the short in-cluster forms do NOT match the
+# fully-qualified suffix, so `https://kubernetes.default.svc` — the default
+# apiserver URL every in-cluster client library builds — went to the proxy and hung
+# until it timed out (found from a haku sandbox, 2026-07-24). The FQDN form worked
+# all along; this makes both work.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -90,7 +97,7 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -148,7 +155,7 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:

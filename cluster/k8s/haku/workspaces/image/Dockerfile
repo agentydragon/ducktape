@@ -48,6 +48,9 @@ RUN curl -fsSL -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client
 
+# The whole reviewed per-claim bootstrap (egress CA, git identity + credentials, the
+# haku-state checkout). The sandbox-provisioning MCP's bootstrap.script is just a call
+# to this, so the logic stays in a lintable file instead of a bash blob in config YAML.
 COPY haku-sandbox-setup.sh /usr/local/bin/haku-sandbox-setup.sh
 RUN chmod +x /usr/local/bin/haku-sandbox-setup.sh
 

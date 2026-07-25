@@ -15,44 +15,12 @@ sandbox:
 bootstrap:
   cwd: /workspace
   timeout_seconds: 300
-  # Reviewed, runs once per claim: (1) trust the egress CA at the JVM level — the one
-  # image-coupled step, the baked haku-sandbox-setup.sh (needs keytool); then all the
-  # git, here so it changes without an image rebuild: (1b) the commit identity, absent
-  # from the image, without which the first `git commit` of a run dies "Author identity
-  # unknown"; (2) write the .netrc from the
-  # pod's HAKU_GIT_USERNAME/HAKU_GIT_PASSWORD (the haku-forgejo-git secret, via the
-  # SandboxTemplate) for BOTH Forgejo hostnames — the in-cluster forgejo-http.forgejo
-  # (the ducktape_haku git_override on every bazel invocation + this clone) and the
-  # public git.allegedly.works, which the CLI's REST readers use (`haku read --source
-  # cpap` hits the cpap-data repo there and 404s unauthenticated); (3) sync
-  # haku-state so `bazel run //cli:...` works. Branch is main (haku-state's default),
-  # not master.
-  #
-  # The clone/fetch are --depth 1: forgejo's full-history pack generation is the
-  # dominant cost (a full clone runs minutes even with the egress proxy bypassed;
-  # a shallow clone is ~9s), and the sandbox only builds/runs the HEAD checkout —
-  # it needs no history. Deviation: if a build step ever needs git history/tags
-  # (e.g. `git describe` version stamping), deepen the fetch here.
+  # The reviewed per-claim bootstrap is one baked script — egress CA trust, git identity,
+  # git credentials, and the haku-state checkout — kept in its native file
+  # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh) rather than inlined here, so
+  # shfmt/shellcheck lint it. Read that file for what each step does and why. Deviation
+  # from the sandbox_mcp README's example config, which inlines the clone: changing
+  # bootstrap behavior here means an image rebuild + rollout, not a ConfigMap edit.
   script: |
     set -euo pipefail
     /usr/local/bin/haku-sandbox-setup.sh
-    git config --global user.name haku
-    git config --global user.email haku@allegedly.works
-    umask 077
-    cat >"$HOME/.netrc" <<NETRC
-    machine forgejo-http.forgejo
-    login ${HAKU_GIT_USERNAME:?HAKU_GIT_USERNAME unset}
-    password ${HAKU_GIT_PASSWORD:?HAKU_GIT_PASSWORD unset}
-    machine git.allegedly.works
-    login ${HAKU_GIT_USERNAME}
-    password ${HAKU_GIT_PASSWORD}
-    NETRC
-    repo=/workspace/haku-state
-    url=http://forgejo-http.forgejo:3000/haku/haku-state.git
-    if [ -d "$repo/.git" ]; then
-      git -C "$repo" fetch --depth 1 --prune origin main
-      git -C "$repo" checkout -B main origin/main
-      git -C "$repo" reset --hard origin/main
-    else
-      git clone --depth 1 --branch main --single-branch "$url" "$repo"
-    fi
