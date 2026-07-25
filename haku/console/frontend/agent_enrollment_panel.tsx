@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import {
   decideAgentEnrollment,
+  displayableError,
   getAgentEnrollment,
   type EnrollmentDecisionRequest,
   type EnrollmentView,
@@ -37,7 +38,7 @@ export function AgentEnrollmentPanel({
         setReconnectAgentId(view.reconnectable_agents[0]?.agent_id ?? null);
       },
       (reason: unknown) => {
-        if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+        if (alive) setError(displayableError(reason));
       }
     );
     return () => {
@@ -57,7 +58,7 @@ export function AgentEnrollmentPanel({
       toastSuccess("Agent enrollment denied", "No Agent credentials were issued.");
       onReturnToSettings();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(displayableError(reason));
       setDeciding(false);
     }
   }

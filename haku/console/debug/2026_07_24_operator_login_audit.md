@@ -146,9 +146,10 @@ error before the browser tears the page down.
 
 Fixed by exposing the existing one-flow-per-document latch (`operatorLoginRedirectStarted()`) so
 `App` holds its loader through the handover. The lesson generalizes past that one surface: **an
-error rendered from the request that triggered its own redirect is noise**, and three other surfaces
-(`tool_calls_page.tsx`, `agent_enrollment_panel.tsx`, `settings_panel.tsx`) still have that shape —
-less visibly, since they render inside a shell that still looks like the console.
+error rendered from the request that triggered its own redirect is noise**. Every fetch-error
+surface in the SPA holds `string | null`, so `client.ts`'s `displayableError` now returns `null`
+while a redirect is in flight and each site just assigns its result — which also collapsed the
+`e instanceof Error ? e.message : String(e)` ternary that had been copied into all nine of them.
 
 ## What is solid
 

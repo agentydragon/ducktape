@@ -1,9 +1,8 @@
 import { Loader, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import { type ConfigResponse, fetchConfig } from "./client.ts";
+import { type ConfigResponse, displayableError, fetchConfig } from "./client.ts";
 import { HakuUiEmbed } from "./haku_ui_embed.tsx";
-import { operatorLoginRedirectStarted } from "./operator_login.ts";
 import { OAuthResultPage } from "./oauth_result_page.tsx";
 import { useOAuthResultAnnouncement } from "./oauth_result_announcement.ts";
 import { useConsoleView } from "./routing.ts";
@@ -27,10 +26,7 @@ export default function App() {
         if (alive) setConfig(c);
       })
       .catch((e: unknown) => {
-        // A 401 already started the login redirect (client.ts). This document is about to be
-        // replaced, so surfacing its own 401 would only flash "no active authenticated operator
-        // on the request" at an operator who is being signed straight back in.
-        if (alive && !operatorLoginRedirectStarted()) setError(e instanceof Error ? e.message : String(e));
+        if (alive) setError(displayableError(e));
       });
     return () => {
       alive = false;

@@ -2,7 +2,7 @@ import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
 import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
-import { fetchToolCalls, type ToolCallRecord } from "./client.ts";
+import { displayableError, fetchToolCalls, type ToolCallRecord } from "./client.ts";
 import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
 import { ToolCallCard } from "./tool_call_card.tsx";
 import { useToolCallDecision } from "./tool_call_decision.ts";
@@ -70,7 +70,7 @@ export function ToolCallsPage() {
         setLoading(false);
       },
       (e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(displayableError(e));
         setLoading(false);
       }
     );

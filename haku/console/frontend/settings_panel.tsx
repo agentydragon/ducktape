@@ -8,6 +8,7 @@ import {
   disconnectMcpOperatorAuth,
   disconnectOperatorConnection,
   fetchDeploymentInfo,
+  displayableError,
   listAgents,
   type AgentView,
   type DeploymentInfo,
@@ -310,7 +311,7 @@ export function SettingsPanel() {
       },
       (e: unknown) => {
         if (generation !== loadGeneration.current) return;
-        setAgentsError(e instanceof Error ? e.message : String(e));
+        setAgentsError(displayableError(e));
       }
     );
     const mcpRequest = listMcpServers().then(
@@ -354,7 +355,7 @@ export function SettingsPanel() {
       },
       (e: unknown) => {
         if (generation !== loadGeneration.current) return;
-        setMcpError(e instanceof Error ? e.message : String(e));
+        setMcpError(displayableError(e));
       }
     );
     const deploymentRequest = fetchDeploymentInfo().then(
@@ -365,7 +366,7 @@ export function SettingsPanel() {
       },
       (e: unknown) => {
         if (generation !== loadGeneration.current) return;
-        setDeploymentError(e instanceof Error ? e.message : String(e));
+        setDeploymentError(displayableError(e));
       }
     );
     void Promise.all([agentsRequest, mcpRequest, deploymentRequest]).then(() => {
@@ -383,7 +384,7 @@ export function SettingsPanel() {
       },
       (e: unknown) => {
         if (generation !== daemonGeneration.current) return;
-        setDaemonsError(e instanceof Error ? e.message : String(e));
+        setDaemonsError(displayableError(e));
       }
     );
   }, []);

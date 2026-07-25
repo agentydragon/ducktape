@@ -12,7 +12,7 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
-import { fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client.ts";
+import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
 import { ShellChrome } from "./shell_chrome.tsx";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
@@ -307,7 +307,7 @@ export function HakuUiEmbed({
           setLastSyncAt(new Date());
           applyToolApprovals(approvals);
         },
-        (e: unknown) => setSyncError(e instanceof Error ? e.message : String(e))
+        (e: unknown) => setSyncError(displayableError(e))
       )
       .finally(() => setSyncsInFlight((count) => count - 1));
   }

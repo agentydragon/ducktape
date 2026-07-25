@@ -105,6 +105,3 @@ From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #351
 - **No sign-out affordance** (audit F6). `/auth/logout` exists and is exact-Origin gated, but
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
-- **Three surfaces still render a 401's error text while redirecting** (audit F7).
-  `tool_calls_page.tsx`, `agent_enrollment_panel.tsx` and `settings_panel.tsx` need the same
-  `operatorLoginRedirectStarted()` guard `app.tsx` has, or one shared helper for all four.

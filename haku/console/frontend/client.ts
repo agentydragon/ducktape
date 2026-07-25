@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
-import { redirectToOperatorLogin } from "./operator_login.ts";
+import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login.ts";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are
 // generated from the backend's OpenAPI schema: //haku/console/frontend:schema.
@@ -54,6 +54,15 @@ export function errorDetail(error: unknown, fallback: string): string {
     if (typeof detail === "string") return detail;
   }
   return fallback;
+}
+
+// Every fetch-error surface in the SPA holds `string | null`, so null means "nothing to show".
+// That is the right answer once a 401 has started the login redirect (the middleware above): this
+// document is about to be replaced, and reporting the failure of the request that triggered its own
+// redirect just flashes the API's detail string at an operator being signed straight back in.
+export function displayableError(e: unknown): string | null {
+  if (operatorLoginRedirectStarted()) return null;
+  return e instanceof Error ? e.message : String(e);
 }
 
 export async function fetchConfig(): Promise<ConfigResponse> {
