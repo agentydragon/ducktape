@@ -7,62 +7,52 @@ in the harness and drives this box through `exec_sandbox`.
 
 Two builds of the same image exist right now:
 
-| File          | Built by                                       | Pushed to                            | Status                                               |
-| ------------- | ---------------------------------------------- | ------------------------------------ | ---------------------------------------------------- |
-| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls            |
-| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | Bazel runs; `bazel test //...` blocked on `rules_js` |
+| File          | Built by                                       | Pushed to                            | Status                                    |
+| ------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------------- |
+| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
+| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
 
 Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
 them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
 then a `python3-minimal` with no `json`, then `jq`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
-## Probe results (2026-07-26) — Bazel runs; `bazel test //...` does not complete
+## Probe results (2026-07-26) — Bazel works, 25/26
 
-Bazel now works in the Nix image. `bazel run //cli:validate` returns **1169/1169 files
-valid**, the bootstrap runs end to end (both checkouts, egress CA, git identity), and the
-Python tests pass. `bazel test //...` still does **not** complete — it dies in the JS
-toolchain. Do not cut over yet.
+`bazel test //...` in a probe pod: **25 pass, 1 fails** — only `//ui/e2e:test_e2e`, the known
+no-Docker-socket gap. `bazel run //cli:validate` returns 1169/1169 and the bootstrap runs end
+to end. That is the documented target for this image.
 
-### What it took
+Three fixes got there, none of them guessable from a green CI build:
 
-Using nixpkgs' Bazel instead of a bazelisk download is the load-bearing change. Bazel's own
-extracted helpers (`process-wrapper`, `linux-sandbox`) are FHS binaries that cannot find
-`libstdc++` under NixOS glibc, and **all three ways to fix them after the fact are dead
-ends**, each measured:
+| Fix                                         | Why                                                                                                                                                                           |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nixpkgs' `bazel_8`, not a bazelisk download | Bazel's embedded helpers are FHS binaries; nixpkgs patches them at build time. Nothing can patch them after: Bazel checksums its install base (`FATAL: corrupt installation`) |
+| nix-ld's **filesystem** fallback            | The load-bearing one — see below                                                                                                                                              |
+| `bazel-shell` wrapper                       | nixpkgs bash falls back to `PATH=/no-such-path`, so any action Bazel renders as `exec env -` loses every bare command (`sort: command not found`)                             |
 
-| Attempt                             | Result                                                                              |
-| ----------------------------------- | ----------------------------------------------------------------------------------- |
-| `LD_LIBRARY_PATH` in the image      | Bazel does not pass it to `process-wrapper`                                         |
-| nix-ld + `--host_action_env=NIX_LD` | Doesn't reach it — `rules_python` runs `exec env -` (seen via `--verbose_failures`) |
-| `patchelf` the extracted helpers    | `FATAL: corrupt installation: … is missing or modified` — Bazel checksums it        |
-| (`/etc/ld.so.cache`)                | nixpkgs glibc reads its cache from inside its own read-only store path              |
+### The lesson: port the fallback, not the env vars
 
-nixpkgs patches those helpers at build time, so the problem never arises. Its `bazel_8` is
-**8.6.0** under this flake's pin — exactly `.bazelversion`, so no skew. (Verified in the
-pod: `nix eval` against the _unpinned_ registry misleadingly reports 8.7.0.)
+nix-ld has compiled-in defaults — `/run/current-system/sw/share/nix-ld/lib{,/ld.so}` — that
+it consults when `NIX_LD` is absent. `programs.nix-ld.enable` builds that directory _and_
+sets `NIX_LD`, but only in `environment.sessionVariables`, which reach login shells and not
+systemd services. **The filesystem is the real mechanism; the env vars are a convenience.**
 
-### The remaining limit, and what it implies
+An earlier revision of `default.nix` copied the env vars, skipped the directory, and then
+concluded from the resulting breakage that env-based nix-ld was structurally hopeless and
+this image should be rebased on Debian. That was wrong, and the probe that disproved it is
+worth keeping in mind as a technique: the same trivial `int main(){return 0;}`, compiled with
+`--dynamic-linker=/lib64/ld-linux-x86-64.so.2`, run under `env -` on both substrates.
 
-nix-ld is environment-based, so **every ruleset that sanitizes its environment defeats it**,
-and each needs its own passthrough:
+|             | NixOS host (wyrm2) | this image, before | this image, after |
+| ----------- | ------------------ | ------------------ | ----------------- |
+| `NIX_LD`    | **unset**          | set                | set               |
+| `env - ./t` | rc=0               | rc=134 (SIGABRT)   | rc=0              |
 
-- `rules_python` actions run `exec env -` → fixed with `--action_env` / `--test_env`
-  (without `--test_env=NIX_LD`, all 14 executed tests failed uniformly in ~0.5s, which
-  looks like a broken image rather than a missing passthrough).
-- `rules_js`'s `js_binary` wrapper scrubs env before exec'ing node → **still broken**; the
-  esbuild lifecycle hook dies `[nix-ld] FATAL: panicked … Posix(2)`.
-
-There is no way to enumerate every ruleset that will scrub its environment. That is the
-structural argument against env-based nix-ld in a container, and for a **Debian base with a
-Nix-built tool closure** ([devinfra/rbe_image/Dockerfile](../../../../../devinfra/rbe_image/Dockerfile)),
-where an ordinary glibc makes downloaded binaries work with no environment at all — while
-still keeping the tool list as one reviewable Nix attribute set, which was the point of the
-rewrite. The nix_rbe_image notes already call that "the primary (working) approach"; this
-probe is independent confirmation.
-
-Meanwhile the **Dockerfile image stays live** and carries every user-facing fix (full
-`python3`, `jq`, `tea`, the git CA config, the ducktape clone).
+Byte-identical nix-ld (store hash `3jbxih2a7…`) in every column, so the difference was never
+the binary or the environment — it was a directory that existed on one substrate and not the
+other. Details and the general rule: <../../../../../debug/nixos_bazel_bash/README.md>
+"Issue 4".
 
 ### Also required at cutover, in the pod spec
 
@@ -104,8 +94,8 @@ Then, inside it:
 1. `bazel --version` — should print 8.6.0 and match `.bazelversion`.
 2. `bazel run //cli:validate` — exercises the cc toolchain and the hermetic CPython.
    Currently passes (1169/1169).
-3. `bazel test //...` — target is **25/26**, with only `//ui/e2e:test_e2e` failing (no
-   Docker socket, deliberate). Currently blocked earlier than that, in `rules_js`.
+3. `bazel test //...` — **25/26**, with only `//ui/e2e:test_e2e` failing (no Docker socket,
+   deliberate). Anything else failing is a regression.
 4. `haku-sandbox-setup.sh` end to end — confirm `.netrc`, the git identity, the egress
    truststore, and both the `haku-state` and `ducktape` checkouts land.
 

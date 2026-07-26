@@ -4,7 +4,8 @@
 
 Bazel doesn't work locally on NixOS. Three independent issues must be fixed — and a
 fourth, [Issue 4](#issue-4-nix-ld-is-environment-based-and-bazel-rulesets-scrub-the-environment),
-which cannot be fixed, only avoided.
+which is about environment-scrubbed actions and is fixed with filesystem defaults rather
+than more env plumbing.
 
 **All of this is about executing actions locally.** With remote execution the question
 never arises: actions run on FHS workers, and only repo rules and the odd host tool stay on
@@ -139,66 +140,71 @@ an image needs its own file with store paths or `/bin`. The last row is why the 
 different in practice: a NixOS host sends the work to FHS workers and never exercises this,
 while a container runs every action on Nix glibc.
 
-## Issue 4: nix-ld is environment-based, and Bazel rulesets scrub the environment
+## Issue 4: nix-ld and bash both need FILESYSTEM defaults, not environment variables
 
-**Substrate**: measured in a Nix-built container, 2026-07-26. The mechanism is Bazel's
-(rulesets scrubbing environments), not the OS's, so it should reproduce on a NixOS host
-that executes actions locally — but that is **unverified**, because our NixOS hosts use RBE
-and never hit it. Treat the numbers below as container-measured.
+**Substrate**: measured in a Nix-built container. The NixOS-host half was measured on wyrm2.
 
-**Symptom**: `[nix-ld] FATAL: panicked at src/main.rs:187:55: called 'Result::unwrap()' on
-an 'Err' value: Posix(2)` (ENOENT) from an action, a test, or a genrule — not from anything
-you invoked directly.
+**Symptom**: `[nix-ld] FATAL: panicked ... Posix(2)` (ENOENT), or `<cmd>: command not found`
+(Exit 127), from an action/test/genrule — never from anything invoked directly.
 
-**Root cause**: nix-ld resolves the real loader by reading `NIX_LD` **from the environment**.
-Bazel and its rulesets scrub environments as a hermeticity measure, and a scrubbed
-environment has no `NIX_LD`, so nix-ld cannot find the interpreter and aborts. Each
-scrubbing layer is separate and needs its own passthrough:
+**Root cause**: Bazel renders actions as `exec env - …`, i.e. with a deliberately emptied
+environment. Two Nix-specific defaults are therefore never seen:
 
-| Scrubber                                      | Seen as                                     | Passthrough that fixes it   |
-| --------------------------------------------- | ------------------------------------------- | --------------------------- |
-| `rules_python` `PyWriteBuildData`             | `exec env - …` under `--verbose_failures`   | `build --action_env=NIX_LD` |
-| Test runner (does **not** inherit action env) | every `py_test` fails uniformly in ~0.5s    | `test --test_env=NIX_LD`    |
-| `rules_js` `js_binary` wrapper                | esbuild lifecycle hook aborts (core dumped) | none found                  |
+|                     | Where it comes from on NixOS                                                  | What a bare container gets                                  |
+| ------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| the ELF interpreter | `/run/current-system/sw/share/nix-ld/lib/ld.so`, nix-ld's compiled-in default | nothing — nix-ld aborts                                     |
+| `PATH`              | an FHS `/bin:/usr/bin`                                                        | nixpkgs bash's compiled fallback, literally `/no-such-path` |
 
-**Why it can't be fixed properly.** The list of scrubbers is open-ended — it is a property
-of every ruleset you happen to depend on, discovered one build failure at a time. And the
-three ways to make the binaries not need an environment are all closed:
+**The decisive experiment.** Compile `int main(void){return 0;}` with
+`-Wl,--dynamic-linker=/lib64/ld-linux-x86-64.so.2` and run it under `env -`:
 
-| Attempt                              | Result                                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `LD_LIBRARY_PATH` in the environment | Bazel does not pass it to `process-wrapper`                                                |
-| `patchelf` the extracted helpers     | `FATAL: corrupt installation: … is missing or modified` — Bazel checksums its install base |
-| `/etc/ld.so.cache`                   | nixpkgs glibc reads its cache from inside its own read-only store path                     |
+|             | NixOS host (wyrm2) | Nix container, before | after |
+| ----------- | ------------------ | --------------------- | ----- |
+| `NIX_LD`    | **unset**          | set                   | set   |
+| `env - ./t` | rc=0               | rc=134 (SIGABRT)      | rc=0  |
 
-**envfs does not help, and never could.** It mounts `/usr/bin` and `/bin` only (verified in
-the nixpkgs module), resolving _executable_ paths — shebangs, hardcoded `/bin/bash`. The
-failing binaries have a valid path; what they cannot resolve is their **ELF interpreter**
-`/lib64/ld-linux-x86-64.so.2` and `libstdc++.so.6`. That is nix-ld's job, not envfs's. (See
-also the separate envfs rejection above, for a different reason.)
+Byte-identical nix-ld (store hash `3jbxih2a7…`) throughout — so it was never the binary and
+never the environment. A NixOS host works _because of a directory_, not because of `NIX_LD`:
+`programs.nix-ld.enable` sets those vars only in `environment.sessionVariables`, which reach
+login shells and not systemd services. The env vars are a convenience; the filesystem is the
+mechanism.
 
-**Use nixpkgs' Bazel, not a bazelisk download.** Bazel's own extracted helpers
-(`process-wrapper`, `linux-sandbox`) are FHS binaries with exactly this problem; nixpkgs
-patches them at build time, so the install base it extracts is both Nix-correct and
-self-consistent. Note this ignores `.bazelversion` — only bazelisk reads that file — so
-check the two agree after any nixpkgs bump.
+**The rule**: when porting NixOS behaviour anywhere actions run with a scrubbed environment,
+**port the filesystem defaults, not the env vars.** Concretely, build nixpkgs'
+`nix-ld-libraries` buildEnv and place it where nix-ld's compiled-in default points, and give
+Bazel a `--shell_executable` wrapper that restores `/bin` on PATH when it is missing.
 
-**Conclusion (containers only — this says nothing about how to run Bazel on a NixOS
-host)**: don't build a container base from `dockerTools` and pile on env plumbing. Use a normal-glibc (Debian) base carrying a Nix-built tool closure — the
-[RBE image](../../devinfra/rbe_image/Dockerfile) shape — where downloaded binaries work with
-no environment at all, and the tool list is still one reviewable Nix attribute set. Measured
-end to end 2026-07-26 in
-[the Haku sandbox image notes](../../cluster/k8s/haku/workspaces/image/README.md): Bazel
-runs and `bazel run //cli:validate` passes, but `bazel test //...` dies in the JS toolchain.
+Chasing the same failures with `--action_env`/`--test_env` passthroughs is whack-a-mole: each
+ruleset scrubs differently (`rules_python`'s `env -`, `rules_js`'s `js_binary` wrapper,
+`tar.bzl`'s mtree rule), the list is open-ended, and rules that set
+`use_default_shell_env = False` cannot be reached by those flags at all. Filesystem defaults
+fix every one of them at once.
+
+**Also true, and unrelated to environments**: use nixpkgs' Bazel rather than a bazelisk
+download. Bazel's extracted helpers (`process-wrapper`, `linux-sandbox`) are FHS binaries
+with the same interpreter problem, and they cannot be patched afterwards — Bazel checksums
+its install base: `FATAL: corrupt installation: file '.../process-wrapper' is missing or
+modified`. nixpkgs patches them at build time. Note this ignores `.bazelversion` (only
+bazelisk reads it), so check the two agree after a nixpkgs bump.
+
+**Dead ends, all measured**: `LD_LIBRARY_PATH` (Bazel doesn't pass it to `process-wrapper`);
+`patchelf` on the helpers (install-base checksum, above); `/etc/ld.so.cache` (nixpkgs glibc
+reads its cache from inside its own read-only store path, so ldconfig can't write one);
+envfs (mounts `/usr/bin` and `/bin` only — it resolves _executable_ paths, never the ELF
+interpreter, verified live on wyrm2).
+
+**Outcome**: with the filesystem defaults in place, the Nix-built Haku sandbox image runs
+`bazel test //...` at 25/26 — only the known no-Docker-socket e2e test fails. Full write-up:
+[the Haku sandbox image notes](../../cluster/k8s/haku/workspaces/image/README.md).
 
 ## Status
 
-| Issue              | Symptom                               | Fix                                                             | Status           |
-| ------------------ | ------------------------------------- | --------------------------------------------------------------- | ---------------- |
-| `/bin/bash`        | Ruff lint fails                       | nixpkgs `bazel_8` already patched                               | Resolved         |
-| Empty PATH         | Mypy lint fails (`env` not found)     | `--action_env=PATH` in `~/.bazelrc`                             | Applied          |
-| `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails      | Patch `toolchains_buildbuddy` repo rule                         | Not started      |
-| Scrubbed env (#4)  | `[nix-ld] FATAL: panicked … Posix(2)` | Per-ruleset passthrough; unfixable in general — use an FHS base | Avoid, don't fix |
+| Issue              | Symptom                                                          | Fix                                                                              | Status      |
+| ------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------- |
+| `/bin/bash`        | Ruff lint fails                                                  | nixpkgs `bazel_8` already patched                                                | Resolved    |
+| Empty PATH         | Mypy lint fails (`env` not found)                                | `--action_env=PATH` in `~/.bazelrc`                                              | Applied     |
+| `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails                                 | Patch `toolchains_buildbuddy` repo rule                                          | Not started |
+| Scrubbed env (#4)  | `[nix-ld] FATAL: panicked … Posix(2)`; `sort: command not found` | Filesystem defaults: nix-ld fallback dir + a PATH-restoring `--shell_executable` | Resolved    |
 
 Docker container test setup for reproducing these issues is at `devinfra/nixos_bazel_test/`.
 

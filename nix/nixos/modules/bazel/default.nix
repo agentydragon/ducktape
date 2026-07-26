@@ -5,18 +5,16 @@
 # 2. Empty PATH in sandbox actions — system.bazelrc installs /etc/bazel.bazelrc
 # 3. Dynamically-linked Bazel-downloaded toolchains — nix-ld provides the linker stub
 #
-# KNOWN LIMIT: #3 only holds while actions execute somewhere FHS. nix-ld is
-# *environment-based*, and every ruleset that scrubs its environment defeats it
-# (rules_python runs `exec env -`; rules_js's js_binary wrapper scrubs before exec'ing
-# node), each needing its own passthrough, from an open-ended list. Our NixOS hosts don't
-# feel this because `bbr` runs actions on FHS RBE workers — local execution on Nix glibc is
-# where it bites, and it is not fully fixable there.
-#
-# That limit was measured in a Nix-built *container*, not on a NixOS host; the two share a
-# glibc and nix-ld and little else (this module's paths, envfs and
-# /run/current-system/sw/bin, don't exist in an image at all). The mechanism is Bazel's, so
-# it should apply to local execution here too — unverified, since we always use RBE.
-# See debug/nixos_bazel_bash/README.md "Two substrates" and "Issue 4".
+# WORTH KNOWING: #3 works here because of a *directory*, not because of the env vars.
+# nix-ld's compiled-in defaults live under /run/current-system/sw/share/nix-ld, which
+# `programs.nix-ld.enable` populates; it also sets NIX_LD, but only in
+# environment.sessionVariables, which reach login shells and not systemd services. A host
+# therefore runs FHS binaries fine with NIX_LD unset and even under `env -` (measured on
+# wyrm2). Anyone porting this to a container must copy that directory, not just the vars —
+# a Nix-built image that ported only the vars broke on every environment-scrubbed Bazel
+# action until the fallback was added. Same for bash: nixpkgs' fallback PATH is
+# `/no-such-path`, which an FHS host never notices. See
+# debug/nixos_bazel_bash/README.md "Two substrates" and "Issue 4".
 #
 # See debug/nixos_bazel_bash/README.md for details.
 {

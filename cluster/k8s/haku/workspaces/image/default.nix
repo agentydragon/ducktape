@@ -12,42 +12,38 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-26): Bazel now uses nixpkgs' build rather than a bazelisk download,
-# which is what makes it work here. Runtime re-probe pending. Still not what the
-# SandboxTemplate pulls — see <README.md>.
+# STATUS (2026-07-26): WORKS. `bazel test //...` gives 25/26 in a probe pod — only
+# //ui/e2e:test_e2e fails, the known no-Docker-socket gap. Not yet what the SandboxTemplate
+# pulls; cutover checklist in <README.md>.
 #
-# THE PROBLEM, AND THE THREE THINGS THAT DID NOT SOLVE IT.
-# NixOS glibc compiles nix-store paths into its library search path, so binaries downloaded
-# at runtime cannot find `libstdc++.so.6`. Bazel's own extracted helpers (process-wrapper,
-# linux-sandbox) are exactly that. Measured, in order:
-#   1. LD_LIBRARY_PATH in the image — Bazel does not pass it to process-wrapper.
-#   2. nix-ld + NIX_LD re-injected via --host_action_env/--repo_env, i.e. what
-#      <../../../../../nix/nixos/modules/bazel/default.nix> does on real NixOS hosts. Still
-#      no good in general: --verbose_failures shows rules_python's PyWriteBuildData running
-#      `exec env - …`, which clears the environment outright.
-#   3. patchelf-ing the extracted helpers — impossible. Bazel checksums its install base:
-#      "FATAL: corrupt installation: file '.../process-wrapper' is missing or modified."
-#   (An /etc/ld.so.cache is also out: nixpkgs glibc reads its cache from inside its own
-#   read-only store path, so ldconfig cannot write one.)
+# THE PROBLEM. NixOS glibc compiles nix-store paths into its library search path, so FHS
+# binaries *downloaded at runtime* can't find `libstdc++.so.6` or their `/lib64` interpreter.
+# Bazel's own extracted helpers (process-wrapper, linux-sandbox) and every ruleset-fetched
+# toolchain (hermetic CPython, node) are exactly that.
 #
-# The fix is to never have an unpatched Bazel in the first place: nixpkgs' bazel_8 patches
-# those helpers at build time. See `bazelPkg` below for the .bazelversion caveat.
+# THREE THINGS FIX IT, each found only by probing a live pod:
 #
-# nix-ld and /etc/bazel.bazelrc are KEPT even so — the rulesets fetch their own toolchains
-# (hermetic CPython, node) at runtime, the same class of binary, and those two are what our
-# NixOS hosts use to cope with it.
+#   1. nixpkgs' Bazel instead of a bazelisk download (`bazelPkg`) — nixpkgs patches the
+#      embedded helpers at build time. Nothing can patch them afterwards: Bazel checksums
+#      its install base ("FATAL: corrupt installation: file '.../process-wrapper' is missing
+#      or modified"), which is what killed the patchelf approach.
 #
-# KNOWN LIMIT (measured 2026-07-26). nix-ld is env-based, and every ruleset that sanitizes
-# its environment defeats it, each needing its own passthrough:
-#   - rules_python actions run `exec env - …`  -> needs --action_env / --test_env (added).
-#   - rules_js's js_binary wrapper scrubs env before exec'ing node -> STILL BROKEN; the
-#     esbuild lifecycle hook dies "[nix-ld] FATAL: panicked … Posix(2)".
-# So `bazel run //cli:validate` works (1169/1169) and the Python tests pass, but
-# `bazel test //...` does not complete — it dies in the JS toolchain. There is no way to
-# enumerate every ruleset that will scrub env, which is the structural argument against
-# env-based nix-ld in a container and for a Debian base with a Nix-built tool closure
-# (<../../../../../devinfra/rbe_image/Dockerfile>), where a normal glibc makes the
-# downloaded binaries work with no environment at all. See README.md.
+#   2. nix-ld's FILESYSTEM fallback (`nixLdLibraries`) — the load-bearing one. See that
+#      binding for the full story; in short, nix-ld has compiled-in defaults under
+#      /run/current-system/sw/share/nix-ld that work with no environment at all, and an
+#      earlier revision of this file ported `programs.nix-ld.enable`'s env vars while
+#      skipping the directory those defaults point at.
+#
+#   3. `bazelShell` — nixpkgs bash falls back to a PATH of `/no-such-path`. See that binding.
+#
+# Fixes 2 and 3 share a shape worth remembering: Bazel renders actions as `exec env - …`, so
+# whatever a process needs must come from the FILESYSTEM, not the environment. Chasing that
+# with --action_env/--test_env passthroughs is whack-a-mole against an open-ended list of
+# rulesets (rules_python's `env -`, rules_js's js_binary wrapper, tar.bzl's mtree rule);
+# giving the tools env-independent defaults fixes every one of them at once.
+#
+# (An /etc/ld.so.cache is separately out: nixpkgs glibc reads its cache from inside its own
+# read-only store path, so ldconfig cannot write one.)
 #
 # A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get envfs/nix-ld
 # for free, but cannot boot here per
@@ -263,11 +259,13 @@ pkgs.dockerTools.buildLayeredImage {
     build --host_action_env=NIX_LD_LIBRARY_PATH
     common --repo_env=NIX_LD
     common --repo_env=NIX_LD_LIBRARY_PATH
-    # Tests need them too, and --host_action_env does NOT cover the test env. Without these
-    # every py_test dies "[nix-ld] FATAL: panicked ... Posix(2)" in ~0.5s — measured, 14/14
-    # executed tests failing uniformly, which reads like a broken image rather than a
-    # missing passthrough. The upstream NixOS module has no such line because its hosts get
-    # NIX_LD from the system environment; a container has to be told.
+    # NIX_LD for tests. BELT-AND-BRACES, not load-bearing: `nixLdLibraries` gives nix-ld an
+    # env-independent fallback, and that is what actually fixed the scrubbed-env failures —
+    # 25/26 passes with no --action_env passthrough at all. Kept so an interactive `bazel`
+    # here behaves like our NixOS hosts. (Before the fallback existed, the absence of these
+    # two lines made all 14 executed py_tests fail uniformly in ~0.5s with
+    # "[nix-ld] FATAL: panicked ... Posix(2)" — which reads like a broken image rather than a
+    # missing passthrough, so they earn their keep as a diagnostic guard.)
     test --test_env=NIX_LD
     test --test_env=NIX_LD_LIBRARY_PATH
     BAZELRC

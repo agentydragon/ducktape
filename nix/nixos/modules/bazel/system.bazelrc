@@ -21,13 +21,11 @@ test --test_env=PATH=/run/current-system/sw/bin:/bin:/usr/bin:/usr/local/bin
 # NOTE: this file is NixOS-host-only — the /run/current-system/sw/bin paths above do not
 # exist in a Nix-built container. An image needs its own /etc/bazel.bazelrc, not a copy.
 #
-# Consequence, for a local-execution-only setting (a container, or RBE turned off):
-# --host_action_env is NOT enough there. rules_python actions run `exec env -`, and the
-# test runner doesn't inherit the action env at all, so you additionally need
-# `build --action_env=NIX_LD{,_LIBRARY_PATH}` and `test --test_env=NIX_LD{,_LIBRARY_PATH}`
-# — safe precisely because nothing goes to an RBE worker. Do not add them here; this file
-# is read on hosts that do use RBE. Even with them, rules_js still fails.
-# See debug/nixos_bazel_bash/README.md "Issue 4".
+# For a local-execution-only setting (a container, or RBE off), do NOT try to extend this
+# list: Bazel renders actions as `exec env - …`, and rules that set
+# use_default_shell_env = False cannot be reached by --action_env at all. Give the tools
+# filesystem defaults instead — nix-ld's fallback directory, and a --shell_executable
+# wrapper that puts /bin back on PATH. See debug/nixos_bazel_bash/README.md "Issue 4".
 build --host_action_env=NIX_LD
 build --host_action_env=NIX_LD_LIBRARY_PATH
 common --repo_env=NIX_LD
