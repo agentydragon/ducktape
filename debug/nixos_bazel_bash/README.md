@@ -2,7 +2,15 @@
 
 ## Summary
 
-Bazel doesn't work locally on NixOS. Three independent issues must be fixed.
+Bazel doesn't work locally on NixOS. Three independent issues must be fixed — and a
+fourth, [Issue 4](#issue-4-nix-ld-is-environment-based-and-bazel-rulesets-scrub-the-environment),
+which cannot be fixed, only avoided.
+
+**All of this is about executing actions locally.** With remote execution the question
+never arises: actions run on FHS workers, and only repo rules and the odd host tool stay on
+the Nix box. That is why ducktape's NixOS hosts feel none of this — `bbr` sends the work to
+BuildBuddy. Local execution on Nix glibc is the untested path, and Issue 4 is what lives
+there.
 
 ## Issue 1: `/bin/bash` not found
 
@@ -111,13 +119,61 @@ build --host_action_env=PATH
 
 This fixes issues 1 and 2. Issue 3 requires a separate toolchain patch.
 
+## Issue 4: nix-ld is environment-based, and Bazel rulesets scrub the environment
+
+**Symptom**: `[nix-ld] FATAL: panicked at src/main.rs:187:55: called 'Result::unwrap()' on
+an 'Err' value: Posix(2)` (ENOENT) from an action, a test, or a genrule — not from anything
+you invoked directly.
+
+**Root cause**: nix-ld resolves the real loader by reading `NIX_LD` **from the environment**.
+Bazel and its rulesets scrub environments as a hermeticity measure, and a scrubbed
+environment has no `NIX_LD`, so nix-ld cannot find the interpreter and aborts. Each
+scrubbing layer is separate and needs its own passthrough:
+
+| Scrubber                                      | Seen as                                     | Passthrough that fixes it   |
+| --------------------------------------------- | ------------------------------------------- | --------------------------- |
+| `rules_python` `PyWriteBuildData`             | `exec env - …` under `--verbose_failures`   | `build --action_env=NIX_LD` |
+| Test runner (does **not** inherit action env) | every `py_test` fails uniformly in ~0.5s    | `test --test_env=NIX_LD`    |
+| `rules_js` `js_binary` wrapper                | esbuild lifecycle hook aborts (core dumped) | none found                  |
+
+**Why it can't be fixed properly.** The list of scrubbers is open-ended — it is a property
+of every ruleset you happen to depend on, discovered one build failure at a time. And the
+three ways to make the binaries not need an environment are all closed:
+
+| Attempt                          | Result                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `LD_LIBRARY_PATH` in the image   | Bazel does not pass it to `process-wrapper`                                                |
+| `patchelf` the extracted helpers | `FATAL: corrupt installation: … is missing or modified` — Bazel checksums its install base |
+| `/etc/ld.so.cache`               | nixpkgs glibc reads its cache from inside its own read-only store path                     |
+
+**envfs does not help, and never could.** It mounts `/usr/bin` and `/bin` only (verified in
+the nixpkgs module), resolving _executable_ paths — shebangs, hardcoded `/bin/bash`. The
+failing binaries have a valid path; what they cannot resolve is their **ELF interpreter**
+`/lib64/ld-linux-x86-64.so.2` and `libstdc++.so.6`. That is nix-ld's job, not envfs's. (See
+also the separate envfs rejection above, for a different reason.)
+
+**Use nixpkgs' Bazel, not a bazelisk download.** Bazel's own extracted helpers
+(`process-wrapper`, `linux-sandbox`) are FHS binaries with exactly this problem; nixpkgs
+patches them at build time, so the install base it extracts is both Nix-correct and
+self-consistent. Note this ignores `.bazelversion` — only bazelisk reads that file — so
+check the two agree after any nixpkgs bump.
+
+**Conclusion**: for a container, don't build the base from `dockerTools` and pile on env
+plumbing. Use a normal-glibc (Debian) base carrying a Nix-built tool closure — the
+[RBE image](../../devinfra/rbe_image/Dockerfile) shape — where downloaded binaries work with
+no environment at all, and the tool list is still one reviewable Nix attribute set. Measured
+end to end 2026-07-26 in
+[the Haku sandbox image notes](../../cluster/k8s/haku/workspaces/image/README.md): Bazel
+runs and `bazel run //cli:validate` passes, but `bazel test //...` dies in the JS toolchain.
+
 ## Status
 
-| Issue              | Symptom                           | Fix                                     | Status      |
-| ------------------ | --------------------------------- | --------------------------------------- | ----------- |
-| `/bin/bash`        | Ruff lint fails                   | nixpkgs `bazel_8` already patched       | Resolved    |
-| Empty PATH         | Mypy lint fails (`env` not found) | `--action_env=PATH` in `~/.bazelrc`     | Applied     |
-| `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails  | Patch `toolchains_buildbuddy` repo rule | Not started |
+| Issue              | Symptom                               | Fix                                                             | Status           |
+| ------------------ | ------------------------------------- | --------------------------------------------------------------- | ---------------- |
+| `/bin/bash`        | Ruff lint fails                       | nixpkgs `bazel_8` already patched                               | Resolved         |
+| Empty PATH         | Mypy lint fails (`env` not found)     | `--action_env=PATH` in `~/.bazelrc`                             | Applied          |
+| `/usr/bin/ld.gold` | BuildBuddy toolchain fetch fails      | Patch `toolchains_buildbuddy` repo rule                         | Not started      |
+| Scrubbed env (#4)  | `[nix-ld] FATAL: panicked … Posix(2)` | Per-ruleset passthrough; unfixable in general — use an FHS base | Avoid, don't fix |
 
 Docker container test setup for reproducing these issues is at `devinfra/nixos_bazel_test/`.
 

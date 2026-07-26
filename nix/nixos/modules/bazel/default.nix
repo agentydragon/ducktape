@@ -5,6 +5,15 @@
 # 2. Empty PATH in sandbox actions — system.bazelrc installs /etc/bazel.bazelrc
 # 3. Dynamically-linked Bazel-downloaded toolchains — nix-ld provides the linker stub
 #
+# KNOWN LIMIT: #3 only holds while actions execute somewhere FHS. nix-ld is
+# *environment-based*, and every ruleset that scrubs its environment defeats it
+# (rules_python runs `exec env -`; rules_js's js_binary wrapper scrubs before exec'ing
+# node), each needing its own passthrough, from an open-ended list. Our NixOS hosts don't
+# feel this because `bbr` runs actions on FHS RBE workers — local execution on Nix glibc is
+# where it bites, and it is not fully fixable there. Do not build a container base this way;
+# use an FHS base with a Nix tool closure. Measured 2026-07-26; see
+# debug/nixos_bazel_bash/README.md "Issue 4".
+#
 # See debug/nixos_bazel_bash/README.md for details.
 {
   config,
