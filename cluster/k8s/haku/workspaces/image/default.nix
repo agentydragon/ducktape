@@ -80,6 +80,25 @@ let
   # — otherwise the sandbox silently stops being "the same Bazel CI runs".
   bazelPkg = pkgs.bazel_8;
 
+  # Bazel's action shell. NOT plain bash — this is the second substrate difference, and
+  # like the nix-ld one it is invisible until an action runs with no environment.
+  #
+  # nixpkgs compiles bash with a fallback PATH of `/no-such-path` (measured:
+  # `env -i /bin/bash -c 'echo $PATH'` prints exactly that), a deliberate purity guard.
+  # Bazel renders an action whose rule declares no env as `exec env - /bin/bash -c …` with
+  # NOTHING after `env -`, so PATH is unset and bash falls back — to nowhere. Every bare
+  # command then fails: tar.bzl's mtree rule dies `sort: command not found` (Exit 127).
+  # --action_env cannot reach those actions: it populates the *default shell env*, and such
+  # rules set `use_default_shell_env = False` precisely to avoid it.
+  #
+  # On an FHS distro bash falls back to /bin:/usr/bin and the same action simply works. This
+  # wrapper restores that one behaviour, and only for the empty case — a PATH that is
+  # already set is passed through untouched.
+  bazelShell = pkgs.writeShellScriptBin "bazel-shell" ''
+    export PATH="''${PATH:-/bin:/usr/bin:/usr/local/bin}"
+    exec ${pkgs.bashInteractive}/bin/bash "$@"
+  '';
+
   # The per-claim bootstrap, as a Nix package rather than a file copied to /usr/local/bin.
   # Two reasons, both measured in the probe pod: a pure Nix image has no `/usr/bin/env`, so
   # the script's `#!/usr/bin/env bash` shebang dies "bad interpreter" (writeShellScriptBin
@@ -98,6 +117,7 @@ let
       bazelPkg
       hakuSandboxSetup
       nixLdLibraries # /share/nix-ld/{lib/ld.so,lib/*} — nix-ld's compiled-in fallback
+      bazelShell # /bin/bazel-shell — restores an FHS PATH fallback for empty-env actions
 
       pkgs.bashInteractive
       pkgs.coreutils
@@ -227,7 +247,7 @@ pkgs.dockerTools.buildLayeredImage {
     # NIX_LD/NIX_LD_LIBRARY_PATH have to be re-injected explicitly or nix-ld's stub receives
     # nothing and dies exactly like the bare loader did.
     cat > etc/bazel.bazelrc <<'BAZELRC'
-    build --shell_executable=/bin/bash
+    build --shell_executable=/bin/bazel-shell
     build --host_action_env=PATH=/bin:/usr/bin:/usr/local/bin:/sbin
     test --test_env=PATH=/bin:/usr/bin:/usr/local/bin
     build --host_action_env=NIX_LD
