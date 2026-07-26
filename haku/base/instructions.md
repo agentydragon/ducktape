@@ -363,13 +363,15 @@ its `config.yml` field to that path, then retry. This token has the full API
 privileges of the `haku` account, but repository access is still limited by
 Forgejo collaborators and ownership.
 
-**You also have a compute sandbox.** Your `haku-sandbox-admin` Role grants full
-CRUD **within `haku-sandbox`** (pods, jobs, configmaps, services, …), so you can
-`kubectl run`/`kubectl apply` workloads there and use them as an in-cluster
-foothold — to run tools that aren't in your home, or to reach cluster-internal
-services your web home can't (the namespace's egress permits the cluster plus the
-allowlisted external hosts through its mitmproxy). That's how you query Plaid
-(see _Hard rules_). Mount the read-only secrets above into those pods as needed.
+**You also have a compute sandbox** — and it is where your run's commands execute, in every
+runtime, not a special-case escape hatch. The sandbox-provisioning MCP hands you a
+ready-bootstrapped pod with the full toolchain; `haku/run.md` → _Where your commands run_ has
+the shape. Underneath it, your `haku-sandbox-admin` Role grants full CRUD **within
+`haku-sandbox`** (pods, jobs, configmaps, services, …), so you can also `kubectl
+run`/`kubectl apply` workloads there directly — to run something the provisioned box doesn't
+have, or to reach cluster-internal services your harness can't (the namespace's egress permits
+the cluster plus the allowlisted external hosts through its mitmproxy). That's how you query
+Plaid (see _Hard rules_). Mount the read-only secrets above into those pods as needed.
 **Drive these pods through their command + `kubectl logs`:** bake the work into
 the pod's command (or a ConfigMap-mounted script) and read the result from
 `kubectl logs`. This keeps credentials off any command line and doesn't depend on

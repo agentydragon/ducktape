@@ -15,6 +15,63 @@ access was provisioned — and then sends you here. Where this file says "your
 `haku-state` checkout" or "the ducktape checkout," the entrypoint tells you the
 actual paths.
 
+## Where your commands run — the in-cluster sandbox
+
+**Whatever harness you are running in — Claude Code web, an ad-hoc claude.ai chat, a managed
+worker, anything else — your commands execute in the `haku-sandbox` pod that the
+sandbox-provisioning MCP hands out**, not in the harness's own container. Claim one at run
+start with a stable name and drive it with `exec_sandbox`; provisioning is a warm-pool hit
+that returns ready and bootstrapped in a single call, with `haku-state` (and ducktape)
+already checked out.
+
+This is the default because the sandbox is the only surface with a real toolchain: bazelisk,
+a JDK, a C toolchain, `kubectl`, `jq`, `tea`, and a full `python3`. `bazel run //cli:validate`
+there is the same command your CI runs. Harness containers have these only by accident of
+whatever closure they happened to boot with, which is the single most repeated source of lost
+time in your environment notes. It is also what makes a harness with **no** ducktape checkout
+of its own — an ad-hoc claude.ai chat, say — able to run at all: the sandbox has one.
+
+**What stays in the harness.** Your **source scans and consent surfaces**: wired connectors
+(Gmail, Calendar, Tana, Grocy, GitHub) and haku-console's approval-gated tools are in-session
+MCP calls, and re-plumbing them through the sandbox would replace working tools with a client
+to credential and keep in sync, for no gain. Your reasoning and synthesis are yours wherever
+you are. So: **the harness reasons and reads; the sandbox executes.**
+
+Prefer **one checkout, in the sandbox**, authoring through `exec_sandbox` heredocs
+(`cat > file <<'EOF'`, or a small `python3` script) — that suits runs that mostly append or
+rewrite whole files, which is most of them. Fall back to editing in the harness and
+`git push`/`git pull` when a run needs heavy in-place surgery across many files; two
+checkouts cost a round trip per iteration and invite divergence.
+
+**Standing facts about the surface** — measured, so don't re-derive them each run:
+
+- **A client-side tool-call timeout may cut calls off well before `exec_sandbox`'s own limit**
+  (which accepts up to 300s). In Claude Code that ceiling is `MCP_TOOL_TIMEOUT`, and it
+  defaults to 60000 ms. Server-side commands **survive** the client giving up, so where you
+  can't raise it, wrap long work in `nohup … > /tmp/x.log 2>&1 &` and poll the log.
+- **Cold Bazel start is ~3.5 min** on a fresh claim (bazelisk fetches Bazel, then a cold
+  analysis pass); warm calls are sub-second. Provision early so it warms while you orient.
+- **Output is capped per call** (100 KB today). Your `items/` alone is larger than that —
+  orient frontmatter-first, then read targeted files.
+- **A fresh clone gives every file the same mtime**, so `ls -t` and `find -printf '%T@'` tell
+  you nothing about what changed. Use `git log`.
+- **One Bazel server per claim**, so two backgrounded Bazel commands serialize.
+- **Abandoned execs leave zombie processes.** Harmless at run scale; re-provision rather than
+  accumulating them across a long-lived claim.
+
+**When the sandbox is unavailable the run is not blocked.** If the tools report "All
+connection attempts failed", call `get_mcp_server_status(server_id='sandbox-mcp')` to force a
+reconnect — observed outages have been the node hosting the MCP flapping `NotReady`. If it
+stays down, fall back to your harness's own execution path and **surface a finding** (manual →
+_Environment self-check_); never silently skip validation because the sandbox was missing.
+
+**Base-sync needs a ducktape checkout** to diff `haku/base` + `haku/run.md` against your pin.
+The sandbox image clones one into `/workspace/ducktape` (from GitHub, full history via a
+partial clone) — but only from the image build that ships it, so **check that the directory
+exists**; if it doesn't, run base-sync against your harness's own ducktape checkout instead.
+Don't reach for the in-cluster Forgejo `haku/ducktape` mirror: it isn't auto-synced yet, and
+base-sync against a stale HEAD silently under-reports changes to your own contract.
+
 ## Continuity
 
 Your runtime keeps nothing between runs; **your `haku-state` repo is your only

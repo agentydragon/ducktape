@@ -221,6 +221,30 @@ the runtimes differ in where the sandbox runs — see
   old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from
   `haku-state` for replayability.
+- **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
+  builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
+  the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:
+  whether the Bazel bazelisk downloads (and `rules_python`'s hermetic CPython) can find
+  `libstdc++.so.6` under NixOS glibc. Run the checklist in
+  <../cluster/k8s/haku/workspaces/image/README.md> § _Cutting over_ against a throwaway Pod;
+  if it passes, delete the Dockerfile and collapse the two workflows into one. If it fails,
+  try `nix-ld` via pod env before abandoning it. **Depends on nothing** — the probe needs no
+  change to the template, the warm pool, or the MCP config.
+- **Deduplicate the agent pod images** — once the Nix cutover lands, the Haku sandbox image
+  and <../x/codex_pod_image/default.nix> share a real substrate (git, tea, jq, curl, kubectl,
+  cacert, tini, the coreutils shell set) that is currently written out twice. Extract the
+  common `buildEnv` paths into one module and let each image add only its distinctive tools
+  (bazelisk/JDK/cc for Haku; codex/claude-code/ssh for the codex pod). Not worth doing before
+  the cutover — the shared list is speculative until the Nix image is the real one.
+- **Auto-sync the Forgejo ducktape mirror, and decide whether agents may PR against it** —
+  `forgejo-http.forgejo:3000/haku/ducktape.git` exists but is not automatically mirrored, and
+  measured 3 commits behind `devel` (`97a23895` vs `a4c497f7`) on 2026-07-25. The sandbox
+  bootstrap therefore clones ducktape from **GitHub** instead, which works fine and is always
+  current, so nothing is blocked on this — but a stale in-cluster mirror is a trap for anyone
+  who reaches for it (base-sync against it silently under-reports contract changes). Either
+  mirror it on a schedule/webhook and point the bootstrap at it, or delete it so it can't be
+  picked up by mistake. The open design question is whether agents should be able to open PRs
+  against the in-cluster copy at all, and how those would flow back to GitHub.
 - **Harmonize the Forgejo host** — the same Forgejo is reached under two names and
   every consumer has to know which: `forgejo-http.forgejo` in-cluster (git clones,
   the `ducktape_haku` bzlmod `git_override`) and `git.allegedly.works` publicly

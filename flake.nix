@@ -469,6 +469,13 @@
           # Build: nix build .#nix-rbe-image
           # Load:  docker load < result
           nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
+          # Haku sandbox image (plain Docker, no NixOS/systemd) — the Nix
+          # replacement for cluster/k8s/haku/workspaces/image/Dockerfile. Builds
+          # in CI but is NOT yet what the SandboxTemplate pulls; cutover is gated
+          # on the runtime checklist in that directory's README.
+          # Build: nix build .#haku-sandbox-image
+          # Load:  docker load < result
+          haku-sandbox-image = import ./cluster/k8s/haku/workspaces/image { inherit pkgs; };
           # Codex pod image (plain Docker, no NixOS/systemd). Tool set is a
           # buildEnv; see cluster/k8s/agents/codex-pod/README.md.
           # Build: nix build .#codex-pod-image

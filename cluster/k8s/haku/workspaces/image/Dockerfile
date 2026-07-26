@@ -13,10 +13,18 @@
 # in haku-sandbox) and haku-state's run plumbing shells out to it — tools/ci_wait.sh
 # reads the Forgejo password from a Secret, tools/plaid_q.sh runs the query pod, and
 # cli/k8s_secrets.py backs `haku console`. Without it those all fail at their first line.
-# python3-minimal likewise: tools/ci_wait.sh parses the Forgejo runs API with an inline
-# python3 snippet, and its absence produced a FALSE GREEN (empty parse -> every `[ ]`
-# integer test errors -> fall through to "all runs green", exit 0) until haku-state PR #41
-# guarded it. Stdlib only — the run's own python deps come from Bazel, never from here.
+# python3 (FULL, not python3-minimal) likewise: tools/ci_wait.sh parses the Forgejo runs API
+# with an inline python3 snippet, and its absence produced a FALSE GREEN (empty parse -> every
+# `[ ]` integer test errors -> fall through to "all runs green", exit 0) until haku-state PR #41
+# guarded it. It was python3-minimal until 2026-07-25, which was the worst of both worlds: a
+# live run measured `json`, `urllib.request`, `http.client`, `shutil`, `difflib`, `dataclasses`,
+# and `sqlite3` all missing, so a `command -v python3` check passes and the import dies at
+# runtime. That also breaks the sandbox's actual authoring motion — an agent driving this box
+# through `exec_sandbox` edits files with heredoc'd python, where one stray `import shutil`
+# kills the whole script. Stdlib only — the run's own python deps come from Bazel, never here.
+# jq: same class of gap, for the shell-side JSON the CLI and k8s recipes produce.
+# tea: haku-state's `procedures/code_changes.md` routes code changes through Forgejo PRs, which
+# is a `tea` workflow; without it that procedure has no non-REST path from inside the sandbox.
 # Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel, but the
 # C/C++ toolchain is NOT: haku-state's cc rules resolve through Bazel's local_config_cc
 # autoconf, which probes for a system gcc/g++. So build-essential is baked in — without
@@ -35,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       default-jre-headless \
       build-essential \
       procps less \
-      python3-minimal \
+      python3 jq \
     && rm -rf /var/lib/apt/lists/*
 
 # bazelisk pin matches haku-state's CI runner (.forgejo/actions/bazel-runner-setup):
@@ -52,6 +60,14 @@ RUN curl -fsSL -o /usr/local/bin/kubectl \
       "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client
+
+# tea, pinned to the version the repo's devshell and codex-pod image already carry
+# (nixpkgs `tea` 0.14.0), so the Forgejo CLI behaves the same wherever an agent runs it.
+ARG TEA_VERSION=0.14.0
+RUN curl -fsSL -o /usr/local/bin/tea \
+      "https://dl.gitea.com/tea/${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64" \
+    && chmod +x /usr/local/bin/tea \
+    && tea --version
 
 # The whole reviewed per-claim bootstrap (egress CA, git identity + credentials, the
 # haku-state checkout). The sandbox-provisioning MCP's bootstrap.script is just a call

@@ -1,9 +1,12 @@
 # Running the Haku run inside the in-cluster sandbox
 
-Status: **probe complete** (2026-07-24), every number below measured live through
-haku-console's `sandbox_mcp` tools against claim `haku-run-test` → pod `haku-qrpjx`.
-**Phase 0 lands with this PR and Phase 2 with its haku-state companion**; Phases 1 and 3
-(the doc/behavior changes) are still proposals.
+Status: **Phases 0-2 done; Phase 3 still not recommended.** Originally probed 2026-07-24
+against claim `haku-run-test` → pod `haku-qrpjx`. **Re-tested 2026-07-25 by executing a real
+(small) run end to end inside the sandbox** — claim `haku-run-sandboxtest` → pod `haku-dqrwp`
+— which confirmed Phase 0 and Phase 2 landed and worked, and produced the Phase 1 doc changes
+plus a second round of image fixes. See _2026-07-25 re-test_ below for what changed; the
+2026-07-24 tables are kept as the original measurement.
+
 Companion to [runtime_options.md](runtime_options.md): this
 does not change _who runs the agent loop_ (still Runtime A, Claude Code web) — it moves
 **where the run's commands execute** from the Anthropic-provisioned container into the
@@ -80,6 +83,72 @@ path working as a fallback rather than inverting the two (Phase 3).
 **Process hygiene:** each `exec_sandbox` whose client call is abandoned leaves its process
 tree reparented to PID 1 as zombies (the probe accumulated five). Harmless at this scale, but
 a long-lived claim driven by many backgrounded execs should reap or re-provision.
+
+## 2026-07-25 re-test — a real run, executed entirely in the sandbox
+
+The 07-24 probe exercised the steps individually. This one ran an actual (narrow) Haku run
+inside the pod: reduced five operator intake notes, validated, logged, wrote a manifest,
+pushed, and waited for CI. It landed as haku-state `f38f7ea`+`41ab63b` → `c1c41ae`, **CI
+4/4 green**. Everything Phase 0/2 promised held:
+
+| Claim from Phase 0/2                 | Verified 2026-07-25                                                                       |
+| ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| git identity baked                   | yes — `haku` / `haku@allegedly.works`, no manual step                                     |
+| both `.netrc` machines               | yes                                                                                       |
+| `kubectl` in the image               | yes, authenticates as the pod SA                                                          |
+| `NO_PROXY` covers the short API name | yes — `kubernetes.default.svc` and the FQDN both return 200                               |
+| `HAKU_CONSOLE_TOKEN` injected        | yes                                                                                       |
+| `//cli:haku` exists                  | yes — `haku console list` returned the live console tool surface from inside the pod      |
+| validators + tests                   | `bookmark check` clean, `validate` 1165/1165, `freshness` clean, `bazel test //...` 25/26 |
+| push + CI                            | `push_state.sh` → `direct OK`; `ci_wait.sh` → all 4 runs green                            |
+
+**Two open concerns from 07-24 resolved:**
+
+- **The shallow clone survives a moved `origin/main`.** A concurrent writer landed
+  `ef1747c` mid-run; `push_state.sh` → rebase → a real content conflict in `log/2026-07-25.md`
+  → resolve → `--continue` → `direct OK` all worked. The "untested shallow rebase" row can go.
+- **ducktape _can_ be cloned from inside the cluster**, so base-sync is not structurally
+  impossible after all — see below.
+
+**New findings, fixed in this PR:**
+
+- **`python3-minimal` is much worse than "no `json`".** Measured missing: `json`,
+  `urllib.request`, `http.client`, `shutil`, `difflib`, `dataclasses`, `sqlite3`. This is not
+  a marginal gap, because **heredoc'd `python3` is the file-authoring motion** when driving
+  the box through `exec_sandbox` — the run's first edit script died on `import shutil`. Now
+  full `python3`.
+- **`jq` and `tea` were absent.** `tea` matters specifically because haku-state's
+  `procedures/code_changes.md` routes code changes through Forgejo PRs. Both added.
+- **`git` did not trust the egress CA.** `curl https://github.com/` returned 200 while
+  `git ls-remote` beside it died `server certificate verification failed. CAfile: none` —
+  git's OpenSSL reads neither `SSL_CERT_FILE` nor `CURL_CA_BUNDLE`. One
+  `git config --global http.sslCAInfo` fixes it, and it is the difference between "the
+  cluster has no GitHub egress" (wrong) and "git wasn't told where the trust store is".
+- **Base-sync now works in-sandbox.** With that CA fix, a `--filter=blob:none` partial clone
+  of `agentydragon/ducktape` from GitHub takes **11s / ~102 MB** and keeps **all 13,904
+  commits**, so `git log <pin>..HEAD -- haku/base haku/run.md` resolves — which `--depth 1`
+  cannot. Added to the bootstrap. Deliberately **GitHub, not the in-cluster Forgejo
+  `haku/ducktape` mirror**: the mirror exists but is not auto-synced and measured 3 commits
+  behind `devel` (`97a23895` vs `a4c497f7`), and base-sync against a stale HEAD silently
+  under-reports contract changes. This also gives an ad-hoc claude.ai chat — which has no
+  ducktape checkout of its own — a way to read Haku's manual at all.
+- **The 60s ceiling is exact and is a client-side cutoff.** `sleep 110` with
+  `timeout_seconds: 180` fails at 60s while the server-side process keeps running. So it is
+  the MCP client, not `exec_sandbox`, that gives up — which is what makes
+  `nohup`-and-poll work, and what a client-side timeout override would fix outright.
+- **Cold Bazel is ~3.5 min on a fresh claim** (bazelisk fetches 8.6.0, then cold analysis),
+  vs. the 83s measured on 07-24's already-warm box. Warm calls stay sub-second.
+- **Zombie count confirmed**: 5 accumulated in one run, as predicted. `tini` as PID 1 in the
+  Nix image is the fix.
+
+**Phase 1 (docs) landed with this PR**: `haku/runtime/claude_web_env/run.md` gains a
+"Bazel-backed steps run in the in-cluster sandbox" section carrying the standing environment
+facts, the harness/sandbox split, the unavailability fallback, and the base-sync caveat.
+
+**Phase 3 (invert the default) stays not-recommended**, unchanged: a sandbox-only run
+inherits both the cluster's availability and the console hop's, `haku-sandbox-mcp` is a
+single replica, and one 07-24 outage came from the Anthropic side entirely. Keep the harness
+path working as a real fallback.
 
 ## The shape that fits: harness reasons, sandbox executes
 
@@ -204,7 +273,15 @@ and `haku-sandbox-mcp` is a single replica).
 
 ## Build the image with Nix instead of a Dockerfile
 
-Operator preference (2026-07-24), and there is directly applicable prior art:
+**Status: written and CI-built as of this PR, NOT yet cut over.**
+`cluster/k8s/haku/workspaces/image/default.nix` +
+`.github/workflows/haku-sandbox-image-nix.yml` publish it to a separate
+`haku-sandbox-image-nix` repo that nothing consumes, so the runtime bet below can be tested
+against a throwaway Pod in `haku-sandbox` before `sandboxtemplate-haku.yaml` moves. The
+cutover checklist lives with the image
+(<../../cluster/k8s/haku/workspaces/image/README.md>). Both builds bake the same
+`haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between them while both
+exist. Rationale and the prior art:
 <../../x/codex_pod_image/> builds a **Kubernetes pod** image purely from Nix — a
 `dockerTools` archive, tool set as one `buildEnv` on `/bin`, home-manager files baked in,
 non-root UID 1000, no runtime bootstrap script, pushed by CI with `skopeo copy

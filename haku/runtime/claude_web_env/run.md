@@ -147,8 +147,23 @@ If it's still not ready after the wait, re-run
 the state as a genuine first run if, after a **completed** clone, the **remote** has
 no commits — never on the strength of a local checkout that might still be filling in.
 
+## Commands run in the in-cluster sandbox
+
+Not specific to this runtime — **every** environment executes the run's commands in the
+`haku-sandbox` pod the sandbox-provisioning MCP hands out. See `haku/run.md` →
+_Where your commands run_ for the contract, the standing environment facts, and the fallback.
+What's specific here: this container is a _fallback_ execution surface, not the default, and
+it is where base-sync runs until you've confirmed the sandbox has `/workspace/ducktape`.
+
+One local quirk worth knowing: this harness sets **`MCP_TOOL_TIMEOUT=60000`**, which is the
+60s ceiling on every `exec_sandbox` call — it is a Claude Code client-side cutoff, nothing to
+do with the sandbox. The repo's `.claude/settings.json` raises it to 300000 to match
+`exec_sandbox`'s own maximum; if you are in a session that predates that (or another harness
+with its own default), fall back to `nohup … &` + poll as `haku/run.md` describes.
+
 ## Then run
 
-Concrete paths for this environment: your `haku-state` checkout is `~/haku-state`,
-and the ducktape checkout is `$CLAUDE_PROJECT_DIR`. Now execute the
-environment-neutral run procedure in `haku/run.md` end to end.
+Concrete paths: in the sandbox your `haku-state` checkout is `/workspace/haku-state` and
+ducktape is `/workspace/ducktape`. In this container (the fallback surface) they are
+`~/haku-state` and `$CLAUDE_PROJECT_DIR`. Now execute the environment-neutral run procedure
+in `haku/run.md` end to end.
