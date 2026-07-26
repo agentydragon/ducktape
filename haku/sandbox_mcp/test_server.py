@@ -15,7 +15,7 @@ from mcp_infra.exec.models import Exited
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
 
 
-def _environment(*, max_exec_timeout_seconds: int = 300) -> EnvironmentConfig:
+def _environment(*, max_exec_timeout_seconds: int = 300, max_output_bytes: int = 100_000) -> EnvironmentConfig:
     return EnvironmentConfig.model_validate(
         {
             "sandbox": {
@@ -27,7 +27,7 @@ def _environment(*, max_exec_timeout_seconds: int = 300) -> EnvironmentConfig:
                 "exec_ttl_extension_seconds": 7_200,
                 "provisioning_timeout_seconds": 600,
                 "max_exec_timeout_seconds": max_exec_timeout_seconds,
-                "max_output_bytes": 100_000,
+                "max_output_bytes": max_output_bytes,
             },
             "bootstrap": {"cwd": "/workspace", "timeout_seconds": 300, "script": "echo ready"},
         }
@@ -79,10 +79,12 @@ async def test_tool_surface_and_annotations() -> None:
     assert tools["dispose_sandbox"].annotations.destructiveHint
 
 
-async def test_exec_timeout_advertises_configured_max() -> None:
-    tools = await _tools(_client(), _environment(max_exec_timeout_seconds=120))
+async def test_exec_advertises_configured_maxes() -> None:
+    tools = await _tools(_client(), _environment(max_exec_timeout_seconds=120, max_output_bytes=5_000))
+    properties = tools["exec_sandbox"].inputSchema["properties"]
 
-    assert tools["exec_sandbox"].inputSchema["properties"]["timeout_seconds"]["maximum"] == 120
+    assert properties["timeout_seconds"]["maximum"] == 120
+    assert properties["max_output_bytes"]["maximum"] == 5_000
 
 
 async def test_provision_has_no_profile_or_ttl_parameter() -> None:

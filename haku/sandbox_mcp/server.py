@@ -40,15 +40,7 @@ _SCRIPT = Annotated[
 ]
 _TIMEOUT_SECONDS = Annotated[int, Field(gt=0, le=3600, description="Command timeout in seconds.")]
 _MAX_OUTPUT_BYTES = Annotated[
-    int,
-    Field(
-        ge=0,
-        le=1_000_000,
-        description=(
-            "Maximum bytes retained independently from stdout and stderr; the configured "
-            "environment may impose a lower maximum."
-        ),
-    ),
+    int, Field(ge=0, le=1_000_000, description="Maximum bytes retained independently from stdout and stderr.")
 ]
 _CWD = Annotated[
     str | None,
@@ -122,13 +114,14 @@ def build_mcp(client: SandboxClient, environment: EnvironmentConfig) -> FastMCP:
         )
 
     # Registered via add_tool rather than the @mcp.tool decorator so the returned Tool's
-    # advertised schema can be patched: _TIMEOUT_SECONDS's le=3600 is a fixed outer ceiling
-    # baked in at module-def time, since FastMCP derives Field bounds from the plain function
-    # signature and has no way to see this environment's configured max there. The actual
-    # ceiling is still enforced independently by kubernetes_client.execute(); this only fixes
-    # what the tool schema advertises to callers.
+    # advertised schema can be patched: _TIMEOUT_SECONDS/_MAX_OUTPUT_BYTES's le= bounds are
+    # fixed outer ceilings baked in at module-def time, since FastMCP derives Field bounds from
+    # the plain function signature and has no way to see this environment's configured maxes
+    # there. Those ceilings are still enforced independently by kubernetes_client.execute();
+    # this only fixes what the tool schema advertises to callers.
     exec_tool = mcp.add_tool(exec_sandbox)
     exec_tool.parameters["properties"]["timeout_seconds"]["maximum"] = environment.sandbox.max_exec_timeout_seconds
+    exec_tool.parameters["properties"]["max_output_bytes"]["maximum"] = environment.sandbox.max_output_bytes
 
     @mcp.tool(annotations=_READ_ONLY)
     async def get_sandbox_info(name: SandboxName) -> SandboxInfo:
