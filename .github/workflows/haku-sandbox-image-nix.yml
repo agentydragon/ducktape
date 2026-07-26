@@ -87,7 +87,11 @@ jobs:
         id: meta
         run: |
           SHA="${{ github.sha }}"
-          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+          # Sanitize: on pull_request events GITHUB_REF_NAME is `<n>/merge`, and `/` is not
+          # legal in an OCI tag — skopeo rejects it with "invalid reference format". The
+          # devel-only workflows never hit this because a branch name has no slash.
+          SLUG="${GITHUB_REF_NAME//\//-}"
+          echo "pin_tag=${SLUG}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       # Ungated, unlike codex-pod-image.yml's devel-only push. Nothing consumes
       # `haku-sandbox-image-nix` — no ImagePolicy, no SandboxTemplate — so a branch tag
