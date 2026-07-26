@@ -7,28 +7,73 @@ in the harness and drives this box through `exec_sandbox`.
 
 Two builds of the same image exist right now:
 
-| File          | Built by                                       | Pushed to                            | Status                                    |
-| ------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------------- |
-| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
-| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | Builds in CI; **not yet** cut over        |
+| File          | Built by                                       | Pushed to                            | Status                                     |
+| ------------- | ---------------------------------------------- | ------------------------------------ | ------------------------------------------ |
+| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls  |
+| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Blocked** — Bazel cannot run (see below) |
 
 Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
 them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
 then a `python3-minimal` with no `json`, then `jq`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
-## Probe results (2026-07-26)
+## Probe results (2026-07-26) — the Nix image is BLOCKED for Bazel
 
-First run of the checklist below, against a throwaway Pod from
-`devel-20260726004537-2538fe8`. **The headline risk did not reproduce**: bazelisk downloaded
-Bazel, extracted it, and its bundled JDK started (`Build label: 9.2.0`). Confirmed working:
-the pull (778 MB, 37s), non-root uid 1000, the full `python3` stdlib (`json`,
+Ran the checklist against a throwaway Pod. Everything except Bazel works; **Bazel cannot
+execute a single action**, and the fix is not in `default.nix`. Do not cut over.
+
+**The blocker.** bazelisk downloads Bazel and its bundled JDK starts fine
+(`Build label: 9.2.0`) — so the FHS loader symlink works and the launcher is healthy. But
+`bazel build` then dies:
+
+```text
+process-wrapper: error while loading shared libraries:
+  libstdc++.so.6: cannot open shared object file
+```
+
+This is the nix*rbe_image failure mode, and the "we own the pod spec, so we can set the
+compat env" argument does **not** rescue it: Bazel scrubs the environment before spawning its
+own extracted helpers, so `process-wrapper` starts with no `LD_LIBRARY_PATH` no matter what
+the image sets. Verified directly — the same binary runs \_with* the variable and fails
+_without_ it.
+
+The standard env-independent escape is closed too. An `/etc/ld.so.cache` built at image-build
+time would be read by the loader regardless of environment, but **nixpkgs glibc reads its
+cache from inside its own read-only store path**, not `/etc`:
+
+```text
+ldconfig: Can't create temporary cache file
+  /nix/store/…-glibc-2.42-67/etc/ld.so.cache~: Permission denied
+```
+
+Both mechanisms — environment and loader cache — are therefore unavailable, which is why this
+needs a different strategy rather than another patch.
+
+### Where this goes next
+
+Don't keep patching `default.nix`. The proven pattern is already in this repo:
+[devinfra/rbe_image/Dockerfile](../../../../../devinfra/rbe_image/Dockerfile) — a Debian base
+with a **Nix-built tool closure** baked in. That keeps the actual goal (one reviewable Nix
+attribute set instead of an `apt-get install` line nobody revisits, shared with the codex pod)
+while retaining a normal glibc, a writable `/etc/ld.so.cache`, and `/usr/bin/env`. The
+nix_rbe_image notes already name it "the primary (working) approach"; this probe is
+independent confirmation that the pure-`dockerTools` route loses to the same glibc issue even
+when Firecracker is out of the picture.
+
+Until then the **Dockerfile image stays live**, and it is in good shape — the apt build
+carries all of this round's real fixes (full `python3`, `jq`, `tea`, the git CA config, the
+ducktape clone).
+
+### What the probe did confirm
+
+Against the Pod from `devel-20260726004537-2538fe8`, these all worked: the pull
+(778 MB, 37s), non-root uid 1000, the full `python3` stdlib (`json`,
 `urllib.request`, `http.client`, `shutil`, `difflib`, `dataclasses`, `sqlite3` all import),
 `jq`/`tea`/`kubectl`/`gcc`/`keytool`, the FHS loader symlink, the Kyverno-injected egress CA,
 and the `haku-state` clone.
 
-Five defects found and fixed in the same pass — all of them Nix-vs-Debian differences that
-the Dockerfile had papered over:
+Five defects turned up, all Nix-vs-Debian differences the Dockerfile had papered over.
+Four are fixed in `default.nix`; the fifth is the blocker:
 
 1. **`bazel` was not on PATH.** nixpkgs installs the binary as `bazelisk`; every haku-state
    caller says `bazel`. Fixed with a shim derivation.
@@ -42,16 +87,12 @@ interpreter`. Both fixed by shipping the bootstrap as a `writeShellScriptBin` pa
    and the variable _overrides_ the `http.sslCAInfo` the bootstrap sets — so the ducktape
    clone failed `unable to get local issuer certificate (20)` while the same `git ls-remote`
    succeeded with the variable unset. Both CA vars are now left to the pod.
-5. **`process-wrapper` could not find `libstdc++.so.6`** — the RBE image's failure mode,
-   arriving by a route `LD_LIBRARY_PATH` cannot fix, because **Bazel scrubs the environment**
-   before spawning its own extracted helpers. Verified by running the same binary with and
-   without the variable. Fixed with an `/etc/ld.so.cache` built at image-build time, which
-   the loader consults regardless of environment; the build now fails if that cache lacks
-   `libstdc++`.
+5. **`process-wrapper` could not find `libstdc++.so.6`** — **not fixed**; this is the
+   blocker described above. An `/etc/ld.so.cache` was attempted and is impossible here
+   (nixpkgs glibc keeps its cache inside its read-only store path).
 
-Still unverified after the fixes: `bazel run //cli:validate` to completion and
-`bazel test //...`. The probe ran in a 500m-CPU Pod (the namespace quota was nearly full),
-which is too slow for the full suite — re-probe with more headroom.
+`bazel run //cli:validate` and `bazel test //...` remain unreachable — not for lack of
+headroom, but because of the `process-wrapper` blocker above.
 
 **Also required at cutover, in the pod spec rather than the image:**
 `sandboxtemplate-haku.yaml` sets `command: ["sleep", "infinity"]`, and a Kubernetes
@@ -69,11 +110,11 @@ Bazel that bazelisk fetches (which runs a bundled JDK) and the hermetic CPython 
 `rules_python` fetches. (Bracketed link, not `<...>`: an autolink containing `_` gets parsed
 as emphasis and prettier rewrites the path — it silently turned this into `nix*rbe_image`.)
 
-`default.nix` bets that the FHS loader symlink plus an image-built `ld.so.cache` are enough,
-on the grounds that what actually killed the RBE image was Firecracker's goinit never running
-the container's `/init` — a constraint a pod we own does not have. The 2026-07-26 probe above
-says the bet holds, with the `ld.so.cache` doing the load-bearing work. Re-run this checklist
-after any image change before switching `sandboxtemplate-haku.yaml`.
+`default.nix` bet that the FHS loader symlink plus `LD_LIBRARY_PATH` would be enough, on the
+grounds that what killed the RBE image was Firecracker's goinit never running the container's
+`/init` — a constraint a pod we own does not have. **The probe above disproved that bet**;
+see the blocker. Re-run this checklist against any replacement image before switching
+`sandboxtemplate-haku.yaml`.
 
 **The whole checklist runs without touching anything live.** It needs no change to the
 SandboxTemplate, the warm pool, or the sandbox MCP's config: the template lives in

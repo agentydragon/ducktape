@@ -12,20 +12,37 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-26): builds, pulls, and runs; NOT yet the image the SandboxTemplate pulls.
-# Cutover is gated on the rest of the checklist in <README.md> § Cutting over.
+# STATUS (2026-07-26): BLOCKED for Bazel. It builds, pulls, and runs, and everything except
+# Bazel works — but `bazel build` cannot execute a single action, and the fix is not in this
+# file. Do NOT point the SandboxTemplate at it. Full evidence in <README.md>.
 #
-# THE BIG RISK IS SETTLED — it does not reproduce here.
-# <../../../../../x/nix_rbe_image/README.md> records that NixOS glibc compiles nix-store
-# paths into its library search path, so dynamically-linked binaries *downloaded at runtime*
-# cannot find `libstdc++.so.6`. This image looked like the worst case: its whole job is
-# bazelisk fetching Bazel (which runs a bundled JDK) and rules_python fetching a hermetic
-# CPython. But the RBE blocker was specifically that BuildBuddy's Firecracker goinit never
-# runs the container's `/init`, so nothing could ever set the compat env — and a pod we own
-# has no such constraint. Verified 2026-07-26 in a probe Pod built from this file:
-# bazelisk downloaded Bazel, extracted it, and its bundled JDK started and printed
-# `Build label: 9.2.0`. The FHS loader symlink + LD_LIBRARY_PATH below are what make that
-# work; don't remove them.
+# THE BLOCKER, and why the "a pod owns its env" argument was wrong.
+# The nix_rbe_image notes record that NixOS glibc compiles nix-store paths into its library
+# search path, so dynamically-linked binaries *downloaded at runtime* cannot find
+# `libstdc++.so.6`. The bet here was that this only killed the RBE image because
+# BuildBuddy's Firecracker goinit never runs the container's `/init`, leaving no way to set
+# the compat env — whereas we own this pod spec.
+#
+# Half of that is right: bazelisk downloads Bazel, extracts it, and its bundled JDK starts
+# fine (`Build label: 9.2.0`). But Bazel then SCRUBS THE ENVIRONMENT before spawning its own
+# extracted helpers, so `process-wrapper` runs with no LD_LIBRARY_PATH regardless of what
+# this image sets, and dies "libstdc++.so.6: cannot open shared object file". Measured: the
+# same binary runs WITH the variable and fails WITHOUT it. Owning the pod env buys nothing
+# for the one process that needs it.
+#
+# The usual env-independent escape — an /etc/ld.so.cache built at image-build time — is also
+# unavailable: nixpkgs glibc reads its cache from INSIDE its own read-only store path
+# (`ldconfig -r .` fails "Can't create temporary cache file
+# /nix/store/…-glibc-…/etc/ld.so.cache~: Permission denied"), not from /etc.
+#
+# So both mechanisms are closed and this needs a different strategy, not another patch here.
+# The recommended one is already proven in this repo: <../../../../../devinfra/rbe_image/Dockerfile>
+# is a Debian base with a Nix-built tool closure baked in — a normal glibc and a writable
+# /etc/ld.so.cache, with the tool list still a single reviewable Nix attribute (which is the
+# deduplication the Nix rewrite was for). See README.md § Where this goes next.
+#
+# Kept in-tree, building in CI, and publishing to an unconsumed image name because the
+# diagnosis above is worth preserving and the remaining fixes here are all correct.
 #
 # Build:  nix build .#haku-sandbox-image
 # Load:   docker load < result
@@ -134,28 +151,6 @@ pkgs.dockerTools.buildLayeredImage {
     # die "no such file or directory" — which reads as a missing binary, not a missing loader.
     ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 lib64/ld-linux-x86-64.so.2
 
-    # ld.so.cache — the part LD_LIBRARY_PATH cannot do. Bazel SCRUBS the environment when
-    # it spawns its own extracted helpers, so `process-wrapper` starts with no
-    # LD_LIBRARY_PATH no matter what this image sets, and dies
-    # "libstdc++.so.6: cannot open shared object file". Measured 2026-07-26 in the probe
-    # pod: the same binary runs fine WITH the variable and fails WITHOUT it, which is
-    # exactly the RBE image's failure mode arriving by a different route.
-    # The loader always consults /etc/ld.so.cache regardless of environment, so building a
-    # cache over the nix-store lib dirs is the env-independent fix. This is what makes
-    # `bazel build` work at all here; without it Bazel starts but every action fails.
-    cat > etc/ld.so.conf <<'LDCONF'
-    ${pkgs.lib.concatMapStringsSep "\n" (p: "${p}/lib") runtimeLibPkgs}
-    LDCONF
-    ${pkgs.glibc.bin}/bin/ldconfig -r . || {
-      echo "ldconfig failed — the image would start but every bazel action would fail" >&2
-      exit 1
-    }
-    # Fail the build rather than ship an image whose cache silently lacks the one library
-    # this whole section exists for.
-    ${pkgs.glibc.bin}/bin/ldconfig -r . -p | grep -q 'libstdc++\.so\.6' || {
-      echo "ld.so.cache built but libstdc++.so.6 is missing from it" >&2
-      exit 1
-    }
 
     cat > etc/passwd <<'PASSWD'
     root:x:0:0:root:/root:/bin/bash
