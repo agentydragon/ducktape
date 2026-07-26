@@ -17,18 +17,63 @@ them. The Nix build exists to end the recurring "the image is missing X" bug (`k
 then a `python3-minimal` with no `json`, then `jq`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
+## Probe results (2026-07-26)
+
+First run of the checklist below, against a throwaway Pod from
+`devel-20260726004537-2538fe8`. **The headline risk did not reproduce**: bazelisk downloaded
+Bazel, extracted it, and its bundled JDK started (`Build label: 9.2.0`). Confirmed working:
+the pull (778 MB, 37s), non-root uid 1000, the full `python3` stdlib (`json`,
+`urllib.request`, `http.client`, `shutil`, `difflib`, `dataclasses`, `sqlite3` all import),
+`jq`/`tea`/`kubectl`/`gcc`/`keytool`, the FHS loader symlink, the Kyverno-injected egress CA,
+and the `haku-state` clone.
+
+Five defects found and fixed in the same pass — all of them Nix-vs-Debian differences that
+the Dockerfile had papered over:
+
+1. **`bazel` was not on PATH.** nixpkgs installs the binary as `bazelisk`; every haku-state
+   caller says `bazel`. Fixed with a shim derivation.
+2. **`/usr/local/bin` is not on PATH** in a pure Nix image, so the bootstrap script was not
+   runnable by name.
+3. **No `/usr/bin/env`**, so the script's `#!/usr/bin/env bash` shebang died `bad
+interpreter`. Both fixed by shipping the bootstrap as a `writeShellScriptBin` package on
+   `/bin` instead of a file copied to `/usr/local/bin`.
+4. **A baked `GIT_SSL_CAINFO` broke all external git.** Pointing it at the public `cacert`
+   bundle looked like a harmless default, but that bundle has none of the egress proxy's CA
+   and the variable _overrides_ the `http.sslCAInfo` the bootstrap sets — so the ducktape
+   clone failed `unable to get local issuer certificate (20)` while the same `git ls-remote`
+   succeeded with the variable unset. Both CA vars are now left to the pod.
+5. **`process-wrapper` could not find `libstdc++.so.6`** — the RBE image's failure mode,
+   arriving by a route `LD_LIBRARY_PATH` cannot fix, because **Bazel scrubs the environment**
+   before spawning its own extracted helpers. Verified by running the same binary with and
+   without the variable. Fixed with an `/etc/ld.so.cache` built at image-build time, which
+   the loader consults regardless of environment; the build now fails if that cache lacks
+   `libstdc++`.
+
+Still unverified after the fixes: `bazel run //cli:validate` to completion and
+`bazel test //...`. The probe ran in a 500m-CPU Pod (the namespace quota was nearly full),
+which is too slow for the full suite — re-probe with more headroom.
+
+**Also required at cutover, in the pod spec rather than the image:**
+`sandboxtemplate-haku.yaml` sets `command: ["sleep", "infinity"]`, and a Kubernetes
+`command:` overrides the image ENTRYPOINT — so `tini` never becomes PID 1 and reaps nothing
+(confirmed: PID 1 in the probe was coreutils). Change it to
+`["/bin/tini", "--", "sleep", "infinity"]`, or move the sleep to `args:`.
+
 ## Cutting over to the Nix image
 
 The Nix build's risk is entirely **runtime**, so a green CI build proves nothing about it.
-<../../../../../x/nix*rbe_image/README.md> records that NixOS glibc compiles nix-store paths
-into its library search path, and binaries \_downloaded at runtime* then cannot find
-`libstdc++.so.6`. This image downloads two such binaries by design: the Bazel that bazelisk
-fetches (which runs a bundled JDK) and the hermetic CPython that `rules_python` fetches.
+The [nix_rbe_image notes](../../../../../x/nix_rbe_image/README.md) record that NixOS glibc
+compiles nix-store paths into its library search path, and binaries **downloaded at runtime**
+then cannot find `libstdc++.so.6`. This image downloads two such binaries by design: the
+Bazel that bazelisk fetches (which runs a bundled JDK) and the hermetic CPython that
+`rules_python` fetches. (Bracketed link, not `<...>`: an autolink containing `_` gets parsed
+as emphasis and prettier rewrites the path — it silently turned this into `nix*rbe_image`.)
 
-`default.nix` bets that the FHS loader symlink plus `LD_LIBRARY_PATH` are enough, on the
-grounds that what actually killed the RBE image was Firecracker's goinit never running the
-container's `/init` — a constraint a pod we own does not have. Settle that bet before
-switching `sandboxtemplate-haku.yaml`.
+`default.nix` bets that the FHS loader symlink plus an image-built `ld.so.cache` are enough,
+on the grounds that what actually killed the RBE image was Firecracker's goinit never running
+the container's `/init` — a constraint a pod we own does not have. The 2026-07-26 probe above
+says the bet holds, with the `ld.so.cache` doing the load-bearing work. Re-run this checklist
+after any image change before switching `sandboxtemplate-haku.yaml`.
 
 **The whole checklist runs without touching anything live.** It needs no change to the
 SandboxTemplate, the warm pool, or the sandbox MCP's config: the template lives in

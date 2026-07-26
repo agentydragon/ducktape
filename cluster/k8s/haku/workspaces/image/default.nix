@@ -12,30 +12,52 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-25): NOT yet the image the SandboxTemplate pulls. It builds in CI, but the
-# risk below is a RUNTIME one that only a real pod can settle, so cutting over is gated on
-# the checklist in <README.md> § Cutting over to the Nix image.
+# STATUS (2026-07-26): builds, pulls, and runs; NOT yet the image the SandboxTemplate pulls.
+# Cutover is gated on the rest of the checklist in <README.md> § Cutting over.
 #
-# THE RISK, and why it is not the same one that killed the RBE image.
+# THE BIG RISK IS SETTLED — it does not reproduce here.
 # <../../../../../x/nix_rbe_image/README.md> records that NixOS glibc compiles nix-store
 # paths into its library search path, so dynamically-linked binaries *downloaded at runtime*
-# cannot find `libstdc++.so.6`. This image is the worst case for that: its whole job is
+# cannot find `libstdc++.so.6`. This image looked like the worst case: its whole job is
 # bazelisk fetching Bazel (which runs a bundled JDK) and rules_python fetching a hermetic
-# CPython — both downloaded, both dynamically linked. But the RBE blocker was specifically
-# that BuildBuddy's Firecracker goinit never runs the container's `/init`, so nothing could
-# ever set the compat env. A SandboxTemplate pod has no such constraint: we own the image
-# config and the pod spec, so the loader symlinks and LD_LIBRARY_PATH below are simply
-# present. That is the bet this file makes, and the cutover checklist is how it gets tested.
+# CPython. But the RBE blocker was specifically that BuildBuddy's Firecracker goinit never
+# runs the container's `/init`, so nothing could ever set the compat env — and a pod we own
+# has no such constraint. Verified 2026-07-26 in a probe Pod built from this file:
+# bazelisk downloaded Bazel, extracted it, and its bundled JDK started and printed
+# `Build label: 9.2.0`. The FHS loader symlink + LD_LIBRARY_PATH below are what make that
+# work; don't remove them.
 #
 # Build:  nix build .#haku-sandbox-image
 # Load:   docker load < result
 { pkgs }:
 let
+  # `bazel`, not `bazelisk`. nixpkgs installs the binary under its own name, but every
+  # caller in haku-state (tools/*.sh, procedures, CI) invokes `bazel` — the Dockerfile
+  # papered over this by curl'ing bazelisk straight to /usr/local/bin/bazel. Measured: with
+  # only `bazelisk` on PATH, `bazel version` is command-not-found in the probe pod.
+  bazelShim = pkgs.runCommand "bazel-shim" { } ''
+    mkdir -p $out/bin
+    ln -s ${pkgs.bazelisk}/bin/bazelisk $out/bin/bazel
+  '';
+
+  # The per-claim bootstrap, as a Nix package rather than a file copied to /usr/local/bin.
+  # Two reasons, both measured in the probe pod: a pure Nix image has no `/usr/bin/env`, so
+  # the script's `#!/usr/bin/env bash` shebang dies "bad interpreter" (writeShellScriptBin
+  # patches it to an absolute store path); and nothing puts /usr/local/bin on PATH here, so
+  # it wasn't runnable by name either. As a package it lands on /bin with everything else.
+  # The .sh file stays the single source — the Dockerfile still COPYs it verbatim.
+  hakuSandboxSetup = pkgs.writeShellScriptBin "haku-sandbox-setup" (
+    builtins.readFile ./haku-sandbox-setup.sh
+  );
+
   # Everything the run needs on PATH. Mirrors the Dockerfile's apt list plus the two tools
   # its absence kept costing (jq, tea); each line notes what breaks without it.
   hakuSandboxEnv = pkgs.buildEnv {
     name = "haku-sandbox-env";
     paths = [
+      bazelShim
+      hakuSandboxSetup
+
       pkgs.bashInteractive
       pkgs.coreutils
       pkgs.findutils
@@ -82,14 +104,16 @@ let
     ];
   };
 
-  # Shared objects the runtime-downloaded binaries look for. Bazel's bundled JDK wants
-  # libstdc++/libz/libgcc; python-build-standalone wants libz and friends.
-  runtimeLibs = pkgs.lib.makeLibraryPath [
+  # Shared objects the runtime-downloaded binaries look for. Bazel's own helpers
+  # (process-wrapper, linux-sandbox) want libstdc++/libgcc; python-build-standalone wants
+  # libz and friends.
+  runtimeLibPkgs = [
     pkgs.stdenv.cc.cc.lib # libstdc++.so.6, libgcc_s.so.1
     pkgs.zlib
     pkgs.glibc
-    pkgs.openssl
+    pkgs.openssl.out
   ];
+  runtimeLibs = pkgs.lib.makeLibraryPath runtimeLibPkgs;
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "haku-sandbox";
@@ -101,7 +125,7 @@ pkgs.dockerTools.buildLayeredImage {
 
   enableFakechroot = true;
   fakeRootCommands = ''
-    mkdir -p tmp workspace etc/ssl/certs lib64 usr/local/bin
+    mkdir -p tmp workspace etc/ssl/certs lib64
     chmod 1777 tmp
 
     # FHS dynamic loader. bazelisk itself is a static Go binary and runs anywhere, but the
@@ -110,10 +134,28 @@ pkgs.dockerTools.buildLayeredImage {
     # die "no such file or directory" — which reads as a missing binary, not a missing loader.
     ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 lib64/ld-linux-x86-64.so.2
 
-    # The reviewed per-claim bootstrap, same file the Dockerfile bakes — one copy, so the
-    # Nix and apt images cannot drift in what they do to a fresh claim.
-    cp ${./haku-sandbox-setup.sh} usr/local/bin/haku-sandbox-setup.sh
-    chmod +x usr/local/bin/haku-sandbox-setup.sh
+    # ld.so.cache — the part LD_LIBRARY_PATH cannot do. Bazel SCRUBS the environment when
+    # it spawns its own extracted helpers, so `process-wrapper` starts with no
+    # LD_LIBRARY_PATH no matter what this image sets, and dies
+    # "libstdc++.so.6: cannot open shared object file". Measured 2026-07-26 in the probe
+    # pod: the same binary runs fine WITH the variable and fails WITHOUT it, which is
+    # exactly the RBE image's failure mode arriving by a different route.
+    # The loader always consults /etc/ld.so.cache regardless of environment, so building a
+    # cache over the nix-store lib dirs is the env-independent fix. This is what makes
+    # `bazel build` work at all here; without it Bazel starts but every action fails.
+    cat > etc/ld.so.conf <<'LDCONF'
+    ${pkgs.lib.concatMapStringsSep "\n" (p: "${p}/lib") runtimeLibPkgs}
+    LDCONF
+    ${pkgs.glibc.bin}/bin/ldconfig -r . || {
+      echo "ldconfig failed — the image would start but every bazel action would fail" >&2
+      exit 1
+    }
+    # Fail the build rather than ship an image whose cache silently lacks the one library
+    # this whole section exists for.
+    ${pkgs.glibc.bin}/bin/ldconfig -r . -p | grep -q 'libstdc++\.so\.6' || {
+      echo "ld.so.cache built but libstdc++.so.6 is missing from it" >&2
+      exit 1
+    }
 
     cat > etc/passwd <<'PASSWD'
     root:x:0:0:root:/root:/bin/bash
@@ -139,6 +181,12 @@ pkgs.dockerTools.buildLayeredImage {
 
   config = {
     # tini reaps orphaned exec trees; the Dockerfile image has no init and accumulates them.
+    # GOTCHA: a Kubernetes `command:` overrides ENTRYPOINT outright, so this is inert unless
+    # the pod cooperates — and `sandboxtemplate-haku.yaml` currently sets
+    # `command: ["sleep", "infinity"]`, which would bypass tini entirely (verified in the
+    # probe pod: PID 1 was coreutils, not tini). At cutover, change the template to
+    # `["/bin/tini", "--", "sleep", "infinity"]` or move it to `args:`, or the zombie
+    # reaping this package is here for does not happen.
     Entrypoint = [
       "/bin/tini"
       "--"
@@ -151,10 +199,15 @@ pkgs.dockerTools.buildLayeredImage {
       "HOME=/home/workspace"
       "USER=workspace"
       "LD_LIBRARY_PATH=${runtimeLibs}"
-      "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
-      "GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt"
-      # The Kyverno egress injection overrides the two CA vars per-pod with the proxy bundle;
-      # these are the sane defaults for a bare `docker run` during cutover testing.
+      # Deliberately NO GIT_SSL_CAINFO and NO SSL_CERT_FILE baked in. Setting them to the
+      # public cacert bundle looks like a harmless default but is an active bug in-cluster:
+      # the egress proxy bumps every external host, its CA is NOT in that bundle, and
+      # GIT_SSL_CAINFO takes precedence over the `http.sslCAInfo` git config that
+      # haku-sandbox-setup.sh sets. Measured 2026-07-26 — with it baked in, cloning ducktape
+      # failed `unable to get local issuer certificate (20)` while `git ls-remote` with the
+      # var unset succeeded against the same host. The Kyverno egress injection supplies
+      # SSL_CERT_FILE/CURL_CA_BUNDLE/REQUESTS_CA_BUNDLE pointing at the proxy bundle, and
+      # the bootstrap covers git; leave both to the pod.
     ];
     Labels."org.opencontainers.image.source" = "https://git.allegedly.works/agentydragon/ducktape";
   };
