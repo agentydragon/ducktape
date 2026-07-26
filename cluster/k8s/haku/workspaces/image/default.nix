@@ -92,10 +92,19 @@ let
   # rules set `use_default_shell_env = False` precisely to avoid it.
   #
   # On an FHS distro bash falls back to /bin:/usr/bin and the same action simply works. This
-  # wrapper restores that one behaviour, and only for the empty case — a PATH that is
-  # already set is passed through untouched.
+  # wrapper restores that one behaviour.
+  #
+  # Test for /bin being ABSENT from PATH, not for PATH being empty: bash substitutes its
+  # compiled-in default before this script's first line runs, so PATH is already the
+  # non-empty string `/no-such-path` and a `''${PATH:-…}` default never fires (measured — the
+  # first cut of this wrapper did exactly that and changed nothing). A PATH that already has
+  # /bin is left untouched.
   bazelShell = pkgs.writeShellScriptBin "bazel-shell" ''
-    export PATH="''${PATH:-/bin:/usr/bin:/usr/local/bin}"
+    case ":$PATH:" in
+      *:/bin:*) ;;
+      *) PATH="$PATH:/bin:/usr/bin:/usr/local/bin" ;;
+    esac
+    export PATH
     exec ${pkgs.bashInteractive}/bin/bash "$@"
   '';
 
