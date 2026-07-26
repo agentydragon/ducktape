@@ -97,6 +97,7 @@ let
     paths = [
       bazelPkg
       hakuSandboxSetup
+      nixLdLibraries # /share/nix-ld/{lib/ld.so,lib/*} — nix-ld's compiled-in fallback
 
       pkgs.bashInteractive
       pkgs.coreutils
@@ -154,6 +155,32 @@ let
     pkgs.openssl.out
   ];
   runtimeLibs = pkgs.lib.makeLibraryPath runtimeLibPkgs;
+
+  # nix-ld's ENV-INDEPENDENT FALLBACK. This is the load-bearing piece, and the thing an
+  # earlier revision of this file missed while copying the NixOS module's env vars.
+  #
+  # nix-ld has two compiled-in defaults (read out of the 2.0.6 binary's strings on wyrm2):
+  #     /run/current-system/sw/share/nix-ld/lib/ld.so   — the real loader
+  #     /run/current-system/sw/share/nix-ld/lib         — its library search path
+  # It consults those when NIX_LD / NIX_LD_LIBRARY_PATH are absent. That is why a NixOS host
+  # runs FHS binaries fine with NIX_LD unset AND under `env -`, while this image — same
+  # nix-ld store path, byte for byte — aborted the moment anything scrubbed the environment.
+  # `programs.nix-ld.enable` sets the env vars only in `environment.sessionVariables`, which
+  # reach login shells and not systemd services; the filesystem is the real mechanism.
+  #
+  # Reproduces nixpkgs' `nix-ld-libraries` buildEnv (nixos/modules/programs/nix-ld.nix)
+  # verbatim in shape; fakeRootCommands then puts it where nix-ld already looks. With this,
+  # NO environment passthrough is needed for the loader to work at all.
+  nixLdLibraries = pkgs.buildEnv {
+    name = "nix-ld-libraries";
+    paths = map pkgs.lib.getLib runtimeLibPkgs;
+    pathsToLink = [ "/lib" ];
+    extraPrefix = "/share/nix-ld";
+    ignoreCollisions = true;
+    postBuild = ''
+      ln -s ${pkgs.stdenv.cc.bintools.dynamicLinker} $out/share/nix-ld/lib/ld.so
+    '';
+  };
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "haku-sandbox";
@@ -167,6 +194,12 @@ pkgs.dockerTools.buildLayeredImage {
   fakeRootCommands = ''
     mkdir -p tmp workspace etc/ssl/certs lib64
     chmod 1777 tmp
+
+    # Put nix-ld's fallback exactly where its compiled-in default expects it. An
+    # unprivileged pod cannot create /run at runtime (measured: "mkdir: cannot create
+    # directory '/run': Permission denied"), so it has to exist in the image.
+    mkdir -p run/current-system/sw/share
+    ln -s /share/nix-ld run/current-system/sw/share/nix-ld
 
     # FHS dynamic loader. bazelisk itself is a static Go binary and runs anywhere, but the
     # Bazel it downloads (and rules_python's hermetic CPython) are ordinary dynamically
