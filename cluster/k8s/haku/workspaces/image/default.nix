@@ -12,37 +12,34 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-26): BLOCKED for Bazel. It builds, pulls, and runs, and everything except
-# Bazel works — but `bazel build` cannot execute a single action, and the fix is not in this
-# file. Do NOT point the SandboxTemplate at it. Full evidence in <README.md>.
+# STATUS (2026-07-26): the blocker has a known fix, ported from our own NixOS module and
+# NOT yet runtime-verified. Still not what the SandboxTemplate pulls. See <README.md>.
 #
-# THE BLOCKER, and why the "a pod owns its env" argument was wrong.
+# THE BLOCKER AND THE FIX.
 # The nix_rbe_image notes record that NixOS glibc compiles nix-store paths into its library
 # search path, so dynamically-linked binaries *downloaded at runtime* cannot find
-# `libstdc++.so.6`. The bet here was that this only killed the RBE image because
-# BuildBuddy's Firecracker goinit never runs the container's `/init`, leaving no way to set
-# the compat env — whereas we own this pod spec.
+# `libstdc++.so.6`. That reproduces here: bazelisk's Bazel and its bundled JDK start fine
+# (`Build label: 9.2.0`), but `bazel build` dies with
+# `process-wrapper: error while loading shared libraries: libstdc++.so.6`, because Bazel
+# scrubs its environment before spawning its own extracted helpers — measured, the same
+# binary runs WITH LD_LIBRARY_PATH and fails WITHOUT it. An /etc/ld.so.cache cannot rescue
+# it either: nixpkgs glibc reads its cache from inside its own read-only store path.
 #
-# Half of that is right: bazelisk downloads Bazel, extracts it, and its bundled JDK starts
-# fine (`Build label: 9.2.0`). But Bazel then SCRUBS THE ENVIRONMENT before spawning its own
-# extracted helpers, so `process-wrapper` runs with no LD_LIBRARY_PATH regardless of what
-# this image sets, and dies "libstdc++.so.6: cannot open shared object file". Measured: the
-# same binary runs WITH the variable and fails WITHOUT it. Owning the pod env buys nothing
-# for the one process that needs it.
+# But this repo already solved exactly this for NixOS hosts, in
+# <../../../../../nix/nixos/modules/bazel/default.nix>, with three mechanisms. Two port to a
+# dockerTools image and are applied below:
+#   - nix-ld as the /lib64 loader stub, plus NIX_LD/NIX_LD_LIBRARY_PATH;
+#   - /etc/bazel.bazelrc re-injecting those two through Bazel's scrubbing via
+#     --host_action_env/--repo_env. This is the part that makes the env approach work at
+#     all, and is what an earlier revision of this file wrongly concluded was impossible.
+# The third, envfs, needs systemd activation an unprivileged pod cannot do, so `/usr/bin/env`
+# and `/bin/bash` are static symlinks instead.
 #
-# The usual env-independent escape — an /etc/ld.so.cache built at image-build time — is also
-# unavailable: nixpkgs glibc reads its cache from INSIDE its own read-only store path
-# (`ldconfig -r .` fails "Can't create temporary cache file
-# /nix/store/…-glibc-…/etc/ld.so.cache~: Permission denied"), not from /etc.
-#
-# So both mechanisms are closed and this needs a different strategy, not another patch here.
-# The recommended one is already proven in this repo: <../../../../../devinfra/rbe_image/Dockerfile>
-# is a Debian base with a Nix-built tool closure baked in — a normal glibc and a writable
-# /etc/ld.so.cache, with the tool list still a single reviewable Nix attribute (which is the
-# deduplication the Nix rewrite was for). See README.md § Where this goes next.
-#
-# Kept in-tree, building in CI, and publishing to an unconsumed image name because the
-# diagnosis above is worth preserving and the remaining fixes here are all correct.
+# A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get all three for
+# free, but cannot boot here for the reason recorded in
+# <../../../../../haku/runtime/managed_agent/self_hosted/README.md>: systemd PID 1 in an
+# unprivileged container can't mount the API filesystems, which is why the Haku managed-agent
+# image runs its closure directly rather than booting.
 #
 # Build:  nix build .#haku-sandbox-image
 # Load:   docker load < result
@@ -113,6 +110,7 @@ let
 
       pkgs.tini # PID 1: reaps the zombies abandoned `exec_sandbox` calls leave behind
     ];
+
     pathsToLink = [
       "/bin"
       "/share"
@@ -147,9 +145,38 @@ pkgs.dockerTools.buildLayeredImage {
 
     # FHS dynamic loader. bazelisk itself is a static Go binary and runs anywhere, but the
     # Bazel it downloads (and rules_python's hermetic CPython) are ordinary dynamically
-    # linked ELF binaries that hard-code this interpreter path. Without the symlink they
-    # die "no such file or directory" — which reads as a missing binary, not a missing loader.
-    ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 lib64/ld-linux-x86-64.so.2
+    # linked ELF binaries that hard-code this interpreter path.
+    # nix-ld, not glibc's own loader. Same role the `programs.nix-ld.enable` half of
+    # <../../../../../nix/nixos/modules/bazel/default.nix> plays on our NixOS hosts: a stub
+    # at the FHS loader path that resolves libraries from NIX_LD_LIBRARY_PATH, so
+    # dynamically-linked binaries Bazel downloads can start. Plain glibc's loader gets them
+    # as far as exec but not as far as finding libstdc++.
+    ln -sf ${pkgs.nix-ld}/libexec/nix-ld lib64/ld-linux-x86-64.so.2
+
+    # envfs is the module's third mechanism and is the one that CANNOT be ported: it is a
+    # FUSE mount needing systemd activation, and this repo already established that an
+    # unprivileged pod cannot boot systemd (haku/runtime/managed_agent/self_hosted/README.md
+    # — "booting systemd PID 1 in an unprivileged container can't mount the API
+    # filesystems"). Static symlinks cover what actually gets used: `/usr/bin/env` for
+    # shebangs and `/bin/bash` for Bazel's shell.
+    mkdir -p usr/bin
+    ln -sf ${pkgs.coreutils}/bin/env usr/bin/env
+    ln -sf ${pkgs.bashInteractive}/bin/bash bin/bash
+
+    # The module's /etc/bazel.bazelrc, adapted: same NIX_LD passthrough, but pointed at this
+    # image's paths instead of /run/current-system/sw/bin. The passthrough lines are the
+    # whole point — Bazel scrubs its environment before spawning helpers and actions, so
+    # NIX_LD/NIX_LD_LIBRARY_PATH have to be re-injected explicitly or nix-ld's stub receives
+    # nothing and dies exactly like the bare loader did.
+    cat > etc/bazel.bazelrc <<'BAZELRC'
+    build --shell_executable=/bin/bash
+    build --host_action_env=PATH=/bin:/usr/bin:/usr/local/bin:/sbin
+    test --test_env=PATH=/bin:/usr/bin:/usr/local/bin
+    build --host_action_env=NIX_LD
+    build --host_action_env=NIX_LD_LIBRARY_PATH
+    common --repo_env=NIX_LD
+    common --repo_env=NIX_LD_LIBRARY_PATH
+    BAZELRC
 
 
     cat > etc/passwd <<'PASSWD'
@@ -194,6 +221,11 @@ pkgs.dockerTools.buildLayeredImage {
       "HOME=/home/workspace"
       "USER=workspace"
       "LD_LIBRARY_PATH=${runtimeLibs}"
+      # What nix-ld's stub loader reads. LD_LIBRARY_PATH alone is not enough because Bazel
+      # strips it; these survive via the --host_action_env/--repo_env lines in
+      # /etc/bazel.bazelrc above.
+      "NIX_LD=${pkgs.glibc}/lib/ld-linux-x86-64.so.2"
+      "NIX_LD_LIBRARY_PATH=${runtimeLibs}"
       # Deliberately NO GIT_SSL_CAINFO and NO SSL_CERT_FILE baked in. Setting them to the
       # public cacert bundle looks like a harmless default but is an active bug in-cluster:
       # the egress proxy bumps every external host, its CA is NOT in that bundle, and

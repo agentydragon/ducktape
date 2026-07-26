@@ -7,20 +7,21 @@ in the harness and drives this box through `exec_sandbox`.
 
 Two builds of the same image exist right now:
 
-| File          | Built by                                       | Pushed to                            | Status                                     |
-| ------------- | ---------------------------------------------- | ------------------------------------ | ------------------------------------------ |
-| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls  |
-| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Blocked** — Bazel cannot run (see below) |
+| File          | Built by                                       | Pushed to                            | Status                                    |
+| ------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------------- |
+| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
+| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | Bazel fix applied, **re-probe pending**   |
 
 Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
 them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
 then a `python3-minimal` with no `json`, then `jq`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
-## Probe results (2026-07-26) — the Nix image is BLOCKED for Bazel
+## Probe results (2026-07-26) — Bazel blocked, fix ported, re-probe needed
 
-Ran the checklist against a throwaway Pod. Everything except Bazel works; **Bazel cannot
-execute a single action**, and the fix is not in `default.nix`. Do not cut over.
+Ran the checklist against a throwaway Pod. Everything except Bazel worked; **Bazel could not
+execute a single action**. A fix is now applied but **not yet re-probed** — do not cut over
+until it is.
 
 **The blocker.** bazelisk downloads Bazel and its bundled JDK starts fine
 (`Build label: 9.2.0`) — so the FHS loader symlink works and the launcher is healthy. But
@@ -46,23 +47,41 @@ ldconfig: Can't create temporary cache file
   /nix/store/…-glibc-2.42-67/etc/ld.so.cache~: Permission denied
 ```
 
-Both mechanisms — environment and loader cache — are therefore unavailable, which is why this
-needs a different strategy rather than another patch.
+### The fix: port our own NixOS Bazel module
 
-### Where this goes next
+Both of those are closed _as I first tried them_ — but this repo already solved this exact
+problem for NixOS hosts, in
+[nix/nixos/modules/bazel](../../../../../nix/nixos/modules/bazel/default.nix), which exists
+precisely because "dynamically-linked Bazel-downloaded toolchains" don't work on NixOS. It has
+three mechanisms, and the third one invalidates my "environment fixes are impossible" claim:
 
-Don't keep patching `default.nix`. The proven pattern is already in this repo:
-[devinfra/rbe_image/Dockerfile](../../../../../devinfra/rbe_image/Dockerfile) — a Debian base
-with a **Nix-built tool closure** baked in. That keeps the actual goal (one reviewable Nix
-attribute set instead of an `apt-get install` line nobody revisits, shared with the codex pod)
-while retaining a normal glibc, a writable `/etc/ld.so.cache`, and `/usr/bin/env`. The
-nix_rbe_image notes already name it "the primary (working) approach"; this probe is
-independent confirmation that the pure-`dockerTools` route loses to the same glibc issue even
-when Firecracker is out of the picture.
+| Module mechanism     | Ports to a `dockerTools` image?                                                     |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `nix-ld`             | **Yes** — symlink its stub at `/lib64/ld-linux-x86-64.so.2`, set `NIX_LD*`          |
+| `/etc/bazel.bazelrc` | **Yes** — just a file; `--host_action_env=NIX_LD` re-injects through Bazel's scrub  |
+| `envfs`              | **No** — FUSE mount needing systemd; substituted static `/usr/bin/env`, `/bin/bash` |
 
-Until then the **Dockerfile image stays live**, and it is in good shape — the apt build
-carries all of this round's real fixes (full `python3`, `jq`, `tea`, the git CA config, the
-ducktape clone).
+The `--host_action_env` / `--repo_env` lines are the crux: Bazel scrubs its environment _by
+default_, but the module explicitly re-injects `NIX_LD` and `NIX_LD_LIBRARY_PATH`, which is
+what lets nix-ld's stub resolve `libstdc++` inside actions. An earlier revision of
+`default.nix` concluded env-based fixes were impossible — wrong, and the counter-example was
+in-tree the whole time.
+
+All three are now applied (or substituted) in `default.nix`. **Not yet runtime-verified** —
+re-run the probe below.
+
+**Why not a full-NixOS container**, which would get all three for free (as
+`nixosConfigurations.nix-rbe-worker` does)? It can't boot here:
+[the managed-agent README](../../../../../haku/runtime/managed_agent/self_hosted/README.md)
+records that "booting systemd PID 1 in an unprivileged container can't mount the API
+filesystems", which is why that image runs its closure directly instead. The Haku sandbox pod
+has the same constraint (baseline PodSecurity, non-root, caps dropped). So the RBE-era reason
+for abandoning NixOS containers (Firecracker never running `/init`) has a k8s analogue after
+all — different cause, same outcome.
+
+Meanwhile the **Dockerfile image stays live**, and it is in good shape — the apt build carries
+all of this round's real fixes (full `python3`, `jq`, `tea`, the git CA config, the ducktape
+clone).
 
 ### What the probe did confirm
 
@@ -87,8 +106,9 @@ interpreter`. Both fixed by shipping the bootstrap as a `writeShellScriptBin` pa
    and the variable _overrides_ the `http.sslCAInfo` the bootstrap sets — so the ducktape
    clone failed `unable to get local issuer certificate (20)` while the same `git ls-remote`
    succeeded with the variable unset. Both CA vars are now left to the pod.
-5. **`process-wrapper` could not find `libstdc++.so.6`** — **not fixed**; this is the
-   blocker described above. An `/etc/ld.so.cache` was attempted and is impossible here
+5. **`process-wrapper` could not find `libstdc++.so.6`** — the blocker above. Now addressed
+   by porting `nix/nixos/modules/bazel` (nix-ld stub + `/etc/bazel.bazelrc` re-injection);
+   unverified at runtime. An `/etc/ld.so.cache` was tried first and is impossible here
    (nixpkgs glibc keeps its cache inside its read-only store path).
 
 `bazel run //cli:validate` and `bazel test //...` remain unreachable — not for lack of
