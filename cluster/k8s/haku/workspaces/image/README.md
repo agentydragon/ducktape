@@ -31,28 +31,15 @@ Three fixes got there, none of them guessable from a green CI build:
 | nix-ld's **filesystem** fallback            | The load-bearing one — see below                                                                                                                                              |
 | `bazel-shell` wrapper                       | nixpkgs bash falls back to `PATH=/no-such-path`, so any action Bazel renders as `exec env -` loses every bare command (`sort: command not found`)                             |
 
-### The lesson: port the fallback, not the env vars
+### Why those three, and what was tried first
 
-nix-ld has compiled-in defaults — `/run/current-system/sw/share/nix-ld/lib{,/ld.so}` — that
-it consults when `NIX_LD` is absent. `programs.nix-ld.enable` builds that directory _and_
-sets `NIX_LD`, but only in `environment.sessionVariables`, which reach login shells and not
-systemd services. **The filesystem is the real mechanism; the env vars are a convenience.**
-
-An earlier revision of `default.nix` copied the env vars, skipped the directory, and then
-concluded from the resulting breakage that env-based nix-ld was structurally hopeless and
-this image should be rebased on Debian. That was wrong, and the probe that disproved it is
-worth keeping in mind as a technique: the same trivial `int main(){return 0;}`, compiled with
-`--dynamic-linker=/lib64/ld-linux-x86-64.so.2`, run under `env -` on both substrates.
-
-|             | NixOS host (wyrm2) | this image, before | this image, after |
-| ----------- | ------------------ | ------------------ | ----------------- |
-| `NIX_LD`    | **unset**          | set                | set               |
-| `env - ./t` | rc=0               | rc=134 (SIGABRT)   | rc=0              |
-
-Byte-identical nix-ld (store hash `3jbxih2a7…`) in every column, so the difference was never
-the binary or the environment — it was a directory that existed on one substrate and not the
-other. Details and the general rule: <../../../../../debug/nixos_bazel_bash/README.md>
-"Issue 4".
+Recorded once, in [the NixOS Bazel notes](../../../../../debug/nixos_bazel_bash/README.md) —
+"Two substrates" and "Issue 4" — because it applies to anything running Bazel on Nix glibc,
+not just this image. The short version: Bazel renders actions as `exec env - …`, so a tool
+that needs configuration must get it from the **filesystem**, not the environment. An earlier
+revision of `default.nix` ported `programs.nix-ld.enable`'s env vars while skipping the
+directory nix-ld's compiled-in defaults point at, and concluded from the breakage that the
+image should be rebased on Debian. It shouldn't.
 
 ### Also required at cutover, in the pod spec
 

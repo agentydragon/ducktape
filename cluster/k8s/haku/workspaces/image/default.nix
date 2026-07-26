@@ -12,45 +12,28 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-26): WORKS. `bazel test //...` gives 25/26 in a probe pod — only
+# STATUS (2026-07-26): WORKS. `bazel test //...` is 25/26 in a probe pod — only
 # //ui/e2e:test_e2e fails, the known no-Docker-socket gap. Not yet what the SandboxTemplate
 # pulls; cutover checklist in <README.md>.
 #
-# THE PROBLEM. NixOS glibc compiles nix-store paths into its library search path, so FHS
-# binaries *downloaded at runtime* can't find `libstdc++.so.6` or their `/lib64` interpreter.
-# Bazel's own extracted helpers (process-wrapper, linux-sandbox) and every ruleset-fetched
-# toolchain (hermetic CPython, node) are exactly that.
+# WHY THIS FILE LOOKS THE WAY IT DOES. NixOS glibc compiles nix-store paths into its library
+# search path, so FHS binaries *downloaded at runtime* — Bazel's extracted helpers, and every
+# ruleset-fetched toolchain — can't find their interpreter or `libstdc++`. Three bindings
+# below fix that, each carrying its own rationale:
+#   `bazelPkg`        nixpkgs' Bazel, so its helpers are patched at build time
+#   `nixLdLibraries`  nix-ld's filesystem fallback — the load-bearing one
+#   `bazelShell`      restores an FHS PATH fallback for empty-env actions
 #
-# THREE THINGS FIX IT, each found only by probing a live pod:
+# The general rule behind the last two (Bazel renders actions as `exec env - …`, so port
+# FILESYSTEM defaults, not environment variables) and every measured dead end are recorded
+# once, in <../../../../../debug/nixos_bazel_bash/README.md> "Issue 4". Don't restate them
+# here.
 #
-#   1. nixpkgs' Bazel instead of a bazelisk download (`bazelPkg`) — nixpkgs patches the
-#      embedded helpers at build time. Nothing can patch them afterwards: Bazel checksums
-#      its install base ("FATAL: corrupt installation: file '.../process-wrapper' is missing
-#      or modified"), which is what killed the patchelf approach.
-#
-#   2. nix-ld's FILESYSTEM fallback (`nixLdLibraries`) — the load-bearing one. See that
-#      binding for the full story; in short, nix-ld has compiled-in defaults under
-#      /run/current-system/sw/share/nix-ld that work with no environment at all, and an
-#      earlier revision of this file ported `programs.nix-ld.enable`'s env vars while
-#      skipping the directory those defaults point at.
-#
-#   3. `bazelShell` — nixpkgs bash falls back to a PATH of `/no-such-path`. See that binding.
-#
-# Fixes 2 and 3 share a shape worth remembering: Bazel renders actions as `exec env - …`, so
-# whatever a process needs must come from the FILESYSTEM, not the environment. Chasing that
-# with --action_env/--test_env passthroughs is whack-a-mole against an open-ended list of
-# rulesets (rules_python's `env -`, rules_js's js_binary wrapper, tar.bzl's mtree rule);
-# giving the tools env-independent defaults fixes every one of them at once.
-#
-# (An /etc/ld.so.cache is separately out: nixpkgs glibc reads its cache from inside its own
-# read-only store path, so ldconfig cannot write one.)
-#
-# A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get envfs/nix-ld
-# for free, but cannot boot here per
+# A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get envfs/nix-ld for
+# free, but cannot boot here per
 # <../../../../../haku/runtime/managed_agent/self_hosted/README.md>: systemd PID 1 in an
-# unprivileged container can't mount the API filesystems, which is why the Haku
-# managed-agent image runs its closure directly rather than booting. Hence static
-# `/usr/bin/env` and `/bin/bash` symlinks instead of envfs.
+# unprivileged container can't mount the API filesystems. Hence static `/usr/bin/env` and
+# `/bin/bash` symlinks instead of envfs.
 #
 # Build:  nix build .#haku-sandbox-image
 # Load:   docker load < result

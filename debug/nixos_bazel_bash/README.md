@@ -108,6 +108,10 @@ if not rctx.os.name.lower().startswith("windows"):
 
 ## Investigated and rejected: nixpkgs-patched Bazel
 
+**Scope**: this rejection is about a **NixOS host**, where `.bazelversion` pinning matters and
+you have RBE. For a **container** the trade-off reverses and nixpkgs' Bazel is the right
+answer — see [Issue 4](#issue-4-nix-ld-and-bash-both-need-filesystem-defaults-not-environment-variables).
+
 nixpkgs patches Bazel's Java source code at build time, replacing `/bin/bash` with a nix-store bash and injecting nix-store coreutils into the strict action env PATH. This fixes issues 1 and 2 but not issue 3 (BuildBuddy toolchain). It also loses `.bazelversion` pinning and builds Bazel from source (~16GB vendored deps). Not worth it given that `.bazelrc` workarounds + a toolchain patch cover all three issues.
 
 ## Combined workaround (`~/.bazelrc`)
