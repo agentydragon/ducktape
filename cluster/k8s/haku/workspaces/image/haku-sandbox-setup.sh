@@ -128,4 +128,45 @@ if [ "${HAKU_DUCKTAPE_SKIP:-}" != "1" ]; then
   fi
 fi
 
+# ── 6. Make Bazel's extracted helpers runnable (Nix image only) ──────────────
+# No-op on the Debian image: NIX_LD is unset there and glibc is FHS-normal.
+#
+# On the Nix image, Bazel extracts `process-wrapper` and `linux-sandbox` from its own
+# embedded zip at first use. They are ordinary dynamically-linked ELF binaries wanting
+# `/lib64/ld-linux-x86-64.so.2` and `libstdc++.so.6`, neither of which resolves under NixOS
+# glibc without help — the failure recorded in <../../../../../x/nix_rbe_image/README.md>.
+#
+# Every environment-based fix is unavailable for these specific binaries, which is the whole
+# reason this section exists rather than an env var somewhere:
+#   - LD_LIBRARY_PATH in the image: Bazel does not pass it to process-wrapper.
+#   - nix-ld's NIX_LD/NIX_LD_LIBRARY_PATH re-injected via
+#     --host_action_env/--repo_env (what nix/nixos/modules/bazel does on real NixOS hosts):
+#     still doesn't reach it, and cannot in general — rules_python's PyWriteBuildData action
+#     literally runs `exec env - …`, clearing the environment outright. Verified with
+#     --verbose_failures.
+#   - /etc/ld.so.cache: nixpkgs glibc reads its cache from inside its own read-only store
+#     path, so ldconfig cannot write one.
+# So the binaries have to become self-sufficient: absolute interpreter + RPATH baked in, no
+# environment required. That is exactly what patchelf is for, and why the repo's own NixOS
+# Bazel module ships it.
+#
+# Idempotent: patchelf --set-interpreter/--set-rpath are overwrites, and re-running against
+# an already-patched binary is a no-op in effect. Cheap: only runs when the install base
+# exists or after we force one extraction.
+if [ -n "${NIX_LD:-}" ] && command -v patchelf >/dev/null 2>&1 && command -v bazel >/dev/null 2>&1; then
+  # Force extraction of the install base so there is something to patch. `bazel version`
+  # outside a workspace runs in batch mode and extracts without starting a build.
+  (cd /tmp && bazel version >/dev/null 2>&1) || true
+  patched=0
+  while IFS= read -r bin; do
+    patchelf --set-interpreter "$NIX_LD" "$bin" 2>/dev/null || continue
+    if [ -n "${NIX_LD_LIBRARY_PATH:-}" ]; then
+      patchelf --set-rpath "$NIX_LD_LIBRARY_PATH" "$bin" 2>/dev/null || true
+    fi
+    patched=$((patched + 1))
+  done < <(find "$HOME/.cache/bazel" -type f \
+    \( -name process-wrapper -o -name linux-sandbox \) 2>/dev/null)
+  echo "haku-sandbox-setup: patched $patched bazel helper binary/ies for nix glibc"
+fi
+
 echo "haku-sandbox-setup: egress CA trusted, git identity + credentials written, haku-state + ducktape synced"

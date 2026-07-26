@@ -107,6 +107,9 @@ let
       pkgs.gcc
       pkgs.gnumake
       pkgs.binutils
+      # patchelf: haku-sandbox-setup.sh §6 rewrites the interpreter/RPATH of the helper
+      # binaries Bazel extracts at runtime. Not optional here — see that section.
+      pkgs.patchelf
 
       pkgs.tini # PID 1: reaps the zombies abandoned `exec_sandbox` calls leave behind
     ];
