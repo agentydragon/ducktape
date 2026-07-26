@@ -12,47 +12,59 @@
 # `tini` as PID 1 also reaps the exec zombies a long-lived claim accumulates (a run driven
 # through many backgrounded `exec_sandbox` calls left 5 in one session).
 #
-# STATUS (2026-07-26): the blocker has a known fix, ported from our own NixOS module and
-# NOT yet runtime-verified. Still not what the SandboxTemplate pulls. See <README.md>.
+# STATUS (2026-07-26): Bazel now uses nixpkgs' build rather than a bazelisk download,
+# which is what makes it work here. Runtime re-probe pending. Still not what the
+# SandboxTemplate pulls — see <README.md>.
 #
-# THE BLOCKER AND THE FIX.
-# The nix_rbe_image notes record that NixOS glibc compiles nix-store paths into its library
-# search path, so dynamically-linked binaries *downloaded at runtime* cannot find
-# `libstdc++.so.6`. That reproduces here: bazelisk's Bazel and its bundled JDK start fine
-# (`Build label: 9.2.0`), but `bazel build` dies with
-# `process-wrapper: error while loading shared libraries: libstdc++.so.6`, because Bazel
-# scrubs its environment before spawning its own extracted helpers — measured, the same
-# binary runs WITH LD_LIBRARY_PATH and fails WITHOUT it. An /etc/ld.so.cache cannot rescue
-# it either: nixpkgs glibc reads its cache from inside its own read-only store path.
+# THE PROBLEM, AND THE THREE THINGS THAT DID NOT SOLVE IT.
+# NixOS glibc compiles nix-store paths into its library search path, so binaries downloaded
+# at runtime cannot find `libstdc++.so.6`. Bazel's own extracted helpers (process-wrapper,
+# linux-sandbox) are exactly that. Measured, in order:
+#   1. LD_LIBRARY_PATH in the image — Bazel does not pass it to process-wrapper.
+#   2. nix-ld + NIX_LD re-injected via --host_action_env/--repo_env, i.e. what
+#      <../../../../../nix/nixos/modules/bazel/default.nix> does on real NixOS hosts. Still
+#      no good in general: --verbose_failures shows rules_python's PyWriteBuildData running
+#      `exec env - …`, which clears the environment outright.
+#   3. patchelf-ing the extracted helpers — impossible. Bazel checksums its install base:
+#      "FATAL: corrupt installation: file '.../process-wrapper' is missing or modified."
+#   (An /etc/ld.so.cache is also out: nixpkgs glibc reads its cache from inside its own
+#   read-only store path, so ldconfig cannot write one.)
 #
-# But this repo already solved exactly this for NixOS hosts, in
-# <../../../../../nix/nixos/modules/bazel/default.nix>, with three mechanisms. Two port to a
-# dockerTools image and are applied below:
-#   - nix-ld as the /lib64 loader stub, plus NIX_LD/NIX_LD_LIBRARY_PATH;
-#   - /etc/bazel.bazelrc re-injecting those two through Bazel's scrubbing via
-#     --host_action_env/--repo_env. This is the part that makes the env approach work at
-#     all, and is what an earlier revision of this file wrongly concluded was impossible.
-# The third, envfs, needs systemd activation an unprivileged pod cannot do, so `/usr/bin/env`
-# and `/bin/bash` are static symlinks instead.
+# The fix is to never have an unpatched Bazel in the first place: nixpkgs' bazel_8 patches
+# those helpers at build time. See `bazelPkg` below for the .bazelversion caveat.
 #
-# A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get all three for
-# free, but cannot boot here for the reason recorded in
+# nix-ld and /etc/bazel.bazelrc are KEPT even so — rules_python still fetches a hermetic
+# CPython at runtime, which is the same class of binary, and those two are what our NixOS
+# hosts use to cope with it.
+#
+# A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get envfs/nix-ld
+# for free, but cannot boot here per
 # <../../../../../haku/runtime/managed_agent/self_hosted/README.md>: systemd PID 1 in an
-# unprivileged container can't mount the API filesystems, which is why the Haku managed-agent
-# image runs its closure directly rather than booting.
+# unprivileged container can't mount the API filesystems, which is why the Haku
+# managed-agent image runs its closure directly rather than booting. Hence static
+# `/usr/bin/env` and `/bin/bash` symlinks instead of envfs.
 #
 # Build:  nix build .#haku-sandbox-image
 # Load:   docker load < result
 { pkgs }:
 let
-  # `bazel`, not `bazelisk`. nixpkgs installs the binary under its own name, but every
-  # caller in haku-state (tools/*.sh, procedures, CI) invokes `bazel` — the Dockerfile
-  # papered over this by curl'ing bazelisk straight to /usr/local/bin/bazel. Measured: with
-  # only `bazelisk` on PATH, `bazel version` is command-not-found in the probe pod.
-  bazelShim = pkgs.runCommand "bazel-shim" { } ''
-    mkdir -p $out/bin
-    ln -s ${pkgs.bazelisk}/bin/bazelisk $out/bin/bazel
-  '';
+  # nixpkgs' Bazel, NOT bazelisk. This is the crux of making Bazel work here at all.
+  #
+  # bazelisk downloads an upstream Bazel release, whose embedded helpers (process-wrapper,
+  # linux-sandbox) are ordinary FHS binaries that cannot find libstdc++ under NixOS glibc.
+  # There is no way to fix them after the fact: Bazel CHECKSUMS its extracted install base
+  # and refuses to start if anything is modified —
+  #   FATAL: corrupt installation: file '.../process-wrapper' is missing or modified.
+  # (measured 2026-07-26, which is what killed the patchelf-the-helpers approach).
+  # nixpkgs' bazel patches those helpers at build time, so the install base it extracts is
+  # both correct for Nix and self-consistent.
+  #
+  # DEVIATION worth knowing: this pins the sandbox to nixpkgs' Bazel and IGNORES
+  # haku-state's `.bazelversion` (only bazelisk reads that file). nixpkgs bazel_8 is 8.7.0
+  # against haku-state's pinned 8.6.0 — a patch-level skew from CI, which still uses
+  # bazelisk. Keep them aligned deliberately: either bump `.bazelversion` to match nixpkgs
+  # or accept the skew knowingly.
+  bazelPkg = pkgs.bazel_8;
 
   # The per-claim bootstrap, as a Nix package rather than a file copied to /usr/local/bin.
   # Two reasons, both measured in the probe pod: a pure Nix image has no `/usr/bin/env`, so
@@ -69,7 +81,7 @@ let
   hakuSandboxEnv = pkgs.buildEnv {
     name = "haku-sandbox-env";
     paths = [
-      bazelShim
+      bazelPkg
       hakuSandboxSetup
 
       pkgs.bashInteractive
@@ -98,7 +110,6 @@ let
       # with it, and an agent driving this box edits files with heredoc'd python.
       pkgs.python3
 
-      pkgs.bazelisk # reads haku-state's .bazelversion (-> Bazel 8.6.0) and fetches it
       pkgs.jdk_headless # keytool for the egress truststore; also a JVM for the Bazel server
 
       # haku-state's cc rules resolve through Bazel's local_config_cc autoconf, which probes
@@ -107,9 +118,6 @@ let
       pkgs.gcc
       pkgs.gnumake
       pkgs.binutils
-      # patchelf: haku-sandbox-setup.sh §6 rewrites the interpreter/RPATH of the helper
-      # binaries Bazel extracts at runtime. Not optional here — see that section.
-      pkgs.patchelf
 
       pkgs.tini # PID 1: reaps the zombies abandoned `exec_sandbox` calls leave behind
     ];
