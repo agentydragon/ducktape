@@ -33,9 +33,21 @@
 # The fix is to never have an unpatched Bazel in the first place: nixpkgs' bazel_8 patches
 # those helpers at build time. See `bazelPkg` below for the .bazelversion caveat.
 #
-# nix-ld and /etc/bazel.bazelrc are KEPT even so — rules_python still fetches a hermetic
-# CPython at runtime, which is the same class of binary, and those two are what our NixOS
-# hosts use to cope with it.
+# nix-ld and /etc/bazel.bazelrc are KEPT even so — the rulesets fetch their own toolchains
+# (hermetic CPython, node) at runtime, the same class of binary, and those two are what our
+# NixOS hosts use to cope with it.
+#
+# KNOWN LIMIT (measured 2026-07-26). nix-ld is env-based, and every ruleset that sanitizes
+# its environment defeats it, each needing its own passthrough:
+#   - rules_python actions run `exec env - …`  -> needs --action_env / --test_env (added).
+#   - rules_js's js_binary wrapper scrubs env before exec'ing node -> STILL BROKEN; the
+#     esbuild lifecycle hook dies "[nix-ld] FATAL: panicked … Posix(2)".
+# So `bazel run //cli:validate` works (1169/1169) and the Python tests pass, but
+# `bazel test //...` does not complete — it dies in the JS toolchain. There is no way to
+# enumerate every ruleset that will scrub env, which is the structural argument against
+# env-based nix-ld in a container and for a Debian base with a Nix-built tool closure
+# (<../../../../../devinfra/rbe_image/Dockerfile>), where a normal glibc makes the
+# downloaded binaries work with no environment at all. See README.md.
 #
 # A full-NixOS container (like nixosConfigurations.nix-rbe-worker) would get envfs/nix-ld
 # for free, but cannot boot here per
@@ -59,11 +71,13 @@ let
   # nixpkgs' bazel patches those helpers at build time, so the install base it extracts is
   # both correct for Nix and self-consistent.
   #
-  # DEVIATION worth knowing: this pins the sandbox to nixpkgs' Bazel and IGNORES
-  # haku-state's `.bazelversion` (only bazelisk reads that file). nixpkgs bazel_8 is 8.7.0
-  # against haku-state's pinned 8.6.0 — a patch-level skew from CI, which still uses
-  # bazelisk. Keep them aligned deliberately: either bump `.bazelversion` to match nixpkgs
-  # or accept the skew knowingly.
+  # Version: this pins the sandbox to nixpkgs' Bazel and IGNORES haku-state's
+  # `.bazelversion` (only bazelisk reads that file). As of this flake's pinned nixpkgs
+  # that is Bazel **8.6.0**, which happens to match `.bazelversion` exactly — verified in
+  # the probe pod, not assumed (`nix eval nixpkgs#bazel_8.version` against the *unpinned*
+  # registry says 8.7.0; the flake pin is what ships). Nothing enforces that agreement, so
+  # if a nixpkgs bump moves bazel_8, either follow it in `.bazelversion` or pin bazel here
+  # — otherwise the sandbox silently stops being "the same Bazel CI runs".
   bazelPkg = pkgs.bazel_8;
 
   # The per-claim bootstrap, as a Nix package rather than a file copied to /usr/local/bin.
@@ -187,6 +201,13 @@ pkgs.dockerTools.buildLayeredImage {
     build --host_action_env=NIX_LD_LIBRARY_PATH
     common --repo_env=NIX_LD
     common --repo_env=NIX_LD_LIBRARY_PATH
+    # Tests need them too, and --host_action_env does NOT cover the test env. Without these
+    # every py_test dies "[nix-ld] FATAL: panicked ... Posix(2)" in ~0.5s — measured, 14/14
+    # executed tests failing uniformly, which reads like a broken image rather than a
+    # missing passthrough. The upstream NixOS module has no such line because its hosts get
+    # NIX_LD from the system environment; a container has to be told.
+    test --test_env=NIX_LD
+    test --test_env=NIX_LD_LIBRARY_PATH
     BAZELRC
 
 
