@@ -20,6 +20,18 @@ on:
       - "cluster/k8s/haku/workspaces/image/**"
       - "flake.lock"
       - ".github/workflows/haku-sandbox-image-nix.yml"
+  # Also on PRs, which the other image workflows deliberately don't do. The cutover
+  # checklist needs a *pullable tag* to point a throwaway Pod at, and the image's whole
+  # open question is a runtime one a build can't answer — so it has to be testable before
+  # it merges, not after. `workflow_dispatch` alone cannot deliver that: GitHub only
+  # dispatches workflows that already exist on the default branch (verified — dispatching
+  # this file on its own branch 404s), which is exactly the situation a brand-new image
+  # workflow is in.
+  pull_request:
+    paths:
+      - "cluster/k8s/haku/workspaces/image/**"
+      - "flake.lock"
+      - ".github/workflows/haku-sandbox-image-nix.yml"
   workflow_dispatch:
 
 concurrency:
@@ -77,12 +89,13 @@ jobs:
           SHA="${{ github.sha }}"
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-      # Unlike codex-pod-image.yml, this is NOT gated to devel-only. Nothing consumes
+      # Ungated, unlike codex-pod-image.yml's devel-only push. Nothing consumes
       # `haku-sandbox-image-nix` — no ImagePolicy, no SandboxTemplate — so a branch tag
-      # cannot be auto-deployed, and being able to push one from a feature branch is what
-      # lets the cutover checklist run *before* the image is merged rather than after.
+      # cannot be auto-deployed anywhere, and tags are timestamped so nothing is clobbered.
+      # RE-GATE THIS TO devel when the cutover lands and this collapses into
+      # haku-sandbox-image.yml under the consumed name; at that point an unreviewed branch
+      # push would roll the live sandbox.
       - name: Push to Forgejo
-        if: github.ref_name == 'devel' || github.event_name == 'workflow_dispatch'
         run: |
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
           skopeo copy --insecure-policy \

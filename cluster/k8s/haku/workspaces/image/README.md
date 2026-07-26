@@ -37,6 +37,12 @@ SandboxTemplate, the warm pool, or the sandbox MCP's config: the template lives 
 exercises the entire risk. (A `SandboxClaim` adds warm-pool and TTL mechanics, which are
 image-independent; the Pod is the part that can fail.)
 
+Get a tag from the `Haku Sandbox Image (Nix)` workflow — it builds and publishes on PRs as
+well as `devel`, precisely so this can run pre-merge. (`workflow_dispatch` is not a
+substitute: GitHub only dispatches workflows already present on the default branch, so a new
+image workflow cannot be dispatched from its own branch.) The pushed ref is in the run's job
+summary.
+
 ```bash
 kubectl -n haku-sandbox run haku-nix-probe --restart=Never \
   --image=git.allegedly.works/ducktape-ci/haku-sandbox-image-nix:<tag> \
