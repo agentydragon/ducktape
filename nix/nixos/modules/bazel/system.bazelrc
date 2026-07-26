@@ -18,6 +18,9 @@ test --test_env=PATH=/run/current-system/sw/bin:/bin:/usr/bin:/usr/local/bin
 # (e.g. /nix/store/...-glibc/lib/ld-linux-x86-64.so.2) that doesn't exist
 # on RBE workers and would be actively wrong if anything tried to use it.
 #
+# NOTE: this file is NixOS-host-only — the /run/current-system/sw/bin paths above do not
+# exist in a Nix-built container. An image needs its own /etc/bazel.bazelrc, not a copy.
+#
 # Consequence, for a local-execution-only setting (a container, or RBE turned off):
 # --host_action_env is NOT enough there. rules_python actions run `exec env -`, and the
 # test runner doesn't inherit the action env at all, so you additionally need

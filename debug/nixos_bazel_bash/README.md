@@ -119,7 +119,32 @@ build --host_action_env=PATH
 
 This fixes issues 1 and 2. Issue 3 requires a separate toolchain patch.
 
+## Two substrates: NixOS host vs Nix-built container
+
+Issues 1-3 and the module beside this file are about a **NixOS host**. Issue 4 was measured
+in a **Nix-built container** (`dockerTools`, no NixOS). They share a glibc and nix-ld, and
+nothing else — do not read a conclusion from one as applying to the other.
+
+|                              | NixOS host                                                                           | Nix-built container (`dockerTools`)                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `NIX_LD`                     | set in the system environment by `programs.nix-ld.enable`; every process inherits it | nothing sets it — must be baked into the image `Env`                             |
+| envfs (`/usr/bin`, `/bin`)   | systemd FUSE mount                                                                   | unavailable: needs systemd activation, FUSE, privileges. Static symlinks instead |
+| `/run/current-system/sw/bin` | exists                                                                               | **does not exist**                                                               |
+| `/etc/bazel.bazelrc`         | installed by this module                                                             | must be baked by the image itself                                                |
+| Where actions run            | RBE in practice (`bbr`)                                                              | locally, by construction                                                         |
+
+The third row is the trap: `system.bazelrc` hardcodes `/run/current-system/sw/bin` in both
+`--shell_executable` and its PATH lines, so **it cannot be copied into an image verbatim** —
+an image needs its own file with store paths or `/bin`. The last row is why the two feel so
+different in practice: a NixOS host sends the work to FHS workers and never exercises this,
+while a container runs every action on Nix glibc.
+
 ## Issue 4: nix-ld is environment-based, and Bazel rulesets scrub the environment
+
+**Substrate**: measured in a Nix-built container, 2026-07-26. The mechanism is Bazel's
+(rulesets scrubbing environments), not the OS's, so it should reproduce on a NixOS host
+that executes actions locally — but that is **unverified**, because our NixOS hosts use RBE
+and never hit it. Treat the numbers below as container-measured.
 
 **Symptom**: `[nix-ld] FATAL: panicked at src/main.rs:187:55: called 'Result::unwrap()' on
 an 'Err' value: Posix(2)` (ENOENT) from an action, a test, or a genrule — not from anything
@@ -140,11 +165,11 @@ scrubbing layer is separate and needs its own passthrough:
 of every ruleset you happen to depend on, discovered one build failure at a time. And the
 three ways to make the binaries not need an environment are all closed:
 
-| Attempt                          | Result                                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------------------ |
-| `LD_LIBRARY_PATH` in the image   | Bazel does not pass it to `process-wrapper`                                                |
-| `patchelf` the extracted helpers | `FATAL: corrupt installation: … is missing or modified` — Bazel checksums its install base |
-| `/etc/ld.so.cache`               | nixpkgs glibc reads its cache from inside its own read-only store path                     |
+| Attempt                              | Result                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `LD_LIBRARY_PATH` in the environment | Bazel does not pass it to `process-wrapper`                                                |
+| `patchelf` the extracted helpers     | `FATAL: corrupt installation: … is missing or modified` — Bazel checksums its install base |
+| `/etc/ld.so.cache`                   | nixpkgs glibc reads its cache from inside its own read-only store path                     |
 
 **envfs does not help, and never could.** It mounts `/usr/bin` and `/bin` only (verified in
 the nixpkgs module), resolving _executable_ paths — shebangs, hardcoded `/bin/bash`. The
@@ -158,8 +183,8 @@ patches them at build time, so the install base it extracts is both Nix-correct 
 self-consistent. Note this ignores `.bazelversion` — only bazelisk reads that file — so
 check the two agree after any nixpkgs bump.
 
-**Conclusion**: for a container, don't build the base from `dockerTools` and pile on env
-plumbing. Use a normal-glibc (Debian) base carrying a Nix-built tool closure — the
+**Conclusion (containers only — this says nothing about how to run Bazel on a NixOS
+host)**: don't build a container base from `dockerTools` and pile on env plumbing. Use a normal-glibc (Debian) base carrying a Nix-built tool closure — the
 [RBE image](../../devinfra/rbe_image/Dockerfile) shape — where downloaded binaries work with
 no environment at all, and the tool list is still one reviewable Nix attribute set. Measured
 end to end 2026-07-26 in
