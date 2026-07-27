@@ -13,7 +13,7 @@ metadata:
     policies.kyverno.io/subject: Sandbox
     policies.kyverno.io/description: >-
       Defaults unset workspace claim templates on OpenShell-managed Sandboxes
-      to the cluster's shared agent-workspace StorageClass.
+      to the OVH local-path StorageClass.
 spec:
   admission: true
   background: false
@@ -43,4 +43,4 @@ spec:
             patchesJson6902: |-
               - op: add
                 path: /spec/volumeClaimTemplates/{{elementIndex}}/spec/storageClassName
-                value: seaweedfs-ovh
+                value: local-path-ovh

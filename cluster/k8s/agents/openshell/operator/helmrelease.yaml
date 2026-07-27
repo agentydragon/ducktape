@@ -31,13 +31,11 @@ spec:
             patch: |
               - op: add
                 path: /spec/volumeClaimTemplates/0/spec/storageClassName
-                value: local-path-proxmox
+                value: local-path-ovh
   values:
     nodeSelector:
-      topology.kubernetes.io/region: proxmox
+      topology.kubernetes.io/zone: hil-ovh
     openshellGateway:
-      nodeSelector:
-        topology.kubernetes.io/region: proxmox
       server:
         sandboxNamespace: openclaw-sandbox
         workspaceDefaultStorageSize: 4Gi
