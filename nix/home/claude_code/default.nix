@@ -56,7 +56,8 @@
 #                                          {environment: [...], allow: [...], soft_deny: [...], hard_deny: [...]}
 #                                          Include "$defaults" in an array to inherit built-in rules
 #   useAutoModeDuringPlan     : boolean  : Use auto mode semantics in plan mode (default: true)
-#   NOTE: defaultMode "auto" is ignored in project/local settings (managed settings only since v2.1.142)
+#   NOTE: defaultMode "auto" is ignored in project/local settings — see the permissions.defaultMode
+#         row below for the user-vs-managed-scope question and how to verify it
 #   NOTE: "$defaults" content is not publicly documented; "claude auto-mode" subcommand exists
 #         in help but sub-subcommands (defaults/config/critique) may not work in all versions
 #
@@ -114,8 +115,14 @@
 #   permissions.allow                     : array  : Rules to allow (lowest priority)
 #   permissions.ask                       : array  : Rules that prompt for confirmation
 #   permissions.deny                      : array  : Rules to deny (highest priority)
-#   permissions.defaultMode               : string : "acceptEdits", "bypassPermissions", "default", "plan"
-#                                                    ("auto" was removed from user settings in v2.1.142)
+#   permissions.defaultMode               : string : "acceptEdits", "auto", "bypassPermissions", "default",
+#                                                    "dontAsk", "plan" ("manual" aliases "default")
+#                                                    "auto" is source-restricted: policy / user / CLI flag only,
+#                                                    ignored in project + local settings. An older note here said
+#                                                    it was managed-settings-only as of v2.1.142; /doctor guidance
+#                                                    shipped with 2.1.220 says user scope grants it. Unverified —
+#                                                    check `/status` after a switch; if it reads "default", the
+#                                                    stricter reading was right and this setting is inert.
 #   permissions.additionalDirectories     : array  : Extra working directories
 #   permissions.disableBypassPermissionsMode: string: Set "disable" to prevent bypass
 #   permissions.skipDangerousModePermissionPrompt: boolean: Skip --dangerously-skip-permissions confirm
@@ -669,7 +676,10 @@ in
         ++ mkReadPerms alwaysAllowedReadDirs
         ++ inspectionPerms.permissions;
         deny = [ ];
-        defaultMode = "default";
+        # "auto" delegates per-action approval to the safety classifier instead of
+        # prompting. Only policy/user-scope settings may grant it — a project or
+        # local settings.json setting "auto" is ignored as repo-controllable.
+        defaultMode = "auto";
         additionalDirectories = baseAdditionalDirs;
       };
     };
