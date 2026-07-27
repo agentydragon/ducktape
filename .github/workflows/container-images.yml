@@ -30,9 +30,22 @@ on:
       - "nix/packages/**"
       - "nix/artifact-pins.json"
       - "nix/gaffer-pins.json"
+      - "skills/skills_registry.json"
       - "skills/freecad/Dockerfile.test"
       - "x/rtl_tcp/Dockerfile"
       - "loom/gym/sandbox/**"
+      - ".github/workflows/container-images.yml"
+  # Build the real RBE Dockerfile before merge, but do not log in, tag, push,
+  # publish cache entries, or update the pinned image digest.
+  pull_request:
+    paths:
+      - "devinfra/rbe_image/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/packages/**"
+      - "nix/artifact-pins.json"
+      - "nix/gaffer-pins.json"
+      - "skills/skills_registry.json"
       - ".github/workflows/container-images.yml"
   workflow_dispatch:
 
@@ -49,8 +62,31 @@ env:
   FREECAD_IMAGE: ghcr.io/${{ github.repository_owner }}/freecad-test
 
 jobs:
+  rbe-image-pr:
+    name: RBE Worker (build only)
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+
+      # With no output or tags, Buildx evaluates the complete Dockerfile and
+      # leaves the result only in its ephemeral build cache.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: devinfra/rbe_image/Dockerfile
+          push: false
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rbe-worker:buildcache
+
   rbe-image:
     name: RBE Worker
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -71,6 +107,7 @@ jobs:
 
   freecad-image:
     name: FreeCAD Test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

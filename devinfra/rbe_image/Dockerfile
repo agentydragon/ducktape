@@ -70,18 +70,17 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # The devtools closure is fetched from cache.nixos.org (and attic when
 # available). Only the symlinkJoin derivation itself needs a local build.
 
-# Copy repo files needed for flake evaluation. CI already does
-# `nix profile install .#devtools` without SSH keys — Nix lazily
-# skips inputs only used by outputs we don't request (gaffer-private
-# is only used by homeConfigurations/nixosConfigurations, not devtools).
+# Copy only the repo files needed to evaluate and build `.#rbetools`. Keep
+# this list in sync with the rbe-worker path filters in
+# .github/workflows/container-images.yml. Pull requests build this image
+# without publishing it, so missing evaluation inputs fail before merge.
 COPY flake.nix flake.lock /tmp/flake/
 COPY nix/artifact-pins.json /tmp/flake/nix/artifact-pins.json
 COPY nix/packages /tmp/flake/nix/packages
-# nix/packages/gaffer.nix reads ../gaffer-pins.json at eval time, so it
-# has to be in the build context too. Added when the gaffer namespace
-# landed in 96c039b69 — the Dockerfile wasn't updated then and the image
-# build has been broken since.
+# nix/packages/gaffer.nix reads ../gaffer-pins.json during package-set
+# evaluation, even though rbetools does not include the private artifacts.
 COPY nix/gaffer-pins.json /tmp/flake/nix/gaffer-pins.json
+COPY skills/skills_registry.json /tmp/flake/skills/skills_registry.json
 SHELL ["/bin/bash", "-c"]
 RUN mkdir -p ~/.config/nix \
     # nix.conf MUST be written BEFORE the installer runs — the installer
@@ -97,29 +96,10 @@ RUN mkdir -p ~/.config/nix \
     && sh /tmp/nix-install.sh --no-daemon \
     && rm /tmp/nix-install.sh \
     && export PATH="$HOME/.nix-profile/bin:$PATH" \
-    # Stub out gaffer-private (private repo, needs SSH). CI pattern from
-    # devinfra/ci/nix_attic_build_and_push.sh. devtools doesn't use it,
-    # but Nix may still try to fetch during flake evaluation.
-    && mkdir -p /tmp/gaffer-stub \
-    && printf '%s\n' \
-         '{' \
-         '  outputs = { ... }: {' \
-         '    homeManagerModules.google-drive = { lib, ... }: {' \
-         '      options.services.google-drive.enable = lib.mkEnableOption "stub";' \
-         '    };' \
-         '  };' \
-         '}' \
-       > /tmp/gaffer-stub/flake.nix \
-    && git -C /tmp/gaffer-stub init -q \
-    && git -C /tmp/gaffer-stub add . \
-    && git -C /tmp/gaffer-stub \
-         -c user.email=ci@localhost -c user.name=CI \
-         commit -qm stub \
     && cd /tmp/flake \
     # Use nix build (not nix profile install) to avoid the profile manifest
     # keeping a reference to the nixpkgs source tree (~457MB).
     && RBETOOLS=$(nix build .#rbetools \
-         --override-input gaffer-private path:/tmp/gaffer-stub \
          --no-link --print-out-paths) \
     # Register as GC root so nix-collect-garbage keeps the closure.
     && nix-store --add-root /nix/var/nix/gcroots/rbetools -r "$RBETOOLS" \
@@ -130,7 +110,7 @@ RUN mkdir -p ~/.config/nix \
     # Remove profile, flake source, and anything not in the rbetools closure.
     # Run GC before removing nix-profile (which has nix binaries on PATH).
     && nix-collect-garbage -d \
-    && rm -rf ~/.nix-profile ~/.nix-defexpr /tmp/flake /tmp/gaffer-stub
+    && rm -rf ~/.nix-profile ~/.nix-defexpr /tmp/flake
 
 # dockerd wrapper: Firecracker's guest kernel lacks CONFIG_IP_NF_RAW, so
 # Docker 28's raw table rules for published ports (-p) fail. The wrapper sets
