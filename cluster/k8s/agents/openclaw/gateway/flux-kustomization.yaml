@@ -15,6 +15,8 @@ spec:
     - name: openclaw-operator
     - name: openclaw-gateway-namespace
     - name: openclaw-gateway-secrets
+    - name: openshell-operator
+    - name: openshell-openclaw
     - name: agents-mitmproxy
     - name: authentik # Wait for Authentik worker to apply SSO blueprints
     - name: local-path-provisioner

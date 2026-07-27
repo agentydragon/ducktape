@@ -69,7 +69,7 @@ spec:
       name: haku-sandbox-mcp
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: openclaw-matrix
+      name: openclaw
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: props-backend

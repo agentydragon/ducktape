@@ -462,9 +462,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
-- [ ] OpenClaw: eliminate custom image (`ghcr.io/agentydragon/openclaw-matrix`).
-      The remaining customization is the bundled Matrix plugin dependency install;
-      the retired Airlock tool plugin is no longer part of this image.
+- [ ] OpenClaw: eliminate the custom `ghcr.io/agentydragon/openclaw` image if the
+      upstream image ever bundles the external OpenShell sandbox plugin and CLI.
+      The old Matrix-specific customization and `openclaw-matrix` image are retired.
 - [ ] OpenClaw: StatefulSet RollingUpdate won't replace crash-looping pods. The K8s
       StatefulSet controller counts a crash-looping pod as unavailable, and with default
       `maxUnavailable: 1` the budget is already spent, so it refuses to delete the pod

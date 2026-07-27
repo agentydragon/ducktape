@@ -1,35 +1,53 @@
-# Custom OpenClaw image with:
-#   - matrix channel plugin pre-installed
+# Custom OpenClaw image with the OpenShell sandbox plugin and CLI pre-installed.
 #
-# The upstream image bundles extension source at /app/extensions/matrix/ but
-# without node_modules/. We install deps directly there so the bundled extension
-# loader (discovery position #4) finds them at runtime — no HOME path confusion,
-# no init container needed.
-#
-# Unlike `plugins install` (which uses --ignore-scripts for security), we allow
-# postinstall scripts so the crypto native binary downloads automatically.
-FROM ghcr.io/openclaw/openclaw:2026.2.24
+# Extensions live under /app/extensions so the persistent OpenClaw state volume
+# cannot hide them. OpenShell is an external package, so we unpack its pinned
+# npm artifact into that immutable extension root.
+FROM ghcr.io/openclaw/openclaw:2026.7.1
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 USER root
 
-# ── Matrix plugin (bundled upstream, needs deps installed) ────────────────────
-WORKDIR /app/extensions/matrix
+# ── OpenShell plugin (official external OpenClaw plugin) ─────────────────────
+ARG OPENCLAW_VERSION=2026.7.1
+RUN npm pack \
+      --pack-destination /tmp \
+      "@openclaw/openshell-sandbox@${OPENCLAW_VERSION}" \
+ && mkdir -p /app/extensions/openshell \
+ && tar \
+      -xzf "/tmp/openclaw-openshell-sandbox-${OPENCLAW_VERSION}.tgz" \
+      --strip-components=1 \
+      -C /app/extensions/openshell \
+ && ln -s /app /app/extensions/openshell/node_modules/openclaw \
+ && rm "/tmp/openclaw-openshell-sandbox-${OPENCLAW_VERSION}.tgz" \
+ && chown -R node:node /app/extensions/openshell
 
-# 1. Strip workspace:* devDependencies (invalid outside the monorepo)
-# 2. Install production deps (postinstall scripts download crypto binary)
-# 3. Fix ownership for runtime (node user, uid 1000)
-RUN node -e " \
-  const fs = require('fs'); \
-  const p = JSON.parse(fs.readFileSync('package.json', 'utf8')); \
-  if (p.devDependencies) { \
-    for (const k of Object.keys(p.devDependencies)) { \
-      if (p.devDependencies[k].startsWith('workspace:')) delete p.devDependencies[k]; \
-    } \
-  } \
-  fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');" \
- && npm install --omit=dev \
- && chown -R node:node node_modules
+# ── OpenShell CLI (checksum-pinned static release) ───────────────────────────
+ARG TARGETARCH
+ARG OPENSHELL_VERSION=0.0.90
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) \
+        openshell_asset="openshell-x86_64-unknown-linux-musl.tar.gz"; \
+        openshell_sha256="9f9f1aa379dacb9484a88e0db407e4743d02f02c3c6212187a77064d2334ed35" \
+        ;; \
+      arm64) \
+        openshell_asset="openshell-aarch64-unknown-linux-musl.tar.gz"; \
+        openshell_sha256="58b8dad7fae51280446adb322049c162f91541a57cfbbdc0f1f46a46aefcf313" \
+        ;; \
+      *) \
+        echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; \
+        exit 1 \
+        ;; \
+    esac; \
+    curl -fLsS \
+      "https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_VERSION}/${openshell_asset}" \
+      -o /tmp/openshell.tar.gz; \
+    echo "${openshell_sha256}  /tmp/openshell.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/openshell.tar.gz -C /usr/local/bin openshell; \
+    chmod 0755 /usr/local/bin/openshell; \
+    rm /tmp/openshell.tar.gz; \
+    openshell --version
 
 WORKDIR /app
 

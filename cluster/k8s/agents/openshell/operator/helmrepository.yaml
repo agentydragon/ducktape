@@ -1,0 +1,9 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: openshell-operator
+  namespace: openclaw-gateway
+spec:
+  interval: 12h
+  type: oci
+  url: oci://ghcr.io/lensapp/charts

@@ -1,0 +1,33 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: openshell
+  namespace: openclaw-gateway
+spec:
+  interval: 30m
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+  chart:
+    spec:
+      chart: openshell-operator
+      version: "0.4.0"
+      sourceRef:
+        kind: HelmRepository
+        name: openshell-operator
+        namespace: openclaw-gateway
+      interval: 12h
+  values:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+    openshellGateway:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      server:
+        sandboxNamespace: openclaw-sandbox
+        workspaceDefaultStorageSize: 4Gi
+      networkPolicy:
+        enabled: true

@@ -1,5 +1,5 @@
-# Build and push the OpenClaw+matrix container image to GHCR.
-# Derives from upstream openclaw with the matrix channel plugin pre-installed.
+# Build and push the OpenClaw derivative to GHCR.
+# Derives from upstream OpenClaw with OpenShell pre-installed.
 name: OpenClaw Image
 
 on:
@@ -28,8 +28,8 @@ jobs:
 
       - uses: ./.github/actions/ghcr-build-push
         with:
-          image: ghcr.io/${{ github.repository_owner }}/openclaw-matrix
+          image: ghcr.io/${{ github.repository_owner }}/openclaw
           context: .
           file: openclaw/Dockerfile
-          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw-matrix:buildcache
-          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw-matrix:buildcache,mode=max
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw:buildcache,mode=max
