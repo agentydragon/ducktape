@@ -32,7 +32,7 @@ spec:
           sandbox:
             mode: all
             backend: openshell
-            scope: session
+            scope: agent
             workspaceAccess: rw
           skills: []
           memorySearch:
@@ -82,7 +82,7 @@ spec:
               # TODO: Consider building and digest-pinning our own OpenShell
               # sandbox image instead of using the mutable community image.
               from: openclaw
-              mode: remote
+              mode: mirror
               gateway: openclaw
               gatewayEndpoint: "https://openshell-gateway.openclaw-gateway.svc.cluster.local:8080"
               providers:
