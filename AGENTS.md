@@ -193,29 +193,21 @@ If you need to run sops outside the repo, derive the key manually (see `.envrc`)
 
 ### Committing: the `Bazel-Test-Invocations` trailer
 
-The `ducktape-commit-msg` hook rejects any commit whose message lacks a
-`Bazel-Test-Invocations` trailer. It is a **standard git trailer in the commit
-message** (a value line, not an environment variable), so either write it in the
-`-m` text (blank line, then the trailer) or pass `--trailer`. Accepted forms
-(source of truth: <devinfra/precommit/commit_tag.py>):
-
-```text
-Bazel-Test-Invocations: buildbuddy:<uuid>              verified against the BuildBuddy API
-Bazel-Test-Invocations: local:<uuid>                   accepted without verification
-Bazel-Test-Invocations: buildbuddy:<uuid>,local:<uuid>  comma-separated, mixed sources
-Bazel-Test-Invocations: none: <explanation>            no tests affected, with a rationale
-```
+Every commit needs a `Bazel-Test-Invocations` trailer — a **standard git trailer**
+(a value line, not an environment variable), so write it in the `-m` text after a
+blank line or pass `--trailer`. The hook prints the accepted forms when it rejects
+you; <devinfra/precommit/commit_tag.py> is the source of truth. What it doesn't
+tell you:
 
 ```bash
 git commit --trailer 'Bazel-Test-Invocations: none: docs-only change'
 ```
 
-For a change no Bazel target covers (docs, Nix/home-manager config), use
-`none: <why>`. A `bbr`/`bb remote` run executes on BuildBuddy, so cite it as
-`buildbuddy:<invocation-id>` — the hook resolves the `remote test` wrapper to
-its child test invocation automatically. Reserve `local:<uuid>` for a genuinely
-local run the API key can't see. `Merge `/`fixup! `/`squash! ` messages are
-exempt.
+- A `bbr`/`bb remote` run executes on BuildBuddy — cite it as `buildbuddy:<id>`,
+  not `local:`. The hook resolves the `remote test` wrapper to its child test
+  invocation automatically; reserve `local:<uuid>` for a run the API key can't see.
+- `none: <why>` is for changes no Bazel target covers (docs, Nix/home-manager).
+- `Merge `/`fixup! `/`squash! ` messages are exempt.
 
 Two more commit gotchas:
 
@@ -252,19 +244,17 @@ if __name__ == "__main__":
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles or the RBE worker image.
 
-**Docker tests run on RBE, never locally**: tests that use Docker (container E2E,
-mitmproxy testcontainers) target BuildBuddy RBE workers, which have Docker. Never skip,
-stub, or declare them "not runnable" because Docker is missing locally. If RBE is
-unreachable, recover it (connectivity steps above) — or abort and report; never fall
-back to local-only execution for tests that assume RBE. Use the `py_test` macro from
-`//devinfra/python:defs.bzl` (not raw `@rules_python`) with `requires_docker = True`;
-the macro handles `env_inherit`, tags, and Docker exec properties — don't add them
-manually.
+**Docker tests run on RBE, never locally**: Docker tests (container E2E, mitmproxy
+testcontainers) target RBE workers, which have Docker. Missing Docker locally is never a
+reason to skip, stub, or declare them unrunnable — if RBE is unreachable, recover it or
+abort and report. Use the `py_test` macro from `//devinfra/python:defs.bzl` (not raw
+`@rules_python`) with `requires_docker = True`; it handles `env_inherit`, tags, and
+Docker exec properties.
 
 **Use undeclared test outputs for log capture**: write diagnostics (container logs, HAR
 dumps, config snapshots) via `util.testing.undeclared_outputs.undeclared_outputs_dir()`,
 not test stdout/stderr. They upload to BuildBuddy and download to
-`bazel-testlogs/<target>/test.outputs/` (see "Build outputs and invocation data" above).
+`bazel-testlogs/<target>/test.outputs/`.
 
 **Test timeouts mean hangs, not slowness**: a timeout means something is wedged
 (deadlock, container never ready, port nothing listens on) — do NOT bump

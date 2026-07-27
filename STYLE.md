@@ -34,18 +34,19 @@ instead, so they load on demand.
 
 ## General
 
-- **Modern Python (3.13+)**: `|` unions, `:=`, `match`.
+- **Modern Python**: `|` unions, `:=`, `match`.
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
 - **No large code blobs in YAML/JSON**: any embedded script/config block longer than ~5
   lines lives in its native file (`.py`, `.sh`) and is mounted via `configMapGenerator`
   or a `ConfigMap` file reference, so it stays lintable and type-checkable.
-- **Imports at module top**; in-function imports only to break a proven circular
-  dependency, with a one-line comment naming the cycle.
+- **In-function imports** only to break a proven circular dependency, with a one-line
+  comment naming the cycle (ruff E402 already pins imports to module top).
 - **No suspicious nullability**: an optional field must represent an intentional,
   defined absent state (or a named transition). Absence is `None` — never `""`/`[]`
   zero values. A field is either required (no default) or `| None = None`.
-- **No dead code**: remove unused code, unused imports, and historical comments.
+- **No dead code**: remove unused code and historical comments (ruff F401 catches
+  unused imports).
 - **No redundant derived fields**: don't return a collection plus a trivially computable
   function of it (a list and its `len()`). Exception: pagination `total_count`.
 - **Every field needs a reader**: a set-but-never-read field is dead payload. Authoring
@@ -63,13 +64,12 @@ instead, so they load on demand.
   - **Never swallow**: no bare/broad `except` as a silent fallback, no defaulting to
     empty values on parse/IO errors — real errors must surface. Broad catch is fine
     only for cleanup-then-`raise` (e.g. `__exit__`).
-  - **Degrade loud, not silent**: when a fallback genuinely is correct (best-effort
+  - **Degrade loud, not silent**: where a fallback genuinely is correct (best-effort
     cache write, optional prefill, non-critical fetch, graceful UI degradation), the
-    `catch` still **logs the exception** via a module-level logger
-    (`logging.getLogger(__name__)`, or the component's frontend logging wrapper) at
-    `warning`/`error`. No empty `catch {}`, comment-only catch, or `.catch(() => {})`.
-    The only exception is when the failure already surfaces through another path (e.g. the
-    caller re-throws with the detail) — then a second log is noise.
+    `catch` still **logs the exception** at `warning`/`error` via a module-level logger.
+    No empty `catch {}`, comment-only catch, or `.catch(() => {})` — unless the failure
+    already surfaces elsewhere (the caller re-throws with the detail), where a second
+    log is noise.
   - **Raise, don't return error lists**, from validation/precondition checks.
   - **Let them propagate** to the single error boundary (CLI wrapper, request
     middleware, FastMCP handler — FastMCP already converts unhandled exceptions to MCP
@@ -83,7 +83,6 @@ instead, so they load on demand.
   no no-op short-circuits; no single-use intermediate variables.
 - **Strict data mapping**: invalid enum/typed inputs raise early; never `continue`
   past them.
-- **Prefer functional style**: comprehensions and idiomatic patterns.
 - **Functions over classes** when there's no state to manage.
 - **Use framework features** (e.g. typer `exists=True`) over manual checks.
 - **Precise types**: discriminated unions, Protocols, TypedDicts, concrete models.
@@ -102,8 +101,6 @@ instead, so they load on demand.
   Construct models, not schema-shaped dicts, in tests; never `Mock()` a Pydantic model;
   no `model_dump()` except at I/O boundaries.
 - **`Field(description=...)`** for per-field docs, not a class docstring listing fields.
-- **Shorten obvious docstrings** to one line; drop Args/Returns sections that echo the
-  signature.
 - **Explicit keyword arguments** when arguments are known; `Model.model_validate(data)`
   over `TypeAdapter(...)` unless adapter semantics are needed.
 - **Enums**: `EnumClass.VALUE`, not string literals. StrEnum is already a string — no
@@ -175,33 +172,12 @@ py_binary(
 
 ### System CA certificates in distroless images
 
-`rules_distroless` unpacks the `ca-certificates` deb but never runs
-`update-ca-certificates`, so its apt `:flat` layer ships only loose certs under
-`/usr/share/ca-certificates` and **no** `/etc/ssl/certs/ca-certificates.crt` bundle. A
-system-trust TLS client then fails to verify. The single repo-level fix is the shared
-`cacerts` layer — never re-assemble a bundle at runtime, and never rely on the apt layer
-alone.
-
-Add the shared layer to the `oci_image` `tars` (one target for both bookworm- and
-trixie-based images — the bundle is release-independent PEM):
-
-```python
-tars = [
-    "@my_apt//:flat",
-    "//third_party/debian_slim:cacerts",
-    ":layers",
-],
-```
-
-Then, by TLS client:
-
-- **C `git` / `curl` / OpenSSL CLI**: the bundle lands at the default path, so they find
-  it automatically. Also set `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` (via
-  `py_image_env(extra_env=...)`) for any OpenSSL consumer.
-- **`pygit2` / `libgit2`**: it ignores `SSL_CERT_FILE`/`GIT_SSL_CAINFO`; call
-  `pygit2.settings.set_ssl_cert_locations("/etc/ssl/certs/ca-certificates.crt", None)`.
-- **Python `requests`/`httpx`, Rust `reqwest` (rustls)**: these bundle their own roots
-  (`certifi` / webpki), so they need **no** CA layer at all.
+`rules_distroless` ships no `/etc/ssl/certs/ca-certificates.crt` bundle, so a
+system-trust TLS client in a distroless image fails to verify. Add the shared
+`//third_party/debian_slim:cacerts` layer to the `oci_image` `tars` — never
+re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
+`SSL_CERT_FILE`; `requests`/`reqwest` need no layer at all):
+<docs/distroless_ca_certificates.md>.
 
 ## Testing
 
@@ -216,12 +192,11 @@ Then, by TLS client:
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
 - **No pure change-detector tests**: don't assert a checked-in literal equals itself
-  copied into the test. Test semantics: invalid values rejected, invariants hold,
-  behavior differs by mode. Example: never assert the current Alembic head revision
-  (`SELECT version_num … == "0011"`) — that literal just tracks whatever the newest
-  migration happens to be, so every migration breaks the test for no behavioral reason.
-  Test the property instead: applying migrations to a fresh DB matches the ORM metadata,
-  and re-applying at head is idempotent (the stamp is unchanged and existing rows survive).
+  copied into the test. Test semantics — invalid values rejected, invariants hold,
+  behavior differs by mode. Example: asserting the Alembic head revision
+  (`version_num == "0011"`) breaks on every migration for no behavioral reason; assert
+  instead that migrating a fresh DB matches the ORM metadata and that re-applying at
+  head is idempotent.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
@@ -231,12 +206,10 @@ Then, by TLS client:
 ## Documentation
 
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/
-Returns sections echoing types; trivial class docstrings; historical "used to" comments;
-`# === Section ===` banners; changelog comments; self-referential counts of an adjacent
-list or table ("the three steps below", "we support 7 providers") — the count duplicates
-what the reader can see and forces a prose edit whenever a row is added or removed,
-drifting silently; drop the count and let the list speak, or derive it if genuinely
-load-bearing.
+Returns sections echoing types; trivial class docstrings; obvious docstrings longer than
+one line; historical "used to" comments; `# === Section ===` banners; changelog comments;
+self-referential counts of an adjacent list ("the three steps below") — they drift
+silently as rows are added, so let the list speak or derive the count.
 
 **Keep**: TODOs/FIXMEs near their context; non-obvious behavior (edge cases, invariants,
 preconditions, contracts); why-comments; system/integration context not visible locally
