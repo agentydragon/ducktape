@@ -69,13 +69,13 @@ HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
 | Grafana        | <https://grafana.allegedly.works>  | Monitoring              |
 | Nix Cache      | <https://cache.allegedly.works>    | Binary cache            |
 | Gatus          | <https://status.allegedly.works>   | Health monitoring       |
-| OpenClaw       | <https://openclaw.allegedly.works> | AI coding agent         |
+| OpenClaw       | <https://openclaw.allegedly.works> | Personal AI agent       |
 | Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)     |
 | Airlock        | <https://airlock.allegedly.works>  | OAuth credential broker |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
-OpenClaw requires a one-time gateway token entry in the UI — the token is included in
-`get-passwords` output.
+OpenClaw is authenticated by its Authentik proxy and restricted to the
+`agentydragon` user; no gateway token entry is required in the UI.
 
 ## Storage
 

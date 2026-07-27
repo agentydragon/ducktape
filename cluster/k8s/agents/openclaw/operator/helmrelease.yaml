@@ -14,9 +14,7 @@ spec:
   chart:
     spec:
       chart: openclaw-operator
-      # Pinned: 0.12.0 generates invalid chromium-proxy nginx config
-      # (proxy_pass with URI inside named location @chromium_ws → crashloop).
-      version: "0.11.1"
+      version: "0.38.1"
       sourceRef:
         kind: HelmRepository
         name: openclaw

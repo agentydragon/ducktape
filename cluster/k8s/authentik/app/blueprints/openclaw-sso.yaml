@@ -36,5 +36,14 @@ entries:
     state: present
     identifiers:
       target: !KeyOf openclaw-app
+      user: !Find [authentik_core.user, [username, agentydragon]]
+      order: 0
+
+  # CLEANUP(added 2026-07-26): Remove after the old admin-group binding is
+  # confirmed absent in Authentik across multiple blueprint reconciles.
+  - model: authentik_policies.policybinding
+    state: absent
+    identifiers:
+      target: !KeyOf openclaw-app
       group: !Find [authentik_core.group, [name, authentik Admins]]
       order: 0

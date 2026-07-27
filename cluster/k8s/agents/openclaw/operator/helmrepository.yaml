@@ -6,4 +6,4 @@ metadata:
 spec:
   type: oci
   interval: 24h
-  url: oci://ghcr.io/openclaw-rocks/charts
+  url: oci://ghcr.io/paperclipinc/charts
