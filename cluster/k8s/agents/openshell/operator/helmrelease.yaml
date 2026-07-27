@@ -20,6 +20,18 @@ spec:
         name: openshell-operator
         namespace: openclaw-gateway
       interval: 12h
+  # The bundled gateway chart does not expose storageClassName for its
+  # StatefulSet claim. This cluster deliberately has no default StorageClass.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: StatefulSet
+              name: openshell-gateway
+            patch: |
+              - op: add
+                path: /spec/volumeClaimTemplates/0/spec/storageClassName
+                value: local-path-proxmox
   values:
     nodeSelector:
       topology.kubernetes.io/region: proxmox

@@ -1,0 +1,46 @@
+# OpenShell 0.0.90 generates Agent Sandbox workspace claim templates without a
+# storageClassName, and exposes only their size as gateway configuration. This
+# cluster deliberately has no default StorageClass, so default only claims on
+# OpenShell-managed Sandboxes in the dedicated namespace.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: default-openshell-sandbox-storage-class
+  annotations:
+    policies.kyverno.io/title: Default OpenShell sandbox storage class
+    policies.kyverno.io/category: Storage
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Sandbox
+    policies.kyverno.io/description: >-
+      Defaults unset workspace claim templates on OpenShell-managed Sandboxes
+      to the cluster's shared agent-workspace StorageClass.
+spec:
+  admission: true
+  background: false
+  rules:
+    - name: default-openshell-workspace-claims
+      match:
+        any:
+          - resources:
+              kinds:
+                - agents.x-k8s.io/v1alpha1/Sandbox
+              namespaces:
+                - openclaw-sandbox
+              operations:
+                - CREATE
+                - UPDATE
+              selector:
+                matchLabels:
+                  openshell.ai/managed-by: openshell
+      mutate:
+        foreach:
+          - list: request.object.spec.volumeClaimTemplates
+            preconditions:
+              all:
+                - key: "{{ element.spec.storageClassName || '' }}"
+                  operator: Equals
+                  value: ""
+            patchesJson6902: |-
+              - op: add
+                path: /spec/volumeClaimTemplates/{{elementIndex}}/spec/storageClassName
+                value: seaweedfs-ovh
