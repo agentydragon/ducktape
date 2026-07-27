@@ -87,7 +87,7 @@ pub(super) struct MemberRequest {
     /// trusts the annotation and drops S edges for `<binding>(...)`
     /// call sites. `Default` means "not annotated, fall back to
     /// inferred classification". An author-trust contract; see
-    /// AGENTS.md "Declared purity" and docs/design.md A9.
+    /// <docs/purity_soundness.md> "Declared purity" and docs/design.md A9.
     pub(super) purity: MemberPurity,
     /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
     /// asserts that recognized calls to the bound helper mutate only
@@ -98,7 +98,7 @@ pub(super) struct MemberRequest {
     /// (`<binding>.<prop>(args)` / `<binding>?.<prop>(args)`) the author
     /// asserts have no observable side effects beyond evaluating their
     /// arguments. Same author-trust contract as `purity: pure` — see
-    /// AGENTS.md "Declared purity". Empty when the spec doesn't carry a
+    /// <docs/purity_soundness.md> "Declared purity". Empty when the spec doesn't carry a
     /// `pure_members` entry for this member.
     pub(super) pure_members: Vec<String>,
     /// Property names on the bound value whose calls do not

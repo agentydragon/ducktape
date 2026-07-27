@@ -39,7 +39,7 @@ pub struct AnalysisHints {
     /// calls the spec author asserts are pure. The classifier consults
     /// this to admit `<recv>.<prop>(args)` as pure when `recv` is the
     /// keyed binding and `<prop>` is in the value set.
-    /// See AGENTS.md "Declared purity".
+    /// See <docs/purity_soundness.md> "Declared purity".
     pub declared_pure_members: BTreeMap<String, BTreeSet<String>>,
     /// Member names on a binding whose calls may receive callback-like
     /// arguments but do not synchronously invoke them. The call itself is

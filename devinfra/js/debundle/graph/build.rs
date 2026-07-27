@@ -23,7 +23,7 @@ use super::owner_graph::{OwnerGraph, OwnerId, OwnerNode};
 /// last declaration win would silently drop every edge into the
 /// earlier owner, so the earlier statement could be ordered after its
 /// readers. Rejecting the chunk is the accepted over-restriction
-/// (AGENTS.md "Soundness over completeness").
+/// (<docs/design.md> "Soundness over completeness").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateTopLevelDeclaration {
     pub binding: swc_atoms::Atom,

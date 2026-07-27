@@ -205,7 +205,7 @@ Some analyses in this crate are **conditionally correct**: they are sound
 only when the input bundle avoids a small set of dynamic-dispatch shapes
 that defeat static reasoning. Each such pass checks the precondition on
 the statements it would fire on and falls back to a strictly-conservative
-path when the check fails — see AGENTS.md → "Conditionally-correct
+path when the check fails — see <docs/design.md> → "Conditionally-correct
 optimizations" for the soundness rule.
 
 The first such pass is the dataflow-aware S-chain in `graph.rs`, opted

@@ -2,41 +2,6 @@
 
 Personal infrastructure monorepo. Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/Talos k8s).
 
-## Selected Directory Index
-
-| Directory          | Purpose                                       |
-| ------------------ | --------------------------------------------- |
-| `x/agent_cli/`     | Agent REPL CLI                                |
-| `x/agent_server/`  | FastAPI backend, runtime, policy              |
-| `cluster/`         | k8s cluster                                   |
-| `tf/`              | GitOps Terraform modules (tofu-ctrl)          |
-| `mcp_infra/`       | MCP compositor and utilities                  |
-| `grocy_mcp/`       | Auth-aware remote MCP server for Grocy        |
-| `x/editor_agent/`  | Experimental editor agent and package helpers |
-| `airlock/`         | OAuth credential broker                       |
-| `haku/`            | Background agent and tool approval console    |
-| `props/`           | LLM critic eval system                        |
-| `devinfra/`        | Repo build, CI, lint infrastructure           |
-| `ansible/`         | System configuration (playbooks)              |
-| `nix/`             | NixOS and home-manager configurations         |
-| `skills/`          | Agent skills and skill packaging              |
-| `devinfra/wt/`     | Worktree management                           |
-| `openai_utils/`    | OpenAI API utilities                          |
-| `tana/`            | Tana export toolkit                           |
-| `finance/`         | Portfolio tracking (Rust)                     |
-| `finance/augur/`   | Probabilistic financial-futures simulator     |
-| `loom/`            | Prediction markets to rollout interpolator    |
-| `cpap/`            | CPAP data sync and analysis skill             |
-| `difftree/`        | Tree-style git diff visualization             |
-| `gmail_archiver/`  | Gmail cleanup and filter sync tooling         |
-| `gmail_api/`       | Shared Gmail API models and service builder   |
-| `gnome/`           | GNOME desktop utilities and Shell extensions  |
-| `qr_codes/`        | Household SVG QR codes                        |
-| `idea/`            | Lightweight future project ideas              |
-| `trilium/`         | Trilium Notes extensions                      |
-| `inventree_utils/` | InventTree plugins                            |
-| `website/`         | Personal website (Hakyll)                     |
-
 ## Build System
 
 **Bazel** is the unified build system. Python 3.13+, Rust via Cargo/Bazel.
@@ -63,10 +28,7 @@ Add deps to root `Cargo.toml`, regenerate `Cargo.Bazel.lock` via
 
 ### Remote Cache + RBE
 
-BuildBuddy provides remote caching and remote build execution (RBE). Build actions run on BuildBuddy runner VMs; results are cached so unchanged targets are instant on repeat runs.
-
-- `bbr` — convenience wrapper around `bb remote`; runs the entire Bazel invocation on a BuildBuddy runner with RBE enabled. Default for builds, tests, and queries.
-- `bb run //target` — Bazel runs locally, build actions dispatched to RBE, binary always executed locally.
+BuildBuddy provides remote caching and remote build execution (RBE). Build actions run on BuildBuddy runner VMs; results are cached so unchanged targets are instant on repeat runs. `bbr` (a wrapper around `bb remote`) runs the whole invocation on a runner; `bb run` keeps Bazel local and dispatches only build actions — which to reach for is in <AGENTS.md> § Bazel Commands.
 
 RBE worker image: `ghcr.io/agentydragon/rbe-worker` from <devinfra/rbe_image/Dockerfile>. Setup: <devinfra/setup_buildbuddy.sh>.
 

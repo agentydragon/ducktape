@@ -47,6 +47,44 @@ owners with the same destination yields a module dep graph; the
 validator checks that this quotient graph admits an ESM evaluation
 order observationally equivalent to the input.
 
+## Soundness over completeness
+
+The debundler's contract: **any spec the validator accepts must emit a
+debundled bundle that runs correctly.** Over-restriction — rejecting a
+spec that would in fact have produced a working output — is an
+acceptable failure mode; the user can rework the spec, or we can loosen
+the validator. Under-restriction — accepting a spec that produces a
+broken bundle — is a soundness violation and is not acceptable.
+
+This governs every static analysis the validator runs: purity
+classification, side-effect graph construction, top-level-await
+detection, dependency-graph cycles.
+
+### Conditionally-correct optimizations
+
+Soundness does not require every inference to hold for arbitrary JS. An
+inference may be **conditionally correct** — sound only when the input
+satisfies a checkable precondition — provided the implementation:
+
+1. Checks the precondition on the specific statements or chunks it
+   would fire on, and
+2. Falls back to the strictly-conservative path (the one already known
+   sound) when the precondition fails.
+
+Example: dataflow-aware S-chain emission (`graph.rs`). Per-statement
+write/read summaries assume the statement contains no `with`, no direct
+`eval`, no computed-key `globalThis` access, no `Function` constructor —
+constructs that would invalidate static reasoning about which cells the
+statement touches. Each impure statement carries a
+`dataflow_summarizable` bit; statements failing the check fall back to
+the unconditional adjacent-impure S-edge.
+
+This is deliberate. The real input (the real-corpus bundle in
+`gaffer-private`, `props/frontend`, and similar) is well-behaved and
+admits precise reasoning even though generic JS does not. Document each
+such optimization with the precondition it requires, where the check
+lives, and the fallback path.
+
 ## ESM execution model (the constraints)
 
 ESM module evaluation is more constrained than ad-hoc discussion
@@ -382,7 +420,7 @@ the chunk spec picks one of two modes via
   reads) and static-key `<global>.<prop>` cells, where `<global>`
   is any unshadowed global-object alias (`globalThis`, `window`,
   `self`, `frames`, `top`). The mode is **conditionally correct**
-  (see AGENTS.md → "Conditionally-correct optimizations"):
+  (see "Conditionally-correct optimizations" above):
   statements containing a shape that defeats static cell tracking
   flip `dataflow_summarizable=false` and fall back to a strict
   S-edge against every prior impure owner (also acting as an
@@ -414,7 +452,7 @@ globalThis`) marks the bindings it flows into (transitively,
     suspect bails — `g.tag` touches the same cells as
     `globalThis.tag` but the summary only sees `Binding(g)`.
 
-  See `README.md` → "Conditionally-correct optimizations" for the
+  See "Conditionally-correct optimizations" above for the
   user-facing precondition list.
 
 ### Relationship
@@ -1069,7 +1107,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   fire no user-defined code on any argument value (no `ToNumber` /
   `ToString` / `ToPrimitive` coercion paths, no iterator protocol,
   no proxy traps, no own-property `[[Get]]`, no mutation). See
-  AGENTS.md "Pure-call whitelist soundness" for the contract that
+  <purity_soundness.md> "Admission rule: PURE_STATIC_CALLS" for the contract that
   governs adding new entries; soundness is preserved iff the
   contract is preserved.
 
@@ -1095,7 +1133,7 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 
   An incorrect annotation can produce a buggy debundle the same way
   an incorrect spec selector can — soundness shifts to the spec
-  author. See AGENTS.md "Declared purity".
+  author. See <purity_soundness.md> "Declared purity".
 
   `chunk_export_purity.<chunk>.pure_exports` is the cross-module form
   of the same contract, addressed to the **defining** chunk rather than

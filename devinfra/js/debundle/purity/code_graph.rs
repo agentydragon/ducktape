@@ -18,7 +18,7 @@ pub struct ChunkCodeGraph {
     /// classifier when it sees `<recv>.<prop>(args)` — if `recv` is a
     /// non-shadowed key here and `<prop>` is in the set, the call is
     /// admitted as pure with args evaluated normally. Author-trust
-    /// contract; see AGENTS.md "Declared purity".
+    /// contract; see <docs/purity_soundness.md> "Declared purity".
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
     /// Chunk-top `const X = <result-primitive init>` binding names.
     /// `const` makes the binding immutable, and a primitive value

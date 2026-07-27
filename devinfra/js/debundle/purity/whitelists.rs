@@ -65,7 +65,7 @@ pub(crate) const PURE_STATIC_PROPS: &[(&str, &str)] = &[
 /// / `ToString` / `ToPrimitive` / `ToPropertyKey` coercion, no
 /// iterator protocol, no proxy trap, no own-property `[[Get]]`,
 /// no mutation of any reachable object. See docs/design.md A8 for the
-/// admission contract; AGENTS.md "Pure-call whitelist soundness"
+/// admission contract; <docs/purity_soundness.md> "Admission rule: PURE_STATIC_CALLS"
 /// for the agent-facing rule. New entries land only with a spec
 /// citation showing no user-callback path; "common in practice"
 /// is not sufficient.
@@ -210,8 +210,8 @@ pub(crate) const PURE_BUILTIN_NEW_ARRAY_ITERABLE: &[&str] = &["Map", "Set"];
 /// appears in `PURE_STATIC_CALLS`. Every entry here MUST have both
 /// a positive `static_function_ref_*_alias_is_pure` test AND a
 /// negative `static_function_ref_*_call_remains_unknown` test
-/// pinning that distinction. See AGENTS.md "Pure-call whitelist
-/// soundness".
+/// pinning that distinction. See <docs/purity_soundness.md> "Admission rule:
+/// PURE_STATIC_CALLS".
 pub(crate) const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
     // All entries below are own data properties of the `Object`
     // built-in per ECMA-262 §20.1.2 — reads fire no getter. The

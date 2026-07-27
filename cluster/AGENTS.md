@@ -7,24 +7,29 @@ documentation. Fetch it with WebFetch to discover available doc pages.
 
 # Agent Instructions
 
-## CRITICAL: Bootstrap Terminology
+## Invariants
 
-"Bootstrap/tear down/recreate the cluster" means:
+These are destructive or silently corrupting if you get them wrong. Everything else in
+this file is guidance you can apply judgment to.
 
-- **Default scope**: `bazel run //cluster:bootstrap` (single TF root at `terraform/main/`, uses targeted applies)
-- **Persistent-auth resources** (keypairs, CSI tokens, signing keys) have `lifecycle { prevent_destroy = true }` in the merged root and are preserved across bootstrap cycles
-- Only destroy persistent-auth resources when user explicitly says "including persistent auth" or "from scratch" (requires removing `prevent_destroy` lifecycle rules first)
+### Persistent auth survives bootstrap
 
-## CRITICAL: Persistent Auth Protection
+"Bootstrap/tear down/recreate the cluster" defaults to `bazel run //cluster:bootstrap`
+(single TF root at `terraform/main/`, targeted applies). Persistent-auth resources
+(keypairs, CSI tokens, signing keys) carry `lifecycle { prevent_destroy = true }` and are
+preserved across bootstrap cycles.
 
-**NEVER remove `prevent_destroy` lifecycle rules on persistent-auth resources without explicit user authorization.**
+**Never remove a `prevent_destroy` lifecycle rule without explicit user authorization.**
+Destroying persistent auth requires the user to say "including persistent auth" or "from
+scratch"; removing the lifecycle rules is part of that request, never a prerequisite you
+satisfy on your own.
 
-## CRITICAL: Commit Before Reconcile
+### Commit and push before reconciling Flux
 
-**NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
-the git remote, not your local filesystem.
+Flux reads from the git remote, not your local filesystem — reconciling uncommitted work
+applies the previous state and reads as a failed change.
 
-## CRITICAL: Wiping a backing DB orphans tofu state
+### Wiping a backing DB orphans tofu state
 
 `tf/gitops/sso-providers/` (Authentik OAuth2 providers) and `tf/gitops/forgejo-props/`
 (Forgejo registry user) both manage objects inside another stateful system whose IDs
@@ -38,11 +43,11 @@ secret-based variant: <docs/troubleshooting.md> § "Resource ID Desync After Wip
 Backing Datastore". Original incident write-up:
 <docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
-## CRITICAL: OVH-Only Resilience
+### DNS and website must survive OVH-only
 
-DNS and website MUST work with OVH only (without Proxmox). No Proxmox-pinned storage
-(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. See <docs/plan.md>
-"OVH-Only Resilience Invariants".
+They must work without Proxmox: no Proxmox-pinned storage (`lvm-proxmox-*`,
+`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience
+Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 
@@ -72,10 +77,6 @@ and `timeout: 600000` (10 min). Takes ~15-20 min.
 
 Includes validation scripts, Helm lint, Terraform format/lint/validate. When adding new
 Terraform modules, create BUILD.bazel targets for format, lint, and validate.
-
-## Task Delegation
-
-Delegate complex diagnostics and independent workstreams to subagents via the Task tool.
 
 ## Operational Context
 

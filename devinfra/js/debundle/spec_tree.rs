@@ -40,7 +40,7 @@ struct AuthoringConfig {
     /// the policy next to the modules tree it governs.
     unassigned_mode: BTreeMap<String, UnassignedMode>,
     /// Per-chunk opt-ins for conditionally-correct analyses (see
-    /// `devinfra/js/debundle/AGENTS.md` → "Conditionally-correct
+    /// <docs/design.md> → "Conditionally-correct
     /// optimizations"). Default empty — each chunk uses the
     /// strictly-conservative analysis path unless it opts in here.
     #[serde(default)]

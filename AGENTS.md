@@ -50,7 +50,7 @@ In-cluster OAuth MCP variants are documented in
 
 Run `bb`, `bazel`, `bazelisk`, `bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
 
-**All Bazel-family commands (`bazel`, `bazelisk`, `bb`, `bbr`) must always use `dangerouslyDisableSandbox: true` in agent sessions.** When any `WebFetch(domain:...)` permission rule exists in settings, the sandbox applies `--unshare-net` (full network namespace isolation). Bazel's BuildBuddy/RBE/BES traffic is not a supported path through that sandbox in this repo. Treat <docs/claude_code_sandbox.md> as the current operational rule; <devinfra/docs/bazel_worktree_cache_sharing.md> contains local CLI cache and proxy-shim notes, not an override for this requirement. See <debug/bazel_sandbox_mitigations.md> only for the historical March 2026 investigation.
+For the Bazel family (`bazel`, `bazelisk`, `bb`, `bbr`) this is unconditional, with no in-sandbox fallback to try first: when any `WebFetch(domain:...)` permission rule exists in settings, the sandbox applies `--unshare-net` (full network namespace isolation), which breaks Bazel's gRPC DNS resolution even for allowlisted hosts — BuildBuddy/RBE/BES traffic has no supported path through it. <docs/claude_code_sandbox.md> is the operational rule; <devinfra/docs/bazel_worktree_cache_sharing.md> covers local CLI cache and proxy shims and does not override it. <debug/bazel_sandbox_mitigations.md> is the historical March 2026 investigation only.
 
 ## Bazel Commands
 
@@ -72,10 +72,7 @@ Remote execution (RBE) and remote caching are the **expected defaults** — do n
 - **Browser/visual tests must run with remote execution.** RBE runner VMs have the required Docker and display stack; local machines typically do not. Never skip or stub these tests to avoid needing RBE.
 - `--noremote_cache` / `--noremote_accept_cached` are fine for forcing a fresh run; they don't break correctness.
 
-**If any Bazel-family command (`bazel`, `bazelisk`, `bb`, `bbr`) cannot reach BuildBuddy** (connection refused, DNS failure, cert error):
-
-1. First, retry the Bash tool call outside the sandbox (per the [Sandbox](#sandbox) rule above) — `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
-2. If it still fails, **stop and report the connectivity issue to the user**. The user may need to recover the session start hook or check VPN/firewall state.
+**If a Bazel-family command cannot reach BuildBuddy** (connection refused, DNS failure, cert error) while already running outside the sandbox, **stop and report the connectivity issue to the user.** They may need to recover the session start hook or check VPN/firewall state.
 
 Build outputs, invocation data, and `bbr` configuration layers live in
 <devinfra/bbr.py>. BuildBuddy log retrieval and target-history recipes live in the
@@ -164,7 +161,6 @@ explicitly asks for a full-tree run.
 For changes that will not pass through the required PR checks, run the relevant
 repository-wide validation before hand-off.
 
-Lint (ruff + mypy) runs by default. Use `--config=nolint` to skip.
 If you touched `ansible/`, also follow <ansible/AGENTS.md>.
 
 ## SOPS

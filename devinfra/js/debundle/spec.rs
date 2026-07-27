@@ -1586,7 +1586,7 @@ pub enum MemberPurity {
     Default,
     /// Author asserts that calls to the bound function have no observable
     /// side effects. Validator drops `S` edges for `<binding>(...)` call
-    /// sites. See AGENTS.md "Declared purity" + docs/design.md A9.
+    /// sites. See <docs/purity_soundness.md> "Declared purity" + docs/design.md A9.
     Pure,
     /// Author asserts that `new <binding>(...)` has no observable side
     /// effects beyond evaluating its constructor arguments. The analyzer

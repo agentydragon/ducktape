@@ -603,7 +603,7 @@ fn classify_callee_call(
     // body-local binding of the same name (`local_shadowed`): a
     // function param or local var is a *different value* than the
     // chunk-top binding the author annotated, so the trust contract
-    // doesn't cover it. See AGENTS.md "Declared purity".
+    // doesn't cover it. See <docs/purity_soundness.md> "Declared purity".
     if let Expr::Ident(ident) = callee_expr
         && declared_pure.contains(ident.sym.as_ref())
         && !local_shadowed.contains(ident.sym.as_ref())
@@ -624,7 +624,7 @@ fn classify_callee_call(
     // shadowing — the spec author asserts THIS bound value is pure
     // regardless of where it came from — but NOT a body-local
     // binding of the same name (a param/local is a different value
-    // than the annotated chunk-top binding). See AGENTS.md
+    // than the annotated chunk-top binding). See <docs/purity_soundness.md>
     // "Declared purity".
     if let Some((recv, prop)) = static_member_obj_prop(callee_expr)
         && !local_shadowed.contains(recv)

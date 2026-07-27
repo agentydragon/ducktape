@@ -12,7 +12,7 @@
 //!
 //! Same author-trust contract as `purity: pure`: the validator does
 //! not re-verify; soundness shifts to the spec author. See
-//! AGENTS.md "Declared purity".
+//! <docs/purity_soundness.md> "Declared purity".
 
 use analysis::{DepKind, EdgeRoleReport, OwnerGraphReport};
 use debundle_e2e_support::*;
