@@ -83,6 +83,7 @@ instead, so they load on demand.
   no no-op short-circuits; no single-use intermediate variables.
 - **Strict data mapping**: invalid enum/typed inputs raise early; never `continue`
   past them.
+- **Prefer functional style**: comprehensions and idiomatic patterns over loop-and-append.
 - **Functions over classes** when there's no state to manage.
 - **Use framework features** (e.g. typer `exists=True`) over manual checks.
 - **Precise types**: discriminated unions, Protocols, TypedDicts, concrete models.
