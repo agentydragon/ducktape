@@ -6,6 +6,7 @@ metadata:
   annotations:
     description: Dedicated execution namespace for OpenShell-managed sandboxes.
 spec:
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/agents/openshell/sandboxes
   prune: true
