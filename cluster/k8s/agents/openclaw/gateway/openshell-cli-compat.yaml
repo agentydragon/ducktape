@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openshell-cli-compat
+  namespace: openclaw-gateway
+data:
+  openshell-compat: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # OpenClaw 2026.7.1 emits names such as
+    # openclaw-agent-main-25bffc4d, while OpenShell 0.0.90 caps routable
+    # sandbox names at 19 characters. Preserve OpenClaw's existing stable
+    # eight-hex hash and translate the name at every CLI boundary.
+    #
+    # Remove this shim when openclaw/openclaw#114177 is present in the pinned
+    # OpenClaw release; that fix generates native 19-character names.
+    rewritten=()
+    for argument in "$@"; do
+      if [[ ${#argument} -gt 19 && "$argument" =~ ^openclaw-.*-([0-9a-f]{8})$ ]]; then
+        argument="oc-${BASH_REMATCH[1]}"
+      fi
+      rewritten+=("$argument")
+    done
+
+    exec /usr/local/bin/openshell "${rewritten[@]}"

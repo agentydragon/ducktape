@@ -17,6 +17,8 @@ spec:
     - name: openclaw-gateway-secrets
     - name: openshell-operator
     - name: openshell-openclaw
+    # Mints and reflects the dedicated Codex-subscription LiteLLM key.
+    - name: litellm-keys-tf
     - name: agents-mitmproxy
     - name: authentik # Wait for Authentik worker to apply SSO blueprints
     - name: local-path-provisioner

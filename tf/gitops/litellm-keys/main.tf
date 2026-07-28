@@ -276,6 +276,44 @@ resource "kubernetes_secret" "codex_pod" {
 }
 
 # ============================================================================
+# openclaw — Codex subscription through LiteLLM and CLIProxyAPI
+# ============================================================================
+# OpenClaw owns the agent loop and talks Anthropic Messages to the main LiteLLM
+# proxy's `codex-*` models. LiteLLM forwards those requests to CLIProxyAPI,
+# which owns the ChatGPT/Codex OAuth session and translates tool calls. This
+# avoids OpenClaw selecting its Codex app-server runtime and avoids the separate
+# litellm-chatgpt Responses provider's independently managed OAuth state.
+
+resource "litellm_key" "openclaw" {
+  key_alias = "openclaw"
+  models    = local.codex_client_models
+  metadata = {
+    consumer = "openclaw"
+  }
+}
+
+# Reflected into openclaw-gateway, where OpenClaw reads it as
+# OPENCLAW_LITELLM_API_KEY. Keep this separate from the direct OpenAI Platform
+# key that OpenClaw uses only for memory embeddings.
+resource "kubernetes_secret" "openclaw" {
+  metadata {
+    name      = "litellm-key-openclaw"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for OpenClaw (Codex subscription models through CLIProxyAPI only)"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "openclaw-gateway"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "openclaw-gateway"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.openclaw.key
+  }
+}
+
+# ============================================================================
 # zai-clients — z.ai-scoped key for interactive Claude-Code-on-GLM clients
 # ============================================================================
 # A LiteLLM virtual key for the laptop `z-claude` alias (nix/home/home.nix) and the

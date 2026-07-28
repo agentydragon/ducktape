@@ -9,10 +9,17 @@ spec:
     tag: devel-20260728031657-59f5024 # {"$imagepolicy": "flux-system:openclaw:tag"}
     pullPolicy: IfNotPresent
   env:
+    # Direct OpenAI Platform credential used only by memorySearch embeddings
+    # below. Agent turns use the dedicated LiteLLM credential and provider.
     - name: OPENAI_API_KEY
       valueFrom:
         secretKeyRef:
           name: openclaw-openai-api-key
+          key: api-key
+    - name: OPENCLAW_LITELLM_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: litellm-key-openclaw
           key: api-key
     # The upstream image uses Node.js 24, whose native fetch/http clients can
     # honor the proxy variables injected by Kyverno.
@@ -28,7 +35,10 @@ spec:
       agents:
         defaults:
           model:
-            primary: "openai/gpt-5.6"
+            # ChatGPT/Codex subscription route exposed by the main LiteLLM
+            # proxy. This is a custom provider, so OpenClaw owns the agent loop
+            # instead of auto-selecting the Codex app-server runtime.
+            primary: "litellm-subscription/codex-gpt-5.6-luna"
           sandbox:
             mode: all
             backend: openshell
@@ -36,12 +46,37 @@ spec:
             workspaceAccess: rw
           skills: []
           memorySearch:
+            # Embeddings are not available through Codex OAuth; retain the
+            # separate OpenAI Platform credential for this feature only.
             provider: openai
             experimental:
               sessionMemory: true
             sources:
               - memory
               - sessions
+      models:
+        providers:
+          litellm-subscription:
+            baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1"
+            apiKey: "${OPENCLAW_LITELLM_API_KEY}"
+            # This Codex OAuth lane is exposed by LiteLLM as Anthropic Messages
+            # and forwarded to CLIProxyAPI, which translates tool calls. The
+            # `/v1/responses` bridge cannot front this lane; the native
+            # Responses lane uses a separate litellm-chatgpt OAuth owner.
+            api: anthropic-messages
+            agentRuntime:
+              id: openclaw
+            request:
+              allowPrivateNetwork: true
+            models:
+              - id: codex-gpt-5.6-luna
+                name: GPT-5.6 Luna (Codex subscription via LiteLLM)
+                reasoning: true
+                input:
+                  - text
+                  - image
+                contextWindow: 200000
+                maxTokens: 64000
       commands:
         config: false
         mcp: false
@@ -79,6 +114,10 @@ spec:
           openshell:
             enabled: true
             config:
+              # Compatibility boundary for OpenClaw 2026.7.1 + OpenShell
+              # 0.0.90. The mounted wrapper shortens only OpenClaw-generated
+              # runtime IDs and delegates every operation to the pinned CLI.
+              command: /opt/openclaw/bin/openshell-compat
               # TODO: Consider building and digest-pinning our own OpenShell
               # sandbox image instead of using the mutable community image.
               from: openclaw
@@ -142,9 +181,19 @@ spec:
             path: oidc_token.json
           - key: ca.crt
             path: mtls/ca.crt
+    - name: openshell-cli-compat
+      configMap:
+        name: openshell-cli-compat
+        defaultMode: 0555
+        items:
+          - key: openshell-compat
+            path: openshell-compat
   extraVolumeMounts:
     - name: openshell-cli-config
       mountPath: /home/openclaw/.config/openshell/gateways/openclaw
+      readOnly: true
+    - name: openshell-cli-compat
+      mountPath: /opt/openclaw/bin
       readOnly: true
   security:
     networkPolicy:
@@ -169,6 +218,19 @@ spec:
                   app.kubernetes.io/instance: openshell
           ports:
             - port: 8080
+              protocol: TCP
+        # Agent inference goes to the in-cluster LiteLLM proxy. Its
+        # `codex-gpt-5.6-luna` route forwards Anthropic Messages requests to
+        # CLIProxyAPI's independently refreshed ChatGPT/Codex OAuth session.
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: litellm
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: litellm
+          ports:
+            - port: 4000
               protocol: TCP
   availability:
     nodeSelector:

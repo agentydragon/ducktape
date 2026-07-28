@@ -25,6 +25,10 @@ RUN npm pack \
 
 # ── OpenShell CLI (checksum-pinned static release) ───────────────────────────
 ARG TARGETARCH
+# Keep this synchronized with the OpenShell gateway bundled by operator chart
+# 0.4.0. OpenClaw 2026.7.1's overlong sandbox IDs are shortened at the CLI
+# boundary by the declarative command shim in cluster/k8s/agents/openclaw/gateway;
+# remove that shim only after openclaw/openclaw#114177 ships.
 ARG OPENSHELL_VERSION=0.0.90
 RUN set -eux; \
     case "${TARGETARCH}" in \

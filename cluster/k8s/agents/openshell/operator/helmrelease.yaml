@@ -14,6 +14,11 @@ spec:
   chart:
     spec:
       chart: openshell-operator
+      # Bundles OpenShell gateway 0.0.90; keep openclaw/Dockerfile's CLI on the
+      # same release. Do not downgrade this stateful gateway to the pre-workspace
+      # 0.0.86 schema: its SQLite database has already applied the incompatible
+      # workspace migration. OpenClaw's name-limit mismatch is handled at its
+      # supported CLI command boundary until openclaw/openclaw#114177 ships.
       version: "0.4.0"
       sourceRef:
         kind: HelmRepository
