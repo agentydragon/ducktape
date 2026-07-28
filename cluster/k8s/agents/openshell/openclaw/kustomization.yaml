@@ -6,6 +6,15 @@ resources:
   - github-provider.yaml
   - sandbox-client-tls.yaml
   - settings-reconciler.yaml
+configMapGenerator:
+  - name: openshell-sandbox-policy
+    namespace: openclaw-gateway
+    files:
+      - policy.yaml
+generatorOptions:
+  # The consuming OpenClawInstance is rendered by a separate Flux
+  # Kustomization, so its volume reference cannot receive a hash rewrite.
+  disableNameSuffixHash: true
 images:
   - name: ghcr.io/agentydragon/openclaw
     # Flux's tag-only setter must target newTag. Putting it on a complete

@@ -1,0 +1,40 @@
+# OpenShell community images copy an image-selected policy to
+# /etc/openshell/policy.yaml. When `openshell sandbox create` receives no
+# --policy, the sandbox supervisor imports that file into the gateway as the
+# sandbox's initial policy. The mutable community `openclaw:latest` image has
+# historically granted unrelated Claude, GitLab, and NVIDIA egress this way.
+#
+# Keep our security boundary independent of the image contents. Kustomize
+# packages this file into the `openshell-sandbox-policy` ConfigMap; OpenClaw
+# mounts it and passes its path through the OpenShell plugin's `policy` option.
+# Provider v2 composes the attached `agentydragon-github` provider's executable-
+# and request-scoped GitHub rules into the effective policy separately.
+#
+# Changing this file affects new sandboxes. Recreate existing OpenClaw
+# sandboxes, or apply the policy with `openshell policy set`, to update them.
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /proc
+    - /dev/urandom
+    - /app
+    - /etc
+    - /var/log
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# Default-deny. Provider v2 adds the GitHub provider policy at runtime.
+network_policies: {}

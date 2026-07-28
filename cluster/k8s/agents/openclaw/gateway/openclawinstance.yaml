@@ -77,6 +77,26 @@ spec:
                   - image
                 contextWindow: 200000
                 maxTokens: 64000
+              # OpenClaw's bundled LiteLLM provider does not discover the
+              # proxy's authenticated /v1/models catalog. Keep the selectable
+              # subscription aliases explicit until it does; transport and
+              # credentials remain shared at the provider level above.
+              - id: codex-gpt-5.6-terra
+                name: GPT-5.6 Terra (Codex subscription via LiteLLM)
+                reasoning: true
+                input:
+                  - text
+                  - image
+                contextWindow: 200000
+                maxTokens: 64000
+              - id: codex-gpt-5.6-sol
+                name: GPT-5.6 Sol (Codex subscription via LiteLLM)
+                reasoning: true
+                input:
+                  - text
+                  - image
+                contextWindow: 200000
+                maxTokens: 64000
       commands:
         config: false
         mcp: false
@@ -120,7 +140,11 @@ spec:
               command: /opt/openclaw/bin/openshell-compat
               # TODO: Consider building and digest-pinning our own OpenShell
               # sandbox image instead of using the mutable community image.
+              # Its baked /etc/openshell/policy.yaml is deliberately ignored:
+              # this explicit policy is mounted from our GitOps-owned ConfigMap
+              # and passed as --policy whenever OpenClaw creates a sandbox.
               from: openclaw
+              policy: /etc/openclaw/openshell/policy.yaml
               mode: mirror
               gateway: openclaw
               gatewayEndpoint: "https://openshell-gateway.openshell-system.svc.cluster.local:8080"
@@ -188,12 +212,22 @@ spec:
         items:
           - key: openshell-compat
             path: openshell-compat
+    - name: openshell-sandbox-policy
+      configMap:
+        name: openshell-sandbox-policy
+        defaultMode: 0444
+        items:
+          - key: policy.yaml
+            path: policy.yaml
   extraVolumeMounts:
     - name: openshell-cli-config
       mountPath: /home/openclaw/.config/openshell/gateways/openclaw
       readOnly: true
     - name: openshell-cli-compat
       mountPath: /opt/openclaw/bin
+      readOnly: true
+    - name: openshell-sandbox-policy
+      mountPath: /etc/openclaw/openshell
       readOnly: true
   security:
     networkPolicy:

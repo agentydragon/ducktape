@@ -158,6 +158,11 @@ _CLIPROXY_MODELS: list[str] = [
     "gpt-5.3-codex-spark",
 ]
 
+# The subset exposed in OpenClaw's model picker. OpenClaw's bundled LiteLLM
+# provider does not query the proxy's authenticated /v1/models endpoint, so a
+# focused cross-config test uses this roster to prevent silent catalog drift.
+OPENCLAW_CODEX_MODELS: list[str] = ["codex-gpt-5.6-luna", "codex-gpt-5.6-terra", "codex-gpt-5.6-sol"]
+
 
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:

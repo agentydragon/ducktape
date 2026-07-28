@@ -29,6 +29,12 @@ filegroup(
 )
 
 filegroup(
+    name = "openclaw_model_config",
+    srcs = ["agents/openclaw/gateway/openclawinstance.yaml"],
+    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+)
+
+filegroup(
     name = "cluster_all_files",
     srcs = glob(
         ["**"],
