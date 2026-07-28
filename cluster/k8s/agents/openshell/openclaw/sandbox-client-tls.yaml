@@ -6,7 +6,7 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: openshell-client-tls
-  namespace: openclaw-sandbox
+  namespace: openshell-sandboxes
 spec:
   refreshInterval: 1m
   secretStoreRef:

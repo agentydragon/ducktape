@@ -57,7 +57,9 @@ spec:
         issuerUrl: http://openshell-issuer.openshell-system.svc.cluster.local:8081
     openshellGateway:
       server:
-        sandboxNamespace: openclaw-sandbox
+        # All sandboxes launched by this gateway share one namespace. Keep them
+        # separate from OpenClaw itself and from its legacy native sandbox.
+        sandboxNamespace: openshell-sandboxes
         workspaceDefaultStorageSize: 4Gi
         oidc:
           issuer: http://openshell-issuer.openshell-system.svc.cluster.local:8081

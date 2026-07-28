@@ -2,7 +2,7 @@
 # Allows: DNS, cluster-internal traffic, kube-apiserver, mitmproxy port 8080.
 # Blocks: direct external internet access.
 #
-# openclaw-sandbox is intentionally absent. Its pods are OpenShell sandboxes,
+# openshell-sandboxes is intentionally absent. Its pods are OpenShell sandboxes,
 # whose supervisor proxy enforces the OpenShell policy and replaces credential
 # placeholders on approved requests. Chaining the generic proxy in front of it
 # prevents OpenShell from seeing and authorizing the original HTTPS requests.
@@ -33,6 +33,7 @@ spec:
         operator: In
         values:
           - claude-sandbox
+          - openclaw-sandbox
   egress:
     # DNS resolution (CoreDNS in kube-system)
     - toEndpoints:

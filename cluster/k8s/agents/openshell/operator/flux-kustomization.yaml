@@ -17,7 +17,7 @@ spec:
   timeout: 10m
   dependsOn:
     - name: openshell-namespace
-    - name: openclaw-sandbox
+    - name: openshell-sandboxes
     - name: agent-sandbox-controller
     - name: openshell-storage-policy
   healthChecks:

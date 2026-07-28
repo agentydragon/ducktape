@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: openshell-sandboxes
+  namespace: flux-system
+  annotations:
+    description: Dedicated execution namespace for OpenShell-managed sandboxes.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agents/openshell/sandboxes
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 5m

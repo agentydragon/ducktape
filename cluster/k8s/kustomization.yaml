@@ -116,6 +116,7 @@ resources:
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
   - agents/openshell/namespace/flux-kustomization.yaml
+  - agents/openshell/sandboxes/flux-kustomization.yaml
   - agents/openshell/storage-policy/flux-kustomization.yaml
   - agents/openshell/operator/flux-kustomization.yaml
   - agents/openshell/openclaw/flux-kustomization.yaml

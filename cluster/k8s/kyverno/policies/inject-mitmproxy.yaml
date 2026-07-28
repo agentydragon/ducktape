@@ -31,11 +31,12 @@ metadata:
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Mutates pods in claude-sandbox and openclaw-gateway to automatically
+      Mutates pods in claude-sandbox, openclaw-sandbox, and openclaw-gateway to
+      automatically
       inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
       SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
       and mount the mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
-      OpenShell owns egress and credential injection inside openclaw-sandbox;
+      OpenShell owns egress and credential injection inside openshell-sandboxes;
       sending those pods through this second proxy bypasses that integration.
 spec:
   mutateExistingOnPolicyUpdate: false
@@ -45,7 +46,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-gateway]
+              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
               operations: [CREATE]
       mutate:
         patchesJson6902: |-
@@ -61,7 +62,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-gateway]
+              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
               operations: [CREATE]
       mutate:
         foreach:
@@ -114,7 +115,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-gateway]
+              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
               operations: [CREATE]
       preconditions:
         any:
