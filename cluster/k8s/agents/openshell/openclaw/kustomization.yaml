@@ -5,3 +5,4 @@ resources:
   - github-credentials.yaml
   - github-provider.yaml
   - sandbox-client-tls.yaml
+  - settings-reconciler.yaml

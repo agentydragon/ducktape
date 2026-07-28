@@ -1,0 +1,81 @@
+# OpenShell 0.0.90 exposes gateway-global feature settings through its API, but
+# neither the gateway Helm chart nor the Kubernetes operator has a declarative
+# field for them. Reapply the supported CLI operation periodically so the
+# Providers v2 contract is repaired after database replacement or manual drift.
+#
+# Providers v2 maps the GitHub provider's opaque `api_token` credential to
+# GITHUB_TOKEN and GH_TOKEN placeholders inside attached sandboxes. OpenShell's
+# supervisor proxy substitutes the real token only on policy-approved requests.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openshell-global-settings
+  namespace: openclaw-gateway
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 6
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openshell-global-settings
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reconcile
+              # Keep this tag on the same Flux ImagePolicy as OpenClaw itself:
+              # the derivative image pins the matching OpenShell 0.0.90 CLI.
+              image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d # {"$imagepolicy": "flux-system:openclaw:tag"}
+              imagePullPolicy: IfNotPresent
+              command:
+                - /usr/local/bin/openshell
+              args:
+                - settings
+                - set
+                - --global
+                - --key
+                - providers_v2_enabled
+                - --value
+                - "true"
+                - --yes
+              env:
+                - name: HOME
+                  value: /home/openclaw
+                - name: OPENSHELL_GATEWAY
+                  value: openclaw
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: openshell-cli-config
+                  mountPath: /home/openclaw/.config/openshell/gateways/openclaw
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: openshell-cli-config
+              secret:
+                secretName: openshell-cli-config
+            - name: tmp
+              emptyDir: {}

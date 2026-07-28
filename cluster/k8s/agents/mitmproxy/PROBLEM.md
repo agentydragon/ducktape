@@ -3,8 +3,13 @@
 ## Problem
 
 The `inject-mitmproxy` Kyverno ClusterPolicy mutates pods at creation time in
-`claude-sandbox`, `openclaw-sandbox`, and `openclaw-gateway` namespaces. It uses
+`claude-sandbox` and `openclaw-gateway` namespaces. It uses
 JSON Patch (`patchesJson6902`) to append volumes, env vars, and volume mounts.
+
+`openclaw-sandbox` is deliberately excluded: OpenShell's supervisor proxy owns
+egress policy and credential injection there. Injecting this generic proxy into
+an OpenShell sandbox prevents the supervisor from observing the original
+request and replacing its credential placeholders.
 
 This causes **duplicate entry errors** when any subsequent `PATCH` or `UPDATE`
 operation is sent to the API server for an already-admitted pod. Kyverno

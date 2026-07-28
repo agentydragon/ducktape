@@ -1,4 +1,4 @@
-# Auto-inject mitmproxy proxy config into all pods in sandbox namespaces.
+# Auto-inject mitmproxy proxy config into pods that use the shared proxy.
 # This makes any pod (e.g. `kubectl run --image=curlimages/curl`) work
 # turnkey with HTTP_PROXY, HTTPS_PROXY, SSL trust, and the CA bundle mounted,
 # without the pod spec needing to know about the proxy.
@@ -31,10 +31,12 @@ metadata:
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Mutates pods in claude-sandbox and openclaw-sandbox to automatically
+      Mutates pods in claude-sandbox and openclaw-gateway to automatically
       inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
       SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
       and mount the mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt.
+      OpenShell owns egress and credential injection inside openclaw-sandbox;
+      sending those pods through this second proxy bypasses that integration.
 spec:
   mutateExistingOnPolicyUpdate: false
   rules:
@@ -43,7 +45,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              namespaces: [claude-sandbox, openclaw-gateway]
               operations: [CREATE]
       mutate:
         patchesJson6902: |-
@@ -59,7 +61,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              namespaces: [claude-sandbox, openclaw-gateway]
               operations: [CREATE]
       mutate:
         foreach:
@@ -112,7 +114,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [claude-sandbox, openclaw-sandbox, openclaw-gateway]
+              namespaces: [claude-sandbox, openclaw-gateway]
               operations: [CREATE]
       preconditions:
         any:
