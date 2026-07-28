@@ -57,13 +57,7 @@
 .haku-oauth-result-page {
   min-height: 100dvh;
   padding: 1.5rem;
-  background:
-    radial-gradient(
-      circle at top,
-      color-mix(in srgb, var(--mantine-color-hakuSpirit-2) 42%, transparent),
-      transparent 48%
-    ),
-    var(--haku-page-bg);
+  background: var(--haku-page-bg);
 }
 
 .haku-oauth-result-card {
@@ -72,11 +66,12 @@
   background: var(--haku-panel-bg);
 }
 
+/* Same small-caps label idiom as .haku-shell-field-label, so this reads as a Haku Console
+   surface rather than a bespoke landing page. */
 .haku-oauth-result-eyebrow {
-  color: var(--mantine-color-hakuSpirit-6);
-  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 

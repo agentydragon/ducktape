@@ -15,7 +15,7 @@ export function OAuthResultView({
   const succeeded = result.status === "success";
   return (
     <Center component="main" className="haku-oauth-result-page">
-      <Paper component="section" className="haku-oauth-result-card" withBorder radius="lg" shadow="xl" p="xl">
+      <Paper component="section" className="haku-oauth-result-card" withBorder radius="md" p="xl">
         <Stack align="center" gap="md">
           <Text className="haku-oauth-result-eyebrow">Haku Console</Text>
           <ThemeIcon
