@@ -1,0 +1,22 @@
+# The bundled gateway's PKI hook creates this mTLS client certificate only in
+# the Helm release namespace. OpenShell-generated pods mount the same Secret
+# name in server.sandboxNamespace, so mirror it declaratively whenever the
+# source certificate is created or rotated.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: openshell-client-tls
+  namespace: openclaw-sandbox
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: kubernetes-openshell-system-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: openshell-client-tls
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/tls
+  dataFrom:
+    - extract:
+        key: openshell-client-tls

@@ -4,3 +4,4 @@ resources:
   - cli-config.yaml
   - github-credentials.yaml
   - github-provider.yaml
+  - sandbox-client-tls.yaml
