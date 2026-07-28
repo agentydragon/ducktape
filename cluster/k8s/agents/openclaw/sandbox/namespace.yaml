@@ -5,3 +5,9 @@ metadata:
   labels:
     name: openclaw-sandbox
     environment: development
+    # OpenShell's supervisor requires an Unconfined AppArmor profile plus
+    # SYS_ADMIN, NET_ADMIN, SYS_PTRACE, and SYSLOG. The cluster default is
+    # baseline, which rejects every generated sandbox pod before scheduling.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
