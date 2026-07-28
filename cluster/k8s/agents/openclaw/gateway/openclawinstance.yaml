@@ -21,7 +21,7 @@ spec:
     - name: OPENSHELL_GATEWAY
       value: openclaw
     - name: OPENSHELL_GATEWAY_ENDPOINT
-      value: "https://openshell-gateway.openclaw-gateway.svc.cluster.local:8080"
+      value: "https://openshell-gateway.openshell-system.svc.cluster.local:8080"
   config:
     mergeMode: overwrite
     raw:
@@ -84,7 +84,7 @@ spec:
               from: openclaw
               mode: mirror
               gateway: openclaw
-              gatewayEndpoint: "https://openshell-gateway.openclaw-gateway.svc.cluster.local:8080"
+              gatewayEndpoint: "https://openshell-gateway.openshell-system.svc.cluster.local:8080"
               providers:
                 - agentydragon-github
               autoProviders: false
@@ -160,7 +160,10 @@ spec:
         # OpenClaw delegates command execution to the in-cluster OpenShell
         # gateway. The gateway's OIDC token and private CA are mounted above.
         - to:
-            - podSelector:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: openshell-system
+              podSelector:
                 matchLabels:
                   app.kubernetes.io/name: openshell
                   app.kubernetes.io/instance: openshell

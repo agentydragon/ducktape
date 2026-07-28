@@ -2,7 +2,7 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: openshell
-  namespace: openclaw-gateway
+  namespace: openshell-system
 spec:
   interval: 30m
   install:
@@ -18,7 +18,7 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: openshell-operator
-        namespace: openclaw-gateway
+        namespace: openshell-system
       interval: 12h
   # The bundled gateway chart does not expose storageClassName for its
   # StatefulSet claim. This cluster deliberately has no default StorageClass.
@@ -32,12 +32,29 @@ spec:
               - op: add
                 path: /spec/volumeClaimTemplates/0/spec/storageClassName
                 value: local-path-ovh
+          # The issuer is stateless, so it cannot inherit OVH placement from
+          # the gateway's local-path claim.
+          - target:
+              kind: Deployment
+              name: openshell-issuer
+            patch: |
+              - op: add
+                path: /spec/template/spec/nodeSelector
+                value:
+                  topology.kubernetes.io/zone: hil-ovh
   values:
+    # The stateless operator also needs explicit placement. Gateway and sandbox
+    # pods are placed by their local-path-ovh claims instead.
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    auth:
+      oidc:
+        issuerUrl: http://openshell-issuer.openshell-system.svc.cluster.local:8081
     openshellGateway:
       server:
         sandboxNamespace: openclaw-sandbox
         workspaceDefaultStorageSize: 4Gi
+        oidc:
+          issuer: http://openshell-issuer.openshell-system.svc.cluster.local:8081
       networkPolicy:
         enabled: true

@@ -9,7 +9,7 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: kubernetes-openclaw-gateway-secret-store
+    name: kubernetes-openshell-system-secret-store
     kind: ClusterSecretStore
   target:
     name: openshell-cli-config
@@ -19,18 +19,18 @@ spec:
         metadata.json: |
           {
             "name": "openclaw",
-            "gateway_endpoint": "https://openshell-gateway.openclaw-gateway.svc.cluster.local:8080",
+            "gateway_endpoint": "https://openshell-gateway.openshell-system.svc.cluster.local:8080",
             "is_remote": true,
             "gateway_port": 8080,
             "auth_mode": "oidc",
-            "oidc_issuer": "http://openshell-issuer:8081",
+            "oidc_issuer": "http://openshell-issuer.openshell-system.svc.cluster.local:8081",
             "oidc_client_id": "openshell-operator",
             "oidc_audience": "openshell-operator"
           }
         oidc_token.json: |
           {
             "access_token": "{{ .token }}",
-            "issuer": "http://openshell-issuer:8081",
+            "issuer": "http://openshell-issuer.openshell-system.svc.cluster.local:8081",
             "client_id": "openshell-operator"
           }
         ca.crt: "{{ .ca }}"
