@@ -144,7 +144,7 @@ spec:
             path: mtls/ca.crt
   extraVolumeMounts:
     - name: openshell-cli-config
-      mountPath: /home/node/.config/openshell/gateways/openclaw
+      mountPath: /home/openclaw/.config/openshell/gateways/openclaw
       readOnly: true
   security:
     networkPolicy:
