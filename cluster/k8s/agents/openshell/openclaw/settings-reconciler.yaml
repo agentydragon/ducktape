@@ -3,9 +3,9 @@
 # field for them. Reapply the supported CLI operation periodically so the
 # Providers v2 contract is repaired after database replacement or manual drift.
 #
-# Providers v2 maps the GitHub provider's opaque `api_token` credential to
-# GITHUB_TOKEN and GH_TOKEN placeholders inside attached sandboxes. OpenShell's
-# supervisor proxy substitutes the real token only on policy-approved requests.
+# Providers v2 exposes the GitHub provider's `GITHUB_TOKEN` credential as an
+# opaque placeholder inside attached sandboxes. OpenShell's supervisor proxy
+# substitutes the real token only on policy-approved requests.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -77,5 +77,14 @@ spec:
             - name: openshell-cli-config
               secret:
                 secretName: openshell-cli-config
+                # OpenShell looks for the private CA at mtls/ca.crt. Keep this
+                # layout identical to the long-running OpenClaw mount.
+                items:
+                  - key: metadata.json
+                    path: metadata.json
+                  - key: oidc_token.json
+                    path: oidc_token.json
+                  - key: ca.crt
+                    path: mtls/ca.crt
             - name: tmp
               emptyDir: {}
