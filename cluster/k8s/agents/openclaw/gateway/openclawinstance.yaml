@@ -111,18 +111,17 @@ spec:
               messages: 15
               llmSlug: false
       tools:
-        # This first deployment can maintain its workspace and memory, but has
-        # no command execution, browser, MCP, cron, or outbound action tools.
+        # OpenClaw's native filesystem tools (read, write, edit, and
+        # apply_patch) run against the gateway-local workspace, not inside the
+        # OpenShell sandbox. Disable them so the agent has one coherent
+        # filesystem view: exec/process in the sandbox. Files under /tmp are
+        # available through shell commands, while /sandbox remains mirrored.
         allow:
-          - apply_patch
-          - edit
           - exec
           - memory_get
           - memory_search
           - process
-          - read
           - session_status
-          - write
         fs:
           workspaceOnly: true
         sessions:
