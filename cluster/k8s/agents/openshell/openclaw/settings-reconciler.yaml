@@ -35,9 +35,9 @@ spec:
               type: RuntimeDefault
           containers:
             - name: reconcile
-              # Keep this tag on the same Flux ImagePolicy as OpenClaw itself:
-              # the derivative image pins the matching OpenShell 0.0.90 CLI.
-              image: devel-20260728182008-17ba82d # {"$imagepolicy": "flux-system:openclaw:tag"}
+              # kustomization.yaml keeps this on the same Flux ImagePolicy as
+              # OpenClaw; the derivative image pins the matching 0.0.90 CLI.
+              image: ghcr.io/agentydragon/openclaw
               imagePullPolicy: IfNotPresent
               command:
                 - /usr/local/bin/openshell

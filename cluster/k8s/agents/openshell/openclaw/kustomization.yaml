@@ -6,3 +6,8 @@ resources:
   - github-provider.yaml
   - sandbox-client-tls.yaml
   - settings-reconciler.yaml
+images:
+  - name: ghcr.io/agentydragon/openclaw
+    # Flux's tag-only setter must target newTag. Putting it on a complete
+    # CronJob image scalar replaces the repository too, yielding ImagePullBackOff.
+    newTag: devel-20260728182008-17ba82d # {"$imagepolicy": "flux-system:openclaw:tag"}
