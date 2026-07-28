@@ -8,4 +8,4 @@ spec:
   credentialsSecretRef:
     name: openshell-github-credentials
     keys:
-      - api_token
+      - GITHUB_TOKEN
