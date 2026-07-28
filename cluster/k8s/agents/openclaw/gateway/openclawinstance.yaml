@@ -75,9 +75,6 @@ spec:
         elevated:
           enabled: false
       plugins:
-        load:
-          paths:
-            - /app/extensions/openshell
         entries:
           openshell:
             enabled: true

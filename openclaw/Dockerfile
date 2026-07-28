@@ -1,8 +1,9 @@
 # Custom OpenClaw image with the OpenShell sandbox plugin and CLI pre-installed.
 #
-# Extensions live under /app/extensions so the persistent OpenClaw state volume
-# cannot hide them. OpenShell is an external package, so we unpack its pinned
-# npm artifact into that immutable extension root.
+# Extensions live beside OpenClaw's built-in plugins under
+# /app/dist/extensions, where the bundled-plugin loader discovers them without
+# consulting persistent state. OpenShell is an external package, so we unpack
+# its pinned npm artifact into that immutable extension root.
 FROM ghcr.io/openclaw/openclaw:2026.7.1
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
@@ -12,15 +13,15 @@ USER root
 ARG OPENCLAW_VERSION=2026.7.1
 RUN npm pack \
       --pack-destination /tmp \
-      "@openclaw/openshell-sandbox@${OPENCLAW_VERSION}" \
- && mkdir -p /app/extensions/openshell \
+ "@openclaw/openshell-sandbox@${OPENCLAW_VERSION}" \
+ && mkdir -p /app/dist/extensions/openshell \
  && tar \
       -xzf "/tmp/openclaw-openshell-sandbox-${OPENCLAW_VERSION}.tgz" \
       --strip-components=1 \
-      -C /app/extensions/openshell \
- && ln -s /app /app/extensions/openshell/node_modules/openclaw \
+      -C /app/dist/extensions/openshell \
+ && ln -s /app /app/dist/extensions/openshell/node_modules/openclaw \
  && rm "/tmp/openclaw-openshell-sandbox-${OPENCLAW_VERSION}.tgz" \
- && chown -R node:node /app/extensions/openshell
+ && chown -R node:node /app/dist/extensions/openshell
 
 # ── OpenShell CLI (checksum-pinned static release) ───────────────────────────
 ARG TARGETARCH
