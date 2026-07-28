@@ -7,7 +7,7 @@
 # cluster), so this image bakes the full local toolchain, not an RBE client.
 #
 # Deliberately minimal (cf. haku/plans/ci_warm_bazel_server.md "Builder image"):
-# bazelisk + a JDK (keytool + the Bazel server JVM) + git/curl/openssl + kubectl. NO
+# bazelisk + a JDK (keytool + the Bazel server JVM) + git/curl/openssl + kubectl + ruff. NO
 # nix, NO docker (bazel's //ui:image uses hermetic rules_oci), NO browser/Rust/GHC deps.
 # kubectl earns its place because the pod runs as the `haku` ServiceAccount (full CRUD
 # in haku-sandbox) and haku-state's run plumbing shells out to it — tools/ci_wait.sh
@@ -68,6 +68,19 @@ RUN curl -fsSL -o /usr/local/bin/tea \
       "https://dl.gitea.com/tea/${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64" \
     && chmod +x /usr/local/bin/tea \
     && tea --version
+
+# ruff pinned to the version haku-state's lint workflow installs
+# (.forgejo/workflows/lint.yaml: `pip install ruff==...`) — a DIFFERENT pin there and here
+# means the sandbox greenlights code CI then rejects, which is worse than not having it.
+# Earns its place because lint is the one CI gate the sandbox couldn't reproduce: ruff is
+# not a Bazel target (see that workflow's header for why), and full `python3` above still
+# ships no pip, so an agent working haku-state could only eyeball line lengths and
+# blank-line runs. That cost three consecutive red PRs (E501, E303, E402) before this was
+# baked in. Standalone binary, same shape as the bazelisk/kubectl/tea pins above.
+ARG RUFF_VERSION=0.15.20
+RUN curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
+      | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/ruff' \
+    && ruff --version
 
 # The whole reviewed per-claim bootstrap (egress CA, git identity + credentials, the
 # haku-state checkout). The sandbox-provisioning MCP's bootstrap.script is just a call
