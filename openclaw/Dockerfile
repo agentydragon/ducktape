@@ -9,6 +9,14 @@ LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 USER root
 
+# The OpenShell plugin attaches to its sandbox supervisor with the system SSH
+# client. The upstream OpenClaw runtime image includes git but not `ssh`, which
+# otherwise makes every delegated exec fail locally with `spawn ssh ENOENT`.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      openssh-client \
+ && rm -rf /var/lib/apt/lists/*
+
 # ── OpenShell plugin (official external OpenClaw plugin) ─────────────────────
 ARG OPENCLAW_VERSION=2026.7.1
 RUN npm pack \
