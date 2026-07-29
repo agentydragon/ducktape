@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: public-coder-agent-data
+  namespace: public-coder-agent
+  annotations:
+    description: OpenClaw state directory -- config, agent workspace, and the memory files that make instructions survive across sessions.
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 10Gi

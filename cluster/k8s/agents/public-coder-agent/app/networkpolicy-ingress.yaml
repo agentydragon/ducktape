@@ -1,0 +1,24 @@
+# Required for any trusted-proxy backend: without it, any pod in the cluster
+# could set x-authentik-username and be trusted as agentydragon. Template and
+# rationale: cluster/docs/sso.md, "Proxy-mode NetworkPolicy (required)".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-coder-agent-ingress
+  namespace: public-coder-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/instance: authentik
+      ports:
+        - { port: 18789, protocol: TCP }

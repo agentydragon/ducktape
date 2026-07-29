@@ -1,0 +1,188 @@
+# Declarative OpenClaw config, planted into the state PVC by an init container.
+#
+# gateway.bind is "all" (not loopback as in the lab rig): the Authentik outpost
+# reaches this pod over the cluster network, so the gateway must listen on the
+# pod IP. What keeps that safe is not the bind address but networkpolicy.yaml,
+# which admits only the outpost's pods -- without it any pod could forge
+# x-authentik-username and be trusted as agentydragon.
+#
+# All six codex-* models are offered; contextWindow/maxTokens are the
+# conservative values validated for luna and applied uniformly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: public-coder-agent-config
+  namespace: public-coder-agent
+data:
+  openclaw.json: |
+    {
+      "agents": {
+        "defaults": {
+          "model": {
+            "primary": "litellm-subscription/codex-gpt-5.6-luna"
+          },
+          "sandbox": {
+            "mode": "off"
+          },
+          "skills": []
+        },
+        "list": [
+          {
+            "id": "coder",
+            "name": "Coder"
+          }
+        ]
+      },
+      "commands": {
+        "config": false,
+        "mcp": false,
+        "restart": false
+      },
+      "cron": {
+        "enabled": false
+      },
+      "gateway": {
+        "auth": {
+          "mode": "trusted-proxy",
+          "trustedProxy": {
+            "allowLoopback": true,
+            "allowUsers": [
+              "agentydragon"
+            ],
+            "requiredHeaders": [
+              "x-authentik-email",
+              "x-forwarded-host",
+              "x-forwarded-proto"
+            ],
+            "userHeader": "x-authentik-username"
+          }
+        },
+        "bind": "all",
+        "controlUi": {
+          "allowedOrigins": [
+            "https://public-coder-agent.allegedly.works"
+          ],
+          "dangerouslyDisableDeviceAuth": true
+        },
+        "mode": "local",
+        "trustedProxies": [
+          "10.0.0.0/8"
+        ]
+      },
+      "hooks": {
+        "internal": {
+          "entries": {
+            "session-memory": {
+              "enabled": true,
+              "llmSlug": false,
+              "messages": 15
+            }
+          }
+        }
+      },
+      "models": {
+        "providers": {
+          "litellm-subscription": {
+            "agentRuntime": {
+              "id": "openclaw"
+            },
+            "api": "anthropic-messages",
+            "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
+            "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
+            "models": [
+              {
+                "contextWindow": 200000,
+                "id": "codex-gpt-5.4",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "GPT-5.4 (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "codex-gpt-5.5",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "GPT-5.5 (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "codex-gpt-5.6-sol",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "GPT-5.6 Sol (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "codex-gpt-5.6-terra",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "GPT-5.6 Terra (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "codex-gpt-5.6-luna",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "GPT-5.6 Luna (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "codex-gpt-5.3-codex-spark",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 64000,
+                "name": "GPT-5.3 Codex Spark (Codex subscription via LiteLLM)",
+                "reasoning": true
+              }
+            ],
+            "request": {
+              "allowPrivateNetwork": true
+            }
+          }
+        }
+      },
+      "tools": {
+        "allow": [
+          "exec",
+          "process",
+          "read",
+          "write",
+          "edit",
+          "apply_patch",
+          "memory_get",
+          "memory_search",
+          "session_status"
+        ],
+        "elevated": {
+          "enabled": false
+        },
+        "fs": {
+          "workspaceOnly": true
+        },
+        "sessions": {
+          "visibility": "agent"
+        }
+      }
+    }

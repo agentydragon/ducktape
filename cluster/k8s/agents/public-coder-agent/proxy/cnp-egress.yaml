@@ -1,0 +1,49 @@
+# The allowlist. Everything the agent can reach on the internet is in this file,
+# and each addition is a reviewable diff.
+#
+# v1 = git hosting (the agent's whole job is opening pull requests) plus package
+# indexes (a coder agent installs tooling). Deliberately absent: LLM providers —
+# the agent's model path is in-cluster LiteLLM and never leaves the cluster; and
+# container registries — kubelet pulls images at the node, not through pod egress.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-public-coder-agent-proxy-egress
+  namespace: public-coder-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent-proxy
+  egress:
+    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # GitHub — clone, push to forks, and open pull requests via the REST API.
+    - toFQDNs:
+        - matchName: github.com
+        - matchName: api.github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Package indexes for in-task tooling (pip install / npx).
+    - toFQDNs:
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

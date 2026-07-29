@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: public-coder-agent
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
+    name: public-coder-agent
+  annotations:
+    description: Second OpenClaw agent, egress-confined to a CONNECT proxy and reachable only through the Authentik proxy outpost. Opens pull requests against public repositories as agentydragon-agent.

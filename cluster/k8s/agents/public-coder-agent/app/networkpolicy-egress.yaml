@@ -1,0 +1,37 @@
+# The egress fence. This is the enforcement layer; the HTTP_PROXY variables in
+# deployment.yaml are convenience only -- an agent that unsets them does not gain
+# egress, it loses its only route out.
+#
+# Known gap: the DNS rule has no destination selector, so port 53 reaches
+# anywhere and DNS tunnelling is not prevented. Narrowing it to kube-dns is the
+# obvious tightening and is deliberately left as a follow-up so the first
+# deployment matches the configuration that was validated in the lab.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-coder-agent-egress
+  namespace: public-coder-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: public-coder-agent-proxy
+      ports:
+        - { port: 8080, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: litellm
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - { port: 4000, protocol: TCP }

@@ -1,0 +1,22 @@
+# The agentydragon-agent GitHub PAT. The agent has its own GitHub account; it
+# opens pull requests from its own forks, so this token needs no write access to
+# any repository owned by someone else.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-agent-github-token
+  namespace: public-coder-agent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-claude-sandbox-secret-store
+  target:
+    name: public-coder-agent-github-token
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: GITHUB_TOKEN
+      remoteRef:
+        key: github-token
+        property: token

@@ -1,0 +1,26 @@
+# Dedicated interception root, separate from the cluster internal CA. Standard
+# mitmproxy trust pattern; see agents/mitmproxy/README.md for the rotation
+# constraint (publish both roots in the Bundle before switching signing keys).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: public-coder-agent-proxy-root-ca
+  namespace: public-coder-agent
+spec:
+  isCA: true
+  commonName: public-coder-agent-proxy-root-ca
+  secretName: public-coder-agent-proxy-ca
+  duration: 87600h # 10 years
+  renewBefore: 8760h # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+  issuerRef:
+    name: cluster-ca-bootstrap
+    kind: ClusterIssuer

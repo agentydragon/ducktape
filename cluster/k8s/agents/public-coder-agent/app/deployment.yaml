@@ -1,0 +1,114 @@
+# OpenClaw as a plain Deployment rather than an OpenClawInstance.
+#
+# Deviation from agents/openclaw/gateway, and the reason for it: the operator's
+# generated NetworkPolicy always contains an egress rule for 443/TCP with no
+# destination selector, and spec.security.networkPolicy offers only additive
+# fields (additionalEgress, allowedEgressCIDRs) with no way to disable it.
+# Kubernetes NetworkPolicies are unions of allows, so that rule cannot be
+# subtracted -- an operator-managed instance cannot be egress-confined. Owning
+# the Deployment means owning networkpolicy-egress.yaml outright.
+#
+# The cost is losing the operator's autoUpdate and CRD ergonomics. Everything
+# else (image, config, state layout) is identical to the operator's shape.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-coder-agent
+  namespace: public-coder-agent
+  labels:
+    app.kubernetes.io/name: public-coder-agent
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: public-coder-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: public-coder-agent
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        # The gateway reads its config from the state dir, which is the PVC, so
+        # the declarative config has to be planted there before startup.
+        - name: seed-config
+          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
+          command: ["sh", "-c", "cp /cfg/openclaw.json /state/openclaw.json"]
+          volumeMounts:
+            - { name: cfg, mountPath: /cfg }
+            - { name: data, mountPath: /state }
+      containers:
+        - name: openclaw
+          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
+          env:
+            # The image does not set HOME to the state dir; without it the
+            # gateway looks for openclaw.json elsewhere and exits "Missing config".
+            - name: HOME
+              value: /home/openclaw
+            - name: NPM_CONFIG_PREFIX
+              value: /home/openclaw/.local
+            - name: NPM_CONFIG_CACHE
+              value: /home/openclaw/.cache/npm
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-github-token
+                  key: GITHUB_TOKEN
+            - name: OPENCLAW_LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-public-coder-agent
+                  key: api-key
+            # Node does not honour proxy environment variables by default.
+            - name: NODE_USE_ENV_PROXY
+              value: "1"
+            - name: HTTP_PROXY
+              value: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080"
+            - name: HTTPS_PROXY
+              value: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080"
+            # LiteLLM is in-cluster and must not go through the proxy.
+            - name: NO_PROXY
+              value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+            # The proxy terminates TLS, so its root must be trusted. The bundle
+            # comes from the trust-manager Bundle in ../proxy/trust-bundle.yaml.
+            - name: SSL_CERT_FILE
+              value: /trust/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /trust/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /trust/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /trust/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /trust/ca-certificates.crt
+          ports:
+            - name: gateway
+              containerPort: 18789
+          volumeMounts:
+            - { name: data, mountPath: /home/openclaw/.openclaw }
+            - { name: trust, mountPath: /trust, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: public-coder-agent-data
+        - name: cfg
+          configMap:
+            name: public-coder-agent-config
+        - name: trust
+          configMap:
+            name: public-coder-agent-proxy-ca-cert
+        - name: tmp
+          emptyDir: {}

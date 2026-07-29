@@ -134,6 +134,9 @@ resources:
   - agents/openclaw/gateway-secrets/flux-kustomization.yaml
   - agents/openclaw/gateway/flux-kustomization.yaml
   - agents/openclaw/gateway-agent-rbac/flux-kustomization.yaml
+  - agents/public-coder-agent/namespace/flux-kustomization.yaml
+  - agents/public-coder-agent/proxy/flux-kustomization.yaml
+  - agents/public-coder-agent/app/flux-kustomization.yaml
   - agents/openclaw/sandbox/flux-kustomization.yaml
   - agents/openclaw/sandbox-secrets/flux-kustomization.yaml
   - agents/machine-access-tf/flux-kustomization.yaml

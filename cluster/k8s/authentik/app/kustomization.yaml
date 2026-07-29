@@ -14,6 +14,7 @@ configMapGenerator:
       - blueprints/users.yaml
       - blueprints/hubble-sso.yaml
       - blueprints/openclaw-sso.yaml
+      - blueprints/public-coder-agent-sso.yaml
       - blueprints/tandoor-sso.yaml
       - blueprints/filebrowser-sso.yaml
       - blueprints/agents-mitmproxy-sso.yaml

@@ -319,6 +319,40 @@ resource "kubernetes_secret" "openclaw" {
 }
 
 # ============================================================================
+# public-coder-agent — second OpenClaw agent, same Codex-subscription lane
+# ============================================================================
+# The coder agent at public-coder-agent.allegedly.works runs the same harness
+# against the same `codex-*` models, but gets its own virtual key rather than
+# sharing openclaw's: usage is then attributable per agent, and either can be
+# revoked without taking the other down. Deleting this key is its kill switch.
+
+resource "litellm_key" "public_coder_agent" {
+  key_alias = "public-coder-agent"
+  models    = local.codex_client_models
+  metadata = {
+    consumer = "public-coder-agent"
+  }
+}
+
+resource "kubernetes_secret" "public_coder_agent" {
+  metadata {
+    name      = "litellm-key-public-coder-agent"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for the public-coder-agent OpenClaw instance (Codex subscription models through CLIProxyAPI only)"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "public-coder-agent"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.public_coder_agent.key
+  }
+}
+
+# ============================================================================
 # zai-clients — z.ai-scoped key for interactive Claude-Code-on-GLM clients
 # ============================================================================
 # A LiteLLM virtual key for the laptop `z-claude` alias (nix/home/home.nix) and the

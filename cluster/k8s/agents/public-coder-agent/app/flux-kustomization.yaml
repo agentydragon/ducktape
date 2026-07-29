@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: public-coder-agent-app
+  namespace: flux-system
+  annotations:
+    description: OpenClaw coder agent at public-coder-agent.allegedly.works -- Authentik-gated, egress-confined to its own proxy.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agents/public-coder-agent/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 5m
+  retryInterval: 1m
+  dependsOn:
+    # The proxy layer owns the trust Bundle this pod mounts, so it must land first.
+    - name: public-coder-agent-proxy
+    - name: external-secrets-config
+    - name: litellm-keys-tf
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: public-coder-agent
+      namespace: public-coder-agent
