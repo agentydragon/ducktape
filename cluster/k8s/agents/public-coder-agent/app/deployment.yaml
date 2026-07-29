@@ -110,7 +110,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: public-coder-agent-data
+            claimName: public-coder-agent-state
         - name: cfg
           configMap:
             name: public-coder-agent-config

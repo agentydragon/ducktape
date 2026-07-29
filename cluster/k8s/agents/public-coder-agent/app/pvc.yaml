@@ -1,9 +1,17 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: public-coder-agent-data
+  name: public-coder-agent-state
   namespace: public-coder-agent
   annotations:
+    # Renamed from public-coder-agent-data, which is not cosmetic:
+    # storageClassName is immutable on a bound PVC, so changing it in place from
+    # seaweedfs-ovh was silently ignored and the pod kept hanging on a volume no
+    # OVH-pinned node could attach. A new name makes Flux create a correct object
+    # and prune the old one, which is cheaper than spec.force on the whole
+    # kustomization and loses nothing -- the old PVC never held data, because the
+    # pod it was for never got past Init.
+    #
     # local-path, not the seaweedfs-ovh default: this is one small state
     # directory for a single-replica agent, and the pod is pinned to `hil`
     # anyway. Node-pinned is the accepted trade -- if that node is lost the
