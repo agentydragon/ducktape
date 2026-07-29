@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_live_api.py
@@ -206,4 +206,17 @@ live_openai_py_test(
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "probe_context_window_lib",
+    srcs = ["probe_context_window.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_binary(
+    name = "probe_context_window",
+    imports = [".."],
+    main_module = "openai_utils.probe_context_window",
+    deps = [":probe_context_window_lib"],
 )

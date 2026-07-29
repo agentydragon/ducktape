@@ -328,7 +328,9 @@ resource "kubernetes_secret" "openclaw" {
 
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
-  models    = local.codex_client_models
+  # Both lanes: the Codex subscription models and the z.ai GLM models, so the
+  # agent can be switched between them without reissuing credentials.
+  models = concat(local.codex_client_models, local.zai_lane_models)
   metadata = {
     consumer = "public-coder-agent"
   }

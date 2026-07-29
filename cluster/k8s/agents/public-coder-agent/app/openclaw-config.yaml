@@ -6,23 +6,25 @@
 # which admits only the outpost's pods -- without it any pod could forge
 # x-authentik-username and be trusted as agentydragon.
 #
-# All six codex-* models are offered. contextWindow/maxTokens are 272000/128000,
-# which is not a guess: the Codex model catalog splits its 400K cap into exactly
-# 272,000 input plus 128,000 reserved for output. 272K is also where the
-# subscription's billing changes -- beyond it Codex charges 2x input and 1.5x
-# output for the whole session -- so this sits on the cost boundary as well as
-# the technical one. The raw models are ~1.05M, but that ceiling is not what the
-# Codex lane exposes.
-#
-# Deviation from agents/openclaw/gateway/openclawinstance.yaml, which declares
-# 200000/64000: those values are understated for this same lane and should be
-# corrected separately.
+# Two lanes on one LiteLLM key: the Codex subscription models and the z.ai GLM
+# models. Only the 5.6 group is offered from the Codex lane. contextWindow/maxTokens are measured, not
+# published: openai_utils/probe_context_window.py binary-searches the live
+# serving path and all three 5.6 models reject identically just above
+# 372,000 total context. Published figures disagree in both directions --
+# the raw models are ~1.05M, Codex product docs say 272K -- and neither is
+# what this chain accepts. cluster/validation/test_codex_context_window.py
+# pins every declaration in the repo to the same measured numbers.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: public-coder-agent-config
   namespace: public-coder-agent
 data:
+  #
+  # The GLM entries are NOT measured -- probe_context_window.py has only been run
+  # against the codex-* routes. 200000/96000 is a deliberately conservative
+  # placeholder, and the pinning test covers only codex-gpt-5.6-* for that reason.
+  # Run the probe against the glm-*-anthropic routes before trusting these.
   openclaw.json: |
     {
       "agents": {
@@ -100,29 +102,7 @@ data:
             "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
             "models": [
               {
-                "contextWindow": 272000,
-                "id": "codex-gpt-5.4",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 128000,
-                "name": "GPT-5.4 (Codex subscription via LiteLLM)",
-                "reasoning": true
-              },
-              {
-                "contextWindow": 272000,
-                "id": "codex-gpt-5.5",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 128000,
-                "name": "GPT-5.5 (Codex subscription via LiteLLM)",
-                "reasoning": true
-              },
-              {
-                "contextWindow": 272000,
+                "contextWindow": 372000,
                 "id": "codex-gpt-5.6-sol",
                 "input": [
                   "text",
@@ -133,7 +113,7 @@ data:
                 "reasoning": true
               },
               {
-                "contextWindow": 272000,
+                "contextWindow": 372000,
                 "id": "codex-gpt-5.6-terra",
                 "input": [
                   "text",
@@ -144,7 +124,7 @@ data:
                 "reasoning": true
               },
               {
-                "contextWindow": 272000,
+                "contextWindow": 372000,
                 "id": "codex-gpt-5.6-luna",
                 "input": [
                   "text",
@@ -153,16 +133,98 @@ data:
                 "maxTokens": 128000,
                 "name": "GPT-5.6 Luna (Codex subscription via LiteLLM)",
                 "reasoning": true
+              }
+            ],
+            "request": {
+              "allowPrivateNetwork": true
+            }
+          },
+          "litellm-zai": {
+            "agentRuntime": {
+              "id": "openclaw"
+            },
+            "api": "anthropic-messages",
+            "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
+            "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
+            "models": [
+              {
+                "contextWindow": 200000,
+                "id": "glm-4.5-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-4.5 (z.ai via LiteLLM)",
+                "reasoning": true
               },
               {
-                "contextWindow": 272000,
-                "id": "codex-gpt-5.3-codex-spark",
+                "contextWindow": 200000,
+                "id": "glm-4.5-air-anthropic",
                 "input": [
-                  "text",
-                  "image"
+                  "text"
                 ],
-                "maxTokens": 128000,
-                "name": "GPT-5.3 Codex Spark (Codex subscription via LiteLLM)",
+                "maxTokens": 96000,
+                "name": "GLM-4.5-AIR (z.ai via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "glm-4.6-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-4.6 (z.ai via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "glm-4.7-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-4.7 (z.ai via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "glm-5-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-5 (z.ai via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "glm-5-turbo-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-5-TURBO (z.ai via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "glm-5.1-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-5.1 (z.ai via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 200000,
+                "id": "glm-5.2-anthropic",
+                "input": [
+                  "text"
+                ],
+                "maxTokens": 96000,
+                "name": "GLM-5.2 (z.ai via LiteLLM)",
                 "reasoning": true
               }
             ],
