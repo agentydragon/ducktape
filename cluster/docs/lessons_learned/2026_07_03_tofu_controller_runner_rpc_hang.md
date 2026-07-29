@@ -1,7 +1,13 @@
 # tofu-controller Reconcile Hangs Forever When a Runner Pod Dies Mid-Init (Upstream Bug)
 
 **Date**: 2026-07-03; recurrence confirmed 2026-07-11
-**Status**: Recurring; controller restart required each time. Upstream fix filed — [flux-iac/tofu-controller#1838](https://github.com/flux-iac/tofu-controller/pull/1838) (the PR body doubles as the bug report; no separate issue). As of 2026-07-11 the PR is open, unreviewed, and unmerged.
+**Status**: Recurring; controller restart required each time. Upstream fix — [flux-iac/tofu-controller#1838](https://github.com/flux-iac/tofu-controller/pull/1838) (the PR body doubles as the bug report; no separate issue) — **merged to `main` 2026-07-29**, but **not yet in a release**, so the workaround below still applies.
+
+**CLEANUP(added 2026-07-29):** once a tofu-controller release/chart newer than `v0.16.4` ships with
+#1838 in it, bump the chart pin in <../../k8s/tofu-controller/tofu-controller.yaml> (currently
+`0.16.1`), decide whether to set the new `--runner-rpc-timeout` flag below its 30-minute upstream
+default (30 min is a long time to hold one of 24 worker slots), and rewrite this file as resolved
+rather than recurring.
 **Affected version**: `ghcr.io/flux-iac/tofu-controller:v0.16.1` (defect identical through v0.16.4 and `main`)
 
 ## Summary
