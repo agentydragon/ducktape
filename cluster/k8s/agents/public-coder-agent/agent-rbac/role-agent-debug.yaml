@@ -1,0 +1,55 @@
+# Time-boxed access to drive and debug the public-coder-agent instance.
+#
+# Two jobs, both of which need a shell in the agent's own pod:
+#
+# 1. **Measuring the GLM context windows.** The declared 200000/96000 for the
+#    glm-*-anthropic routes is an unmeasured placeholder. Measuring it needs a
+#    LiteLLM key allowlisted for GLM, and the only one is this instance's own
+#    key -- it exists as an env var inside this pod and nowhere an agent can
+#    otherwise read. Running openai_utils/probe_context_window.py in here is the
+#    cheapest way to get a real number; the alternative is minting a second
+#    GLM-capable key purely to probe with, which is more credential surface for
+#    less.
+# 2. **Test-driving the agent.** Confirming it can autonomously open a pull
+#    request end to end means issuing it a task, which is an `openclaw agent`
+#    invocation inside the pod.
+#
+# No write verbs on any object: no delete, no patch, no create except the exec
+# subresource itself. This cannot reconfigure the agent, only observe and drive
+# it. Note that driving it *does* let it act with its GitHub token -- that is
+# the point of the test-drive, and the token's blast radius is bounded by the
+# agent having its own GitHub account that pushes to its own forks.
+#
+# CLEANUP(added 2026-07-29): remove after 2026-07-31. Tracked in the revert PR
+# (#3559), which removes this directory alongside the other experiment grants.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: public-coder-agent-debug
+  namespace: public-coder-agent
+  annotations:
+    description: Time-boxed read-and-exec access so the agent-lab experiments can measure GLM context windows and test-drive the coder agent. Remove after 2026-07-31.
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: ["get", "list", "watch"]
+  # `create` alone is not enough: kubectl tries the WebSocket transport first,
+  # which authorizes as **get** on pods/exec and only then falls back to SPDY.
+  # With create-only every exec 403s while `kubectl auth can-i` still says yes.
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: public-coder-agent-debug
+  namespace: public-coder-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-debug
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io

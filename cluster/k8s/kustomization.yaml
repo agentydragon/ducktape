@@ -137,6 +137,8 @@ resources:
   - agents/public-coder-agent/namespace/flux-kustomization.yaml
   - agents/public-coder-agent/proxy/flux-kustomization.yaml
   - agents/public-coder-agent/app/flux-kustomization.yaml
+  # CLEANUP(added 2026-07-29): remove after 2026-07-31 (time-boxed debug grant).
+  - agents/public-coder-agent/agent-rbac/flux-kustomization.yaml
   - agents/openclaw/sandbox/flux-kustomization.yaml
   - agents/openclaw/sandbox-secrets/flux-kustomization.yaml
   - agents/machine-access-tf/flux-kustomization.yaml
