@@ -1,0 +1,49 @@
+# The sandbox-side view is not enough to explain the wedge.
+#
+# `openshell-sandboxes` (see ../sandboxes-agent-rbac/) shows the supervisor's
+# half of the session: the sandbox reports `relay bridge failed` and nothing
+# more. The other half — which relay slot the gateway handed out, whether it
+# ever saw the supervisor's response, and what it did with the session
+# afterwards — is only in `openshell-gateway-0`, which lives here.
+#
+# Read-only and namespace-scoped. No exec, no delete, no write of any kind:
+# unlike the sandboxes grant this one cannot touch the running OpenShell
+# control plane, only observe it. `pods/log` is the point of the grant;
+# `pods` and `events` are what make the log readable (you need the pod name
+# and the container name to ask for a log, and events explain gaps in it).
+#
+# Blast radius: `openshell-system` runs the gateway, the issuer, and the
+# operator. Their logs carry session and sandbox identifiers, not user content
+# — the agent's own conversation and workspace never transit these pods, they
+# transit the sandbox pods next door. The one caveat is the issuer, which mints
+# the mTLS material the gateway and supervisors authenticate with; it logs
+# issuance events but not the keys themselves.
+#
+# CLEANUP(added 2026-07-29): remove after 2026-07-30 together with the rest of
+# the agent-lab grant. Tracked in the revert PR (#3559), which removes this
+# directory, ../sandboxes-agent-rbac/, and ../../agent-lab/ in one change.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-lab-system-observer
+  namespace: openshell-system
+  annotations:
+    description: Time-boxed read-only access to OpenShell control-plane logs so the agent-lab experiments can see the gateway's half of a wedged sandbox session. Remove after 2026-07-30.
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-lab-system-observer
+  namespace: openshell-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-lab-system-observer
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io

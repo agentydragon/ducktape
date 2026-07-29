@@ -62,6 +62,7 @@ resources:
   #   2026-07-30 (time-boxed experiment grant).
   - agents/agent-lab/flux-kustomization.yaml
   - agents/openshell/sandboxes-agent-rbac/flux-kustomization.yaml
+  - agents/openshell/system-agent-rbac/flux-kustomization.yaml
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
