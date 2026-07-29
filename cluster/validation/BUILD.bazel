@@ -433,3 +433,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_generator_namespace",
+    srcs = ["test_generator_namespace.py"],
+    data = ["//cluster/k8s:cluster_all_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

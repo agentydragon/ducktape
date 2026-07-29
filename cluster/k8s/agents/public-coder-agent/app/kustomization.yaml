@@ -13,5 +13,11 @@ generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
   - name: public-coder-agent-config
+    # Generated resources get no namespace of their own, and every hand-written
+    # manifest here carries an explicit metadata.namespace instead. Without this
+    # the apply fails "ConfigMap/... namespace not specified" and Flux applies
+    # *nothing* from this directory -- which wedged the agent on a stale
+    # Deployment for three hours.
+    namespace: public-coder-agent
     files:
       - openclaw.json
