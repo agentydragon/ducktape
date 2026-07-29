@@ -21,15 +21,21 @@ this one.
 
 - **`agent-lab` namespace** — full CRUD on workloads, secrets, RBAC,
   NetworkPolicies, ExternalSecrets, and every installed sandbox/harness CRD.
-- **`openshell-sandboxes` namespace** — read plus `pods/exec` only, granted
-  separately in <../openshell/sandboxes-agent-rbac/> so a missing or suspended
-  namespace there cannot block this one. See the caveat below.
+- **`openshell-sandboxes` namespace** — read, `pods/exec`, and sandbox
+  lifecycle (delete on `Sandbox`/`OpenShellSandbox`/pods), granted separately in
+  <../openshell/sandboxes-agent-rbac/> so a missing or suspended namespace there
+  cannot block this one. See the caveat below.
 - **`openshellworkspaces`** (the one cluster-scoped CR in this set) —
   read-only.
 
 Subject is the group `oidc-ksbx-groups:haku`. The pre-existing agent bindings
 target `oidc-ksbx-groups:kubectl-sandbox-users`, which this session's identity
 (`oidc-ksbx:haku-k8s`) is not a member of.
+
+**`kubectl auth can-i` lies here.** It answers `yes` for `pods/log` in
+`openclaw-gateway` and for `pods/exec` in `openshell-sandboxes` while the real
+requests return 403. Verify a permission with the actual call, never with
+`can-i` — an earlier diagnosis was wrong because it trusted `can-i` over a real 403.
 
 **Caveat worth knowing before merging**: the OpenShell operator places all
 sandbox pods in `openshell-sandboxes` (chart value `server.sandboxNamespace`),

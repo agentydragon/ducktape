@@ -1,13 +1,19 @@
 # The OpenShell operator places every sandbox pod in `openshell-sandboxes`
 # (chart value `server.sandboxNamespace`), regardless of which namespace the
-# OpenShellSandbox CR lives in — so a lab-owned sandbox is only observable from
-# there. This grants log/exec on those pods.
+# OpenClawInstance lives in — so a lab-owned sandbox is only observable, and
+# only resettable, from here. This grants log/exec plus sandbox lifecycle.
 #
-# Blast radius, stated plainly: `openshell-sandboxes` also holds the production
-# OpenClaw agent's sandbox, so this reaches beyond lab-created pods. It is part
-# of the same time-boxed grant as the rest of this directory and is removed with
-# it. If the grant is ever made permanent, split the lab onto its own
-# sandboxNamespace first.
+# Blast radius, stated plainly and now larger: `openshell-sandboxes` also holds
+# the production OpenClaw agent's sandbox, and nothing here distinguishes lab
+# sandboxes from it — the namespace is the only boundary the chart offers. So
+# delete on Sandboxes/pods necessarily includes production's. That is
+# deliberate: as of 2026-07-29 production's sandbox is wedged
+# (`relay bridge failed`) and recreating it is the known remedy, so the same
+# permission that unblocks the experiments also allows that repair.
+#
+# It is part of the same time-boxed grant as the rest of this directory and is
+# removed with it. If the grant is ever made permanent, give the lab its own
+# `server.sandboxNamespace` first so the two stop sharing a blast radius.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -17,9 +23,29 @@ rules:
   - apiGroups: [""]
     resources: [pods, pods/log, events]
     verbs: ["get", "list", "watch"]
+  # `create` alone is not enough. kubectl attempts the WebSocket transport
+  # first, which authorizes as **get** on pods/exec, and only falls back to
+  # SPDY (create). With create-only, every exec here returned 403 while
+  # `kubectl auth can-i --subresource=exec` still answered yes — see the
+  # can-i caveat in the lab README.
   - apiGroups: [""]
     resources: [pods/exec]
-    verbs: ["create"]
+    verbs: ["get", "create"]
+  # Sandbox lifecycle. The OpenShell gateway creates one agents.x-k8s.io
+  # Sandbox per agent here, and nothing in agent-lab owns it, so without
+  # delete the lab can only ever accumulate sandboxes — it cannot recreate one.
+  # That blocks the "survives sandbox recreation" half of S3 and the
+  # relay-exhaustion test, which has to wedge a sandbox and then rebuild it.
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: [sandboxes]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["openshell.lenshq.io"]
+    resources: [openshellsandboxes]
+    verbs: ["get", "list", "watch", "delete"]
+  # Deleting the pod is the blunter reset when the Sandbox object survives.
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: ["delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
