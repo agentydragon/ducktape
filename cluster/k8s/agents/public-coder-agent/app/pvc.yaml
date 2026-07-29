@@ -4,10 +4,14 @@ metadata:
   name: public-coder-agent-data
   namespace: public-coder-agent
   annotations:
+    # local-path, not the seaweedfs-ovh default: this is one small state
+    # directory for a single-replica agent, and the pod is pinned to `hil`
+    # anyway. Node-pinned is the accepted trade -- if that node is lost the
+    # volume is stranded, and the agent is rebuilt rather than migrated.
     description: OpenClaw state directory -- config, agent workspace, and the memory files that make instructions survive across sessions.
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: seaweedfs-ovh
+  storageClassName: local-path-ovh-hdd
   resources:
     requests:
       storage: 10Gi

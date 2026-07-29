@@ -30,7 +30,10 @@ filegroup(
 
 filegroup(
     name = "openclaw_model_config",
-    srcs = ["agents/openclaw/gateway/openclawinstance.yaml"],
+    srcs = [
+        "agents/openclaw/gateway/openclawinstance.yaml",
+        "agents/public-coder-agent/app/openclaw-config.yaml",
+    ],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )
 
