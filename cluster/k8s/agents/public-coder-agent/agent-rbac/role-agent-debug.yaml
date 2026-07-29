@@ -20,7 +20,8 @@
 # the point of the test-drive, and the token's blast radius is bounded by the
 # agent having its own GitHub account that pushes to its own forks.
 #
-# CLEANUP(added 2026-07-29): remove after 2026-07-31. Tracked in the revert PR
+# CLEANUP(added 2026-07-29, delete verbs added same day): remove after
+# 2026-07-31. Tracked in the revert PR
 # (#3559), which removes this directory alongside the other experiment grants.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -39,6 +40,21 @@ rules:
   - apiGroups: [""]
     resources: [pods/exec]
     verbs: ["get", "create"]
+  # Delete-to-recreate, for exactly one failure shape seen on this instance:
+  # storageClassName is immutable on a bound PVC, so #3563's change from
+  # seaweedfs-ovh to local-path-ovh-hdd could not apply. #3565 renamed the PVC
+  # so Flux would create a correct one, and that deadlocked -- the stalled
+  # Deployment makes the kustomization fail early, before the rename it needs is
+  # ever applied. Breaking that cycle means removing the stuck object, and no
+  # amount of git state can do it.
+  #
+  # Delete only. No create and no patch on these, so this cannot author a pod or
+  # a volume, only remove one that GitOps will then recreate from the committed
+  # spec. That keeps the declarative contract intact: the cluster still converges
+  # to git, this just unsticks it.
+  - apiGroups: [""]
+    resources: [pods, persistentvolumeclaims]
+    verbs: ["delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
