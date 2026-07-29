@@ -58,9 +58,6 @@ resources:
   - agents/shared-rbac/flux-kustomization.yaml
   - agents/shared-secrets/flux-kustomization.yaml
   - agents/agent-rbac-base/flux-kustomization.yaml
-  # CLEANUP(added 2026-07-29): remove with cluster/k8s/agents/agent-lab after
-  #   2026-07-30 (time-boxed experiment grant).
-  - agents/agent-lab/flux-kustomization.yaml
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
@@ -132,8 +129,6 @@ resources:
   - agents/public-coder-agent/namespace/flux-kustomization.yaml
   - agents/public-coder-agent/proxy/flux-kustomization.yaml
   - agents/public-coder-agent/app/flux-kustomization.yaml
-  # CLEANUP(added 2026-07-29): remove after 2026-07-31 (time-boxed debug grant).
-  - agents/public-coder-agent/agent-rbac/flux-kustomization.yaml
   - agents/machine-access-tf/flux-kustomization.yaml
 
   # --- kyverno ---
