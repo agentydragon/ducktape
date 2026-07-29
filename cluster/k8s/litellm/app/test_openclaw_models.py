@@ -3,23 +3,20 @@ import json
 import pytest_bazel
 import yaml
 
-from cluster.k8s.litellm.app.generate_litellm import OPENCLAW_CODEX_MODELS, generate
+from cluster.k8s.litellm.app.generate_litellm import (
+    CODEX_CONTEXT_WINDOW,
+    CODEX_MAX_OUTPUT_TOKENS,
+    OPENCLAW_CODEX_MODELS,
+    generate,
+)
 from util.bazel.runfiles import get_required_path
 
-# Measured, not published, and the published figures are wrong in both
-# directions: the raw models are ~1.05M and Codex product documentation says
-# 272K, while this serving path (OpenClaw -> LiteLLM -> CLIProxyAPI -> upstream)
-# accepts neither. LiteLLM carries no `max_input_tokens` for the codex-* routes,
-# so there is nothing upstream of this file to consult instead.
-#
-# openai_utils/probe_context_window.py binary-searches the live path. On
-# 2026-07-29 all three 5.6 models behaved identically: 370,629 counted tokens
-# accepted, 372,194 rejected. Re-derive with:
-#
-#     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
-#         codex-gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
-CODEX_CONTEXT_WINDOW = 372_000
-CODEX_MAX_TOKENS = 128_000
+# LiteLLM is the single source of truth for these numbers (declared in
+# generate_litellm.py, served at /v1/model/info). This test pins every consumer
+# that does NOT read that endpoint -- OpenClaw's bundled provider does not query
+# it, so both OpenClaw configs hardcode the values and can silently drift. They
+# already had: both were at 200000/64000, which was inconsistent with each other
+# and wrong against the measured window.
 
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
 
@@ -53,7 +50,12 @@ def test_openclaw_models_match_litellm_codex_routes() -> None:
                 "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "chat", "supports_function_calling": True},
+            "model_info": {
+                "mode": "chat",
+                "supports_function_calling": True,
+                "max_input_tokens": CODEX_CONTEXT_WINDOW,
+                "max_output_tokens": CODEX_MAX_OUTPUT_TOKENS,
+            },
         }
 
 
@@ -62,12 +64,21 @@ def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     assert [model["id"] for model in _public_coder_agent_codex_models()] == OPENCLAW_CODEX_MODELS
 
 
-def test_codex_context_window_is_the_measured_one() -> None:
-    """Both agents must declare the measured window, and must not drift apart.
+def test_litellm_declares_the_codex_context_window() -> None:
+    """LiteLLM must actually serve the numbers, or consumers cannot discover them."""
+    litellm_models = {entry["model_name"]: entry for entry in yaml.safe_load(generate())["model_list"]}
+    for model_id in OPENCLAW_CODEX_MODELS:
+        info = litellm_models[model_id]["model_info"]
+        assert info["max_input_tokens"] == CODEX_CONTEXT_WINDOW
+        assert info["max_output_tokens"] == CODEX_MAX_OUTPUT_TOKENS
 
-    Not a change-detector: these are two independently authored manifests that
-    have to agree. They had already drifted to 200000/64000 -- a value that was
-    both inconsistent and wrong -- before this check existed.
+
+def test_hardcoding_consumers_match_litellm() -> None:
+    """Pin every consumer that does not read LiteLLM's model-listing API.
+
+    OpenClaw's bundled provider never queries /v1/model/info, so both configs
+    restate the numbers and can drift from the proxy and from each other. They
+    already had -- both sat at 200000/64000, inconsistent and wrong.
     """
     openclaw = yaml.safe_load(
         get_required_path("ducktape/cluster/k8s/agents/openclaw/gateway/openclawinstance.yaml").read_text()
@@ -76,9 +87,9 @@ def test_codex_context_window_is_the_measured_one() -> None:
     declared += _public_coder_agent_codex_models()
 
     assert [model["contextWindow"] for model in declared] == [CODEX_CONTEXT_WINDOW] * len(declared)
-    assert [model["maxTokens"] for model in declared] == [CODEX_MAX_TOKENS] * len(declared)
+    assert [model["maxTokens"] for model in declared] == [CODEX_MAX_OUTPUT_TOKENS] * len(declared)
     # maxTokens is reserved out of the window, so it has to leave room for input.
-    assert CODEX_MAX_TOKENS < CODEX_CONTEXT_WINDOW
+    assert CODEX_MAX_OUTPUT_TOKENS < CODEX_CONTEXT_WINDOW
 
 
 if __name__ == "__main__":

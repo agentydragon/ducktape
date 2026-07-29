@@ -163,6 +163,20 @@ _CLIPROXY_MODELS: list[str] = [
 # focused cross-config test uses this roster to prevent silent catalog drift.
 OPENCLAW_CODEX_MODELS: list[str] = ["codex-gpt-5.6-luna", "codex-gpt-5.6-terra", "codex-gpt-5.6-sol"]
 
+# Measured against the live serving path, not published: openai_utils/
+# probe_context_window.py binary-searches it, and on 2026-07-29 all three 5.6
+# models behaved identically -- 370,629 counted tokens accepted, 372,194
+# rejected. Published figures are wrong in both directions (the raw models are
+# ~1.05M; Codex product docs say 272K, which is really a *pricing* threshold --
+# LiteLLM even carries a cache_read_input_token_cost_above_272k_tokens field).
+#
+# Declared here so /v1/model/info reports it and clients can discover it.
+# LiteLLM cannot infer it: these routes key on "anthropic/gpt-5.6-*", which is a
+# fabricated name for Anthropic-format traffic aimed at CLIProxyAPI, so its
+# static catalog misses and max_input_tokens stays null.
+CODEX_CONTEXT_WINDOW = 372_000
+CODEX_MAX_OUTPUT_TOKENS = 128_000
+
 
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
@@ -258,7 +272,12 @@ def _cliproxy_entries() -> Iterator[dict]:
                 "api_base": _CLIPROXY_BASE,
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "chat", "supports_function_calling": True},
+            "model_info": {
+                "mode": "chat",
+                "supports_function_calling": True,
+                "max_input_tokens": CODEX_CONTEXT_WINDOW,
+                "max_output_tokens": CODEX_MAX_OUTPUT_TOKENS,
+            },
         }
 
 
