@@ -21,12 +21,11 @@ from util.bazel.runfiles import get_required_path
 CODEX_CONTEXT_WINDOW = 372_000
 CODEX_MAX_TOKENS = 128_000
 
-_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw-config.yaml"
+_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
 
 
 def _public_coder_agent_codex_models() -> list[dict]:
-    doc = yaml.safe_load(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    config = json.loads(doc["data"]["openclaw.json"])
+    config = json.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     models: list[dict] = config["models"]["providers"]["litellm-subscription"]["models"]
     return models
 
