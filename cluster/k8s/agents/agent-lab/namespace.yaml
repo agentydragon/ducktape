@@ -1,0 +1,14 @@
+# CLEANUP(added 2026-07-29): delete this whole directory, its root
+#   kustomization.yaml entry, and the agent-lab reflection targets in
+#   tf/gitops/litellm-keys/main.tf after 2026-07-30. This namespace exists only
+#   to let the agent map working sandbox/harness combinations against
+#   plans/personal_agents/success_criteria.md; the grant is deliberately broad
+#   and deliberately short-lived.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-lab
+  labels:
+    name: agent-lab
+    environment: development
+    goldilocks.fairwinds.com/enabled: "true"

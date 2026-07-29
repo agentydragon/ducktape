@@ -1,0 +1,36 @@
+# The OpenShell operator places every sandbox pod in `openshell-sandboxes`
+# (chart value `server.sandboxNamespace`), regardless of which namespace the
+# OpenShellSandbox CR lives in — so a lab-owned sandbox is only observable from
+# there. This grants log/exec on those pods.
+#
+# Blast radius, stated plainly: `openshell-sandboxes` also holds the production
+# OpenClaw agent's sandbox, so this reaches beyond lab-created pods. It is part
+# of the same time-boxed grant as the rest of this directory and is removed with
+# it. If the grant is ever made permanent, split the lab onto its own
+# sandboxNamespace first.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-lab-sandbox-observer
+  namespace: openshell-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-lab-sandbox-observer
+  namespace: openshell-sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-lab-sandbox-observer
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io

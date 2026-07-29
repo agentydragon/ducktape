@@ -1,0 +1,24 @@
+# `openshellworkspaces` is the one CRD in this set with cluster scope, so it
+# cannot be covered by the namespaced lab Role. Read-only: the experiment needs
+# to see which workspace a sandbox is bound to, never to mutate one.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-lab-openshellworkspaces-reader
+rules:
+  - apiGroups: ["openshell.lenshq.io"]
+    resources: [openshellworkspaces]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agent-lab-openshellworkspaces-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-lab-openshellworkspaces-reader
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io

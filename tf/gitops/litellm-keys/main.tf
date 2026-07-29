@@ -301,10 +301,14 @@ resource "kubernetes_secret" "openclaw" {
     namespace = "litellm"
     annotations = {
       description                                                     = "LiteLLM virtual key for OpenClaw (Codex subscription models through CLIProxyAPI only)"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "openclaw-gateway"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed" = "true"
+      # CLEANUP(added 2026-07-29): drop agent-lab from both namespace lists after
+      #   2026-07-30, together with cluster/k8s/agents/agent-lab. The lab drives
+      #   experiment agents through this same Codex-subscription lane rather than
+      #   minting a second virtual key for a namespace that is about to be deleted.
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "openclaw-gateway,agent-lab"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "openclaw-gateway"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "openclaw-gateway,agent-lab"
     }
   }
 

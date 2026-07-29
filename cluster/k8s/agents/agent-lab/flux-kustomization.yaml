@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agent-lab
+  namespace: flux-system
+  annotations:
+    description: Time-boxed experiment namespace for mapping sandbox/harness combinations against plans/personal_agents/success_criteria.md. Remove after 2026-07-30.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agents/agent-lab
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 2m
+  dependsOn:
+    - name: kyverno-policies
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agent-lab

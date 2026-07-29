@@ -1,0 +1,17 @@
+# Binds the group this session's kubeconfig actually carries. The existing
+# agent bindings target `oidc-ksbx-groups:kubectl-sandbox-users`, which does not
+# include `oidc-ksbx:haku-k8s` — that mismatch is why every experiment call
+# otherwise has to go through the Haku approval queue.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-lab-admin
+  namespace: agent-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-lab-admin
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
