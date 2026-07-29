@@ -6,8 +6,17 @@
 # which admits only the outpost's pods -- without it any pod could forge
 # x-authentik-username and be trusted as agentydragon.
 #
-# All six codex-* models are offered; contextWindow/maxTokens are the
-# conservative values validated for luna and applied uniformly.
+# All six codex-* models are offered. contextWindow/maxTokens are 272000/128000,
+# which is not a guess: the Codex model catalog splits its 400K cap into exactly
+# 272,000 input plus 128,000 reserved for output. 272K is also where the
+# subscription's billing changes -- beyond it Codex charges 2x input and 1.5x
+# output for the whole session -- so this sits on the cost boundary as well as
+# the technical one. The raw models are ~1.05M, but that ceiling is not what the
+# Codex lane exposes.
+#
+# Deviation from agents/openclaw/gateway/openclawinstance.yaml, which declares
+# 200000/64000: those values are understated for this same lane and should be
+# corrected separately.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -91,68 +100,68 @@ data:
             "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
             "models": [
               {
-                "contextWindow": 200000,
+                "contextWindow": 272000,
                 "id": "codex-gpt-5.4",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 64000,
+                "maxTokens": 128000,
                 "name": "GPT-5.4 (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {
-                "contextWindow": 200000,
+                "contextWindow": 272000,
                 "id": "codex-gpt-5.5",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 64000,
+                "maxTokens": 128000,
                 "name": "GPT-5.5 (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {
-                "contextWindow": 200000,
+                "contextWindow": 272000,
                 "id": "codex-gpt-5.6-sol",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 64000,
+                "maxTokens": 128000,
                 "name": "GPT-5.6 Sol (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {
-                "contextWindow": 200000,
+                "contextWindow": 272000,
                 "id": "codex-gpt-5.6-terra",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 64000,
+                "maxTokens": 128000,
                 "name": "GPT-5.6 Terra (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {
-                "contextWindow": 200000,
+                "contextWindow": 272000,
                 "id": "codex-gpt-5.6-luna",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 64000,
+                "maxTokens": 128000,
                 "name": "GPT-5.6 Luna (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {
-                "contextWindow": 200000,
+                "contextWindow": 272000,
                 "id": "codex-gpt-5.3-codex-spark",
                 "input": [
                   "text",
                   "image"
                 ],
-                "maxTokens": 64000,
+                "maxTokens": 128000,
                 "name": "GPT-5.3 Codex Spark (Codex subscription via LiteLLM)",
                 "reasoning": true
               }
