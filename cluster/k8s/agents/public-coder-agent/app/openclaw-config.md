@@ -5,7 +5,7 @@ init container. JSON takes no comments, so the rationale lives here.
 
 Declarative OpenClaw config, planted into the state PVC by an init container.
 
-gateway.bind is "all" (not loopback as in the lab rig): the Authentik outpost
+gateway.bind is "lan" (not loopback as in the lab rig): the Authentik outpost
 reaches this pod over the cluster network, so the gateway must listen on the
 pod IP. What keeps that safe is not the bind address but networkpolicy.yaml,
 which admits only the outpost's pods -- without it any pod could forge
@@ -19,3 +19,7 @@ serving path and all three 5.6 models reject identically just above
 the raw models are ~1.05M, Codex product docs say 272K -- and neither is
 what this chain accepts. cluster/validation/test_codex_context_window.py
 pins every declaration in the repo to the same measured numbers.
+
+`bind` is an enum -- `loopback`, `lan`, `tailnet`, `auto`, `custom`. `"all"` is
+not a member and the gateway exits with
+`Invalid --bind. Use "loopback", "lan", "tailnet", "auto", or "custom".`

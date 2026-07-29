@@ -34,7 +34,7 @@
         "userHeader": "x-authentik-username"
       }
     },
-    "bind": "all",
+    "bind": "lan",
     "controlUi": {
       "allowedOrigins": ["https://public-coder-agent.allegedly.works"],
       "dangerouslyDisableDeviceAuth": true
