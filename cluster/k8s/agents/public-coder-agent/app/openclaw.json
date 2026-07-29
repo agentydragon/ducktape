@@ -101,7 +101,7 @@
         "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
         "models": [
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-4.5-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -109,7 +109,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-4.5-air-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -117,7 +117,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-4.6-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -125,7 +125,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-4.7-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -133,7 +133,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-5-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -141,7 +141,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-5-turbo-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -149,7 +149,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-5.1-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
@@ -157,7 +157,7 @@
             "reasoning": true
           },
           {
-            "contextWindow": 200000,
+            "contextWindow": 1000000,
             "id": "glm-5.2-anthropic",
             "input": ["text"],
             "maxTokens": 96000,
