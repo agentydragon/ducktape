@@ -1,0 +1,4 @@
+{% extends "base.html" %} {% block content %}
+<div class="info">Posted on {{ page.date | date(format="%Y-%m-%d") }}</div>
+
+{{ page.content | safe }} {% endblock content %}

@@ -1,0 +1,13 @@
+base_url = "http://agentydragon.com"
+title = "~agentydragon"
+description = "*agentydragon noises*"
+author = "Rai"
+compile_sass = true
+generate_feeds = true
+feed_filenames = ["atom.xml", "rss.xml"]
+
+[markdown.highlighting]
+light_theme = "solarized-light"
+dark_theme = "solarized-dark"
+
+[extra]

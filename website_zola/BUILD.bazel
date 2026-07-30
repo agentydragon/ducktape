@@ -1,0 +1,35 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "diff_sites",
+    srcs = ["diff_sites.py"],
+    imports = [".."],
+    deps = [
+        "@pypi//html5lib",
+        "@pypi//jinja2",
+    ],
+)
+
+py_binary(
+    name = "diff_sites_bin",
+    imports = [".."],
+    main_module = "website_zola.diff_sites",
+    deps = [":diff_sites"],
+)
+
+genrule(
+    name = "site",
+    srcs = glob([
+        "content/**",
+        "templates/**",
+        "sass/**",
+        "static/**",
+    ]) + ["config.toml"],
+    outs = ["site.tar"],
+    cmd = " && ".join([
+        "$(location @zola//:zola) --root $$(dirname $(location config.toml)) build --output-dir $$PWD/zola_out",
+        "tar -cf $@ -C zola_out .",
+    ]),
+    tags = ["manual"],
+    tools = ["@zola"],
+)
