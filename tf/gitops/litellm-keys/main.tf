@@ -336,7 +336,10 @@ resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
   # Both lanes: the Codex subscription models and the z.ai GLM models, so the
   # agent can be switched between them without reissuing credentials.
-  models = concat(local.codex_client_models, local.zai_lane_models)
+  # Embeddings ride along because OpenClaw's memory index needs a backend and
+  # this agent has no route to api.openai.com -- its egress allowlist is git
+  # hosting plus package indexes, and it should not gain one merely to embed.
+  models = concat(local.codex_client_models, local.zai_lane_models, local.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }

@@ -7,7 +7,18 @@
       "sandbox": {
         "mode": "off"
       },
-      "skills": []
+      "skills": [],
+      "memorySearch": {
+        "enabled": true,
+        "sources": ["memory"],
+        "provider": "openai-compatible",
+        "model": "gemini-embedding-2",
+        "remote": {
+          "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
+          "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
+          "nonBatchConcurrency": 2
+        }
+      }
     },
     "list": [
       {
