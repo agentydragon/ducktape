@@ -109,7 +109,7 @@ GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
 # secret). Chat lineup verified against generativelanguage.googleapis.com/v1beta/models
 # (2026-07-18): the Gemini-3.x preview family (pro / flash / flash-lite) + gemini-3.5-flash,
 # the stable 2.5 pair, and the -latest aliases that auto-point at the newest generation.
-# Specialty SKUs (image, tts, live/bidi, customtools, embedding, imagen, veo) are
+# Remaining specialty SKUs (image, tts, live/bidi, customtools, imagen, veo) are
 # intentionally excluded — add on demand.
 GEMINI_MODELS: list[str] = [
     "gemini-3-pro-preview",
@@ -122,6 +122,22 @@ GEMINI_MODELS: list[str] = [
     "gemini-pro-latest",
     "gemini-flash-latest",
 ]
+
+# Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
+# whose index needs an embedding backend and had none — see
+# plans/personal_agents/lab_notes.md F9.
+#
+# Both are stable and their embedding spaces are **mutually incompatible**: vectors
+# from one cannot be compared against the other, so switching a consumer between
+# them means re-embedding its whole corpus. Verified against
+# ai.google.dev/gemini-api/docs/embeddings (2026-07-30).
+#
+# gemini-embedding-2 is the current one (8,192 input tokens, multimodal);
+# gemini-embedding-001 is text-only with a 2,048-token limit and is kept because it
+# is the longer-established route through LiteLLM. Both expose flexible output
+# dimensionality (128-3072, recommended 768/1536/3072), selected per request rather
+# than per deployment, so neither entry pins a size.
+GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
 
 
 # Tana (Tana-UI models) fronted through the DB-less tana-litellm proxy. tana-litellm is a
@@ -194,6 +210,12 @@ def _gemini_entries() -> Iterator[dict]:
             "model_name": model,
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+    for model in GEMINI_EMBEDDING_MODELS:
+        yield {
+            "model_name": model,
+            "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
+            "model_info": {"mode": "embedding"},
         }
 
 

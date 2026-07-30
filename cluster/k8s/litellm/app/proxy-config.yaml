@@ -389,6 +389,18 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+  - model_name: gemini-embedding-2
+    litellm_params:
+      model: gemini/gemini-embedding-2
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: embedding
+  - model_name: gemini-embedding-001
+    litellm_params:
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: embedding
 litellm_settings:
   drop_params: true
   callbacks:
