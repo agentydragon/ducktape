@@ -77,6 +77,12 @@ locals {
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
   ]
+  # Gemini embeddings (GEMINI_EMBEDDING_MODELS in generate_litellm.py). Granted to
+  # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
+  # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
+  # route to it and should not gain one just to embed. Routing embeddings through
+  # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
+  embedding_client_models = ["gemini-embedding-2", "gemini-embedding-001"]
   # Google Gemini models (GEMINI_MODELS in generate_litellm.py) fronted through the
   # `gemini/` provider. Consumed by the laptop gemini-claude alias.
   gemini_client_models = [
@@ -286,7 +292,7 @@ resource "kubernetes_secret" "codex_pod" {
 
 resource "litellm_key" "openclaw" {
   key_alias = "openclaw"
-  models    = local.codex_client_models
+  models    = concat(local.codex_client_models, local.embedding_client_models)
   metadata = {
     consumer = "openclaw"
   }
