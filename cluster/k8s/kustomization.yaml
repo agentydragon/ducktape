@@ -339,6 +339,7 @@ resources:
 
   # --- cli-proxy-api (Claude Code on ChatGPT/Codex via CLIProxyAPI) ---
   - cli-proxy-api/flux-kustomization.yaml
+  - cli-proxy-api/agent-rbac/flux-kustomization.yaml
 
   # --- headlamp ---
   - headlamp/namespace/flux-kustomization.yaml
