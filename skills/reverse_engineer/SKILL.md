@@ -202,14 +202,15 @@ When a tool fails, follow this pattern:
 
 **Known-defeated techniques** (tools in `examples/`):
 
-| Technique                                       | What breaks                                                                         | Fix                                                                                                          | File                   |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------- |
-| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab    | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                         | `examples/pclntool.go` |
-| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                                | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below) | `examples/gosymtab.go` |
-| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction   | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)     | `examples/gosymtab.go` |
-| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors  | Dump process memory after package init and read the decrypted literals out of a core (see below)             | (recipe below)         |
-| garble randomizes struct and field names        | `strings`-scraped tags lose which struct they belong to, plus field order and types | `gotypes` walks `.typelink`/`abi.Type` to recover full struct definitions with offsets (see below)           | `examples/gotypes.go`  |
-| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                   | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                          | (no file needed)       |
+| Technique                                       | What breaks                                                                                       | Fix                                                                                                                           | File                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab                  | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                                          | `examples/pclntool.go` |
+| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                                              | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below)                  | `examples/gosymtab.go` |
+| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction                 | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)                      | `examples/gosymtab.go` |
+| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors                | Dump process memory after package init and read the decrypted literals out of a core (see below)                              | (recipe below)         |
+| garble `-literals` hides function-local strings | A local literal never decrypts unless its function runs, and running it means running the feature | Freeze the process, point `$pc` at the decryption block, read the result — decrypts without executing the feature (see below) | (recipe below)         |
+| garble randomizes struct and field names        | `strings`-scraped tags lose which struct they belong to, plus field order and types               | `gotypes` walks `.typelink`/`abi.Type` to recover full struct definitions with offsets (see below)                            | `examples/gotypes.go`  |
+| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                                 | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                                           | (no file needed)       |
 
 When you encounter a new technique not in this table, defeat it and add a row.
 
@@ -341,6 +342,42 @@ initialises all packages, so it gets every **package-level** literal. Literals
 local to a function body are only decrypted when that function runs, so a
 function you never execute keeps its secrets. Union several safe invocations
 when you need more coverage.
+
+**Keep the addresses, not just the text.** A flat `strings` dump of the core
+tells you _what_ the literals are but not _where_ they are used, which is the
+half you need for cross-referencing. Recover the mapping instead: generated
+`init()` code decrypts package-level literals into heap buffers whose
+`(ptr, len)` string headers are stored into globals in `.data`/`.bss`. Scan that
+range in the core, treat each 16-byte pair as a candidate header, resolve `ptr`
+in the core's memory, and keep it when the bytes are printable:
+
+```python
+# for each 8-byte-aligned offset in the binary's .data/.bss VMA range:
+ptr, ln = struct.unpack_from("<QQ", region, off)
+if 2 <= ln <= 400 and ptr >= 0x400000:
+    s = read_from_core(ptr, ln)          # None if unmapped
+    if s and all(0x20 <= c < 0x7f or c in (9, 10, 13) for c in s):
+        globals_[region_base + off] = s.decode()
+```
+
+That yields `global_addr -> plaintext`, so any instruction RIP-referencing the
+global is a use of that literal and static cross-referencing works again. On
+`environment-manager` this resolved 9,203 globals.
+
+**Function-local literals: force the decryptor to run.** Locals stay encrypted
+unless their function executes, and you often cannot run the function — it is
+the feature you are trying to understand, and running it has side effects.
+You do not have to: freeze the process at a safe breakpoint, point `$pc` at the
+decryption block's buffer allocation, and run to the block's `[]byte`→`string`
+conversion, then read the result. This decrypts an arbitrary local literal
+_without_ executing the feature that contains it. Set
+`GOGC=off GODEBUG=asyncpreemptoff=1` first so the GC and the preemption signal
+handler cannot move or interrupt the buffer mid-probe.
+
+The catch is that you need a valid entry point: where several literals share one
+decryption state machine, isolating a single block's entry can fail, and then
+that literal stays out of reach. Treat a literal you could not decrypt as
+unknown and mark it — do not infer it from the surrounding code.
 
 Two practical notes: the core can be far larger than the binary (~1.8 GB for a
 59 MB input), so extract strings and delete it immediately; and garble's
