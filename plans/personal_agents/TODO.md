@@ -27,97 +27,21 @@ next refresh (1h) with no manifest change.
 
 **Delete this section once rotated.**
 
-## Ship the credential-injecting proxy to `public-coder-agent`
+## Pin iron-proxy by digest and mirror it to Harbor
 
-**No longer blocked on OpenShell.** F10 has this working in the lab: the token
-lives in the proxy, the agent container has none (env _and_ `/proc` clean), and
-the agent still opened PR #3574 unaided. It also carries a write policy confining
-writes to the agent's own fork — defence in depth rather than the mechanism,
-since GitHub already denies `agentydragon-agent` write access outside its own
-forks. Do not let that rule gate the rollout.
+The adoption decision came with a condition that only got half-met. Production
+runs `ironsh/iron-proxy:0.49.0` — a **tag**, pulled from Docker Hub, on the one
+process in this design that holds the GitHub credential. A tag is mutable, so the
+thing standing between a compromised upstream account and our token is Docker
+Hub's access control.
 
-Production already runs the mitmproxy this needs, with no addon wired, so the
-change is a ConfigMap, a volume, `-s`, moving `GITHUB_TOKEN` from the agent
-Deployment to the proxy Deployment, and widening the Cilium `toFQDNs` policy not
-at all. Do **not** add `--ignore-hosts`; ignored hosts skip the addon hooks and the
-injection never runs.
+The repo's own convention for container images is digest pinning plus a mirror
+(<../../cluster/docs/container-images.md>). Both halves matter for different
+reasons: the digest removes the mutable-tag window, and the Harbor mirror removes
+the runtime dependency on Docker Hub being reachable and honest.
 
-Order this **after** the `GH_PAT` rename merges, not instead of it: the rename is
-already proven and unblocks S2 immediately, and this supersedes it cleanly (with
-injection the agent needs no token variable at all, under any name).
-
-Two things to carry over from the lab:
-
-- Match policy paths against **both** the REST API shape
-  (`/repos/<owner>/<repo>/...`) and the git transport shape
-  (`/<owner>/<repo>.git/...`). The agent uses the API and never ran `git push`; a
-  git-shaped policy blocks its entire workflow while looking correct.
-- Let Airlock own token rotation and hand the value to the **proxy**. Airlock
-  distributes credentials to consumers as Secrets, which is refresh, not
-  possession — pointing it at the proxy instead of the agent composes the two
-  properly.
-
-## Fix `GIT_SSL_CAINFO` in production before the agent ever runs `git push`
-
-F17: OpenClaw's exec tool strips `GIT_SSL_CAINFO` by name, so git behind the
-TLS-intercepting proxy fails with `CAfile: none` while `curl` keeps working.
-`public-coder-agent` sets the CA that way and has neither `/etc/gitconfig` nor a
-global `http.sslCAInfo`, so it is one `git push` away from an unexplained TLS
-failure — and F8 records what an agent does with one of those.
-
-**Do it by putting the CA in the system trust store, not by patching gitconfig.**
-Both fixes are verified (F17). The `/etc/gitconfig` one works and is narrow; the
-better one puts the bundle at `/etc/ssl/certs/ca-certificates.crt`, which covers
-git, curl and Python at once and lets `SSL_CERT_FILE`, `CURL_CA_BUNDLE`,
-`GIT_SSL_CAINFO` and `REQUESTS_CA_BUNDLE` all be deleted. Only
-`NODE_EXTRA_CA_CERTS` stays, because Node ignores the system store — and it must
-point at the **mounted** path, since Node ignores a missing file silently (F18).
-
-**In production this needs no initContainer.** The lab merged the distro bundle
-with the CA at startup; production's trust-manager `Bundle` already carries
-`useDefaultCAs: true` plus the cluster root plus the proxy's interception root,
-under the key `ca-certificates.crt`. So the whole change is a `subPath` mount of
-a ConfigMap already in the namespace, over the system path, plus deleting four
-environment variables.
-
-That turns a stripped-variable workaround into the removal of the whole class:
-there is no longer an env var name for the harness denylist to catch. It is also
-the one change here that is **strictly** an improvement — it fixes a live latent
-bug, removes configuration, and adds no dependency and no new failure mode.
-
-Cheap, and it removes a trap rather than adding a feature.
-
-## Decide on iron-proxy — the case is now narrow and testable
-
-F15 and F16 measured it, including a real OpenClaw opening a PR end to end
-behind it. Two of the three drawbacks did not survive: the 1 MiB body-buffer
-worry (a 3.9 MB push went through) and unproven Basic-auth substitution (real
-`git ls-remote` and `git push` both work with the placeholder).
-
-What remains is one property and one judgement call:
-
-- **No anti-bypass control.** `require: true` would reject requests to GitHub
-  that do not carry the placeholder — stopping an agent from substituting a
-  credential of its own — and it is unusable here because it is evaluated
-  against the header-less `CONNECT`. Low severity: an agent that brings its own
-  token already had it.
-- **The placeholder contract has to reach the agent**, since `replace` only acts
-  on requests carrying it: reach GitHub with `$GH_PAT`, a placeholder whose real
-  value is attached on the way out. Saying it in the OpenClaw chat at cutover is
-  enough — it does not have to be committed anywhere to be tried.
-- **Trust.** It puts a ~540-star, roughly year-old Go binary from a vendor with
-  a commercial product into the credential path, replacing mitmproxy, which is
-  mature and already runs here. If adopted: pin by digest and mirror to Harbor
-  rather than tracking `ironsh/iron-proxy:latest`.
-
-Client-supplied auth headers are **not** stripped, but that is out of scope: an
-agent that brings its own token already had it, and the property we need is that
-it never holds ours.
-
-Not a slam dunk either way. The honest position is that our addon works, is
-smaller, and rests on a better-established engine; iron-proxy is a real upgrade
-on configurability and on the git transport. Reach for it when the addon becomes
-a maintenance burden, not before.
+This is the last unmet item from the iron-proxy adoption; everything else in that
+decision shipped.
 
 ## Use k3d, not production RBAC, for the next round of experiments
 
@@ -218,11 +142,11 @@ Done and measured for the lab agent (lab_notes.md F9): `gemini-embedding-2` via
 LiteLLM, 3072 dims, semantic retrieval verified, and the temporary embeddings pod
 deleted. #3575 added the models, #3576 granted them to the openclaw key.
 
-Two consumers left, and both are a config change rather than new infrastructure:
+`public-coder-agent` is done too — #3586 made its seeded config authoritative and
+the index built on the next restart, with semantic recall confirmed live.
 
-- **`public-coder-agent`** has no embedding backend at all. It cannot reach
-  `api.openai.com` and should not gain that route, so LiteLLM is the only sane
-  option for it.
+One consumer left, and it is a config change rather than new infrastructure:
+
 - **The main `openclaw` gateway** still uses a direct OpenAI Platform key
   (`OPENAI_API_KEY`, `memorySearch.provider: openai`). Moving it puts embeddings
   through Langfuse with every other model call and retires a standing credential.
@@ -316,7 +240,8 @@ reporting it (F8). Nothing surfaced that. Containment held — destinations are
 enforced at `CONNECT`, before TLS — so this is an integrity and observability gap,
 not an escape.
 
-Cheap detector, since every request already transits our mitmproxy: the proxy sees
+Cheap detector, since every request already transits an intercepting proxy —
+iron-proxy for `public-coder-agent`, mitmproxy for the Haku zones. The proxy sees
 which client connections skip verification, and `-k`/`sslVerify=false` appearing in
 an agent's command history is a reliable signal that some control has broken. Worth
 alerting on rather than discovering by reading transcripts weeks later.
