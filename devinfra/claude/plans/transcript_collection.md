@@ -129,7 +129,15 @@ forwarder** (the exporter can't egress directly; see Facts):
   OTEL_LOG_TOOL_DETAILS=1
   OTEL_LOG_TOOL_CONTENT=1
   OTEL_LOG_RAW_API_BODIES=1
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
   ```
+
+  The temporality line is **load-bearing for the metrics leg**: Claude Code defaults
+  to delta, which Prometheus/Mimir cannot ingest, and Alloy's
+  `otelcol.exporter.prometheus` drops delta metrics silently — logs and traces still
+  arrive, so the pipeline looks healthy while `claude_code_*` never appears in Mimir.
+  Root cause and verification:
+  <../../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
 
 - CLI / operator machines need no forwarder: direct export is wired in
   <../../../nix/home/claude_code/default.nix> with `otelHeadersHelper` (a script
