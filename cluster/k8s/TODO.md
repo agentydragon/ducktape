@@ -54,6 +54,9 @@ Then two steps, in order — the second is blocked on the first:
       `agents/shared-secrets/` with the right namespace and `sops -e -i`:
       `openclaw-{anthropic-api-key,openai-api-key,telegram-bot-token}` from
       `openclaw-gateway`, `ibkr-flex-query-credentials` from `openclaw-sandbox`.
+      Note the IBKR one's Kustomization is `suspend: true` in git, so that Secret
+      is frozen rather than reconciled — re-homing it un-freezes it, which is a
+      deliberate change, not a side effect.
       Update the reflector annotations and `docs/bootstrap_dependencies.md` rows
       in the same change. Alternatively **revoke** any you no longer want — at the
       Anthropic and OpenAI consoles, via @BotFather, and in IBKR Account

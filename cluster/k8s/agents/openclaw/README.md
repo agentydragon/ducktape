@@ -25,6 +25,16 @@ on uninstall. Clearing that up is tracked in <../../TODO.md> § "Retire the
 `openclaw-*` namespaces"; until then, read the sections below as describing what
 _should_ be here, not everything that is.
 
+**`ibkr-flex-query-credentials` is frozen, not managed.** Its Flux Kustomization
+(`sandbox-secrets`) carries `suspend: true` in git and has since before this
+teardown — its Ready condition is still the `DependencyNotReady` it had on
+2026-05-10, because a suspended Kustomization is never reconciled again. The
+Secret survives only because suspension also stops pruning. So unlike the three
+`openclaw-gateway` secrets, this one is not being maintained by GitOps; treat it
+as a frozen object that happens to still exist. Re-homing it (below) would also
+un-freeze it, which is a change worth making deliberately rather than as a side
+effect.
+
 The two namespaces exist for one reason: **each SOPS document pins its namespace in
 `metadata`, and these files set no `mac_only_encrypted`, so the document MAC covers
 that field.** Re-homing them into `shared-secrets` is not a text edit — it needs the
