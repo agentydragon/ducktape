@@ -63,14 +63,30 @@ type ServiceWorkerNotificationOptions = NotificationOptions & {
 };
 
 /** The same one-line description the approvals card shows, from the same registry — so a
- * notification reads "Gmail: Draft email", not "gmail · drafts_create". Falls back to the bare
+ * notification reads "Gmail: Draft email", not "gmail.drafts_create". Falls back to the bare
  * identity when a tool has no entry or its (not-yet-validated) arguments do not parse. */
 function notificationTitle(message: PushShow): string {
   const action = toolActionDescription(message.server_id, message.tool_name, message.arguments);
-  if (!action) return `${message.server_id}.${message.tool_name}`;
-  // An OS notification has no red text, so the danger cue the card renders as color has to be
-  // said in words — this is the one place a destructive call can be approved without seeing it.
-  return action.destructive ? `⚠ ${action.text}` : action.text;
+  return action ? action.text : `${message.server_id}.${message.tool_name}`;
+}
+
+/** The buttons this platform will actually render.
+ *
+ * Browsers cap notification actions and silently drop the rest (`Notification.maxActions` —
+ * Chrome reports 2), so the array's tail cannot be treated as guaranteed. Deciding is what the
+ * notification is *for*, so Approve and Deny come first and Details is offered only where there
+ * is room for it. Nothing is lost when it is dropped: tapping the notification body opens the
+ * call, which is the same thing Details does. */
+function notificationActions(): { action: string; title: string }[] {
+  const decisions = [
+    { action: APPROVE_ACTION, title: "Approve" },
+    { action: DENY_ACTION, title: "Deny" },
+  ];
+  const details = { action: DETAILS_ACTION, title: "Details" };
+  // Read defensively: `maxActions` is not in every lib.dom, and a browser that omits it is one
+  // whose limit we do not know — offer the full set and let it drop what it cannot show.
+  const max = (Notification as { maxActions?: number }).maxActions;
+  return max === undefined || max > decisions.length ? [...decisions, details] : decisions;
 }
 
 async function showPending(message: PushShow): Promise<void> {
@@ -81,13 +97,7 @@ async function showPending(message: PushShow): Promise<void> {
     tag: message.tool_call_id,
     // A pending call is a question. Leaving it up until answered is the point.
     requireInteraction: true,
-    actions: [
-      { action: APPROVE_ACTION, title: "Approve" },
-      { action: DENY_ACTION, title: "Deny" },
-      // Deciding blind is the failure mode this exists to prevent: the notification carries one
-      // line, and some calls (a bash command, an apply) need the arguments before an answer.
-      { action: DETAILS_ACTION, title: "Details" },
-    ],
+    actions: notificationActions(),
     data: message,
   } satisfies ServiceWorkerNotificationOptions as NotificationOptions);
 }
