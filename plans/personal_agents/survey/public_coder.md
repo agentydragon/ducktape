@@ -7,7 +7,7 @@
   GitHub-as-review-UI).
 - **Tool-output truncation (C9)**: OpenClaw truncates single oversized tool
   results, verified by reading the source rather than the docs.
-  (`docs/self_hosted_coding_agent_platforms.md` and
+  (`docs/self_hosted_coding_agent_platforms.md` and the since-deleted
   `cluster/docs/openclaw_command_execution.md` were both stale on this and on the
   execution model; corrected in the same change as this doc.)
   - `src/agents/session-tool-result-guard.ts` intercepts every `toolResult`
