@@ -29,6 +29,7 @@ configurations that failed on the way, are in [lab_notes.md](lab_notes.md).
 | [success_criteria.md](success_criteria.md)                 | S1–S5: the observable pass conditions, and what a failure of each would force us to decide             |
 | [credential_proxy_options.md](credential_proxy_options.md) | Survey of credential-injecting proxies: three architectural camps, what was tested, where we landed    |
 | [personal_data_agent.md](personal_data_agent.md)           | How we would build the personal-data agent today, and how its Google credentials would work            |
+| [reviving_openshell.md](reviving_openshell.md)             | How to bring OpenShell back for a scoped experiment, and the five things that will bite again          |
 | [TODO.md](TODO.md)                                         | Open work, each item carrying the evidence for why it matters                                          |
 | [requirements.md](requirements.md)                         | The original stated wants, cross-cutting and per-agent-function                                        |
 | [survey/](survey/README.md)                                | The sourced evidence behind the verdicts: upstream code, live CRD schemas, vendor docs, with citations |
