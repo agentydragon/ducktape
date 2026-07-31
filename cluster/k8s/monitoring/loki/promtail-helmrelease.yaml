@@ -30,6 +30,28 @@ spec:
         # off SingleBinary mode.
         - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
 
+      snippets:
+        # Drop `filename`. It is the chart default and carries the full
+        # /var/log/pods/<ns>_<pod>_<uid>/<container>/0.log path, so the pod UID
+        # changes on every restart, rollout, Job, and CronJob run — 6194
+        # distinct values in 24h, against 59 KB/s of actual ingest. Loki memory
+        # scales with stream cardinality, not volume, and the retained index is
+        # O(streams created x retention): that churn is what OOMKilled
+        # loki-backend 165 times while ingest stayed trivial.
+        #
+        # It is redundant — namespace + pod + container already identify the
+        # source; the UID is the only thing `filename` adds.
+        #
+        # Must be a pipeline stage, not extraRelabelConfigs: promtail attaches
+        # `filename` at file-target discovery, after relabeling, so a
+        # relabel-stage drop does not see it. `cri: {}` is restated because it
+        # is the chart's default pipelineStages value and overriding the key
+        # replaces it wholesale.
+        pipelineStages:
+          - cri: {}
+          - labeldrop:
+              - filename
+
     resources:
       requests:
         cpu: 50m
