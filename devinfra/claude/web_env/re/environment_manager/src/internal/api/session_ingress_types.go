@@ -3,6 +3,67 @@
 //
 // Original source path:
 //   /home/runner/work/anthropic/anthropic/api-go/environment-manager/internal/api/session_ingress_types.go
+//
+// ---------------------------------------------------------------------------
+// RE-VERIFICATION against Build ID 0b86a2a0 (release-1186d93b9-ext), from Go
+// runtime type metadata rather than disassembly guessing.
+//
+// VERDICT: the session-ingress event payload types are **byte-for-byte
+// unchanged** between release-d84d76b7-ext and release-1186d93b9-ext — same
+// fields, same json tags, same offsets. Nothing in this file's wire contract
+// changed in this release.
+//
+// BUT several of the shapes below do not match the binary. Corrections, with
+// the RTTI addresses that prove them (garbled package `fHxyBOR9qvy` = the
+// session-ingress side of internal/api; previous binary's `viRrDTePbcGS`):
+//
+//	SessionIngressEvent  -> fHxyBOR9qvy.AIGJ5cph, vaddr 0x28eaa00, size 0xc0,
+//	                        16 fields (previous: viRrDTePbcGS.J4sedR @0x247a760,
+//	                        identical). The real shape is NOT {type,id,data}:
+//	  type                string  `json:"type"`                          // +0x00
+//	  uuid                string  `json:"uuid"`                          // +0x10  <- NOT "id"
+//	  data                <iface> `json:"data,omitempty"`                // +0x20
+//	  message             <iface> `json:"message,omitempty"`             // +0x30
+//	  parent_tool_use_id  *string `json:"parent_tool_use_id,omitempty"`  // +0x40
+//	  isApiErrorMessage   *bool   `json:"isApiErrorMessage,omitempty"`   // +0x48
+//	  subtype             *string `json:"subtype,omitempty"`             // +0x50
+//	  is_error            *bool   `json:"is_error,omitempty"`            // +0x58
+//	  duration_ms         *int    `json:"duration_ms,omitempty"`         // +0x60
+//	  duration_api_ms     *int    `json:"duration_api_ms,omitempty"`     // +0x68
+//	  num_turns           *int    `json:"num_turns,omitempty"`           // +0x70
+//	  total_cost_usd  *float64    `json:"total_cost_usd,omitempty"`      // +0x78
+//	  errors            []string  `json:"errors,omitempty"`              // +0x80
+//	  modelUsage         <named>  `json:"modelUsage,omitempty"`          // +0x98
+//	  permission_denials []Denial `json:"permission_denials,omitempty"`  // +0xa0
+//	  usage              *Usage   `json:"usage,omitempty"`               // +0xb8
+//
+//	AssistantMessage     -> fHxyBOR9qvy.Labalu1jJu, vaddr 0x28a9c00, size 0x68:
+//	                        {role, model, content []ContentBlock, stop_reason,
+//	                        usage} — the RE below models only `content`.
+//	ContentBlock         -> fHxyBOR9qvy.IBq8n0_LLk, vaddr 0x27c1ec0:
+//	                        {type, text `json:"text,omitempty"`} — correct.
+//	PermissionDenial     -> fHxyBOR9qvy.Ai2IVr3VUa, vaddr 0x27e77e0:
+//	                        {tool_name, reason, requested_at time.Time} — the
+//	                        RE below leaves it empty.
+//	Usage                -> fHxyBOR9qvy.TRepBeaLEAWm, vaddr 0x2883260:
+//	                        {input_tokens, output_tokens,
+//	                         cache_creation_input_tokens,omitempty,
+//	                         cache_read_input_tokens,omitempty}
+//	Session activity log -> fHxyBOR9qvy.C55iIMbPNU, vaddr 0x28a9d00, size 0x50:
+//	                        {level, category, content, timestamp time.Time,
+//	                         extra map[string]any}
+//	DiagLogEntry         -> fHxyBOR9qvy.Ur1ssf, vaddr 0x27c1f60, size 0x20:
+//	                        {time.Time, map[string]any} — matches the RE below.
+//
+//	EnvManagerLogEventData: NO struct type in either binary carries the tag set
+//	{message, level, source, timestamp, nanos, fields}. The `nanos` tag in this
+//	build belongs to google.protobuf.Timestamp only. Treat the struct below as
+//	unverified.
+//
+// TODO(re): rewrite the Go declarations in this file against the addresses
+// above. They are left as-is here to avoid clobbering another lane's work; only
+// this header was added.
+// ---------------------------------------------------------------------------
 
 package api
 

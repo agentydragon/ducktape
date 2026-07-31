@@ -94,6 +94,88 @@ var LanguageSetupMetric *O11yMetric
 // Binary address: 0x1589508
 var InitScriptMetric *O11yMetric
 
+// ---- Metrics added in Build ID 0b86a2a0 (release-1186d93b9-ext) ----
+//
+// These six metric names appear in Build ID 0b86a2a0's decrypted literal set
+// and in none of the previous binary's. The names and descriptions quoted below
+// are exact strings recovered from a process core of the running binary (garble
+// `-literals` encrypts them in .rodata, so `strings` on the file does not show
+// them). The Go variable names are invented; their data-segment addresses were
+// not re-derived for this build.
+//
+//	claude_code.spawn_to_ready.latency_ms
+//	  "Wall-clock from CLI launch setup (tailer init, docker wrap,
+//	   spawn/spare-claim) to first system/init stdout line"
+//
+//	claude_code.spawn_to_ready.outcome
+//	  "Count of CLI spawn outcomes (ready, exited_before_ready,
+//	   no_init_observed, unobservable)"
+//
+//	claude_code.spare.claim_miss
+//	  "Cold spawn instead of warm-spare claim, attributed by reason"
+//
+//	claude_code.spare.spawn_to_claim_window_ms
+//	  "Wall-clock from spare spawn/adopt to Claim (the overlap window W)"
+//
+//	claude_code.binary_prewarm.duration
+//	  "Time to read the claude binary into guest page cache
+//	   (CCR_PREWARM_CC_BINARY)"
+//
+//	claude_code.gateway_arg.dropped
+//	  "Count of ClaudeCodeArgs entries dropped by buildArgsFromGatewayConfig"
+
+// SpawnToReadyLatencyMetric records wall-clock from launch setup to the first
+// `system`/`init` line on Claude Code's stdout.
+//
+// TODO(re): data-segment address not derived for Build ID 0b86a2a0.
+var SpawnToReadyLatencyMetric *O11yFunctionMetric
+
+// SpawnToReadyOutcomeCounter counts CLI spawn outcomes. The tag key is
+// literally "outcome": a plaintext .rodata string at 0x2914857 (len 7) loaded
+// by FKPKJ5B0zZ.NwaNmS at 0x200b773. The four documented values are "ready",
+// "exited_before_ready", "no_init_observed" and "unobservable"; "ready" is
+// confirmed independently as a plaintext 5-byte literal at 0x29107eb passed to
+// NwaNmS from the `system`/`init` handler at 0x21b13df.
+var SpawnToReadyOutcomeCounter *O11yMetric
+
+// SpareClaimMissCounter counts cold spawns that could not claim a warm spare.
+var SpareClaimMissCounter *O11yMetric
+
+// SpareSpawnToClaimWindowMetric records the spare spawn-to-claim overlap window.
+var SpareSpawnToClaimWindowMetric *O11yFunctionMetric
+
+// BinaryPrewarmDurationMetric records the CCR_PREWARM_CC_BINARY page-cache warm.
+var BinaryPrewarmDurationMetric *O11yFunctionMetric
+
+// GatewayArgDroppedCounter counts ClaudeCodeArgs entries dropped by the
+// sandbox-gateway argument builder.
+var GatewayArgDroppedCounter *O11yMetric
+
+// recordSpawnToReady emits the spawn_to_ready pair.
+//
+// Binary address: 0x200b720 (FKPKJ5B0zZ.NwaNmS). Register ABI at entry:
+// AX/BX carry a two-word value (a time.Time-shaped pair, per the caller at
+// 0x21b13d1-0x21b13d5), CX/DI the outcome string (ptr, len), SIL a bool. The
+// bool selects between the plaintext literals "true" (0x290fa1a, len 4) and
+// "false" (0x291053e, len 5) at 0x200b79f-0x200b7c3, i.e. it becomes a
+// stringified tag value. The function ends by tail-calling FKPKJ5B0zZ.CdqIOIL
+// at 0x2013d60.
+//
+// TODO(re): the tag KEY for that boolean is a garble-encrypted literal and was
+// not recovered ("warm_spare"/"adopted" are plausible but unproven), so the
+// parameter is named neutrally here.
+// TODO(re): the latency leg (SpawnToReadyLatencyMetric) is emitted inside
+// FKPKJ5B0zZ.CdqIOIL (0x2013d60), which was not disassembled.
+func recordSpawnToReady(elapsedMs float64, outcome string, boolTagValue bool) {
+	tags := map[string]string{"outcome": outcome}
+	tags["TODO_re_unrecovered_tag_key"] = "false"
+	if boolTagValue {
+		tags["TODO_re_unrecovered_tag_key"] = "true"
+	}
+	Increment(context.Background(), SpawnToReadyOutcomeCounter, []TagProvider{&kvTagProvider{tags: tags}})
+	_ = elapsedMs
+}
+
 // IncrementEnvManagerEnd increments the EnvManagerEndCounter with the
 // given exit code tag and error tags.
 //
