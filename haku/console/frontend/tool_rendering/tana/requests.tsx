@@ -12,8 +12,8 @@ import { ExternalLink } from "../../link";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client";
 import { definePreview, type ToolPreview } from "../entry";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary";
-import type { zEditOperation } from "./schemas";
 import {
+  type zEditOperation,
   zEditNodeArgs,
   zGetOrCreateCalendarNodeArgs,
   zImportTanaPasteArgs,

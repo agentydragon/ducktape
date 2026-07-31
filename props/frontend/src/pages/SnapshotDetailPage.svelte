@@ -3,14 +3,12 @@
   import { toast } from "svelte-sonner";
   import { splitBadgeClass } from "$lib/colors";
   import { formatLocationAnchor } from "$lib/formatters";
-  import type {
-    SnapshotDetailResponse,
-    FileContentResponse,
-    FileTreeResponse,
-    ClusterResponse,
-    OccurrenceStatsRow,
-  } from "$lib/api/client";
   import {
+    type SnapshotDetailResponse,
+    type FileContentResponse,
+    type FileTreeResponse,
+    type ClusterResponse,
+    type OccurrenceStatsRow,
     fetchSnapshotDetail,
     fetchSnapshotTree,
     fetchSnapshotFile,

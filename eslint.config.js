@@ -56,7 +56,10 @@ const importRules = {
   "import/first": "error",
   "import/order": "off",
   "import/newline-after-import": "error",
-  "import/no-duplicates": "error",
+  // `prefer-inline` is what makes this catch a module imported twice — once for values, once
+  // for types. Without it the rule treats `import type {X} from "m"` and `import {y} from "m"`
+  // as different categories and leaves both statements in place.
+  "import/no-duplicates": ["error", { "prefer-inline": true }],
 };
 
 // typescript-eslint's recommended rule set (ban-ts-comment, no-explicit-any,
@@ -73,7 +76,10 @@ const coreRules = {
   ...tsRecommendedRules,
   "prefer-const": "error",
   eqeqeq: ["error", "always", { null: "ignore" }],
-  "@typescript-eslint/consistent-type-imports": "error",
+  // `inline-type-imports` so the autofix marks a type-only specifier in place rather than
+  // splitting a second `import type` statement off the value import it sits next to, which
+  // `import/no-duplicates` below would then flag.
+  "@typescript-eslint/consistent-type-imports": ["error", { fixStyle: "inline-type-imports" }],
   // recommended sets a plain `error`; override to keep our leading-underscore escape hatch.
   // (recommended already disables the base `no-unused-vars`, so no need to repeat that here.)
   "@typescript-eslint/no-unused-vars": ["error", unusedVarsOptions],

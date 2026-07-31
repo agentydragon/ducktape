@@ -3,8 +3,7 @@
 // describe, and React-free so `../../sw.ts` can bundle them (see ../action_entry.ts).
 
 import { mcpToolSchema } from "../../mcp_tool_schema";
-import { fixed, fromArgs, plural } from "../action_entry";
-import type { ActionEntry } from "../action_entry";
+import { type ActionEntry, fixed, fromArgs, plural } from "../action_entry";
 import { GROCY_SERVER_ID } from "../server_ids";
 
 export const grocyActions: Record<string, ActionEntry> = {

@@ -1,6 +1,5 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import type { PointerEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { type PointerEvent, useEffect, useRef, useState } from "react";
 
 import { ACTION_COLOR } from "./theme";
 

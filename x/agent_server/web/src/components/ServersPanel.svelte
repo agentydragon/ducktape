@@ -7,8 +7,7 @@
   import ModalBackdrop from "./ModalBackdrop.svelte";
   import { attachMcpServer, detachMcpServer, refreshSnapshot } from "../features/chat/stores";
   import { MCP_PRESETS } from "../features/mcp/presets";
-  import { buildSpecFromForm } from "../features/mcp/schema";
-  import type { TransportSpec } from "../features/mcp/schema";
+  import { buildSpecFromForm, type TransportSpec } from "../features/mcp/schema";
   import { currentAgentId } from "../shared/router";
 
   import type { ServerEntry } from "../shared/types";

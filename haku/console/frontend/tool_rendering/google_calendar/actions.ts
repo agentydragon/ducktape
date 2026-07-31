@@ -3,8 +3,7 @@
 // describe, and React-free so `../../sw.ts` can bundle them (see ../action_entry.ts).
 
 import { mcpToolSchema } from "../../mcp_tool_schema";
-import { fixed, fromArgs } from "../action_entry";
-import type { ActionEntry } from "../action_entry";
+import { type ActionEntry, fixed, fromArgs } from "../action_entry";
 import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
 
 export const googleCalendarActions: Record<string, ActionEntry> = {
