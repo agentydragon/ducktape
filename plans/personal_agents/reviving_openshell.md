@@ -92,15 +92,31 @@ plugin work, does the policy apply, does the harness come up — are answerable
 on a local cluster without production RBAC, and only the questions that
 genuinely need cluster identity or cluster-only services justify the real one.
 
-## Leftovers from the teardown
+## Leftovers from the teardown, and the order that matters
 
 Deleting the manifests did not remove everything, because the namespace
 kustomizations carried `prune: false` and Helm does not remove CRDs on
-uninstall. Still present after #3607:
+uninstall.
+
+**The trap: #3607 deleted the operator while its custom resources still
+existed.** `OpenShellProvider/agentydragon-github` carries the finalizer
+`openshell.lenshq.io/provider-cleanup`, and the controller that would run it is
+gone — so `kubectl delete ns openshell-system` hangs in `Terminating` forever.
+The namespace tells you so itself:
+
+```text
+NamespaceContentRemaining     Some resources are remaining:
+                              openshellproviders.openshell.lenshq.io has 1 resource instances
+NamespaceFinalizersRemaining  Some content in the namespace has finalizers remaining:
+                              openshell.lenshq.io/provider-cleanup in 1 resource instances
+```
+
+Clear the orphaned finalizer, then everything else follows:
 
 ```bash
-kubectl delete ns openshell-system      # holds only an orphaned 1Gi PVC,
-                                        # openshell-data-openshell-gateway-0
+kubectl -n openshell-system patch openshellprovider agentydragon-github \
+  --type=merge -p '{"metadata":{"finalizers":[]}}'
+# the namespace finalizes on its own; then the CRDs have no instances left
 kubectl delete crd \
   openshellsandboxes.openshell.lenshq.io \
   openshellpolicies.openshell.lenshq.io \
@@ -109,10 +125,22 @@ kubectl delete crd \
   openshellworkspaces.openshell.lenshq.io
 ```
 
-Both need cluster-admin; the sandbox-scoped agent RBAC cannot delete namespaces
-or CRDs. Leaving the CRDs installed is the same trap as the orphaned
-`kagent.dev` CRDs — a CRD with no controller reads as an available capability
-while being inert YAML.
+Clearing a finalizer is safe **only because** the controller is gone and its
+cleanup — deregistering the provider from a gateway that no longer exists — is
+meaningless. Do **not** reach for the namespace's own `spec.finalizers` via the
+`/finalize` subresource, which is the widely-copied version of this fix: it
+deletes the namespace object while leaving its contents orphaned in etcd.
+
+**So tear down in dependency order next time:** delete the custom resources
+first and let their controller finalize them, then the operator, then the CRDs,
+then the namespace. Deleting the operator first is what turns a one-command
+teardown into manual finalizer surgery.
+
+Both steps need cluster-admin; the sandbox-scoped agent RBAC can neither delete
+namespaces and CRDs nor list `openshellproviders` once `agent-lab` is gone.
+Leaving the CRDs installed is the same trap as the orphaned `kagent.dev` CRDs —
+a CRD with no controller reads as an available capability while being inert
+YAML.
 
 `openclaw-operator` is a separate orphaned namespace from the same teardown,
 left by the OpenClaw operator rather than OpenShell.
