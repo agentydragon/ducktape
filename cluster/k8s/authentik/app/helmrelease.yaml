@@ -73,6 +73,22 @@ spec:
       name: server
       replicas: 1
 
+      # Colocate with the database. `authentik-db-ovh` is pinned to OVH, so an unpinned
+      # server lands wherever the scheduler puts it — it was on `optiplex` (home), issuing
+      # every one of Django's per-request queries across the home↔OVH link. Measured:
+      # TCP connect from optiplex to the DB primary is 114ms, and an uncontended request for
+      # the static OIDC discovery document took ttfb≈1.6s (~14 serialized round trips) while
+      # TCP connect to the gateway itself was 4ms. The latency was almost entirely per-query
+      # RTT, not the client network and not CPU. That also made `Home down` take SSO with it,
+      # contradicting cluster/README.md's failure-mode table.
+      #
+      # Selects on the same key/value as the database's own placement
+      # (db/postgres-cluster-ovh.yaml), so the two stay together by construction rather than
+      # by both happening to resolve to the same nodes today. The DB cannot move anyway —
+      # it is on node-local `local-path-ovh` storage.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+
       # Preferred (not required) anti-affinity allows a surge pod to land on
       # an occupied node while still spreading replicas across nodes when possible.
       deploymentStrategy:
@@ -160,6 +176,11 @@ spec:
     worker:
       name: worker
       replicas: 1
+
+      # Same reasoning as the server above: the worker is equally DB-bound, and it ran on
+      # `optiplex` too.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
 
       deploymentStrategy:
         type: RollingUpdate
