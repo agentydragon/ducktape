@@ -38,11 +38,30 @@ when/how session-start-adjacent things fire. Specifically:
   `Initialize()`. Steps 1–2 (install languages, clone sources) are gated on
   `isNewOrSetup`. Step 3 (init script / `web_setup.sh`) is gated on
   `isNewOrSetup` — **both `resume` and `resume-cached` skip the init script**.
-  **`resume-cached` exits early** (after FJqRbR1MIeE + ProcessSources, VMA
-  `0x1fbb074`) and does NOT run Steps 4–6. Steps 4–6 (`claude --init-only`
-  which fires SessionStart hooks, skill bootstrap, hook bootstrap) run for
-  `new` and `resume` modes only. `setup-only` runs the init script and exits
-  partway through the subsequent steps.
+  **`resume-cached` exits early** and does NOT run Steps 4–6. Steps 4–6
+  (`claude --init-only` which fires SessionStart hooks, skill bootstrap, hook
+  bootstrap) run for `new` and `resume` modes only. `setup-only` runs the init
+  script and exits partway through the subsequent steps.
+
+  **Unverified against Build ID `0b86a2a0` — re-check before relying on the
+  details.** The gating above was established on an earlier binary. In the
+  current one the `anthropic` envtype is garbled package `CWddODOS8sH` (see
+  <web*env/re/environment_manager/degarble_map.md>) and its `Initialize` grew
+  from 103 to 157 symbols, but \_what* changed has not been established — the
+  mode gating may well still hold exactly as described.
+
+  What is established: `Initialize` now wraps seven phases in identical timing
+  closures that call into the o11y package and `Duration.Milliseconds`. The old
+  binary had none, so this is the new `startup_timing` / `phase_start_ms`
+  telemetry being added around the existing sequence. Seven timed phases is
+  **not** evidence of a seventh lifecycle step — the instrumentation need not
+  partition the steps one-to-one.
+
+  Note the previous version of this text cited VMA `0x1fbb074`. Addresses here
+  are per-build: garble re-randomizes every symbol, so a VMA never survives a
+  version bump. Re-derive addresses with `gosymtab` (recipe in
+  <web_env/re/environment_manager/README.md>) rather than carrying them forward.
+
 - **`process_api` (PID 1) lifecycle**, WebSocket ports, orphan monitor, OOM killers:
   <web_env/re/process_api/README.md>.
 - **CLI flags and env vars** that tune the above:

@@ -8,6 +8,7 @@ Available Commands:
   help                   Help about any command
   orchestrator           Poll for session tasks and hand off for execution
   poll                   Make a single poll request for work
+  preload-claude         Pre-boot a Claude Code spare for a later task-run to claim
   print-sandbox-settings Print the default sandbox runtime settings
   setup                  Install dependencies for orchestrator mode
   task-run               Handles execution of a provided session
@@ -17,9 +18,11 @@ Flags:
   -v, --version   version for environment-runner
 
 Use "environment-runner [command] --help" for more information about a command.
----
-environment-runner version release-9f4ec76fbc-ext
----
+
+=== --version ===
+environment-runner version release-1186d93b9-ext
+
+=== setup --help ===
 The setup command pre-installs all required dependencies for orchestrator mode.
 
 This command is intended to be run during container image build to ensure that
@@ -78,7 +81,8 @@ Flags:
       --service-key-file string          Path to environment service key file for API healthcheck. Falls back to ENVIRONMENT_SERVICE_KEY env var if not set. When provided, verifies connectivity by calling /v1/environments/whoami
       --skip-claude-code                 Skip Claude Code installation
       --skip-sandbox-runtime             Skip sandbox-runtime installation
----
+
+=== orchestrator --help ===
 The orchestrator command polls the API for session tasks and handing off work to be executed.
 
 It handles:
@@ -150,7 +154,8 @@ Flags:
       --skip-git-config                 Skip git configuration setup (use container's existing .gitconfig)
       --timeout-hook string             Command to run on loop timeout (e.g., monorepo updates)
       --timeout-hook-timeout duration   Timeout for timeout hook execution (e.g., monorepo updates) (default 5m0s)
----
+
+=== task-run --help ===
 Connects directly to the API to execute an existing session id.
 
 Provide a JSON object via stdin with the following structure:
@@ -196,7 +201,8 @@ Flags:
       --upgrade-claude-code                     Deprecated: use --claude-agent-version instead. When true (default), upgrades Claude Agent to latest version. (default true)
       --verbose-claude-logs                     Enable verbose logging of Claude Agent output to console (automatically enabled with --local-testing)
       --working-directory string                Default working directory for the session (used when session context doesn't specify cwd) (default "/root")
----
+
+=== poll --help ===
 The poll command makes a single non-blocking request to the API for work.
 
 This is a thin wrapper around the poll endpoint that returns work JSON on stdout
@@ -245,3 +251,47 @@ Flags:
       --reclaim-older-than-ms int   Reclaim unacknowledged work items older than this many milliseconds (0 = use API default of 5000ms)
       --service-key-file string     Path to file containing the environment service key. If not set, falls back to ENVIRONMENT_SERVICE_KEY environment variable
       --worker-id string            Unique worker identifier for this worker. Sent via Anthropic-Worker-ID header. If not set, defaults to system hostname
+
+=== preload-claude --help ===
+Pre-boot a Claude Code spare for a later task-run to claim
+
+Usage:
+  environment-runner preload-claude [flags]
+
+Flags:
+      --claude-path string   Path to claude binary (default: resolved via GetClaudePath)
+  -h, --help                 help for preload-claude
+
+=== print-sandbox-settings --help ===
+Outputs the default sandbox-runtime settings as JSON to stdout.
+
+This is useful for:
+- Viewing the default network and filesystem isolation settings
+- Creating a custom settings file based on the defaults
+- Debugging sandbox configuration issues
+
+The output can be redirected to a file and customized, then passed to
+the orchestrator via --sandbox-settings flag.
+
+Usage:
+  environment-runner print-sandbox-settings [flags]
+
+Examples:
+  # Print default settings to stdout
+  environment-runner print-sandbox-settings
+
+  # Save to file for customization
+  environment-runner print-sandbox-settings > my-sandbox-settings.json
+
+Flags:
+  -h, --help   help for print-sandbox-settings
+
+=== code-sign --help ===
+Error: unsupported code-sign operation: currently only SSH-style signing (-Y sign) is supported
+Usage:
+  environment-runner code-sign [flags]
+
+Flags:
+  -h, --help   help for code-sign
+
+Error: unsupported code-sign operation: currently only SSH-style signing (-Y sign) is supported
