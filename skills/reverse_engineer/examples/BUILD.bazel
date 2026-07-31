@@ -7,6 +7,7 @@ exports_files(
         "binary_diff_recipe.sh",
         "garble_hash_fix.patch",
         "garble_re_recipe.sh",
+        "gosymtab.go",
         "pclntool.go",
     ],
     visibility = [
@@ -20,6 +21,29 @@ go_binary(
     srcs = ["pclntool.go"],
     pure = "on",
     deps = ["@com_github_spf13_cobra//:cobra"],
+)
+
+go_binary(
+    name = "gosymtab",
+    srcs = ["gosymtab.go"],
+    pure = "on",
+)
+
+sh_test(
+    name = "test_gosymtab",
+    srcs = ["test_scaffold_gosymtab.sh"],
+    data = [
+        ":build_v2_garbled",
+        ":gosymtab",
+        "//third_party:go.mod",
+        "//third_party:go.sum",
+        "@io_bazel_rules_go//go",
+    ],
+    env = {
+        "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
+        "GOSYMTAB": "$(rlocationpath :gosymtab)",
+        "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
+    },
 )
 
 sh_test(

@@ -71,23 +71,51 @@ output.`,
 	}
 }
 
+// textBases returns the candidate text base addresses to try, most-likely last.
+//
+// debug/gosym ignores the pclntab header's textStart for the Go 1.18/1.20 table
+// formats and uses the caller's value instead ("may be unrelocated"). That
+// assumes .text begins at the first Go function, which does not hold when the
+// linker puts an entry stub or padding first — on environment-manager .text
+// starts 0x100 bytes before the first function, so passing the section address
+// shifts every symbol. Prefer the header's value when the two disagree.
+func textBases(pclntabData []byte, textAddr uint64) []uint64 {
+	bases := []uint64{textAddr}
+	if len(pclntabData) >= 32 {
+		if hdr := binary.LittleEndian.Uint64(pclntabData[24:32]); hdr != 0 && hdr != textAddr {
+			bases = append(bases, hdr)
+		}
+	}
+	return bases
+}
+
 // findWorkingMagic tries each known Go pclntab magic against pclntabData
 // (with .text base addr textAddr) and returns the first that parses, plus
 // the resulting symbol table.
+//
+// Use gosymtab.go instead when you need the recovered symbols to be correct
+// rather than merely present: it scores the candidate bases against the actual
+// instruction stream, whereas this picks the last candidate that parses.
 func findWorkingMagic(pclntabData []byte, textAddr uint64) (uint32, *gosym.Table, bool) {
 	if len(pclntabData) < 4 {
 		return 0, nil, false
 	}
+	bases := textBases(pclntabData, textAddr)
 	for _, magic := range goMagics {
 		buf := make([]byte, len(pclntabData))
 		copy(buf, pclntabData)
 		binary.LittleEndian.PutUint32(buf[:4], magic)
-		lt := gosym.NewLineTable(buf, textAddr)
-		table, err := gosym.NewTable(nil, lt)
-		if err != nil || len(table.Funcs) == 0 {
-			continue
+		var best *gosym.Table
+		for _, base := range bases {
+			table, err := gosym.NewTable(nil, gosym.NewLineTable(buf, base))
+			if err != nil || len(table.Funcs) == 0 {
+				continue
+			}
+			best = table
 		}
-		return magic, table, true
+		if best != nil {
+			return magic, best, true
+		}
 	}
 	return 0, nil, false
 }

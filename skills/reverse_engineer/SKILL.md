@@ -38,10 +38,16 @@ readelf --debug-dump=info "$BINARY" 2>/dev/null | grep -q DW_TAG && echo "DWARF"
 # Go garble? (returns "unknown" when garbled)
 go version -m "$BINARY" 2>&1 | grep -q unknown && echo "GARBLE-OBFUSCATED"
 
+# Go garble -literals? A binary whose own --help text is absent from `strings`
+# has encrypted literals; recover them from a core dump (see Defeating Obfuscation).
+"$BINARY" --help 2>/dev/null | head -1 | grep -qf - <(strings "$BINARY") \
+  || echo "GARBLE -literals (string constants encrypted)"
+
 # Go: enumerate functions from pclntab (non-garbled only — garble XORs the magic)
 # Install: go install github.com/goretk/redress@latest
 redress packages "$BINARY"      # packages (returns empty on garbled binaries)
-# For garbled binaries, use pclntool (see examples/pclntool.go)
+# For garbled binaries, rebuild the symbol table first (examples/gosymtab.go):
+#   gosymtab "$BINARY" "$BINARY.sym" && go tool nm "$BINARY.sym"
 
 # Application string count
 strings "$BINARY" | grep -cE '(error|fail|flag|usage|http|/v[0-9])'
@@ -196,11 +202,13 @@ When a tool fails, follow this pattern:
 
 **Known-defeated techniques** (tools in `examples/`):
 
-| Technique                                       | What breaks                                                                      | Fix                                                                                  | File                   |
-| ----------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------- |
-| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn | `examples/pclntool.go` |
-| garble strips ELF `.symtab`                     | `go tool objdump` fails with "no symbol section"                                 | Use GNU `objdump -d` instead; it does not require `.symtab`                          | (no file needed)       |
-| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section  | (no file needed)       |
+| Technique                                       | What breaks                                                                        | Fix                                                                                                          | File                   |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------- |
+| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab   | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                         | `examples/pclntool.go` |
+| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                               | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below) | `examples/gosymtab.go` |
+| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction  | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)     | `examples/gosymtab.go` |
+| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors | Dump process memory after package init and read the decrypted literals out of a core (see below)             | (recipe below)         |
+| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                  | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                          | (no file needed)       |
 
 When you encounter a new technique not in this table, defeat it and add a row.
 
@@ -225,6 +233,40 @@ magic and get garbage. This is a defeated technique: `pclntool`
 `gosym.NewTable` succeeds. See `examples/garble_re_recipe.sh` for the full
 workflow: pclntab deobfuscation → redress/GoReSym enumeration → string →
 byte offset → VMA → instruction PC → function name (see `examples/binary_diff_recipe.sh`).
+
+**Restore the whole toolchain with `gosymtab`.** Rather than working around the
+missing `.symtab`, rebuild it. `examples/gosymtab.go` reads the (magic-repaired)
+pclntab, enumerates every function, and writes a genuine ELF `.symtab`/`.strtab`
+into a copy of the binary:
+
+```bash
+gosymtab ./garbled ./garbled.sym
+go tool nm ./garbled.sym                          # all functions, garbled names
+go tool objdump -s '^main\.main$' ./garbled.sym   # CALLs resolve to names again
+```
+
+This is strictly better than falling back to GNU `objdump -d`: `go tool objdump`
+understands Go's calling convention and annotates call targets, and gdb, radare2
+and Ghidra all pick the symbols up automatically. On `environment-manager` it
+recovered 46,573 functions. `//skills/reverse_engineer/examples:test_gosymtab`
+verifies it end to end against a garbled fixture.
+
+**Watch the text base.** `debug/gosym` ignores the pclntab header's `textStart`
+for the Go 1.18/1.20 table formats and trusts the caller's value instead
+(the comment in Go's source says it "may be unrelocated"). Every tool built on
+it therefore passes the `.text` section address — which is wrong whenever the
+linker places an entry stub or padding before the first Go function. On
+`environment-manager`, `.text` starts at `0x4023a0` but the first Go function is
+at `0x4024a0`, so every recovered symbol was shifted by 0x100: names still
+appear, disassembly still renders, and everything is quietly off by one
+function. Detect it rather than trusting either value — a correct base lands
+function entries on real prologues (`CMPQ SP,0x10(R14)` or `PUSHQ BP; MOVQ SP,BP`),
+a wrong one lands them mid-instruction. `gosymtab` scores both candidates and
+picks the winner; the two separated 77.3% vs 37.0% here, which is not a close call.
+
+This is the failure mode the "heuristic red flags mean you mis-RE'd something"
+principle exists for: the tell was that the ELF entry point fell _inside_ a
+function rather than at its start.
 
 ### Go-Specific: Instruction-Level Analysis and String-to-Function Anchoring
 
@@ -272,34 +314,45 @@ strings "$BINARY" | grep -c "KNOWN_STRING"   # → 0 means likely encrypted
 objdump -d "$BINARY" | grep -E 'movb|xorb' | head -20
 ```
 
-**Recovery via strace:**
+**Recovery via core dump (verified — use this first).**
 
-The binary decrypts strings at runtime. In principle, strace can observe the
-results as arguments to write/sendto or in environment lookups. This has not
-been verified against an actual `-literals` binary — treat as a starting point:
+Don't fight the decryption; let the binary do it and then read its memory. Go
+initialises every imported package at startup, so by the time the process is
+about to exit, every package-level string constant has already been decrypted
+somewhere in the heap or BSS:
 
 ```bash
-strace -e trace=write -s 512 ./binary --help 2>&1
-strace -e trace=openat,read -s 256 ./binary --help 2>&1
+gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' \
+    -ex 'catch syscall exit_group' -ex 'run' -ex 'generate-core-file core' \
+    --args ./binary --help
+strings -n 4 core | sort -u > decrypted.txt
+comm -13 <(strings -n 4 ./binary | sort -u) decrypted.txt > encrypted-only.txt
 ```
 
-**Recovery via disassembly:**
+`encrypted-only.txt` is exactly the set `-literals` was hiding. On
+`environment-manager` this recovered 53,703 strings, including every cobra help
+string, all OpenTelemetry metric names and descriptions, and internal literals
+like `GetClaudePath` that are never printed — proof the technique recovers
+program constants and not merely echoed output.
 
-Each encrypted string has a generated `init` function that decrypts it in
-place using XOR/shift sequences. The general shape to look for (not verified
-against a real `-literals` binary — treat as illustrative):
+Choose the driving subcommand for coverage: `--help` is side-effect free and
+initialises all packages, so it gets every **package-level** literal. Literals
+local to a function body are only decrypted when that function runs, so a
+function you never execute keeps its secrets. Union several safe invocations
+when you need more coverage.
 
-```asm
-; Encrypted bytes loaded into a stack buffer, then XOR'd in place
-MOVB $0x43, 0x00(SP)
-MOVB $0x57, 0x01(SP)
-XORB $0x14, 0x00(SP)
-XORB $0x14, 0x01(SP)
-; the buffer now holds the decrypted string
-```
+Two practical notes: the core can be far larger than the binary (~1.8 GB for a
+59 MB input), so extract strings and delete it immediately; and garble's
+decrypted buffers often sit adjacent in memory, so a recovered "string" may run
+into its neighbour — treat exact matches as reliable and long concatenations as
+fragments to be split.
 
-Emulate the sequence manually or with a short Python script to recover the
-plaintext.
+**Recovery via disassembly** (fallback, when the binary cannot be run):
+
+Each encrypted string has generated code that decrypts it in place using
+XOR/shift sequences over a stack buffer — look for runs of `MOVB $imm, n(SP)`
+followed by `XORB`/`ADDB`/`ROLB` over the same slots, then emulate the sequence.
+Prefer the core-dump route: it is faster and yields the whole set at once.
 
 **Go-specific: garble preserves struct tags.** Even with `-literals`, garble
 cannot encrypt `json:"field_name"` struct tags because the `encoding/json`
