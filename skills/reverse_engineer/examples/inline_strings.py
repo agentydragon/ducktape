@@ -104,6 +104,8 @@ def main():
     proc = subprocess.Popen(
         ["objdump", "-d", "-j", ".text", binary], stdout=subprocess.PIPE, text=True, bufsize=1 << 20
     )
+    if proc.stdout is None:  # stdout=PIPE always gives one; this satisfies mypy
+        raise RuntimeError("objdump produced no stdout pipe")
     for line in proc.stdout:
         m = INSN.match(line)
         if not m:
