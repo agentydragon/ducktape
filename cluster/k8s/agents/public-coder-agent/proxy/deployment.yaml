@@ -1,11 +1,23 @@
-# Egress proxy for the coder agent. Mirrors agents/haku-zones-mitmproxy;
-# deviation: a single consuming namespace, and the allowlist is git hosting plus
-# package indexes only (its LLM path is in-cluster LiteLLM, which bypasses the
-# proxy entirely — see the app NetworkPolicy).
+# Egress proxy for the coder agent, and the holder of its GitHub credential.
+#
+# Deviation from agents/haku-zones-mitmproxy, which this used to mirror: it runs
+# iron-proxy rather than mitmproxy, because it now does two jobs. It is still the
+# TLS-intercepting forward proxy, and it additionally swaps a placeholder for the
+# real GitHub PAT on the way out, so the agent container holds no credential at
+# all. mitmproxy could do that too, through an addon we wrote and tested;
+# iron-proxy was chosen because the substitution is a maintained project's product
+# rather than forty lines of ours, and because it handles the base64 `Basic` shape
+# that git over HTTPS uses, which our addon did not.
 #
 # The proxy itself enforces nothing about destinations. The allowlist is
 # cnp-egress.yaml, applied to *this* pod's egress by Cilium, so a CONNECT to a
 # non-allowlisted host fails at the network layer rather than in proxy config.
+# iron-proxy carries its own host allowlist as well — defence in depth, and the
+# two lists are meant to stay in step.
+#
+# Evidence for every choice here, including a real agent opening a pull request
+# from behind this configuration:
+# plans/personal_agents/findings/egress_and_tls.md F15-F18.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,46 +37,32 @@ spec:
       labels:
         app.kubernetes.io/name: public-coder-agent-proxy
     spec:
-      initContainers:
-        - name: mitmproxy-ca-init
-          image: busybox:1.37
-          command:
-            - sh
-            - -c
-            - |
-              cat /mitmproxy-ca/tls.key /mitmproxy-ca/tls.crt > /mitmproxy-data/mitmproxy-ca.pem
-              cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
-          volumeMounts:
-            - name: mitmproxy-ca
-              mountPath: /mitmproxy-ca
-              readOnly: true
-            - name: mitmproxy-data
-              mountPath: /mitmproxy-data
       containers:
-        - name: mitmproxy
-          # >=12.2.3 for the CA SKI/AKI fix — see
-          # cluster/docs/lessons_learned/2026_06_25_mitmproxy_ca_ski_aki_mismatch.md.
-          image: mitmproxy/mitmproxy:12.2.3
-          command:
-            - mitmweb
-            - --listen-host
-            - "0.0.0.0"
-            - --listen-port
-            - "8080"
-            - --web-host
-            - "0.0.0.0"
-            - --web-port
-            - "8081"
-            - --set
-            - confdir=/mitmproxy-data
+        - name: iron-proxy
+          # Pinned, not :latest — this process holds the credential. 0.49.0 is the
+          # version every measurement in F15-F18 was taken against.
+          image: ironsh/iron-proxy:0.49.0
+          args: ["-config", "/etc/iron-proxy/iron.yaml"]
+          env:
+            # The real credential lives here and nowhere else. It reaches the
+            # agent's traffic only as a substitution performed by this process.
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-github-token
+                  key: GITHUB_TOKEN
           ports:
             - name: proxy
               containerPort: 8080
-            - name: web
-              containerPort: 8081
+            - name: metrics
+              containerPort: 9090
           volumeMounts:
-            - name: mitmproxy-data
-              mountPath: /mitmproxy-data
+            - name: config
+              mountPath: /etc/iron-proxy
+              readOnly: true
+            - name: ca
+              mountPath: /ca
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -73,8 +71,12 @@ spec:
               cpu: 500m
               memory: 512Mi
       volumes:
-        - name: mitmproxy-ca
+        - name: config
+          configMap:
+            name: public-coder-agent-proxy-config
+        # iron-proxy reads the CA certificate and key straight from these paths,
+        # so unlike mitmproxy it needs no initContainer to assemble a combined
+        # PEM. It rejects a CA without keyCertSign at startup, loudly.
+        - name: ca
           secret:
             secretName: public-coder-agent-proxy-ca
-        - name: mitmproxy-data
-          emptyDir: {}

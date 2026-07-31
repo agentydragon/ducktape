@@ -10,7 +10,7 @@ own GitHub account and pushes to its own forks.
 | Directory    | Contents                                                             |
 | ------------ | -------------------------------------------------------------------- |
 | `namespace/` | Namespace only                                                       |
-| `proxy/`     | Interception CA, trust bundle, mitmproxy, and the FQDN allowlist     |
+| `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist    |
 | `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies |
 
 ## Egress model

@@ -54,23 +54,23 @@ spec:
               value: /home/openclaw/.local
             - name: NPM_CONFIG_CACHE
               value: /home/openclaw/.cache/npm
-            # NOT `GITHUB_TOKEN`, and not `GH_TOKEN` either. OpenClaw strips both
-            # names from the environment it hands its exec tool, via a hardcoded
-            # denylist in `host-env-security`, so under either name the agent
-            # authenticates as nobody. Measured on this deployment: the container
-            # has GITHUB_TOKEN set, while `env | grep -c GITHUB_TOKEN` inside the
-            # agent's own tool returns 0 and api.github.com returns 401.
+            # A placeholder, not a credential. The real PAT lives in the egress
+            # proxy, which swaps this value into `Authorization` on the way out to
+            # GitHub — in `Bearer <value>` and inside base64 `Basic user:<value>`
+            # alike, so both the REST API and the git transport work. The agent
+            # cannot read the token from its environment or from /proc, which is
+            # what F7 previously left exposed.
             #
-            # The denylist is hygiene rather than a boundary — the value is still
-            # readable from the gateway's /proc/<pid>/environ under the same uid —
-            # so renaming makes an existing exposure legible without creating one.
-            # The real fix is to stop giving the agent the credential at all; see
-            # plans/personal_agents/lab_notes.md F7 and F10.
+            # The agent has to be told the contract, because the proxy only acts on
+            # requests carrying the placeholder: authenticate to GitHub with
+            # $GH_PAT as if it were a real token. A request without it is not a
+            # failure, just an unauthenticated request.
+            #
+            # Still not named `GITHUB_TOKEN`/`GH_TOKEN`: OpenClaw strips both from
+            # the exec tool's environment via a hardcoded denylist, so the agent
+            # would never see it. See plans/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
-              valueFrom:
-                secretKeyRef:
-                  name: public-coder-agent-github-token
-                  key: GITHUB_TOKEN
+              value: "proxy-github-placeholder"
             - name: OPENCLAW_LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -87,23 +87,36 @@ spec:
             - name: NO_PROXY
               value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
             # The proxy terminates TLS, so its root must be trusted. The bundle
-            # comes from the trust-manager Bundle in ../proxy/trust-bundle.yaml.
-            - name: SSL_CERT_FILE
-              value: /trust/ca-certificates.crt
-            - name: CURL_CA_BUNDLE
-              value: /trust/ca-certificates.crt
-            - name: REQUESTS_CA_BUNDLE
-              value: /trust/ca-certificates.crt
-            - name: GIT_SSL_CAINFO
-              value: /trust/ca-certificates.crt
+            # from ../proxy/trust-bundle.yaml is mounted over the system trust
+            # store below, which covers every OpenSSL and GnuTLS client at once —
+            # so the four per-tool variables that used to live here are gone.
+            #
+            # That is not tidying. `GIT_SSL_CAINFO` is one of the names OpenClaw
+            # strips from the exec tool's environment, and git links GnuTLS, which
+            # reads neither `SSL_CERT_FILE` (an OpenSSL variable) nor
+            # `CURL_CA_BUNDLE` (read by the curl binary, not by libcurl) — so git
+            # through this proxy could not verify at all. F17.
+            #
+            # Node is the exception: it carries its own roots and ignores the
+            # system store. Point it at the MOUNTED path — Node ignores a
+            # nonexistent file silently and then fails with
+            # SELF_SIGNED_CERT_IN_CHAIN, which reads like a trust problem rather
+            # than a typo. F18.
             - name: NODE_EXTRA_CA_CERTS
-              value: /trust/ca-certificates.crt
+              value: /etc/ssl/certs/ca-certificates.crt
           ports:
             - name: gateway
               containerPort: 18789
           volumeMounts:
             - { name: data, mountPath: /home/openclaw/.openclaw }
-            - { name: trust, mountPath: /trust, readOnly: true }
+            # Over the system trust store, not alongside it. The Bundle is built
+            # with useDefaultCAs, so it already contains the public roots plus the
+            # cluster root plus this proxy's interception root — replacing the
+            # distro file loses nothing.
+            - name: trust
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-certificates.crt
+              readOnly: true
             - { name: tmp, mountPath: /tmp }
           resources:
             requests:

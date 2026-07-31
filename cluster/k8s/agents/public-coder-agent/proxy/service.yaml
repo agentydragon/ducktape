@@ -10,6 +10,9 @@ spec:
     - name: proxy
       port: 8080
       targetPort: 8080
-    - name: web
-      port: 8081
-      targetPort: 8081
+    # iron-proxy's Prometheus metrics. mitmproxy's `mitmweb` UI on 8081 goes with
+    # it — it was never routed, and a browsable log of the agent's intercepted
+    # traffic is not a thing to leave reachable in-cluster.
+    - name: metrics
+      port: 9090
+      targetPort: 9090

@@ -1,6 +1,10 @@
 # The agentydragon-agent GitHub PAT. The agent has its own GitHub account; it
 # opens pull requests from its own forks, so this token needs no write access to
 # any repository owned by someone else.
+#
+# Consumed by the **egress proxy**, not by the agent. The agent container holds
+# only a placeholder, which the proxy swaps for this value on requests bound for
+# GitHub — see ../proxy/configmap.yaml.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

@@ -1,6 +1,9 @@
 # Dedicated interception root, separate from the cluster internal CA. Standard
-# mitmproxy trust pattern; see agents/mitmproxy/README.md for the rotation
+# TLS-interception trust pattern; see agents/mitmproxy/README.md for the rotation
 # constraint (publish both roots in the Bundle before switching signing keys).
+#
+# ECDSA P-256 is deliberate and fine: iron-proxy accepts an ECDSA root and mints
+# working leaves from it, verified against the pinned image.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

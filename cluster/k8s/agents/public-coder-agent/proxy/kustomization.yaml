@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - certificate.yaml
   - trust-bundle.yaml
+  - configmap.yaml
   - deployment.yaml
   - service.yaml
   - cnp-egress.yaml
