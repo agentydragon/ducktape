@@ -267,6 +267,25 @@ restart away from silently ignoring its CRD. `openclaw-0` shows no
 `last-good` was promoted. Worth reporting upstream: an init-container seed is the
 documented deployment shape, and the guard silently defeats it.
 
+### Verified in production
+
+Shipped as #3586. On the first pod that rolled with it:
+
+```text
+memorySearch present  : True   model: gemini-embedding-2
+stale probe vars      : gone
+top-level keys        : no `env`, no `meta` — the seed is what is running
+clobbered files       : 3 (unchanged; no new one written)
+auto-restored lines   : 0
+[memory] sync failed  : none since the restart (was recurring every few minutes)
+openclaw memory index : "Memory index updated (coder)."
+```
+
+So the config in git is now the config in effect, and the original symptom is
+gone. Note `last-good` reappears — the gateway re-promotes it once it accepts a
+config, which is fine: the initContainer clears it again on every start, so the
+seed always wins.
+
 **Standing lesson:** a declarative config that is copied into a directory the
 application also writes is not declarative — it is a suggestion. The failure is
 silent, survives restarts, and looks like a feature bug (missing memory index)
