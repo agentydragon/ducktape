@@ -167,3 +167,107 @@ what the self-heal already amounts to. Reduce restart frequency by finding the
 ConfigMap churn. Neither addresses the underlying behaviour, which is upstream:
 the recovery path could repair a truncated transcript instead of failing the
 session, and does not.
+
+## F19. OpenClaw discards the declaratively seeded config, and has been since a probe wrote to it
+
+Symptom: `public-coder-agent` reports a missing memory index. The embeddings
+wiring is not the problem — it is correct in git, the LiteLLM key carries the
+model, and the endpoint answers:
+
+```text
+POST litellm:4000/v1/embeddings  model=gemini-embedding-2  -> 200, 3072-dim vector
+```
+
+But the running gateway has `agents.defaults.memorySearch = null`, so memory
+falls back to a default provider it has no key for:
+
+```text
+[memory] sync failed (search-bootstrap): No API key found for provider "openai"
+```
+
+**The config never reaches the gateway.** The startup log says so outright:
+
+```text
+Config auto-restored from backup: /home/openclaw/.openclaw/openclaw.json (missing-meta-vs-last-good)
+```
+
+The initContainer copies the ConfigMap over `/state/openclaw.json`; the gateway
+compares it against its own `openclaw.json.last-good`, decides the incoming file
+has lost fields, restores the backup, and preserves the seed as
+`openclaw.json.clobbered.<timestamp>`. This is deliberate anti-clobber
+protection — `/app/docs/gateway/troubleshooting.md` documents the signature and
+advises "if you edit by hand, keep the full JSON5 config".
+
+Proof that the seed was correct and was thrown away:
+
+```text
+clobbered file: memorySearch = {enabled: true, model: gemini-embedding-2, …}, meta absent
+last-good:      memorySearch = null,  meta = {lastTouchedAt: 2026-07-30T00:39:41Z}
+keys in last-good missing from our seed: ['env', 'meta']
+```
+
+**Cause, and it was mine.** That `env` block is
+`{"vars": {"GH_PAT_PROBE": "s1", "GITHUB_TOKEN_PROBE": "s2", "GITHUB_PROBE": "s3"}}`
+— probe variables set through the gateway during the F7 credential-denylist
+investigation. Writing them made the gateway persist its own config, which added
+`env` and `meta`. From that moment every seeded file looked like a regression.
+Three `.clobbered.*` files at 21:04, 21:33 and 02:12 record every restart since.
+
+**This also closes F14's open question.** F14 recorded that
+`public-coder-agent-config` appeared to change without its source changing and
+could not explain it. The clobber timestamps match exactly: those restarts were
+seeding a config that was then discarded.
+
+### Reproduced, and the precondition is narrower than it looks
+
+In `agent-lab`, same image, same initContainer as production and as the operator:
+
+```text
+1. seed config v1, gateway starts                      -> clean
+2. openclaw config set env.vars.PROBE a1               -> adds `env` and `meta` on disk
+3. restart                                             -> "auto-restored … missing-meta-vs-last-good"
+                                                          seed discarded, .clobbered.* written
+```
+
+Deterministic across two runs. What is **not** sufficient: simply having a
+`last-good` that contains `meta` while the seed does not — hand-constructing that
+state did not trip the guard, and a restart with a _larger_ seed (v1 → v2 adding
+`memorySearch`) passed cleanly. So the predicate involves more than the missing
+key, and is not characterised here. The reliable trigger is a gateway-side write
+followed by a restart.
+
+### The fix, verified
+
+Delete the baseline the guard compares against, so the seeded config is
+authoritative on every start:
+
+```sh
+cp /cfg/openclaw.json /state/openclaw.json
+rm -f /state/openclaw.json.last-good /state/openclaw.json.bak*
+```
+
+Same sequence as the reproduction, with the fix applied:
+
+```text
+openclaw config set env.vars.PROBE_B b1 ; restart
+  -> PROBE_B absent            (last-good was NOT restored; the seed won)
+  -> no new .clobbered.* file
+  -> zero "auto-restored" lines
+```
+
+Git is the source of truth for this file, so the anti-clobber backup is only
+protecting it from its owner. The `rm` also clears the stale probe variables,
+which would otherwise keep returning.
+
+**The upstream operator has the identical exposure.** Its init container runs
+`cp /config/openclaw.json /data/openclaw.json` with no such guard-clearing, so
+any `config set`, UI edit, or plugin write puts an operator-managed instance one
+restart away from silently ignoring its CRD. `openclaw-0` shows no
+`auto-restored` lines today only because nothing has written its config since its
+`last-good` was promoted. Worth reporting upstream: an init-container seed is the
+documented deployment shape, and the guard silently defeats it.
+
+**Standing lesson:** a declarative config that is copied into a directory the
+application also writes is not declarative — it is a suggestion. The failure is
+silent, survives restarts, and looks like a feature bug (missing memory index)
+rather than a config-delivery bug.
