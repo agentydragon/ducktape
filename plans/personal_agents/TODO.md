@@ -61,6 +61,9 @@ a future personal-data agent.
 
 Cost it before assuming W2 is blocked on OpenClaw's maturity: the answer we have
 is "the OpenShell plugin is under-tested", not "OpenClaw cannot split execution".
+And note `public-coder-agent` runs `sandbox.mode: "off"` — it has no execution
+split at all, so W2 here is unattempted rather than tried-and-failed. The mirror
+is what the main `openclaw` gateway runs, not this agent.
 Three unknowns to settle first — how much of the provider contract assumes a VM,
 whether a pod can satisfy the setup/lease lifecycle, and where sandboxing (H3)
 comes from once OpenShell is out of the path.
