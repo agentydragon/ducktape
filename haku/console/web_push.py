@@ -20,6 +20,22 @@ signs each push with the keypair the browser bound to the subscription) and RFC 
 encryption to the subscription's own keys, so the push service relays ciphertext it cannot
 read). This module keeps their *transport* on the console's async httpx rather than pywebpush's
 `requests`, so a slow or wedged push endpoint cannot occupy a thread of the API service.
+
+**The payload below is a compatibility boundary, not an internal type.** The console deploys
+atomically; the code that *reads* these messages does not. A service worker updates only when the
+browser decides to check — on a navigation to the console, or after handling a push once the
+registration has gone stale (>24h since its last check) — so an installed worker can be a day or
+more behind this file, and the push that triggers an update is still handled by the old code.
+
+Consequences for editing `PushShow`/`PushRetract`:
+
+- **Adding a field is safe**; an old worker ignores what it does not read.
+- **Renaming or removing one is not.** The old worker reads `undefined` and renders a broken
+  notification — an empty title, a missing deep link — with no error anywhere the operator sees.
+- A change that genuinely cannot be additive needs a `kind` variant, so old workers fall through
+  their existing branches rather than misreading a familiar one.
+
+Mirrored in `frontend/sw.ts`, which declares the reading half.
 """
 
 from __future__ import annotations
@@ -70,6 +86,9 @@ class PushShow(BaseModel):
     of "gmail · drafts_create" and the two surfaces cannot drift into different phrasings for the
     same call. The payload is encrypted to the subscription, so this exposes nothing the operator's
     own browser would not already show.
+
+    **This is a versioned wire contract — see the module docstring.** Add fields freely; renaming
+    or removing one breaks every browser still running an older service worker.
     """
 
     kind: Literal["show"] = "show"

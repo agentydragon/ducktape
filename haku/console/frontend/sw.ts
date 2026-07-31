@@ -8,7 +8,13 @@
 // are defined here in reviewed console code, and the authority behind them is the operator's own
 // Authentik session cookie, not anything carried in the message.
 //
-// Payload shapes mirror `PushShow`/`PushRetract` in ../web_push.py.
+// Payload shapes mirror `PushShow`/`PushRetract` in ../web_push.py, and that pairing is a
+// versioned wire contract rather than two views of one type. This file updates on the browser's
+// schedule — a navigation to the console, or a push handled once the registration has gone stale
+// (>24h since its last check) — while the backend deploys atomically, so a worker running this
+// code can be a day or more behind the server sending to it. Treat every field below as optional
+// in practice: read what an older payload might not carry defensively, and never assume the
+// server that sent a message is the version that shipped alongside this file.
 
 import { toolActionDescription } from "./tool_rendering/actions.ts";
 
@@ -183,8 +189,10 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(decided ? decide(message, event.action) : openToolCall(message.url));
 });
 
-// Take over from a previous worker immediately. A console that is showing approval notifications
-// from stale worker code is worse than a brief reload, and there is no in-flight state to lose.
+// Take over from a previous worker immediately, rather than waiting in `waiting` until every
+// controlled tab closes — which is how a fixed worker sits undeployed for days. Safe here because
+// this worker holds no state and intercepts no fetches: there is nothing for a mid-session
+// handover to lose, and a console showing notifications from stale code is the worse outcome.
 self.addEventListener("install", () => {
   void self.skipWaiting();
 });

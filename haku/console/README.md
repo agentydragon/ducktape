@@ -425,6 +425,12 @@ Two operational notes:
   configured (`HAKU_CONSOLE_WEB_PUSH__PRIVATE_KEY_PEM`, from `haku-console-web-push-vapid`); the
   public half is derived at startup, so the two cannot drift apart. Rotating it invalidates every
   stored subscription — each device must re-subscribe from Settings.
+- **The push payload is a versioned wire contract.** The console deploys atomically, but the
+  service worker that reads its messages updates only when the browser checks — on a navigation to
+  the console, or after a push once the registration is stale (>24h). An installed worker can
+  therefore be a day behind the server pushing to it, so `PushShow`/`PushRetract` fields may be
+  added but never renamed or removed; a non-additive change needs a new `kind` variant. Both sides
+  say so (`web_push.py`, `frontend/sw.ts`).
 - **Operator sessions are short** (`OPERATOR_SESSION_MAX_AGE_SECONDS`, one hour), so a notification
   acted on hours later routinely outlives the session that would authorize it. The service worker
   treats that 401 as expected and opens the console at the call's deep link
