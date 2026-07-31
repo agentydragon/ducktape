@@ -1,5 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load(":defs.bzl", "visual_test_matrix")
@@ -126,3 +127,21 @@ filegroup(
 )
 
 visual_test_matrix(pages = ["OAuthPage"])
+
+# Type-check the Svelte app, as props/frontend and x/agent_server/web already do. Without it the
+# esbuild bundle strips types without checking them, so nothing here was verified at all.
+svelte_check_bin.svelte_check_test(
+    name = "svelte_check_test",
+    args = [
+        "--tsconfig",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "svelte.config.js",
+        "tsconfig.json",
+        ":app",
+        ":node_modules",
+    ],
+    tags = ["lint"],
+)
