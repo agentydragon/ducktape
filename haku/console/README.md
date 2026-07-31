@@ -394,7 +394,10 @@ covers that gap: the operator turns notifications on per browser in Settings →
 the console pushes an OS notification carrying **Approve** / **Deny** whenever a call enters the
 queue (plus **Details** where the platform has room — browsers cap notification actions and
 silently drop the rest, and Chrome's cap is two; tapping the notification body opens the call
-regardless, so nothing is lost where Details cannot be shown). Server half: `web_push.py` (delivery) plus `push_routes.py` (`/api/push/*`, subscriptions).
+regardless, so nothing is lost where Details cannot be shown). A destructive call is marked in
+the title, mirroring the red the approvals card gives its action line — a notification has no
+color, and it is the one surface where such a call can be approved without its arguments being
+seen. Server half: `web_push.py` (delivery) plus `push_routes.py` (`/api/push/*`, subscriptions).
 Browser half: `frontend/sw.ts` (the service worker) plus `frontend/push_subscription.ts`.
 
 **No new authority.** A push is a prompt to decide, never the decision. The notification's buttons

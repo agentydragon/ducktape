@@ -67,7 +67,11 @@ type ServiceWorkerNotificationOptions = NotificationOptions & {
  * identity when a tool has no entry or its (not-yet-validated) arguments do not parse. */
 function notificationTitle(message: PushShow): string {
   const action = toolActionDescription(message.server_id, message.tool_name, message.arguments);
-  return action ? action.text : `${message.server_id}.${message.tool_name}`;
+  if (!action) return `${message.server_id}.${message.tool_name}`;
+  // The approvals card renders a destructive action's line in red (tool_action_line.tsx). An OS
+  // notification has no equivalent, so the same cue has to be carried in the text — and this is
+  // the one surface where such a call can be approved without its arguments ever being seen.
+  return action.destructive ? `⚠ ${action.text}` : action.text;
 }
 
 /** The buttons this platform will actually render.
