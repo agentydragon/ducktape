@@ -1,32 +1,38 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
 
+TSCONFIG = "//haku/console/frontend:tsconfig"
+
 # The `kubectl-passthrough-mcp` server's tool-call rendering widgets (request-only; see
 # ../BUILD.bazel for the tree's shape).
 
-js_library(
+ts_library(
     name = "schemas",
     srcs = ["schemas.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
 
-js_library(
+ts_library(
     name = "actions",
     srcs = ["actions.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":schemas",
         "//haku/console/frontend/tool_rendering:action_entry",
     ],
 )
 
-js_library(
+ts_library(
     name = "requests",
     srcs = ["requests.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":schemas",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:code_block",
@@ -43,18 +49,21 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
-js_library(
+ts_library(
     name = "requests_test",
     srcs = ["requests.test.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":requests",
+        "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering:entry",
     ],
 )
 
-js_library(
+ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering/screenshot:mount",
@@ -63,7 +72,7 @@ js_library(
 
 preview_screenshots(
     name = "previews",
-    entry = "preview_harness.tsx",
+    entry = "preview_harness.js",
     deps = [
         ":preview_harness",
         "//:node_modules",

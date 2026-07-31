@@ -1,20 +1,30 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
-load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//util:data_uri.bzl", "data_uri_module")
 
 package(default_visibility = ["//visibility:public"])
 
-# Shared by every ts_project in this package tree, including the subpackages.
+TSCONFIG = ":tsconfig"
+
+# Compiler options every ts_library in this package tree extends, subpackages included.
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
+)
+
+# The service worker runs in ServiceWorkerGlobalScope, so it is checked against the WebWorker lib
+# rather than the SPA's DOM lib. tsconfig.json excludes sw.ts so exactly one config owns it.
+ts_config(
+    name = "tsconfig_sw",
+    src = "tsconfig.sw.json",
+    deps = [":tsconfig"],
 )
 
 # TypeScript types generated from the backend's OpenAPI schema (reuses the API
@@ -47,18 +57,20 @@ js_json_schema(
     schema_out = "api/mcp_tool_results.schema.json",
 )
 
-js_library(
+ts_library(
     name = "mcp_tool_schema",
     srcs = ["mcp_tool_schema.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":mcp_tool_arguments",
         "//:node_modules/zod",
     ],
 )
 
-js_library(
+ts_library(
     name = "mcp_tool_result_schema",
     srcs = ["mcp_tool_result_schema.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":mcp_tool_results",
         ":mcp_tool_schema",
@@ -66,9 +78,10 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "client",
     srcs = ["client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
         ":schema",
@@ -76,20 +89,23 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "mcp_result",
     srcs = ["mcp_result.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
 
-js_library(
+ts_library(
     name = "mcp_client",
     srcs = ["mcp_client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":mcp_result",
@@ -98,148 +114,174 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "mcp_status_client",
     srcs = ["mcp_status_client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
         ":mcp_tool_result_schema",
     ],
 )
 
-js_library(
+ts_library(
     name = "calendar_client",
     srcs = ["calendar_client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
         ":mcp_tool_result_schema",
     ],
 )
 
-js_library(
+ts_library(
     name = "gmail_client",
     srcs = ["gmail_client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
         ":mcp_tool_result_schema",
     ],
 )
 
-js_library(
+ts_library(
     name = "grocy_client",
     srcs = ["grocy_client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
         "//:node_modules/zod",
     ],
 )
 
-js_library(
+ts_library(
     name = "tana_client",
     srcs = ["tana_client.ts"],
+    tsconfig = TSCONFIG,
     deps = [":mcp_client"],
 )
 
-js_library(
+ts_library(
     name = "approval_state",
     srcs = ["approval_state.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         "//:node_modules/@haku/console-bridge",
     ],
 )
 
-js_library(
+ts_library(
     name = "theme",
     srcs = ["theme.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/@mantine/core"],
 )
 
-js_library(
+ts_library(
     name = "toast",
     srcs = ["toast.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":theme",
         "//:node_modules/@mantine/notifications",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "bridge",
     srcs = ["bridge.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/@haku/console-bridge"],
 )
 
-js_library(
+ts_library(
     name = "console_events",
     srcs = ["console_events.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "push_subscription",
     srcs = ["push_subscription.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "sw_lib",
     srcs = ["sw.ts"],
+    tsconfig = ":tsconfig_sw",
     deps = ["//haku/console/frontend/tool_rendering:actions"],
 )
 
 # The service worker is bundled on its own, not as part of :bundle, because its URL must be
 # stable across deploys (a fingerprinted name would read as a different worker every build) and
 # it must be served from the docroot root so its default scope covers the whole origin. The
-# console image copies it to /sw.js; see //haku/console:service_worker_files.
+# bundle is written to a subdirectory only so it does not collide with :sw_lib's compiled
+# `sw.js`, which it bundles; the image flattens it back to /sw.js — see
+# //haku/console:service_worker_files.
 esbuild(
     name = "service_worker",
-    entry_point = "sw.ts",
+    entry_point = "sw.js",
     format = "esm",
     minify = True,
-    output = "sw.js",
+    output = "bundled/sw.js",
     platform = "browser",
     sourcemap = "linked",
     target = ["es2022"],
     deps = [":sw_lib"],
 )
 
-js_library(
+ts_library(
     name = "operator_session",
     srcs = ["operator_session.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_call_decision",
     srcs = ["tool_call_decision.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
         ":toast",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "open_external",
     srcs = ["open_external.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "routing",
     srcs = ["routing.ts"],
-    deps = ["//:node_modules/react"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
 )
 
 # Gmail's and Google Calendar's official multicolor icon SVGs (MODULE.bazel's `gmail_icon_svg` /
@@ -251,77 +293,100 @@ data_uri_module(
         "GMAIL_ICON_DATA_URI": "@gmail_icon_svg//file",
         "GOOGLE_CALENDAR_ICON_DATA_URI": "@google_calendar_icon_svg//file",
     },
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "icons",
-    srcs = ["icons.tsx"],
+    srcs = [
+        "icons.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths icons.tsx
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
     deps = [
         ":brand_icon_data",
         "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "geolocation_grant",
     srcs = ["geolocation_grant.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "geolocation",
     srcs = ["geolocation.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/@haku/console-bridge"],
 )
 
-js_library(
+ts_library(
     name = "screenshot_grant",
     srcs = ["screenshot_grant.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "screenshot_capture",
     srcs = ["screenshot_capture.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "confirm_dialog",
     srcs = ["confirm_dialog.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":bridge",
         ":theme",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "field",
     srcs = ["field.tsx"],
-    deps = ["//:node_modules/react"],
-)
-
-js_library(
-    name = "link",
-    srcs = ["link.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
-        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
+    name = "link",
+    srcs = ["link.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "shell_lang",
     srcs = ["shell_lang.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@codemirror/language",
         "//:node_modules/@codemirror/legacy-modes",
     ],
 )
 
-js_library(
+ts_library(
     name = "code_block",
     srcs = ["code_block.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":shell_lang",
         "//:node_modules/@codemirror/lang-json",
@@ -330,40 +395,47 @@ js_library(
         "//:node_modules/@codemirror/state",
         "//:node_modules/@codemirror/view",
         "//:node_modules/@lezer/highlight",
+        "//:node_modules/@types/react",
         "//:node_modules/@uiw/react-codemirror",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_arguments_field",
     srcs = ["tool_arguments_field.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":code_block",
         ":field",
         ":json_preview",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
-js_library(
+ts_library(
     name = "json_preview",
     srcs = ["json_preview.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":code_block",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_result_field",
     srcs = ["tool_result_field.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":code_block",
         ":field",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering:result_entry",
@@ -371,29 +443,34 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_call_meta",
     srcs = ["tool_call_meta.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":field",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_action_line",
     srcs = ["tool_action_line.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering:actions",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_call_card",
     srcs = ["tool_call_card.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":tool_action_line",
@@ -402,36 +479,42 @@ js_library(
         ":tool_result_field",
         ":variant_control",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
-js_library(
+ts_library(
     name = "pending_tool_call_actions",
     srcs = ["pending_tool_call_actions.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":theme",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "variant_control",
     srcs = ["variant_control.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":icons",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
-js_library(
+ts_library(
     name = "shell_chrome",
     srcs = ["shell_chrome.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
@@ -445,13 +528,15 @@ js_library(
         ":tool_call_card",
         ":variant_control",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_calls_page",
     srcs = ["tool_calls_page.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
@@ -462,13 +547,15 @@ js_library(
         ":tool_call_decision",
         ":variant_control",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "settings_panel",
     srcs = ["settings_panel.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
@@ -479,24 +566,28 @@ js_library(
         ":push_subscription",
         ":toast",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "agent_enrollment_panel",
     srcs = ["agent_enrollment_panel.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":toast",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":agent_enrollment_panel",
         ":approval_state",
@@ -519,13 +610,15 @@ js_library(
         ":tool_call_decision",
         ":tool_calls_page",
         "//:node_modules/@haku/console-bridge",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "app",
     srcs = ["app.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":haku_ui_embed",
@@ -533,41 +626,49 @@ js_library(
         ":oauth_result_page",
         ":routing",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "oauth_result_announcement",
     srcs = ["oauth_result_announcement.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":routing",
         ":toast",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "oauth_result_page",
     srcs = ["oauth_result_page.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":routing",
         ":theme",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "main_lib",
     srcs = ["main.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":app",
         ":theme",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
     ],
@@ -654,7 +755,7 @@ js_run_binary(
 # Everything the static frontend image serves as the SPA docroot.
 spa_bundle(
     name = "bundle",
-    entry_point = "main.tsx",
+    entry_point = "main.js",
     fingerprint = True,
     fingerprinted_assets = {
         ":styles_css": "__STYLES_CSS__",
@@ -673,7 +774,7 @@ spa_bundle(
 # can't fetch repos in web sessions — so it is a js_test, not a `bb run` binary. It is a
 # generator, not a pixel-diff gate: it passes as long as every scene renders.
 
-js_library(
+ts_library(
     name = "screenshot_harness_lib",
     srcs = [
         "screenshots/harness.tsx",
@@ -681,6 +782,7 @@ js_library(
         "screenshots/sample_data.ts",
     ],
     tags = ["no-lint"],
+    tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
@@ -694,6 +796,8 @@ js_library(
         ":tool_calls_page",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//haku/console/frontend/tool_rendering",
@@ -759,144 +863,261 @@ js_test(
     ],
 )
 
-# Full TypeScript type-check (the correctness gate esbuild bundling skips).
-tsc_bin.tsc_test(
-    name = "tsc_test",
-    args = [
-        "--noEmit",
-        "-p",
-        "tsconfig.json",
+# ── Unit tests ─────────────────────────────────────────────────────────────────
+#
+# One ts_library per spec, exactly as under tool_rendering/: each spec declares what it imports,
+# is type-checked against those deps' declarations as it compiles, and hands vitest the emitted
+# `.test.js`. There is no separate whole-project type-check target to keep the file list in step
+# with — a spec that is not wired here simply does not exist to Bazel.
+
+ts_library(
+    name = "approval_state_test",
+    srcs = ["approval_state.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":approval_state",
+        ":client",
+        "//:node_modules/vitest",
     ],
-    chdir = package_name(),
-    data = [
-        "approval_state.test.ts",
-        "bridge.test.ts",
-        "bridge_client.test.ts",
-        "code_block.test.ts",
-        "calendar_client.test.ts",
-        "geolocation.test.ts",
-        "gmail_client.test.ts",
-        "haku_ui_embed.test.ts",
-        "mcp_tool_schema.test.ts",
-        "mcp_tool_result_schema.test.ts",
-        "open_external.test.ts",
-        "operator_login.test.ts",
-        "routing.test.ts",
-        ":sw_lib",
-        "settings_panel.test.ts",
-        "shell_chrome.test.ts",
-        "tana_client.test.ts",
-        "screenshots/sample_data.test.ts",
-        "screenshot_capture.test.ts",
-        "tool_call_decision.test.ts",
-        # Ambient types for the @tabler/icons-react per-icon subpath imports (icons.tsx).
-        "tabler_icons.d.ts",
-        "tsconfig.json",
-        ":main_lib",
-        ":mcp_tool_arguments",
-        ":mcp_tool_result_schema",
-        ":mcp_tool_results",
-        ":mcp_tool_schema",
-        ":operator_login",
-        ":schema",
-        ":screenshot_harness_lib",
-        ":tana_client",
-        "//:node_modules",
-        "//:node_modules/@haku/console-bridge",
-        "//haku/console/frontend/tool_rendering/gmail:requests_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:requests_test",
-        "//haku/console/frontend/tool_rendering/grocy:requests_test",
-        "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
-        "//haku/console/frontend/tool_rendering:actions_test",
-        "//haku/console/frontend/tool_rendering/gmail:preview_harness",
-        "//haku/console/frontend/tool_rendering/google_calendar:preview_harness",
-        "//haku/console/frontend/tool_rendering/grocy:preview_harness",
-        "//haku/console/frontend/tool_rendering/haku_routine:preview_harness",
-        "//haku/console/frontend/tool_rendering/hostexec:preview_harness",
-        "//haku/console/frontend/tool_rendering/kubectl:preview_harness",
-        "//haku/console/frontend/tool_rendering/tana:preview_harness",
-        "//haku/console/frontend/tool_rendering:index_test",
-        "//haku/console/frontend/tool_rendering/hostexec:requests_test",
-        "//haku/console/frontend/tool_rendering/hostexec:responses_test",
-        "//haku/console/frontend/tool_rendering/kubectl:requests_test",
-        "//haku/console/frontend/tool_rendering/tana:requests_test",
-        "//haku/console/frontend/tool_rendering:variant_test",
-        "//haku/console/frontend/tool_rendering:result_entry_test",
-        "//haku/console/frontend/tool_rendering:call_entry_test",
-        "//haku/console/frontend/tool_rendering/gmail:calls_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:calls_test",
-        "//haku/console/frontend/tool_rendering/gmail:responses_test",
-        "//haku/console/frontend/tool_rendering/google_calendar:responses_test",
-        "//haku/console/frontend/tool_rendering/grocy:responses_test",
-    ],
-    tags = ["lint"],
 )
 
-# The service worker is checked separately, against the WebWorker lib rather than the SPA's DOM
-# lib (tsconfig.sw.json) — it runs in ServiceWorkerGlobalScope and uses worker-only types the DOM
-# lib does not declare. tsconfig.json excludes sw.ts so exactly one config owns it.
-tsc_bin.tsc_test(
-    name = "tsc_sw_test",
-    args = [
-        "--noEmit",
-        "-p",
-        "tsconfig.sw.json",
+ts_library(
+    name = "bridge_test_lib",
+    srcs = ["bridge.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":bridge",
+        "//:node_modules/vitest",
     ],
-    chdir = package_name(),
-    data = [
-        "tsconfig.json",
-        "tsconfig.sw.json",
-        ":sw_lib",
-        "//:node_modules",
-        "//haku/console/frontend/tool_rendering:actions",
+)
+
+ts_library(
+    name = "bridge_client_test",
+    srcs = ["bridge_client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@haku/console-bridge",
+        "//:node_modules/vitest",
     ],
-    tags = ["lint"],
+)
+
+ts_library(
+    name = "calendar_client_test",
+    srcs = ["calendar_client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":calendar_client",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "code_block_test",
+    srcs = ["code_block.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":code_block",
+        "//:node_modules/@codemirror/lang-json",
+        "//:node_modules/@codemirror/lang-yaml",
+        "//:node_modules/@codemirror/language",
+        "//:node_modules/@codemirror/state",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "geolocation_test",
+    srcs = ["geolocation.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":geolocation",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "gmail_client_test",
+    srcs = ["gmail_client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":gmail_client",
+        ":mcp_tool_result_schema",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "haku_ui_embed_test",
+    srcs = ["haku_ui_embed.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":geolocation_grant",
+        ":haku_ui_embed",
+        ":routing",
+        ":screenshot_grant",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "mcp_tool_result_schema_test",
+    srcs = ["mcp_tool_result_schema.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_tool_result_schema",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "mcp_tool_schema_test",
+    srcs = ["mcp_tool_schema.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_tool_schema",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "open_external_test",
+    srcs = ["open_external.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":open_external",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "operator_login_test",
+    srcs = ["operator_login.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":operator_login",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "routing_test",
+    srcs = ["routing.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":routing",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "screenshot_capture_test",
+    srcs = ["screenshot_capture.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":screenshot_capture",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "sample_data_test",
+    srcs = ["screenshots/sample_data.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":approval_state",
+        ":screenshot_harness_lib",
+        "//:node_modules/vitest",
+        "//haku/console/frontend/tool_rendering",
+    ],
+)
+
+ts_library(
+    name = "settings_panel_test",
+    srcs = ["settings_panel.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":settings_panel",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "shell_chrome_test",
+    srcs = ["shell_chrome.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":shell_chrome",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "tana_client_test",
+    srcs = ["tana_client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":tana_client",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "tool_call_decision_test",
+    srcs = ["tool_call_decision.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":tool_call_decision",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+# vitest loads this config itself, so it must stay a `.ts` file in the runfiles rather than be
+# compiled to one. `no_emit` type-checks it anyway, through the generated
+# :vitest_config_typecheck_test.
+ts_project(
+    name = "vitest_config",
+    srcs = ["vitest.config.ts"],
+    extends = ":tsconfig",
+    no_emit = True,
+    resolve_json_module = True,
+    tsconfig = {
+        "exclude": [],
+        "include": [],
+    },
+    deps = ["//:node_modules/vitest"],
 )
 
 vitest_bin.vitest_test(
-    name = "bridge_test",
+    name = "vitest_test",
     args = ["run"],
     chdir = package_name(),
     data = [
-        "approval_state.test.ts",
-        "bridge.test.ts",
-        "bridge_client.test.ts",
-        "calendar_client.test.ts",
-        "code_block.test.ts",
-        "geolocation.test.ts",
-        "gmail_client.test.ts",
-        "haku_ui_embed.test.ts",
-        "mcp_tool_result_schema.test.ts",
-        "mcp_tool_schema.test.ts",
-        "open_external.test.ts",
-        "operator_login.test.ts",
-        "routing.test.ts",
-        "screenshot_capture.test.ts",
-        "screenshots/sample_data.test.ts",
-        "settings_panel.test.ts",
-        "shell_chrome.test.ts",
-        "tana_client.test.ts",
-        "tool_call_decision.test.ts",
         "vitest.config.ts",
-        ":approval_state",
-        ":bridge",
-        ":calendar_client",
-        ":code_block",
-        ":geolocation",
-        ":gmail_client",
-        ":haku_ui_embed",
-        ":mcp_tool_result_schema",
-        ":mcp_tool_schema",
-        ":open_external",
-        ":operator_login",
-        ":routing",
-        ":screenshot_capture",
-        ":screenshot_harness_lib",
-        ":settings_panel",
-        ":shell_chrome",
-        ":sw_lib",
-        ":tana_client",
-        ":tool_call_decision",
+        ":approval_state_test",
+        ":bridge_client_test",
+        ":bridge_test_lib",
+        ":calendar_client_test",
+        ":code_block_test",
+        ":geolocation_test",
+        ":gmail_client_test",
+        ":haku_ui_embed_test",
+        ":mcp_tool_result_schema_test",
+        ":mcp_tool_schema_test",
+        ":open_external_test",
+        ":operator_login_test",
+        ":routing_test",
+        ":sample_data_test",
+        ":screenshot_capture_test",
+        ":settings_panel_test",
+        ":shell_chrome_test",
+        ":tana_client_test",
+        ":tool_call_decision_test",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
         "//haku/console/frontend/tool_rendering:actions_test",

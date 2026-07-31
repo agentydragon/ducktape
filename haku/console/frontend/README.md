@@ -8,6 +8,11 @@ components + **Tailwind v4** utilities — modeled on
 `finance/augur/frontend` (references root `//:node_modules/*`; no per-package
 `package.json`).
 
+Every module is its own `ts_library` (`//devinfra/js:ts_library.bzl`), one target per file. tsc
+type-checks each target as it compiles it, so `bbr build` is the type check — there is no separate
+whole-project checker whose file list could fall out of step with the library graph. esbuild
+bundles the emitted `.js`, and vitest runs the emitted `.test.js`.
+
 - `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin
   iframe remains mounted while the content area switches between Haku UI, Settings, and Past tool
   calls, preserving bridge and in-frame state.
@@ -53,6 +58,7 @@ components + **Tailwind v4** utilities — modeled on
   placeholders to hashed JS/CSS/logo URLs under `/_console/assets/`.
 
 ```bash
+bbr build //haku/console/frontend/...      # compile + type-check everything
 bbr build //haku/console/frontend:bundle   # production bundle (dist/)
-bbr test //haku/console/frontend/...        # tsc type-check + vitest
+bbr test //haku/console/frontend/...       # vitest, previews, screenshots
 ```

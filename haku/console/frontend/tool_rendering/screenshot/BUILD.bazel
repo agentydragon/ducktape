@@ -1,6 +1,9 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
+
+TSCONFIG = "//haku/console/frontend:tsconfig"
 
 # Shared preview-screenshot harness. `mcp_mock.ts` owns only the JSON-RPC transport simulation;
 # each server package owns its fixtures and tiny installer beside its widgets. `render` wraps the
@@ -10,15 +13,18 @@ js_library(
     srcs = ["render.mjs"],
 )
 
-js_library(
+ts_library(
     name = "mcp_mock",
     srcs = ["mcp_mock.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "card",
     srcs = ["card.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend:approval_state",
         "//haku/console/frontend:client",
@@ -27,12 +33,14 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "mount",
     srcs = ["mount.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":card",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react-dom",
         "//haku/console/frontend:theme",
         "//haku/console/frontend/tool_rendering:variant",

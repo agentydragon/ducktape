@@ -402,9 +402,9 @@ use_repo(playwright, playwright_browsers = "playwright")
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
 
-# TypeScript toolchain for ts_project. The bazel_dep above was declared without this, so
-# rules_ts was unusable — @npm_typescript never existed. Version follows the workspace's
-# pinned typescript so the checker and the editor agree.
+# TypeScript toolchain for ts_project (//devinfra/js:ts_library.bzl). The bazel_dep alone
+# yields nothing — @npm_typescript does not exist until this extension is used. Version follows
+# the workspace's pinned typescript so the checker and the editor agree.
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 
 # Exact, not `ts_version_from`: package.json pins the range `~5.8.3`, and rules_ts mirrors

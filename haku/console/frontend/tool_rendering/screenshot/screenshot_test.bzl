@@ -24,9 +24,10 @@ def preview_screenshots(name, entry, deps, visibility = None):
 
     Args:
       name: Target name (convention: `previews`).
-      entry: The per-server harness entry source (e.g. `preview_harness.tsx`) — imports the
-        shared `mountPreviewCards` and passes this server's `PREVIEW_FIXTURES`.
-      deps: `js_library` targets forming the entry's module graph — at minimum the entry's own
+      entry: The compiled per-server harness entry (e.g. `preview_harness.js`, what the
+        `ts_library` wrapping `preview_harness.tsx` emits) — imports the shared
+        `mountPreviewCards` and passes this server's `PREVIEW_FIXTURES`.
+      deps: Library targets forming the entry's module graph — at minimum the entry's own
         library (which Gazelle wires transitively to the shared harness + this server's widgets)
         and `//:node_modules`.
       visibility: Target visibility.

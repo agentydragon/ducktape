@@ -1,6 +1,8 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
+
+TSCONFIG = "//haku/console/frontend:tsconfig"
 
 # Shared leaves of the server-first tool-rendering tree plus the dispatch registry. Each
 # `<server>/` subpackage owns one server's widgets — `requests.tsx` exports the server id + a
@@ -11,11 +13,13 @@ package(default_visibility = ["//visibility:public"])
 
 # Compact/detailed rendering shared by every widget (the PreviewVariant type + helpers).
 # Leaf: no widget deps, so index.tsx and each widget import it without a cycle.
-js_library(
+ts_library(
     name = "variant",
     srcs = ["vocabulary.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
@@ -25,24 +29,27 @@ js_library(
 # every widget import it without a cycle.
 # Leaf: no imports at all, so both the React widget registry and the React-free action registry
 # can key off the same server ids.
-js_library(
+ts_library(
     name = "server_ids",
     srcs = ["server_ids.ts"],
+    tsconfig = TSCONFIG,
 )
 
 # Deliberately React-free — the service worker bundles it to describe push notifications. Depends
 # only on the generated schema catalog and the server ids.
-js_library(
+ts_library(
     name = "action_entry",
     srcs = ["action_entry.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
 
 # Composes the per-server action maps, mirroring how :tool_rendering composes the per-server
 # widget registries. React-free the whole way down — //haku/console/frontend:sw_lib bundles it.
-js_library(
+ts_library(
     name = "actions",
     srcs = ["actions.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":action_entry",
         ":server_ids",
@@ -56,10 +63,11 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "actions_test",
     testonly = True,
     srcs = ["actions.test.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":actions",
         ":server_ids",
@@ -67,11 +75,13 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "entry",
     srcs = ["entry.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":variant",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:mcp_result",
@@ -80,13 +90,16 @@ js_library(
 
 # The result-side counterpart of :entry (the tool's zod result schema + renderer) plus the
 # defineResultPreview/renderResultPreview helpers and the CallToolResult unwrap. Leaf too.
-js_library(
+ts_library(
     name = "result_entry",
     srcs = ["result_entry.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":variant",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//haku/console/frontend:mcp_result",
     ],
 )
 
@@ -95,27 +108,31 @@ js_library(
 # Depends on :entry (the ToolAction type) and :result_entry (the CallToolResult unwrap shared
 # with the result-only path), so a pending call, an error result, and a schema mismatch all
 # resolve the same way a result-only widget's does.
-js_library(
+ts_library(
     name = "call_entry",
     srcs = ["call_entry.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":entry",
         ":result_entry",
         ":variant",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
     ],
 )
 
-js_library(
+ts_library(
     name = "tool_rendering",
     srcs = ["index.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":call_entry",
         ":entry",
         ":result_entry",
         ":server_ids",
         ":variant",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend/tool_rendering/gmail:calls",
@@ -154,30 +171,45 @@ filegroup(
 # js_library so the dep graph stays per-file; the frontend's aggregate tsc_test + bridge_test
 # consume them (a js_test can't take a source file from another package directly, only via a
 # library).
-js_library(
+ts_library(
     name = "index_test",
     srcs = ["index.test.ts"],
-    deps = [":tool_rendering"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":tool_rendering",
+        "//:node_modules/vitest",
+    ],
 )
 
-js_library(
+ts_library(
     name = "result_entry_test",
     srcs = ["result_entry.test.ts"],
-    deps = [":result_entry"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":result_entry",
+        "//:node_modules/vitest",
+    ],
 )
 
-js_library(
+ts_library(
     name = "call_entry_test",
     srcs = ["call_entry.test.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":call_entry",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/vitest",
         "//:node_modules/zod",
     ],
 )
 
-js_library(
+ts_library(
     name = "variant_test",
     srcs = ["vocabulary.test.ts"],
-    deps = [":variant"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":variant",
+        "//:node_modules/vitest",
+    ],
 )
