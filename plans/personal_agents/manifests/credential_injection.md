@@ -1,0 +1,35 @@
+# Credential-injecting egress proxy
+
+**The agent holds no GitHub credential.**
+
+This is the working version of what OpenShell's provider model promises and
+cannot yet deliver (no `entrypoint` field on OpenShellSandbox). The agent's
+container has no token in its environment and none reachable via /proc; the
+proxy attaches one on the way out, only for GitHub hosts, and only for requests
+that pass the write policy below.
+
+Verified end to end (<../findings/credentials.md> F10): with zero credential in the agent,
+`curl https://api.github.com/user` returns agentydragon-agent, and the agent
+opened PR #3574 unaided in 26 tool calls.
+
+Replaces the allowlist-only addon in egress-allowlist-proxy.yaml; the rest of
+that file (Deployment, Service, CA handling) still applies. Two extra wiring
+steps, both of which are the point:
+
+```bash
+# give the token to the proxy...
+kubectl -n agent-lab set env deploy/lab-proxy \
+  GITHUB_TOKEN_INJECT=secretKeyRef:lab-github-token:GITHUB_TOKEN
+# ...and take it away from the agent
+kubectl -n agent-lab set env deploy/oc-plain GH_PAT-
+```
+
+Gotcha that cost a run: writes to the same fork arrive in two path shapes --
+the git transport (github.com/<owner>/<repo>.git/...) and the REST API
+(api.github.com/repos/<owner>/<repo>/...). The agent prefers the API, so a
+policy written only against the git shape blocks everything it actually does.
+
+The addon itself is `credential_injection_addon.py`. To run this variant, point
+the `lab-proxy-addon` generator in <kustomization.yaml> at that file instead of
+`allowlist.py` — they are alternatives populating the same mounted path, not
+layers.

@@ -19,12 +19,19 @@ One container behind one boundary — the "whole harness sandboxed" topology
   NetworkPolicy in the same file.
 - `egress-allowlist-proxy.yaml` — mitmproxy with a CONNECT-host allowlist addon.
   It resolves hostnames itself, so a client cannot smuggle an allowed name to an
-  arbitrary address.
+  arbitrary address. The addon is `allowlist.py`;
+  `credential_injection_addon.py` is the alternative that also attaches the
+  GitHub token (<credential_injection.md>). Swap which one the `lab-proxy-addon`
+  generator points at — they populate the same mounted path.
 - `openclaw.json` — the gateway config, planted into the state dir by an
   init container.
 
-`iron-proxy-lab.yaml` is an **alternative to the two files above**, not an
-addition: the off-the-shelf proxy in place of mitmproxy plus our addon. Adopt one
+Every config blob is a real file wired in by <kustomization.yaml> via
+`configMapGenerator` — `allowlist.py`, `iron.yaml`, `envoy.yaml` — rather than
+embedded in a YAML string, so they stay lintable and diffable.
+
+`iron-proxy-lab.yaml` (config: `iron.yaml`) is an **alternative to the two files
+above**, not an addition: the off-the-shelf proxy in place of mitmproxy plus our addon. Adopt one
 or the other. It is the configuration that actually ran in F16 — a real OpenClaw
 holding only a placeholder, which opened a pull request end to end — plus the
 system-trust-store fix from F17, and it carries the reasoning for each choice
