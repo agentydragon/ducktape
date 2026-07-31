@@ -91,15 +91,35 @@ const SCENES = [
     viewport: { width: 1200, height: 1500 },
     closeApprovals: true,
     clicks: ['[aria-label="Show auto-approved"]'],
+    // Toggling the checkbox fires an async refetch. Without this the scene would pass while
+    // showing exactly the plain `history` rows — its whole point unverified — so assert the
+    // provenance line only an auto-approved row renders.
+    expectVisible: "::-p-text(Auto-approved by unconditional_v1)",
     frame: true,
   },
-  { name: "sync-current", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Up to date"]'] },
-  { name: "sync-syncing", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Syncing"]'] },
-  { name: "sync-error", viewport: { width: 600, height: 420 }, clicks: ['[aria-label="Sync error"]'] },
+  {
+    name: "sync-current",
+    viewport: { width: 600, height: 420 },
+    clicks: ['[aria-label="Up to date"]'],
+    expectVisible: '[aria-label="Sync status"]',
+  },
+  {
+    name: "sync-syncing",
+    viewport: { width: 600, height: 420 },
+    clicks: ['[aria-label="Syncing"]'],
+    expectVisible: '[aria-label="Sync status"]',
+  },
+  {
+    name: "sync-error",
+    viewport: { width: 600, height: 420 },
+    clicks: ['[aria-label="Sync error"]'],
+    expectVisible: '[aria-label="Sync status"]',
+  },
   {
     name: "session-expiring",
     viewport: { width: 600, height: 420 },
     clicks: ['[aria-label="Session expiring soon"]'],
+    expectVisible: '[aria-label="Console session"]',
   },
   { name: "oauth-success", viewport: { width: 900, height: 700 } },
   { name: "oauth-error", viewport: { width: 900, height: 700 } },
@@ -216,10 +236,13 @@ try {
         await settle(300);
       }
       // A click that lands on the wrong element fails silently — `page.click` only throws when
-      // nothing matches at all. `expectVisible` is the scene's own proof that its clicks did what
-      // they were written to do.
+      // nothing matches at all — and so does one whose effect arrives asynchronously and never
+      // does. Either way the scene renders something plausible and the test passes. So a scene
+      // that clicks must also state what the clicks were for; `expectVisible` is its own proof.
       if (expectVisible) {
         await page.waitForSelector(expectVisible, { visible: true, timeout: 5_000 });
+      } else if (clicks ?? click) {
+        throw new Error(`scene ${name}: has clicks but no expectVisible — assert what they reveal`);
       }
       if (frame) {
         // haku_ui_embed.tsx's refreshToolApprovals() fires on mount and increments syncsInFlight
