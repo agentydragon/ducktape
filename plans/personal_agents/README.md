@@ -20,21 +20,24 @@ configurations that failed on the way, are in [lab_notes.md](lab_notes.md).
 
 ## Where things are
 
-| Document                                                   | What it holds                                                                                       |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [lab_notes.md](lab_notes.md)                               | **Start here.** The configurations tried and how each scored against S1–S5                          |
-| [findings/](findings/README.md)                            | The numbered findings F1–F20, grouped by subject, with the measurements behind them                 |
-| [requirements_status.md](requirements_status.md)           | Every stated requirement (C/P/W) against what is deployed, with evidence                            |
-| [success_criteria.md](success_criteria.md)                 | S1–S5: the observable pass conditions, and what a failure of each would force us to decide          |
-| [credential_proxy_options.md](credential_proxy_options.md) | Survey of credential-injecting proxies: three architectural camps, what was tested, where we landed |
-| [personal_data_agent.md](personal_data_agent.md)           | How we would build the personal-data agent today, and how its Google credentials would work         |
-| [TODO.md](TODO.md)                                         | Open work, each item carrying the evidence for why it matters                                       |
-| [requirements.md](requirements.md)                         | The original stated wants, cross-cutting and per-agent-function                                     |
-| [survey/](survey/README.md)                                | Requirement-to-implementation mapping with citations, from the phase that preceded the lab          |
-| [manifests/](manifests/)                                   | Lab manifests reproducing the tested shapes                                                         |
+| Document                                                   | What it holds                                                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [verdicts.md](verdicts.md)                                 | **Start here.** Everything evaluated and closed, with the reason it closed — read before re-proposing  |
+| [lab_notes.md](lab_notes.md)                               | The configurations tried and how each scored against S1–S5                                             |
+| [findings/](findings/README.md)                            | The numbered findings F1–F20, grouped by subject, with the measurements behind them                    |
+| [requirements_status.md](requirements_status.md)           | Every stated requirement (C/P/W) against what is deployed, with evidence                               |
+| [success_criteria.md](success_criteria.md)                 | S1–S5: the observable pass conditions, and what a failure of each would force us to decide             |
+| [credential_proxy_options.md](credential_proxy_options.md) | Survey of credential-injecting proxies: three architectural camps, what was tested, where we landed    |
+| [personal_data_agent.md](personal_data_agent.md)           | How we would build the personal-data agent today, and how its Google credentials would work            |
+| [TODO.md](TODO.md)                                         | Open work, each item carrying the evidence for why it matters                                          |
+| [requirements.md](requirements.md)                         | The original stated wants, cross-cutting and per-agent-function                                        |
+| [survey/](survey/README.md)                                | The sourced evidence behind the verdicts: upstream code, live CRD schemas, vendor docs, with citations |
+| [manifests/](manifests/)                                   | Lab manifests reproducing the tested shapes                                                            |
 
 Where the survey and the findings disagree, the findings win: one is what the
-documentation claimed, the other is what the cluster did.
+documentation claimed, the other is what the cluster did. That ordering is about
+resolving conflicts, not about which is worth keeping — most options were closed
+on sourced evidence and never needed a measurement.
 
 ## Reading it
 

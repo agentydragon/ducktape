@@ -1,7 +1,16 @@
 # Survey
 
 Requirement-to-implementation mapping with citations, from the survey phase that
-preceded the lab. What was _measured_ rather than surveyed is in
+preceded the lab.
+
+**This is backing detail, not superseded material.** Most of what was ruled out on
+this programme was ruled out here rather than in the lab — from upstream source,
+CRD schemas read live off the cluster, and vendor documentation — and those
+citations are why the conclusions are re-checkable instead of remembered. The
+distilled version is [../verdicts.md](../verdicts.md); come here for the evidence
+behind a row, or when a verdict's premise looks like it may have changed.
+
+What was _measured_ rather than surveyed is in
 [../findings/](../findings/README.md); where the two disagree, the findings win.
 
 | Section                                                                                       |           |

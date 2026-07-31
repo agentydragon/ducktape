@@ -43,6 +43,39 @@ the runtime dependency on Docker Hub being reachable and honest.
 This is the last unmet item from the iron-proxy adoption; everything else in that
 decision shipped.
 
+## Cost a Kubernetes `WorkerProvider` — the live candidate for W2
+
+The one hard-ish want still unmet is execution off the harness container, and the
+survey found a path to it that nothing else here records:
+[verdicts.md](verdicts.md) § "Still open". OpenClaw's **cloud workers** feature
+already does git-backed workspace sync, and does it properly — staged result refs,
+three-way merge against the dispatch-time manifest, conflict handling — where the
+OpenShell mirror does a whole-tree destructive replace on yield. `WorkerProvider`
+is a public plugin-SDK type; only the bundled `crabbox` implementation is
+cloud-VM-shaped, not the interface.
+
+It also inverts credential placement the right way: the box authors git history
+credential-free and the gateway owns push/PR, so no standing forge credential
+lives where the agent runs. That would improve `public-coder-agent` too, not just
+a future personal-data agent.
+
+Cost it before assuming W2 is blocked on OpenClaw's maturity: the answer we have
+is "the OpenShell plugin is under-tested", not "OpenClaw cannot split execution".
+Three unknowns to settle first — how much of the provider contract assumes a VM,
+whether a pod can satisfy the setup/lease lifecycle, and where sandboxing (H3)
+comes from once OpenShell is out of the path.
+
+## Decide the orphaned `kagent.dev` CRDs
+
+`agentharnesses.kagent.dev` and friends are still installed with no controller —
+the `kagent` namespace runs no pods and there is no HelmRelease. A CRD with no
+controller is inert YAML that reads like an available capability.
+
+Either remove them or write down why they are kept. `AgentHarness` is the one
+worth a deliberate decision rather than a sweep: it is the right shape for what we
+want (see [verdicts.md](verdicts.md) § Control planes), and keeping the CRD costs
+nothing if the reason is recorded. Right now it is neither kept nor cleaned.
+
 ## Use k3d, not production RBAC, for the next round of experiments
 
 **Standing preference, not a suggestion: experiment in `k3d` whenever it can
