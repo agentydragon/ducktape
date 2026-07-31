@@ -114,8 +114,8 @@ forwarder** (the exporter can't egress directly; see Facts):
   `claude-sandbox` and `haku-sandbox` (openclaw-sandbox deliberately excluded —
   nothing there runs the forwarder, and its Kustomization is suspended).
 - **Operator step — paste into each environment's UI env vars** (Haku env + default
-  web env; full logging to operator-only ingestion; OTel events truncate at 60 KB,
-  so the rsync path remains the lossless record):
+  web env; full logging to operator-only ingestion; inline OTel events truncate —
+  see _Raw API bodies_ below for the lossless option):
 
   ```text
   CLAUDE_CODE_ENABLE_TELEMETRY=1
@@ -146,6 +146,38 @@ forwarder** (the exporter can't egress directly; see Facts):
 - Possible later simplification (untested): if the hosted-egress block was only the
   environment domain allowlist, allowlisting `alloy-otlp.allegedly.works` +
   `otelHeadersHelper` would remove the forwarder. Test before assuming.
+
+## Raw API bodies — inline vs file mode (probed live 2026-07-31)
+
+`OTEL_LOG_RAW_API_BODIES` has two modes, and the choice changes what the sink is
+even for:
+
+- **`=1` (inline)** — bodies ride in the `api_request_body` /
+  `api_response_body` events, truncated at `CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH`
+  (default 61440, i.e. 60 KB; needs claude ≥ 2.1.214). Truncation is **head-first**,
+  so what survives is the system prompt and skills listing — the least informative
+  part — while the actual conversation turns fall past the cut. Observed live: a
+  `body_length` of 417471 against the 60 KB cap, i.e. ~15% retained, all of it
+  preamble. Raising the cap is close to pointless and is bounded anyway by Loki's
+  256 KB default `max_line_size` and the `per_stream_rate_limit: 5MB` in
+  <../../../cluster/k8s/loki/helmrelease.yaml>, against ~3.3k events in a single
+  observed session.
+- **`=file:<dir>` (file mode)** — **untruncated** bodies written to disk as JSON,
+  with a `body_ref` pointer in the event. This is the lossless path.
+
+**This supersedes the earlier assumption that the rsync/JSONL path is the only
+lossless record.** File mode is better for this purpose in two ways: the bodies are
+already parsed JSON (no JSONL reconstruction), and `body_ref` is a real join key from
+the Loki event back to the body — which the transcript-JSONL design never had. On
+operator machines file mode alone is sufficient and needs no sink at all; only the
+hosted habitats still need shipping, and there the sink's job becomes "ship a
+directory of JSON" rather than "parse transcripts".
+
+> ⚠️ Before enabling file mode anywhere shared: `OTEL_LOG_RAW_API_BODIES` already
+> implies consent to prompts, tool details, and tool content, and file mode removes
+> the truncation that was incidentally capping exposure. Full conversation history
+> lands in plaintext on disk. Fine for operator-only hosts; think about it for the
+> Haku container, which sits inside the egress perimeter.
 
 ## Remaining build order
 

@@ -72,8 +72,8 @@ processor reaches general availability.
 
 - **`environment_manager` was wrongly suspected.** It does propagate the web
   UI's `environment_variables` into the Claude process — see step 11 of
-  <../../../devinfra/claude/web*env/re/environment_manager/src/internal/claude/claude_code_executor.go>,
-  which appends `e.Config.EnvironmentVariables` to `cmd.Env` \_after* the
+  [`claude_code_executor.go`](../../../devinfra/claude/web_env/re/environment_manager/src/internal/claude/claude_code_executor.go),
+  which appends `e.Config.EnvironmentVariables` to `cmd.Env` **after** the
   step-10 `filterInitOnlyFromEnviron` pass.
 - **`kubectl port-forward` does not work through `kubeapi.allegedly.works`** —
   the L7 proxy can't do the SPDY/websocket upgrade (`error upgrading connection:
@@ -87,7 +87,26 @@ Both were found while diagnosing this and are **not fixed here**:
 
 - `mimir.rules.kubernetes` has been failing to sync for at least 48h:
   `per-user rules per rule group limit (limit: 20 actual: 26) exceeded` on
-  `monitoring-node-exporter`. Rules are not being evaluated.
-- `loki-gateway` was unreachable during the investigation
-  (`dial tcp 10.244.2.170:8080: i/o timeout`), so whether Claude Code's OTel
-  **logs** reach Loki is still unverified.
+  `monitoring-node-exporter`. **Rules are not being evaluated**, so recording rules
+  and alerts are silently inert — the more serious of the two.
+- **`loki-gateway` is unreachable via the API-server service-proxy path**, twice,
+  ~90 s timeouts (`dial tcp 10.244.2.170:8080: i/o timeout`). The pod is `1/1
+Running` with 0 restarts on `ovh-ns103711` — same OVH site as the control plane,
+  so not a cross-site/Nebula issue. `loki-backend-0` on that same node has **165
+  restarts**. Loki is reachable by other paths (a port-forward from an operator
+  machine works), so this is specific to the apiserver proxy route.
+
+## Status of the three signals
+
+All three Claude Code OTel legs are now accounted for:
+
+| Signal  | Backend | Status                                                      |
+| ------- | ------- | ----------------------------------------------------------- |
+| Traces  | Tempo   | ✅ working throughout (`service.name=claude-code`)          |
+| Metrics | Mimir   | ✅ fixed here — was the delta-temporality drop              |
+| Logs    | Loki    | ✅ verified 2026-07-31 — `api_request_body` events arriving |
+
+The logs leg was working all along; it only looked doubtful because the apiserver
+proxy path to Loki is broken (above). Raw-body truncation behaviour and the
+lossless file-mode alternative:
+[`transcript_collection.md`](../../../devinfra/claude/plans/transcript_collection.md) section *Raw API bodies*.

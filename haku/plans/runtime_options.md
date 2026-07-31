@@ -46,6 +46,40 @@ doesn't survive. Net: it collapses to "A's harness in front of LiteLLM →
 Anthropic" — self-hosted infra, same model lock-in — which is why it's a variant
 of A, not a peer of C.
 
+**Amendment (2026-07-31).** The above conflates two separable choices —
+self-hosting the loop, and routing the model leg through LiteLLM. Only the second
+kills the subscription:
+
+- **Agent SDK → LiteLLM → Anthropic.** As described: subscription benefit lost,
+  because LiteLLM terminates and re-emits the request, so what reaches Anthropic is
+  not a Claude Code request. It is also **blocked** — consumer OAuth tokens are
+  rejected outside Claude Code with `This credential is only authorized for use with
+Claude Code`, and Anthropic's [legal-and-compliance
+  doc](https://code.claude.com/docs/en/legal-and-compliance) scopes OAuth to
+  "ordinary use of Claude Code and other native Anthropic applications".
+- **Agent SDK → Anthropic directly.** Keeps flat subscription billing: the same doc
+  puts advertised Pro/Max limits on "ordinary, individual usage of Claude Code **and
+  the Agent SDK**". This buys BYOC — the loop inside the perimeter, in-cluster access
+  without Runtime A's public `kubeapi.allegedly.works` hop — while staying on the
+  subscription. It is the option this section didn't separate out.
+
+Two things to weigh before adopting it:
+
+- **It inverts a deliberate credential boundary.** Today the launch credential lives
+  in `haku-console`, a namespace Haku has no RBAC into — see <../console/README.md>
+  ("the confidentiality boundary that lets the console hold secrets Haku may not
+  read"). Running the loop in `haku-sandbox` puts the subscription OAuth token where
+  Haku has full CRUD. Blast radius is worse than a LiteLLM virtual key: misuse is
+  enforceable against the **personal Anthropic account**, without prior notice, and
+  there is no per-lane Terraform kill switch. Mitigations exist (loop in a third
+  namespace; Agent SDK with built-in tools disabled, reaching `haku-sandbox` only
+  through an MCP server) but they are design work, not defaults.
+- **The observability motivation is gone.** Wanting traces/metrics out of Haku was a
+  main driver for moving off Runtime A. That gap was a monitoring-stack bug, not a
+  runtime limitation — see
+  <../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
+  Runtime A emits all three signals once the env var is set on the web environment.
+
 ## Runtime B — Anthropic Managed Agents (self-hosted sandbox)
 
 Loop at Anthropic; tools execute in **your** worker in `haku-sandbox`; **vaults**
