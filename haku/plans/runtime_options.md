@@ -147,15 +147,17 @@ collapse them into one.
 **Beyond billing mode, there is a coverage nuance** (policy/ToS, not technical).
 Running Haku as a **Claude Code web routine (A) is fine — routines are a first-party
 feature of the product**, i.e. a supported use of the subscription; scheduling one is
-not "programmatic use" in the ToS sense. The constraint is on the A-variant: driving the
-subscription-authed `claude` CLI from a **self-hosted Agent-SDK loop**. The Agent SDK's own
-documentation says Anthropic "does not allow third party developers to offer claude.ai login
-or rate limits for their products, including agents built on the Claude Agent SDK", and
-directs callers to API-key auth; `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere in the SDK's
-documented auth surface. That note addresses _offering_ subscription login to others rather
-than single-operator personal use, so it is not decisively on point — but it is a good deal
-more pointed than a grey area, and the instruction that follows is unqualified. Settle it
-before building on the A-variant; see
+not "programmatic use" in the ToS sense. **The A-variant is also in scope**, on the
+[legal-and-compliance doc](https://code.claude.com/docs/en/legal-and-compliance)'s own words:
+"Advertised usage limits for Pro and Max plans assume ordinary, individual usage of Claude
+Code **and the Agent SDK**." The restriction there is aimed elsewhere — at "third-party
+developers" building products, who may not "offer Claude.ai login or … route requests through
+Free, Pro, or Max plan credentials **on behalf of their users**." A single operator running
+their own agent on their own subscription is the named-in-scope case, not the prohibited one.
+The Agent SDK overview's blunter "use the API key authentication methods instead" reads as
+guidance for that developer audience; note also that `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere
+in the SDK's documented auth surface, so the mechanics still need proving even where the
+policy allows it. Design caveats (chiefly the credential-boundary inversion) are in
 [agent_sdk_sandbox_runtime.md](agent_sdk_sandbox_runtime.md). Managed Agents (B) bill **API rates
 regardless**, so they never draw on the subscription in the first place. Net:
 A-as-routine is defensible; the caution is specifically about self-hosted

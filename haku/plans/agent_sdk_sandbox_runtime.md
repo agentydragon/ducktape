@@ -1,6 +1,7 @@
 # Agent SDK loop in a Haku sandbox, driven from haku-console
 
-Status: **design only — blocked on an auth decision (see below). No code written.**
+Status: **design only, no code written.** Policy permits subscription auth for individual use
+(see below); the open question is the mechanical one the spike answers.
 
 Companion to [runtime_options.md](runtime_options.md), which catalogues this as the
 "Runtime A variant — self-hosted Claude Code (Agent SDK)", and to
@@ -16,25 +17,37 @@ a phone. The motivation is the one Claude Code web can't serve: **full telemetry
 transcripts** for Haku runs, which today can only be extracted by asking the agent to upload
 them by hand.
 
-## Blocking question: which credential the loop uses
+## Which credential the loop uses
 
-The entire premise is "run Haku on the Anthropic subscription rather than paying API rates."
-The Agent SDK documentation does not support that reading:
+The premise is "run Haku on the Anthropic subscription rather than paying API rates."
+**Policy permits this for individual use**, per the
+[legal-and-compliance doc](https://code.claude.com/docs/en/legal-and-compliance):
 
-> Unless previously approved, Anthropic does not allow third party developers to offer
-> claude.ai login or rate limits for their products, including agents built on the Claude
-> Agent SDK. Use the API key authentication methods described in the Quickstart instead.
->
-> — <https://code.claude.com/docs/en/agent-sdk/overview>
+> Advertised usage limits for Pro and Max plans assume ordinary, individual usage of Claude
+> Code **and the Agent SDK**.
 
-`CLAUDE_CODE_OAUTH_TOKEN` appears nowhere in the SDK's documented auth surface;
-`ClaudeAgentOptions` has no auth fields at all, and credentials reach the CLI subprocess only
-through the inherited environment (or `options.env`).
+Its restriction is aimed at a different audience — "third-party developers" building products,
+who may not "offer Claude.ai login or … route requests through Free, Pro, or Max plan
+credentials **on behalf of their users**". A single operator running their own agent on their
+own subscription is the named-in-scope case. The Agent SDK overview's blunter "use the API key
+authentication methods described in the Quickstart instead" is guidance for that developer
+audience, not a prohibition on the individual case.
 
-The note is scoped to _third-party developers offering claude.ai login for their products_,
-which is not obviously personal single-operator use — but the instruction that follows is
-unqualified. **Resolve this before building.** Every step below is wasted if the answer is
-"API key only", because the cost argument was the reason to prefer this over Runtime C.
+What remains is **mechanical, not legal**: `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere in the
+SDK's documented auth surface. `ClaudeAgentOptions` has no auth fields; credentials reach the
+CLI subprocess only through the inherited environment or `options.env`. Whether a token from
+`claude setup-token` authenticates a **headless container** is unverified — subscription OAuth
+is built around an interactive laptop login. That is step 1 of the build order below, and it
+is the thing that can still invalidate the plan.
+
+The real design cost is elsewhere and is covered in
+[runtime_options.md](runtime_options.md): running the loop in `haku-sandbox` **inverts a
+deliberate credential boundary**, putting the subscription OAuth token in a namespace where
+Haku has full CRUD, when today the launch credential lives in `haku-console` where Haku has no
+RBAC. Misuse is enforceable against the personal Anthropic account without prior notice, and
+there is no per-lane kill switch the way a LiteLLM virtual key would give. Mitigations exist —
+loop in a third namespace; built-in tools disabled so it reaches `haku-sandbox` only through
+MCP (which is the tool-surface decision below) — but they are design work, not defaults.
 
 ## Decisions taken
 
@@ -122,7 +135,6 @@ inline bodies at 61440 bytes by default, which is why the proxy leg carries the 
 
 ## Build order
 
-0. **Resolve the auth question.** Nothing below is worth doing first.
 1. **Spike.** One pod, one Agent SDK turn, subscription-authed, egressing through the proxy —
    `kubectl apply`, one response, delete. No UI, no session model, no CR plumbing. It tests the
    two things nothing in this repo has exercised: whether `CLAUDE_CODE_OAUTH_TOKEN`
