@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The service worker runs in ServiceWorkerGlobalScope, not a document: no DOM, and worker-only
+    // types (PushEvent, NotificationEvent, notification actions) that the DOM lib does not declare.
+    // Type-checking it under the SPA's DOM config forced casts at every worker global; this is the
+    // same source checked against the globals it actually has.
+    "lib": ["ES2022", "WebWorker"]
+  },
+  "include": ["sw.ts"],
+  // `extends` would otherwise inherit the base config's exclusion of this very file.
+  "exclude": []
+}

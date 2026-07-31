@@ -1,5 +1,3 @@
-/// <reference lib="webworker" />
-
 // The console's service worker. Its only job is Web Push: render an OS notification for a tool
 // call waiting on the operator, and let them decide from it without opening the console.
 //
@@ -14,11 +12,25 @@
 
 import { toolActionDescription } from "./tool_rendering/actions.ts";
 
-// The project's tsconfig is DOM-typed (it is a React SPA), so redeclaring `self` as a
-// ServiceWorkerGlobalScope would collide with the DOM lib's own declaration. Alias instead: the
-// `webworker` lib reference above supplies the worker event types, and every worker-global call
-// below goes through `sw` so it resolves against the right global.
-const sw = self as unknown as ServiceWorkerGlobalScope;
+// Checked against the WebWorker lib (tsconfig.sw.json), so this narrows the worker global to
+// the service-worker scope rather than casting around a DOM-typed one.
+declare const self: ServiceWorkerGlobalScope;
+
+// TypeScript models no notification actions at all — neither lib.dom nor lib.webworker declares
+// `NotificationAction` or `NotificationOptions.actions`, though the service-worker
+// `showNotification` has taken them for years. Declare the slice this worker uses, scoped to the
+// sw type-check program (tsconfig.json excludes this file), so the call site stays a plain typed
+// object rather than a cast.
+interface NotificationAction {
+  action: string;
+  title: string;
+}
+
+declare global {
+  interface NotificationOptions {
+    actions?: NotificationAction[];
+  }
+}
 
 interface PushShow {
   kind: "show";
@@ -55,13 +67,6 @@ function parsePush(event: PushEvent): PushMessage | null {
   }
 }
 
-// Action buttons are only supported by the service-worker `showNotification`, and this project's
-// DOM-typed `NotificationOptions` therefore has no `actions` field. Widen it here rather than
-// switching the whole tsconfig to the webworker lib for one file.
-type ServiceWorkerNotificationOptions = NotificationOptions & {
-  actions?: { action: string; title: string }[];
-};
-
 /** The same one-line description the approvals card shows, from the same registry — so a
  * notification reads "Gmail: Draft email", not "gmail.drafts_create". Falls back to the bare
  * identity when a tool has no entry or its (not-yet-validated) arguments do not parse. */
@@ -81,7 +86,7 @@ function notificationTitle(message: PushShow): string {
  * notification is *for*, so Approve and Deny come first and Details is offered only where there
  * is room for it. Nothing is lost when it is dropped: tapping the notification body opens the
  * call, which is the same thing Details does. */
-function notificationActions(): { action: string; title: string }[] {
+function notificationActions(): NotificationAction[] {
   const decisions = [
     { action: APPROVE_ACTION, title: "Approve" },
     { action: DENY_ACTION, title: "Deny" },
@@ -94,7 +99,7 @@ function notificationActions(): { action: string; title: string }[] {
 }
 
 async function showPending(message: PushShow): Promise<void> {
-  await sw.registration.showNotification(notificationTitle(message), {
+  await self.registration.showNotification(notificationTitle(message), {
     body: message.rationale,
     // The call id as tag means a re-sent push replaces rather than stacks, and gives
     // `retract` a handle on exactly this notification.
@@ -103,7 +108,7 @@ async function showPending(message: PushShow): Promise<void> {
     requireInteraction: true,
     actions: notificationActions(),
     data: message,
-  } satisfies ServiceWorkerNotificationOptions as NotificationOptions);
+  });
 }
 
 async function showResolved(message: PushRetract): Promise<void> {
@@ -112,19 +117,19 @@ async function showResolved(message: PushRetract): Promise<void> {
   // — exhaust it and the browser substitutes its own "site updated in the background" notice,
   // which is worse than the stale notification this is clearing. Showing the outcome is also
   // the better answer for the operator: they learn the thing they were pinged about is settled.
-  await sw.registration.showNotification(message.outcome, {
+  await self.registration.showNotification(message.outcome, {
     tag: message.tool_call_id,
     silent: true,
     requireInteraction: false,
     data: message,
   });
   await new Promise((resolve) => setTimeout(resolve, RESOLVED_LINGER_MS));
-  for (const notification of await sw.registration.getNotifications({ tag: message.tool_call_id })) {
+  for (const notification of await self.registration.getNotifications({ tag: message.tool_call_id })) {
     notification.close();
   }
 }
 
-sw.addEventListener("push", (event) => {
+self.addEventListener("push", (event) => {
   const message = parsePush(event);
   if (!message) return;
   // waitUntil keeps this worker alive across the await chain; without it the browser may kill it
@@ -135,14 +140,14 @@ sw.addEventListener("push", (event) => {
 async function openToolCall(url: string): Promise<void> {
   // Prefer a console tab that already exists: focusing the operator's open session is both faster
   // and less disruptive than spawning a duplicate window.
-  const clients = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const existing = clients.find((client) => new URL(client.url).origin === sw.location.origin);
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const existing = clients.find((client) => new URL(client.url).origin === self.location.origin);
   if (existing) {
     await existing.focus();
     await existing.navigate(url).catch(() => undefined);
     return;
   }
-  await sw.clients.openWindow(url);
+  await self.clients.openWindow(url);
 }
 
 async function decide(message: PushShow, action: string): Promise<void> {
@@ -170,7 +175,7 @@ async function decide(message: PushShow, action: string): Promise<void> {
   await openToolCall(message.url);
 }
 
-sw.addEventListener("notificationclick", (event) => {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const message = event.notification.data as PushMessage | undefined;
   if (!message || message.kind !== "show") return;
@@ -180,10 +185,10 @@ sw.addEventListener("notificationclick", (event) => {
 
 // Take over from a previous worker immediately. A console that is showing approval notifications
 // from stale worker code is worse than a brief reload, and there is no in-flight state to lose.
-sw.addEventListener("install", () => {
-  void sw.skipWaiting();
+self.addEventListener("install", () => {
+  void self.skipWaiting();
 });
 
-sw.addEventListener("activate", (event) => {
-  event.waitUntil(sw.clients.claim());
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
 });

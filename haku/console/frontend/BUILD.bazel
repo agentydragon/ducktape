@@ -817,6 +817,27 @@ tsc_bin.tsc_test(
     tags = ["lint"],
 )
 
+# The service worker is checked separately, against the WebWorker lib rather than the SPA's DOM
+# lib (tsconfig.sw.json) — it runs in ServiceWorkerGlobalScope and uses worker-only types the DOM
+# lib does not declare. tsconfig.json excludes sw.ts so exactly one config owns it.
+tsc_bin.tsc_test(
+    name = "tsc_sw_test",
+    args = [
+        "--noEmit",
+        "-p",
+        "tsconfig.sw.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "tsconfig.json",
+        "tsconfig.sw.json",
+        ":sw_lib",
+        "//:node_modules",
+        "//haku/console/frontend/tool_rendering:actions",
+    ],
+    tags = ["lint"],
+)
+
 vitest_bin.vitest_test(
     name = "bridge_test",
     args = ["run"],
