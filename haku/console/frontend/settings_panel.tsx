@@ -111,23 +111,35 @@ function connectionSummary(server: McpServerConnection): string {
       ? `${backend} · Console-managed credential`
       : `${backend} · no operator-linked account`;
   }
+  // Both unions below are switched exhaustively with no `default`, so a new status is a missing
+  // return — a compile error — rather than falling through to the connected wording. That
+  // fall-through is not hypothetical: `degraded` already existed in both unions and landed on it,
+  // so a connection whose token refresh was failing was summarised as plainly connected while the
+  // badge beside it read "Unavailable".
   if (isMcpOperatorAuthStatus(connection)) {
-    if (connection.state.status === "unconnected") {
-      return `${backend} · Not linked for ${connection.username}`;
-    }
-    const until = shortDate(
+    const linkedUntil = shortDate(
       typeof connection.state.token_expires_at === "string" ? connection.state.token_expires_at : null
     );
-    return `${backend} · linked for ${connection.username}${until ? ` until ${until}` : ""}`;
-  }
-  if (connection.status === "unprovisioned") {
-    return `${backend} · ${connection.display_name} OAuth client is not provisioned`;
-  }
-  if (connection.status === "unconnected") {
-    return `${backend} · ${connection.display_name} is not connected`;
+    switch (connection.state.status) {
+      case "unconnected":
+        return `${backend} · Not linked for ${connection.username}`;
+      case "degraded":
+        return `${backend} · linked for ${connection.username} · refresh failing${linkedUntil ? ` · token until ${linkedUntil}` : ""}`;
+      case "connected":
+        return `${backend} · linked for ${connection.username}${linkedUntil ? ` until ${linkedUntil}` : ""}`;
+    }
   }
   const until = shortDate(typeof connection.token_expires_at === "string" ? connection.token_expires_at : null);
-  return `${backend} · ${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
+  switch (connection.status) {
+    case "unprovisioned":
+      return `${backend} · ${connection.display_name} OAuth client is not provisioned`;
+    case "unconnected":
+      return `${backend} · ${connection.display_name} is not connected`;
+    case "degraded":
+      return `${backend} · ${connection.display_name} refresh failing${until ? ` · token until ${until}` : ""}`;
+    case "connected":
+      return `${backend} · ${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
+  }
 }
 
 function McpServerCard({

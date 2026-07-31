@@ -211,11 +211,37 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
 // operator never has to wonder whether the approval list is current.
 export type SyncState = "current" | "syncing" | "error";
 
+// Exhaustive over LiveStatus with no fallback: the old if-chain ended in `return "current"`, so a
+// new live-channel state would have been reported as fully healthy — the one answer that must
+// never be a default here, since the whole point of this indicator is to say when the channel is
+// broken. The maps below are keyed for the same reason.
 export function syncState(liveStatus: LiveStatus, syncError: string | null, syncing: boolean): SyncState {
-  if (liveStatus === "offline" || syncError !== null) return "error";
-  if (liveStatus === "connecting" || syncing) return "syncing";
-  return "current";
+  if (syncError !== null) return "error";
+  switch (liveStatus) {
+    case "offline":
+      return "error";
+    case "connecting":
+      return "syncing";
+    case "live":
+      return syncing ? "syncing" : "current";
+  }
 }
+
+// Also the sync rail button's aria-labels, which the screenshot scenes select on.
+const SYNC_STATE_LABEL: Record<SyncState, string> = {
+  error: "Sync error",
+  syncing: "Syncing",
+  current: "Up to date",
+};
+
+const SYNC_BADGE_COLOR: Record<SyncState, string> = { error: "orange", syncing: "yellow", current: "teal" };
+
+// The rail leaves `syncing` uncolored so the inline Loader carries that state on its own.
+const SYNC_RAIL_COLOR: Record<SyncState, string | undefined> = {
+  error: "orange",
+  syncing: undefined,
+  current: "teal",
+};
 
 function SyncStatusPanel({
   liveStatus,
@@ -237,8 +263,10 @@ function SyncStatusPanel({
           <Text fw={600} size="sm">
             Sync status
           </Text>
-          <Badge color={state === "error" ? "orange" : state === "syncing" ? "yellow" : "teal"} variant="light">
-            {offline ? "Offline" : syncError !== null ? "Fetch error" : state === "syncing" ? "Syncing" : "Up to date"}
+          <Badge color={SYNC_BADGE_COLOR[state]} variant="light">
+            {/* Not SYNC_STATE_LABEL: this badge splits `error` into Offline vs Fetch error, a
+                distinction SyncState deliberately collapses. */}
+            {offline ? "Offline" : syncError !== null ? "Fetch error" : SYNC_STATE_LABEL[state]}
           </Badge>
         </Group>
         {offline && (
@@ -711,10 +739,8 @@ export function ShellChrome(props: ShellChromeProps) {
         <div className="haku-shell-rail-bottom">
           <RailButton
             open={openIndicator === "sync-status"}
-            label={
-              currentSyncState === "error" ? "Sync error" : currentSyncState === "syncing" ? "Syncing" : "Up to date"
-            }
-            color={currentSyncState === "error" ? "orange" : currentSyncState === "current" ? "teal" : undefined}
+            label={SYNC_STATE_LABEL[currentSyncState]}
+            color={SYNC_RAIL_COLOR[currentSyncState]}
             onClick={() => toggleIndicator("sync-status")}
           >
             {currentSyncState === "error" ? (
