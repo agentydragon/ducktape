@@ -8,6 +8,7 @@ exports_files(
         "garble_hash_fix.patch",
         "garble_re_recipe.sh",
         "gosymtab.go",
+        "gotypes.go",
         "pclntool.go",
     ],
     visibility = [
@@ -21,6 +22,25 @@ go_binary(
     srcs = ["pclntool.go"],
     pure = "on",
     deps = ["@com_github_spf13_cobra//:cobra"],
+)
+
+go_binary(
+    name = "gotypes",
+    srcs = ["gotypes.go"],
+    pure = "on",
+)
+
+sh_test(
+    name = "test_gotypes",
+    srcs = ["test_scaffold_gotypes.sh"],
+    data = [
+        ":build_v2_garbled",
+        ":gotypes",
+    ],
+    env = {
+        "GOTYPES": "$(rlocationpath :gotypes)",
+        "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
+    },
 )
 
 go_binary(

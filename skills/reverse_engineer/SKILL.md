@@ -202,13 +202,14 @@ When a tool fails, follow this pattern:
 
 **Known-defeated techniques** (tools in `examples/`):
 
-| Technique                                       | What breaks                                                                        | Fix                                                                                                          | File                   |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------- |
-| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab   | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                         | `examples/pclntool.go` |
-| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                               | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below) | `examples/gosymtab.go` |
-| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction  | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)     | `examples/gosymtab.go` |
-| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors | Dump process memory after package init and read the decrypted literals out of a core (see below)             | (recipe below)         |
-| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                  | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                          | (no file needed)       |
+| Technique                                       | What breaks                                                                         | Fix                                                                                                          | File                   |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------- |
+| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab    | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                         | `examples/pclntool.go` |
+| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                                | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below) | `examples/gosymtab.go` |
+| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction   | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)     | `examples/gosymtab.go` |
+| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors  | Dump process memory after package init and read the decrypted literals out of a core (see below)             | (recipe below)         |
+| garble randomizes struct and field names        | `strings`-scraped tags lose which struct they belong to, plus field order and types | `gotypes` walks `.typelink`/`abi.Type` to recover full struct definitions with offsets (see below)           | `examples/gotypes.go`  |
+| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                   | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                          | (no file needed)       |
 
 When you encounter a new technique not in this table, defeat it and add a row.
 
@@ -363,7 +364,45 @@ strings "$BINARY" | grep -oP 'json:"[^"]*"' | sort -u
 strings "$BINARY" | grep -oP '[a-z_]+,omitempty' | sort -u
 ```
 
-These reveal the complete wire format of every serialized struct.
+These reveal that a wire format exists, but not its shape — a flat list of tags
+loses which struct each belongs to, the field order, the Go types, and every
+untagged field. Recover the actual definitions instead with `gotypes`
+(`examples/gotypes.go`):
+
+```bash
+gotypes ./binary                     # every struct: fields, types, offsets, tags
+gotypes -filter Config ./binary      # narrow by type name
+```
+
+It walks `.typelink` into `abi.Type` and expands composite types recursively.
+The runtime needs this metadata for interface dispatch, type assertions and
+reflection, so the linker cannot drop it and garble cannot rewrite it away.
+Field _names_ are garbled, but the tags and the byte offsets are exact, which
+pins the wire format and the memory layout:
+
+```text
+type main.QsttgfCY661L struct {
+        FeLwnu4WC    string  `json:"host"`             // +0x0
+        FfE93J5NPav  int     `json:"port"`             // +0x10
+        Uk3WI1       string  `json:"token,omitempty"`  // +0x18
+}
+```
+
+Because the output is structural, it also **diffs across builds**: dumping two
+versions and comparing gives an exact protocol delta — fields added, removed, or
+moved — where a `strings` diff only shows tags appearing and disappearing with
+no idea which struct changed. On a real target this distinguished "four fields
+were removed" from what had actually happened: one nested struct was deleted
+whole.
+
+**Gotcha: the types base is not `.rodata`'s address.** `.typelink` holds offsets
+relative to `moduledata.types`, which sits _near_ the start of `.rodata` but not
+at it — on a real binary they differed by 0x20. Using the section address still
+produces plausible-looking output (a few valid types, then garbage), which is
+the dangerous failure mode. `gotypes` scores candidate bases by how many
+`.typelink` entries decode into a sane type and reports the winner; the wrong
+base yielded 164 structs, the right one 3,014. Override with `-types-base` if
+the detection ever picks wrong.
 
 ### Binary Diffing: Recovering Names from a Prior Version
 
