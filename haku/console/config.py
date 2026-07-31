@@ -152,6 +152,35 @@ class ProviderOAuthClientConfig(BaseModel):
     client_secret: SecretStr
 
 
+class WebPushConfig(BaseModel):
+    """VAPID identity for Web Push notifications of pending approvals (RFC 8292).
+
+    The keypair *is* this console's application identity to every browser push service: the SPA
+    hands the public half to the browser at subscribe time and the push service binds it to that
+    subscription, so it verifies the signature on each push against the key recorded then.
+    Rotating the key therefore invalidates every stored subscription and each device must
+    re-subscribe — `POST /api/push/subscriptions` overwrites by endpoint, so re-subscribing is
+    the only recovery.
+
+    Only the private key is configured; the public half is derived from it, because two
+    independently-set values that must agree is a class of outage worth designing out. `subject`
+    is the RFC 8292 `sub` contact a push service uses to reach the operator about abusive
+    traffic; it must be a `mailto:` or `https:` URL.
+
+    Unset → push is disabled: the subscribe endpoints return 503 and nothing is ever sent.
+    """
+
+    private_key_pem: SecretStr
+    subject: str
+
+    @field_validator("subject")
+    @classmethod
+    def _subject_must_be_contactable(cls, value: str) -> str:
+        if not value.startswith(("mailto:", "https://")):
+            raise ValueError("web_push.subject must be a mailto: or https:// contact URL")
+        return value
+
+
 class HostexecHostConfig(BaseModel):
     """One in-scope host for the `hostexec` in-process server.
 
@@ -252,6 +281,10 @@ class Settings(BaseSettings):
     # to a specific tool call in the SPA, returned in the MCP server's promise/read-tool results.
     # Unset → no link is included.
     ui_base_url: str | None = None
+
+    # VAPID identity for Web Push. Reads HAKU_CONSOLE_WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
+    # Unset → the console never sends push notifications and the subscribe endpoints return 503.
+    web_push: WebPushConfig | None = None
 
     # Outbound token endpoint budget for remote MCP operator OAuth. Refresh endpoints may
     # legitimately queue behind an authorization server's control-plane work; keep this larger

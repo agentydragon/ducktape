@@ -228,6 +228,7 @@ manifest:
     hf_xet: hf_xet
     homeassistant_api: homeassistant_api
     hpack: hpack
+    http_ece: http_ece
     httpcore: httpcore
     httpcore2: httpcore2
     httplib2: httplib2
@@ -460,6 +461,7 @@ manifest:
     pwdlib: pwdlib
     pwiz: peewee
     py: pytest
+    py_vapid: py_vapid
     pyarrow: pyarrow
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
@@ -501,6 +503,7 @@ manifest:
     pythonjsonlogger: python_json_logger
     pytimeparse: pytimeparse
     pytz: pytz
+    pywebpush: pywebpush
     qrcode: qrcode
     qtpy: QtPy
     reaktiv: reaktiv
@@ -662,4 +665,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 91fbd4f98acf69749c5fd907a7163d4b1eaf66143c6cd500943e46b0b83726b8
+integrity: 09af7d2eaca852d6af13b16cc58a10326660717b5aadcf910c47d56643eaee9b

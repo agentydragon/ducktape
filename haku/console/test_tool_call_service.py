@@ -43,6 +43,25 @@ from haku.console.tool_calls import (
 )
 
 
+class _RecordingApprovalNotifier:
+    """Records which tool-call edges asked for an out-of-band notification.
+
+    `pending`/`resolved` are separate lists because the whole contract is that they pair up: a
+    call notified once and retracted once, and never a retraction for a call that was never
+    shown (which would spend a browser's push budget on nothing).
+    """
+
+    def __init__(self) -> None:
+        self.pending: list[tuple[UUID, str]] = []
+        self.resolved: list[tuple[UUID, str, ToolCallStatus]] = []
+
+    async def tool_call_pending(self, *, operator_id: UUID, record: ToolCallRecord) -> None:
+        self.pending.append((operator_id, record.tool_call_id))
+
+    async def tool_call_resolved(self, *, operator_id: UUID, record: ToolCallRecord) -> None:
+        self.resolved.append((operator_id, record.tool_call_id, record.status))
+
+
 class _RecordingInvalidationPublisher:
     def __init__(self) -> None:
         self.publications: list[tuple[UUID, str]] = []
@@ -249,6 +268,11 @@ def executor() -> _RecordingExecutor:
 
 
 @pytest.fixture
+def notifier() -> _RecordingApprovalNotifier:
+    return _RecordingApprovalNotifier()
+
+
+@pytest.fixture
 def tokens(actors: dict[str, ToolCallActor]) -> _OperatorTokens:
     return _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
 
@@ -261,6 +285,7 @@ def _service(
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
+    notifier: _RecordingApprovalNotifier,
 ) -> ToolCallApplicationService:
     sessions = console_sessions(database_url)
     identity_store = operator_identity_store(database_url)
@@ -308,6 +333,7 @@ def _service(
             client_secret="test-secret",
             issuer="https://auth.test/application/o/haku-console/",
         ),
+        approval_notifier=notifier,
     )
 
 
@@ -319,6 +345,7 @@ def service(
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
+    notifier: _RecordingApprovalNotifier,
 ) -> ToolCallApplicationService:
     return _service(
         database_url=migrated_db_url,
@@ -327,6 +354,7 @@ def service(
         publisher=publisher,
         executor=executor,
         tokens=tokens,
+        notifier=notifier,
     )
 
 
@@ -508,6 +536,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
+    notifier: _RecordingApprovalNotifier,
 ) -> None:
     agent = actors["aa1"]
     operator = actors["oa"]
@@ -519,6 +548,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
         publisher=publisher,
         executor=executor,
         tokens=tokens,
+        notifier=notifier,
     )
 
     # A deny is a synchronous terminal transition (unlike approve, which now dispatches execution to a
@@ -587,6 +617,78 @@ async def test_withdraw_retracts_the_agents_own_pending_call(
     # Published to the owning operator, so their open approvals drawer drops the item live.
     assert publisher.publications == [(actor.operator_id, pending.tool_call_id)]
     assert service.pending_approvals(actor=actors["oa"]) == []
+
+
+async def test_queued_call_is_notified_once_and_retracted_by_whichever_exit_it_takes(
+    actors: dict[str, ToolCallActor], notifier: _RecordingApprovalNotifier, service: ToolCallApplicationService
+) -> None:
+    """Each of the three exits retracts the notification the queue entry raised.
+
+    A notification that outlives its call is the failure mode worth pinning: it keeps offering
+    Approve/Deny for a decision that has already been made somewhere else.
+    """
+    agent, operator = actors["aa1"], actors["oa"]
+
+    denied = await service.submit_and_wait(req=_request(owner="denied"), actor=agent)
+    approved = await service.submit_and_wait(req=_request(owner="approved"), actor=agent)
+    withdrawn = await service.submit_and_wait(req=_request(owner="withdrawn"), actor=agent)
+    assert notifier.pending == [(agent.operator_id, call.tool_call_id) for call in (denied, approved, withdrawn)]
+    assert notifier.resolved == []
+
+    await service.decide(
+        tool_call_id=denied.tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="no"),
+        actor=operator,
+    )
+    await service.decide(
+        tool_call_id=approved.tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+        actor=operator,
+    )
+    await service.withdraw(tool_call_id=withdrawn.tool_call_id, reason="superseded", actor=agent)
+
+    assert notifier.resolved == [
+        (agent.operator_id, denied.tool_call_id, ToolCallStatus.DENIED),
+        # Retracted at the decision, not at execution: the ask is settled the moment it is approved.
+        (agent.operator_id, approved.tool_call_id, ToolCallStatus.RUNNING),
+        (agent.operator_id, withdrawn.tool_call_id, ToolCallStatus.WITHDRAWN),
+    ]
+
+
+async def test_calls_that_never_queue_are_never_notified(
+    actors: dict[str, ToolCallActor],
+    notifier: _RecordingApprovalNotifier,
+    service: ToolCallApplicationService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An auto-approved call never consumes operator attention, so it must not spend a push.
+
+    Every push a browser shows draws down a budget it will eventually enforce, so a retraction
+    for a notification that was never raised is not merely redundant — it is corrosive.
+    """
+    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+
+    completed = await service.submit_and_wait(req=_request(owner="auto"), actor=actors["aa1"])
+
+    assert completed.status is ToolCallStatus.OK
+    assert notifier.pending == []
+    assert notifier.resolved == []
+
+
+async def test_a_failing_notifier_never_fails_the_transition(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Notification is best-effort in exactly the way invalidation is: the ledger row wins."""
+
+    async def explode(**_: object) -> None:
+        raise RuntimeError("push service unreachable")
+
+    monkeypatch.setattr(service._approval_notifier, "tool_call_pending", explode)
+
+    pending = await service.submit_and_wait(req=_request(owner="unreachable"), actor=actors["aa1"])
+
+    assert pending.status is ToolCallStatus.PENDING_APPROVAL
+    assert service.pending_approvals(actor=actors["oa"])[0].tool_call_id == pending.tool_call_id
 
 
 async def test_withdraw_rejects_calls_that_are_no_longer_pending(
@@ -744,6 +846,7 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
     monkeypatch: pytest.MonkeyPatch,
+    notifier: _RecordingApprovalNotifier,
 ) -> None:
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
@@ -755,6 +858,7 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
         publisher=publisher,
         executor=executor,
         tokens=tokens,
+        notifier=notifier,
     )
 
     completed = await service.submit_and_wait(req=_request(owner="raising-publisher"), actor=actor)
@@ -774,6 +878,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     publisher: _RecordingInvalidationPublisher,
     tokens: _OperatorTokens,
     monkeypatch: pytest.MonkeyPatch,
+    notifier: _RecordingApprovalNotifier,
 ) -> None:
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
@@ -785,6 +890,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
         publisher=publisher,
         executor=executor,
         tokens=tokens,
+        notifier=notifier,
     )
 
     with pytest.raises(asyncio.CancelledError):
@@ -804,6 +910,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
     tokens: _OperatorTokens,
+    notifier: _RecordingApprovalNotifier,
 ) -> None:
     executor = _BlockingExecutor()
     service = _service(
@@ -813,6 +920,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
         publisher=publisher,
         executor=executor,
         tokens=tokens,
+        notifier=notifier,
     )
     pending = await service.submit_and_wait(req=_request(owner="aa1"), actor=actors["aa1"])
     assert pending.status is ToolCallStatus.PENDING_APPROVAL

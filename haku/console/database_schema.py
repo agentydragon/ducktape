@@ -823,4 +823,35 @@ class OperatorAuthentikToken(Base):
     )
 
 
+class PushSubscription(Base):
+    """One browser Push API subscription an Operator has granted this console.
+
+    The ``endpoint`` a push service issues is both the address and the capability to push to that
+    browser, so it is the natural identity: re-subscribing the same device (permission re-grant,
+    key rotation, browser-initiated refresh) overwrites its row rather than accumulating dead
+    ones. ``p256dh`` and ``auth`` are that subscription's own RFC 8291 encryption inputs — the
+    console encrypts each payload to them, so the push service relays ciphertext it cannot read.
+
+    Subscriptions die silently and often (permission revoked, browser profile cleared, endpoint
+    expired). A push service reports that as 404/410, which prunes the row; ``last_failure_at``
+    records the transient failures that do not.
+    """
+
+    __tablename__ = "push_subscriptions"
+
+    endpoint: Mapped[str] = mapped_column(Text, primary_key=True)
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
+    )
+    p256dh: Mapped[str] = mapped_column(Text, nullable=False)
+    auth: Mapped[str] = mapped_column(Text, nullable=False)
+    # Free-text, operator-facing only: lets the Settings panel say *which* device a row is, so
+    # revoking the right one does not require reading endpoint URLs.
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_failure_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("idx_push_subscriptions_operator_id", "operator_id"),)
+
+
 metadata = Base.metadata

@@ -193,6 +193,7 @@ aiohttp==3.13.3 \
     #   litellm
     #   matrix-nio
     #   mautrix
+    #   pywebpush
     #   s3fs
 aiohttp-client-cache==0.14.3 \
     --hash=sha256:1154497739dcf9c7f6f6f1f27dc3985d8a7f5f8f31fb76710c06044ffac6f983 \
@@ -1291,12 +1292,15 @@ cryptography==46.0.5 \
     #   asyncvnc
     #   authlib
     #   google-auth
+    #   http-ece
     #   joserfc
     #   mitmproxy
     #   paramiko
     #   pdfminer-six
+    #   py-vapid
     #   pyjwt
     #   pyopenssl
+    #   pywebpush
     #   secretstorage
     #   service-identity
     #   types-paramiko
@@ -2150,6 +2154,9 @@ hpack==4.1.0 \
     --hash=sha256:157ac792668d995c657d93111f46b4535ed114f0c9c8d672271bbec7eae1b496 \
     --hash=sha256:ec5eca154f7056aa06f196a557655c5b009b382873ac8d1e66e79e87535f1dca
     # via h2
+http-ece==1.2.1 \
+    --hash=sha256:8c6ab23116bbf6affda894acfd5f2ca0fb8facbcbb72121c11c75c33e7ce8cff
+    # via pywebpush
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
@@ -4859,6 +4866,10 @@ py-key-value-aio[filetree, keyring, memory, valkey]==0.4.4 \
     # via
     #   ducktape (pyproject.toml)
     #   fastmcp-slim
+py-vapid==1.9.4 \
+    --hash=sha256:a004023560cbc54e34fc06380a0580f04ffcc788e84fb6d19e9339eeb6551a28 \
+    --hash=sha256:f165a5bf90dcf966b226114f01f178f137579a09784c7f0628fa2f0a299741b6
+    # via pywebpush
 pyarrow==23.0.1 \
     --hash=sha256:00be9576d970c31defb5c32eb72ef585bf600ef6d0a82d5eccaae96639cf9d07 \
     --hash=sha256:07deae7783782ac7250989a7b2ecde9b3c343a643f82e8a4df03d93b633006f0 \
@@ -5805,6 +5816,10 @@ pytz==2026.1.post1 \
     --hash=sha256:3378dde6a0c3d26719182142c56e60c7f9af7e968076f31aae569d72a0358ee1 \
     --hash=sha256:f2fd16142fda348286a75e1a524be810bb05d444e5a081f37f7affc635035f7a
     # via ducktape (pyproject.toml)
+pywebpush==2.3.0 \
+    --hash=sha256:3d97469fb14d4323c362319d438183737249a4115b50e146ce233e7f01e3cf98 \
+    --hash=sha256:d1e27db8de9e6757c1875f67292554bd54c41874c36f4b5c4ebb5442dce204f2
+    # via ducktape (pyproject.toml)
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
     --hash=sha256:0150219816b6a1fa26fb4699fb7daa9caf09eb1999f3b70fb6e786805e80375a \
@@ -6162,6 +6177,7 @@ requests==2.32.5 \
     #   posthog
     #   pygithub
     #   pytest-base-url
+    #   pywebpush
     #   requests-cache
     #   requests-oauthlib
     #   requests-toolbelt

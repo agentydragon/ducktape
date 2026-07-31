@@ -42,7 +42,9 @@ from haku.console import (
     operator_auth,
     operator_login_flow,
     provider_connection,
+    push_routes,
     tool_call_service,
+    web_push,
 )
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
@@ -177,6 +179,17 @@ def create_app(
     oauth_connection_result_store = oauth_connection_result.PostgresOAuthConnectionResultStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
+    # Web Push reaches the operator's browsers when none of them has the console open. Without a
+    # VAPID identity there is nothing to sign with, so the console simply never notifies.
+    push_subscription_store = web_push.PostgresPushSubscriptionStore(db_sessions)
+    web_push_identity = web_push.WebPushIdentity(settings.web_push) if settings.web_push else None
+    approval_notifier: web_push.WebPushApprovalNotifier | web_push.NullApprovalNotifier = (
+        web_push.WebPushApprovalNotifier(
+            identity=web_push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
+        )
+        if web_push_identity is not None
+        else web_push.NullApprovalNotifier()
+    )
     # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
     # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
     # Authentik token endpoint lazily (on refresh), so a non-Authentik operator OIDC that never
@@ -280,6 +293,7 @@ def create_app(
         gmail_client_provider=gmail_client_provider,
         provider_store=provider_connection_store,
         authentik_token_store=authentik_operator_token_store,
+        approval_notifier=approval_notifier,
     )
 
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
@@ -329,6 +343,7 @@ def create_app(
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
                 await console_event_hub.aclose()
+                await approval_notifier.aclose()
 
     # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even
     # though the operational MCP/OAuth handlers remain isolated under /mcp. FastMCP cannot infer an
@@ -353,6 +368,8 @@ def create_app(
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
     app.state.node_daemon_service = node_daemon_service
+    app.state.push_subscription_store = push_subscription_store
+    app.state.web_push_identity = web_push_identity
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -395,6 +412,7 @@ def create_app(
     app.include_router(oauth_connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(node_daemons.operator_router, dependencies=operator_only)
+    app.include_router(push_routes.router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session or CSRF token.
     app.include_router(node_daemons.machine_router)
