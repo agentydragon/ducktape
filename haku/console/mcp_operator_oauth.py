@@ -320,14 +320,27 @@ class PostgresMcpOperatorOAuthStore:
     ) -> McpOperatorAuthStatus:
         with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            # Each refusal below ends a browser account-link attempt, so log the reason: the operator
+            # only sees the JSON detail, and nothing else records why a reconnect failed. The `state`
+            # is the flow's primary key and a callback parameter, so it is never logged.
             if (row := session.get(McpOperatorOAuthFlow, state)) is None:
+                logger.warning("MCP operator OAuth callback: no flow for the presented state (unknown or already used)")
                 raise HTTPException(status_code=404, detail="OAuth flow not found or already used")
             if row.operator_id != operator_id:
+                logger.warning(
+                    "MCP operator OAuth callback for %r: flow belongs to operator %s, not the caller %s",
+                    row.server_id,
+                    row.operator_id,
+                    operator_id,
+                )
                 raise HTTPException(status_code=403, detail="OAuth flow belongs to a different operator")
             session.delete(row)
             flow = OperatorOAuthFlowState.from_row(row)
         now = datetime.datetime.now(datetime.UTC)
         if flow.expires_at < now:
+            logger.warning(
+                "MCP operator OAuth callback for %r: flow expired %s ago", flow.server_id, now - flow.expires_at
+            )
             raise HTTPException(status_code=410, detail="OAuth flow expired; start connection again")
         token = await _exchange_operator_oauth_code(flow, code, timeout_seconds=self._token_timeout_seconds)
         expires_at = token_expires_at(token, now)
@@ -339,6 +352,14 @@ class PostgresMcpOperatorOAuthStore:
                 McpOperatorOAuthAssociation, (flow.server_id, flow.operator_id), with_for_update=True
             )
             if existing is not None:
+                # Reached by reconnecting a server whose association still exists but is degraded —
+                # a stuck token looks disconnected in every way that matters to the operator.
+                logger.warning(
+                    "MCP operator OAuth callback for %r: association already exists (connected %s); "
+                    "it must be disconnected before it can be replaced",
+                    flow.server_id,
+                    existing.created_at,
+                )
                 raise HTTPException(
                     status_code=409, detail=f"MCP server {flow.server_id} is already connected; disconnect it first"
                 )

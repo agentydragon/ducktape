@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 import time
 from pathlib import Path
 
@@ -259,6 +260,29 @@ def test_signed_operator_session_has_an_absolute_reauthentication_deadline(make_
     with make_operator_client(operator_session_expires_at=int(time.time()) - 1) as client:
         assert client.get("/auth/me").status_code == 401
         assert client.get("/api/config").status_code == 401
+
+
+def test_session_rejections_are_logged_with_distinguishing_reasons(
+    make_client, make_operator_client, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A blown absolute deadline and a cookie the browser never sent are both a bare 401 to the
+    caller. The server log is the only place they can be told apart, which is what an operator
+    reporting a failed account reconnect needs."""
+    with caplog.at_level(logging.INFO, logger="haku.console.operator_auth"):
+        with make_client() as client:
+            assert client.get("/api/config").status_code == 401
+        anonymous = [record.getMessage() for record in caplog.records]
+
+        caplog.clear()
+        with make_operator_client(operator_session_expires_at=int(time.time()) - 90) as client:
+            assert client.get("/api/config").status_code == 401
+        expired = [record.getMessage() for record in caplog.records]
+
+    assert any("reason=no_session_cookie" in message for message in anonymous)
+    assert not any("reason=expired" in message for message in anonymous)
+    assert any("reason=expired" in message and "path=/api/config" in message for message in expired)
+    # The elapsed time since the deadline is what identifies the absolute-deadline case on sight.
+    assert any("expired_for=0:01:30" in message for message in expired)
 
 
 def test_logout_is_an_exact_origin_post_that_clears_the_session(make_operator_client) -> None:
