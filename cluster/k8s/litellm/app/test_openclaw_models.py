@@ -30,20 +30,8 @@ def _public_coder_agent_codex_models() -> list[dict]:
     return models
 
 
-def test_openclaw_models_match_litellm_codex_routes() -> None:
-    """Keep OpenClaw's static catalog aligned with the generated LiteLLM routes."""
-    openclaw = yaml.safe_load(
-        get_required_path("ducktape/cluster/k8s/agents/openclaw/gateway/openclawinstance.yaml").read_text()
-    )
-    provider = openclaw["spec"]["config"]["raw"]["models"]["providers"]["litellm-subscription"]
-    configured_ids = [model["id"] for model in provider["models"]]
-
-    assert configured_ids == OPENCLAW_CODEX_MODELS
-    assert provider["api"] == "anthropic-messages"
-    assert openclaw["spec"]["config"]["raw"]["agents"]["defaults"]["model"]["primary"] in {
-        f"litellm-subscription/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
-    }
-
+def test_litellm_generates_a_route_per_declared_codex_model() -> None:
+    """Every model the agents may name must exist as a generated LiteLLM route."""
     litellm_models = {entry["model_name"]: entry for entry in yaml.safe_load(generate())["model_list"]}
     for model_id in OPENCLAW_CODEX_MODELS:
         assert litellm_models[model_id] == {
@@ -58,22 +46,27 @@ def test_openclaw_models_match_litellm_codex_routes() -> None:
 
 
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
-    """The second agent's catalog is pinned to the same routes as the first."""
+    """The agent's catalog is pinned to the generated routes."""
     assert [model["id"] for model in _public_coder_agent_codex_models()] == OPENCLAW_CODEX_MODELS
+
+    config = json.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
+    provider = config["models"]["providers"]["litellm-subscription"]
+    assert provider["api"] == "anthropic-messages"
+    assert config["agents"]["defaults"]["model"]["primary"] in {
+        f"litellm-subscription/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
+    }
 
 
 def test_codex_context_window_is_the_measured_one() -> None:
-    """Both agents must declare the measured window, and must not drift apart.
+    """The declared window must be the measured one, not a plausible-looking guess.
 
-    Not a change-detector: these are two independently authored manifests that
-    have to agree. They had already drifted to 200000/64000 -- a value that was
-    both inconsistent and wrong -- before this check existed.
+    Not a change-detector: the manifest had drifted to 200000/64000 -- a value
+    that was both inconsistent and wrong -- before this check existed. This
+    guarded two independently authored manifests against disagreeing until the
+    OpenClaw gateway was deleted on 2026-07-31; `public-coder-agent` is the only
+    declaring manifest now, so it guards against regression rather than drift.
     """
-    openclaw = yaml.safe_load(
-        get_required_path("ducktape/cluster/k8s/agents/openclaw/gateway/openclawinstance.yaml").read_text()
-    )
-    declared = openclaw["spec"]["config"]["raw"]["models"]["providers"]["litellm-subscription"]["models"]
-    declared += _public_coder_agent_codex_models()
+    declared = _public_coder_agent_codex_models()
 
     assert [model["contextWindow"] for model in declared] == [CODEX_CONTEXT_WINDOW] * len(declared)
     assert [model["maxTokens"] for model in declared] == [CODEX_MAX_TOKENS] * len(declared)
