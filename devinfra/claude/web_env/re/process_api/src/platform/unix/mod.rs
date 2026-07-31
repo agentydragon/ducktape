@@ -1,9 +1,11 @@
 //! Unix platform implementations for vsock and UDS operations.
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
+//! edebff2c: no application-string delta in this module; logic carried forward.
 //!
-//! Source path: /root/src/tree/marcus-process-api/sandboxing/sandboxing/server/
-//!   process_api/src/platform/unix/mod.rs
+//! Source path (edebff2c panic-location table): src/platform/unix/mod.rs
+//!   (810fd3a4 embedded the unremapped
+//!   /root/src/tree/marcus-process-api/sandboxing/sandboxing/server/process_api/ prefix)
 //!
 //! This module provides the platform-specific vsock and dial-UDS abstractions
 //! used by main.rs and control_server.rs. The binary links tokio-vsock 0.7.2

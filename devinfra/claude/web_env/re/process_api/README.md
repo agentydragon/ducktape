@@ -7,18 +7,19 @@ PID 1 duties (orphan adoption, zombie reaping).
 
 ## Target Binary
 
-| Property           | Value                                                          |
-| ------------------ | -------------------------------------------------------------- |
-| **ELF Build ID**   | `810fd3a49330ce58ff678d539a91723adfda88a8`                     |
-| **Release**        | `process_api_2026-03-25-20-38`                                 |
-| **MD5**            | `6d69e30fbe636e6534959562e4a6413c`                             |
-| **Reference file** | `devinfra/claude/web_env/reference/process_api.gz`             |
-| **Language**       | Rust                                                           |
-| **Stripped**       | Yes (no debug info, no symbol table)                           |
-| **Linking**        | Static-pie                                                     |
-| **Binary size**    | 3,326,984 bytes uncompressed                                   |
-| **Rust toolchain** | `rustc 1.94.0-nightly (1aa9bab4e 2025-12-05)`                  |
-| **Source path**    | `/root/src/tree/marcus-process-api/sandboxing/.../process_api` |
+| Property           | Value                                                               |
+| ------------------ | ------------------------------------------------------------------- |
+| **ELF Build ID**   | `edebff2c28de76238c95c299ba3401a9098c9e17`                          |
+| **Release**        | `process_api_2026-05-11-18-55`                                      |
+| **MD5**            | `78f08d09b8b626ef1d48904161b27739`                                  |
+| **SHA-256**        | `06e438d1757ad998978d1592884019d6922daf5a7c1d52f5b537377c97cbf89b`  |
+| **Reference file** | `devinfra/claude/web_env/reference/process_api.gz`                  |
+| **Language**       | Rust                                                                |
+| **Stripped**       | Yes (no debug info, no symbol table)                                |
+| **Linking**        | Static-pie                                                          |
+| **Binary size**    | 4,377,896 bytes uncompressed (`.text` 3,547,304, `.rodata` 405,644) |
+| **Rust toolchain** | `rustc 1.95.0-nightly (6a979b3e3 2026-02-26)`                       |
+| **Source paths**   | Remapped: application modules appear as bare `src/*.rs`             |
 
 Reconstructed source lives under `src/` in this directory.
 
@@ -30,23 +31,31 @@ bazel build //devinfra/claude/web_env/re/process_api:process_api_re
 
 ## Approach
 
-Decompilation-first using Ghidra headless:
+String-anchored decompilation. The binary is stripped, so every claim traces to
+one of four kinds of evidence:
 
-1. **Full Ghidra decompilation** of the stripped ELF binary (2,382 functions)
-2. **String cross-references** mapped ~200 application strings to their source
-   files via `/build/src/*.rs` panic paths, producing a function catalog of
-   29 application functions across 9 source files
-3. **Translation** of Ghidra's decompiled C pseudocode to idiomatic Rust, guided
-   by known types (serde field names, clap struct, message enums)
-4. **Assembly** into the original 9-file module structure with Bazel build
-5. **String differential analysis** (Phases A-D) to close ~60 gaps in format
-   strings, debug logs, and missing code paths
-6. **Structural type enrichment** (Phase C7) to match serde field names from
-   the binary's serialization visitors
+1. **Panic-location tables.** `core::panic::Location` records in `.data.rel.ro`
+   pair a source-file string with a line and column. They reveal the module
+   list (`src/*.rs`) and pin individual `expect`/`assert` sites to line numbers.
+2. **Interned string runs in `.rodata`.** rustc concatenates literals without
+   separators; serde variant tags, field names and log templates appear in
+   source order, so a run is itself structural evidence.
+3. **Format templates.** rustc 1.95 packs `format_args!` into a byte template
+   (length-prefixed literal chunks, `0xc0` placeholder markers, `0x00`
+   terminator). Reading the template recovers the exact message and its
+   argument count.
+4. **Disassembly** (`objdump -d`) anchored on `.rodata` addresses: find the LEA
+   that loads a string, then read outward. Function boundaries come from the
+   set of `call` targets.
 
-Every function is annotated with `/// Decompiled from 0xAAAA..0xBBBB` and
-`/// Xrefs:` referencing the binary address range and string cross-references,
-so the reconstruction is auditable against the original.
+Serde `FIELDS` arrays are read directly out of `.data.rel.ro` by resolving
+`R_X86_64_RELATIVE` addends and the adjacent length words — that gives struct
+field names in declaration order.
+
+Every recovered function is annotated with `/// Decompiled from 0xAAAA..0xBBBB`
+and `/// Xrefs:`, so the reconstruction is auditable against the original.
+Anything not actually read is marked `TODO(re):`, `GUESS:` or `STUB:` in the
+source.
 
 ## Architecture
 
@@ -99,54 +108,63 @@ Internally it runs several concurrent tasks:
 
 ## Module Breakdown
 
-### Source Files (11 modules)
+### Source Files
 
-| Module                 | Purpose                                                 |
-| ---------------------- | ------------------------------------------------------- |
-| `main.rs`              | CLI, cgroup init, WS/vsock/dial-uds listeners, shutdown |
-| `io.rs`                | WebSocket protocol, process I/O, JWT auth               |
-| `state.rs`             | Process map state machine                               |
-| `proc_handle.rs`       | Per-process lifecycle, kill/wait                        |
-| `cgroup.rs`            | Cgroup v1/v2 setup, memory/CPU                          |
-| `control_server.rs`    | HTTP control API (TCP + vsock)                          |
-| `oom_killer.rs`        | Container + per-process OOM monitors                    |
-| `adopter.rs`           | Orphan adoption, zombie reaping                         |
-| `pid_tree.rs`          | `/proc` PID tree traversal                              |
-| `firecracker_init.rs`  | Firecracker VM init system                              |
-| `platform/unix/mod.rs` | Platform-specific vsock/UDS abstractions                |
+The binary's own module list, from the `src/*.rs` strings in its
+panic-location table:
+
+| Module                 | Purpose                                                 | Recovered |
+| ---------------------- | ------------------------------------------------------- | --------- |
+| `main.rs`              | CLI, cgroup init, WS/vsock/dial-uds listeners, shutdown | yes       |
+| `io.rs`                | WebSocket protocol, process I/O, JWT auth               | yes       |
+| `state.rs`             | Process map state machine                               | yes       |
+| `proc_handle.rs`       | Per-process lifecycle, wall-clock + CPU timeout, kill   | yes       |
+| `cgroup.rs`            | Cgroup v1/v2 setup, memory/CPU                          | yes       |
+| `control_server.rs`    | HTTP control API (TCP + vsock)                          | yes       |
+| `oom_killer.rs`        | Container + per-process OOM monitors                    | yes       |
+| `adopter.rs`           | Orphan adoption, zombie reaping                         | yes       |
+| `pid_tree.rs`          | `/proc` PID tree traversal                              | yes       |
+| `firecracker_init.rs`  | Firecracker VM init, egress-CA fan-out                  | partial   |
+| `platform/unix/mod.rs` | Platform-specific vsock/UDS abstractions                | yes       |
+| `ws_compression.rs`    | zstd stream encode/decode for WebSocket payloads        | partial   |
+| `trace.rs`             | Trace-event emission (`##TRACE##` marker)               | no        |
+
+`trace.rs` is present in the binary (panic locations at `.data.rel.ro`
+0x4211f0/0x421208/0x421220, marker string `##TRACE##` at 0x4211e0) but has no
+counterpart under `src/` yet.
 
 ### Function Address Map
 
-Key functions with their binary address ranges (for cross-referencing with
-Ghidra):
+Addresses established against the current binary (`edebff2c`) by string
+cross-reference plus call-target boundaries. Anything not listed here still
+carries a stale address in the source doc comments — see <PLAN.md>.
 
-| Function                     | Address range        | Size    | Module              |
-| ---------------------------- | -------------------- | ------- | ------------------- |
-| `main` (async entry)         | `0x2273c0..0x232177` | 44.5 KB | `main.rs`           |
-| CLI builder                  | `0x209200..0x20ca80` | 14.5 KB | `main.rs`           |
-| CLI parser/init              | `0x20d0c0..0x21199e` | 18.7 KB | `main.rs`           |
-| Container name detection     | `0x2089f0..0x2091fe` | 2.1 KB  | `main.rs`           |
-| Socket bind/listen           | `0x13f6a0..0x13faff` | 1.1 KB  | `main.rs`           |
-| `CreateProcess` deserializer | `0x233900..0x23567c` | 7.5 KB  | `io.rs`             |
-| Stdout pipe handler          | `0x144970..0x145eb0` | 5.4 KB  | `io.rs`             |
-| Stderr pipe handler          | `0x141db0..0x1432f0` | 5.4 KB  | `io.rs`             |
-| Exit status formatter        | `0x1bafc0..0x1bb772` | 2.0 KB  | `io.rs`             |
-| WS message enum deserializer | `0x1275e0..0x12766e` | 142 B   | `io.rs`             |
-| State map lookup             | `0x1ba610..0x1bacf7` | 1.8 KB  | `state.rs`          |
-| State transition validate    | `0x1b9f30..0x1ba60d` | 1.8 KB  | `state.rs`          |
-| `kill_and_wait`              | `0x1b5620..0x1b5b56` | 1.3 KB  | `proc_handle.rs`    |
-| `ProcessInfo` deserializer   | `0x21c970..0x21cb45` | 469 B   | `proc_handle.rs`    |
-| `CgroupConfig` deserializer  | `0x21ce40..0x21d015` | 469 B   | `proc_handle.rs`    |
-| `ProcHandle` deserializer    | `0x21d120..0x21d303` | 483 B   | `proc_handle.rs`    |
-| `detect_cgroup_version`      | `0x1b4f20..0x1b5085` | —       | `cgroup.rs`         |
-| `setup_cgroup_path`          | `0x1b50e0..0x1b54b5` | —       | `cgroup.rs`         |
-| `setup_cgroup`               | `0x1b5df0..0x1b729c` | —       | `cgroup.rs`         |
-| `read_memory_usage`          | `0x1328a0..0x132d66` | —       | `cgroup.rs`         |
-| Connection handler           | `0x143330..0x14496f` | 5.7 KB  | `control_server.rs` |
-| Control startup/shutdown     | `0x1471a0..0x14796d` | 2.0 KB  | `control_server.rs` |
-| Healthcheck builder          | `0x0fef20..0x10032a` | 1.0 KB  | `control_server.rs` |
-| OOM event handler setup      | `0x21c2b0..0x21c510` | 608 B   | `oom_killer.rs`     |
-| OOM killed TX setup          | `0x21c870..0x21c96b` | 251 B   | `oom_killer.rs`     |
+| Function                         | Address range        | Module                |
+| -------------------------------- | -------------------- | --------------------- |
+| `handle_ws` (connection owner)   | `0x1428f0..0x1492d0` | `io.rs`               |
+| `process_ws_message`             | `0x14bc40..0x153610` | `io.rs`               |
+| stderr `pipe_to_ws`              | `0x4a1f0..0x4bb60`   | `io.rs`               |
+| stdout `pipe_to_ws`              | `0x4c310..0x4dc80`   | `io.rs`               |
+| `ProcessConnection` deserializer | `0x15cc30..0x15e400` | `io.rs`               |
+| `CreateProcess` deserializer     | `0x186c00..0x188e70` | `io.rs`               |
+| `ServerMessage` JSON encoder     | `0x1856e0..0x185d00` | `io.rs`               |
+| JSON string escaper              | `0x1850c0..0x185440` | `io.rs`               |
+| `wait_for_child_to_exit`         | `0x58f00..0x5a600`   | `proc_handle.rs`      |
+| graceful-shutdown driver         | `0x154810..0x158a80` | `main.rs`             |
+| zstd `StreamEncoder::new`        | `0x11ff20..0x120200` | `ws_compression.rs`   |
+| zstd stream encode               | `0x1bd5c0..0x1bf330` | `ws_compression.rs`   |
+| `append_ca_cert` (orchestrator)  | `0xfab40..0xfc530`   | `firecracker_init.rs` |
+| PEM splitter                     | `0x101090..0x101570` | `firecracker_init.rs` |
+| Java JKS injector                | `0xfc530..0xfe330`   | `firecracker_init.rs` |
+| NSS DB injector                  | `0xfe330..0x100770`  | `firecracker_init.rs` |
+| Chromium policy writer           | `0x100770..0x101090` | `firecracker_init.rs` |
+| Python bundle patcher            | `0xf5f90..0xf7630`   | `firecracker_init.rs` |
+| gcloud bundle patcher            | `0xf37d0..0xf5cd0`   | `firecracker_init.rs` |
+| npmrc writer                     | `0xf8d60..0xf9910`   | `firecracker_init.rs` |
+| pip.conf writer                  | `0xf9910..0xfa570`   | `firecracker_init.rs` |
+| uv.toml writer                   | `0xfa570..0xfab40`   | `firecracker_init.rs` |
+| sudoers `env_keep` writer        | `0xf8910..0xf8d60`   | `firecracker_init.rs` |
+| chown helper                     | `0xf5cd0..0xf5f90`   | `firecracker_init.rs` |
 
 ## CLI Arguments
 
@@ -173,7 +191,7 @@ Options:
 All flags accept corresponding `SCREAMING_SNAKE_CASE` environment variables
 (e.g., `MEMORY_LIMIT_BYTES`, `CONTROL_SERVER_ADDR`, `FIRECRACKER_INIT`).
 
-### `--firecracker-init` Mode (New)
+### `--firecracker-init` Mode
 
 When `--firecracker-init` is set, `process_api` runs a full VM init sequence
 before starting the WebSocket listener:
@@ -182,10 +200,40 @@ before starting the WebSocket listener:
 2. `pivot_root` to mounted filesystem
 3. Set up networking (socket creation, interface configuration)
 4. Set up FUSE (`/dev/fuse`, FUSE service URL)
-5. Mount rclone_tools (remote storage)
+5. Mount rclone_tools (remote storage); the rclone VFS cache lives at
+   `/dev/shm/rclone-vfscache` (exported as `RCLONE_CACHE_DIR`)
 6. Parse `container.env` JSON for memory and filestore mount config
 7. Mount memory and filestore destinations
-8. Spawn the main process
+8. Install the egress CA (see below)
+9. Spawn the main process
+
+### Egress CA Injection
+
+When the mount config carries `ca_cert_pem` (or `POST
+/auth_public_key/write_etc_files` carries `ca_cert`), `process_api` installs
+that PEM into every trust store the sandbox's toolchains consult, then exports
+the matching environment variables so all children of PID 1 inherit them.
+
+| Target                   | What is written                                                                                                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| System anchors           | `/usr/local/share/ca-certificates/sandboxing-egress-ca.crt`, `/etc/ssl/certs/sandboxing-egress-ca.pem`                                                                                                                        |
+| Merged bundles           | `/etc/ssl/certs/ca-certificates.crt` plus `etc/pki/tls/{certs/ca-bundle.crt,cacert.pem}`, `etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem`, `etc/ssl/ca-bundle.pem`, `var/lib/ca-certificates/ca-bundle.pem`                |
+| dpkg bookkeeping         | appends the anchor to `/var/lib/dpkg/info/ca-certificates.list` so `update-ca-certificates` keeps it                                                                                                                          |
+| Python                   | `certifi/cacert.pem`, `pip/_vendor/certifi/cacert.pem`, `botocore/cacert.pem` under every discovered `site-packages` / `dist-packages`, plus `/opt/conda/ssl/cacert.pem`                                                      |
+| google-cloud-sdk         | the four vendored `certifi`/`botocore` bundles under each SDK root                                                                                                                                                            |
+| pip                      | `[global]` `cert = <path>`                                                                                                                                                                                                    |
+| npm                      | `cafile=<path>` in `etc/npmrc`, `usr/etc/npmrc`, `usr/local/etc/npmrc`                                                                                                                                                        |
+| uv                       | `native-tls = true` in `/etc/uv/uv.toml` (only if a `uv` binary exists)                                                                                                                                                       |
+| Java                     | `keytool -importcert -storepass changeit -alias sandboxing-egress-ca-<n>` into every `cacerts` found                                                                                                                          |
+| NSS                      | `certutil -N --empty-password` then `certutil -A -t C,,` against every `nssdb`                                                                                                                                                |
+| Firefox                  | `policies.json` with `policies.Certificates.Install`                                                                                                                                                                          |
+| Chromium / Chrome / Edge | `sandboxing-ca.json` in each managed-policy directory                                                                                                                                                                         |
+| Environment              | `REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `PIP_CERT`, `CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`, `HTTPLIB2_CA_CERTS`, `GIT_SSL_CAINFO`, `AWS_CA_BUNDLE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE` |
+| sudo                     | `/etc/sudoers.d/90-sandbox-ca-env` with `Defaults env_keep +=` for those vars plus the proxy vars                                                                                                                             |
+
+Every step is best-effort: failures log `[INIT] WARNING: ...` and boot
+continues. If the whole helper fails during Firecracker init, a marker file
+`<root>/.sandboxing-ca-inject-failed` records the reason.
 
 This mode is used in the current live container invocation:
 
@@ -236,6 +284,7 @@ Spawn a new child process. The `name` field doubles as the `process_id` key.
   "reattachable": true,
   "allow_process_id_reuse": false,
   "timeout": 300,
+  "cpu_timeout": 120,
   "memory_limit_bytes": 1073741824
 }
 ```
@@ -250,8 +299,12 @@ Spawn a new child process. The `name` field doubles as the `process_id` key.
 | `gid`                    | `u32?`              | —       | Run as this GID                              |
 | `reattachable`           | `bool?`             | `false` | Keep process alive on WS disconnect          |
 | `allow_process_id_reuse` | `bool?`             | `true`  | Allow reusing an existing process ID         |
-| `timeout`                | `u64?`              | —       | Kill after N seconds                         |
+| `timeout`                | `u64?`              | —       | Kill after N wall-clock seconds              |
+| `cpu_timeout`            | `u64?`              | —       | Kill after N seconds of cgroup CPU time      |
 | `memory_limit_bytes`     | `u64?`              | —       | Per-process memory limit via cgroup          |
+
+Evidence: `struct CreateProcess with 11 elements` (0x39a02b); the `cpu_timeout`
+field-name compare is at 0x186fa5.
 
 The spawned process runs in a new session (`setsid`), with piped
 stdin/stdout/stderr. If `memory_limit_bytes` is set, a per-process cgroup is
@@ -266,19 +319,21 @@ Reattach to a previously detached process, or query its state.
   "process_id": "/bin/bash",
   "reattach": true,
   "expected_container_name": "my-container",
-  "want_trace_events": true
+  "want_trace_events": true,
+  "accept_zstd": true
 }
 ```
 
-| Field                     | Type      | Default | Description                                  |
-| ------------------------- | --------- | ------- | -------------------------------------------- |
-| `process_id`              | `string`  | —       | ID of process to reconnect to                |
-| `reattach`                | `bool?`   | `true`  | Actually reattach (false = just query)       |
-| `expected_container_name` | `string?` | —       | Validate container identity                  |
-| `want_trace_events`       | `bool?`   | `false` | Request `TraceEvent` stream (since 91c789ff) |
+| Field                     | Type      | Default | Description                            |
+| ------------------------- | --------- | ------- | -------------------------------------- |
+| `process_id`              | `string`  | —       | ID of process to reconnect to          |
+| `reattach`                | `bool?`   | `true`  | Actually reattach (false = just query) |
+| `expected_container_name` | `string?` | —       | Validate container identity            |
+| `want_trace_events`       | `bool?`   | `false` | Request the `TraceEvent` stream        |
+| `accept_zstd`             | `bool?`   | `false` | Client can decode zstd binary frames   |
 
-Evidence: `struct ProcessConnection with 4 elements` in 91c789ff+.
-New field `want_trace_events` confirmed from serde field name strings.
+Evidence: `struct ProcessConnection with 5 elements` (0x39a074); the field-name
+literals are loaded at 0x15ddd5..0x15de0f.
 
 If `expected_container_name` is set and doesn't match the container's current
 name, the server responds with `InfraError` and closes.
@@ -307,50 +362,53 @@ Supported signals: `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGKILL`, `SIGTERM`,
 
 All responses are tagged JSON text messages (`{"type": "...", ...}`):
 
-| Message                  | Fields                              | Description                                                |
-| ------------------------ | ----------------------------------- | ---------------------------------------------------------- |
-| `ProcessCreated`         | `process_id`, `pid`                 | Process spawned successfully                               |
-| `AttachedToProcess`      | `process_id`, `pid`                 | Reattached to detached process                             |
-| `AttachedToProcessV2`    | `process_id`, `pid`, `capabilities` | Reattached with capability negotiation (since 91c789ff)    |
-| `ProcessNotRunning`      | `process_id`                        | Process not found or already exited                        |
-| `ProcessAlreadyAttached` | `process_id`                        | Another WS is attached to this process                     |
-| `FailedToStartProcess`   | `error`                             | Spawn failed                                               |
-| `WithSameIdRunning`      | `process_id`                        | Duplicate ID (and reuse disallowed)                        |
-| `InfraError`             | `error`                             | Infrastructure error (name mismatch)                       |
-| `ExpectStdOut`           | —                                   | Next binary frame is stdout data                           |
-| `StdOutEOF`              | —                                   | Stdout pipe closed                                         |
-| `ExpectStdErr`           | —                                   | Next binary frame is stderr data                           |
-| `StdErrEOF`              | —                                   | Stderr pipe closed                                         |
-| `ProcessExited`          | `status: i32`, `details: string`    | Normal exit or signal death                                |
-| `ProcessTimedOut`        | `timeout_secs`, `details`           | Killed after timeout exceeded                              |
-| `ProcessOutOfMemory`     | `limit_bytes`, `details`            | Per-process memory limit exceeded                          |
-| `ContainerOutOfMemory`   | `limit_bytes`, `details`            | Container-level OOM kill                                   |
-| `TraceEvent`             | `TraceEventMsg` fields              | Trace event (new in 91c789ff; sent when want_trace_events) |
-| `InvalidSignal`          | `signal`                            | Unrecognized signal name/number                            |
-| `FailedToSendSignal`     | `error`                             | Signal delivery failed                                     |
-| `SignalSent`             | `signal`                            | Signal delivered successfully                              |
-| `KeepAlive`              | —                                   | WebSocket keepalive                                        |
-| `Closed`                 | —                                   | Connection closed                                          |
-| `AlreadyClosed`          | —                                   | Connection already closed                                  |
-| `IoWriteBufferFull`      | —                                   | I/O write buffer full                                      |
-| `AttackAttemptUrl`       | —                                   | Rejected URL attack attempt                                |
-| `HttpFormatIpSocket`     | —                                   | HTTP-formatted IP socket info                              |
-| `ShuttingDown`           | —                                   | Server is shutting down                                    |
+| Message                  | Fields                              | Description                                |
+| ------------------------ | ----------------------------------- | ------------------------------------------ |
+| `ProcessCreated`         | `process_id`, `pid`                 | Process spawned successfully               |
+| `AttachedToProcess`      | `process_id`, `pid`                 | Reattached to detached process             |
+| `ProcessCreatedV2`       | `process_id`, `pid`                 | Extended form of `ProcessCreated`          |
+| `AttachedToProcessV2`    | `process_id`, `pid`, `capabilities` | Reattached with capability negotiation     |
+| `ProcessNotRunning`      | `process_id`                        | Process not found or already exited        |
+| `ProcessAlreadyAttached` | `process_id`                        | Another WS is attached to this process     |
+| `FailedToStartProcess`   | `error`                             | Spawn failed                               |
+| `WithSameIdRunning`      | `process_id`                        | Duplicate ID (and reuse disallowed)        |
+| `InfraError`             | `error`                             | Infrastructure error (name mismatch)       |
+| `ExpectStdOut`           | —                                   | Next binary frame is stdout data           |
+| `StdOutEOF`              | —                                   | Stdout pipe closed                         |
+| `ExpectStdErr`           | —                                   | Next binary frame is stderr data           |
+| `StdErrEOF`              | —                                   | Stderr pipe closed                         |
+| `ProcessExited`          | `status: i32`, `details: string`    | Normal exit or signal death                |
+| `ProcessTimedOut`        | `timeout_secs`, `details`           | Killed after the wall-clock timeout        |
+| `ProcessCpuTimedOut`     | `cpu_timeout_secs`, `details`       | Killed after the cgroup CPU-time budget    |
+| `ProcessOutOfMemory`     | `limit_bytes`, `details`            | Per-process memory limit exceeded          |
+| `ContainerOutOfMemory`   | `limit_bytes`, `details`            | Container-level OOM kill                   |
+| `TraceEvent`             | `TraceEventMsg` fields              | Trace event; sent when `want_trace_events` |
+| `InvalidSignal`          | `signal`                            | Unrecognized signal name/number            |
+| `FailedToSendSignal`     | `error`                             | Signal delivery failed                     |
+| `SignalSent`             | `signal`                            | Signal delivered successfully              |
+| `KeepAlive`              | —                                   | WebSocket keepalive                        |
+| `Closed`                 | —                                   | Connection closed                          |
+| `AlreadyClosed`          | —                                   | Connection already closed                  |
+| `IoWriteBufferFull`      | —                                   | I/O write buffer full                      |
+| `AttackAttemptUrl`       | —                                   | Rejected URL attack attempt                |
+| `HttpFormatIpSocket`     | —                                   | HTTP-formatted IP socket info              |
+| `ShuttingDown`           | —                                   | Server is shutting down                    |
 
-#### `ConnectionCapabilities` (since 91c789ff)
+#### `ConnectionCapabilities`
 
-Sent as part of `AttachedToProcessV2`. Evidence: `struct ConnectionCapabilities`
-string in binary with `supports_trace` field.
+Sent as part of `AttachedToProcessV2`. Evidence: the interned run
+`ConnectionCapabilities` / `supports_trace` / `supports_zstd` at 0x39a8b3, and
+the JSON serializer at 0x185440..0x1854ff which emits both keys.
 
 ```json
-{ "supports_trace": true }
+{ "supports_trace": true, "supports_zstd": true }
 ```
 
-#### `TraceEventMsg` (since 91c789ff)
+#### `TraceEventMsg`
 
 5-element serde struct. Evidence: `struct TraceEventMsg with 5 elements`.
-Fields inferred from serde field name strings: `process_id`, `pid`, `event_type`,
-`data`, `timestamp` (approximate — exact field names not extracted).
+Fields from the serde field-name run at 0x399f8a: `process`, `host`, `sph`,
+`cat`, `dur_us`.
 
 Sent as `TraceEvent` WS messages when `want_trace_events=true` in
 `ProcessConnection`.
@@ -387,26 +445,57 @@ Server                              Client
 Binary frames are read in 64 KB chunks. Each chunk is preceded by an
 `ExpectStdOut`/`ExpectStdErr` text frame signaling which stream follows.
 
+### Payload Compression (zstd)
+
+When the client sets `accept_zstd` in `ProcessConnection`, the server answers
+`ConnectionCapabilities { supports_zstd: true }` and builds one streaming zstd
+encoder per output stream, and a decoder for inbound binary frames.
+
+Parameters read out of the binary:
+
+| Parameter                       | Value                | Evidence                   |
+| ------------------------------- | -------------------- | -------------------------- |
+| `ZSTD_c_compressionLevel`       | 3                    | 0x11ff40 (`$0x64`, `$0x3`) |
+| `ZSTD_c_windowLog`              | 15 (32 KiB)          | 0x11ffa2 (`$0x65`, `$0xf`) |
+| `ZSTD_d_windowLogMax`           | 15                   | 0x14bf5b (`$0x64`, `$0xf`) |
+| Stream scratch buffer           | 32 KiB (`0x8000`)    | 0x11ff8b, 0x14bf44         |
+| Max decompressed size per frame | 64 MiB (`0x4000000`) | 0x14bfc2                   |
+
+Exceeding the decompression cap produces
+`decompressed output exceeds 67108864 bytes`.
+
+The zstd C library is statically linked (`zstd-safe 7.2.4` on the Rust side);
+its error-string table lives at `.rodata` 0x3abe08..0x3ac360.
+
 ## HTTP Control Server
 
 When `--control-server-addr` is set, the SIGINT handler is disabled and
 shutdown is driven exclusively through HTTP.
 
-| Method | Path                               | Request body      | Response                                   |
-| ------ | ---------------------------------- | ----------------- | ------------------------------------------ |
-| `POST` | `/shutdown`                        | —                 | `200 "Shutdown initiated\n"`               |
-| `POST` | `/container_name`                  | UTF-8 name string | `200 "Container name set to: X\n"`         |
-| `POST` | `/auth_public_key/write_etc_files` | JSON body         | `200` or `400` (Ed25519 key + etc setup)   |
-| `POST` | `/mount_root`                      | JSON config       | `200` or `500` (Firecracker snapstart)     |
-| `POST` | `/fs_freeze`                       | —                 | `200` (FIFREEZE filesystem)                |
-| `POST` | `/fs_thaw`                         | —                 | `200` (FITHAW filesystem)                  |
-| `POST` | `/sync_clock`                      | JSON/integer      | `200` clock synced (810fd3a4: implemented) |
-| `GET`  | `/health`                          | —                 | `200` diagnostic text                      |
-| `GET`  | `/container_name`                  | —                 | `200 "X\n"` or `"not set\n"`               |
-| `*`    | `*`                                | —                 | `404 "Not Found\n"`                        |
+| Method | Path                               | Request body      | Response                               |
+| ------ | ---------------------------------- | ----------------- | -------------------------------------- |
+| `POST` | `/shutdown`                        | —                 | `200 "Shutdown initiated\n"`           |
+| `POST` | `/container_name`                  | UTF-8 name string | `200 "Container name set to: X\n"`     |
+| `POST` | `/auth_public_key/write_etc_files` | JSON body         | `200`/`400`/`500` (key, etc files, CA) |
+| `POST` | `/mount_root`                      | JSON config       | `200` or `500` (Firecracker snapstart) |
+| `POST` | `/fs_freeze`                       | —                 | `200` (FIFREEZE filesystem)            |
+| `POST` | `/fs_thaw`                         | —                 | `200` (FITHAW filesystem)              |
+| `POST` | `/sync_clock`                      | JSON/integer      | `200` clock synced (`clock_settime`)   |
+| `GET`  | `/health`                          | —                 | `200` diagnostic text                  |
+| `GET`  | `/container_name`                  | —                 | `200 "X\n"` or `"not set\n"`           |
+| `*`    | `*`                                | —                 | `404 "Not Found\n"`                    |
 
 **`POST /shutdown`** performs `sync(1)` before sending the broadcast shutdown
-signal. All tracked processes are then killed.
+signal. All tracked processes are then killed. The shutdown driver then waits a
+one-second grace period; any tasks still alive produce
+`[WARN] N task(s) still alive after 1s shutdown grace, aborting` on stderr.
+
+**`POST /auth_public_key/write_etc_files`** accepts an `EtcFiles` body with
+three fields — `process`, `hosts` and `ca_cert` (evidence: `struct EtcFiles
+with 3 elements` at 0x39a00c). `ca_cert` is fanned out through the same helper
+the Firecracker init path uses; failure returns `500` with body
+`append_ca_cert: <err>`. On success the server logs
+`[CONTROL] /write_etc_files: hosts N bytes, resolv N bytes, ca_cert ...`.
 
 **`GET /healthcheck`** returns a multi-line diagnostic string:
 
@@ -495,6 +584,21 @@ When usage exceeds the limit:
    - Phase 1 (10s): Wait for PID to disappear from `/proc`
    - Phase 2 (20s): Wait for container memory to drop below limit
 
+### CPU-Time Enforcement
+
+A process created with `cpu_timeout` is additionally checked against its
+cgroup's cumulative CPU usage. `wait_for_child_to_exit` reads
+`<cgroup>/cpu.stat` and parses the `usage_usec ` line; once that exceeds the
+budget the process tree is killed and `ProcessCpuTimedOut` is sent.
+
+If the cgroup has no readable `cpu.stat`, the feature degrades:
+
+```text
+[DEBUG] Process X (PID N) cpu.stat unavailable (E); cpu_timeout not enforced, falling back to wall-clock timeout only
+```
+
+A handle with no cgroup at all fails earlier with `no cgroup for this process`.
+
 ### Per-Process OOM Monitor
 
 One task per process with `memory_limit_bytes` set. Polls the individual
@@ -541,7 +645,8 @@ an explicit `expected_state` parameter to detect races.
 3. **Exit detection**: `wait_for_child_to_exit` polls `waitpid(WNOHANG)` at
    50ms intervals, checking for:
    - Process exit (normal or signal)
-   - Timeout expiry
+   - Wall-clock timeout expiry (`timeout`)
+   - CPU-time budget expiry (`cpu_timeout`)
    - Per-process memory limit exceeded
    - Container OOM notification (via channel)
    - Stop signal (from shutdown or non-reattachable disconnect)
@@ -581,7 +686,7 @@ Tracked zombies log their age when finally reaped.
 
 1. Initialize `env_logger`
 2. Parse CLI arguments
-3. Log version: `[INFO] process_api release: process_api_2026-03-23-22-49`
+3. Log version: `[INFO] process_api release: process_api_2026-05-11-18-55`
 4. Set up cgroup hierarchy (with retry loop on failure, 10s backoff)
 5. Set CPU shares if configured
 6. Detect container name from `/container_info.json` (if present)
@@ -589,7 +694,8 @@ Tracked zombies log their age when finally reaped.
 8. Start orphan monitor task
 9. Start container OOM monitor task (if memory limit set)
 10. Bind WebSocket listener, enter accept loop
-11. On shutdown signal: kill all tracked processes, log completion
+11. On shutdown signal: kill all tracked processes, wait a 1-second grace period
+    for outstanding tasks, log completion
 
 ## Container Integration
 

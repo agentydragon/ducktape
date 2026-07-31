@@ -1,5 +1,6 @@
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
+//! edebff2c: no application-string delta in this module; logic carried forward.
 //!
 //! Process map state management: attach/detach/reattach.
 //! Logic unchanged from b0e4b2f4; offsets stale.

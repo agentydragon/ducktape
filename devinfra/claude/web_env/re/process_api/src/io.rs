@@ -1,11 +1,26 @@
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
 //!
 //! WebSocket message handler, serde structs for the CreateProcess/ProcessConnection
 //! protocol, JWT authentication, and stdin/stdout/stderr forwarding over WebSocket.
 //!
-//! Offsets below from 91c789ff (NOT re-verified against 810fd3a4).
-//! String refs and serde fields verified against 810fd3a4.
+//! Offsets below from 91c789ff (NOT re-verified against edebff2c) except where
+//! an edebff2c address is named explicitly.
+//! String refs and serde fields verified against edebff2c.
+//!
+//! edebff2c function addresses (from call-target boundaries in `objdump -d`):
+//!   handle_ws:                   0x1428f0..0x1492d0
+//!     Owns the whole connection: accept, JWT-or-JSON dispatch, capability
+//!     negotiation, per-stream zstd encoder construction (0x147d45 stdout,
+//!     0x1487a6 stderr), cleanup.
+//!   process_ws_message:          0x14bc40..0x153610
+//!     WS message loop; also holds the inlined inbound zstd decoder
+//!     (0x14bee3..0x14bff9).
+//!   stderr pipe_to_ws:           0x4a1f0..0x4bb60   ("[DEBUG] started stderr pipe")
+//!   stdout pipe_to_ws:           0x4c310..0x4dc80
+//!   ProcessConnection deser:     0x15cc30..0x15e400
+//!   CreateProcess deser:         0x186c00..0x188e70
+//!   ServerMessage JSON encoder:  0x1856e0..0x185d00 (string escaper 0x1850c0)
 //!
 //! Previously verified against 91c789ff (objdump + strings -t x cross-referencing):
 //!
@@ -86,6 +101,16 @@
 //!   "[DEBUG] process_ws_message: Starting WebSocket message processing for process"  (0x295e87)
 //!   "[DEBUG] Finished WebSocket message processing for process"  (0x2a4868)
 //!
+//! Server->Client message variant strings (edebff2c: interned run at
+//! 0x39a8b3..0x39aa3e, exact order as laid out in the binary):
+//!   ConnectionCapabilities(supports_trace, supports_zstd), ProcessCreated,
+//!   AttachedToProcess, AttachedToProcessV2, ProcessNotRunning,
+//!   ProcessAlreadyAttached, FailedToStartProcess, WithSameIdRunning,
+//!   InfraError, ExpectStdOut, StdOutEOF, ExpectStdErr, StdErrEOF,
+//!   ProcessExited, ProcessTimedOut, ProcessCpuTimedOut, ProcessOutOfMemory,
+//!   ContainerOutOfMemory, InvalidSignal, FailedToSendSignal, SignalSent,
+//!   ShuttingDown, SendSignal, ExpectStdIn, TraceEvent
+//!
 //! Server->Client message variant strings (at 0x2a4cb7..0x2a4d00):
 //!   ConnectionCapabilities(supports_trace), ProcessCreated, AttachedToProcess,
 //!   AttachedToProcessV2, ProcessNotRunning, ProcessAlreadyAttached,
@@ -141,11 +166,17 @@ use crate::state::{self, ProcessMap, ProcessState};
 // Serde structs -- Verified at 0x23270..0x240da and 0x170740/0x1707a0
 // ---------------------------------------------------------------------------
 
-/// Visitor at 0x170740..0x170757  (24 bytes)
-/// Deserializer at 0x23270..0x240da  (3562 bytes)
-/// Xrefs: "struct CreateProcess with 10 elements", "name", "args",
-///   "clear_env", "uid", "gid", "reattachable", "allow_process_id_reuse",
-///   "timeout", "memory_limit_bytes", "env_vars"
+/// Deserializer at edebff2c 0x186c00..0x188e70.
+/// Xrefs: "struct CreateProcess with 11 elements" (0x39a02b), "name", "args",
+///   "clear_env", "uid", "gid", "timeout", "cpu_timeout", "reattachable",
+///   "allow_process_id_reuse", "memory_limit_bytes", "env_vars"
+///
+/// Binary: edebff2c raised the element count 10 -> 11 by adding `cpu_timeout`.
+/// The field-name compare is at 0x186fa5..0x186fc6:
+///   `movabs $0x656d69745f757063,%rcx` ("cpu_time")
+///   `movabs $0x74756f656d69745f,%rdx` ("_timeout")
+/// i.e. an 11-byte overlapping compare against "cpu_timeout", matched
+/// immediately before "reattachable" (0x6863617474616572 at 0x18708a).
 #[derive(Debug, Deserialize)]
 pub struct CreateProcess {
     pub name: String,
@@ -162,15 +193,25 @@ pub struct CreateProcess {
     pub reattachable: Option<bool>,
     #[serde(default)]
     pub allow_process_id_reuse: Option<bool>,
+    /// Wall-clock timeout, in seconds.
     #[serde(default)]
     pub timeout: Option<u64>,
+    /// Binary: edebff2c — CPU-time budget in seconds, enforced from the
+    /// process cgroup's `cpu.stat` `usage_usec` counter (see
+    /// `proc_handle::read_cpu_usage_usec`). Independent of `timeout`, which
+    /// stays wall-clock.
+    #[serde(default)]
+    pub cpu_timeout: Option<u64>,
     #[serde(default)]
     pub memory_limit_bytes: Option<u64>,
 }
 
-/// Visitor at 0x1707a0..0x1707b7  (24 bytes)
-/// Xrefs: "struct ProcessConnection with 4 elements"
-/// Binary: 91c789ff adds want_trace_events (was 3 fields in e409c31a).
+/// Deserializer at edebff2c 0x15cc30..0x15e400.
+/// Xrefs: "struct ProcessConnection with 5 elements" (0x39a074); field-name
+///   literals loaded at 0x15ddd5 ("process_id", len 10), 0x15dd9f
+///   ("expected_container_name", len 23), 0x15ddf2 ("want_trace_events",
+///   len 17), 0x15de0f ("accept_zstd", len 11).
+/// Binary: edebff2c raised the element count 4 -> 5 by adding `accept_zstd`.
 #[derive(Debug, Deserialize)]
 pub struct ProcessConnection {
     pub process_id: String,
@@ -181,6 +222,12 @@ pub struct ProcessConnection {
     /// Binary: 91c789ff — request trace events for this connection.
     #[serde(default)]
     pub want_trace_events: Option<bool>,
+    /// Binary: edebff2c — client can decode zstd-compressed binary frames.
+    /// When set, `handle_ws` builds a `ws_compression::StreamEncoder` per
+    /// output stream (0x147d45 / 0x1487a6) and answers with
+    /// `ConnectionCapabilities { supports_zstd: true, .. }`.
+    #[serde(default)]
+    pub accept_zstd: Option<bool>,
 }
 
 /// Trace event message (used in both client->server and server->client TraceEvent).
@@ -221,9 +268,15 @@ pub enum ClientMessage {
 #[serde(tag = "type")]
 pub enum ServerMessage {
     /// Binary: 91c789ff — reports whether trace events are supported.
-    /// Field "supports_trace" at 0x2a4ccd.
+    /// edebff2c adds `supports_zstd`.
+    ///
+    /// Serializer decompiled from 0x185440..0x1854ff: the encoder emits
+    /// `"supports_trace":` then `true`/`false` (0x1854ca writes the literal
+    /// `true`, 0x185459 writes `fals`+`e`), a `,`, then `"supports_zstd"`
+    /// (string 0x39a8d7, len 0xd loaded at 0x185480) and its bool.
     ConnectionCapabilities {
         supports_trace: bool,
+        supports_zstd: bool,
     },
     ProcessCreated {
         process_id: String,
@@ -270,6 +323,14 @@ pub enum ServerMessage {
     },
     ProcessTimedOut {
         timeout_secs: u64,
+        details: String,
+    },
+    /// Binary: edebff2c — the process exceeded its `cpu_timeout` CPU budget.
+    /// Variant tag "ProcessCpuTimedOut" at 0x39a9b2 (loaded at 0x1858e2 in the
+    /// ServerMessage encoder and 0x1324f2). The `cpu_timeout_secs` key is the
+    /// 16-byte string at 0x37bd20, emitted at 0x150c48.
+    ProcessCpuTimedOut {
+        cpu_timeout_secs: u64,
         details: String,
     },
     ProcessOutOfMemory {
@@ -520,6 +581,15 @@ async fn process_ws_message(
                             details,
                         }).await
                     }
+                    // Binary: edebff2c — new arm. Tag string "ProcessCpuTimedOut"
+                    // (0x39a9b2), payload key "cpu_timeout_secs" (0x37bd20,
+                    // emitted at 0x150c48).
+                    ExitReason::CpuTimedOut { cpu_timeout_secs } => {
+                        send_msg(ws_tx, &ServerMessage::ProcessCpuTimedOut {
+                            cpu_timeout_secs: *cpu_timeout_secs,
+                            details,
+                        }).await
+                    }
                     ExitReason::OutOfMemory { limit_bytes } => {
                         send_msg(ws_tx, &ServerMessage::ProcessOutOfMemory {
                             limit_bytes: *limit_bytes,
@@ -546,6 +616,12 @@ async fn process_ws_message(
 
                 break match &exit_reason {
                     ExitReason::TimedOut { .. } => Ok("process_ws_message: Timeout".to_string()),
+                    // Binary: edebff2c — "process_ws_message: CpuTimeout"
+                    // (interned run at 0x399d98, immediately after
+                    // "process_ws_message: Timeout").
+                    ExitReason::CpuTimedOut { .. } => {
+                        Ok("process_ws_message: CpuTimeout".to_string())
+                    }
                     ExitReason::OutOfMemory { .. } => Ok("process_ws_message: OOM".to_string()),
                     ExitReason::ContainerOom { .. } => Ok("process_ws_message: Container OOM".to_string()),
                     ExitReason::KilledByProcessApi => Ok("process_ws_message: Killed".to_string()),
@@ -932,8 +1008,16 @@ async fn handle_create_process(
 
     // Create process handle with all channel endpoints stored
     let timeout = req.timeout.map(Duration::from_secs);
+    // Binary: edebff2c — CreateProcess.cpu_timeout, in seconds.
+    let cpu_timeout = req.cpu_timeout.map(Duration::from_secs);
     let reattachable = req.reattachable.unwrap_or(false);
-    let mut handle = ProcHandle::new(pid, reattachable, timeout, req.memory_limit_bytes);
+    let mut handle = ProcHandle::new(
+        pid,
+        reattachable,
+        timeout,
+        cpu_timeout,
+        req.memory_limit_bytes,
+    );
     handle.memory_cgroup_path = cgroup_path.clone();
     handle.stop_waiting_tx = Some(stop_waiting_tx);
     handle.stop_waiting_rx = Some(stop_waiting_rx);
@@ -964,6 +1048,7 @@ async fn handle_create_process(
         pid,
         reattachable,
         timeout: req.timeout,
+        cpu_timeout: req.cpu_timeout,
         memory_limit_bytes: req.memory_limit_bytes,
         start_time: now.as_secs(),
         start_wallclock_micros: now.as_micros() as u64,
@@ -993,6 +1078,7 @@ async fn handle_create_process(
     let (
         start_time,
         handle_timeout,
+        handle_cpu_timeout,
         handle_memory_limit,
         exit_status_tx,
         oom_killed_tx,
@@ -1004,6 +1090,7 @@ async fn handle_create_process(
         (
             entry.proc_handle.start_time,
             entry.proc_handle.timeout,
+            entry.proc_handle.cpu_timeout,
             entry.proc_handle.memory_limit_bytes,
             entry
                 .proc_handle
@@ -1043,7 +1130,9 @@ async fn handle_create_process(
     log::debug!("[DEBUG] Spawning wait_for_child_to_exit for process {process_id}");
     tokio::spawn(proc_handle::wait_for_child_to_exit(
         pid,
+        process_id.clone(),
         handle_timeout,
+        handle_cpu_timeout,
         handle_memory_limit,
         cgroup_path.clone(),
         Some(controller.version),

@@ -1,5 +1,5 @@
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
 //!
 //! HTTP control server for graceful shutdown, container name updates,
 //! filesystem freeze/thaw, and mount_root (Firecracker).
@@ -531,6 +531,13 @@ async fn handle_request(
                 /// Content for /etc/resolv.conf.
                 #[serde(default)]
                 resolv_conf: Option<String>,
+                /// Binary: edebff2c — PEM of the egress-inspection CA, fanned
+                /// out by `firecracker_init::append_ca_cert`.
+                /// Evidence: "struct EtcFiles with 3 elements" (0x39a00c, was
+                /// "with 2 elements" in 810fd3a4) and the field-name run
+                /// "process" "hosts" "ca_cert" at 0x399f8a.
+                #[serde(default)]
+                ca_cert: Option<String>,
             }
 
             match serde_json::from_slice::<AuthWriteEtcFilesRequest>(&body) {
@@ -596,8 +603,32 @@ async fn handle_request(
                         }
                     }
 
+                    // Binary: edebff2c — the CA PEM is fanned out through the
+                    // same helper the Firecracker init path uses. On failure
+                    // the request is rejected (template 0x38b117):
+                    //   "[CONTROL] /write_etc_files: append_ca_cert failed: {}"
+                    // and the response body is "append_ca_cert: {}\n"
+                    // (template 0x38b150).
+                    let mut ca_cert_desc = String::from("none");
+                    if let Some(ref pem) = req_body.ca_cert {
+                        match firecracker_init::append_ca_cert(pem) {
+                            Ok(()) => ca_cert_desc = format!("{} bytes", pem.len()),
+                            Err(e) => {
+                                log::error!(
+                                    "[CONTROL] /write_etc_files: append_ca_cert failed: {e}"
+                                );
+                                return Ok(Response::builder()
+                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Full::new(Bytes::from(format!("append_ca_cert: {e}\n"))))
+                                    .unwrap());
+                            }
+                        }
+                    }
+
+                    // Binary: edebff2c template 0x38b164 — the old build logged
+                    // only "hosts {} bytes, resolv {} bytes".
                     log::info!(
-                        "[CONTROL] /write_etc_files: hosts {hosts_len} bytes, resolv {resolv_len} bytes"
+                        "[CONTROL] /write_etc_files: hosts {hosts_len} bytes, resolv {resolv_len} bytes, ca_cert {ca_cert_desc}"
                     );
 
                     Ok(Response::builder()
@@ -817,6 +848,7 @@ async fn build_healthcheck_response(
                     pid: entry.pid,
                     reattachable: entry.reattachable,
                     timeout: entry.proc_handle.timeout.map(|d| d.as_secs()),
+                    cpu_timeout: entry.proc_handle.cpu_timeout.map(|d| d.as_secs()),
                     memory_limit_bytes: entry.proc_handle.memory_limit_bytes,
                     start_time: entry.proc_handle.start_time.elapsed().as_secs(),
                     start_wallclock_micros: 0, // TODO(re): track wall-clock start
@@ -863,9 +895,14 @@ async fn build_healthcheck_response(
     format!("{tracked}\nDiagnostic info: [OK\n")
 }
 
-/// Persist a key-value pair to `../container_info.json` (relative to working directory).
+/// Persist a key-value pair to `/container_info.json`.
 /// Reads the existing file (if present), updates the key, and writes back.
-/// Binary string evidence: "../container_info.json" at 0x2a5ca0.
+///
+/// Binary: edebff2c — the path literal is now the absolute
+/// "/container_info.json" at 0x39aa90. 810fd3a4 interned the *relative*
+/// "../container_info.json" (0x2a9007) and took suffixes of it; the leading
+/// ".." is absent from edebff2c's .rodata entirely, so this build writes the
+/// file at the filesystem root rather than one level above the cwd.
 /// Also reads "container_name" field on startup for initial container name.
 /// Xrefs: "[CONTROL] Failed to persist container name to container_info.json: ",
 ///   "[CONTROL] Failed to persist auth key to container_info.json: ",
@@ -874,7 +911,7 @@ async fn build_healthcheck_response(
 ///   "[DEBUG] Failed to read /container_info.json: ",
 ///   "[DEBUG] container_name field not found in /container_info.json"
 fn persist_container_info(key: &str, value: &str) -> Result<(), String> {
-    let path = "../container_info.json";
+    let path = "/container_info.json";
     let mut obj = match std::fs::read_to_string(path) {
         Ok(contents) => serde_json::from_str::<serde_json::Value>(&contents)
             .unwrap_or_else(|_| serde_json::json!({})),
