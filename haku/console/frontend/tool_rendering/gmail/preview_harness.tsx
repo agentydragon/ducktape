@@ -41,7 +41,7 @@ const PREVIEW_FIXTURES = [
     title: "Get the Q3 planning thread",
     serverId: "gmail",
     toolName: "threads_get",
-    args: { thread_id: "t1", format: "full" },
+    args: { id: "t1", format: "full" },
     result: {
       id: "t1",
       snippet: "Here are the notes and open questions from the Q3 planning session.",
@@ -60,7 +60,7 @@ const PREVIEW_FIXTURES = [
     title: "Search threads mentioning receipts",
     serverId: "gmail",
     toolName: "threads_list",
-    args: { query: "label:receipts after:2026/01/01" },
+    args: { q: "label:receipts after:2026/01/01" },
     result: {
       threads: [
         { id: "t3", snippet: "Your order is on its way and should arrive this week." },
@@ -73,7 +73,7 @@ const PREVIEW_FIXTURES = [
     title: "Get the dentist confirmation message",
     serverId: "gmail",
     toolName: "messages_get",
-    args: { message_id: "m-t2", format: "full" },
+    args: { id: "m-t2", format: "full" },
     result: {
       id: "m-t2",
       threadId: "t2",
