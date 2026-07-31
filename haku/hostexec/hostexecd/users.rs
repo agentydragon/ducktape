@@ -7,6 +7,7 @@
 
 use std::ffi::{CStr, CString};
 use std::io;
+use std::path::PathBuf;
 
 /// A resolved account's numeric credentials, including supplementary groups.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +17,12 @@ pub struct Credentials {
     /// Supplementary group GIDs (from `getgrouplist`, includes the primary gid); applied via
     /// `setgroups` before the setgid/setuid drop so the child gets the account's full group set.
     pub groups: Vec<u32>,
+    /// The account name, home and login shell, straight from the same passwd entry. `exec.rs` sets
+    /// `USER`/`LOGNAME`/`HOME`/`SHELL` from these: the drop switches *identity*, and without this
+    /// the child would keep the daemon's environment, so `$HOME` would be root's or unset.
+    pub name: String,
+    pub home: PathBuf,
+    pub shell: String,
 }
 
 /// Look up `username` in the passwd database and its group memberships. Errors if the user does not
@@ -47,10 +54,27 @@ pub fn resolve(username: &str) -> io::Result<Credentials> {
             format!("no such user: {username}"),
         ));
     }
+    // SAFETY: on a hit, these point into `buf`, which outlives the copies made here.
+    let cstr = |p: *const libc::c_char| -> String {
+        if p.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+        }
+    };
+    let home = cstr(pwd.pw_dir);
+    let shell = cstr(pwd.pw_shell);
     Ok(Credentials {
         uid: pwd.pw_uid,
         gid: pwd.pw_gid,
         groups: supplementary_groups(&c_name, pwd.pw_gid)?,
+        name: username.to_owned(),
+        home: PathBuf::from(if home.is_empty() { "/" } else { &home }),
+        shell: if shell.is_empty() {
+            "/bin/sh".to_owned()
+        } else {
+            shell
+        },
     })
 }
 

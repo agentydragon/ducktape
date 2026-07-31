@@ -79,8 +79,28 @@ pub async fn run_command(req: &ExecRequest) -> io::Result<ExecResult> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    if let Some(cwd) = &req.cwd {
-        command.current_dir(cwd);
+    if let Some(creds) = &req.credentials {
+        // The privilege drop below switches *identity*; without this the child would keep the
+        // daemon's environment, so a command running as `alice` would see root's `$HOME` (or none
+        // at all, which makes `set -u` scripts die on `HOME: unbound variable`). Set the same four
+        // variables `su`, `runuser` and systemd's `User=` do, all from the passwd entry of the
+        // account being dropped to — no new privilege, and no daemon state leaking in.
+        command
+            .env("HOME", &creds.home)
+            .env("USER", &creds.name)
+            .env("LOGNAME", &creds.name)
+            .env("SHELL", &creds.shell);
+    }
+    // Default to the target account's home rather than whatever directory the daemon happens to be
+    // in, for the same reason.
+    match (&req.cwd, &req.credentials) {
+        (Some(cwd), _) => {
+            command.current_dir(cwd);
+        }
+        (None, Some(creds)) => {
+            command.current_dir(&creds.home);
+        }
+        (None, None) => {}
     }
     if let Some(creds) = &req.credentials {
         let (uid, gid, groups) = (creds.uid, creds.gid, creds.groups.clone());
