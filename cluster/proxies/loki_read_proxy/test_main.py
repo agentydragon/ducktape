@@ -6,7 +6,8 @@ import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
-from main import DEFAULT_LIMIT, MAX_LIMIT, UPSTREAM_TIMEOUT_S, Settings, create_app
+
+from cluster.proxies.loki_read_proxy.main import DEFAULT_LIMIT, MAX_LIMIT, UPSTREAM_TIMEOUT_S, Settings, create_app
 
 ALLOWLIST = frozenset({"flux-system", "monitoring", "kube-system"})
 

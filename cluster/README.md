@@ -142,7 +142,7 @@ cluster/
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
-├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/)
+├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/, proxies/)
 │   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
@@ -152,6 +152,7 @@ cluster/
 │   └── flux-system/        # Flux controllers (auto-generated)
 ├── rotators/               # Source for credential-rotation CronJob images (authentik/attic JWTs)
 ├── provisioners/           # Source for reconciler CronJob/Job images (grocy user-perms, inventree token, matrix users)
+├── proxies/                # Source for long-running proxy images (loki-read-proxy)
 └── validation/             # Structural validation tests
 ```
 

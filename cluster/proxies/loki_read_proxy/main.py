@@ -18,10 +18,11 @@ allowlisted set of namespaces:
   Upstream responses that *arrive* pass through with their own status.
 
 The proxy has **no authentication of its own** — access control is the
-CiliumNetworkPolicy deployed next to it (ingress only from ``haku-sandbox``
-pods, egress only to the Loki gateway plus DNS), together with Loki's own
-ingress policy (cluster/k8s/monitoring/loki/cilium-network-policy.yaml),
-which admits this proxy but not agent namespaces.
+CiliumNetworkPolicy in cluster/k8s/agents/loki-read-proxy/ (ingress only from
+``haku-sandbox`` pods, egress only to the Loki gateway plus DNS), together with
+Loki's own ingress policy (cluster/k8s/monitoring/loki/cilium-network-policy.yaml),
+which admits this proxy but not agent namespaces. Those manifests deploy this
+code; they live under k8s/ because that is where Flux reads config from.
 
 Configuration (env): ``NAMESPACE_ALLOWLIST`` (comma-separated, required),
 ``UPSTREAM_URL`` (default ``http://loki-gateway.loki.svc:80``).
