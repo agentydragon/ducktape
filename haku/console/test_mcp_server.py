@@ -22,7 +22,7 @@ import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from jsonschema import Draft202012Validator
-from mcp.types import Icon, Tool, ToolAnnotations
+from mcp.types import Icon, TextContent, Tool, ToolAnnotations
 from pydantic import SecretStr, ValidationError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
@@ -546,7 +546,9 @@ async def test_withdraw_tool_call_is_advertised_as_a_mutation(agent_client: Clie
     assert annotations is not None
     assert annotations.readOnlyHint is False
     assert annotations.openWorldHint is False
-    assert tools["get_tool_call"].annotations.readOnlyHint is True
+    read_tool_annotations = tools["get_tool_call"].annotations
+    assert read_tool_annotations is not None
+    assert read_tool_annotations.readOnlyHint is True
 
 
 async def test_withdraw_tool_call_after_approval_reports_the_real_status(
@@ -608,7 +610,9 @@ def test_withdrawn_record_is_not_reported_as_a_promise() -> None:
 
     assert result.is_error is True
     assert result.structured_content is None
-    assert "withdrawn: superseded" in result.content[0].text
+    block = result.content[0]
+    assert isinstance(block, TextContent)
+    assert "withdrawn: superseded" in block.text
 
 
 # ── End-to-end: real upstream MCP server + console served over HTTP + real Postgres ──────────
