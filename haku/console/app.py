@@ -22,6 +22,7 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
@@ -110,7 +111,7 @@ def _cache_control_for_path(path: str, status_code: int) -> str:
     # The app is authoritative for the cache policy of every backend surface it serves — nginx no
     # longer sets Cache-Control on proxied responses (haku/console/default.conf.template), so these
     # prefixes must be listed here, not there. Keep in sync with the proxied `location`s.
-    if path.startswith(("/api/", "/mcp", "/auth/", "/.well-known/")) or path == "/healthz":
+    if path.startswith(("/api/", "/mcp", "/auth/", "/.well-known/", "/metrics")) or path == "/healthz":
         return NO_STORE_CACHE_CONTROL
     return APP_SHELL_CACHE_CONTROL
 
@@ -373,6 +374,15 @@ def create_app(
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Prometheus scrape target. Deliberately absent from default.conf.template's proxied
+    # `location`s: nginx serves the public origin, so an unproxied /metrics stays reachable only
+    # on the pod's own API port, which is what the ServiceMonitor's `metrics` port targets.
+    # A route, not app.mount(): a Mount only matches paths *under* its prefix, so bare /metrics
+    # would fall through to the SPA catch-all and return the app shell.
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # The browser API is operator-only. Agents use /mcp; static bearer support there does not grant
     # access to any /api/* route. The same endpoint separately recognizes the Operator session.

@@ -14,3 +14,11 @@ spec:
       port: 8080
       targetPort: http
       protocol: TCP
+    # Prometheus scrape port. `http` above reaches the nginx container, which serves the public
+    # origin and does not proxy /metrics; this port targets the API container directly so the
+    # ServiceMonitor can reach it without exposing metrics on the public HTTPRoute. Pod IPs are
+    # already routable in-cluster, so this widens no reachability — it only names the target.
+    - name: metrics
+      port: 9090
+      targetPort: api
+      protocol: TCP
