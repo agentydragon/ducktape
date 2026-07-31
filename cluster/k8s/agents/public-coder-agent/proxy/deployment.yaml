@@ -9,11 +9,10 @@
 # rather than forty lines of ours, and because it handles the base64 `Basic` shape
 # that git over HTTPS uses, which our addon did not.
 #
-# The proxy itself enforces nothing about destinations. The allowlist is
-# cnp-egress.yaml, applied to *this* pod's egress by Cilium, so a CONNECT to a
-# non-allowlisted host fails at the network layer rather than in proxy config.
-# iron-proxy carries its own host allowlist as well — defence in depth, and the
-# two lists are meant to stay in step.
+# Destinations are deliberately unrestricted for this agent — see cnp-egress.yaml
+# for why, and for the confined configuration kept ready to restore. What is not
+# unrestricted is the credential: iron.yaml scopes the substitution to GitHub
+# hosts, so wider egress widens what data can leave, not what the token can do.
 #
 # Evidence for every choice here, including a real agent opening a pull request
 # from behind this configuration:

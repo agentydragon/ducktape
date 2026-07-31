@@ -289,6 +289,8 @@ repos:
             cluster/k8s/haku-ci/config\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/openshell/openclaw/policy\.yaml|
+            # iron-proxy config mounted via configMapGenerator, not a K8s manifest
+            cluster/k8s/agents/public-coder-agent/proxy/iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             cluster/k8s/haku/dispatch/litellm/workers-litellm-config\.yaml|

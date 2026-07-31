@@ -1,0 +1,80 @@
+# iron-proxy configuration. The proxy holds the GitHub PAT; the agent holds only
+# a placeholder and never possesses the credential.
+#
+# `replace` mode rather than `inject`: the agent presents `$GH_PAT` on requests it
+# wants authenticated, exactly as it would a real token, and the proxy swaps the
+# value on the way out. That keeps the agent's model of its own situation
+# accurate — there is a credential, it is mediated, it cannot be read — where
+# `inject` would attach it invisibly and leave an agent that looks for a
+# credential finding none. Rationale and measurements:
+# plans/personal_agents/credential_proxy_options.md.
+
+# Explicit forward proxy: consumers point HTTP_PROXY at the Service. The built-in
+# DNS interception mode is off — nothing here hijacks resolution.
+dns:
+  enabled: false
+
+proxy:
+  tunnel_listen: ":8080"
+
+tls:
+  mode: "mitm"
+  # The interception root from certificate.yaml, owned by cert-manager so it
+  # cannot drift the way a self-generated mitmproxy CA did. ECDSA P-256 is fine —
+  # verified against this exact image, which rejects a CA lacking keyCertSign.
+  ca_cert: "/ca/tls.crt"
+  ca_key: "/ca/tls.key"
+
+transforms:
+  # Destination allowlist deliberately disabled for THIS agent. It opens pull
+  # requests against arbitrary public repositories and reads whatever they link
+  # to, so a maintained domain list is friction with little to protect: the
+  # credential is scoped below by host regardless, and the agent never possesses
+  # it, so wider egress widens what data can leave — not what the token can do.
+  #
+  # This waiver is specific to public-coder-agent. Domain confinement remains a
+  # requirement for agents with access to higher-sensitivity material, and the
+  # tested configuration for it is one uncommenting away.
+  #
+  # With no allowlist transform present iron-proxy permits every host — verified,
+  # not assumed. Re-enable by uncommenting here AND narrowing cnp-egress.yaml.
+  #
+  # - name: allowlist
+  #   config:
+  #     domains:
+  #       - "github.com"
+  #       - "api.github.com"
+  #       - "codeload.github.com"
+  #       - "objects.githubusercontent.com"
+  #       - "release-assets.githubusercontent.com"
+  #       - "raw.githubusercontent.com"
+  #       - "pypi.org"
+  #       - "files.pythonhosted.org"
+  #       - "registry.npmjs.org"
+
+  - name: secrets
+    config:
+      secrets:
+        - source:
+            type: env
+            var: GITHUB_TOKEN
+          replace:
+            # Substituted inside `Bearer <placeholder>` and inside base64
+            # `Basic <user>:<placeholder>` alike — the latter is how git over
+            # HTTPS authenticates, verified with a real multi-megabyte push.
+            proxy_value: "proxy-github-placeholder"
+            match_headers: ["Authorization"]
+            # `require: true` is deliberately absent. It rejects requests to a
+            # matching host that lack the placeholder — which sounds right, but in
+            # explicit-proxy mode it is evaluated against the header-less CONNECT
+            # and so rejects every HTTPS request with 403.
+          # These rules are the credential boundary, and they are what makes wide
+          # egress tolerable: the token is attached on these hosts and nowhere
+          # else, however far the agent can reach.
+          rules:
+            - host: "api.github.com"
+            - host: "github.com"
+            - host: "codeload.github.com"
+
+log:
+  level: "info"

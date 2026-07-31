@@ -1,10 +1,26 @@
-# The allowlist. Everything the agent can reach on the internet is in this file,
-# and each addition is a reviewable diff.
+# Egress for the proxy pod — deliberately unrestricted, for THIS agent only.
 #
-# v1 = git hosting (the agent's whole job is opening pull requests) plus package
-# indexes (a coder agent installs tooling). Deliberately absent: LLM providers —
-# the agent's model path is in-cluster LiteLLM and never leaves the cluster; and
-# container registries — kubelet pulls images at the node, not through pod egress.
+# Its job is opening pull requests against arbitrary public repositories and
+# reading whatever they link to, so a maintained domain list is friction with
+# little left to protect. What such a list would have protected is now protected
+# elsewhere and better: the GitHub PAT lives in the proxy, the agent never
+# possesses it, and iron.yaml scopes the substitution by host — so however far the
+# agent can reach, the token is attached to GitHub and nowhere else.
+#
+# The real cost of widening this is a data boundary, not a credential one: with
+# the world reachable, a prompt injection from a cloned repository can send
+# repository contents or session memory somewhere. That is the accepted trade
+# here, and only here.
+#
+# **Domain confinement remains a requirement for agents that will handle
+# higher-sensitivity material.** The confined list is kept verbatim below and is
+# one uncomment away — re-enabling it means uncommenting the allowlist transform
+# in iron.yaml too, so the two stay in step. Evidence that the confined shape
+# works: plans/personal_agents/findings/egress_and_tls.md F4, F15, F16.
+#
+# NOT relaxed, and not relaxable without losing the credential boundary: the app's
+# own NetworkPolicy, which permits egress solely to this proxy. That is what makes
+# the substitution unavoidable rather than advisory.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -15,7 +31,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: public-coder-agent-proxy
   egress:
-    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -27,25 +42,35 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    # GitHub — clone, push to forks, and open pull requests via the REST API.
-    - toFQDNs:
-        - matchName: github.com
-        - matchName: api.github.com
-        - matchName: codeload.github.com
-        - matchName: objects.githubusercontent.com
-        # GitHub release assets redirect here (e.g. workspace-local tool bootstraps).
-        - matchName: release-assets.githubusercontent.com
-        - matchName: raw.githubusercontent.com
+    - toEntities:
+        - world
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
-    # Package indexes for in-task tooling (pip install / npx).
-    - toFQDNs:
-        - matchName: pypi.org
-        - matchName: files.pythonhosted.org
-        - matchName: registry.npmjs.org
-      toPorts:
-        - ports:
-            - port: "443"
+            - port: "80"
               protocol: TCP
+    # The confined configuration, kept verbatim for restoration:
+    #
+    # # GitHub — clone, push to forks, and open pull requests via the REST API.
+    # - toFQDNs:
+    #     - matchName: github.com
+    #     - matchName: api.github.com
+    #     - matchName: codeload.github.com
+    #     - matchName: objects.githubusercontent.com
+    #     # GitHub release assets redirect here (e.g. workspace-local tool bootstraps).
+    #     - matchName: release-assets.githubusercontent.com
+    #     - matchName: raw.githubusercontent.com
+    #   toPorts:
+    #     - ports:
+    #         - port: "443"
+    #           protocol: TCP
+    # # Package indexes for in-task tooling (pip install / npx).
+    # - toFQDNs:
+    #     - matchName: pypi.org
+    #     - matchName: files.pythonhosted.org
+    #     - matchName: registry.npmjs.org
+    #   toPorts:
+    #     - ports:
+    #         - port: "443"
+    #           protocol: TCP
