@@ -102,10 +102,12 @@ openshell-system` hung in `Terminating` on an `OpenShellProvider` whose
 `openshell.lenshq.io/provider-cleanup` finalizer had no controller left, and the
 five CRDs outlived the uninstall.
 
-Read the runbook rather than this section. The one thing worth adding to it is
-recorded there now: the stall is **not** limited to deleting controller pods by
-hand. A pure GitOps removal hits it too when the operator and its custom
-resources are pruned in the same commit, which is the shape this project used.
+Read the runbook rather than this section. It had one gap, which is why I read
+it as not applying: it attributed the stall to deleting controller pods by hand,
+and a pure GitOps removal hits it just as reliably when the operator and its
+custom resources are pruned in the same commit — the shape this project used.
+That correction, and the `openclaw-gateway` cleanup below, ship separately as
+operational changes rather than in this research PR.
 
 For the record, what unstuck it:
 

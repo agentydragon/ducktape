@@ -12,8 +12,8 @@ metadata:
   annotations:
     description: >-
       Retained only to hold the OpenClaw-era API keys and bot token, whose SOPS
-      documents pin this namespace. Nothing should run here since the OpenClaw/OpenShell teardown
-      on 2026-07-31; see ../README.md for what the teardown left behind.
+      documents pin this namespace. No workloads run here since the
+      OpenClaw/OpenShell teardown on 2026-07-31.
   labels:
     name: openclaw-gateway
     # No workloads, so nothing for Goldilocks to right-size.

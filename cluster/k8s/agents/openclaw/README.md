@@ -15,25 +15,14 @@ costs real effort to re-mint:
 | `openclaw-telegram-bot-token` | `openclaw-gateway` | `@agentydragonopenclawbot` from @BotFather       |
 | `ibkr-flex-query-credentials` | `openclaw-sandbox` | IBKR Flex Query token + query ID                 |
 
-**`openclaw-gateway` is not yet clean.** The 2026-07-31 teardown left an
-`OpenClawInstance/openclaw` behind — Flux pruned its manifest, but its finalizer
-has no controller left to run it, so it lingers and keeps a scaled-to-zero
-`StatefulSet/openclaw` and two orphaned PVCs alive (`openclaw-data`, 20Gi on the
-Proxmox-pinned `local-path-proxmox`; and `openshell-data-openshell-gateway-0`,
-1Gi). The three `openclaw.rocks` CRDs survived too, as Helm does not remove CRDs
-on uninstall. Clearing that up is tracked in <../../TODO.md> § "Retire the
-`openclaw-*` namespaces"; until then, read the sections below as describing what
-_should_ be here, not everything that is.
-
 The two namespaces exist for one reason: **each SOPS document pins its namespace in
 `metadata`, and these files set no `mac_only_encrypted`, so the document MAC covers
 that field.** Re-homing them into `shared-secrets` is not a text edit — it needs the
 cluster age key and a `sops` round-trip. Keeping the namespaces was the option that
 loses nothing and requires no key.
 
-`openclaw-sandbox` is genuinely empty; `openclaw-gateway` is not, per the note
-above. The privileged Pod Security labels that `openclaw-sandbox` carried for
-OpenShell's supervisor are gone, and
+So both namespaces are now empty of workloads. The privileged Pod Security labels
+that `openclaw-sandbox` carried for OpenShell's supervisor are gone, and
 `openclaw-gateway` opts out of Goldilocks since there is nothing to right-size.
 
 Not to be confused with the `openclaw` **ImageRepository/ImagePolicy** under

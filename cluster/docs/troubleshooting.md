@@ -407,26 +407,13 @@ Distilled from the Longhorn uninstall incident
    - Cloudnative-PG: `prune-confirmed` annotation on clusters
    - Strimzi: explicit `pause-reconciliation` removal
 
-5. **Helm uninstall hooks may stall on finalizers** whenever the controller is
-   gone before its custom resources are — by hand, _or_ by pruning the operator
-   and its CRs in the same GitOps commit, which is the easy way to hit this
-   without ever running `kubectl delete` (#3607 stalled
-   `kubectl delete ns openshell-system` exactly this way, on an
-   `OpenShellProvider` whose `provider-cleanup` finalizer had no controller
-   left). Identify and clear them:
+5. **Helm uninstall hooks may stall on finalizers** if you've already deleted
+   the controller pods by hand. Identify and clear them:
 
    ```bash
    kubectl -n <ns> get <crd> -o jsonpath='{range .items[*]}{.metadata.name}: {.metadata.finalizers}{"\n"}{end}'
    kubectl -n <ns> patch <crd> <name> --type=merge -p '{"metadata":{"finalizers":[]}}'
    ```
-
-   A stuck namespace names the culprit itself — check
-   `kubectl get ns <ns> -o jsonpath='{.status.conditions}'` for
-   `NamespaceContentRemaining` and `NamespaceFinalizersRemaining` rather than
-   hunting. And clear the finalizer on the **resource**: patching the
-   namespace's own `spec.finalizers` via the `/finalize` subresource is the
-   widely-copied version of this fix and it orphans the namespace's contents in
-   etcd.
 
 6. **CRDs and webhook configs are NOT cleaned by Helm uninstall by default.**
    Explicitly delete after `helm uninstall` completes:

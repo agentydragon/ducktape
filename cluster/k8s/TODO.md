@@ -27,28 +27,7 @@ unique secrets pin those namespaces in `metadata`, and since the files set no
 `mac_only_encrypted` the document MAC covers that field, so re-homing them is a
 `sops` operation and not a text edit. Background: `agents/openclaw/README.md`.
 
-Before either step, there is teardown debris to clear in `openclaw-gateway`.
-`OpenClawInstance/openclaw` outlived its manifest because its finalizer has no
-controller left to run it — the same trap that hung the `openshell-system`
-deletion — and while it lingers, Kubernetes will not garbage-collect the
-scaled-to-zero `StatefulSet/openclaw` it owns, nor release 21Gi of PVCs.
-
-- [ ] Clear the stuck instance and let GC follow, then drop the CRDs Helm left:
-
-      ```bash
-      kubectl -n openclaw-gateway patch openclawinstance openclaw \
-        --type=merge -p '{"metadata":{"finalizers":[]}}'
-      kubectl -n openclaw-gateway delete pvc openclaw-data \
-        openshell-data-openshell-gateway-0
-      kubectl delete crd openclawinstances.openclaw.rocks \
-        openclawselfconfigs.openclaw.rocks openclawclusterdefaults.openclaw.rocks
-      ```
-
-      `openclaw-data` is 20Gi on `local-path-proxmox` — Proxmox-pinned storage
-      held for a deleted service, so this is resilience debt as well as tidiness.
-      Needs cluster-admin.
-
-Then two steps, in order — the second is blocked on the first:
+Two steps, in order — the second is blocked on the first:
 
 - [ ] **Move the credentials** (needs the cluster age key). Re-author each under
       `agents/shared-secrets/` with the right namespace and `sops -e -i`:

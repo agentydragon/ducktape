@@ -12,9 +12,9 @@ metadata:
   annotations:
     description: >-
       Retained only to hold ibkr-flex-query-credentials, whose SOPS document
-      pins this namespace. Nothing should run here since the OpenClaw/OpenShell teardown on
-      2026-07-31 — the privileged Pod Security labels OpenShell's supervisor
-      needed are gone with it.
+      pins this namespace. No workloads run here since the OpenClaw/OpenShell
+      teardown on 2026-07-31 — the privileged Pod Security labels OpenShell's
+      supervisor needed are gone with it.
   labels:
     name: openclaw-sandbox
     environment: development
