@@ -19,9 +19,24 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
       through mitmproxy unconditionally — a stricter posture giving full
       audit but losing the in-cluster bypass escape hatch.
 
-## OpenClaw secrets
+## Stale `openclaw-sandbox` reflector targets in shared secrets
 
-- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
+Two SOPS-encrypted Secrets still name the deleted `openclaw-sandbox` namespace in
+their emberstack reflector annotations:
+
+- [ ] `agents/shared-secrets/attic-push-token.sops.yaml` — drop `openclaw-sandbox`
+      from `reflection-{allowed,auto}-namespaces`
+- [ ] `agents/shared-secrets/buildbuddy-api-key.sops.yaml` — same, leaving
+      `codex-pod,public-coder-agent`
+
+Not done alongside the deletion because these files set no `mac_only_encrypted`,
+so the document MAC covers metadata: a raw text edit of the annotations breaks
+decryption with a MAC mismatch. Fixing them needs the age key and a `sops -i`
+pass, which an agent without the key cannot do without rotating the value.
+
+Harmless in the meantime — reflecting into a namespace that does not exist is a
+no-op, so this is tidiness rather than a fault. Fold it into the next `sops` edit
+of either file rather than making a trip for it.
 
 ## Secret layout
 
