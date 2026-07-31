@@ -234,6 +234,12 @@ try {
       for (const selector of clicks ?? (click ? [click] : [])) {
         await page.click(selector);
         await settle(300);
+        // `page.click` leaves the cursor on the element it clicked, so any Tooltip attached to it
+        // opens and stays open into the capture — in the sync/session scenes that put a tooltip
+        // squarely over the panel heading it had just revealed. Park the cursor off-canvas so a
+        // scene captures its post-click state, not a hover state nobody asked for.
+        await page.mouse.move(0, 0);
+        await settle(150);
       }
       // A click that lands on the wrong element fails silently — `page.click` only throws when
       // nothing matches at all — and so does one whose effect arrives asynchronously and never
