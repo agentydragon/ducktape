@@ -92,13 +92,18 @@ is specified in <../../plans/oauth_architecture.md>. The next product slices are
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
 
-## Tool-call cards — compact view
+## Screenshot harness — the detailed variant is never actually rendered
 
-- **Don't show why a call _wasn't_ auto-approved in compact view.** `tool_call_card.tsx` renders
-  `Auto-approval: {fields.autoApprovalEvaluation}` in both variants. For a call that was not
-  auto-approved that string only explains an absence — exactly the provenance the compact rules
-  say to omit — and it is the reason the operator is looking at the card at all. Keep it for
-  auto-approved calls and/or move it behind the detailed `Metadata` disclosure.
+The `history` scene (`screenshots/render.mjs`) clicks `[aria-label="Full"]` intending to put its
+first row into the detailed variant, but no card in the resulting PNG renders the detail-only
+`Metadata` disclosure, so the click is not reaching a history row (most likely it matches a
+control in the closed approvals drawer first, which `closeApprovals: true` hides but leaves in the
+DOM). Effect: **no scene visually reviews the detailed variant at all** — detail-only rendering
+regressions cannot be caught by looking at the screenshots. Scope the selector to the history list
+(or click the row's own control by index) and confirm `Metadata` appears in the PNG.
+
+## Approvals drawer
+
 - **A withdrawn call vanishes from the drawer with no explanation.** An agent withdrawal removes
   the card from the queue mid-review; the operator sees a silent drop. Fixing it properly means
   re-fetching disappeared ids in `applyToolApprovals` (`haku_ui_embed.tsx`) and surfacing the

@@ -8,6 +8,7 @@ import {
   recentToolCallCountdown,
   recentToolCallTtlMs,
   screenshotApprovalQueueId,
+  showsAutoApprovalEvaluation,
   statusColor,
   terminalStatusLabel,
   toolApprovalQueueId,
@@ -114,6 +115,20 @@ describe("approval queue state", () => {
     );
     expect(fields.approvalPolicyId).toBe("v1");
     expect(fields.autoApprovalEvaluation).toBe("approved: Gmail search/read operation");
+  });
+
+  it("hides a declined policy's evaluation in compact but keeps an auto-approval's", () => {
+    const declined = { autoApprovalEvaluation: "manual: not a read-only tool", approvalPolicyId: null };
+    const approved = { autoApprovalEvaluation: "approved: allowlisted read", approvalPolicyId: "unconditional_v1" };
+
+    // A declined evaluation only explains an absence — the reason the operator is reading the card
+    // at all — so it is provenance the compact view omits.
+    expect(showsAutoApprovalEvaluation(declined, false)).toBe(false);
+    expect(showsAutoApprovalEvaluation(declined, true)).toBe(true);
+    // What let a call through unattended is worth a compact line.
+    expect(showsAutoApprovalEvaluation(approved, false)).toBe(true);
+    expect(showsAutoApprovalEvaluation(approved, true)).toBe(true);
+    expect(showsAutoApprovalEvaluation({ autoApprovalEvaluation: null, approvalPolicyId: null }, true)).toBe(false);
   });
 
   it("labels an agent withdrawal distinctly from an operator denial", () => {

@@ -103,6 +103,9 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     rationale: "These are already in stock after the Thrive delivery, so drop them from the list.",
     result: null,
     arguments: { ids: [3, 7, 12] },
+    // The history scene toggles this first row to "Full", so it shows the declined-policy
+    // evaluation; tc_3 below carries the same kind of string on a compact row, where it is hidden.
+    auto_approval_evaluation: "manual: grocy-sf/shopping_list_items_remove is not a read-only tool",
   }),
   toolCall({ tool_call_id: "tc_1", title: "Add Thrive box items to Grocy", status: "ok" }),
   toolCall({
@@ -125,6 +128,7 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     status: "denied",
     rationale: "The worker pod has been CrashLoopBackOff for 20 minutes; restart it.",
     denial_reason: "Not without a rollout plan — investigate the crash first.",
+    auto_approval_evaluation: "manual: kubectl/delete is never auto-approved",
     result: null,
     caller: { kind: "operator" },
     arguments: KUBECTL_HISTORY_FIXTURE.args,

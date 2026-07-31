@@ -170,6 +170,20 @@ const STATUS_COLORS: Record<ToolCallRecord["status"], string> = {
   withdrawn: "gray",
 };
 
+/** Whether the card should show the auto-approval evaluation string.
+ *
+ * The evaluation records why the reviewed policy did or did not match. When it *did*, it says what
+ * let the call through unattended, which is worth a compact line. When it did not, the string only
+ * explains an absence — and that absence is the very reason the operator is looking at the card at
+ * all — so it is provenance, which compact omits. Detailed still carries it either way. */
+export function showsAutoApprovalEvaluation(
+  fields: Pick<ApprovalDisplayFields, "autoApprovalEvaluation" | "approvalPolicyId">,
+  detailed: boolean
+): boolean {
+  if (!fields.autoApprovalEvaluation) return false;
+  return detailed || fields.approvalPolicyId !== null;
+}
+
 export function terminalStatusLabel(status: ToolCallRecord["status"]): string {
   return STATUS_LABELS[status];
 }

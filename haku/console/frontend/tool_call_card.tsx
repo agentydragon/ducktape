@@ -1,7 +1,7 @@
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 
-import type { ApprovalDisplayFields } from "./approval_state.ts";
+import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state.ts";
 import { ToolActionLine } from "./tool_action_line.tsx";
 import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field.tsx";
 import { ToolCallMeta } from "./tool_call_meta.tsx";
@@ -79,7 +79,7 @@ export function ToolCallCard({
               Auto-approved by {fields.approvalPolicyId}
             </Text>
           )}
-          {fields.autoApprovalEvaluation && (
+          {showsAutoApprovalEvaluation(fields, detailed) && (
             <Text size="xs" c="dimmed">
               Auto-approval: {fields.autoApprovalEvaluation}
             </Text>
