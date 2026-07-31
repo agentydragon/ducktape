@@ -12,7 +12,7 @@ import { Group, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
+import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
@@ -20,9 +20,9 @@ import {
   PreviewText,
   PreviewTitle,
   type PreviewVariant,
-} from "../vocabulary.tsx";
-import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { GROCY_SERVER_ID } from "../server_ids.ts";
+} from "../vocabulary";
+import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
+import { GROCY_SERVER_ID } from "../server_ids";
 
 // A batch result is a list of per-item rows: an ok variant (per-op details) or an error variant
 // (an `error` message). FastMCP emits the union as `anyOf`; both variants carry an optional `kind`

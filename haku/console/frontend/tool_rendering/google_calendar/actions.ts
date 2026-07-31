@@ -2,10 +2,10 @@
 // approvals card shows and a push notification is titled with. Beside the widgets they
 // describe, and React-free so `../../sw.ts` can bundle them (see ../action_entry.ts).
 
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { fixed, fromArgs } from "../action_entry.ts";
-import type { ActionEntry } from "../action_entry.ts";
-import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { fixed, fromArgs } from "../action_entry";
+import type { ActionEntry } from "../action_entry";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
 
 export const googleCalendarActions: Record<string, ActionEntry> = {
   create_event: fromArgs(mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event"), (a) => ({

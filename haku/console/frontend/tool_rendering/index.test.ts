@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toolCallPreview, toolPreview, toolResultPreview } from "./index.tsx";
+import { toolCallPreview, toolPreview, toolResultPreview } from "./index";
 
 // The per-server renderers are covered in each module's own *.test.ts; this covers the
 // registry dispatch itself — routing by serverId, threading the variant, and the null paths.

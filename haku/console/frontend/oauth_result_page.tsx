@@ -1,9 +1,9 @@
 import { Button, Center, Loader, Paper, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import { consumeOAuthConnectionResult, type OAuthConnectionResult } from "./client.ts";
-import { rememberedEmbedPath } from "./routing.ts";
-import { SUCCESS_COLOR } from "./theme.ts";
+import { consumeOAuthConnectionResult, type OAuthConnectionResult } from "./client";
+import { rememberedEmbedPath } from "./routing";
+import { SUCCESS_COLOR } from "./theme";
 
 export function OAuthResultView({
   result,

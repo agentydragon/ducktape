@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 
-import { approvalDisplayFields, terminalStatusLabel } from "./approval_state.ts";
-import { approveToolCall, denyToolCall, type ToolCallRecord } from "./client.ts";
-import { toastError, toastSuccess } from "./toast.ts";
+import { approvalDisplayFields, terminalStatusLabel } from "./approval_state";
+import { approveToolCall, denyToolCall, type ToolCallRecord } from "./client";
+import { toastError, toastSuccess } from "./toast";
 
 type ToolCallDecision = "approve" | "deny";
 export interface ToolCallDecisionDependencies {

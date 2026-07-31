@@ -2,9 +2,9 @@
 // fixtures plus the mount call; `satisfies RegisteredToolPreviewFixture` ties each
 // (serverId, toolName, args, result?) to the registry's real Zod schemas, so a stale id, argument,
 // or result shape is a type error.
-import { mountPreviewCards } from "../screenshot/mount.tsx";
+import { mountPreviewCards } from "../screenshot/mount";
 
-import type { RegisteredToolPreviewFixture } from "../index.tsx";
+import type { RegisteredToolPreviewFixture } from "../index";
 
 const PREVIEW_FIXTURES = [
   {

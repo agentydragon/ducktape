@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calendarSummaryFromEvents } from "./calendar_client.ts";
+import { calendarSummaryFromEvents } from "./calendar_client";
 
 describe("calendarSummaryFromEvents", () => {
   it("uses the standard events.list summary and derives the calendar link", () => {

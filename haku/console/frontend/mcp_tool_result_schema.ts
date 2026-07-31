@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import type { McpToolResults } from "./api/mcp_tool_results";
 import mcpToolResultsSchema from "./api/mcp_tool_results.schema.json";
-import { objectProperties } from "./mcp_tool_schema.ts";
+import { objectProperties } from "./mcp_tool_schema";
 
 type JsonSchema = Parameters<typeof z.fromJSONSchema>[0];
 

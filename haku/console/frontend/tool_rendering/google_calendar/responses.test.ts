@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderResultPreview } from "../result_entry.tsx";
-import { googleCalendarResultPreviews } from "./responses.tsx";
+import { renderResultPreview } from "../result_entry";
+import { googleCalendarResultPreviews } from "./responses";
 
 const recurringEvent = {
   event_id: "evt1",

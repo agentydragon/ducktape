@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { defineCallPreview, renderCallPreview } from "./call_entry.tsx";
+import { defineCallPreview, renderCallPreview } from "./call_entry";
 
 const zArgs = z.object({ subject: z.string() });
 const zResult = z.object({ id: z.string() });

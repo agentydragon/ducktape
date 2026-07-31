@@ -6,8 +6,8 @@
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { unwrapMcpToolResult } from "../mcp_result.ts";
-import type { PreviewVariant } from "./vocabulary.tsx";
+import { unwrapMcpToolResult } from "../mcp_result";
+import type { PreviewVariant } from "./vocabulary";
 
 export type ToolResultPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   schema: S;

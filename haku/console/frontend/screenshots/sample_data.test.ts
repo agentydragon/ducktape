@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { recentToolCallTtlMs } from "../approval_state.ts";
-import { toolCallPreview, toolPreview } from "../tool_rendering/index.tsx";
-import { SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCalls } from "./sample_data.ts";
+import { recentToolCallTtlMs } from "../approval_state";
+import { toolCallPreview, toolPreview } from "../tool_rendering/index";
+import { SAMPLE_PENDING, SAMPLE_TOOL_CALLS, sampleRecentToolCalls } from "./sample_data";
 
 const CUSTOM_HISTORY_IDS = new Set(["tc_1", "tc_2", "tc_3"]);
 const CUSTOM_PENDING_IDS = new Set(["tc_p2"]);

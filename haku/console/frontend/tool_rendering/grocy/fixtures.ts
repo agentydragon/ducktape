@@ -1,4 +1,4 @@
-import type { GrocyReferenceData } from "../../grocy_client.ts";
+import type { GrocyReferenceData } from "../../grocy_client";
 
 // Grocy reference rows used by this server's id-to-name and old-to-new preview fixtures.
 export const GROCY_REFERENCE_FIXTURE: GrocyReferenceData = {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { gmailThreadPreview } from "./gmail_client.ts";
-import type { McpToolResultFor } from "./mcp_tool_result_schema.ts";
+import { gmailThreadPreview } from "./gmail_client";
+import type { McpToolResultFor } from "./mcp_tool_result_schema";
 
 describe("gmailThreadPreview", () => {
   it("derives preview fields from threads_get and labels_list results", () => {

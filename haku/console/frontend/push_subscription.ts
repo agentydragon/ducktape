@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { api, errorDetail } from "./client.ts";
+import { api, errorDetail } from "./client";
 
 // Browser-side half of Web Push (server half: ../web_push.py). Registers the console's service
 // worker, asks for notification permission, and hands the resulting subscription to the backend

@@ -8,17 +8,17 @@ import {
   type GeolocationApproval,
   type RecentToolCall,
   type ScreenshotApproval,
-} from "./approval_state.ts";
+} from "./approval_state";
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
-import { isRoutePath, parseInbound, vetOpenLink } from "./bridge.ts";
-import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client.ts";
-import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
-import { ShellChrome } from "./shell_chrome.tsx";
-import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
-import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
-import { ExternalLink } from "./link.tsx";
-import { openExternal, POPUP_HINT } from "./open_external.ts";
+import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
+import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client";
+import { ConfirmDialog, type Escalation } from "./confirm_dialog";
+import { ShellChrome } from "./shell_chrome";
+import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation";
+import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant";
+import { ExternalLink } from "./link";
+import { openExternal, POPUP_HINT } from "./open_external";
 import {
   CONSOLE_ROOT_PATH,
   rememberEmbedPath,
@@ -26,17 +26,17 @@ import {
   type ConsoleNavigationView,
   type ConsoleView,
   viewForPathname,
-} from "./routing.ts";
-import { ScreenshotSession } from "./screenshot_capture.ts";
-import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
-import { SettingsPanel } from "./settings_panel.tsx";
-import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel.tsx";
-import { toastError, toastSuccess } from "./toast.ts";
-import { useToolCallDecision } from "./tool_call_decision.ts";
-import { useConsoleEvents } from "./console_events.ts";
-import { redirectToOperatorLogin } from "./operator_login.ts";
-import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session.ts";
-import { ToolCallsPage } from "./tool_calls_page.tsx";
+} from "./routing";
+import { ScreenshotSession } from "./screenshot_capture";
+import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
+import { SettingsPanel } from "./settings_panel";
+import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel";
+import { toastError, toastSuccess } from "./toast";
+import { useToolCallDecision } from "./tool_call_decision";
+import { useConsoleEvents } from "./console_events";
+import { redirectToOperatorLogin } from "./operator_login";
+import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
+import { ToolCallsPage } from "./tool_calls_page";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The

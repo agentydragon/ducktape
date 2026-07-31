@@ -1,8 +1,8 @@
-import { CodeBlock } from "./code_block.tsx";
-import { Field } from "./field.tsx";
-import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
-import { unwrapToolResult } from "./tool_rendering/result_entry.tsx";
-import { toolResultPreview } from "./tool_rendering/index.tsx";
+import { CodeBlock } from "./code_block";
+import { Field } from "./field";
+import type { PreviewVariant } from "./tool_rendering/vocabulary";
+import { unwrapToolResult } from "./tool_rendering/result_entry";
+import { toolResultPreview } from "./tool_rendering/index";
 
 /** The exact stored result envelope behind a collapsed disclosure — byte-exact-ish (the stored
  * envelope, not the unwrapped payload), so a widget's ranking never costs the real, copyable

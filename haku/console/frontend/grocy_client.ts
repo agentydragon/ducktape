@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { callOperatorMcpTool } from "./mcp_client.ts";
+import { callOperatorMcpTool } from "./mcp_client";
 
 const zReferenceItem = z.object({ id: z.coerce.number().int(), name: z.string() });
 const nullableReferenceId = z.preprocess(

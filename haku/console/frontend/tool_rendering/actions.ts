@@ -12,13 +12,13 @@
 // loads to show a notification. Sharing one registry is also what stops the two surfaces from
 // drifting into different phrasings for the same call.
 
-import type { ActionEntry, ToolAction } from "./action_entry.ts";
-import { gmailActions } from "./gmail/actions.ts";
-import { googleCalendarActions } from "./google_calendar/actions.ts";
-import { grocyActions } from "./grocy/actions.ts";
-import { hakuRoutineActions } from "./haku_routine/actions.ts";
-import { hostexecActions } from "./hostexec/actions.ts";
-import { kubectlActions } from "./kubectl/actions.ts";
+import type { ActionEntry, ToolAction } from "./action_entry";
+import { gmailActions } from "./gmail/actions";
+import { googleCalendarActions } from "./google_calendar/actions";
+import { grocyActions } from "./grocy/actions";
+import { hakuRoutineActions } from "./haku_routine/actions";
+import { hostexecActions } from "./hostexec/actions";
+import { kubectlActions } from "./kubectl/actions";
 import {
   GMAIL_SERVER_ID,
   GOOGLE_CALENDAR_SERVER_ID,
@@ -27,8 +27,8 @@ import {
   HOSTEXEC_SERVER_ID,
   KUBECTL_SERVER_ID,
   TANA_RW_SERVER_ID,
-} from "./server_ids.ts";
-import { tanaActions } from "./tana/actions.ts";
+} from "./server_ids";
+import { tanaActions } from "./tana/actions";
 
 const ACTIONS: Record<string, Record<string, ActionEntry>> = {
   [GMAIL_SERVER_ID]: gmailActions,

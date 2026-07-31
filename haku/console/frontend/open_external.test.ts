@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { openExternal } from "./open_external.ts";
+import { openExternal } from "./open_external";
 
 describe("openExternal", () => {
   afterEach(() => {

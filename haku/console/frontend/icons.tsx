@@ -21,7 +21,7 @@ import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import type { ComponentProps } from "react";
 
-import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon_data.ts";
+import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon_data";
 
 type TablerIconProps = ComponentProps<typeof IconChecklist>;
 

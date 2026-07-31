@@ -5,14 +5,14 @@
 import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
-import { Field } from "../../field.tsx";
-import { ClockIcon, GoogleCalendarIcon, MapPinIcon, UsersIcon } from "../../icons.tsx";
-import { ExternalLink } from "../../link.tsx";
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
-import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { COMPACT_ITEM_LIMIT, MoreLine, PreviewText, PreviewTitle } from "../vocabulary.tsx";
-import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
-import { formatEventDateTimeRange, RecurrenceField } from "./requests.tsx";
+import { Field } from "../../field";
+import { ClockIcon, GoogleCalendarIcon, MapPinIcon, UsersIcon } from "../../icons";
+import { ExternalLink } from "../../link";
+import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
+import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
+import { COMPACT_ITEM_LIMIT, MoreLine, PreviewText, PreviewTitle } from "../vocabulary";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
+import { formatEventDateTimeRange, RecurrenceField } from "./requests";
 
 export const zCreateEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
 const zGetEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");

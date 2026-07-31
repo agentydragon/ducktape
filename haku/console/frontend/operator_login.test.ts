@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login.ts";
+import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 describe("redirectToOperatorLogin", () => {
   it("carries the current console page and query as the continuation", async () => {
     // A fresh module registry: the one-flow-per-document latch below is module state, so this
     // case has to run against an untouched copy.
     vi.resetModules();
-    const { redirectToOperatorLogin: redirect } = await import("./operator_login.ts");
+    const { redirectToOperatorLogin: redirect } = await import("./operator_login");
     const replace = vi.fn();
 
     redirect({ pathname: "/_console/tool-calls", search: "?show=all", replace });
@@ -18,7 +18,7 @@ describe("redirectToOperatorLogin", () => {
   it("reports that the document is leaving, so surfaces can hold their error state", async () => {
     vi.resetModules();
     const { redirectToOperatorLogin: redirect, operatorLoginRedirectStarted: started } =
-      await import("./operator_login.ts");
+      await import("./operator_login");
 
     expect(started()).toBe(false);
     redirect({ pathname: "/", search: "", replace: vi.fn() });
@@ -28,7 +28,7 @@ describe("redirectToOperatorLogin", () => {
   it("stays quiet on the login pages themselves, so nothing suppresses their own errors", async () => {
     vi.resetModules();
     const { redirectToOperatorLogin: redirect, operatorLoginRedirectStarted: started } =
-      await import("./operator_login.ts");
+      await import("./operator_login");
     const replace = vi.fn();
 
     redirect({ pathname: "/auth/callback", search: "?state=abc", replace });

@@ -9,12 +9,12 @@
 import { Group, Stack } from "@mantine/core";
 import { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { Field } from "../../field.tsx";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { PreviewText, type PreviewProps } from "../vocabulary.tsx";
-import { KUBECTL_SERVER_ID } from "../server_ids.ts";
-import { zPodsDeleteArgs, zPodsLogArgs, zResourcesCreateOrUpdateArgs, zResourcesDeleteArgs } from "./schemas.ts";
+import { CodeBlock } from "../../code_block";
+import { Field } from "../../field";
+import { definePreview, type ToolPreview } from "../entry";
+import { PreviewText, type PreviewProps } from "../vocabulary";
+import { KUBECTL_SERVER_ID } from "../server_ids";
+import { zPodsDeleteArgs, zPodsLogArgs, zResourcesCreateOrUpdateArgs, zResourcesDeleteArgs } from "./schemas";
 
 // kubectl-passthrough-mcp is a remote third-party binary
 // (containers/kubernetes-mcp-server), so its tools/list schemas are not available to the

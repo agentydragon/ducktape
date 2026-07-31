@@ -1,5 +1,4 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,22 +25,16 @@ js_library(
 # every widget import it without a cycle.
 # Leaf: no imports at all, so both the React widget registry and the React-free action registry
 # can key off the same server ids.
-ts_project(
+js_library(
     name = "server_ids",
     srcs = ["server_ids.ts"],
-    no_emit = True,
-    resolve_json_module = True,
-    tsconfig = "//haku/console/frontend:tsconfig",
 )
 
 # Deliberately React-free — the service worker bundles it to describe push notifications. Depends
 # only on the generated schema catalog and the server ids.
-ts_project(
+js_library(
     name = "action_entry",
     srcs = ["action_entry.ts"],
-    no_emit = True,
-    resolve_json_module = True,
-    tsconfig = "//haku/console/frontend:tsconfig",
     deps = ["//:node_modules/zod"],
 )
 

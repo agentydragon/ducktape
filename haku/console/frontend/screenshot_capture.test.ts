@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ScreenshotSession } from "./screenshot_capture.ts";
+import { ScreenshotSession } from "./screenshot_capture";
 
 // jsdom has no getDisplayMedia / real video decoding; each test stubs what it needs and
 // restores afterward.

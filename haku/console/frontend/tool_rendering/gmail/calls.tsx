@@ -6,9 +6,9 @@
 // operator is verifying what actually got drafted, so that content stays), plus the draft id in
 // detailed. The card's error line (tool_call_card.tsx) already shows a failed call's message, so
 // a failed/pending call keeps rendering the pending view — there's nothing to link to yet.
-import { defineCallPreview, type ToolCallPreview } from "../call_entry.tsx";
-import { CreateGmailDraftPreview, type CreateGmailDraftArgs, zCreateGmailDraftArgs } from "./requests.tsx";
-import { CreateGmailDraftResultView, type Draft, zDraft } from "./responses.tsx";
+import { defineCallPreview, type ToolCallPreview } from "../call_entry";
+import { CreateGmailDraftPreview, type CreateGmailDraftArgs, zCreateGmailDraftArgs } from "./requests";
+import { CreateGmailDraftResultView, type Draft, zDraft } from "./responses";
 
 function CreateDraftCall({
   args,

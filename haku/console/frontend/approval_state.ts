@@ -1,6 +1,6 @@
 import type { GeolocationOptions } from "@haku/console-bridge/protocol";
 
-import type { ToolCallRecord } from "./client.ts";
+import type { ToolCallRecord } from "./client";
 
 export interface GeolocationApproval {
   id: string;

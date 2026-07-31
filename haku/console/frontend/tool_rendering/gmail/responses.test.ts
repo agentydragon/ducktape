@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderResultPreview } from "../result_entry.tsx";
-import { gmailResultPreviews } from "./responses.tsx";
+import { renderResultPreview } from "../result_entry";
+import { gmailResultPreviews } from "./responses";
 
 describe("gmailResultPreviews", () => {
   it("has no entry for drafts_create — it's a combined widget (calls.tsx) instead", () => {

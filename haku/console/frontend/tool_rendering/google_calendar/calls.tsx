@@ -7,9 +7,9 @@
 // the way it would be if both rendered together. The card's error line (tool_call_card.tsx)
 // already shows a failed call's message, so a failed/pending call keeps rendering the pending
 // view — there's nothing to link to yet.
-import { defineCallPreview, type ToolCallPreview } from "../call_entry.tsx";
-import { CreateCalendarEventPreview, type CreateCalendarEventArgs, zCreateCalendarEventArgs } from "./requests.tsx";
-import { CalendarEventResultView, type CalendarEvent, zCreateEventResult } from "./responses.tsx";
+import { defineCallPreview, type ToolCallPreview } from "../call_entry";
+import { CreateCalendarEventPreview, type CreateCalendarEventArgs, zCreateCalendarEventArgs } from "./requests";
+import { CalendarEventResultView, type CalendarEvent, zCreateEventResult } from "./responses";
 
 function CreateEventCall({
   args,

@@ -1,20 +1,20 @@
 // Full-page screenshot harness for Haku Console. The production shell is rendered with mocked
 // API data; render.mjs intercepts the real iframe request and supplies an unmistakable striped
 // Haku UI document so layout overlap is visible in the resulting image.
-import "./mock_api.ts";
+import "./mock_api";
 
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
-import { HakuUiEmbed } from "../haku_ui_embed.tsx";
-import { OAuthResultView } from "../oauth_result_page.tsx";
-import type { ConsoleNavigationView, ConsoleView } from "../routing.ts";
-import { ShellChrome, type ShellChromeProps } from "../shell_chrome.tsx";
-import { hakuTheme } from "../theme.ts";
-import { toastError, toastSuccess } from "../toast.ts";
-import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data.ts";
+import { HakuUiEmbed } from "../haku_ui_embed";
+import { OAuthResultView } from "../oauth_result_page";
+import type { ConsoleNavigationView, ConsoleView } from "../routing";
+import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
+import { hakuTheme } from "../theme";
+import { toastError, toastSuccess } from "../toast";
+import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
 
 const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};

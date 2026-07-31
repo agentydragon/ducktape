@@ -4,7 +4,7 @@ import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { describe, expect, it } from "vitest";
 
-import { chooseCompactFolds } from "./code_block.tsx";
+import { chooseCompactFolds } from "./code_block";
 
 // Build a parsed state for `doc` and return the names of the top-level entries that compact mode
 // would fold at `budget` visible lines. Each name comes from the fold range's header line (the text

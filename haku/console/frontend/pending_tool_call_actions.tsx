@@ -1,7 +1,7 @@
 import { Button, Group, Textarea } from "@mantine/core";
 import { useState } from "react";
 
-import { SUCCESS_COLOR } from "./theme.ts";
+import { SUCCESS_COLOR } from "./theme";
 
 // The approve/deny control for a pending tool call, shared by the approvals panel card and the
 // history row so both spell it one way. The optional free-text reason sits to the LEFT of the

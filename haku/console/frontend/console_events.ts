@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { redirectToOperatorLogin } from "./operator_login.ts";
+import { redirectToOperatorLogin } from "./operator_login";
 
 // The one close the shell acts on instead of reconnecting: the operator session reached its
 // absolute deadline, so every reconnect would be refused until the browser re-authenticates.

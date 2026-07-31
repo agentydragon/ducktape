@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mcpToolSchema, mcpToolSchemas, type McpToolArgumentsFor } from "./mcp_tool_schema.ts";
+import { mcpToolSchema, mcpToolSchemas, type McpToolArgumentsFor } from "./mcp_tool_schema";
 
 describe("generated MCP tool argument schemas", () => {
   it("constructs a validator for every advertised tool", () => {

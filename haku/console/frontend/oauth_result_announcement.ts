@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 
-import { consumeOAuthConnectionResult } from "./client.ts";
-import { SETTINGS_PATH, type ConsoleView } from "./routing.ts";
-import { toastError, toastSuccess } from "./toast.ts";
+import { consumeOAuthConnectionResult } from "./client";
+import { SETTINGS_PATH, type ConsoleView } from "./routing";
+import { toastError, toastSuccess } from "./toast";
 
 const RESULT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampBlock, firstLines } from "./vocabulary.tsx";
+import { clampBlock, firstLines } from "./vocabulary";
 
 describe("firstLines", () => {
   it("keeps the first n non-blank lines and flags that more was dropped", () => {

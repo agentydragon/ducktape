@@ -1,8 +1,8 @@
-import { CodeBlock } from "./code_block.tsx";
-import { Field } from "./field.tsx";
-import { JsonPreview } from "./json_preview.tsx";
-import { toolPreview } from "./tool_rendering/index.tsx";
-import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
+import { CodeBlock } from "./code_block";
+import { Field } from "./field";
+import { JsonPreview } from "./json_preview";
+import { toolPreview } from "./tool_rendering/index";
+import type { PreviewVariant } from "./tool_rendering/vocabulary";
 
 /** The exact raw-arguments JSON behind a collapsed disclosure, byte-exact (`JSON.stringify`) so
  * reflow/truncation never costs the real, copyable payload. Shared by `ToolArgumentsField` and a

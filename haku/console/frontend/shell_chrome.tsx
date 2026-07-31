@@ -15,10 +15,10 @@ import {
   type RecentToolCall,
   type ScreenshotApproval,
   terminalStatusLabel,
-} from "./approval_state.ts";
-import type { ToolCallRecord } from "./client.ts";
-import { CodeBlock } from "./code_block.tsx";
-import { Field } from "./field.tsx";
+} from "./approval_state";
+import type { ToolCallRecord } from "./client";
+import { CodeBlock } from "./code_block";
+import { Field } from "./field";
 import {
   CameraIcon,
   ChecklistIcon,
@@ -30,13 +30,13 @@ import {
   SettingsIcon,
   SyncCurrentIcon,
   SyncErrorIcon,
-} from "./icons.tsx";
-import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import type { ConsoleNavigationView, ConsoleView } from "./routing.ts";
-import { SUCCESS_COLOR } from "./theme.ts";
-import { ToolCallCard } from "./tool_call_card.tsx";
-import type { LiveStatus } from "./console_events.ts";
-import { useVariant, VariantControl } from "./variant_control.tsx";
+} from "./icons";
+import { PendingToolCallActions } from "./pending_tool_call_actions";
+import type { ConsoleNavigationView, ConsoleView } from "./routing";
+import { SUCCESS_COLOR } from "./theme";
+import { ToolCallCard } from "./tool_call_card";
+import type { LiveStatus } from "./console_events";
+import { useVariant, VariantControl } from "./variant_control";
 
 export interface ShellChromeProps {
   // Approvals panel open-state, parent-controlled so a newly-arrived geolocation approval can

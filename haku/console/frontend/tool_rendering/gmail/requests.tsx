@@ -14,19 +14,19 @@ import { Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { Field } from "../../field.tsx";
+import { CodeBlock } from "../../code_block";
+import { Field } from "../../field";
 import {
   fetchGmailMessagePreview,
   fetchGmailThreadPreviews,
   type GmailMessagePreview,
   type GmailThreadPreview,
-} from "../../gmail_client.ts";
-import { MailIcon } from "../../icons.tsx";
-import { ExternalLink } from "../../link.tsx";
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { GMAIL_SERVER_ID } from "../server_ids.ts";
+} from "../../gmail_client";
+import { MailIcon } from "../../icons";
+import { ExternalLink } from "../../link";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { definePreview, type ToolPreview } from "../entry";
+import { GMAIL_SERVER_ID } from "../server_ids";
 import {
   COMPACT_ITEM_LIMIT,
   firstLines,
@@ -36,7 +36,7 @@ import {
   PreviewText,
   PreviewTitle,
   type PreviewProps,
-} from "../vocabulary.tsx";
+} from "../vocabulary";
 
 const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
 export const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
