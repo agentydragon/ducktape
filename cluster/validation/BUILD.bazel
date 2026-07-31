@@ -407,6 +407,7 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
+        "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/haku/dispatch/dispatcher:manifests",
         "//cluster/k8s/haku/dispatch/litellm:manifests",

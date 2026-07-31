@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: loki-read-proxy
+  namespace: flux-system
+  annotations:
+    description: Read-only namespace-filtering Loki query proxy so Haku can read logs for allowlisted namespaces without touching Loki (auth_enabled:false) directly.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  path: ./cluster/k8s/agents/loki-read-proxy
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: loki-read-proxy
+      namespace: loki-read-proxy

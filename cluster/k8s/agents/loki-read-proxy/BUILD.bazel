@@ -1,0 +1,70 @@
+# gazelle:ignore
+# (Dashed directory name: modules import as bare `main`, so the libraries need
+# `imports = ["."]` instead of Gazelle's repo-root imports.)
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    imports = ["."],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_main",
+    srcs = ["test_main.py"],
+    imports = ["."],
+    deps = [
+        ":main",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+aspect_py_binary(
+    name = "main_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":main_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("main_bin"),
+    env = py_image_env(binary_name = "main_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["loki-read-proxy:latest"],
+)
+
+# Cluster manifests for cluster/validation's flux-build test (the
+# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+filegroup(
+    name = "manifests",
+    srcs = glob(["*.yaml"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)
