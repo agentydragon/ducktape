@@ -765,6 +765,7 @@ tsc_bin.tsc_test(
         "approval_state.test.ts",
         "bridge.test.ts",
         "bridge_client.test.ts",
+        "code_block.test.ts",
         "calendar_client.test.ts",
         "geolocation.test.ts",
         "gmail_client.test.ts",
