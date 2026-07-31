@@ -81,3 +81,42 @@ isolated.
   (`8.5.0-2ubuntu10.8`) is _older_ than the 2026-07-31 archive snapshot
   (`10.11`), so the list needs an intermediate entry. Advancing it requires a
   machine that can verify the fetch and the resulting image diff end to end.
+
+## Update 2026-07-31 (later pass): inline immediates
+
+A third literal-recovery channel turned up, independent of the core dump and of
+any live process. **garble `-literals` cannot hide a short string that is
+compared inline**, because the constant is an instruction operand, not data. Go
+emits such a comparison as a length check plus compares at increasing
+displacements off the string pointer:
+
+```text
+cmpq    $0xd, 0x28(%rcx)              ; len(s) == 13
+movabsq $0x632d656d75736572, %r12     ; "resume-c"
+cmpq    %r12, (%rdx)
+cmpl    $0x65686361, 0x8(%rdx)        ; "ache"
+cmpb    $0x64, 0xc(%rdx)              ; 'd'      -> "resume-cached"
+```
+
+Sweeping `.text` for ASCII immediates recovered 333 strings. Confirmed from the
+app packages: `resume`, `resume-cached`, `setup-only`; `github`, `git+ssh`,
+`ssh+git`, `fresh`; `network`, `timeout`, `unknown`, `not_found`, `rate_limit`,
+`server_error`, `clone_timeout`, `ref_not_found`; `latest`, `stable`,
+`current`; `system`, `result`; `golang`, `nodejs`, `python`.
+
+**This resolves the "carried forward" item on envtype gating.** The session-mode
+dispatch is _not_ confined to the runner: `CWddODOS8sH.(*i9eIWNpWL).Initialize`
+compares against `resume-cached` at three sites (`0x238ddb1`, `0x238de05`,
+`0x2392105`), so mode gating does live inside `Initialize` on this binary, as
+<../../AGENTS.md> describes. The step-by-step gating still wants reading, but
+the structural premise is confirmed rather than assumed.
+
+The `not_found` / `rate_limit` / `server_error` / `clone_timeout` /
+`ref_not_found` set sits in `WWD9Ee6Wrf4m.Bd3trAjD.GetUserMessage` — a backend
+error taxonomy. Whether it is the same vocabulary as `failure_category` is
+**not** established; do not assume it.
+
+Caveat on the sweep: it reliably recovers the first fragment of each comparison,
+so strings of 8 bytes or fewer come out whole and longer ones come out
+truncated (`resume-c` for `resume-cached`) unless the fragments are reassembled
+by displacement, which has to be done per-site by hand for now.
