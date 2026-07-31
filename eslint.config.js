@@ -22,11 +22,16 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 // Project source dirs, bucketed by framework so each config block targets the
 // right files — and a new project is declared exactly once, in the right list.
 //
+// Paths are matched against the file's repo-relative path, so a glob that names no real
+// directory silently lints nothing — `augur/frontend/**` sat here while augur lived at
+// `finance/augur/frontend`, so the React projects were uncovered. When adding one, check it
+// fires: append an unused `const` to a file in it and confirm the target fails to build.
+//
 // x/rspcache/admin_ui is intentionally NOT listed: its BUILD.bazel has no
 // js_library targets (the Vite build is a WIP stub), so the lint aspect never
 // runs on it. Listing it here would be dead config implying coverage that does
-// not exist — re-add once it's Bazelized (per-file js_library + tsc_test).
-const reactProjects = ["augur/frontend/**"];
+// not exist — re-add once it's Bazelized (per-file ts_library).
+const reactProjects = ["finance/augur/frontend/**", "haku/console/frontend/**"];
 const svelteProjects = ["props/frontend/src/**", "x/agent_server/web/src/**", "airlock/frontend/**"];
 const projectGlobs = [...reactProjects, ...svelteProjects];
 

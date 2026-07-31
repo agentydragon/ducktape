@@ -4,7 +4,7 @@
 
 import { Group, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";
@@ -12,10 +12,9 @@ import { ExternalLink } from "../../link";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client";
 import { definePreview, type ToolPreview } from "../entry";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary";
-import { TANA_RW_SERVER_ID } from "../server_ids";
+import type { zEditOperation } from "./schemas";
 import {
   zEditNodeArgs,
-  zEditOperation,
   zGetOrCreateCalendarNodeArgs,
   zImportTanaPasteArgs,
   zMoveNodeArgs,

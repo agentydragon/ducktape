@@ -354,87 +354,100 @@ export function HakuUiEmbed({
             : "Not found · Haku";
   }, [view]);
 
-  useEffect(() => {
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
-      const msg = parseInbound(e.data);
-      if (!msg) return;
-      if (msg.type === "requestLaunch") {
-        // Firing the capability must be an operator gesture against trusted chrome; the
-        // iframe can only ask. Refuse outright if launch isn't configured this deploy.
-        if (!launchAvailable) {
-          reply({ type: "launchResult", id: msg.id, ok: false, reason: "Launch is not configured." });
-          return;
-        }
-        setPending({ kind: "launch", id: msg.id, prompt: msg.prompt });
+  // The bridge listener stays registered for the tab's whole life. Re-subscribing whenever one
+  // of the handlers it closes over changes would open a window in which a postMessage from the
+  // iframe arrives with nothing listening, silently dropping a launch or geolocation reply — so
+  // the handler is reached through a ref instead of being an effect dependency. That also means
+  // it always sees current state: with `[origin, launchAvailable]` deps it captured whatever the
+  // other nine handlers were at the last change of those two.
+  function onMessage(e: MessageEvent) {
+    if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
+    const msg = parseInbound(e.data);
+    if (!msg) return;
+    if (msg.type === "requestLaunch") {
+      // Firing the capability must be an operator gesture against trusted chrome; the
+      // iframe can only ask. Refuse outright if launch isn't configured this deploy.
+      if (!launchAvailable) {
+        reply({ type: "launchResult", id: msg.id, ok: false, reason: "Launch is not configured." });
         return;
       }
-      if (msg.type === "requestGeolocation") {
-        // The iframe can only ask; the shell owns the standing grant. With consent already
-        // given ("allow until withdrawn"), serve directly; otherwise queue a trusted shell
-        // approval in the non-modal approvals panel so Haku's UI remains usable.
-        if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
-        else addGeolocationApproval("geolocation", msg.id, msg.options);
-        return;
-      }
-      if (msg.type === "startGeolocationWatch") {
-        // A continuous stream: same grant gate as a one-shot read, but the shell keeps the
-        // watch (so the iframe can't start one silently or keep one the operator stopped).
-        if (hasGeolocationGrant()) startWatch(msg.id, msg.options);
-        else addGeolocationApproval("geolocationWatch", msg.id, msg.options);
-        return;
-      }
-      if (msg.type === "stopGeolocationWatch") {
-        stopWatch(msg.id);
-        return;
-      }
-      if (msg.type === "requestScreenshot") {
-        if (viewRef.current !== "embed") {
-          reply({ type: "screenshotResult", id: msg.id, ok: false, reason: "Haku UI is not visible." });
-          return;
-        }
-        // Same grant-gate shape as geolocation, but capture ALSO needs the browser's own
-        // tab-share picker (no persistent silent grant for getDisplayMedia) — so even with the
-        // standing grant set, a dead session (operator stopped sharing) still needs a fresh
-        // approval to re-open the picker from a real click.
-        if (hasScreenshotGrant() && screenshotSession.active) captureAndReplyScreenshot(msg.id);
-        else addScreenshotApproval(msg.id);
-        return;
-      }
-      if (msg.type === "routeChanged") {
-        // Mirror the route into the console's own pathname so refresh/deep-links restore the
-        // view (path-form URLs are the copyable ones — operator, 2026-07-13).
-        // replaceState, not pushState: the iframe's own history navigations already create
-        // joint-session-history entries, so Back works via the frame. Skip while a
-        // console-own view (e.g. /_console/tool-calls) holds the pathname — just remember the
-        // route for the return trip.
-        rememberEmbedPath(msg.path);
-        if (viewForPathname(window.location.pathname) === "embed") {
-          history.replaceState(null, "", msg.path);
-        }
-        return;
-      }
-      if (msg.type === "titleChanged") {
-        // The frame is cross-origin, so a validated bridge message is the only way for the
-        // outer tab to follow its document.title.
-        frameTitleRef.current = msg.title;
-        if (viewRef.current === "embed") document.title = msg.title;
-        return;
-      }
-      // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.
-      const verdict = vetOpenLink(msg.url);
-      if (verdict.action === "reject") {
-        toastError("Link blocked", verdict.reason);
-        reply({ type: "openLinkResult", url: msg.url, opened: false, reason: verdict.reason });
-      } else if (verdict.action === "open") {
-        openAndReply(msg.url);
-      } else {
-        setPending({ kind: "openLink", url: msg.url });
-      }
+      setPending({ kind: "launch", id: msg.id, prompt: msg.prompt });
+      return;
     }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [origin, launchAvailable]);
+    if (msg.type === "requestGeolocation") {
+      // The iframe can only ask; the shell owns the standing grant. With consent already
+      // given ("allow until withdrawn"), serve directly; otherwise queue a trusted shell
+      // approval in the non-modal approvals panel so Haku's UI remains usable.
+      if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
+      else addGeolocationApproval("geolocation", msg.id, msg.options);
+      return;
+    }
+    if (msg.type === "startGeolocationWatch") {
+      // A continuous stream: same grant gate as a one-shot read, but the shell keeps the
+      // watch (so the iframe can't start one silently or keep one the operator stopped).
+      if (hasGeolocationGrant()) startWatch(msg.id, msg.options);
+      else addGeolocationApproval("geolocationWatch", msg.id, msg.options);
+      return;
+    }
+    if (msg.type === "stopGeolocationWatch") {
+      stopWatch(msg.id);
+      return;
+    }
+    if (msg.type === "requestScreenshot") {
+      if (viewRef.current !== "embed") {
+        reply({ type: "screenshotResult", id: msg.id, ok: false, reason: "Haku UI is not visible." });
+        return;
+      }
+      // Same grant-gate shape as geolocation, but capture ALSO needs the browser's own
+      // tab-share picker (no persistent silent grant for getDisplayMedia) — so even with the
+      // standing grant set, a dead session (operator stopped sharing) still needs a fresh
+      // approval to re-open the picker from a real click.
+      if (hasScreenshotGrant() && screenshotSession.active) captureAndReplyScreenshot(msg.id);
+      else addScreenshotApproval(msg.id);
+      return;
+    }
+    if (msg.type === "routeChanged") {
+      // Mirror the route into the console's own pathname so refresh/deep-links restore the
+      // view (path-form URLs are the copyable ones — operator, 2026-07-13).
+      // replaceState, not pushState: the iframe's own history navigations already create
+      // joint-session-history entries, so Back works via the frame. Skip while a
+      // console-own view (e.g. /_console/tool-calls) holds the pathname — just remember the
+      // route for the return trip.
+      rememberEmbedPath(msg.path);
+      if (viewForPathname(window.location.pathname) === "embed") {
+        history.replaceState(null, "", msg.path);
+      }
+      return;
+    }
+    if (msg.type === "titleChanged") {
+      // The frame is cross-origin, so a validated bridge message is the only way for the
+      // outer tab to follow its document.title.
+      frameTitleRef.current = msg.title;
+      if (viewRef.current === "embed") document.title = msg.title;
+      return;
+    }
+    // openLink: scheme-gate + whitelist; whitelisted opens directly, off-whitelist confirms.
+    const verdict = vetOpenLink(msg.url);
+    if (verdict.action === "reject") {
+      toastError("Link blocked", verdict.reason);
+      reply({ type: "openLinkResult", url: msg.url, opened: false, reason: verdict.reason });
+    } else if (verdict.action === "open") {
+      openAndReply(msg.url);
+    } else {
+      setPending({ kind: "openLink", url: msg.url });
+    }
+  }
+
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  });
+
+  useEffect(() => {
+    const listener = (e: MessageEvent) => onMessageRef.current(e);
+    window.addEventListener("message", listener);
+    return () => window.removeEventListener("message", listener);
+  }, []);
 
   useEffect(() => {
     toolApprovalsRef.current = toolApprovals;

@@ -6,86 +6,103 @@
 // Add a block here for each icon imported.
 declare module "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconClock.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconBell.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconUsers.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconMail.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconHistory.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconSettings.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconList.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconCamera.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconHome.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }
 declare module "@tabler/icons-react/dist/esm/icons/IconX.mjs" {
   import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }

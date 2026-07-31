@@ -4,7 +4,7 @@
 // widget already-validated data, so no widget repeats `schema.safeParse(payload)`. Leaf module
 // (no widget deps) so index.tsx and every per-server module import it without a cycle.
 import type { ReactNode } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { unwrapMcpToolResult } from "../mcp_result";
 import type { PreviewVariant } from "./vocabulary";

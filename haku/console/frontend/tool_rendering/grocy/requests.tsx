@@ -32,7 +32,6 @@ import { GROCY_SERVER_ID } from "../server_ids";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
-  plural,
   PreviewBadge,
   PreviewText,
   PreviewTitle,
@@ -143,7 +142,7 @@ function formatAmount(amount: number, qu: string | null | undefined): string {
 
 function GrocyReferenceLoadError({ error }: { error: string | null }) {
   if (!error) return null;
-  return <PreviewText c="red">Couldn't resolve product/location names: {error}</PreviewText>;
+  return <PreviewText c="red">Couldn&apos;t resolve product/location names: {error}</PreviewText>;
 }
 
 // Shared skeleton for the item-list previews (stock add/consume, products create/edit, shopping

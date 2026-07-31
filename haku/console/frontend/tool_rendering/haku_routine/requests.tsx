@@ -4,7 +4,7 @@
 // verbatim before approving. Its validator comes from the exact FastMCP input schema advertised
 // by tools/list, through the same generated catalog as the Gmail and Calendar previews.
 
-import { z } from "zod";
+import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";

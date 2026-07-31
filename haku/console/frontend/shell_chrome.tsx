@@ -197,7 +197,7 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
         </Group>
         <Text size="xs" c="dimmed">
           Console sessions last an hour and cannot be extended. Re-authenticating reloads this tab — anything unsaved in
-          Haku's UI is lost either way, so pick a good moment.
+          Haku&apos;s UI is lost either way, so pick a good moment.
         </Text>
         <Button size="compact-sm" variant="light" color="orange" fullWidth onClick={onReauthenticate}>
           Re-authenticate now
@@ -272,8 +272,8 @@ function SyncStatusPanel({
         </Group>
         {offline && (
           <Text size="xs" c="dimmed">
-            The console lost its live connection, so new tool calls and approvals won't appear on their own. It keeps
-            retrying; reload the page to refresh immediately.
+            The console lost its live connection, so new tool calls and approvals won&apos;t appear on their own. It
+            keeps retrying; reload the page to refresh immediately.
           </Text>
         )}
         {!offline && syncError !== null && (

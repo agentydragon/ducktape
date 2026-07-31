@@ -2,7 +2,6 @@ import { callOperatorMcpTool } from "./mcp_client";
 import { mcpToolResultSchema, type McpToolResultFor } from "./mcp_tool_result_schema";
 
 type GmailThread = McpToolResultFor<"gmail", "threads_get">;
-type GmailLabels = McpToolResultFor<"gmail", "labels_list">;
 
 const zGmailThread = mcpToolResultSchema("gmail", "threads_get");
 const zGmailMessage = mcpToolResultSchema("gmail", "messages_get");

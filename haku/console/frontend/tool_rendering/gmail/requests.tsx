@@ -31,7 +31,6 @@ import {
   COMPACT_ITEM_LIMIT,
   firstLines,
   MoreLine,
-  plural,
   PreviewBadge,
   PreviewText,
   PreviewTitle,
@@ -66,7 +65,7 @@ function GmailThreadRow({
   showLabels: boolean;
 }) {
   if (!preview) {
-    return <PreviewText c="dimmed">{threadId} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{threadId} (couldn&apos;t load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -213,7 +212,7 @@ function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArg
 
   if (preview === undefined) return <Loader size="xs" />;
   if (preview === null) {
-    return <PreviewText c="dimmed">{args.id} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{args.id} (couldn&apos;t load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -245,7 +244,7 @@ function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageA
 
   if (preview === undefined) return <Loader size="xs" />;
   if (preview === null) {
-    return <PreviewText c="dimmed">{args.id} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{args.id} (couldn&apos;t load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
