@@ -9,17 +9,17 @@ Findings are cited by number; see [findings/](findings/README.md).
 
 ## Cross-cutting
 
-| #      | Requirement                              | Status                 | Evidence                                                                                            |
-| ------ | ---------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
-| **C1** | Reachable on the go                      | met                    | Web UI behind the Authentik outpost, restricted to one user                                         |
-| **C2** | Runs in k8s                              | met                    | `cluster/k8s/agents/public-coder-agent/`                                                            |
-| **C3** | Multi-provider, Codex **subscription**   | met                    | `litellm-subscription/codex-gpt-5.6-luna` plus the z.ai lane — not single-provider                  |
-| **C4** | Langfuse observability                   | **wired, unwitnessed** | The LiteLLM the agent uses has `callbacks: ["langfuse_otel", "prometheus"]`; no trace read back yet |
-| **C5** | No unrestricted network w/ personal data | n/a here               | Scoped to agents holding personal data; this one holds none, and egress is deliberately open        |
-| **C6** | Full LLM-level rollouts                  | **unproven**           | Scoped to personal-data agents. Depends on C4 and has never been demonstrated anywhere              |
-| **C7** | Declarative provisioning that holds up   | met, the hard way      | F19 is precisely this requirement failing silently, and the fix                                     |
-| **C8** | Persistence model understood             | met                    | One container, state on a PVC; harness and shell share a machine — the outcome C8 calls acceptable  |
-| **C9** | Bounds overlong tool output              | **met, tested**        | 20 MB through the real agent → truncated with an explicit marker, 1 tool call, session intact       |
+| #      | Requirement                              | Status                | Evidence                                                                                                                                                                         |
+| ------ | ---------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C1** | Reachable on the go                      | met                   | Web UI behind the Authentik outpost, restricted to one user                                                                                                                      |
+| **C2** | Runs in k8s                              | met                   | `cluster/k8s/agents/public-coder-agent/`                                                                                                                                         |
+| **C3** | Multi-provider, Codex **subscription**   | met                   | `litellm-subscription/codex-gpt-5.6-luna` plus the z.ai lane — not single-provider                                                                                               |
+| **C4** | Langfuse observability                   | **met, verified**     | Traces read back: `gemini-embedding-2` ×10, `gpt-5.6-luna` ×7, `gpt-5.6-sol` ×25 in a day, `input` and `output` both populated                                                   |
+| **C5** | No unrestricted network w/ personal data | n/a here              | Scoped to agents holding personal data; this one holds none, and egress is deliberately open                                                                                     |
+| **C6** | Full LLM-level rollouts                  | **likely, unchecked** | C4’s traces carry full `input` and `output`, which is the substance C6 wants — but no real transcript has been reconstructed from them, and C6 is scoped to personal-data agents |
+| **C7** | Declarative provisioning that holds up   | met, the hard way     | F19 is precisely this requirement failing silently, and the fix                                                                                                                  |
+| **C8** | Persistence model understood             | met                   | One container, state on a PVC; harness and shell share a machine — the outcome C8 calls acceptable                                                                               |
+| **C9** | Bounds overlong tool output              | **met, tested**       | 20 MB through the real agent → truncated with an explicit marker, 1 tool call, session intact                                                                                    |
 
 ## Wants
 

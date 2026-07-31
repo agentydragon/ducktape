@@ -21,7 +21,7 @@ configurations that failed on the way, are in [lab_notes.md](lab_notes.md).
 | Document                                                   | What it holds                                                                                       |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | [lab_notes.md](lab_notes.md)                               | **Start here.** The configurations tried and how each scored against S1–S5                          |
-| [findings/](findings/README.md)                            | The numbered findings F1–F19, grouped by subject, with the measurements behind them                 |
+| [findings/](findings/README.md)                            | The numbered findings F1–F20, grouped by subject, with the measurements behind them                 |
 | [requirements_status.md](requirements_status.md)           | Every stated requirement (C/P/W) against what is deployed, with evidence                            |
 | [success_criteria.md](success_criteria.md)                 | S1–S5: the observable pass conditions, and what a failure of each would force us to decide          |
 | [credential_proxy_options.md](credential_proxy_options.md) | Survey of credential-injecting proxies: three architectural camps, what was tested, where we landed |

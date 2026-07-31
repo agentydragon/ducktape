@@ -77,3 +77,52 @@ Docker itself works fine (`29.3.1`, overlayfs, uid 0 with broad caps).
 the current context**, so the next unqualified `kubectl` hits the toy cluster
 instead of production. Restore with `kubectl config use-context <prod>` and pass
 `--context` explicitly, or point `KUBECONFIG` somewhere else before creating.
+
+## F20. Langfuse receives the agent's traces; its read API falls over on modest queries
+
+Two separate results, and it matters that they are separate — one is the
+requirement, the other is the tool used to check it.
+
+**The traces land (C4).** Per-model counts for one day, from the aggregate
+endpoint:
+
+```text
+glm-5.2              traces=361     the z.ai lane (other agents)
+gpt-5.6-sol          traces=25      public-coder-agent
+gemini-embedding-2   traces=10      public-coder-agent memory search
+gpt-oss:20b          traces=10      ollama
+gpt-5.6-luna         traces=7       public-coder-agent
+gpt-5.6-terra        traces=1
+None                 traces=403
+```
+
+`gemini-embedding-2` is conclusive: nothing else in the cluster embeds with it,
+so both the agent's chat path and its memory search reach Langfuse. A sampled
+trace carried populated `input` and `output`, so the substance C6 wants is
+present in principle.
+
+**Identifying the caller is inference, not lookup.** Everything lands in one
+`langfuse-litellm-project`, and `user_api_key_alias` is **not populated** on the
+traces — the discriminator used above is the model name, which stops working the
+moment two agents share a model. The caller identity does exist, but buried: a
+JSON _string_ at `metadata.attributes.metadata` holding `user_api_key_hash`.
+
+**The read API is the fragile part.** It materialises full request and response
+bodies, and these traces carry whole `CLAUDE.md` payloads. Cost scales with
+window × limit, and the web tier aborts rather than degrading:
+
+```text
+limit=5,  45 min   ->  7s
+limit=20, 45 min   -> 18s
+limit=25, 3 h      -> timeout, then langfuse-web exit 134 (SIGABRT, 2Gi limit)
+limit=100, 8 h     -> "Empty reply from server", same abort
+/api/public/metrics/daily, 1 day  -> 1.4s
+```
+
+`langfuse-web` restarted **twice** during this investigation, both times from a
+read. Ingestion was unaffected throughout — that path is `langfuse-worker`, a
+different pod — so observability kept working while the API used to inspect it
+did not. Worth keeping the two apart when judging whether Langfuse is healthy.
+
+**Practical rule until this is fixed:** aggregate endpoints for counts, and
+`limit<=5` with a tight window when trace bodies are actually needed.

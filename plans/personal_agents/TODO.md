@@ -320,3 +320,36 @@ Cheap detector, since every request already transits our mitmproxy: the proxy se
 which client connections skip verification, and `-k`/`sslVerify=false` appearing in
 an agent's command history is a reliable signal that some control has broken. Worth
 alerting on rather than discovering by reading transcripts weeks later.
+
+## Give the OpenClaw agents their own Langfuse project, or populate the key alias
+
+Traces do land (F20) — but every agent's traffic goes into one
+`langfuse-litellm-project`, and `user_api_key_alias` is **not populated**, so the
+only way to tell whose request a trace is is the model name. That worked here
+only because `gemini-embedding-2` is unique to OpenClaw's memory search; it stops
+working the moment two agents share a model, which is already nearly true for the
+Codex lane.
+
+Either fix removes the guesswork: a separate Langfuse project per agent (cleaner
+separation, and per-agent retention/limits), or getting LiteLLM to carry the
+virtual key's alias into the trace metadata so a filter is a lookup rather than an
+inference. The alias is already the natural key — the virtual keys are per-agent
+and named.
+
+Do this before adding a second agent on the same models, not after.
+
+## Make Langfuse’s read path survivable
+
+F20: `langfuse-web` aborted (exit 134, SIGABRT under a 2Gi limit) twice during a
+single investigation, both times serving an ordinary read — `limit=25` over three
+hours was enough. The API materialises full request and response bodies and these
+traces carry whole `CLAUDE.md` payloads, so cost scales with window × limit.
+Ingestion was never affected; that is `langfuse-worker`, a different pod.
+
+So the observability data is fine and the tool for looking at it is not, which is
+worth separating when judging whether Langfuse is "working". Options, unranked:
+raise the web tier's memory, cap or paginate on the client side, or use the
+aggregate endpoints (`/api/public/metrics/daily` returned a full day in 1.4s
+against a query that killed the pod).
+
+Until then: aggregates for counts, `limit<=5` and a tight window for bodies.

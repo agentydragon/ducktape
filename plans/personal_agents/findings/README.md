@@ -25,6 +25,7 @@ within a file. Grouped here by subject.
 | F17 | `GIT_SSL_CAINFO` is stripped, and git links GnuTLS so no other CA var covers it | [egress and TLS](egress_and_tls.md)       |
 | F18 | Node ignores a missing `NODE_EXTRA_CA_CERTS` silently, with a misleading error  | [egress and TLS](egress_and_tls.md)       |
 | F19 | OpenClaw discards the declaratively seeded config after any gateway-side write  | [harness behaviour](harness_behaviour.md) |
+| F20 | Langfuse receives the traces; its read API aborts on modest queries             | [tooling](tooling.md)                     |
 
 Also here: [rough edges, knowns and unknowns](rough_edges.md).
 
