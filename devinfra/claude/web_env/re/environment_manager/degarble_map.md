@@ -64,9 +64,18 @@ These are the reverse-engineering targets — the Anthropic module
 
 `CWddODOS8sH` and `WOoacuN0` expose the same initialisation surface
 (`SetStartupContext`, `SetSessionMode`, `InitSteps`, `Initialize`,
-`GetClaudeEnvironmentVariables`). Whether these are two packages sharing an
-interface or one package plus a wrapper is **not yet established** — do not
-assume either in recovered source.
+`GetClaudeEnvironmentVariables`) because they are the **two `envtype`
+implementations**, not a package and a wrapper:
+
+- `CWddODOS8sH` = `internal/envtype/anthropic` — its `Initialize` is 17,616
+  disassembly lines and references `setup_script`, `clone`, and the language
+  install targets `golang`/`node`/`nodejs`/`python`.
+- `WOoacuN0` = `internal/envtype/byoc` — 4,589 lines, and `WOoacuN0.BJymDLy7`
+  compares against the literal `byoc`.
+
+The `byoc` literal is recovered from an inline comparison, not from `strings`:
+it is an instruction operand, which `-literals` cannot encrypt. See
+`//skills/reverse_engineer/examples:inline_strings`.
 
 ## Third-party and stdlib-adjacent packages
 
