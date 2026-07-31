@@ -699,22 +699,14 @@ Tracked zombies log their age when finally reaped.
 
 ## Container Integration
 
-In the live Claude Code web container (as of 2026-03-26), `process_api` is invoked as:
+In the live Claude Code web container, `process_api` is PID 1 and is invoked as:
 
-```
+```text
 /process_api --firecracker-init \
   --addr 0.0.0.0:2024 \
   --max-ws-buffer-size 32768 \
-  --block-local-connections
-```
-
-Previous invocation (before `--firecracker-init`):
-
-```
-/process_api --addr 0.0.0.0:2024 \
-  --control-server-addr 0.0.0.0:2025 \
-  --memory-limit-bytes <container_limit> \
-  --block-local-connections
+  --block-local-connections \
+  --listen-vsock-port 2024
 ```
 
 `environment-manager` (the next binary in the boot chain) connects via
@@ -727,57 +719,60 @@ claude` process tree.
 
 ## Dependencies
 
-| Crate                  | Purpose                                  |
-| ---------------------- | ---------------------------------------- |
-| `tokio`                | Async runtime                            |
-| `tokio-tungstenite`    | WebSocket server                         |
-| `hyper` + `hyper-util` | HTTP/1.1 control server                  |
-| `http-body-util`       | HTTP body handling                       |
-| `serde` + `serde_json` | JSON serialization/deserialization       |
-| `clap`                 | CLI argument parsing                     |
-| `nix`                  | Unix syscalls (signals, waitpid, setsid) |
-| `parking_lot`          | Synchronous mutex (for process map)      |
-| `futures`              | Stream/Sink extensions for WebSocket     |
-| `bytes`                | Byte buffer utilities                    |
-| `log` + `env_logger`   | Logging                                  |
+Versions come from the crate source paths embedded in the binary's
+panic-location table (`/root/.cargo/registry/src/artifactory.infra.ant.dev-*/<crate>-<version>/`).
 
-| `jsonwebtoken` | JWT authentication (Ed25519 verify) |
-
-| `tokio-vsock` | AF_VSOCK socket support (Firecracker) |
+| Crate                  | Version | Purpose                                  |
+| ---------------------- | ------- | ---------------------------------------- |
+| `tokio`                | 1.52.2  | Async runtime                            |
+| `tokio-tungstenite`    | —       | WebSocket server                         |
+| `hyper`                | 1.9.0   | HTTP/1.1 control server                  |
+| `http`                 | 1.4.0   | HTTP types                               |
+| `httparse`             | 1.10.1  | HTTP request parsing                     |
+| `httpdate`             | 1.0.3   | HTTP date formatting                     |
+| `http-body-util`       | 0.1.3   | HTTP body handling                       |
+| `serde` + `serde_json` | —       | JSON serialization/deserialization       |
+| `clap`                 | —       | CLI argument parsing                     |
+| `nix`                  | 0.29.0  | Unix syscalls (signals, waitpid, setsid) |
+| `parking_lot`          | 0.12.5  | Synchronous mutex (for process map)      |
+| `futures-channel`      | 0.3.32  | Stream/Sink plumbing                     |
+| `bytes`                | 1.11.1  | Byte buffer utilities                    |
+| `itoa`                 | 1.0.18  | Integer formatting                       |
+| `once_cell`            | 1.21.4  | Lazy statics                             |
+| `smallvec`             | 1.15.1  | Small-vector optimization                |
+| `mio`                  | 1.2.0   | Non-blocking IO (tokio backend)          |
+| `jsonwebtoken`         | 9.3.1   | JWT authentication (Ed25519 verify)      |
+| `tokio-vsock`          | —       | AF_VSOCK socket support (Firecracker)    |
+| `zstd-safe`            | 7.2.4   | WebSocket payload compression            |
+| `miniz_oxide`          | 0.8.9   | inflate (backtrace symbolization)        |
+| `rustc-demangle`       | 0.1.27  | Panic backtrace symbol demangling        |
+| `base64`               | 0.22.1  | Base64 (JWT, auth key)                   |
+| `log` + `env_logger`   | —       | Logging                                  |
 
 ### Dependency Version Drift
 
-The reconstructed binary uses newer crate versions than the original:
+The reconstructed source builds against newer crate versions than the binary.
+These produce string differences (library panic paths, version strings) but no
+behavioral difference:
 
-| Crate         | Original | Reconstructed | Impact     |
-| ------------- | -------- | ------------- | ---------- |
-| `tungstenite` | 0.24     | 0.28          | API compat |
-| `nix`         | 0.29     | 0.31          | API compat |
-| `clap_lex`    | 0.7      | 1.0           | Internal   |
-
-These produce string differences in the binary (library panic paths, version
-strings) but have no behavioral impact.
+| Crate         | Binary | Reconstructed |
+| ------------- | ------ | ------------- |
+| `tungstenite` | 0.24   | 0.28          |
+| `nix`         | 0.29   | 0.31          |
+| `clap_lex`    | 0.7    | 1.0           |
 
 ## Verification Status
 
 See <PLAN.md> for detailed status.
 
-- [x] Binary analysis, decompilation, translation, build
-- [x] String differential analysis + remediation
-- [x] String coverage diff passes (application-level strings)
-- [x] Every function annotated with `Decompiled from 0x...`
-- [x] Structural type enrichment
-- [x] Firecracker init module
-- [x] `/fs_freeze` + `/fs_thaw` endpoints
-- [x] `/auth_public_key/write_etc_files` endpoint
-- [x] DNS/network setup in init (`/etc/hostname`, `/etc/hosts`, resolv.conf)
-- [x] JWT auth (`TokenClaims`, `ClaimsForValidation`, jsonwebtoken 9.3.1)
-- [x] `/container_info.json` container name persistence
-- [x] `cgroup.rs` / `oom_killer.rs` re-verified (offsets updated, 18 new strings)
-- [x] `io.rs` re-verified (JWT flow recovered, offsets updated, new message variants)
-- [x] Vsock support — real `tokio-vsock 0.7.2` (WS listener + control server)
-- [x] `--dial-uds` — gVisor UDS bridge dial-out mode
-- [x] `POST /sync_clock` — clock_settime implementation
-- [x] `platform/unix/mod.rs` — platform module matching binary layout
+- [x] Module inventory matches the binary's panic-location table (except `trace.rs`)
+- [x] Wire protocol structs match the binary's serde `FIELDS` arrays
+- [x] CLI surface matches the binary's clap definition blob
+- [x] Recovered source compiles (`bazel build //devinfra/claude/web_env/re/process_api:process_api_re`)
+- [ ] `ws_compression.rs` — zstd stream pumps are stubbed (`TODO(re)`)
+- [ ] `firecracker_init.rs` CA fan-out — helper bodies are stubbed (`TODO(re)`)
+- [ ] `trace.rs` — not recovered at all
+- [ ] Binary offsets in `adopter.rs`, `cgroup.rs`, `oom_killer.rs`, `pid_tree.rs`,
+      `state.rs` are still carried from older builds
 - [ ] Behavioral test harness
-- [ ] Behavioral tests pass against both binaries
+- [ ] Behavioral tests pass against the binary

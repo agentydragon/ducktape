@@ -2,53 +2,90 @@
 
 ## Current Binary
 
-| Property        | Value                                              |
-| --------------- | -------------------------------------------------- |
-| **Build ID**    | `810fd3a49330ce58ff678d539a91723adfda88a8`         |
-| **Release**     | `process_api_2026-03-25-20-38`                     |
-| **Size**        | 3,326,984 bytes                                    |
-| **Linking**     | Static-pie                                         |
-| **Rust**        | `rustc 1.94.0-nightly (1aa9bab4e 2025-12-05)`      |
-| **Source path** | `/root/src/tree/marcus-process-api/sandboxing/...` |
+| Property        | Value                                         |
+| --------------- | --------------------------------------------- |
+| **Build ID**    | `edebff2c28de76238c95c299ba3401a9098c9e17`    |
+| **Release**     | `process_api_2026-05-11-18-55`                |
+| **Size**        | 4,377,896 bytes                               |
+| **Linking**     | Static-pie                                    |
+| **Rust**        | `rustc 1.95.0-nightly (6a979b3e3 2026-02-26)` |
+| **Source path** | Remapped — modules appear as bare `src/*.rs`  |
 
 ## RE Status by Module
 
-All modules have 810fd3a4 headers. String references verified against
-810fd3a4 via `strings -t x`. Code offsets are stale — function addresses
-shifted significantly between builds (typically +0x3K-0x19K for 91c789ff
-modules, incomparable for b0e4b2f4 modules).
+`edebff2c verified` means the module's strings and structural evidence were
+checked against this binary. `offsets` says whether the `Decompiled from 0x...`
+annotations in the source point at this binary.
 
-| Module                 | Status            | Offset Status   | Notes                                        |
-| ---------------------- | ----------------- | --------------- | -------------------------------------------- |
-| `main.rs`              | 810fd3a4 verified | N/A             | vsock, dial-uds, CLI flags                   |
-| `control_server.rs`    | 810fd3a4 verified | Exact match     | Strings at same offsets as 91c789ff          |
-| `platform/unix/mod.rs` | 810fd3a4 verified | N/A             | New module                                   |
-| `io.rs`                | 810fd3a4 updated  | Shifted +0x3A76 | process_id validation, bad control msg added |
-| `proc_handle.rs`       | 810fd3a4 updated  | Incomparable    | 7 new ProcessInfo fields, Cgroup rename      |
-| `firecracker_init.rs`  | 810fd3a4 updated  | Not verified    | Source path updated                          |
-| `cgroup.rs`            | strings verified  | Shifted +0x45A0 | Logic unchanged                              |
-| `oom_killer.rs`        | strings verified  | Shifted +0x3901 | Logic unchanged                              |
-| `adopter.rs`           | strings verified  | Incomparable    | Logic unchanged                              |
-| `state.rs`             | strings verified  | Incomparable    | Logic unchanged                              |
-| `pid_tree.rs`          | strings verified  | N/A             | Logic unchanged, no offsets in original      |
+| Module                 | Status            | Offsets          | Notes                                                               |
+| ---------------------- | ----------------- | ---------------- | ------------------------------------------------------------------- |
+| `main.rs`              | edebff2c verified | partial          | CLI blob re-anchored; shutdown grace added                          |
+| `io.rs`                | edebff2c verified | partial          | `cpu_timeout`, `accept_zstd`, `supports_zstd`, `ProcessCpuTimedOut` |
+| `proc_handle.rs`       | edebff2c verified | partial          | `read_cpu_usage_usec`, `ExitReason::CpuTimedOut`                    |
+| `control_server.rs`    | edebff2c verified | stale            | `EtcFiles.ca_cert`; `/container_info.json` path change              |
+| `firecracker_init.rs`  | edebff2c partial  | new section only | CA fan-out recovered structurally, bodies stubbed                   |
+| `ws_compression.rs`    | edebff2c partial  | edebff2c         | New module; zstd params exact, stream pumps stubbed                 |
+| `cgroup.rs`            | strings verified  | stale (b0e4b2f4) | No application-string delta                                         |
+| `oom_killer.rs`        | strings verified  | stale (91c789ff) | No application-string delta                                         |
+| `adopter.rs`           | strings verified  | stale (b0e4b2f4) | No application-string delta                                         |
+| `state.rs`             | strings verified  | stale (b0e4b2f4) | No application-string delta                                         |
+| `pid_tree.rs`          | strings verified  | n/a              | No application-string delta                                         |
+| `platform/unix/mod.rs` | strings verified  | stale            | No application-string delta                                         |
+| `trace.rs`             | **not recovered** | —                | Exists in the binary; no source file yet                            |
 
 ## Completed
 
-- [x] Vsock WS listener — real `tokio-vsock 0.7.2` (was UDS stub)
-- [x] Vsock control server — real `tokio-vsock 0.7.2` (was no-op stub)
-- [x] `--dial-uds` / `DIAL_UDS` CLI flag and dial-out implementation
-- [x] `POST /sync_clock` — `clock_settime` implementation (was stub error)
-- [x] `platform/unix/mod.rs` — new module matching binary layout
-- [x] `ProcessInfo` struct — added 7 missing serde fields (start_wallclock_micros,
-      cmd_summary, stdin_bytes, stdout_bytes, stderr_bytes, trace_emitted, trace_outcome)
-- [x] `CgroupConfig` → `Cgroup` struct rename (matches binary evidence)
-- [x] process_id validation — empty, too long, control chars, trace marker
-- [x] `[DEBUG] bad control msg from ws:` error path in WS message loop
-- [x] All module headers updated to 810fd3a4
-- [x] Directory flattened — removed BuildID subdirectory
+- [x] `ws_compression.rs` — new module; zstd level 3 / windowLog 15 /
+      d_windowLogMax 15 / 32 KiB buffers / 64 MiB decompression cap, and the six
+      panic line numbers (69, 71, 87, 104, 106, 120)
+- [x] `CreateProcess.cpu_timeout` (serde element count 10 -> 11)
+- [x] `ProcessConnection.accept_zstd` (serde element count 4 -> 5)
+- [x] `ConnectionCapabilities.supports_zstd`
+- [x] `ServerMessage::ProcessCpuTimedOut { cpu_timeout_secs, details }`
+- [x] `ProcessInfo.cpu_timeout` (FIELDS array at `.data.rel.ro` 0x422c30, 14 entries)
+- [x] `EtcFiles.ca_cert` (serde element count 2 -> 3)
+- [x] CPU-time enforcement from `<cgroup>/cpu.stat` `usage_usec`
+- [x] Egress-CA fan-out in `firecracker_init.rs` — path tables, argv, log
+      templates and the twelve helper function boundaries
+- [x] Shutdown grace period + `[WARN] N task(s) still alive ...`
+- [x] `/container_info.json` (was `../container_info.json`)
+- [x] `fuse_spawn ok` status fragment removed from the init status line
+- [x] Dependency versions re-read from the binary's panic paths
+- [x] Recovered source builds clean (rustc + clippy via `bbr build`)
 
 ## Open Items
 
-- [ ] Re-verify binary offsets against 810fd3a4 (all modules carry stale offsets
-      from b0e4b2f4 or 91c789ff)
-- [ ] Behavioral test harness
+- [ ] `trace.rs` — recover the module. Evidence available: source-path panic
+      locations at `.data.rel.ro` 0x4211f0 / 0x421208 / 0x421220, the
+      `##TRACE##` marker at 0x4211e0, the `TraceEventMsg` fields
+      (`process`, `host`, `sph`, `cat`, `dur_us`) and the `trace_emitted` /
+      `trace_outcome` `ProcessInfo` fields. The `cpu_timeout` trace-outcome
+      label is at 0x39a886.
+- [ ] `ws_compression.rs` — decompile the `ZSTD_compressStream2` /
+      `ZSTD_decompressStream` pumps (0x1bd5c0..0x1bf1bf and the decode arm
+      inlined at 0x14c460..0x14dbb0), and identify the GOT slots 0x42bf58 /
+      0x42bfa0 (both called as `(ctx, 1, 0)`).
+- [ ] `firecracker_init.rs` CA fan-out — decompile the helper bodies; in
+      particular the Chromium managed-policy JSON schema, which has no
+      distinguishing key string in `.rodata`.
+- [ ] `main.rs` — identify where the surviving-task count read at
+      `0x98(%r13)` (fn 0x154810) comes from.
+- [ ] Re-anchor the remaining stale offsets (`cgroup.rs`, `oom_killer.rs`,
+      `adopter.rs`, `state.rs`, `platform/unix/mod.rs`, most of
+      `control_server.rs`).
+- [ ] Behavioral test harness.
+
+## Method Notes
+
+- rustc 1.95 packs `format_args!` into a byte template: length-prefixed literal
+  chunks, `0xc0` placeholder markers, `0x00` terminator. A no-argument
+  formatted call passes `(len << 1) | 1` in the argument slot instead of a
+  pointer — that is why `panic!("literal")` sites show odd immediates such as
+  `$0x35` for a 26-character message.
+- Serde `FIELDS` arrays live in `.data.rel.ro` as `(ptr, len)` pairs; the
+  pointers arrive as `R_X86_64_RELATIVE` relocations, so `readelf -r` plus the
+  adjacent length word recovers field names in declaration order. This is the
+  most reliable way to diff wire structs between builds.
+- Function boundaries on this stripped binary come from the set of `call`
+  targets in `objdump -d` output; that is exact enough for the small helpers
+  and approximate for async state machines, which are one giant function each.
