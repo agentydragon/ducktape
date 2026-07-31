@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { fmtNumber } from "./lib/format.ts";
-import { fmtMetricValue } from "./lib/chart.ts";
-import { useCurrencyDisplay } from "./hooks.ts";
-import { ScenarioBadge } from "./scenario_tabs.tsx";
+import { fmtNumber } from "./lib/format";
+import { fmtMetricValue } from "./lib/chart";
+import { useCurrencyDisplay } from "./hooks";
+import { ScenarioBadge } from "./scenario_tabs";
 import {
   ROLLOUT_EVENT_COLORS,
   ROLLOUT_EVENT_KIND_ORDER,
@@ -13,7 +13,7 @@ import {
   eventDetailText,
   eventColor,
   eventAmount,
-} from "./data_helpers.ts";
+} from "./data_helpers";
 
 export function SelectedRolloutEventsPanel({
   events,

@@ -4,7 +4,7 @@
 
 import React from "react";
 
-import { fmtPct } from "./lib/format.ts";
+import { fmtPct } from "./lib/format";
 
 export function fmtProb(value) {
   return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);

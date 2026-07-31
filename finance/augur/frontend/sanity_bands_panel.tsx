@@ -4,7 +4,7 @@
 
 import React, { useMemo } from "react";
 
-import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands.ts";
+import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands";
 
 // Reasonableness-band status → pill classes. A failing band reads loudest (rose), a passing
 // band reassuring (emerald), a skipped band muted (slate), an unmodeled band a distinct amber

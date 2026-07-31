@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { CategoricalPanel } from "./categorical_chart.tsx";
-import { CleanTable, SurfacedTable } from "./calibration_tables.tsx";
-import { fetchCalibrationRun } from "./client.ts";
-import { toastFetchError } from "./lib/toast.ts";
-import { MetricFanChart } from "./fan_chart.tsx";
-import { RolloutResultsSkeleton } from "./skeleton.tsx";
-import { SanityBandsPanel } from "./sanity_bands_panel.tsx";
-import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed } from "./input_helpers.ts";
-import { markFanRows } from "./data_helpers.ts";
+import { CategoricalPanel } from "./categorical_chart";
+import { CleanTable, SurfacedTable } from "./calibration_tables";
+import { fetchCalibrationRun } from "./client";
+import { toastFetchError } from "./lib/toast";
+import { MetricFanChart } from "./fan_chart";
+import { RolloutResultsSkeleton } from "./skeleton";
+import { SanityBandsPanel } from "./sanity_bands_panel";
+import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed } from "./input_helpers";
+import { markFanRows } from "./data_helpers";
 
 // `chartValue` ending in `Usd` makes the shared `MetricFanChart` axis/tooltip format these
 // issuer channels as currency.

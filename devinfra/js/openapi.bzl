@@ -13,6 +13,7 @@ They differ in what they run on that JSON:
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@npm_ducktape//:@hey-api/openapi-ts/package_json.bzl", openapi_ts_bin = "bin")
 load("@npm_ducktape//:openapi-typescript/package_json.bzl", openapi_typescript_bin = "bin")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 def _openapi_json_genrule(name, generator):
     json_out = "_" + name + "_openapi.json"
@@ -64,7 +65,7 @@ def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = Non
         visibility = visibility,
     )
 
-def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = None):
+def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, visibility = None):
     """Generate a js_library with runtime Zod 4 schemas from an OpenAPI schema.
 
     Pipeline:
@@ -88,8 +89,17 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
         out:        Package-relative path for the generated schema module. A
                     ``.ts``/``.mts`` suffix keeps TypeScript; any other suffix
                     (default ``api/schema.zod.mjs``) strips types to JavaScript.
+        tsconfig:   Label of the ``ts_config`` the generated module compiles
+                    against. Required for a TypeScript *out* and rejected for a
+                    JavaScript one, since only the former is compiled.
         visibility: Visibility of the output ``js_library``.
     """
+    emits_typescript = out.endswith(".ts") or out.endswith(".mts")
+    if emits_typescript and not tsconfig:
+        fail("js_openapi_zod: a TypeScript out (%s) is compiled, so it needs a tsconfig" % out)
+    if tsconfig and not emits_typescript:
+        fail("js_openapi_zod: out %s is JavaScript; nothing compiles it, so tsconfig is unused" % out)
+
     json_out = _openapi_json_genrule(name, generator)
     gen_dir = "_" + name + "_hey_api_out"
     gen_ts = gen_dir + "/zod.gen.ts"
@@ -114,7 +124,7 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
         tool = ":_" + name + "_openapi_ts_bin",
     )
 
-    if out.endswith(".ts") or out.endswith(".mts"):
+    if emits_typescript:
         # A real content copy, not `copy_file`'s symlink: esbuild resolves imported modules to
         # their realpath, and the gen-dir `zod.gen.ts` the symlink points at is not an input of
         # downstream bundle actions, so a symlinked `out` makes esbuild fail with
@@ -137,10 +147,22 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
         )
         emit = ":_" + name + "_strip_types"
 
-    js_library(
-        name = name,
-        srcs = [emit],
-        tags = ["no-lint"],
-        visibility = visibility,
-        deps = ["//:node_modules/zod"],
-    )
+    # A TypeScript out is a module like any other and compiles through ts_library, so its
+    # consumers resolve it by declaration. A stripped JavaScript out has nothing to compile.
+    if emits_typescript:
+        ts_library(
+            name = name,
+            srcs = [emit],
+            tsconfig = tsconfig,
+            tags = ["no-lint"],
+            visibility = visibility,
+            deps = ["//:node_modules/zod"],
+        )
+    else:
+        js_library(
+            name = name,
+            srcs = [emit],
+            tags = ["no-lint"],
+            visibility = visibility,
+            deps = ["//:node_modules/zod"],
+        )

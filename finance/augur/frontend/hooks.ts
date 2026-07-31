@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { DEFAULT_HIDDEN_EVENT_KINDS, ROLLOUT_EVENT_KIND_ORDER } from "./data_helpers.ts";
+import { DEFAULT_HIDDEN_EVENT_KINDS, ROLLOUT_EVENT_KIND_ORDER } from "./data_helpers";
 
 const CurrencyDisplayContext = createContext<{ display: string; setDisplay: (display: string) => void }>({
   display: "compact",

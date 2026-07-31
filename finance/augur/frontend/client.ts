@@ -1,4 +1,4 @@
-import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.ts";
+import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing";
 import {
   zBudgetSnapshotRequest,
   zBudgetSnapshotResponse,
@@ -17,7 +17,7 @@ import {
   zSettingsResponse,
   zTerminalDistributionRequest,
   zTerminalDistributionResponse,
-} from "./lib/api/schema.zod.ts";
+} from "./lib/api/schema.zod";
 
 type FetchOptions = { signal?: AbortSignal };
 

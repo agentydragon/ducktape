@@ -65,12 +65,31 @@ builds — recorded so the next frontend to migrate does not re-derive it.
     every spec is a `ts_library` declaring what it imports. Confirmed the same 37 files / 204
     tests run as before.
 
+## Rollout
+
+`finance/augur/frontend` followed. The remaining TypeScript — `airlock/frontend`,
+`props/frontend`, `x/agent_server/web` — is Svelte and stays on `svelte_check_test`: `ts_project`
+cannot process `.svelte`, and those packages never had the second list this pattern removes
+(`svelte_check` checks components and their `.ts` as one program, driven by the tsconfig globs off
+the `:app` library graph). The pattern is written up in `STYLE.md`.
+
+Augur added two findings of its own:
+
+12. **Every `.tsx` needs `@types/react` declared**, even one importing no React symbol: JSX
+    element types and Mantine's inferred component types both resolve through it. Augur's
+    `noImplicitAny: false` suppresses the obvious symptoms (TS7016/TS7026) but not TS2742, "the
+    inferred type of X cannot be named without a reference to @types/react", so a file importing
+    only `@mantine/core` still fails without it.
+13. **A whole-program tool cannot be fed from the library graph.** Augur's type-aware
+    `eslint_typed_test` reads `.ts`, which a `ts_library` does not propagate. Staging the sources
+    in a parallel `js_library` collides with `ts_project`'s own copy-to-bin — same path, two
+    actions. Resolved with a `filegroup` glob plus `no_copy_to_bin` on the test, so eslint reads
+    the sources where they already are. Verified still live by injecting a floating promise.
+
 ## Not addressed
 
-- **ESLint never covered this tree, before or after.** `eslint.config.js`'s `projectGlobs` lists
+- **ESLint never covered haku-console, before or after.** `eslint.config.js`'s `projectGlobs` lists
   augur, props, airlock, and `x/agent_server` — not `haku/console/frontend`. The lint aspect does
   visit `ts_project` targets, since that kind is in `lint_eslint_aspect`'s default `rule_kinds`,
   so the conversion loses nothing; there was simply nothing configured to match. Separate gap,
   separate change.
-- `airlock/frontend`, `props/frontend`, and `finance/augur/frontend` still use the `js_library` +
-  whole-project-`tsc_test` shape. `ts_library` is repo-wide and ready for them.

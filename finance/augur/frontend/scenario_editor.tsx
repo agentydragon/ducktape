@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 import { Button } from "@mantine/core";
-import { NumberField, NativeSelectField } from "./lib/controls.tsx";
-import { fmtUsd, fmtNumber } from "./lib/format.ts";
-import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
+import { NumberField, NativeSelectField } from "./lib/controls";
+import { fmtUsd, fmtNumber } from "./lib/format";
+import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers";
 import {
   DisclosureArrow,
   SellOrderControl,
   ProductPortfolioPanel,
   LifecycleEventsEditor,
   propertyLabel,
-} from "./forms.tsx";
+} from "./forms";
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },

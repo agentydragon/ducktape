@@ -9,7 +9,7 @@ import {
   adjustmentsToParams,
   effectiveSignedAvg,
   computeTotals,
-} from "./budget_adjustments.ts";
+} from "./budget_adjustments";
 
 test("parseAdjustments reads hidden buckets and numeric overrides", () => {
   const adjustments = parseAdjustments("?bhide=rent,utilities&bset=insurance:450,phone:0");

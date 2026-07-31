@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
-import { useCurrencyDisplay } from "./hooks.ts";
+import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart";
+import { useCurrencyDisplay } from "./hooks";
 import {
   SELECTED_ROLLOUT_COLOR,
   FAILED_ROLLOUT_COLOR,
@@ -9,7 +9,7 @@ import {
   eventMonthIndex,
   eventColor,
   eventTitle,
-} from "./data_helpers.ts";
+} from "./data_helpers";
 
 function FanAxes({ left, top, plotWidth, plotHeight, height, y, yAxis, maxYear, metric }) {
   return (

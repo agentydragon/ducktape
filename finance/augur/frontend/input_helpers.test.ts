@@ -10,7 +10,7 @@ import {
   resolveVariant,
   productInputDefaults,
   MAX_VARIANTS,
-} from "./input_helpers.ts";
+} from "./input_helpers";
 
 // `productInputDefaults` only reads `productInputDefaults` (deployment overrides) and
 // `locations[0]?.id`; an empty bootstrap exercises the pure hard-coded defaults.

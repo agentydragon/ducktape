@@ -1,4 +1,4 @@
-import { fmtNumber, fmtPct, fmtUsd, fmtUsdCompact } from "./format.ts";
+import { fmtNumber, fmtPct, fmtUsd, fmtUsdCompact } from "./format";
 
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const LOG_SCALE_UNIT = 1;

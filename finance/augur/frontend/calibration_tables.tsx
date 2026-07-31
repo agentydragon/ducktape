@@ -3,8 +3,8 @@
 
 import React from "react";
 
-import { fmtProb, fmtKl, klTextClass, PlatformBadge } from "./calibration_format.tsx";
-import { fmtPct, fmtVolume } from "./lib/format.ts";
+import { fmtProb, fmtKl, klTextClass, PlatformBadge } from "./calibration_format";
+import { fmtPct, fmtVolume } from "./lib/format";
 
 export function CleanTable({ rows }) {
   if (rows.length === 0) {

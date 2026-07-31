@@ -1,9 +1,9 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
-import { rowsFrom } from "./lib/frame.ts";
-import { scenarioColor } from "./input_helpers.ts";
-import { useCurrencyDisplay } from "./hooks.ts";
-import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } from "./data_helpers.ts";
+import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart";
+import { rowsFrom } from "./lib/frame";
+import { scenarioColor } from "./input_helpers";
+import { useCurrencyDisplay } from "./hooks";
+import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } from "./data_helpers";
 
 function terminalPercentilePoints(result, metric) {
   if (result?.metric !== metric.value) return [];

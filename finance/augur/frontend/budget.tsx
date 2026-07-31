@@ -6,10 +6,10 @@ import {
   fetchBudgetSummaryCsv,
   fetchBudgetTransactions,
   fetchBudgetTransactionsCsv,
-} from "./client.ts";
-import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments.ts";
-import { fmtUsd, fmtNumber } from "./lib/format.ts";
-import { toastFetchError } from "./lib/toast.ts";
+} from "./client";
+import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments";
+import { fmtUsd, fmtNumber } from "./lib/format";
+import { toastFetchError } from "./lib/toast";
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
 // income render in their own panels (or, for inflow, alongside their family's expenses).
