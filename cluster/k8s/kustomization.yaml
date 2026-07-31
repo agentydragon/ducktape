@@ -114,8 +114,8 @@ resources:
   - agents/ha-mcp/credentials/flux-kustomization.yaml
   - agents/ha-mcp/app/flux-kustomization.yaml
   - agents/ha-mcp/servicemonitor/flux-kustomization.yaml
-  - home-assistant/namespace/flux-kustomization.yaml
-  - home-assistant/app/flux-kustomization.yaml
+  - home_assistant/namespace/flux-kustomization.yaml
+  - home_assistant/app/flux-kustomization.yaml
   # Credential retention only — the OpenClaw gateway and OpenShell stack were
   #   deleted 2026-07-31; these hold Secrets whose SOPS documents pin the
   #   namespace. See agents/openclaw/README.md.

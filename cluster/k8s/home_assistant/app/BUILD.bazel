@@ -1,10 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "bootstrap_onboarding",
     srcs = ["bootstrap_onboarding.py"],
-    imports = ["."],
 )
 
 py_test(
@@ -19,7 +17,6 @@ py_test(
 py_library(
     name = "install_oidc",
     srcs = ["install_oidc.py"],
-    imports = ["."],
     visibility = ["//visibility:public"],
 )
 

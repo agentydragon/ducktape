@@ -1,5 +1,6 @@
-import bootstrap_onboarding
 import pytest_bazel
+
+from cluster.k8s.home_assistant.app import bootstrap_onboarding
 
 
 def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):

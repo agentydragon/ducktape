@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/home-assistant/namespace
+  path: ./cluster/k8s/home_assistant/namespace
   prune: true
   sourceRef:
     kind: GitRepository

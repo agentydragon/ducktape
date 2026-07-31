@@ -5,7 +5,7 @@ Version: 2026.3.4
 
 > **Legacy instance (2026-06-27):** the 15 Leroy household was left. This config (`iaqi`,
 > `packages/rai`, `deploy.sh`) is retained as migration reference for the Kubernetes Home
-> Assistant deployment under `cluster/k8s/home-assistant`. The
+> Assistant deployment under `cluster/k8s/home_assistant`. The
 > `~/.ssh/15leroy` key + `nix/home/modules/15leroy-ssh.nix` module were removed (see TODO.md).
 
 ## Access
@@ -90,4 +90,4 @@ SSH access is set up. See <config-as-code.md> for research notes on options.
 
 ## Current deployment
 
-- `cluster/k8s/home-assistant/` — Kubernetes Home Assistant on `optiplex`
+- `cluster/k8s/home_assistant/` — Kubernetes Home Assistant on `optiplex`
