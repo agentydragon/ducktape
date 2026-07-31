@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - activitywatch-httproute.yaml
   - hubble-httproute.yaml
-  - openclaw-httproute.yaml
   - public-coder-agent-httproute.yaml
   - alloy-otlp-httproute.yaml
   - grocy-sf-httproute.yaml

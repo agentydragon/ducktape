@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { toolActionDescription } from "../actions.ts";
-import { renderCallPreview } from "../call_entry.tsx";
-import { GMAIL_SERVER_ID } from "../server_ids.ts";
-import { gmailCallPreviews } from "./calls.tsx";
+import { toolActionDescription } from "../actions";
+import { renderCallPreview } from "../call_entry";
+import { GMAIL_SERVER_ID } from "../server_ids";
+import { gmailCallPreviews } from "./calls";
 
 const ARGS = { to: ["a@example.com"], subject: "Hello", body: "Hi there" };
 const RESULT = { id: "r-1", message: { id: "m1", threadId: "t1" } };

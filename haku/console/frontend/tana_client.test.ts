@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nodeNameFromMarkdown } from "./tana_client.ts";
+import { nodeNameFromMarkdown } from "./tana_client";
 
 describe("nodeNameFromMarkdown", () => {
   it("extracts the matching Tana node name", () => {

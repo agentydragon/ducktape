@@ -2,13 +2,11 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["**/*.test.ts"],
+    // Specs reach vitest already compiled: each is a `ts_library` whose tsc action type-checked
+    // it and emitted the `.js` collected here. Nothing in the runfiles needs transforming, which
+    // is also why no `esbuild.jsx` setting is needed — the JSX is long since gone.
+    include: ["**/*.test.js"],
     environment: "jsdom", // DOMPurify (in markdown.ts) needs a DOM
   },
-  // Matches tsconfig.json's "jsx": "react-jsx" — needed explicitly because the Bazel
-  // sandbox this runs in doesn't copy tsconfig.json into vitest_test's runfiles (only
-  // tsc_test's), so esbuild can't discover it and falls back to the classic transform
-  // (which needs `React` in scope — every .tsx file here relies on the automatic one).
-  esbuild: { jsx: "automatic" },
   cacheDir: ".vitest-cache",
 });

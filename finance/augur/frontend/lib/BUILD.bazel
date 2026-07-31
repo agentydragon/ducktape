@@ -1,46 +1,66 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/js:openapi.bzl", "js_openapi_zod")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
+
+TSCONFIG = "//finance/augur/frontend:tsconfig"
 
 js_openapi_zod(
     name = "schema_zod",
     out = "api/schema.zod.ts",
     generator = "//finance/augur/api:export_schema_bin",
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "casing",
     srcs = ["casing.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "frame",
     srcs = ["frame.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "chart",
     srcs = ["chart.ts"],
+    tsconfig = TSCONFIG,
     deps = [":format"],
 )
 
-js_library(
+ts_library(
     name = "controls",
     srcs = ["controls.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "format",
     srcs = ["format.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "toast",
     srcs = ["toast.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//:node_modules/@mantine/notifications"],
+)
+
+# This package's half of //finance/augur/frontend:typed_lint_srcs — a glob cannot cross a package
+# boundary. Includes the generated Zod module, which is part of the same TS program.
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]) + [":_schema_zod_emit"],
 )

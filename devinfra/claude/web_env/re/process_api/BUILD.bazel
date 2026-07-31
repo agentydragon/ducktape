@@ -15,6 +15,7 @@ rust_binary(
         "src/platform/unix/mod.rs",
         "src/proc_handle.rs",
         "src/state.rs",
+        "src/ws_compression.rs",
     ],
     crate_root = "src/main.rs",
     edition = "2024",

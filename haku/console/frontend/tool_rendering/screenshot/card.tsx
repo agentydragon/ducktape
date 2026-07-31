@@ -4,10 +4,10 @@
 // and element-screenshots `.haku-preview-card`.
 import type { ReactNode } from "react";
 
-import { approvalDisplayFields } from "../../approval_state.ts";
-import type { ToolCallRecord } from "../../client.ts";
-import { ToolCallCard } from "../../tool_call_card.tsx";
-import type { PreviewVariant } from "../vocabulary.tsx";
+import { approvalDisplayFields } from "../../approval_state";
+import type { ToolCallRecord } from "../../client";
+import { ToolCallCard } from "../../tool_call_card";
+import type { PreviewVariant } from "../vocabulary";
 
 export type StoredToolResult = NonNullable<ToolCallRecord["result"]>;
 

@@ -8,9 +8,9 @@
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
-import { hakuTheme } from "../../theme.ts";
-import type { PreviewVariant } from "../vocabulary.tsx";
-import { PreviewCard, previewFixtureSlugs, type PreviewFixture } from "./card.tsx";
+import { hakuTheme } from "../../theme";
+import type { PreviewVariant } from "../vocabulary";
+import { PreviewCard, previewFixtureSlugs, type PreviewFixture } from "./card";
 
 // Exposed so render.mjs can name/label each fixture's PNGs without duplicating the slug logic.
 const PREVIEW_WINDOW = window as unknown as {

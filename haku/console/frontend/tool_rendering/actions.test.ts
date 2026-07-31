@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { toolActionDescription } from "./actions.ts";
-import { GMAIL_SERVER_ID, HOSTEXEC_SERVER_ID, KUBECTL_SERVER_ID, TANA_RW_SERVER_ID } from "./server_ids.ts";
+import { toolActionDescription } from "./actions";
+import { GMAIL_SERVER_ID, HOSTEXEC_SERVER_ID, KUBECTL_SERVER_ID, TANA_RW_SERVER_ID } from "./server_ids";
 
 describe("toolActionDescription", () => {
   it("describes a call from its arguments, for both generated and hand-authored schemas", () => {

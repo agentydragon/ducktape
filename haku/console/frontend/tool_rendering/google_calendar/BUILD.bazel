@@ -1,14 +1,17 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
 
+TSCONFIG = "//haku/console/frontend:tsconfig"
+
 # The `google_calendar` server's tool-call rendering widgets (see ../BUILD.bazel for the
 # tree's shape).
 
-js_library(
+ts_library(
     name = "actions",
     srcs = ["actions.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         "//haku/console/frontend:mcp_tool_schema",
         "//haku/console/frontend/tool_rendering:action_entry",
@@ -16,11 +19,13 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "requests",
     srcs = ["requests.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/rrule",
         "//:node_modules/zod",
@@ -35,12 +40,14 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "responses",
     srcs = ["responses.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":requests",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:field",
@@ -54,12 +61,14 @@ js_library(
 )
 
 # `create_event`'s combined pending/finished widget (see ../BUILD.bazel's :call_entry).
-js_library(
+ts_library(
     name = "calls",
     srcs = ["calls.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":requests",
         ":responses",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering:call_entry",
     ],
@@ -71,40 +80,47 @@ filegroup(
     srcs = glob(["*.tsx"]),
 )
 
-js_library(
+ts_library(
     name = "requests_test",
     srcs = ["requests.test.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":requests",
+        "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering:actions",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:server_ids",
     ],
 )
 
-js_library(
+ts_library(
     name = "responses_test",
     srcs = ["responses.test.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":responses",
+        "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering:result_entry",
     ],
 )
 
-js_library(
+ts_library(
     name = "calls_test",
     srcs = ["calls.test.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":calls",
+        "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering:actions",
         "//haku/console/frontend/tool_rendering:call_entry",
         "//haku/console/frontend/tool_rendering:server_ids",
     ],
 )
 
-js_library(
+ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":preview_mock",
         "//haku/console/frontend/tool_rendering",
@@ -112,15 +128,17 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "fixtures",
     srcs = ["fixtures.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//haku/console/frontend:mcp_tool_result_schema"],
 )
 
-js_library(
+ts_library(
     name = "preview_mock",
     srcs = ["preview_mock.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":fixtures",
         "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
@@ -129,7 +147,7 @@ js_library(
 
 preview_screenshots(
     name = "previews",
-    entry = "preview_harness.tsx",
+    entry = "preview_harness.js",
     deps = [
         ":preview_harness",
         "//:node_modules",

@@ -61,8 +61,6 @@ resources:
   # CLEANUP(added 2026-07-29): remove with cluster/k8s/agents/agent-lab after
   #   2026-07-30 (time-boxed experiment grant).
   - agents/agent-lab/flux-kustomization.yaml
-  - agents/openshell/sandboxes-agent-rbac/flux-kustomization.yaml
-  - agents/openshell/system-agent-rbac/flux-kustomization.yaml
   - agents/agent-sandbox/controller/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
   - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
@@ -118,29 +116,25 @@ resources:
   - agents/ha-mcp/servicemonitor/flux-kustomization.yaml
   - home-assistant/namespace/flux-kustomization.yaml
   - home-assistant/app/flux-kustomization.yaml
-  - agents/openclaw/operator/flux-kustomization.yaml
+  # Credential retention only — the OpenClaw gateway and OpenShell stack were
+  #   deleted 2026-07-31; these hold Secrets whose SOPS documents pin the
+  #   namespace. See agents/openclaw/README.md.
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
-  - agents/openshell/namespace/flux-kustomization.yaml
-  - agents/openshell/sandboxes/flux-kustomization.yaml
-  - agents/openshell/storage-policy/flux-kustomization.yaml
-  - agents/openshell/operator/flux-kustomization.yaml
-  - agents/openshell/openclaw/flux-kustomization.yaml
+  - agents/openclaw/gateway-secrets/flux-kustomization.yaml
+  - agents/openclaw/sandbox/flux-kustomization.yaml
+  - agents/openclaw/sandbox-secrets/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml
   - agents/mitmproxy/flux-kustomization.yaml
   - agents/haku-egress-proxy-namespace/flux-kustomization.yaml
   - agents/haku-egress-proxy/flux-kustomization.yaml
   - agents/haku-zones-mitmproxy-namespace/flux-kustomization.yaml
   - agents/haku-zones-mitmproxy/flux-kustomization.yaml
-  - agents/openclaw/gateway-secrets/flux-kustomization.yaml
-  - agents/openclaw/gateway/flux-kustomization.yaml
-  - agents/openclaw/gateway-agent-rbac/flux-kustomization.yaml
+  - agents/loki-read-proxy/flux-kustomization.yaml # namespace-filtered read-only Loki queries for Haku
   - agents/public-coder-agent/namespace/flux-kustomization.yaml
   - agents/public-coder-agent/proxy/flux-kustomization.yaml
   - agents/public-coder-agent/app/flux-kustomization.yaml
   # CLEANUP(added 2026-07-29): remove after 2026-07-31 (time-boxed debug grant).
   - agents/public-coder-agent/agent-rbac/flux-kustomization.yaml
-  - agents/openclaw/sandbox/flux-kustomization.yaml
-  - agents/openclaw/sandbox-secrets/flux-kustomization.yaml
   - agents/machine-access-tf/flux-kustomization.yaml
 
   # --- kyverno ---

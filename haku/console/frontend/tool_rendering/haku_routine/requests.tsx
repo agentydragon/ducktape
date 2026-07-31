@@ -4,14 +4,14 @@
 // verbatim before approving. Its validator comes from the exact FastMCP input schema advertised
 // by tools/list, through the same generated catalog as the Gmail and Calendar previews.
 
-import { z } from "zod";
+import type { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { Field } from "../../field.tsx";
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary.tsx";
-import { HAKU_ROUTINE_SERVER_ID } from "../server_ids.ts";
+import { CodeBlock } from "../../code_block";
+import { Field } from "../../field";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { definePreview, type ToolPreview } from "../entry";
+import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary";
+import { HAKU_ROUTINE_SERVER_ID } from "../server_ids";
 
 const zLaunchRoutineArgs = mcpToolSchema(HAKU_ROUTINE_SERVER_ID, "launch_routine");
 type LaunchRoutineArgs = z.infer<typeof zLaunchRoutineArgs>;

@@ -1,0 +1,11 @@
+# Manifests only. The proxy's Python source and image build live in
+# //cluster/proxies/loki_read_proxy, following this tree's split: k8s/ holds
+# Flux config, source lives beside rotators/ and provisioners/.
+
+# Cluster manifests for cluster/validation's flux-build test (the
+# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+filegroup(
+    name = "manifests",
+    srcs = glob(["*.yaml"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)

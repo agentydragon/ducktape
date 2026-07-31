@@ -241,7 +241,7 @@ locals {
       kubernetesTalosAPIAccess = {
         enabled                     = true
         allowedRoles                = ["os:reader"]
-        allowedKubernetesNamespaces = ["kube-system", "claude-sandbox", "openclaw-sandbox"]
+        allowedKubernetesNamespaces = ["kube-system", "claude-sandbox"]
       }
     }
     registries = {

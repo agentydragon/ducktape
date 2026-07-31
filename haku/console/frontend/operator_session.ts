@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { fetchOperator } from "./client.ts";
+import { fetchOperator } from "./client";
 
 // How long before the deadline the shell starts saying so. The operator session has a hard,
 // non-sliding one-hour lifetime, so expiry always arrives — the only question is whether it

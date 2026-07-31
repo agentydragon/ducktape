@@ -75,5 +75,5 @@ revisit it if the agent later uses only one of those layers.
 - With `sandbox.mode: "off"` there is no isolation _inside_ the boundary: the
   agent runs as the harness, with the GitHub token in its environment. That is
   the accepted cost of not using OpenShell — see
-  <../../../../plans/personal_agents/lab_notes.md> F1 for why OpenShell was not
+  <../../../../plans/personal_agents/findings/openshell.md> F1 for why OpenShell was not
   used.

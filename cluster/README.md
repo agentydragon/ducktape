@@ -51,6 +51,11 @@ join/leave the cluster frequently. `rugged` has taint
 `node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
 require persistent availability on roaming nodes.
 
+Changing how many roaming nodes exist also requires raising `maxUnavailable` on
+the DaemonSets that schedule onto them — `//cluster/validation:test_roaming_daemonset_capacity`
+fails with the details when it doesn't. See <docs/mesh_membership.md> § Roaming
+k8s nodes.
+
 Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`)
 lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
 <docs/mesh_membership.md>.
@@ -69,13 +74,10 @@ HTTPRoutes under `k8s/` and `k8s/authentik/proxy-routes/`):
 | Grafana        | <https://grafana.allegedly.works>  | Monitoring              |
 | Nix Cache      | <https://cache.allegedly.works>    | Binary cache            |
 | Gatus          | <https://status.allegedly.works>   | Health monitoring       |
-| OpenClaw       | <https://openclaw.allegedly.works> | Personal AI agent       |
 | Ollama         | <https://ollama.allegedly.works>   | LLM inference (GPU)     |
 | Airlock        | <https://airlock.allegedly.works>  | OAuth credential broker |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
-OpenClaw is authenticated by its Authentik proxy and restricted to the
-`agentydragon` user; no gateway token entry is required in the UI.
 
 ## Storage
 
@@ -140,8 +142,8 @@ cluster/
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
-├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/)
-│   ├── agents/             # Agent infra (openclaw, airlock, agent-rbac-base, tana-mcp, ...)
+├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/, proxies/)
+│   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
 │   ├── harbor/             # Registry (app, secrets, ci, webhook, ...)
@@ -150,6 +152,7 @@ cluster/
 │   └── flux-system/        # Flux controllers (auto-generated)
 ├── rotators/               # Source for credential-rotation CronJob images (authentik/attic JWTs)
 ├── provisioners/           # Source for reconciler CronJob/Job images (grocy user-perms, inventree token, matrix users)
+├── proxies/                # Source for long-running proxy images (loki-read-proxy)
 └── validation/             # Structural validation tests
 ```
 

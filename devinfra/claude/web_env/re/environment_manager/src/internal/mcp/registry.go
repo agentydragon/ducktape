@@ -1,19 +1,47 @@
 // Package mcp provides the MCP (Model Context Protocol) server registry and
 // base server implementation. MCP servers are registered at init time and
-// started/registered with Claude Code at runtime.
+// started/exposed to Claude Code at runtime.
 //
-// Reconstructed from a6f96673 DWARF extraction, carried forward to 495ea204.
+// Originally reconstructed from a6f96673 DWARF extraction, carried forward to
+// 495ea204, then re-anchored against build `release-1186d93b9-ext`
+// (Build ID 0b86a2a0dbc9411eb18435e1c56822b0156f90fe).
 // Source path: /home/runner/work/anthropic/anthropic/api-go/environment-manager/internal/mcp/registry.go
 //
-// Key symbols:
-//   - mcp.RegisterServer (0xace1c0)
-//   - mcp.NewRegistration (0xace340)
-//   - mcp.GetMCPRegistrations (0xacedc0)
-//   - mcp.RegisterWithClaude (0xacf0a0)
-//   - mcp.registry (0x15ade00) - package-level slice
-//   - mcp.registryMu (0x15d2500) - package-level RWMutex
-//   - mcp.debugHardcodedToken (0x15d1af2) - package-level bool
-//   - mcp.init (0xace180)
+// Garbled package identity in the new binary: `uBHoqupaaEIs` (142 functions,
+// 0x1767ca0..0x1783d40). Previous binary (`release-d84d76b7-ext`):
+// `a8IEAlutXX1f` (142 functions, from 0x15a8ac0). The garbled token is
+// per-build; the package was matched by its four top-level functions, by the
+// BaseServer/responseWriter method sets, and by address adjacency to the
+// vendored github.com/mark3labs/mcp-go packages.
+//
+// Top-level symbols, new binary (old binary in parentheses):
+//
+//	RegisterServer        0x176b8a0  `UfNGvUHYQa`   (0x15ab240 `F1vSEGPGlOh`)
+//	NewRegistration       0x176ba20  `J94FVvod_X`   (0x15ab3c0 `IdsevjfGRyP`)
+//	GetMCPRegistrations   0x176c620  `RzSiJ9`       (0x15ad880 `BvsDxiOZ`)
+//	configureMCPServers   0x176c900  `SALjTKZ4I`    (NEW)
+//	writeMCPConfigFile    0x176e860  `cgaZUQI840`   (NEW)
+//	mcpConfigPath         0x1770500  `fMeIjMWq9p`   (NEW)
+//	init                  0x1767ca0
+//
+// REMOVED versus the old binary: `a8IEAlutXX1f.LZB7ps2aUx` (0x15adb60), the
+// `claude mcp add` shell-out that the earlier RE reconstructed as
+// RegisterWithClaude. Evidence:
+//
+//   - Old: LZB7ps2aUx CALLs `os/exec.CommandContext` and
+//     `(*exec.Cmd).CombinedOutput`; its string xrefs are
+//     ["cl", "cla", "claude", "claude%q, ", ":"].
+//   - New: disassembling the whole package range 0x1767ca0..0x1783f20 yields no
+//     os/exec call target at all, and the only function in the entire new
+//     binary whose string xrefs contain "claude" is `TaVHwGAw.DmttrbQxfow`
+//     (the session manager's Claude Code executor — a different package).
+//   - Instead the new package reaches encoding/json (`Ciyypbbc_`) and os
+//     (`daI_d2D7`) from `cgaZUQI840`, which references the two-space indent
+//     literal "  " — i.e. it writes an MCP config file rather than shelling
+//     out to the `claude` CLI.
+//
+// Vendored MCP library: github.com/mark3labs/mcp-go **v0.54.1** (was v0.37.0).
+// Full version-pinning evidence: README.md in this directory.
 package mcp
 
 import (
@@ -23,8 +51,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +60,7 @@ import (
 // ToolConfig holds a tool definition and its handler function.
 // This is the mcp package's own tool type used by the MCPServer interface.
 //
-// DWARF type: github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp.ToolConfig
+// DWARF type (a6f96673): github.com/anthropics/anthropic/api-go/environment-manager/internal/mcp.ToolConfig
 //
 //	field: Tool -> mcp.Tool (github.com/mark3labs/mcp-go/mcp)
 //	field: Handler -> func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
@@ -43,42 +69,86 @@ type ToolConfig struct {
 	Handler func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error)
 }
 
+// Config is the runtime connection descriptor an MCPServer hands back once
+// started. It is the return type of the new GetConfig method.
+//
+// Layout recovered from mcp.(*BaseServer).GetConfig — Binary: 0x17785e0:
+//
+//	CALL runtime.newobject           ; 0x18-byte object
+//	MOVQ 0x58(CX), DX ; MOVQ DX, 0(AX)     -> +0x00 <- BaseServer+0x58 (port int)
+//	MOVQ 0x50(CX), DX ; MOVQ DX, 0x10(AX)  -> +0x10 <- BaseServer+0x50 (str len)
+//	MOVQ 0x48(CX), CX ; gcWriteBarrier1    -> +0x08 <- BaseServer+0x48 (str ptr)
+//
+// BaseServer+0x48/0x50 is bearerToken and +0x58 is port (see server.go).
+//
+// TODO(re): the original type name and field names are not recoverable —
+// garble renamed them and the type carries no reflect metadata (it is never
+// marshalled). The offsets and source fields above are exact.
+type Config struct {
+	Port        int
+	BearerToken string
+}
+
 // MCPServer is the interface that all MCP servers must implement.
-// Implementations include BaseServer (embedded default) and concrete servers
-// like codesign.CodeSignMCPServer.
+// Implementations are BaseServer (embedded default) and codesign's server type.
 //
-// Interface reconstructed from itab:
+// DELTA vs the old binary: the interface gained GetConfig. In the old binary
+// neither implementation has a GetConfig method — `a8IEAlutXX1f.(*AkqABij02)`
+// and `dxJm5y847M.(*OmZxUM8x1u)` expose only GetName/GetTools/Start/Stop/
+// ShouldRegisterWithClaude. In the new binary both do:
 //
-//	go:itab.*codesign.CodeSignMCPServer,mcp.MCPServer (0xf68220)
+//	uBHoqupaaEIs.(*Lw9QeTzj).GetConfig  0x17785e0  (real body)
+//	N4j_xy6.Grx_cqh.GetConfig           0x17ba260  <autogenerated>
+//	N4j_xy6.(*Grx_cqh).GetConfig        0x17ba360  <autogenerated>
+//
+// The codesign copies are `<autogenerated>` promotion wrappers, confirming
+// codesign still inherits GetConfig from the embedded BaseServer rather than
+// implementing it itself.
 type MCPServer interface {
 	// GetName returns the server's display name.
+	// Binary: 0x1770760 (BaseServer) — MOVQ 0x8(AX),CX; MOVQ 0x10(AX),BX; RET.
 	GetName() string
 
 	// GetTools returns the server tool definitions for the MCP protocol.
+	// Binary: 0x1770780 (BaseServer) — LEAQ <zerobase>,AX; XORL BX,BX; RET.
 	GetTools() []ToolConfig
 
 	// Start starts the MCP server, binding to a port and serving requests.
 	// It returns the listening port and any error.
+	// Binary: 0x17707a0 (BaseServer).
 	Start(logger *slog.Logger, name string) (int, error)
 
 	// Stop gracefully stops the MCP server.
+	// Binary: 0x17782a0 (BaseServer).
 	Stop() bool
 
-	// ShouldRegisterWithClaude returns whether this server should be registered
-	// with the Claude Code MCP configuration.
+	// ShouldRegisterWithClaude reports whether this server should be surfaced
+	// in the generated Claude Code MCP configuration.
+	//
+	// Binary: 0x17785c0 (BaseServer) — MOVL $0x1,AX; RET  => true.
+	//         0x179a2a0 (codesign)   — XORL AX,AX;   RET  => false.
+	// Same constants as the old binary (0x15bc9c0 => true, 0x15e0260 => false),
+	// so this behaviour is unchanged.
 	ShouldRegisterWithClaude() bool
+
+	// GetConfig returns the started server's port and bearer token.
+	// Binary: 0x17785e0 (BaseServer).
+	GetConfig() *Config
 }
 
-// ServerRegistration holds a registered MCP server's metadata and lifecycle hooks.
+// ServerRegistration holds a registered MCP server's metadata and lifecycle
+// hooks.
 //
-// Struct layout (from NewRegistration assembly at 0xace340):
+// Struct layout carried from the a6f96673 DWARF/NewRegistration analysis. The
+// new binary's NewRegistration (0x176ba20) has the same argument shape as the
+// old one (0x15ab3c0): AX,BX,CX,DI,SI,R8,R9 all spilled on entry.
 //
 //	offset 0x00: name string (ptr + len)
 //	offset 0x10: configureServer func(...) (MCPServer, error)
 //	offset 0x18: shouldRegister func() bool
 //	offset 0x20: server MCPServer (interface)
-//	offset 0x28: enabled func() bool (closure from NewRegistration.func1)
-//	offset 0x38: disable func() (closure from NewRegistration.func2)
+//	offset 0x28: enabled func() bool
+//	offset 0x38: disable func()
 type ServerRegistration struct {
 	name            string
 	command         string
@@ -101,6 +171,8 @@ func (r *ServerRegistration) Command() string {
 
 // Setup calls the registration's configureServer function and starts the server.
 // Returns the MCPServer, the socket directory path, and any error.
+//
+// TODO(re): not re-derived against the 0b86a2a0 binary; carried from a6f96673.
 func (r *ServerRegistration) Setup(ctx context.Context, logger *slog.Logger) (MCPServer, string, error) {
 	srv, err := r.configureServer(logger, r.name, nil, nil, nil)
 	if err != nil {
@@ -112,49 +184,44 @@ func (r *ServerRegistration) Setup(ctx context.Context, logger *slog.Logger) (MC
 
 // registry is the global slice of registered MCP server registrations.
 // Protected by registryMu.
-// Symbol: mcp.registry (0x15ade00) - []interface{} (slice header: ptr, len, cap)
 var registry []*ServerRegistration
 
 // registryMu protects concurrent access to the registry slice.
-// Symbol: mcp.registryMu (0x15d2500)
+// GetMCPRegistrations inlines the RWMutex read-lock fast path as
+// `LOCK XADDL SI, 0x24b040b(IP)` (Binary: 0x176c675), i.e. the readerCount
+// word of the package-level RWMutex.
 var registryMu sync.RWMutex
 
 // debugHardcodedToken controls whether a hardcoded bearer token is used instead
-// of randomly generated tokens. Set to true when MCP_DEBUG_TOKEN env var is non-empty.
-// Symbol: mcp.debugHardcodedToken (0x15d1af2)
+// of randomly generated tokens. Set to true when MCP_DEBUG_TOKEN is non-empty.
 var debugHardcodedToken bool
 
 // heartbeatDuration is the interval for MCP server heartbeat checks.
-// Symbol: mcp.heartbeatDuration (0x152dae8)
+//
+// TODO(re): value not re-confirmed against the 0b86a2a0 binary.
 var heartbeatDuration time.Duration
 
 // init checks for the MCP_DEBUG_TOKEN environment variable and sets
 // debugHardcodedToken accordingly.
 //
-// Binary address: 0xace180
-// Source file: <autogenerated> (init function)
+// Binary: 0x1767ca0 (old: 0x15a8ac0; a6f96673: 0xace180)
 //
-// Assembly:
-//
-//	LEA "MCP_DEBUG_TOKEN" → AX (0xace18e)
-//	CALL os.Getenv (0xace19a)
-//	SETNE debugHardcodedToken (0xace1a2)
+// TODO(re): the new init also carries 77 `init.funcN` thunks
+// (0x17690a0..0x176b8a0) that the old binary's init did not have. They were not
+// individually reversed; the shape (uniform 0x80-byte bodies) matches garble
+// -literals decrypt thunks rather than application logic.
 func init() {
 	val := os.Getenv("MCP_DEBUG_TOKEN")
 	debugHardcodedToken = val != ""
 }
 
 // RegisterServer appends a ServerRegistration to the global registry.
-// It acquires registryMu write lock before modifying the slice.
+// It acquires registryMu's write lock before modifying the slice.
 //
-// Binary address: 0xace1c0
-// Source file: registry.go
+// Binary: 0x176b8a0 (old: 0x15ab240; a6f96673: 0xace1c0)
 //
-// Assembly flow:
-//  1. Lock registryMu (0xace1ea)
-//  2. defer registryMu.Unlock via deferwrap1 (0xace1ef)
-//  3. Append registration to registry slice (0xace224-0xace2a0)
-//  4. Unlock and return
+// Its only outbound call is `sync.(*Mutex).Lock`; the Unlock runs from
+// deferwrap1 at 0x176b9c0. Structurally identical to the old binary.
 func RegisterServer(reg *ServerRegistration) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -162,27 +229,14 @@ func RegisterServer(reg *ServerRegistration) {
 }
 
 // NewRegistration creates a new ServerRegistration and immediately registers it.
-// It wraps the configure function and shouldRegister predicate into closures,
-// then calls RegisterServer.
 //
-// Binary address: 0xace340
-// Source file: registry.go
+// Binary: 0x176ba20 (old: 0x15ab3c0; a6f96673: 0xace340)
 //
-// Parameters (from register calling convention):
-//
-//	AX: name ptr, BX: name len
-//	CX: description ptr, DI: description len
-//	SI: configureServer func
-//	R8: shouldRegister func
-//	R9: additional parameter
-//
-// Assembly flow:
-//  1. Allocates enabled closure (func1 at 0xace580) at 0xace380
-//  2. Allocates disable closure (func2 at 0xace560) at 0xace3a0
-//  3. Allocates ServerRegistration at 0xace40a
-//  4. Populates all fields
-//  5. Calls RegisterServer at 0xace4e0
-//  6. Returns the registration
+// Its only outbound call is RegisterServer (0x176b8a0). The `.func1` closure
+// (0x176bc60) references the literals "mcp__" and "__" — it builds the
+// `mcp__<server>__<tool>` permission names Claude Code uses. The old binary's
+// equivalent closure (`a8IEAlutXX1f.IdsevjfGRyP.func1`) referenced exactly the
+// same two literals, so this part is unchanged.
 func NewRegistration(
 	name string,
 	description string,
@@ -195,7 +249,7 @@ func NewRegistration(
 		shouldRegister:  shouldRegister,
 	}
 
-	// enabled and disable are closures over an internal boolean flag
+	// enabled and disable are closures over an internal boolean flag.
 	enabled := true
 	reg.enabled = func() bool { return enabled }
 	reg.disable = func() { enabled = false }
@@ -204,21 +258,23 @@ func NewRegistration(
 	return reg
 }
 
-// GetMCPRegistrations returns all registered ServerRegistrations that pass their
-// shouldRegister predicate for the given environment type and session mode.
+// GetMCPRegistrations returns all registered ServerRegistrations that pass
+// their shouldRegister predicate.
 //
-// Binary address: 0xacedc0
-// Source file: registry.go
+// Binary: 0x176c620 (old: 0x15ad880; a6f96673: 0xacedc0)
 //
-// Assembly flow:
-//  1. RLock registryMu (inline atomic at 0xacee0e)
-//  2. defer RUnlock via deferwrap1 (0xacf040)
-//  3. Iterate registry slice (0xaceea0 loop)
-//  4. For each entry, check if enabled callback (offset 0x28) returns true (0xaceeb4)
-//  5. If enabled, call shouldRegister closure (0xaceedb)
-//  6. If passes, append to result slice (0xaceef0-0xacef49)
-//  7. RUnlock and return filtered slice
-func GetMCPRegistrations(envType string, sessionMode string) []*ServerRegistration {
+// CORRECTION to the earlier RE: this takes a SINGLE string argument, not two.
+// The new and old prologues are byte-identical and spill only AX and BX:
+//
+//	SUBQ $0xb0, SP
+//	MOVQ AX, 0xc0(SP)      ; string.ptr
+//	MOVQ BX, 0xc8(SP)      ; string.len
+//	...
+//	LOCK XADDL SI, 0x24b040b(IP)   ; inlined RWMutex.RLock
+//
+// TODO(re): which string this is (environment type vs session mode) is not
+// recovered — every caller-side literal is garble-encrypted.
+func GetMCPRegistrations(selector string) []*ServerRegistration {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -235,75 +291,90 @@ func GetMCPRegistrations(envType string, sessionMode string) []*ServerRegistrati
 	return result
 }
 
-// RegisterWithClaude registers an MCP server with Claude Code by calling the
-// claude CLI with "mcp add" arguments. It constructs a unique server name using
-// a timestamp, builds the claude command with appropriate arguments, and
-// executes it.
+// configureMCPServers starts the registered MCP servers and emits the Claude
+// Code MCP configuration describing them.
 //
-// Binary address: 0xacf0a0
-// Source file: registry.go
+// Binary: 0x176c900 (`uBHoqupaaEIs.SALjTKZ4I`, ~0x1f60 bytes) — NEW in this
+// build; there is no counterpart in the old binary.
 //
-// Assembly flow:
-//  1. Get current time via time.Now (0xacf0ed)
-//  2. Format server name: fmt.Sprintf("%s-%d", port, timestamp) (0xacf158)
-//  3. Format URL: fmt.Sprintf("http://localhost:%d", port) (0xacf1c1)
-//  4. Build command: exec.CommandContext(ctx, "claude", "mcp", "add", "--transport", "http", name, url) (0xacf24b)
-//  5. Execute: cmd.CombinedOutput (0xacf250)
-//  6. On error: log warning with error details (0xacf337)
-//  7. On success: parse output for URL confirmation (0xacf3a1)
-//  8. Log info about successful registration (0xacf443)
-//  9. Then run "claude mcp add" again for the scope (0xacf4e6)
-func RegisterWithClaude(
-	ctx context.Context,
-	logger *slog.Logger,
-	name string,
-	port interface{},
-	serverURL string,
-) {
-	now := time.Now()
-	serverName := fmt.Sprintf("%s-%d", name, now.UnixNano())
-	serverEndpoint := fmt.Sprintf("http://localhost:%s", serverURL)
+// Evidence:
+//   - String xrefs: ["Bearer "] — it materialises the `Authorization: Bearer
+//     <token>` value that goes into the emitted config, using the token
+//     BaseServer.GetConfig hands back.
+//   - Calls writeMCPConfigFile (0x176e860) and mcpConfigPath (0x1770500), plus
+//     fmt (`bmbxQn.D01hzp89WP7`), time (`cAKtTFMwQ1J.Th_JtAXtvFY0`,
+//     `cAKtTFMwQ1J.ZddtiQWGpqE`), slog
+//     (`OyuTObuaEGx.(*GfyjDDEX).tNNXrYKN0q`) and encoding/json
+//     (`Ciyypbbc_.NFWAFIyls`).
+//   - Three inlined closures: func4 (0x177a980), func6 (0x177ae00),
+//     func9 (0x177c360).
+//
+// This function plus writeMCPConfigFile is what replaced the old
+// `claude mcp add` shell-out at 0x15adb60.
+//
+// TODO(re): stub — control flow, parameter list and return values are not
+// reconstructed. Only the call graph and the "Bearer " literal are confirmed.
+func configureMCPServers(ctx context.Context, logger *slog.Logger) error {
+	_ = ctx    // TODO(re): should be threaded into server Start/Stop.
+	_ = logger // TODO(re): should be passed to each MCPServer.Start.
+	// TODO(re): not reconstructed — see Binary: 0x176c900.
+	return nil
+}
 
-	// Execute: claude mcp add --transport http <name> <url>
-	cmd := exec.CommandContext(ctx, "claude", "mcp", "add", "--transport", "http", serverName, serverEndpoint)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Warn(
-			"failed to register MCP server with claude",
-			"error", err,
-			"output", string(output),
-			"server", name,
-		)
-		return
-	}
+// writeMCPConfigFile serialises the started MCP servers into the Claude Code
+// MCP configuration file.
+//
+// Binary: 0x176e860 (`uBHoqupaaEIs.cgaZUQI840`, ~0x1ca0 bytes) — NEW.
+//
+// Evidence:
+//   - String xrefs: ["  "] — the two-space indent argument of
+//     json.MarshalIndent.
+//   - Calls encoding/json (`Ciyypbbc_.JiaxQxa`, `Ciyypbbc_.NFWAFIyls`,
+//     `Ciyypbbc_.RacKtkD0HtDy`), os (`daI_d2D7.Ejp6NvDKlhv`,
+//     `daI_d2D7.IgleaC5i3tU`, `daI_d2D7.XeHYAU0`), fmt
+//     (`bmbxQn.AEjJ1Z__rd`), slog, and `DfXYR3h.Y6ArtJJULsfD`.
+//   - Four inlined closures: func3 (0x17795e0), func4 (0x1779b60),
+//     func5 (0x177a2e0), func6 (0x177a5e0).
+//
+// TODO(re): stub — the concrete config schema (server name -> {type, url,
+// headers}) is not recovered: every field literal in this function is
+// garble-encrypted and the function never executes under `--help`, so it is
+// absent from the runtime core dump too.
+func writeMCPConfigFile(path string, servers []*ServerRegistration) error {
+	_ = path    // TODO(re): destination from mcpConfigPath.
+	_ = servers // TODO(re): serialisation shape not recovered.
+	// TODO(re): not reconstructed — see Binary: 0x176e860.
+	return nil
+}
 
-	outputStr := string(output)
-	if strings.Index(outputStr, serverURL) >= 0 {
-		logger.Info(
-			"registered MCP server with Claude Code and it recognized our URL",
-			"server", name,
-		)
-	}
-
-	// Register again with scope (claude mcp add --scope <scope> <name> <url>)
-	cmd2 := exec.CommandContext(ctx, "claude", "mcp", "add", "--transport", "http", serverName, serverEndpoint, name)
-	_, _ = cmd2.CombinedOutput()
+// mcpConfigPath resolves the path of the Claude Code MCP configuration file.
+//
+// Binary: 0x1770500 (`uBHoqupaaEIs.fMeIjMWq9p`, 0xc0 bytes) — NEW.
+// Calls encoding/json (`Ciyypbbc_.JiaxQxa`) and os (`daI_d2D7.IgleaC5i3tU`).
+//
+// The binary contains the exported Go field name `McpConfigFile` (present in
+// both builds, in the session-config type-name blob), which is the most likely
+// source of this path.
+//
+// TODO(re): stub — not reconstructed.
+func mcpConfigPath() (string, error) {
+	// TODO(re): not reconstructed — see Binary: 0x1770500.
+	return "", nil
 }
 
 // generateBearerToken generates a random bearer token for MCP server auth.
-// If debugHardcodedToken is true, uses a fixed token for debugging.
-// Otherwise generates 32 random bytes and base64url-encodes them.
+// If debugHardcodedToken is true, a fixed token is used for debugging.
+// Otherwise 32 random bytes are base64url-encoded.
 //
-// Called from BaseServer.Start (0xad01ad).
-// Assembly evidence at 0xad0194-0xad0250:
-//  1. crypto/rand.Read 32 bytes (0xad01ad)
-//  2. If error: fmt.Errorf("failed to read random data: %w") (0xad01f2)
-//  3. base64.URLEncoding.EncodeToString (0xad0220)
-//  4. Store token on BaseServer
+// Inlined into BaseServer.Start in both builds. In the new binary the base64
+// call site is `aHae1zHtl.(*JI1WMF).EncodeToString`, reachable in this package
+// only from `uBHoqupaaEIs.(*Lw9QeTzj).Start` (0x17707a0).
+//
+// TODO(re): the debug token literal is garble-encrypted and was not recovered;
+// "debug-token" below is a placeholder carried from the a6f96673 RE.
 func generateBearerToken() (string, error) {
 	if debugHardcodedToken {
-		// Use hardcoded token for debugging
-		return "debug-token", nil
+		return "debug-token", nil // TODO(re): literal not recovered.
 	}
 
 	buf := make([]byte, 32)

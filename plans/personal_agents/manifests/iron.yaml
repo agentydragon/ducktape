@@ -1,0 +1,61 @@
+# The agent reaches the proxy via HTTP_PROXY at a Service; nothing hijacks DNS.
+dns:
+  enabled: false
+
+proxy:
+  tunnel_listen: ":8080"
+
+tls:
+  mode: "mitm"
+  # cert-manager owns this keypair, so it cannot drift the way a
+  # self-generated mitmproxy CA did (F8). The CA must carry
+  # keyUsage=keyCertSign or iron-proxy refuses to start, with that message.
+  ca_cert: "/ca/tls.crt"
+  ca_key: "/ca/tls.key"
+
+transforms:
+  - name: allowlist
+    config:
+      domains:
+        - "github.com"
+        - "api.github.com"
+        - "codeload.github.com"
+        - "objects.githubusercontent.com"
+        - "raw.githubusercontent.com"
+      # Optional defence in depth -- confining writes to the agent's own
+      # fork. Note the first rule: without a CONNECT entry the scoped rules
+      # below never apply, because the preflight matches none of them and
+      # the host is rejected outright.
+      #
+      # rules:
+      #   - host: "api.github.com"
+      #     methods: ["CONNECT"]
+      #   - host: "api.github.com"
+      #     methods: ["GET"]
+      #   - host: "api.github.com"
+      #     methods: ["POST", "PATCH", "PUT", "DELETE"]
+      #     paths: ["/repos/agentydragon-agent/*"]
+
+  - name: secrets
+    config:
+      secrets:
+        - source:
+            type: env
+            var: GITHUB_TOKEN
+          replace:
+            # What the agent holds. Substituted in `Bearer <placeholder>`
+            # and inside base64 `Basic <user>:<placeholder>` alike -- the
+            # latter being the git-over-HTTPS shape, verified with a real
+            # 3.9 MB push (F16).
+            proxy_value: "proxy-github-placeholder"
+            match_headers: ["Authorization"]
+            # require: true is NOT set. In explicit-proxy mode it is
+            # evaluated against the header-less CONNECT and rejects every
+            # HTTPS request with 403 (F15).
+          rules:
+            - host: "api.github.com"
+            - host: "github.com"
+            - host: "codeload.github.com"
+
+log:
+  level: "info"

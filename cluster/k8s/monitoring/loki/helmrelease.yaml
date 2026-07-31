@@ -155,13 +155,22 @@ spec:
       extraEnvFrom:
         - secretRef:
             name: loki-s3-credentials
+      # backend runs the compactor + index-gateway + ruler. Its memory tracks
+      # the size of the *retained index* (streams ever created x retention),
+      # not the active stream count the ingesters see — which is why it was the
+      # component that died while loki-write survived. At 256Mi it was OOMKilled
+      # 165 times (exit 137), peaking at exactly the limit; that peak is
+      # censored, since working-set cannot be observed above the cap.
+      # Raised alongside the promtail `filename` labeldrop that cuts index
+      # growth at the source; the drop alone does not shrink the already-retained
+      # index, which ages out over the retention period.
       resources:
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 256Mi
         limits:
           cpu: 500m
-          memory: 256Mi
+          memory: 1Gi
 
     gateway:
       enabled: true

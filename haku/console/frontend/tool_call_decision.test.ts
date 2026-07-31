@@ -2,8 +2,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ToolCallRecord } from "./client.ts";
-import { executeToolCallDecision, toolCallDecisionFeedback, useToolCallDecision } from "./tool_call_decision.ts";
+import type { ToolCallRecord } from "./client";
+import { executeToolCallDecision, toolCallDecisionFeedback, useToolCallDecision } from "./tool_call_decision";
 
 function pendingApproval(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
   return {

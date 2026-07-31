@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { syncState } from "./shell_chrome.tsx";
+import { syncState } from "./shell_chrome";
 
 describe("syncState", () => {
   it("reports an error before any lower-priority state", () => {

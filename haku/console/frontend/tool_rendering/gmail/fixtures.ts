@@ -1,4 +1,4 @@
-import type { McpToolResultFor } from "../../mcp_tool_result_schema.ts";
+import type { McpToolResultFor } from "../../mcp_tool_result_schema";
 
 type GmailThread = McpToolResultFor<"gmail", "threads_get">;
 type GmailMessage = McpToolResultFor<"gmail", "messages_get">;

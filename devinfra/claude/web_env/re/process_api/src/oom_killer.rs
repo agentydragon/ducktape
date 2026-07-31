@@ -1,5 +1,6 @@
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
+//! edebff2c: no application-string delta in this module; logic carried forward.
 //! Logic verified against 91c789ff (2026-03-26); offsets stale.
 //!
 //! Container-level OOM monitoring: polls cgroup memory usage and kills

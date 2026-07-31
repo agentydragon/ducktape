@@ -125,7 +125,13 @@ py_test(
     name = "test_sync",
     srcs = ["test_sync.py"],
     deps = [
+        ":link_profiles",
+        ":link_store",
         ":sync",
+        "//:conftest",
+        "@pypi//plaid_python",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

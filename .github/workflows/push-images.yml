@@ -73,6 +73,11 @@ jobs:
           - { image: "//finance/scraper:image", image_name: augur-evidence, test_target: "//finance/scraper/..." }
           - { image: "//haku/dispatch:image", image_name: haku-dispatcher, test_target: "//haku/dispatch/..." }
           - { image: "//haku/sandbox_mcp:image", image_name: haku-sandbox-mcp, test_target: "//haku/sandbox_mcp/..." }
+          - {
+              image: "//cluster/proxies/loki_read_proxy:image",
+              image_name: loki-read-proxy,
+              test_target: "//cluster/proxies/loki_read_proxy/...",
+            }
           - { image: "//mcp_infra/exec:direct_image", image_name: exec-backend, test_target: "//mcp_infra/exec/..." }
           - { image: "//props/backend:image", image_name: props-backend, test_target: "//props/backend/..." }
           - { image: "//props/llm_proxy:image", image_name: props-llm-proxy, test_target: "//props/llm_proxy/..." }

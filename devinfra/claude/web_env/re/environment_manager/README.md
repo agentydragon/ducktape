@@ -3,26 +3,58 @@
 Analysis and reconstruction of Anthropic's `environment-manager` binary — the
 Go-based orchestration service that manages Claude Code web container sessions.
 
-> **Current binary is garble-obfuscated.** The previous (`a6f96673`, staging)
-> had full DWARF + symbols. The current (`495ea204`, release) uses
-> [garble](https://github.com/burrowers/garble) — symbol names are randomized,
-> `go version -m` returns "unknown", DWARF extraction is not possible. RE now
-> relies on runtime behavior and string analysis only.
+> **The binary is garble-obfuscated, including `-literals`.** Symbol names are
+> randomized, `go version -m` returns "unknown", there is no DWARF, and string
+> constants are encrypted so the binary's own help text does not appear in
+> `strings` output. All of that is defeated — see [Working with the binary](#working-with-the-binary).
+> Full function-level disassembly is available; RE does **not** need to fall
+> back to string analysis.
 
 ## Target Binary
 
-| Property           | Value                                                      |
-| ------------------ | ---------------------------------------------------------- |
-| **ELF Build ID**   | `495ea204294a4d78ef9d6d3ef7cd2d433486514b`                 |
-| **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz` |
-| **Language**       | Go                                                         |
-| **Version string** | `release-d84d76b7-ext`                                     |
-| **Channel**        | Release (was staging)                                      |
-| **Obfuscation**    | garble (all symbol names randomized)                       |
-| **Binary size**    | 51.9 MB (uncompressed), 20 MB (gzipped)                    |
-| **Binary path**    | `/opt/env-runner/environment-manager`                      |
-| **Dynamic deps**   | Only `libc.so.6`                                           |
-| **RE directory**   | `src/` (flat layout, Build ID in this table)               |
+| Property           | Value                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| **ELF Build ID**   | `0b86a2a0dbc9411eb18435e1c56822b0156f90fe`                       |
+| **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz`       |
+| **Language**       | Go                                                               |
+| **Version string** | `release-1186d93b9-ext`                                          |
+| **Channel**        | Release                                                          |
+| **Obfuscation**    | garble, with `-literals` (symbols randomized, strings encrypted) |
+| **Binary size**    | 58.6 MB (uncompressed), 22 MB (gzipped)                          |
+| **Functions**      | 46,573 (recovered from `.gopclntab`)                             |
+| **Binary path**    | `/opt/env-runner/environment-manager`                            |
+| **Dynamic deps**   | Only `libc.so.6`                                                 |
+| **RE directory**   | `src/` (flat layout, Build ID in this table)                     |
+
+## Working with the binary
+
+Garble strips the ELF symbol table, so `go tool objdump` and `go tool nm` both
+refuse the binary outright. Rebuild the symbol table first — then the entire
+standard toolchain works, including call-target resolution:
+
+```bash
+bazel run //skills/reverse_engineer/examples:gosymtab -- \
+    /opt/env-runner/environment-manager /tmp/em.sym
+go tool nm /tmp/em.sym | grep TaVHwGAw
+go tool objdump -s '^main\.main$' /tmp/em.sym
+```
+
+String constants are encrypted, so anchoring on `strings` output does not work.
+Recover them by letting the binary decrypt them and reading its memory:
+
+```bash
+gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' \
+    -ex 'catch syscall exit_group' -ex 'run' -ex 'generate-core-file core' \
+    --args /opt/env-runner/environment-manager --help
+strings -n 4 core | sort -u > decrypted.txt   # core is ~1.8 GB; delete it after
+```
+
+Package and identifier names are randomized per build. <degarble_map.md> maps
+the garbled tokens for this Build ID back to real packages, and explains how to
+regenerate the map for a future binary.
+
+Both techniques, and the pitfalls in each, are documented in the
+`reverse_engineer` skill under "Defeating Obfuscation".
 
 ## Binary Name vs CLI Name
 
@@ -32,12 +64,15 @@ is `environment-runner`. All CLI examples in strings use `environment-runner`.
 ## Source Tree
 
 The original Go module lives at
-`github.com/anthropics/anthropic/api-go/environment-manager`. Source tree
-was extracted from `a6f96673` DWARF debug info (87 files). Binary diff
-confirmed that several packages were removed (Supabase, Vercel, Antspace,
-Baku) and the old binary's DWARF paths revealed files missing from the RE
-source tree. Items marked `REMOVED` are confirmed absent from the current
-binary.
+`github.com/anthropics/anthropic/api-go/environment-manager`.
+
+The file layout below came from DWARF debug info in a much older build that
+shipped with symbols; current binaries have none, and garble randomizes
+filenames per function so the real layout is no longer recoverable (see
+<degarble*map.md>). Treat the \_file names* as historical and the _package
+structure_ as current — package boundaries and their contents are re-verified
+against each binary via the recovered symbol table. Entries marked `REMOVED`
+are confirmed absent from the current binary.
 
 ```
 main.go                                         # Entry point: Cobra root command + Version
@@ -256,9 +291,31 @@ Flags:
 
 Makes a single poll request for work.
 
+### `environment-runner preload-claude`
+
+Pre-boots a Claude Code process ("a spare") so that a later `task-run` can claim
+it instead of paying cold-start cost.
+
+```text
+Pre-boot a Claude Code spare for a later task-run to claim
+
+Usage:
+  environment-runner preload-claude [flags]
+
+Flags:
+      --claude-path string   Path to claude binary (default: resolved via GetClaudePath)
+  -h, --help                 help for preload-claude
+```
+
+The claim path is instrumented with two metrics recovered from the binary:
+`claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare
+spawn/adopt to Claim (the overlap window W)") and `claude_code.spare.claim_miss`
+("Cold spawn instead of warm-spare claim, attributed by reason").
+
 ### `environment-runner print-sandbox-settings`
 
-Prints default sandbox configuration as JSON to stdout.
+Prints default sandbox configuration as JSON to stdout. Output is byte-identical
+to the previous binary; see `reference/sandbox-settings.json`.
 
 ### `environment-runner completion`
 

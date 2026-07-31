@@ -1,13 +1,20 @@
+# CLEANUP(added 2026-07-31): delete this whole directory once
+#   `openclaw-anthropic-api-key`, `openclaw-openai-api-key`,
+#   `openclaw-telegram-bot-token` and `ibkr-flex-query-credentials` no longer
+#   live in an `openclaw-*` namespace — either re-homed under
+#   `agents/shared-secrets/` or revoked upstream. Nothing else here survives the
+#   2026-07-31 teardown; this namespace exists only because the SOPS documents
+#   pin it. See ../README.md.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: openclaw-sandbox
+  annotations:
+    description: >-
+      Retained only to hold ibkr-flex-query-credentials, whose SOPS document
+      pins this namespace. Nothing should run here since the OpenClaw/OpenShell teardown on
+      2026-07-31 — the privileged Pod Security labels OpenShell's supervisor
+      needed are gone with it.
   labels:
     name: openclaw-sandbox
     environment: development
-    # OpenShell's supervisor requires an Unconfined AppArmor profile plus
-    # SYS_ADMIN, NET_ADMIN, SYS_PTRACE, and SYSLOG. The cluster default is
-    # baseline, which rejects every generated sandbox pod before scheduling.
-    pod-security.kubernetes.io/enforce: privileged
-    pod-security.kubernetes.io/audit: privileged
-    pod-security.kubernetes.io/warn: privileged

@@ -171,6 +171,52 @@ py_binary(
 )
 ```
 
+### TypeScript: one `ts_library` per module
+
+**`ts_library` (`//devinfra/js:ts_library.bzl`) is how TypeScript is built here.** One target
+per module, `srcs` listing that module's file(s), `tsconfig` naming the package tree's shared
+`ts_config`:
+
+```python
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    tsconfig = TSCONFIG,  # a package-level constant, e.g. ":tsconfig" or "//pkg/frontend:tsconfig"
+    deps = [":operator_login", ":schema", "//:node_modules/openapi-fetch"],
+)
+```
+
+It wraps `ts_project`: tsc emits the `.js` and `.d.ts` in the same action that type-checks them,
+so **the type check is the build step** — `bazel build` fails on a type error, and a module's
+dependencies are what it declares. Bundlers (`spa_bundle`, `esbuild`) take the emitted `.js`, so
+their `entry_point` is `main.js`, not `main.tsx`. vitest runs the emitted `.test.js`, so every
+spec is its own `ts_library` too and `vitest.config.ts`'s `include` is `["**/*.test.js"]`.
+
+**Never `js_library` for `.ts`/`.tsx`, and never a whole-project `tsc_test`.** `js_library` only
+stages files; a codebase built from it needs a second target re-listing every file to check it,
+the two lists drift, and what falls through is checked by nothing — silently, which is how three
+haku-console fixtures rendered as raw JSON (#3599, #3604, #3610). `js_library` remains right for
+`.mjs`/`.js` and for staging generated declarations.
+
+Three consequences worth knowing before they surprise you:
+
+- **A generated `.ts` needs compiling like any other.** rules_js classifies it as a source, not a
+  type, and `ts_project` pulls only its deps' types into the compile — so a `js_library`-wrapped
+  generated module reads as "cannot find module". Macros that emit TypeScript
+  (`js_openapi_zod`, `data_uri_module`) take a `tsconfig` and emit a `ts_library`.
+- **Every `.tsx` needs `//:node_modules/@types/react`**, including a file that imports no React
+  symbol itself — JSX element types and inferred component types come from there (TS2742).
+- **A whole-program tool still needs the sources.** Type-aware ESLint reads `.ts`, which a
+  `ts_library` does not propagate. Feed it a `filegroup` glob and set `no_copy_to_bin` on the
+  test, or `ts_project`'s copy-to-bin and the staging copy become two actions writing one path.
+  A glob is right here: the tool runs over the whole directory, and unlike a hand-written list it
+  cannot fall behind a new file.
+
+**Svelte packages keep `svelte_check_test`.** `ts_project` cannot process `.svelte`, and
+`svelte_check` already type-checks components and their `.ts` as one program driven by the
+tsconfig's globs off the `:app` library graph — there is no second hand-maintained list, so the
+drift this pattern prevents does not arise there.
+
 ### System CA certificates in distroless images
 
 `rules_distroless` ships no `/etc/ssl/certs/ca-certificates.crt` bundle, so a

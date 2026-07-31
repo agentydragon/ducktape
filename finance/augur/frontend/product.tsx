@@ -6,20 +6,20 @@ import {
   fetchProductPortfolio,
   fetchProductRollout,
   fetchProductTerminalDistribution,
-} from "./client.ts";
-import { fmtNumber } from "./lib/format.ts";
-import { fmtMetricValue } from "./lib/chart.ts";
-import { toastFetchError } from "./lib/toast.ts";
+} from "./client";
+import { fmtNumber } from "./lib/format";
+import { fmtMetricValue } from "./lib/chart";
+import { toastFetchError } from "./lib/toast";
 
-import { MetricFanChart } from "./fan_chart.tsx";
-import { TerminalDistributionChart } from "./terminal_distribution.tsx";
-import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
-import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
-import { ScenarioEditor } from "./scenario_editor.tsx";
-import { ScenarioBadge } from "./scenario_tabs.tsx";
-import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } from "./header.tsx";
-import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton.tsx";
-import { useVisibleEventKinds, useEventSelection } from "./hooks.ts";
+import { MetricFanChart } from "./fan_chart";
+import { TerminalDistributionChart } from "./terminal_distribution";
+import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table";
+import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel";
+import { ScenarioEditor } from "./scenario_editor";
+import { ScenarioBadge } from "./scenario_tabs";
+import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } from "./header";
+import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton";
+import { useVisibleEventKinds, useEventSelection } from "./hooks";
 import {
   METRIC_OPTIONS,
   MAX_VARIANTS,
@@ -32,7 +32,7 @@ import {
   resolveVariant,
   defaultVariantLabel,
   scenarioColor,
-} from "./input_helpers.ts";
+} from "./input_helpers";
 import {
   metricFanRows,
   terminalPercentileValue,
@@ -40,7 +40,7 @@ import {
   selectedRolloutMetricRows,
   selectedRolloutEvents,
   visibleMetricOptions,
-} from "./data_helpers.ts";
+} from "./data_helpers";
 
 function RolloutResultsPanel({
   visibleMetrics,

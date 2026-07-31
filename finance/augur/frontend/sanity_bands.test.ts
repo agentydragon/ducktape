@@ -3,7 +3,7 @@
 
 import { test, expect } from "vitest";
 
-import { sortSanityBands, sanityPassCount, fmtBandValue, fmtExpectedBand, fmtObserved } from "./sanity_bands.ts";
+import { sortSanityBands, sanityPassCount, fmtBandValue, fmtExpectedBand, fmtObserved } from "./sanity_bands";
 
 function band(overrides) {
   return {

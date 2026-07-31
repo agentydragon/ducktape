@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki-read-proxy
+  namespace: loki-read-proxy
+  labels:
+    app.kubernetes.io/name: loki-read-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: loki-read-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP

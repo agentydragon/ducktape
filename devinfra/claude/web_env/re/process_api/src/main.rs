@@ -5,21 +5,29 @@
     clippy::manual_memcpy,
     clippy::doc_overindented_list_items
 )]
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
 //!
 //! Main entry point: CLI argument parsing, optional Firecracker VM init,
 //! WebSocket listener (TCP, UDS, vsock, or dial-uds), SIGINT handler,
 //! control server initialization, cgroup setup, and task spawning.
 //!
-//! Changes in 810fd3a4 vs 91c789ff:
-//!   - Real vsock support via tokio-vsock 0.7.2 (was UDS stub)
-//!   - New --dial-uds / DIAL_UDS flag: dial out to host-side UDS bridge
-//!     (gVisor --host-uds=open, where bind() on gofer-backed paths
-//!     falls back to a sentry-synthetic dentry the host cannot reach)
-//!   - Release string updated to process_api_2026-03-25-20-38
+//! CLI surface is unchanged in edebff2c: the clap definition blob at
+//! 0x39abaf..0x39b2c0 matches 810fd3a4's at 0x2a9126 flag for flag
+//! (--addr, --max-ws-buffer-size, --memory-limit-bytes, --cpu-shares,
+//! --oom-polling-period-ms, --cgroupv2, --control-server-addr,
+//! --block-local-connections, --listen-uds, --dial-uds, --listen-vsock-port,
+//! --control-vsock-port, --firecracker-init), including help text.
 //!
-//! Source path: /root/src/tree/marcus-process-api/sandboxing/sandboxing/server/process_api/src/main.rs
+//! New in edebff2c: `graceful_shutdown` bounds its wait with a 1-second grace
+//! period and warns to stderr when tasks remain (template 0x38c516,
+//! emitted from the shutdown driver at 0x154810; the three inlined copies are
+//! at 0x15838e, 0x180044 and 0x1b8c7e).
+//!
+//! Source path (edebff2c panic-location table): src/main.rs — edebff2c builds
+//! with --remap-path-prefix, so every application module now appears as a bare
+//! src/*.rs path instead of 810fd3a4's
+//! /root/src/tree/marcus-process-api/sandboxing/sandboxing/server/process_api/ prefix.
 //!
 //! String refs (CLI argument definitions):
 //!   "process_api", "firecracker_init", "FIRECRACKER_INIT", "firecracker-init",
@@ -44,6 +52,7 @@ mod pid_tree;
 mod platform;
 mod proc_handle;
 mod state;
+mod ws_compression;
 
 use std::net::{IpAddr, SocketAddr};
 use std::os::unix::fs::PermissionsExt;
@@ -57,8 +66,9 @@ use tokio::sync::broadcast;
 use tokio_tungstenite::accept_async;
 use tokio_vsock::{VMADDR_CID_ANY, VsockAddr, VsockListener};
 
-/// CLI arguments (Binary: 810fd3a4).
-/// Decompiled from serde visitor at binary offset 0x28ea5c.
+/// CLI arguments (Binary: edebff2c).
+/// Decompiled from the clap definition blob at 0x39abaf..0x39b2c0; unchanged
+/// from 810fd3a4's 0x2a9126 blob apart from its address.
 #[derive(Parser, Debug)]
 #[command(name = "process_api")]
 struct Cli {
@@ -134,10 +144,7 @@ pub fn is_local_ip(addr: &IpAddr) -> bool {
 
 /// Main entry point.
 ///
-/// Changes in 810fd3a4:
-/// - Real vsock via tokio-vsock 0.7.2
-/// - New --dial-uds flag for gVisor UDS bridge dial-out
-/// - Release string updated to process_api_2026-03-25-20-38
+/// Binary: edebff2c — release string "process_api_2026-05-11-18-55" (0x39aaf0).
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -151,8 +158,8 @@ async fn main() {
     }
 
     // Log version info
-    // Binary: 810fd3a4
-    log::info!("[INFO] process_api release: process_api_2026-03-25-20-38");
+    // Binary: edebff2c — "[INFO] process_api release: ..." at 0x39aaf0
+    log::info!("[INFO] process_api release: process_api_2026-05-11-18-55");
     log::info!("[INFO] process_api package version: 0.1.0");
 
     // Broadcast channel for shutdown signaling
@@ -494,7 +501,29 @@ async fn graceful_shutdown(proc_map: &state::ProcessMap) {
     }
 
     log::info!("All connections and monitors closed, shutting down");
+
+    // Binary: edebff2c — after the shutdown broadcast, the driver waits one
+    // second for outstanding tasks and, if any survive, prints to stderr:
+    //   "[WARN] {} task(s) still alive after 1s shutdown grace, aborting"
+    // (template 0x38c516; the "stderr" target string is 0x39e358, loaded with
+    // len 6 at each of the three inlined copies).
+    // TODO(re): the source of the surviving-task count (a JoinSet length or a
+    // task-tracker counter, read from 0x98(%r13) at 0x158344) was not traced.
+    let still_alive = remaining_task_count();
+    if still_alive > 0 {
+        eprintln!("[WARN] {still_alive} task(s) still alive after 1s shutdown grace, aborting");
+    }
+
     log::info!("[INFO] process_api shutdown complete");
+}
+
+/// Number of spawned tasks still running after the shutdown grace period.
+///
+/// STUB: returns a plausible default. The binary reads this count from
+/// `0x98(%r13)` in the shutdown driver (fn 0x154810) — the owning structure was
+/// not identified, so the accounting mechanism is unknown.
+fn remaining_task_count() -> usize {
+    0
 }
 
 /// Run the vsock WebSocket listener.

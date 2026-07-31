@@ -37,17 +37,17 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
 - **Matrix**: `matrix`, `matrix-{agent-rbac,db,secrets,namespace}` — parked; workload
   manifests are retained on disk, but the Flux Kustomization CRs were removed.
-- **OpenClaw**: `openclaw-{gateway,operator,sandbox}` (+ their `-namespace`/`-secrets`,
-  `gateway-agent-rbac`) — experimental, parked. **Cluster objects deleted 2026-06-19**:
-  the `openclaw-{operator,mitmproxy}` namespaces (operator Deployment/HelmRelease/pod) and
-  the `openclaw-operator-manager-{role,binding}` ClusterRole/ClusterRoleBinding. The
-  operator was already broken before teardown — its HelmChart had no artifact and the
-  operator image `ghcr.io/openclaw-rocks/openclaw-operator:v0.11.1` was in
-  `ImagePullBackOff` — so it sat firing `FluxHelmReleaseNotReady` /
-  `KubeDeploymentReplicasMismatch`. **To revive: fix the operator HelmChart/image pull
-  first, then un-suspend the kustomizations** (the git manifests are intact). The
-  `authentik/openclaw` HTTPRoute is left in place (owned by the active authentik
-  proxy-routes kustomization, backend is the authentik outpost) and will 502 until revived.
+- **OpenClaw / OpenShell**: **removed 2026-07-31**, manifests deleted rather than
+  parked. The gateway was unused and wedged (no exec traffic, idle orphaned
+  sandboxes), the operator could not be egress-confined
+  (`plans/personal_agents/findings/` F3), and `public-coder-agent` is now the
+  reference agent — same OpenClaw image, plain Deployment, `sandbox.mode: "off"`.
+  The `ghcr.io/agentydragon/openclaw` ImageRepository/ImagePolicy are deliberately
+  **kept**: that image is what `public-coder-agent` runs. The `openclaw-gateway`
+  and `openclaw-sandbox` namespaces also survive, holding only the unique
+  credentials (Anthropic/OpenAI keys, Telegram bot token, IBKR Flex) whose SOPS
+  documents pin those namespaces — see `agents/openclaw/README.md`. Rationale and
+  the evaluated alternatives: `plans/personal_agents/verdicts.md`.
 - **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
   currently used.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.

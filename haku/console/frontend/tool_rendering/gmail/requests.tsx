@@ -14,29 +14,28 @@ import { Group, Loader, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { Field } from "../../field.tsx";
+import { CodeBlock } from "../../code_block";
+import { Field } from "../../field";
 import {
   fetchGmailMessagePreview,
   fetchGmailThreadPreviews,
   type GmailMessagePreview,
   type GmailThreadPreview,
-} from "../../gmail_client.ts";
-import { MailIcon } from "../../icons.tsx";
-import { ExternalLink } from "../../link.tsx";
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { GMAIL_SERVER_ID } from "../server_ids.ts";
+} from "../../gmail_client";
+import { MailIcon } from "../../icons";
+import { ExternalLink } from "../../link";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { definePreview, type ToolPreview } from "../entry";
+import { GMAIL_SERVER_ID } from "../server_ids";
 import {
   COMPACT_ITEM_LIMIT,
   firstLines,
   MoreLine,
-  plural,
   PreviewBadge,
   PreviewText,
   PreviewTitle,
   type PreviewProps,
-} from "../vocabulary.tsx";
+} from "../vocabulary";
 
 const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
 export const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
@@ -66,7 +65,7 @@ function GmailThreadRow({
   showLabels: boolean;
 }) {
   if (!preview) {
-    return <PreviewText c="dimmed">{threadId} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{threadId} (couldn&apos;t load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -213,7 +212,7 @@ function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArg
 
   if (preview === undefined) return <Loader size="xs" />;
   if (preview === null) {
-    return <PreviewText c="dimmed">{args.id} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{args.id} (couldn&apos;t load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>
@@ -245,7 +244,7 @@ function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageA
 
   if (preview === undefined) return <Loader size="xs" />;
   if (preview === null) {
-    return <PreviewText c="dimmed">{args.id} (couldn't load preview)</PreviewText>;
+    return <PreviewText c="dimmed">{args.id} (couldn&apos;t load preview)</PreviewText>;
   }
   return (
     <Stack gap={2}>

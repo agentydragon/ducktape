@@ -1,6 +1,6 @@
 import { Text } from "@mantine/core";
 
-import { toolActionDescription } from "./tool_rendering/actions.ts";
+import { toolActionDescription } from "./tool_rendering/actions";
 
 /** The card's identity line. A registered tool renders its own action description ("Gmail: Draft
  * email", "kubectl: Delete Pod" — destructive ones in red); a tool with no widget falls back to

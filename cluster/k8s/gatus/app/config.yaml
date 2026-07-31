@@ -240,13 +240,6 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: OpenClaw
-    group: services
-    url: http://openclaw.openclaw-gateway.svc.cluster.local:18789
-    interval: 60s
-    conditions:
-      - "[STATUS] == any(200, 302)"
-
   - name: kubectl-sandbox-mcp
     group: services
     url: http://kubectl-sandbox-mcp.kubectl-sandbox-mcp.svc.cluster.local:8080/healthz

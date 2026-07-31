@@ -185,8 +185,8 @@
       "sha256": "UNTTQSGQD+dbvEEZ0TuTckFDh6MJXAjLXsCYSRWSWXI="
     },
     "skill-reverse_engineer": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-reverse_engineer-06c59ba7a8c4/reverse_engineer.skill",
-      "sha256": "BsWbp6jEKGw/+njVuEqjkZXVH8iTUUN8esTUM4guc8k="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-reverse_engineer-04b45b4d5ba9/reverse_engineer.skill",
+      "sha256": "BLRbTVupl++pIpqmQZ7WZVzCw1IGy/JDG50ZOqc7HGg="
     },
     "skill-session_logs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-a6074d10de1d/session_logs.skill",

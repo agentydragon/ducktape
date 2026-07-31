@@ -7,8 +7,8 @@ import {
   getAgentEnrollment,
   type EnrollmentDecisionRequest,
   type EnrollmentView,
-} from "./client.ts";
-import { toastSuccess } from "./toast.ts";
+} from "./client";
+import { toastSuccess } from "./toast";
 
 export type EnrollmentChoice = "create" | "reconnect";
 

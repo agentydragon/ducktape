@@ -1,5 +1,4 @@
-import { writable, derived, type Writable, type Readable } from "svelte/store";
-import { get } from "svelte/store";
+import { writable, derived, get, type Writable, type Readable } from "svelte/store";
 
 import { currentAgentId, agentStatus } from "../agents/stores";
 import { mcpManager } from "../mcp/manager";

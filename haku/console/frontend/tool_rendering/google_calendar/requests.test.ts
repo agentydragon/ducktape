@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPreview } from "../entry.tsx";
-import { formatEventDateTimeRange, googleCalendarPreviews, humanizeRRule } from "./requests.tsx";
+import { renderPreview } from "../entry";
+import { formatEventDateTimeRange, googleCalendarPreviews, humanizeRRule } from "./requests";
 
 describe("googleCalendarPreviews", () => {
   it("has no entry for create_event — it's a combined widget (calls.tsx) instead", () => {

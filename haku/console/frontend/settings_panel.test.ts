@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { DeploymentInfo } from "./client.ts";
-import { deploymentVersions } from "./settings_panel.tsx";
+import type { DeploymentInfo } from "./client";
+import { deploymentVersions } from "./settings_panel";
 
 function deployment(server: string | null, frontend: string | null): DeploymentInfo {
   const image = (commit: string | null) => ({

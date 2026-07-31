@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import type { PreviewProps, PreviewVariant } from "./vocabulary.tsx";
+import type { PreviewProps, PreviewVariant } from "./vocabulary";
 
 export type ToolPreview<S extends z.ZodTypeAny = z.ZodTypeAny> = {
   schema: S;

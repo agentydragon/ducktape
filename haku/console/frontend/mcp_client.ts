@@ -1,8 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import { mcpToolError, unwrapMcpToolResult } from "./mcp_result.ts";
-import { redirectToOperatorLogin } from "./operator_login.ts";
+import { mcpToolError, unwrapMcpToolResult } from "./mcp_result";
+import { redirectToOperatorLogin } from "./operator_login";
 
 let connectedClient: Promise<Client> | null = null;
 

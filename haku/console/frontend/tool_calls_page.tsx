@@ -1,13 +1,13 @@
 import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useState } from "react";
 
-import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state.ts";
-import { displayableError, fetchToolCalls, type ToolCallRecord } from "./client.ts";
-import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import { ToolCallCard } from "./tool_call_card.tsx";
-import { useToolCallDecision } from "./tool_call_decision.ts";
-import { useConsoleEvents } from "./console_events.ts";
-import { useVariant } from "./variant_control.tsx";
+import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state";
+import { displayableError, fetchToolCalls, type ToolCallRecord } from "./client";
+import { PendingToolCallActions } from "./pending_tool_call_actions";
+import { ToolCallCard } from "./tool_call_card";
+import { useToolCallDecision } from "./tool_call_decision";
+import { useConsoleEvents } from "./console_events";
+import { useVariant } from "./variant_control";
 
 // Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
 const HISTORY_LIMIT = 500;

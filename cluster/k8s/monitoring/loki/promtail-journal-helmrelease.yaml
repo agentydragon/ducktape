@@ -37,6 +37,15 @@ spec:
       - effect: NoSchedule
         operator: Exists
 
+    # Same rollout deadlock as promtail-helmrelease.yaml, and worse here: the
+    # nodeSelector above is NixOS-only, so two of the three candidate nodes are
+    # the roaming laptops. Exceeding the desired count is intended — Kubernetes
+    # clamps it, and no roaming node should ever gate a journal rollout.
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 3
+
     config:
       clients:
         - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push

@@ -1,9 +1,9 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
-import { makeRecentToolCall, type RecentToolCall } from "../approval_state.ts";
-import type { DeploymentInfo, ToolCallRecord } from "../client.ts";
-import type { DaemonStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client.ts";
-import type { RegisteredToolPreviewFixture } from "../tool_rendering/index.tsx";
+import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
+import type { DeploymentInfo, ToolCallRecord } from "../client";
+import type { DaemonStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
+import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
   serverId: "grocy-sf",

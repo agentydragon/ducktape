@@ -15,10 +15,10 @@ import {
   type RecentToolCall,
   type ScreenshotApproval,
   terminalStatusLabel,
-} from "./approval_state.ts";
-import type { ToolCallRecord } from "./client.ts";
-import { CodeBlock } from "./code_block.tsx";
-import { Field } from "./field.tsx";
+} from "./approval_state";
+import type { ToolCallRecord } from "./client";
+import { CodeBlock } from "./code_block";
+import { Field } from "./field";
 import {
   CameraIcon,
   ChecklistIcon,
@@ -30,13 +30,13 @@ import {
   SettingsIcon,
   SyncCurrentIcon,
   SyncErrorIcon,
-} from "./icons.tsx";
-import { PendingToolCallActions } from "./pending_tool_call_actions.tsx";
-import type { ConsoleNavigationView, ConsoleView } from "./routing.ts";
-import { SUCCESS_COLOR } from "./theme.ts";
-import { ToolCallCard } from "./tool_call_card.tsx";
-import type { LiveStatus } from "./console_events.ts";
-import { useVariant, VariantControl } from "./variant_control.tsx";
+} from "./icons";
+import { PendingToolCallActions } from "./pending_tool_call_actions";
+import type { ConsoleNavigationView, ConsoleView } from "./routing";
+import { SUCCESS_COLOR } from "./theme";
+import { ToolCallCard } from "./tool_call_card";
+import type { LiveStatus } from "./console_events";
+import { useVariant, VariantControl } from "./variant_control";
 
 export interface ShellChromeProps {
   // Approvals panel open-state, parent-controlled so a newly-arrived geolocation approval can
@@ -197,7 +197,7 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
         </Group>
         <Text size="xs" c="dimmed">
           Console sessions last an hour and cannot be extended. Re-authenticating reloads this tab — anything unsaved in
-          Haku's UI is lost either way, so pick a good moment.
+          Haku&apos;s UI is lost either way, so pick a good moment.
         </Text>
         <Button size="compact-sm" variant="light" color="orange" fullWidth onClick={onReauthenticate}>
           Re-authenticate now
@@ -272,8 +272,8 @@ function SyncStatusPanel({
         </Group>
         {offline && (
           <Text size="xs" c="dimmed">
-            The console lost its live connection, so new tool calls and approvals won't appear on their own. It keeps
-            retrying; reload the page to refresh immediately.
+            The console lost its live connection, so new tool calls and approvals won&apos;t appear on their own. It
+            keeps retrying; reload the page to refresh immediately.
           </Text>
         )}
         {!offline && syncError !== null && (

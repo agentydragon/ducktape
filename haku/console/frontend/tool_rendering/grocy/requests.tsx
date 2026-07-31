@@ -24,21 +24,20 @@ import { Group, Stack } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { z } from "zod";
 
-import { Field } from "../../field.tsx";
-import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client.ts";
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { GROCY_SERVER_ID } from "../server_ids.ts";
+import { Field } from "../../field";
+import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { definePreview, type ToolPreview } from "../entry";
+import { GROCY_SERVER_ID } from "../server_ids";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
-  plural,
   PreviewBadge,
   PreviewText,
   PreviewTitle,
   type PreviewProps,
   type PreviewVariant,
-} from "../vocabulary.tsx";
+} from "../vocabulary";
 
 // Argument validators generated from grocy_mcp's own Pydantic models (`grocy_mcp/mcp_types.py`):
 // the batch tools are reflected at build time (haku/console/export_mcp_tool_schemas.py) so these
@@ -143,7 +142,7 @@ function formatAmount(amount: number, qu: string | null | undefined): string {
 
 function GrocyReferenceLoadError({ error }: { error: string | null }) {
   if (!error) return null;
-  return <PreviewText c="red">Couldn't resolve product/location names: {error}</PreviewText>;
+  return <PreviewText c="red">Couldn&apos;t resolve product/location names: {error}</PreviewText>;
 }
 
 // Shared skeleton for the item-list previews (stock add/consume, products create/edit, shopping

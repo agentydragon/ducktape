@@ -3,11 +3,11 @@
 // before the registry/widget graph reaches client.ts. `satisfies RegisteredToolPreviewFixture` ties
 // each (serverId, toolName, args, result?) to the registry's real Zod schemas, so a stale id,
 // argument, or result shape is a type error.
-import "./preview_mock.ts";
+import "./preview_mock";
 
-import { mountPreviewCards } from "../screenshot/mount.tsx";
+import { mountPreviewCards } from "../screenshot/mount";
 
-import type { RegisteredToolPreviewFixture } from "../index.tsx";
+import type { RegisteredToolPreviewFixture } from "../index";
 
 const PREVIEW_FIXTURES = [
   {

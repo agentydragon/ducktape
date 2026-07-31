@@ -9,14 +9,14 @@ import { useEffect, useState } from "react";
 import { rrulestr } from "rrule";
 import type { z } from "zod";
 
-import { fetchCalendarSummary, type CalendarSummary } from "../../calendar_client.ts";
-import { Field } from "../../field.tsx";
-import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, RepeatIcon, UsersIcon } from "../../icons.tsx";
-import { ExternalLink } from "../../link.tsx";
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
-import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
+import { fetchCalendarSummary, type CalendarSummary } from "../../calendar_client";
+import { Field } from "../../field";
+import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, RepeatIcon, UsersIcon } from "../../icons";
+import { ExternalLink } from "../../link";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { definePreview, type ToolPreview } from "../entry";
+import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
 
 export const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
 const zGetCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");

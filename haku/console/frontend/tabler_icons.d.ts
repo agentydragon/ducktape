@@ -1,91 +1,18 @@
 // Ambient types for the @tabler/icons-react per-icon subpath imports used by icons.tsx. The
-// `.mjs` subpaths resolve to real but untyped files, so each needs an *exact* module
-// declaration. Kept as a global script (no top-level import/export — the React imports live
-// INSIDE each block) so the declarations register globally. The subpath form is mandatory:
-// the `@tabler/icons-react` barrel OOMs esbuild on RBE (~8.7 GB; debug/esbuild_tabler_memory.md).
-// Add a block here for each icon imported.
-declare module "@tabler/icons-react/dist/esm/icons/IconChecklist.mjs" {
+// `.mjs` subpaths resolve to real but untyped files, so they need a module declaration; the
+// wildcard covers every icon under the subpath directory, so adding an icon to icons.tsx needs
+// no edit here. The subpath form is mandatory: the `@tabler/icons-react` barrel OOMs esbuild on
+// RBE (~8.7 GB; debug/esbuild_tabler_memory.md), and the pattern deliberately does not match it.
+//
+// Kept as a global script (no top-level import/export — the React import lives INSIDE the block)
+// so the declaration registers globally; a top-level import would make this a module and the
+// `declare module` an augmentation of a module that has no types to augment.
+//
+// Gotcha: a wildcard declaration types any matching specifier, so a misspelled icon name is no
+// longer a tsc error — esbuild reports it as an unresolved import at bundle time instead.
+declare module "@tabler/icons-react/dist/esm/icons/*.mjs" {
   import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconClock.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconBell.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconUsers.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconMail.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconHistory.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconSettings.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconList.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconCamera.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconCircleCheck.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconHome.mjs" {
-  import type { FC, SVGProps } from "react";
-  const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
-  export default Icon;
-}
-declare module "@tabler/icons-react/dist/esm/icons/IconX.mjs" {
-  import type { FC, SVGProps } from "react";
+
   const Icon: FC<SVGProps<SVGSVGElement> & { size?: number | string; stroke?: number | string }>;
   export default Icon;
 }

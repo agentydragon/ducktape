@@ -8,13 +8,13 @@ import { Group, Loader, Stack } from "@mantine/core";
 import { type ReactNode, useEffect, useState } from "react";
 import type { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { Field } from "../../field.tsx";
-import { fetchGmailLabelNames, messageSubject } from "../../gmail_client.ts";
-import { GmailIcon, MailIcon } from "../../icons.tsx";
-import { ExternalLink } from "../../link.tsx";
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
-import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
+import { CodeBlock } from "../../code_block";
+import { Field } from "../../field";
+import { fetchGmailLabelNames, messageSubject } from "../../gmail_client";
+import { GmailIcon, MailIcon } from "../../icons";
+import { ExternalLink } from "../../link";
+import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
+import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import {
   COMPACT_ITEM_LIMIT,
   firstLines,
@@ -23,9 +23,9 @@ import {
   PreviewBadge,
   PreviewText,
   type PreviewVariant,
-} from "../vocabulary.tsx";
-import { GMAIL_SERVER_ID } from "../server_ids.ts";
-import { CompactBody, gmailThreadUrl, type CreateGmailDraftArgs } from "./requests.tsx";
+} from "../vocabulary";
+import { GMAIL_SERVER_ID } from "../server_ids";
+import { CompactBody, gmailThreadUrl, type CreateGmailDraftArgs } from "./requests";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {

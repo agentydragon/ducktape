@@ -1,5 +1,5 @@
-import { CodeBlock } from "./code_block.tsx";
-import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
+import { CodeBlock } from "./code_block";
+import type { PreviewVariant } from "./tool_rendering/vocabulary";
 
 // Width-aware pretty-print: a value whose one-line form fits within `maxLength` (accounting for
 // the current indent) stays inline; only larger arrays/objects break, one child per line, each

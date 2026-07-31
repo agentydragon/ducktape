@@ -1,0 +1,38 @@
+# Let Haku's own sandboxes reach haku-ui.
+#
+# Deviation from the sibling `haku-ui-ingress-authentik-only` policy (networkpolicy.yaml):
+# that one exists because haku-ui trusts the `X-authentik-username` forward-auth header, so
+# an arbitrary in-cluster caller could forge operator intent. That threat model does not
+# apply to Haku's own sandboxes (operator, 2026-07-30): **haku-ui is Haku's code running at
+# Haku's privilege level**, and a sandbox already holds Haku's git credential — it can write
+# haku-state directly. Restricting it to reads would buy nothing it can't route around.
+#
+# The genuinely sensitive service is **haku-console**, which owns privileged tool-call
+# approval. It is a different namespace and a different policy, and nothing here touches it.
+#
+# Why at all (2026-07-30): confirming a live `/api/location` read after a Home Assistant
+# reconnect was impossible from a sandbox — requests timed out — leaving `kubectl
+# port-forward` from the operator's session as the only path. Diagnosing whether the UI
+# actually serves what we think should not need a privileged hop.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-ui-ingress-sandbox
+  namespace: haku-sandbox
+  annotations:
+    description: >-
+      Haku sandboxes may reach haku-ui. Same privilege level as Haku itself, so this grants no
+      capability a sandbox lacks; haku-console, the privileged surface, is unaffected.
+spec:
+  endpointSelector:
+    matchLabels:
+      app: haku-ui
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+            app.kubernetes.io/name: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

@@ -1,13 +1,29 @@
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
-//! Offsets from 91c789ff, NOT re-verified against 810fd3a4.
-//! Source path and string refs verified against 810fd3a4.
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
+//! Offsets from 91c789ff, NOT re-verified against edebff2c, except where an
+//! edebff2c address is named explicitly (all of the CA fan-out section).
+//! Source path and string refs verified against edebff2c.
+//!
+//! New in edebff2c:
+//!   - Egress-CA fan-out (`append_ca_cert` and friends, 0xf37d0..0x101570) —
+//!     see the section at the end of this file. This is the single largest
+//!     addition in the build.
+//!   - "[INIT] Removing non-directory at {} (checkpoint replaced dir)"
+//!     (template 0x388b0d) — init deletes a non-directory sitting where a
+//!     mountpoint should be, attributed to a checkpoint restore.
+//!   - `RCLONE_CACHE_DIR` (0x37bca0) is exported pointing at
+//!     `/dev/shm/rclone-vfscache` (0x3988f5) for the rclone FUSE daemons; the
+//!     810fd3a4 build had only `/root/.cache/rclone`.
+//!   - "[INIT] WARNING: chown {} -> {}:{} failed: {}" (template 0x3897ea,
+//!     fn 0xf5cd0).
+//!   - "failed to set environment variable `{}` to `{}`: {}" (template
+//!     0x38981a).
 //!
 //! Firecracker VM init system — runs as PID 1 inside a Firecracker microVM.
 //! Handles low-level system initialization that is normally done by the container
 //! runtime (gVisor/runc) on the host side.
 //!
-//! Source file: /root/src/tree/marcus-process-api/sandboxing/sandboxing/server/process_api/src/firecracker_init.rs
+//! Source file (edebff2c panic-location table): src/firecracker_init.rs
 //!
 //! String refs (Binary: 91c789ff):
 //!   "[INIT] Starting Firecracker VM initialization..."
@@ -29,7 +45,6 @@
 //!   "[INIT] FUSE_MOUNT_STATUS count=..."
 //!   "[INIT] Waiting for ready_file(s)..."
 //!   "[INIT] All ready_file(s) found after ..."
-//!   "[INIT] fuse_spawn ok"            (new: replaces "fuse_mounts ok")
 //!   "[INIT] fuse_spawn FAILED"        (new: replaces "fuse_mounts FAILED")
 //!   "[INIT] Spawning: ..."
 //!   "[INIT] Spawned ..."
@@ -295,13 +310,13 @@ pub fn apply_mount_config(config: &MountRootConfig) -> Result<String, String> {
     }
 
     // Set up FUSE mounts via multimount
-    // Binary: 91c789ff — uses "multimount --config" to spawn FUSE daemon,
-    // status strings are "fuse_spawn ok" / "fuse_spawn FAILED"
+    // Binary: 91c789ff — uses "multimount --config" to spawn FUSE daemon.
+    // Binary: edebff2c — the "fuse_spawn ok; " status fragment was REMOVED;
+    // .rodata now contains only "fuse_spawn FAILED; " (0x398e2b), so the
+    // status line reports the FUSE step only when it fails.
     if let Some(ref fuse_mounts) = config.fuse_mounts {
         match setup_fuse_mounts(fuse_mounts, config) {
-            Ok(()) => {
-                status_parts.push("fuse_spawn ok".to_string());
-            }
+            Ok(()) => {}
             Err(e) => {
                 eprintln!("[INIT] FUSE mount wait failed (non-fatal): {e}");
                 status_parts.push("fuse_spawn FAILED".to_string());
@@ -347,8 +362,21 @@ pub fn apply_mount_config(config: &MountRootConfig) -> Result<String, String> {
     if let Some(ref content) = config.resolv_conf {
         write_file("/etc/resolv.conf", content);
     }
+    // Binary: edebff2c — the CA PEM is no longer just written over
+    // /etc/ssl/certs/ca-certificates.crt; it is fanned out across every trust
+    // store the sandbox's toolchains consult (see `append_ca_cert`).
+    // On failure init records a marker file instead of aborting the boot:
+    //   template 0x389691 "[INIT] WARNING: append_ca_cert failed: {}"
+    //   template 0x3896dd "append_ca_cert failed at FC PID-1 boot: {}"
+    //     written to "{root}/.sandboxing-ca-inject-failed" (template 0x3896be)
     if let Some(ref content) = config.ca_cert_pem {
-        write_file("/etc/ssl/certs/ca-certificates.crt", content);
+        if let Err(e) = append_ca_cert(content) {
+            eprintln!("[INIT] WARNING: append_ca_cert failed: {e}");
+            let _ = std::fs::write(
+                format!("{}/.sandboxing-ca-inject-failed", config.destination),
+                format!("append_ca_cert failed at FC PID-1 boot: {e}\n"),
+            );
+        }
     }
 
     // Persist config to mount_config.json for future reference
@@ -1235,4 +1263,409 @@ pub fn fithaw_fd(file: &std::fs::File) -> Result<(), std::io::Error> {
     } else {
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Egress-CA fan-out (Binary: edebff2c — entirely new in this build)
+//
+// The 810fd3a4 build wrote `ca_cert_pem` to /etc/ssl/certs/ca-certificates.crt
+// and stopped there. edebff2c installs the same PEM into every trust store the
+// sandbox's toolchains consult, and exports the corresponding env vars.
+//
+// Function map (call-target boundaries from `objdump -d` plus per-function
+// string cross-references):
+//
+// | Address    | Role                                                        |
+// | ---------- | ----------------------------------------------------------- |
+// | `0xfab40`  | `append_ca_cert` — orchestrator; PEM files, env vars,        |
+// |            | dpkg list, firefox policies                                 |
+// | `0x101090` | PEM splitter ("BEGIN CERTIFICATE" 0x3999a2 / "END            |
+// |            | CERTIFICATE" 0x399817)                                      |
+// | `0xfc530`  | Java JKS injector (`keytool -importcert`)                    |
+// | `0xfe330`  | NSS DB injector (`certutil -N` / `certutil -A`)              |
+// | `0x100770` | Chrome/Chromium/Edge managed-policy writer                   |
+// | `0xf5f90`  | Python bundle patcher (certifi / botocore / pip vendored)    |
+// | `0xf37d0`  | gcloud bundle patcher                                        |
+// | `0xf8d60`  | npm `cafile=` writer                                         |
+// | `0xf9910`  | pip `[global] cert =` writer                                 |
+// | `0xfa570`  | uv `native-tls = true` writer                                |
+// | `0xf8910`  | sudoers `Defaults env_keep` writer                           |
+// | `0xf5cd0`  | chown helper ("[INIT] WARNING: chown ...") |
+//
+// The path tables below were read out of `.data.rel.ro` (each entry is a
+// `(ptr, len)` pair whose pointer arrives as an `R_X86_64_RELATIVE`
+// relocation); addresses are given per table.
+// ---------------------------------------------------------------------------
+
+/// PEM written by `append_ca_cert` into the system anchor directory.
+/// String at 0x398f48 (len 57), loaded at 0xfb7e3 / 0xfb996 / 0xfba85.
+const EGRESS_CA_CRT: &str = "/usr/local/share/ca-certificates/sandboxing-egress-ca.crt";
+
+/// Second copy written next to the merged bundle.
+/// String at 0x398f81 (len 39), loaded at 0xfb83b / 0xfbb02 / 0xfbcc2.
+const EGRESS_CA_PEM: &str = "/etc/ssl/certs/sandboxing-egress-ca.pem";
+
+/// Merged system bundle the PEM is appended to.
+/// String at 0x420e50 (`.data.rel.ro` entry, len 34).
+const SYSTEM_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
+
+/// dpkg file list appended so `update-ca-certificates` does not garbage-collect
+/// the injected anchor. Template 0x388d4a, referenced from 0xf8d97, 0xf9951
+/// and 0xfa5c3.
+const DPKG_CA_LIST: &str = "/var/lib/dpkg/info/ca-certificates.list";
+
+/// Additional merged bundles that get the PEM appended when they exist.
+/// Table at `.data.rel.ro` 0x420b30..0x420b80 (relative to root).
+const EXTRA_CA_BUNDLES: &[&str] = &[
+    "etc/pki/tls/certs/ca-bundle.crt",
+    "etc/pki/tls/cacert.pem",
+    "etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+    "etc/ssl/ca-bundle.pem",
+    "var/lib/ca-certificates/ca-bundle.pem",
+];
+
+/// Environment variables exported so children inherit the anchor.
+/// Table at `.data.rel.ro` 0x420ea0..0x420f50.
+///
+/// Each is applied with `std::env::set_var` — the failure path formats
+/// "failed to set environment variable `{}` to `{}`: {}" (template 0x38981a).
+/// `SSL_CERT_DIR` gets the directory, the rest get a file path.
+const CA_ENV_VARS: &[&str] = &[
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+    "PIP_CERT",
+    "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE",
+    "HTTPLIB2_CA_CERTS",
+    "GIT_SSL_CAINFO",
+    "AWS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "NIX_SSL_CERT_FILE",
+];
+
+/// Proxy variables preserved alongside the CA vars in the sudoers drop-in.
+/// Table at `.data.rel.ro` 0x420dd0..0x420e20.
+const PROXY_ENV_VARS: &[&str] = &[
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+];
+
+/// Library roots scanned for Python `site-packages` / `dist-packages`.
+/// Interned run at 0x398471..0x3984c0 plus the interpreter roots at
+/// `.data.rel.ro` 0x420f50..0x420f90.
+const PYTHON_LIB_ROOTS: &[&str] = &[
+    "opt/conda/lib",
+    "root/.local/lib",
+    "usr/local/lib",
+    "usr/lib",
+    "root/code/.venv/lib",
+    "root/.venv/lib",
+    "opt/venv/lib",
+    "app/.venv/lib",
+    "workspace/.venv/lib",
+];
+
+/// Interpreter installation roots whose per-version trees are also scanned.
+/// Table at `.data.rel.ro` 0x420f50..0x420f90.
+const PYTHON_INTERPRETER_ROOTS: &[&str] = &[
+    "root/.pyenv/versions",
+    "root/.local/share/uv/python",
+    "opt/pyenv/versions",
+    "opt/conda/envs",
+];
+
+/// CA bundles shipped inside Python packages; each gets the PEM appended.
+/// Interned run at 0x399099 ("certifi/cacert.pem"), 0x3990ab
+/// ("pip/_vendor/certifi/cacert.pem"), 0x3990c9 ("botocore/cacert.pem"),
+/// loaded at 0xf62d4 / 0xf62ef / 0xf630a in fn 0xf5f90.
+const PYTHON_BUNDLE_RELPATHS: &[&str] = &[
+    "certifi/cacert.pem",
+    "pip/_vendor/certifi/cacert.pem",
+    "botocore/cacert.pem",
+];
+
+/// google-cloud-sdk roots (0x3984d0..0x39850e) and the bundles inside them
+/// (0x39867e..0x3986ed, loaded at 0xf532e..0xf537f in fn 0xf37d0).
+const GCLOUD_ROOTS: &[&str] = &[
+    "usr/lib/google-cloud-sdk",
+    "opt/google-cloud-sdk",
+    "root/google-cloud-sdk",
+    "snap/google-cloud-sdk/current",
+];
+const GCLOUD_BUNDLE_RELPATHS: &[&str] = &[
+    "lib/third_party/certifi/cacert.pem",
+    "lib/third_party/botocore/cacert.pem",
+    "platform/bq/third_party/certifi/cacert.pem",
+    "platform/gsutil/third_party/certifi/certifi/cacert.pem",
+];
+
+/// npm configuration files that get a `cafile=` line (fn 0xf8d60, strings
+/// 0x398c2e / 0x398c37 / 0x398c44; the emitted line comes from the template at
+/// 0x389316, literal "cafile=" at 0x389319).
+const NPMRC_PATHS: &[&str] = &["etc/npmrc", "usr/etc/npmrc", "usr/local/etc/npmrc"];
+
+/// uv binaries probed before writing `/etc/uv/uv.toml` (table 0x420d00..0x420d40).
+const UV_BINARIES: &[&str] = &[
+    "usr/local/bin/uv",
+    "usr/bin/uv",
+    "root/.local/bin/uv",
+    "root/.cargo/bin/uv",
+];
+
+/// Java trust stores. Absolute candidates come from the run at 0x398b33
+/// ("etc/ssl/certs/java/cacerts", "etc/pki/java/cacerts",
+/// "etc/pki/ca-trust/extracted/java/cacerts"); JDK roots from 0x398b88
+/// ("usr/lib/jvm"), 0x398b93 ("root/.sdkman/candidates/java") and 0x37c2d8
+/// ("opt/java"); relative store paths from 0x398bc3 ("lib/security/cacerts")
+/// and 0x398bd7 ("jre/lib/security/cacerts").
+const JAVA_CACERTS_ABS: &[&str] = &[
+    "etc/ssl/certs/java/cacerts",
+    "etc/pki/java/cacerts",
+    "etc/pki/ca-trust/extracted/java/cacerts",
+];
+const JAVA_HOME_ROOTS: &[&str] = &["usr/lib/jvm", "root/.sdkman/candidates/java", "opt/java"];
+const JAVA_CACERTS_RELPATHS: &[&str] = &["lib/security/cacerts", "jre/lib/security/cacerts"];
+
+/// Default JKS password (string 0x37c298).
+const JKS_PASSWORD: &str = "changeit";
+
+/// Alias prefix for imported certs — template 0x39893f
+/// "sandboxing-egress-ca-{}" (suffixed per certificate in the PEM chain).
+const JKS_ALIAS_PREFIX: &str = "sandboxing-egress-ca-";
+
+/// NSS database directories (strings 0x398d93 ".pki/nssdb",
+/// 0x398d9d ".local/share/pki/nssdb", loaded at 0xfe3e2 / 0xfe41f) and the
+/// files that mark an initialized DB (0x398db3 "key4.db", 0x398dba
+/// "pkcs11.txt", 0x37c2e0 "cert9.db").
+const NSS_DB_DIRS: &[&str] = &[".pki/nssdb", ".local/share/pki/nssdb"];
+
+/// Firefox policy directories (strings 0x398fa8 / 0x398fbc) plus the browser
+/// installation roots at `.data.rel.ro` 0x420b80..0x420cb0 whose
+/// `distribution/policies.json` is written.
+const FIREFOX_POLICY_DIRS: &[&str] = &["etc/firefox/policies", "etc/firefox-esr/policies"];
+const BROWSER_ROOTS: &[&str] = &[
+    "usr/lib/firefox",
+    "usr/lib/firefox-esr",
+    "usr/lib64/firefox",
+    "opt/firefox",
+    "usr/bin/firefox",
+    "usr/bin/firefox-esr",
+    "ms-playwright",
+    "root/.cache/ms-playwright",
+    "root/.cache/puppeteer",
+    "opt/puppeteer-cache",
+    "opt/ms-playwright",
+    "opt/google/chrome",
+    "opt/microsoft/msedge",
+    "usr/lib/chromium",
+    "usr/lib/chromium-browser",
+    "usr/bin/google-chrome",
+    "usr/bin/chromium",
+    "usr/bin/chromium-browser",
+    "usr/bin/microsoft-edge",
+];
+
+/// Chromium-family managed-policy directories (strings 0x398e83, 0x398ea2,
+/// 0x398ebf, loaded at 0x100b6d / 0x100b82 / 0x100b9a in fn 0x100770). The
+/// file written into each is "/sandboxing-ca.json" (template 0x3895d3).
+const CHROME_POLICY_DIRS: &[&str] = &[
+    "etc/opt/chrome/policies/managed",
+    "etc/chromium/policies/managed",
+    "etc/opt/edge/policies/managed",
+];
+
+/// Install the egress-inspection CA into every trust store present on the
+/// rootfs. Called from the Firecracker init path (config `ca_cert_pem`) and
+/// from the control server's `POST /auth_public_key/write_etc_files`.
+///
+/// Decompiled from 0xfab40..0xfc530.
+///
+/// Recovered steps (each failure is a warning, never fatal):
+///  1. Write `EGRESS_CA_CRT` and `EGRESS_CA_PEM` (0xfb7e3, 0xfb83b).
+///  2. Append the PEM to `SYSTEM_CA_BUNDLE` and every existing
+///     `EXTRA_CA_BUNDLES` entry.
+///  3. Append `EGRESS_CA_CRT` to `DPKG_CA_LIST` so `update-ca-certificates`
+///     keeps it (0xf8d97 / 0xf9951 / 0xfa5c3 all consult this path).
+///  4. Export `CA_ENV_VARS` into this process's environment, so every child of
+///     PID 1 inherits them.
+///  5. Write `/etc/sudoers.d/90-sandbox-ca-env` with
+///     `Defaults env_keep += "..."` (template 0x38978b, fn 0xf8910) listing
+///     `CA_ENV_VARS` + `PROXY_ENV_VARS`; failure logs
+///     "[INIT] WARNING: sudoers env_keep write failed: {}" (0x3897a7).
+///  6. Patch Python / gcloud vendored bundles, npm, pip and uv configs.
+///  7. Inject into Java keystores and NSS databases.
+///  8. Write Firefox and Chromium managed policies.
+///
+/// # TODO(re)
+/// The orchestration order above is the order the helper functions appear in
+/// `.text` and the order their strings appear in `.rodata`; the exact call
+/// sequence inside 0xfab40 was not traced branch by branch.
+pub fn append_ca_cert(pem: &str) -> Result<(), String> {
+    // TODO(re): stub — the individual helpers below carry the recovered
+    // evidence; the driver body of 0xfab40 (roughly 6 KB of inlined path
+    // joining and `std::fs` calls) was not decompiled statement by statement.
+    let certs = split_pem_certificates(pem);
+    if certs.is_empty() {
+        // 0xfc5a5 — the JKS path bails out with this warning when the PEM does
+        // not parse into at least one certificate.
+        eprintln!("[INIT] WARNING: egress CA PEM unparseable; skipping JKS inject");
+    }
+    let _ = pem;
+    Ok(())
+}
+
+/// Split a PEM blob into individual base64 certificate bodies.
+/// Decompiled from 0x101090..0x101570.
+/// Xrefs: "BEGIN CERTIFICATE" (0x3999a2, loaded at 0x101113 and 0x10119c),
+///   "END CERTIFICATE" (0x399817, loaded at 0x101217).
+fn split_pem_certificates(pem: &str) -> Vec<String> {
+    // TODO(re): stub — only the two delimiter strings and the function
+    // boundary were recovered; the scanning loop was not decompiled.
+    let mut out = Vec::new();
+    let mut rest = pem;
+    while let Some(begin) = rest.find("BEGIN CERTIFICATE") {
+        let after = &rest[begin..];
+        match after.find("END CERTIFICATE") {
+            Some(end) => {
+                out.push(after[..end].to_string());
+                rest = &after[end..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// Import the certificate chain into every Java keystore found on the rootfs.
+/// Decompiled from 0xfc530..0xfe330.
+///
+/// Recovered behaviour:
+/// * Candidate stores: `JAVA_CACERTS_ABS`, plus `JAVA_CACERTS_RELPATHS` under
+///   every directory in `JAVA_HOME_ROOTS`.
+/// * A store whose magic is not JKS v2 and for which `keytool` is unusable is
+///   skipped with template 0x38928f:
+///   "[INIT] cacerts at {} is not JKS v2 changeit and keytool unavailable/failed; skipped"
+/// * Otherwise it runs `keytool -importcert -keystore <store> -storepass
+///   changeit -noprompt -alias sandboxing-egress-ca-<n>` with `LC_ALL` set
+///   (argv strings interned at 0x39895d..0x3989aa, loaded at 0xfd5a3..0xfd9f8).
+/// * `already exists` (0x3989aa) in keytool's output is treated as success.
+/// * Failures log "[INIT] keytool -importcert failed: {}" (0x388fac) or
+///   "[INIT] WARNING: cacerts write failed at {}: {}" (0x3892e5).
+///
+/// # TODO(re)
+/// The JKS-v2 magic check and the direct (keytool-free) keystore append were
+/// not decompiled; only their string edges are established.
+fn inject_java_cacerts(_certs: &[String]) {
+    // TODO(re): stub — see the doc comment for what the binary establishes.
+}
+
+/// Add the certificate to every NSS database on the rootfs.
+/// Decompiled from 0xfe330..0x100770.
+///
+/// Recovered behaviour:
+/// * Databases are located by scanning for `NSS_DB_DIRS` and by walking
+///   `/proc/mounts` (string 0x398dc8 region); a directory counts as a database
+///   when it contains `cert9.db`, `key4.db` or `pkcs11.txt`.
+/// * An uninitialized database is created with
+///   `certutil -N -d sql:/<dir> --empty-password`
+///   (argv fragments "-N" 0x398dc4, "-d" 0x398dc6, "--empty-password"
+///   0x37bcb0; the `sql:/` prefix is template 0x3893aa).
+///   Failure logs "[INIT] WARNING: certutil -N failed: {}" (0x3893b2).
+/// * The certificate is then added with
+///   `certutil -A -n <alias> -t C,, -a -d sql:/<dir>`
+///   ("-A" 0x398dd3, "-n" 0x398dd5, "-t" 0x398dd7, "C,," 0x398dd9,
+///   "-a" 0x398ddc).
+///   Failures log "[INIT] WARNING: certutil -A failed at {}: {}" (0x38940f)
+///   and "[INIT] WARNING: certutil -A wait failed: {}" (0x38943e).
+/// * If `certutil` is not on PATH the whole step is skipped with template
+///   0x3893db: "[INIT] certutil unavailable ({}); skipping NSS DB".
+fn inject_nss_databases(_cert_path: &str) {
+    // TODO(re): stub — argv and error edges recovered; the scanning loop and
+    // the process spawn/wait bookkeeping were not decompiled.
+}
+
+/// Write a Chromium/Chrome/Edge managed policy that installs the CA.
+/// Decompiled from 0x100770..0x101090.
+///
+/// The policy file is `<dir>/sandboxing-ca.json` for each existing
+/// `CHROME_POLICY_DIRS` entry; failure logs
+/// "[INIT] WARNING: chrome policies write failed at {}: {}" (0x3895e8).
+///
+/// # TODO(re)
+/// The JSON body was not recovered — no policy-key string other than the
+/// "Certificates"/"Install" pair at 0x398e70 (used by the Firefox writer)
+/// appears in `.rodata`, so the Chromium policy schema this build emits is
+/// undetermined.
+fn write_chrome_policies(_cert_path: &str) {
+    // TODO(re): stub — see the doc comment.
+}
+
+/// Write Firefox enterprise policies that install the CA.
+/// Decompiled from the tail of 0xfab40 (0xfb500..0xfc4a0).
+///
+/// * Policy object keys "policies" (0x37c2f0), "Certificates" (0x398e70) and
+///   "Install" (0x398e7c) are emitted around the `EGRESS_CA_CRT` path.
+/// * Files written: `<dir>/policies.json` for each `FIREFOX_POLICY_DIRS`
+///   entry (template 0x38970b) and `<root>/distribution/policies.json` for
+///   each `BROWSER_ROOTS` entry (template 0x389756).
+/// * Failure logs "[INIT] WARNING: firefox policies write failed at {}: {}"
+///   (0x38971b).
+fn write_firefox_policies(_cert_path: &str) {
+    // TODO(re): stub — key names, target paths and the failure edge are
+    // recovered; the JSON serialization itself was not decompiled.
+}
+
+/// Append the CA to every vendored Python trust bundle.
+/// Decompiled from 0xf5f90..0xf7630.
+///
+/// Scans `PYTHON_LIB_ROOTS` (plus every version directory under
+/// `PYTHON_INTERPRETER_ROOTS`) for `site-packages` (0x39907f) and
+/// `dist-packages` (0x39908c) directories, then appends the PEM to each
+/// existing `PYTHON_BUNDLE_RELPATHS` file. `/opt/conda/ssl/cacert.pem`
+/// (templates 0x388d24 + 0x388d35) is handled the same way.
+fn patch_python_bundles(_pem: &str) {
+    // TODO(re): stub — path tables recovered from `.data.rel.ro`; the walk
+    // itself was not decompiled.
+}
+
+/// Append the CA to google-cloud-sdk's vendored bundles.
+/// Decompiled from 0xf37d0..0xf5cd0 — `GCLOUD_ROOTS` x `GCLOUD_BUNDLE_RELPATHS`.
+fn patch_gcloud_bundles(_pem: &str) {
+    // TODO(re): stub.
+}
+
+/// Point npm at the merged bundle by writing `cafile=<path>` into each of
+/// `NPMRC_PATHS`. Decompiled from 0xf8d60..0xf9910; the emitted line is
+/// the template at 0x389316 (literal "cafile=" at 0x389319).
+fn write_npmrc(_cert_path: &str) {
+    // TODO(re): stub.
+}
+
+/// Point pip at the merged bundle. Decompiled from 0xf9910..0xfa570.
+/// Writes the "[global]\ncert = {}\n" template at 0x38932f (literal body at
+/// 0x389330) when the config is new, or appends the "cert = {}" template at
+/// 0x389324 (literal at 0x389326) to an existing `[global]` section.
+fn write_pip_conf(_cert_path: &str) {
+    // TODO(re): stub — the two templates and the `[global]` literal (0x37c298
+    // region) are recovered; the merge logic was not decompiled.
+}
+
+/// Make uv use the OS trust store. Decompiled from 0xfa570..0xfab40.
+/// Probes `UV_BINARIES`; if any exists, writes `native-tls = true`
+/// (template 0x388d86) to `/etc/uv/uv.toml` (template 0x388d75).
+fn write_uv_config() {
+    // TODO(re): stub.
+}
+
+/// Preserve the CA/proxy environment across `sudo`.
+/// Decompiled from 0xf8910..0xf8d60.
+/// Writes `Defaults env_keep += "<vars>"` (template 0x38978b) to
+/// `/etc/sudoers.d/90-sandbox-ca-env` (templates 0x389766 + 0x389777);
+/// failure logs "[INIT] WARNING: sudoers env_keep write failed: {}" (0x3897a7).
+fn write_sudoers_env_keep() {
+    // TODO(re): stub.
 }

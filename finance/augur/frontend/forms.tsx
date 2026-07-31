@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
-import { NativeSelectField, NumberField } from "./lib/controls.tsx";
-import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format.ts";
-import { LIFECYCLE_KINDS, SELL_BUCKETS, SELL_BUCKET_BY_CODE, defaultLifecycleEvent } from "./input_helpers.ts";
-import { portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers.ts";
+import { NativeSelectField, NumberField } from "./lib/controls";
+import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format";
+import { LIFECYCLE_KINDS, SELL_BUCKETS, SELL_BUCKET_BY_CODE, defaultLifecycleEvent } from "./input_helpers";
+import { portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers";
 
 function firstSaleMonth(events) {
   let earliest = null;

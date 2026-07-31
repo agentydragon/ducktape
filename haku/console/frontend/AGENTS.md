@@ -32,8 +32,8 @@ is its own figure on the PR-visuals page, and a widget change re-runs only that 
 (per-target Bazel caching). When you add or change a per-server widget
 (`tool_rendering/<server>/{requests,responses}.tsx`), add a fixture to that server's
 `preview_harness.tsx` (it `satisfies RegisteredToolPreviewFixture`, so a stale id/arg is a type
-error — the harnesses are in `:tsc_test`'s `data` for exactly that reason, since esbuild strips
-types without checking them) and re-run `bbr test //haku/console/frontend/tool_rendering/<server>:previews`. Add a whole
+error the `ts_library` wrapping it catches on build) and re-run
+`bbr test //haku/console/frontend/tool_rendering/<server>:previews`. Add a whole
 new scene to `screenshots/harness.tsx` (and the `SCENES` list in `screenshots/render.mjs`) whenever
 you add a new surface. A single-component scene must render inside its real production container
 (preview cards use `.haku-shell-panels`) and take an element

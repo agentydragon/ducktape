@@ -1,4 +1,4 @@
-import type { McpToolResultFor } from "../../mcp_tool_result_schema.ts";
+import type { McpToolResultFor } from "../../mcp_tool_result_schema";
 
 // The existing events.list result includes the calendar's standard display summary.
 const FAMILY_CALENDAR_EVENTS = {

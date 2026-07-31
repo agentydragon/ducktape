@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { toolActionDescription } from "../actions.ts";
-import { renderCallPreview } from "../call_entry.tsx";
-import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
-import { googleCalendarCallPreviews } from "./calls.tsx";
+import { toolActionDescription } from "../actions";
+import { renderCallPreview } from "../call_entry";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
+import { googleCalendarCallPreviews } from "./calls";
 
 const RECURRING_ARGS = {
   summary: "Standup",

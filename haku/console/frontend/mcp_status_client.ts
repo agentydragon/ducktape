@@ -1,5 +1,5 @@
-import { callOperatorMcpTool } from "./mcp_client.ts";
-import { mcpToolResultSchema, type McpToolResultFor } from "./mcp_tool_result_schema.ts";
+import { callOperatorMcpTool } from "./mcp_client";
+import { mcpToolResultSchema, type McpToolResultFor } from "./mcp_tool_result_schema";
 
 type McpServerList = McpToolResultFor<"haku-console", "list_mcp_servers">;
 type McpServerStatus = McpToolResultFor<"haku-console", "get_mcp_server_status">;

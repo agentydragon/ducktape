@@ -4,24 +4,23 @@
 
 import { Group, Stack } from "@mantine/core";
 import { useEffect, useState } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { Field } from "../../field.tsx";
-import { ExternalLink } from "../../link.tsx";
-import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary.tsx";
-import { TANA_RW_SERVER_ID } from "../server_ids.ts";
+import { CodeBlock } from "../../code_block";
+import { Field } from "../../field";
+import { ExternalLink } from "../../link";
+import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client";
+import { definePreview, type ToolPreview } from "../entry";
+import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary";
 import {
+  type zEditOperation,
   zEditNodeArgs,
-  zEditOperation,
   zGetOrCreateCalendarNodeArgs,
   zImportTanaPasteArgs,
   zMoveNodeArgs,
   zSetFieldOptionArgs,
   zTrashNodeArgs,
-} from "./schemas.ts";
+} from "./schemas";
 
 type ImportTanaPasteArgs = z.infer<typeof zImportTanaPasteArgs>;
 type GetOrCreateCalendarNodeArgs = z.infer<typeof zGetOrCreateCalendarNodeArgs>;

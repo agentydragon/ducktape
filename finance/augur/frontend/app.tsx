@@ -2,11 +2,11 @@ import React, { useEffect, useState } from "react";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 
-import { fetchAugurCalibrationInfo, fetchAugurCatalog, fetchAugurDeployment, fetchAugurSettings } from "./client.ts";
+import { fetchAugurCalibrationInfo, fetchAugurCatalog, fetchAugurDeployment, fetchAugurSettings } from "./client";
 
-import { ProductProjectionWorkspace } from "./product.tsx";
-import { CalibrationWorkspace } from "./calibration.tsx";
-import { BudgetWorkspace } from "./budget.tsx";
+import { ProductProjectionWorkspace } from "./product";
+import { CalibrationWorkspace } from "./calibration";
+import { BudgetWorkspace } from "./budget";
 import {
   AugurHeader,
   SharedControls,
@@ -14,9 +14,9 @@ import {
   DeploymentCommitSummary,
   tabFromSearch,
   writeTabToSearch,
-} from "./header.tsx";
-import { ProductProjectionLoading } from "./skeleton.tsx";
-import { CurrencyDisplayProvider } from "./hooks.ts";
+} from "./header";
+import { ProductProjectionLoading } from "./skeleton";
+import { CurrencyDisplayProvider } from "./hooks";
 import {
   rolloutCountFromSearch,
   rolloutCountDefault,
@@ -28,7 +28,7 @@ import {
   horizonMonthsDefault,
   clampHorizonMonths,
   metricScaleFromSearch,
-} from "./input_helpers.ts";
+} from "./input_helpers";
 
 // The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
 // its own `?n=` param written by the shell rather than living in either tab's serialized input.

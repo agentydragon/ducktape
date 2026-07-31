@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
-import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login.ts";
+import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are
 // generated from the backend's OpenAPI schema: //haku/console/frontend:schema.

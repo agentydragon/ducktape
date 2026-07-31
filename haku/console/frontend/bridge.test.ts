@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseGeolocationOptions, parseInbound, vetOpenLink } from "./bridge.ts";
+import { parseGeolocationOptions, parseInbound, vetOpenLink } from "./bridge";
 
 describe("parseInbound", () => {
   it("accepts a well-formed openLink", () => {

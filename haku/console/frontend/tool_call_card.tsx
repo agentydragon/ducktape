@@ -1,14 +1,14 @@
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode, Ref } from "react";
 
-import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state.ts";
-import { ToolActionLine } from "./tool_action_line.tsx";
-import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field.tsx";
-import { ToolCallMeta } from "./tool_call_meta.tsx";
-import { toolCallPreview } from "./tool_rendering/index.tsx";
-import type { PreviewVariant } from "./tool_rendering/vocabulary.tsx";
-import { RawResultDisclosure, ToolResultField } from "./tool_result_field.tsx";
-import { VariantControl } from "./variant_control.tsx";
+import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state";
+import { ToolActionLine } from "./tool_action_line";
+import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
+import { ToolCallMeta } from "./tool_call_meta";
+import { toolCallPreview } from "./tool_rendering/index";
+import type { PreviewVariant } from "./tool_rendering/vocabulary";
+import { RawResultDisclosure, ToolResultField } from "./tool_result_field";
+import { VariantControl } from "./variant_control";
 
 /** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and recent
  * cards and the history page's rows. It owns the shared skeleton (the identity header + action

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderResultPreview } from "../result_entry.tsx";
-import { hostexecResultPreviews } from "./responses.tsx";
+import { renderResultPreview } from "../result_entry";
+import { hostexecResultPreviews } from "./responses";
 
 describe("hostexecResultPreviews", () => {
   it("renders a successful exit, in both variants", () => {

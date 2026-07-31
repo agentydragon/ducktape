@@ -26,7 +26,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/plaid-mcp-sync:devel-20260717000444-6162a72 # {"$imagepolicy": "flux-system:plaid-mcp-sync"}
+              image: ghcr.io/agentydragon/plaid-mcp-sync:devel-20260731090733-e842fe5 # {"$imagepolicy": "flux-system:plaid-mcp-sync"}
               imagePullPolicy: Always
               securityContext:
                 allowPrivilegeEscalation: false

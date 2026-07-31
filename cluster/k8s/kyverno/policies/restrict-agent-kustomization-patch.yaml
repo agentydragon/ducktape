@@ -8,8 +8,7 @@ metadata:
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Kustomization
     policies.kyverno.io/description: >
-      Restricts agent identities (claude-code-web user, openclaw-sandbox/default SA,
-      kubectl-sandbox-users group) to only patching the reconcile.fluxcd.io/requestedAt
+      Restricts agent identities (claude-code-web user, kubectl-sandbox-users group) to only patching the reconcile.fluxcd.io/requestedAt
       annotation on Flux Kustomization resources. Changes to spec or any other annotation
       are blocked.
 spec:
@@ -35,15 +34,6 @@ spec:
             subjects:
               - kind: Group
                 name: oidc-ksbx-groups:kubectl-sandbox-users
-          - resources:
-              kinds:
-                - kustomize.toolkit.fluxcd.io/v1/Kustomization
-              operations:
-                - UPDATE
-            subjects:
-              - kind: ServiceAccount
-                name: default
-                namespace: openclaw-sandbox
       validate:
         message: >
           Agent service accounts may only patch the reconcile.fluxcd.io/requestedAt

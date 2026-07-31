@@ -1,11 +1,11 @@
 import { Loader, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import { type ConfigResponse, displayableError, fetchConfig } from "./client.ts";
-import { HakuUiEmbed } from "./haku_ui_embed.tsx";
-import { OAuthResultPage } from "./oauth_result_page.tsx";
-import { useOAuthResultAnnouncement } from "./oauth_result_announcement.ts";
-import { useConsoleView } from "./routing.ts";
+import { type ConfigResponse, displayableError, fetchConfig } from "./client";
+import { HakuUiEmbed } from "./haku_ui_embed";
+import { OAuthResultPage } from "./oauth_result_page";
+import { useOAuthResultAnnouncement } from "./oauth_result_announcement";
+import { useConsoleView } from "./routing";
 
 // The console is now just the trusted outer shell: a full-page frame for Haku's own UI
 // (a sandboxed cross-origin iframe) plus the bridge that brokers the iframe's privileged

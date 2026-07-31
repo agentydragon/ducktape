@@ -1,0 +1,40 @@
+# Config blobs live in their native files rather than embedded in YAML, so they
+# stay lintable and diffable — STYLE.md forbids blocks over ~5 lines inline, and
+# every one of these is 30–120.
+#
+# These manifests are mutually exclusive proposals plus one negative-result
+# experiment; see README.md. Building this kustomization emits all of the
+# ConfigMaps, which is harmless — apply it alongside whichever workload manifest
+# you are trying.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agent-lab
+
+configMapGenerator:
+  # The mitmproxy addon. Two versions exist and they are alternatives, not
+  # layers: `allowlist.py` refuses hosts off the allowlist, and
+  # `credential_injection_addon.py` does that *and* attaches the GitHub token on
+  # the way out (credential_injection.md). Both land on the same key because the
+  # Deployment in egress-allowlist-proxy.yaml mounts one path — swap the source
+  # file here to switch variants.
+  - name: lab-proxy-addon
+    files:
+      - allowlist.py
+    options:
+      # mitmproxy loads the addon by path at startup and is not restarted by a
+      # hash change, so a suffixed name would strand it on the old ConfigMap.
+      disableNameSuffixHash: true
+
+  # iron-proxy — the shape that ran end to end (F16). Hash suffix left on
+  # deliberately: iron-proxy reads its config once at startup, so the rolled
+  # Deployment is what makes a change take effect. Production does the same, in
+  # cluster/k8s/agents/public-coder-agent/proxy/.
+  - name: iron-proxy-config
+    files:
+      - iron.yaml
+
+  # Envoy credential_injector — the negative result, kept so it is not
+  # re-derived. Same hash reasoning as iron-proxy.
+  - name: envoy-cred-test
+    files:
+      - envoy.yaml

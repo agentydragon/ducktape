@@ -11,6 +11,8 @@
 #   - Gatus (gatus namespace, health checks)
 #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
 #   - Alloy (monitoring namespace, Loki canary metrics)
+#   - loki-read-proxy (loki-read-proxy namespace, namespace-filtered read-only
+#     queries for the Haku agent, via the gateway)
 #   - Loki itself (SimpleScalable: read/backend/write/gateway/canary)
 #
 # Allowed egress from Loki:
@@ -106,6 +108,20 @@ spec:
       toPorts:
         - ports:
             - port: "3100"
+              protocol: TCP
+
+    # loki-read-proxy → Loki gateway (namespace-filtered read-only queries for
+    # the Haku agent; the proxy enforces the query validator + allowlist).
+    # 8080 is the gateway nginx listen port behind service port 80.
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki-read-proxy
+            k8s:io.kubernetes.pod.namespace: loki-read-proxy
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8080"
               protocol: TCP
 
     # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)

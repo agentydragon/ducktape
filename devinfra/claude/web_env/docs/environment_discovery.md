@@ -1,16 +1,19 @@
 # Claude Code Web Environment Discovery
 
-Documented from a live session on 2026-03-26.
+Documented from a live session on 2026-07-31.
 
 ## Binary Versions
 
-| Binary                | Build ID   | Release / Version              |
-| --------------------- | ---------- | ------------------------------ |
-| `process_api` (PID 1) | `91c789ff` | `process_api_2026-03-23-22-49` |
-| `environment-manager` | `495ea204` | `release-d84d76b7-ext`         |
+| Binary                | Build ID   | Release / Version       |
+| --------------------- | ---------- | ----------------------- |
+| `process_api` (PID 1) | `edebff2c` | see `re/process_api/`   |
+| `environment-manager` | `0b86a2a0` | `release-1186d93b9-ext` |
 
-`environment-manager` is garble-obfuscated (release channel, 52MB).
-DWARF/symbol extraction is not possible.
+`environment-manager` is garble-obfuscated with `-literals` (release channel,
+58.6 MB): symbol names randomized, no DWARF, and string constants encrypted so
+the binary's own help text is absent from `strings` output. Both are defeated —
+`re/environment_manager/README.md` documents how to get full disassembly and to
+recover the encrypted literals.
 
 ## Table of Contents
 
@@ -156,7 +159,7 @@ From `/usr/local/bin/environment-manager print-sandbox-settings`:
 ## Environment Runner
 
 Binary: `/usr/local/bin/environment-manager` → `/opt/env-runner/environment-manager` (Go, ELF 64-bit, garble-obfuscated)
-Version: `release-9f4ec76fbc-ext`
+Version: `release-1186d93b9-ext`
 
 ### Overview
 
@@ -176,6 +179,7 @@ Available Commands:
   help                   Help about any command
   orchestrator           Poll for session tasks and hand off for execution
   poll                   Make a single poll request for work
+  preload-claude         Pre-boot a Claude Code spare for a later task-run to claim
   print-sandbox-settings Print the default sandbox runtime settings
   setup                  Install dependencies for orchestrator mode
   task-run               Handles execution of a provided session
@@ -300,6 +304,29 @@ Flags:
       --service-key-file string     Path to file containing the environment service key
       --worker-id string            Unique worker identifier (defaults to hostname)
 ```
+
+### preload-claude Subcommand
+
+Pre-boots a Claude Code process so a later `task-run` can claim it warm rather
+than paying cold-start cost:
+
+```
+$ environment-manager preload-claude --help
+Pre-boot a Claude Code spare for a later task-run to claim
+
+Usage:
+  environment-runner preload-claude [flags]
+
+Flags:
+      --claude-path string   Path to claude binary (default: resolved via GetClaudePath)
+  -h, --help                 help for preload-claude
+```
+
+The spare/claim path is instrumented with `claude_code.spare.claim_miss` ("Cold
+spawn instead of warm-spare claim, attributed by reason") and
+`claude_code.spare.spawn_to_claim_window_ms` ("Wall-clock from spare spawn/adopt
+to Claim (the overlap window W)"). Both metric descriptions were recovered from
+the binary's encrypted literals, not from documentation.
 
 ### setup Subcommand
 

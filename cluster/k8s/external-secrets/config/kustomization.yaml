@@ -5,4 +5,3 @@ resources:
   - airlock-secret-store.yaml
   - claude-sandbox-secret-store.yaml
   - flux-system-secret-store.yaml
-  - openshell-system-secret-store.yaml

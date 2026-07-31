@@ -23,5 +23,3 @@ spec:
           operator: In
           values:
             - claude-sandbox
-            - openclaw-sandbox
-            - openclaw-gateway

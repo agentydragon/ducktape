@@ -1,7 +1,7 @@
 import { Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { shortDate } from "./approval_state.ts";
+import { shortDate } from "./approval_state";
 import {
   connectMcpOperatorAuth,
   connectOperatorConnection,
@@ -13,10 +13,10 @@ import {
   type AgentView,
   type DeploymentInfo,
   type OperatorConnectionName,
-} from "./client.ts";
-import { useConsoleEvents } from "./console_events.ts";
-import { ExternalLink } from "./link.tsx";
-import { usePushNotifications, type PushState } from "./push_subscription.ts";
+} from "./client";
+import { useConsoleEvents } from "./console_events";
+import { ExternalLink } from "./link";
+import { usePushNotifications, type PushState } from "./push_subscription";
 import {
   getMcpServerStatus,
   listNodeDaemons,
@@ -26,9 +26,9 @@ import {
   type McpOperatorAuthStatus,
   type McpServerConnection,
   type McpServerProbe,
-} from "./mcp_status_client.ts";
-import { openExternal, POPUP_HINT } from "./open_external.ts";
-import { toastError, toastSuccess } from "./toast.ts";
+} from "./mcp_status_client";
+import { openExternal, POPUP_HINT } from "./open_external";
+import { toastError, toastSuccess } from "./toast";
 
 type DeploymentVersion = {
   label: string;

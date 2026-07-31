@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { toolActionDescription } from "../actions.ts";
-import { renderPreview } from "../entry.tsx";
-import { GMAIL_SERVER_ID } from "../server_ids.ts";
-import { gmailPreviews } from "./requests.tsx";
+import { toolActionDescription } from "../actions";
+import { renderPreview } from "../entry";
+import { GMAIL_SERVER_ID } from "../server_ids";
+import { gmailPreviews } from "./requests";
 
 describe("gmailPreviews", () => {
   it("renders threads_modify_labels for valid args, in both variants", () => {

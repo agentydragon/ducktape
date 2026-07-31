@@ -5,7 +5,7 @@
 
 import React from "react";
 
-import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format.tsx";
+import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format";
 
 const MARKET_BAR_CLASS = "fill-blue-500 dark:fill-blue-400";
 const MODEL_BAR_CLASS = "fill-emerald-500 dark:fill-emerald-400";

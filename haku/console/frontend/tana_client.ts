@@ -1,4 +1,4 @@
-import { callOperatorMcpTool } from "./mcp_client.ts";
+import { callOperatorMcpTool } from "./mcp_client";
 
 export type TanaNodePreview = { id: string; name: string };
 

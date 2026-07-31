@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 
-import { fmtNumber, fmtQuantity } from "./lib/format.ts";
+import { fmtNumber, fmtQuantity } from "./lib/format";
 
 test("fmtQuantity preserves fractional crypto-sized positions", () => {
   expect(fmtQuantity(2.46761356)).toBe("2.46761356");

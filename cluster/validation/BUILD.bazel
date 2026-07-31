@@ -328,6 +328,22 @@ py_test(
 )
 
 py_test(
+    name = "test_roaming_daemonset_capacity",
+    srcs = ["test_roaming_daemonset_capacity.py"],
+    data = [
+        "//:nebula-mesh.json",
+        "//cluster/k8s:cluster_all_files",
+    ],
+    deps = [
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_dns_records",
     srcs = ["test_dns_records.py"],
     data = [
@@ -407,6 +423,7 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
+        "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/haku/dispatch/dispatcher:manifests",
         "//cluster/k8s/haku/dispatch/litellm:manifests",

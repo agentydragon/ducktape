@@ -1,11 +1,17 @@
-//! Reverse-engineered from process_api BuildID 810fd3a49330ce58ff678d539a91723adfda88a8
-//! release process_api_2026-03-25-20-38
+//! Reverse-engineered from process_api BuildID edebff2c28de76238c95c299ba3401a9098c9e17
+//! release process_api_2026-05-11-18-55
 //!
-//! Per-process lifecycle management: spawn, wait, timeout, memory monitoring,
-//! kill, and cleanup.
+//! Per-process lifecycle management: spawn, wait, wall-clock timeout, CPU-time
+//! timeout, memory monitoring, kill, and cleanup.
 //!
-//! Offsets below are from b0e4b2f4 and have NOT been re-verified against 810fd3a4.
-//! Serde field names verified against 810fd3a4 string evidence.
+//! Offsets below are from b0e4b2f4 and have NOT been re-verified against
+//! edebff2c, except where an edebff2c address is named explicitly.
+//! Serde field names verified against edebff2c string evidence.
+//!
+//! edebff2c: `wait_for_child_to_exit` is the async state machine at
+//! 0x58f00..0x5a600 (anchored by "[DEBUG] Starting wait_for_child_to_exit for
+//! process {} (PID {}) with timeout: {}, cpu_timeout: {}, start_time: ..."
+//! template 0x385a11, referenced at 0x59532).
 //!
 //! Functions decompiled from (b0e4b2f4 offsets, stale):
 //!   kill_and_wait:               0x1b5620..0x1b5b56  (1334 bytes)
@@ -14,7 +20,7 @@
 //!   proc_handle_deser:           0x21d120..0x21d303  (483 bytes)
 //!   process_info_variant_deser:  0x21d560..0x21d732  (466 bytes)
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use nix::sys::signal::{self, Signal};
@@ -35,8 +41,12 @@ pub enum ExitReason {
     Exited { status: i32 },
     /// Process was killed by a signal.
     Signaled { signal: i32, core_dumped: bool },
-    /// Process timed out and was killed by process_api.
+    /// Process exceeded its wall-clock timeout and was killed by process_api.
     TimedOut { timeout_secs: u64 },
+    /// Binary: edebff2c — process exceeded its cgroup CPU-time budget.
+    /// Debug name "CpuTimedOut" interned directly after "Exited" at 0x391a85
+    /// (old binary had only "Exited" at that position).
+    CpuTimedOut { cpu_timeout_secs: u64 },
     /// Process exceeded its per-process memory limit.
     OutOfMemory { limit_bytes: u64 },
     /// Process was killed due to container-level OOM.
@@ -56,6 +66,8 @@ pub struct ProcHandle {
     pub process_group_pid: u32,
     pub reattachable: bool,
     pub timeout: Option<Duration>,
+    /// Binary: edebff2c — CPU-time budget from `CreateProcess.cpu_timeout`.
+    pub cpu_timeout: Option<Duration>,
     pub memory_limit_bytes: Option<u64>,
     pub start_time: Instant,
     pub memory_cgroup_path: Option<PathBuf>,
@@ -81,6 +93,7 @@ impl ProcHandle {
         pid: u32,
         reattachable: bool,
         timeout: Option<Duration>,
+        cpu_timeout: Option<Duration>,
         memory_limit_bytes: Option<u64>,
     ) -> Self {
         Self {
@@ -88,6 +101,7 @@ impl ProcHandle {
             process_group_pid: pid,
             reattachable,
             timeout,
+            cpu_timeout,
             memory_limit_bytes,
             start_time: Instant::now(),
             memory_cgroup_path: None,
@@ -103,14 +117,22 @@ impl ProcHandle {
 }
 
 /// Static process configuration, serialized in GET /health response.
-/// Serde visitor at 0x21c970..0x21cb45 (469 bytes, b0e4b2f4 offsets).
-/// 13 fields verified from serde field name strings in 810fd3a4.
+///
+/// Binary: edebff2c — the serde `FIELDS` array is at `.data.rel.ro` 0x422c30,
+/// 14 entries in exactly this order (read via `R_X86_64_RELATIVE` addends plus
+/// the adjacent length words):
+///   process_id, pid, reattachable, timeout, cpu_timeout, memory_limit_bytes,
+///   start_time, start_wallclock_micros, cmd_summary, stdin_bytes,
+///   stdout_bytes, stderr_bytes, trace_emitted, trace_outcome
+/// (`cpu_timeout` at 0x422c70 is the new entry vs. 810fd3a4's 13.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessInfo {
     pub process_id: String,
     pub pid: u32,
     pub reattachable: bool,
     pub timeout: Option<u64>,
+    /// Binary: edebff2c — CPU-time budget in seconds.
+    pub cpu_timeout: Option<u64>,
     pub memory_limit_bytes: Option<u64>,
     pub start_time: u64,
     /// Wall-clock timestamp at process start (microseconds since epoch).
@@ -249,8 +271,41 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
     }
 }
 
-/// Wait for a child process to exit, with optional timeout and memory monitoring.
-/// Sends the exit reason via `exit_status_tx` channel.
+/// Read the cumulative CPU time of a process's cgroup, in microseconds.
+///
+/// Binary: edebff2c — inlined into `wait_for_child_to_exit`; decompiled from
+/// 0x596b9..0x599d0.
+///
+/// * 0x596e7 formats `"{}/cpu.stat"` (template 0x385540) from the process's
+///   cgroup path.
+/// * 0x59857..0x5996c iterates `content.lines()` (`\n` splitter constant
+///   `0xa0000000a` at 0x59891) and trims a trailing `\r`.
+/// * 0x59968 requires `line.len() >= 11`, then 0x59972..0x59982 compares the
+///   first 11 bytes against `"usage_usec "` with two overlapping 8-byte
+///   constants (`0x73755f6567617375` = "usage_us", `0x20636573755f6567`
+///   = "eg_usec " at offset 3).
+/// * 0x59988..0x59993 skips those 11 bytes and parses the remainder as `u64`.
+/// * If no line matched, 0x599ea builds `"usage_usec not found in {}"`
+///   (template 0x38554c).
+/// * When the handle has no cgroup at all, 0x5a3a8 raises
+///   `"no cgroup for this process"` (0x391638).
+///
+/// Xrefs: "/cpu.stat", "usage_usec not found in ", "no cgroup for this process"
+pub async fn read_cpu_usage_usec(cgroup_path: &Path) -> Result<u64, String> {
+    let path = format!("{}/cpu.stat", cgroup_path.display());
+    let content = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| e.to_string())?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("usage_usec ") {
+            return rest.parse::<u64>().map_err(|e| e.to_string());
+        }
+    }
+    Err(format!("usage_usec not found in {path}"))
+}
+
+/// Wait for a child process to exit, with optional wall-clock timeout, CPU-time
+/// timeout and memory monitoring. Sends the exit reason via `exit_status_tx`.
 ///
 /// String refs from binary offset 0x1b8598:
 ///   "[DEBUG] Starting wait_for_child_to_exit for process , start_time: , memory_limit_bytes:"
@@ -264,7 +319,9 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
 #[allow(clippy::too_many_arguments)] // Matches binary's function signature
 pub async fn wait_for_child_to_exit(
     pid: u32,
+    process_id: String,
     timeout: Option<Duration>,
+    cpu_timeout: Option<Duration>,
     memory_limit_bytes: Option<u64>,
     cgroup_path: Option<PathBuf>,
     cgroup_version: Option<CgroupVersion>,
@@ -275,9 +332,27 @@ pub async fn wait_for_child_to_exit(
     let start = Instant::now();
     let nix_pid = Pid::from_raw(pid as i32);
 
+    // Binary: edebff2c template 0x385a11 (referenced at 0x59532):
+    //   "[DEBUG] Starting wait_for_child_to_exit for process {} (PID {}) with
+    //    timeout: {}, cpu_timeout: {}, start_time: ..."
     log::debug!(
-        "[DEBUG] Starting wait_for_child_to_exit for process (PID {pid}), start_time: {start:?}, memory_limit_bytes: {memory_limit_bytes:?}",
+        "[DEBUG] Starting wait_for_child_to_exit for process {process_id} (PID {pid}) with timeout: {timeout:?}, cpu_timeout: {cpu_timeout:?}, start_time: {start:?}",
     );
+
+    // Binary: edebff2c — the CPU-time budget is only enforceable when the
+    // process has a cgroup whose `cpu.stat` is readable. On failure the code
+    // logs template 0x385ce3 and falls back to wall-clock enforcement:
+    //   "[DEBUG] Process {} (PID {}) cpu.stat unavailable ({}); cpu_timeout not
+    //    enforced, falling back to wall-clock timeout only"
+    let mut cpu_timeout_active = cpu_timeout.is_some();
+    if let (Some(_), Some(cp)) = (cpu_timeout, &cgroup_path) {
+        if let Err(e) = read_cpu_usage_usec(cp).await {
+            log::debug!(
+                "[DEBUG] Process {process_id} (PID {pid}) cpu.stat unavailable ({e}); cpu_timeout not enforced, falling back to wall-clock timeout only"
+            );
+            cpu_timeout_active = false;
+        }
+    }
 
     let mut oom_rx = oom_killed_rx;
     let mut stop = stop_rx;
@@ -326,6 +401,32 @@ pub async fn wait_for_child_to_exit(
                     log::debug!("[DEBUG] Failed to send timeout status for process (PID {pid})");
                 }
                 return;
+            }
+        }
+
+        // Check CPU-time budget (Binary: edebff2c).
+        // Templates: 0x385c4b "[DEBUG] Process {} (PID {}) exceeded cpu_timeout
+        // of {} seconds (usage_usec={})" and 0x385c9b "[DEBUG] Failed to send
+        // cpu-timeout status for process {} (PID {}): {}".
+        if let (true, Some(budget), Some(cp)) = (cpu_timeout_active, cpu_timeout, &cgroup_path) {
+            if let Ok(usage_usec) = read_cpu_usage_usec(cp).await {
+                if usage_usec >= budget.as_micros() as u64 {
+                    log::debug!(
+                        "[DEBUG] Process {process_id} (PID {pid}) exceeded cpu_timeout of {} seconds (usage_usec={usage_usec})",
+                        budget.as_secs()
+                    );
+                    kill_and_wait(pid, cgroup_path.as_ref()).await;
+                    let reason = ExitReason::CpuTimedOut {
+                        cpu_timeout_secs: budget.as_secs(),
+                    };
+                    log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+                    if let Err(e) = exit_status_tx.send(reason) {
+                        log::debug!(
+                            "[DEBUG] Failed to send cpu-timeout status for process {process_id} (PID {pid}): {e:?}"
+                        );
+                    }
+                    return;
+                }
             }
         }
 
@@ -415,6 +516,15 @@ pub fn format_exit_reason(pid: u32, reason: &ExitReason, elapsed_secs: f64) -> S
         }
         ExitReason::TimedOut { timeout_secs } => {
             format!("[PID {pid}] {elapsed_secs:.1} seconds: timed out after {timeout_secs} seconds")
+        }
+        // TODO(re): the exact `details` wording for this variant was not
+        // located in edebff2c's .rodata; the sibling log line at template
+        // 0x38a729 reads "[DEBUG] Process {} (PID {}) exceeded cpu_timeout of
+        // {} seconds", and this arm mirrors the existing TimedOut style.
+        ExitReason::CpuTimedOut { cpu_timeout_secs } => {
+            format!(
+                "[PID {pid}] {elapsed_secs:.1} seconds: exceeded cpu_timeout of {cpu_timeout_secs} seconds"
+            )
         }
         ExitReason::OutOfMemory { limit_bytes } => {
             format!(

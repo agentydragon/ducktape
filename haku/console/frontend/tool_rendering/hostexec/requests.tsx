@@ -9,11 +9,11 @@ import prettyBytes from "pretty-bytes";
 import prettyMs from "pretty-ms";
 import type { z } from "zod";
 
-import { CodeBlock } from "../../code_block.tsx";
-import { mcpToolSchema } from "../../mcp_tool_schema.ts";
-import { definePreview, type ToolPreview } from "../entry.tsx";
-import { clampBlock, PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
-import { HOSTEXEC_SERVER_ID } from "../server_ids.ts";
+import { CodeBlock } from "../../code_block";
+import { mcpToolSchema } from "../../mcp_tool_schema";
+import { definePreview, type ToolPreview } from "../entry";
+import { clampBlock, PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary";
+import { HOSTEXEC_SERVER_ID } from "../server_ids";
 
 const zBashArgs = mcpToolSchema(HOSTEXEC_SERVER_ID, "bash");
 

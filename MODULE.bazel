@@ -402,6 +402,16 @@ use_repo(playwright, playwright_browsers = "playwright")
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
 
+# TypeScript toolchain for ts_project (//devinfra/js:ts_library.bzl). The bazel_dep alone
+# yields nothing — @npm_typescript does not exist until this extension is used. Version follows
+# the workspace's pinned typescript so the checker and the editor agree.
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
+
+# Exact, not `ts_version_from`: package.json pins the range `~5.8.3`, and rules_ts mirrors
+# exact versions only. Keep in step with pnpm-lock.yaml's resolved typescript.
+rules_ts_ext.deps(ts_version = "5.8.3")
+use_repo(rules_ts_ext, "npm_typescript")
+
 # Pin pnpm v9 to match the lockfile format (rules_js 2.9.2 defaults to pnpm v8
 # which cannot read lockfileVersion 9 and triggers a non-hermetic regeneration).
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")

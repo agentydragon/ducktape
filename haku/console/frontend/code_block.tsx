@@ -21,7 +21,7 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useMemo } from "react";
 
-import { shellLanguage } from "./shell_lang.ts";
+import { shellLanguage } from "./shell_lang";
 
 export type CodeLanguage = "json" | "yaml" | "shell";
 

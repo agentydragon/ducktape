@@ -1,8 +1,7 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import type { PointerEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { type PointerEvent, useEffect, useRef, useState } from "react";
 
-import { ACTION_COLOR } from "./theme.ts";
+import { ACTION_COLOR } from "./theme";
 
 // The escalation the shell is asking the operator to approve — the **actual action** the
 // iframe requested, as a disjoint union so each kind carries exactly its own fields and

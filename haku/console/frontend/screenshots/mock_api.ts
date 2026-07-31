@@ -10,10 +10,10 @@ import {
   SAMPLE_MCP_SERVERS,
   SAMPLE_PENDING,
   SAMPLE_TOOL_CALLS,
-} from "./sample_data.ts";
-import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock.ts";
-import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures.ts";
-import { GROCY_MCP_FIXTURES } from "../tool_rendering/grocy/fixtures.ts";
+} from "./sample_data";
+import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
+import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
+import { GROCY_MCP_FIXTURES } from "../tool_rendering/grocy/fixtures";
 
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;

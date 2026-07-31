@@ -14,21 +14,21 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import { renderCallPreview, type ToolCallPreview } from "./call_entry.tsx";
-import { renderPreview, type ToolPreview } from "./entry.tsx";
-import { gmailCallPreviews } from "./gmail/calls.tsx";
-import { gmailPreviews } from "./gmail/requests.tsx";
-import { gmailResultPreviews } from "./gmail/responses.tsx";
-import { googleCalendarCallPreviews } from "./google_calendar/calls.tsx";
-import { googleCalendarPreviews } from "./google_calendar/requests.tsx";
-import { googleCalendarResultPreviews } from "./google_calendar/responses.tsx";
-import { grocyPreviews } from "./grocy/requests.tsx";
-import { grocyResultPreviews } from "./grocy/responses.tsx";
-import { hakuRoutinePreviews } from "./haku_routine/requests.tsx";
-import { hostexecPreviews } from "./hostexec/requests.tsx";
-import { hostexecResultPreviews } from "./hostexec/responses.tsx";
-import { kubectlPreviews } from "./kubectl/requests.tsx";
-import { renderResultPreview, type ToolResultPreview } from "./result_entry.tsx";
+import { renderCallPreview, type ToolCallPreview } from "./call_entry";
+import { renderPreview, type ToolPreview } from "./entry";
+import { gmailCallPreviews } from "./gmail/calls";
+import { gmailPreviews } from "./gmail/requests";
+import { gmailResultPreviews } from "./gmail/responses";
+import { googleCalendarCallPreviews } from "./google_calendar/calls";
+import { googleCalendarPreviews } from "./google_calendar/requests";
+import { googleCalendarResultPreviews } from "./google_calendar/responses";
+import { grocyPreviews } from "./grocy/requests";
+import { grocyResultPreviews } from "./grocy/responses";
+import { hakuRoutinePreviews } from "./haku_routine/requests";
+import { hostexecPreviews } from "./hostexec/requests";
+import { hostexecResultPreviews } from "./hostexec/responses";
+import { kubectlPreviews } from "./kubectl/requests";
+import { renderResultPreview, type ToolResultPreview } from "./result_entry";
 import {
   GMAIL_SERVER_ID,
   GOOGLE_CALENDAR_SERVER_ID,
@@ -37,9 +37,9 @@ import {
   HOSTEXEC_SERVER_ID,
   KUBECTL_SERVER_ID,
   TANA_RW_SERVER_ID,
-} from "./server_ids.ts";
-import { tanaPreviews } from "./tana/requests.tsx";
-import type { PreviewVariant } from "./vocabulary.tsx";
+} from "./server_ids";
+import { tanaPreviews } from "./tana/requests";
+import type { PreviewVariant } from "./vocabulary";
 
 const REGISTRY = {
   [GMAIL_SERVER_ID]: gmailPreviews,

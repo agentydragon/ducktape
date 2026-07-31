@@ -1,5 +1,5 @@
 import React from "react";
-import { AugurHeader } from "./header.tsx";
+import { AugurHeader } from "./header";
 
 function Skeleton({ className, style }: { className: string; style?: React.CSSProperties }) {
   return <div className={`animate-pulse rounded bg-slate-200 dark:bg-slate-800 ${className}`} style={style} />;

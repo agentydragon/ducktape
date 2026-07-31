@@ -13,7 +13,7 @@ import {
   TOOL_CALLS_PATH,
   toolCallIdForPathname,
   viewForPathname,
-} from "./routing.ts";
+} from "./routing";
 
 describe("viewForPathname", () => {
   it("reserves only the _console namespace for trusted pages", () => {

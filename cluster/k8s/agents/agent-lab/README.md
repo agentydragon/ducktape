@@ -54,5 +54,5 @@ with the rest of the grant.
 ## Recording results
 
 Findings — including failures, which are the point — go to
-<../../../../plans/personal_agents/findings.md>, with the S-criterion they bear
+<../../../../plans/personal_agents/survey/README.md>, with the S-criterion they bear
 on named explicitly.

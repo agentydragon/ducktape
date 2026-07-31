@@ -8,6 +8,7 @@ go_library(
         "get_session_context.go",
         "noop_backend.go",
         "retry.go",
+        "session_context_types.go",
         "session_ingress_backend.go",
         "session_ingress_client.go",
         "session_ingress_types.go",

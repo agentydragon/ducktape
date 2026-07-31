@@ -1,5 +1,5 @@
 //! Platform-specific abstractions.
-//! Binary: 810fd3a4
+//! Binary: edebff2c
 
 #[cfg(unix)]
 pub mod unix;

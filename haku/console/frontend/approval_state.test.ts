@@ -14,8 +14,8 @@ import {
   toolApprovalQueueId,
   type GeolocationApproval,
   type ScreenshotApproval,
-} from "./approval_state.ts";
-import type { ToolCallRecord } from "./client.ts";
+} from "./approval_state";
+import type { ToolCallRecord } from "./client";
 
 function pendingApproval(overrides: Partial<ToolCallRecord> = {}): ToolCallRecord {
   return {

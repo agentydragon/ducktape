@@ -1,17 +1,26 @@
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
-load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
+
+TSCONFIG = ":tsconfig"
+
+# Compiler options every ts_library in this package tree extends, lib/ included.
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
 
 # -- Frontend bundle -----------------------------------------------------------
 #
@@ -23,27 +32,30 @@ package(default_visibility = ["//visibility:public"])
 
 # -- Pure JS helpers (no React) -------------------------------------------------
 
-js_library(
+ts_library(
     name = "input_helpers",
     srcs = ["input_helpers.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:frame",
     ],
 )
 
-js_library(
+ts_library(
     name = "client",
     srcs = ["client.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         "//finance/augur/frontend/lib:casing",
         "//finance/augur/frontend/lib:schema_zod",
     ],
 )
 
-js_library(
+ts_library(
     name = "data_helpers",
     srcs = ["data_helpers.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":input_helpers",
         "//finance/augur/frontend/lib:format",
@@ -51,114 +63,143 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "hooks",
     srcs = ["hooks.ts"],
+    tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "sanity_bands",
     srcs = ["sanity_bands.ts"],
+    tsconfig = TSCONFIG,
     deps = ["//finance/augur/frontend/lib:format"],
 )
 
 # -- React components -----------------------------------------------------------
 
-js_library(
+ts_library(
     name = "header",
     srcs = ["header.tsx"],
-    deps = ["//:node_modules/react"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "skeleton",
     srcs = ["skeleton.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":header",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "events_panel",
     srcs = ["events_panel.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
+        ":hooks",
         ":scenario_tabs",
-        "//:node_modules/react",
-        "//finance/augur/frontend/lib:format",
-    ],
-)
-
-js_library(
-    name = "fan_chart",
-    srcs = ["fan_chart.tsx"],
-    deps = [
-        ":data_helpers",
-        ":input_helpers",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
     ],
 )
 
-js_library(
-    name = "terminal_distribution",
-    srcs = ["terminal_distribution.tsx"],
+ts_library(
+    name = "fan_chart",
+    srcs = ["fan_chart.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
         ":hooks",
         ":input_helpers",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+ts_library(
+    name = "terminal_distribution",
+    srcs = ["terminal_distribution.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":data_helpers",
+        ":hooks",
+        ":input_helpers",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:frame",
     ],
 )
 
-js_library(
+ts_library(
     name = "metric_table",
     srcs = ["metric_table.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
         ":hooks",
         ":input_helpers",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
     ],
 )
 
-js_library(
+ts_library(
     name = "scenario_tabs",
     srcs = ["scenario_tabs.tsx"],
-    deps = ["//:node_modules/react"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
 )
 
-js_library(
+ts_library(
     name = "scenario_editor",
     srcs = ["scenario_editor.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":forms",
         ":input_helpers",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:controls",
         "//finance/augur/frontend/lib:format",
     ],
 )
 
-js_library(
+ts_library(
     name = "forms",
     srcs = ["forms.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
         ":header",
         ":input_helpers",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:controls",
@@ -166,46 +207,55 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "calibration_format",
     srcs = ["calibration_format.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
     ],
 )
 
-js_library(
+ts_library(
     name = "calibration_tables",
     srcs = ["calibration_tables.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":calibration_format",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
     ],
 )
 
-js_library(
+ts_library(
     name = "sanity_bands_panel",
     srcs = ["sanity_bands_panel.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":sanity_bands",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "categorical_chart",
     srcs = ["categorical_chart.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":calibration_format",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
-js_library(
+ts_library(
     name = "calibration",
     srcs = ["calibration.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":calibration_tables",
         ":categorical_chart",
@@ -215,6 +265,7 @@ js_library(
         ":input_helpers",
         ":sanity_bands_panel",
         ":skeleton",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:toast",
     ],
@@ -222,27 +273,31 @@ js_library(
 
 # Pure planning-adjustment model (hidden / override) + URL encoding + adjusted-total math for the
 # budget tab (no React/DOM; see `:budget_adjustments_test`).
-js_library(
+ts_library(
     name = "budget_adjustments",
     srcs = ["budget_adjustments.ts"],
+    tsconfig = TSCONFIG,
 )
 
-js_library(
+ts_library(
     name = "budget",
     srcs = ["budget.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":budget_adjustments",
         ":client",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:toast",
     ],
 )
 
-js_library(
+ts_library(
     name = "product",
     srcs = ["product.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":data_helpers",
@@ -257,6 +312,7 @@ js_library(
         ":skeleton",
         ":terminal_distribution",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
@@ -264,9 +320,10 @@ js_library(
     ],
 )
 
-js_library(
+ts_library(
     name = "app",
     srcs = ["app.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":budget",
         ":calibration",
@@ -278,17 +335,21 @@ js_library(
         ":skeleton",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
+        "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
 )
 
 # -- Bundle entry point ---------------------------------------------------------
 
-js_library(
+ts_library(
     name = "main_lib",
     srcs = ["main.tsx"],
+    tsconfig = TSCONFIG,
     deps = [
         ":app",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
     ],
@@ -299,7 +360,7 @@ esbuild(
     config = {
         "jsx": "automatic",
     },
-    entry_point = "main.tsx",
+    entry_point = "main.js",
     format = "esm",
     output = "dist/main.js",
     platform = "browser",
@@ -470,31 +531,6 @@ diff_test(
 
 # -- Type-check + unit tests ----------------------------------------------------
 
-# Full TypeScript type-check over the app (the hard correctness gate). `tsc --noEmit`
-# resolves free identifiers and prop shapes that esbuild bundling silently ignores
-# (e.g. a component referencing an undestructured prop).
-tsc_bin.tsc_test(
-    name = "tsc_test",
-    args = [
-        "--noEmit",
-        "-p",
-        "tsconfig.json",
-    ],
-    chdir = package_name(),
-    data = [
-        "budget_adjustments.test.ts",
-        "format.test.ts",
-        "input_helpers.test.ts",
-        "sanity_bands.test.ts",
-        "tsconfig.json",
-        ":budget_adjustments",
-        ":main_lib",
-        ":sanity_bands",
-        "//:node_modules",
-    ],
-    tags = ["lint"],
-)
-
 # Type-aware ESLint (no-floating-promises, no-misused-promises, await-thenable).
 # Runs as a whole-program test, not via the per-file lint-gate aspect: type-aware
 # rules need the full TS program (built from tsconfig.json), which only a
@@ -510,18 +546,85 @@ eslint_bin.eslint_test(
     ],
     chdir = package_name(),
     data = [
-        "budget_adjustments.test.ts",
         "eslint.typed.config.js",
-        "format.test.ts",
-        "input_helpers.test.ts",
-        "sanity_bands.test.ts",
         "tsconfig.json",
-        ":budget_adjustments",
-        ":main_lib",
-        ":sanity_bands",
+        ":typed_lint_srcs",
         "//:node_modules",
     ],
+    # ts_library already copies these same sources to bin to compile them, so a second copy
+    # here would be two actions writing one path. eslint reads them where they are.
+    no_copy_to_bin = [":typed_lint_srcs"],
     tags = ["lint"],
+)
+
+# The sources eslint_typed_test builds its program from. A ts_library propagates the `.js` and
+# `.d.ts` it emits, not the `.ts` eslint reads, so the library graph cannot feed this. A glob,
+# deliberately: this lint runs over the whole directory, so "every TypeScript file here" is the
+# honest input — and unlike a hand-written list it cannot fall behind a new file, which is the
+# drift that motivated ts_library in the first place.
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]) + ["//finance/augur/frontend/lib:typed_lint_srcs"],
+)
+
+# One ts_library per spec, so each declares what it imports and is type-checked as it compiles;
+# vitest then runs the emitted `.test.js`.
+ts_library(
+    name = "sanity_bands_test_lib",
+    srcs = ["sanity_bands.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":sanity_bands",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "budget_adjustments_test_lib",
+    srcs = ["budget_adjustments.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":budget_adjustments",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "input_helpers_test_lib",
+    srcs = ["input_helpers.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":input_helpers",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "format_test_lib",
+    srcs = ["format.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/vitest",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+# vitest loads this config itself, so it stays a `.ts` in the runfiles rather than being compiled
+# away; no_emit type-checks it anyway, through the generated :vitest_config_typecheck_test.
+ts_project(
+    name = "vitest_config",
+    srcs = ["vitest.config.ts"],
+    extends = ":tsconfig",
+    no_emit = True,
+    resolve_json_module = True,
+    tsconfig = {
+        "exclude": [],
+        "include": [],
+    },
+    deps = ["//:node_modules/vitest"],
 )
 
 vitest_bin.vitest_test(
@@ -529,9 +632,8 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "sanity_bands.test.ts",
         "vitest.config.ts",
-        ":sanity_bands",
+        ":sanity_bands_test_lib",
         "//:node_modules",
     ],
 )
@@ -541,9 +643,8 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "budget_adjustments.test.ts",
         "vitest.config.ts",
-        ":budget_adjustments",
+        ":budget_adjustments_test_lib",
         "//:node_modules",
     ],
 )
@@ -553,9 +654,8 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "input_helpers.test.ts",
         "vitest.config.ts",
-        ":input_helpers",
+        ":input_helpers_test_lib",
         "//:node_modules",
     ],
 )
@@ -564,13 +664,12 @@ vitest_bin.vitest_test(
     name = "format_test",
     args = [
         "run",
-        "format.test.ts",
+        "format.test.js",
     ],
     chdir = package_name(),
     data = [
-        "format.test.ts",
         "vitest.config.ts",
+        ":format_test_lib",
         "//:node_modules",
-        "//finance/augur/frontend/lib:format",
     ],
 )

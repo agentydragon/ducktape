@@ -9,8 +9,8 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import { unwrapToolResult } from "./result_entry.tsx";
-import type { PreviewVariant } from "./vocabulary.tsx";
+import { unwrapToolResult } from "./result_entry";
+import type { PreviewVariant } from "./vocabulary";
 
 export type ToolCallPreview<
   ArgsSchema extends z.ZodTypeAny = z.ZodTypeAny,

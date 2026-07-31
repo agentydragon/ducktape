@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { toolActionDescription } from "../actions.ts";
-import { renderPreview } from "../entry.tsx";
-import { HOSTEXEC_SERVER_ID } from "../server_ids.ts";
-import { hostexecPreviews } from "./requests.tsx";
+import { toolActionDescription } from "../actions";
+import { renderPreview } from "../entry";
+import { HOSTEXEC_SERVER_ID } from "../server_ids";
+import { hostexecPreviews } from "./requests";
 
 const VALID_ARGS = {
   host: "wyrm2",

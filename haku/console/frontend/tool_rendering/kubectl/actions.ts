@@ -2,9 +2,8 @@
 // approvals card shows and a push notification is titled with. Beside the widgets they
 // describe, and React-free so `../../sw.ts` can bundle them (see ../action_entry.ts).
 
-import { fixed, fromArgs } from "../action_entry.ts";
-import type { ActionEntry } from "../action_entry.ts";
-import { zResourcesDeleteArgs } from "./schemas.ts";
+import { type ActionEntry, fixed, fromArgs } from "../action_entry";
+import { zResourcesDeleteArgs } from "./schemas";
 
 export const kubectlActions: Record<string, ActionEntry> = {
   resources_create_or_update: fixed("kubectl: Apply resource"),

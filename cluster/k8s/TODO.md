@@ -19,9 +19,75 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
       through mitmproxy unconditionally — a stricter posture giving full
       audit but losing the in-cluster bypass escape hatch.
 
-## OpenClaw secrets
+## Retire the `openclaw-*` namespaces
 
-- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
+The OpenClaw gateway and OpenShell stack were deleted on 2026-07-31, but
+`openclaw-gateway` and `openclaw-sandbox` survive as credential holders: four
+unique secrets pin those namespaces in `metadata`, and since the files set no
+`mac_only_encrypted` the document MAC covers that field, so re-homing them is a
+`sops` operation and not a text edit. Background: `agents/openclaw/README.md`.
+
+Before either step, there is teardown debris to clear in `openclaw-gateway`.
+`OpenClawInstance/openclaw` outlived its manifest because its finalizer has no
+controller left to run it — the same trap that hung the `openshell-system`
+deletion — and while it lingers, Kubernetes will not garbage-collect the
+scaled-to-zero `StatefulSet/openclaw` it owns, nor release 21Gi of PVCs.
+
+- [ ] Clear the stuck instance and let GC follow, then drop the CRDs Helm left:
+
+      ```bash
+      kubectl -n openclaw-gateway patch openclawinstance openclaw \
+        --type=merge -p '{"metadata":{"finalizers":[]}}'
+      kubectl -n openclaw-gateway delete pvc openclaw-data \
+        openshell-data-openshell-gateway-0
+      kubectl delete crd openclawinstances.openclaw.rocks \
+        openclawselfconfigs.openclaw.rocks openclawclusterdefaults.openclaw.rocks
+      ```
+
+      `openclaw-data` is 20Gi on `local-path-proxmox` — Proxmox-pinned storage
+      held for a deleted service, so this is resilience debt as well as tidiness.
+      Needs cluster-admin.
+
+Then two steps, in order — the second is blocked on the first:
+
+- [ ] **Move the credentials** (needs the cluster age key). Re-author each under
+      `agents/shared-secrets/` with the right namespace and `sops -e -i`:
+      `openclaw-{anthropic-api-key,openai-api-key,telegram-bot-token}` from
+      `openclaw-gateway`, `ibkr-flex-query-credentials` from `openclaw-sandbox`.
+      Note the IBKR one's Kustomization is `suspend: true` in git, so that Secret
+      is frozen rather than reconciled — re-homing it un-freezes it, which is a
+      deliberate change, not a side effect.
+      Update the reflector annotations and `docs/bootstrap_dependencies.md` rows
+      in the same change. Alternatively **revoke** any you no longer want — at the
+      Anthropic and OpenAI consoles, via @BotFather, and in IBKR Account
+      Management. Deleting only the Secret leaves a live credential in the wild.
+- [ ] **Then delete `agents/openclaw/` entirely** — all four flux kustomizations,
+      their root `kustomization.yaml` entries, and the `CLEANUP(added 2026-07-31)`
+      tombstones in both `namespace.yaml` files. The gate is
+      `grep -rl 'namespace: openclaw-' cluster/k8s/ --include='*.sops.yaml'`
+      returning nothing; it lists four files today.
+
+- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive); fold into the move above rather than making a separate `sops` trip
+
+## `openclaw-sandbox` reflector targets in shared secrets
+
+Two SOPS-encrypted Secrets name `openclaw-sandbox` in their emberstack reflector
+annotations. That namespace still exists (see above), so this is dormant rather
+than stale — it becomes stale the moment the namespace is retired:
+
+- [ ] `agents/shared-secrets/attic-push-token.sops.yaml` — drop `openclaw-sandbox`
+      from `reflection-{allowed,auto}-namespaces`
+- [ ] `agents/shared-secrets/buildbuddy-api-key.sops.yaml` — same, leaving
+      `codex-pod,public-coder-agent`
+
+Not done alongside the deletion because these files set no `mac_only_encrypted`,
+so the document MAC covers metadata: a raw text edit of the annotations breaks
+decryption with a MAC mismatch. Fixing them needs the age key and a `sops -i`
+pass, which an agent without the key cannot do without rotating the value.
+
+Harmless either way: reflecting into a namespace that does not exist is a no-op,
+and while it does exist nothing there consumes these. Fold it into the same `sops`
+pass that re-homes the credentials rather than making a separate trip.
 
 ## Secret layout
 

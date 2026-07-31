@@ -18,11 +18,6 @@ spec:
     - apiVersion: external-secrets.io/v1
       kind: ClusterSecretStore
       name: kubernetes-secret-store
-    - apiVersion: external-secrets.io/v1
-      kind: ClusterSecretStore
-      name: kubernetes-openshell-system-secret-store
   dependsOn:
     - name: external-secrets-operator
-      namespace: flux-system
-    - name: openshell-namespace
       namespace: flux-system

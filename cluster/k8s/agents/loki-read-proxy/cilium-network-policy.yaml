@@ -1,0 +1,51 @@
+# The proxy's only access control: it has no auth of its own. Ingress is
+# restricted to Haku sandbox pods; egress is restricted to the Loki gateway
+# (plus DNS), so a compromised proxy cannot pivot anywhere else either.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: loki-read-proxy
+  namespace: loki-read-proxy
+  annotations:
+    description: "Ingress to the Loki read proxy only from haku-sandbox pods; egress only to the Loki gateway and kube-dns. This policy IS the proxy's access control — the app itself is unauthenticated."
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki-read-proxy
+  ingress:
+    # Haku agent sandboxes → proxy (namespace-filtered log reads)
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    # kube-dns (resolve loki-gateway.loki.svc)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    # Loki gateway (UPSTREAM_URL). 8080 is the gateway nginx listen port that
+    # service port 80 DNATs to; 80/3100 cover direct pod-port addressing.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: loki
+            app.kubernetes.io/component: gateway
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "3100"
+              protocol: TCP

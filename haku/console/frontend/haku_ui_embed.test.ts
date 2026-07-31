@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
-import { initialFrameSrc, routeFromLocation } from "./haku_ui_embed.tsx";
-import { rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH } from "./routing.ts";
-import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant.ts";
+import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant";
+import { initialFrameSrc, routeFromLocation } from "./haku_ui_embed";
+import { rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH } from "./routing";
+import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 
 describe("initialFrameSrc", () => {
   it("pins the origin and carries the route into the frame's pathname", () => {

@@ -16,7 +16,7 @@
 // in practice: read what an older payload might not carry defensively, and never assume the
 // server that sent a message is the version that shipped alongside this file.
 
-import { toolActionDescription } from "./tool_rendering/actions.ts";
+import { toolActionDescription } from "./tool_rendering/actions";
 
 // Checked against the WebWorker lib (tsconfig.sw.json), so this narrows the worker global to
 // the service-worker scope rather than casting around a DOM-typed one.

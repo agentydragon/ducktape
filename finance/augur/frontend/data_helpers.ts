@@ -1,6 +1,6 @@
-import { rowsFrom } from "./lib/frame.ts";
-import { fmtNumber, fmtUsd, fmtUsdCompact } from "./lib/format.ts";
-import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers.ts";
+import { rowsFrom } from "./lib/frame";
+import { fmtNumber, fmtUsd, fmtUsdCompact } from "./lib/format";
+import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers";
 
 function cu(value, currencyDisplay) {
   return currencyDisplay === "compact" ? fmtUsdCompact(value) : fmtUsd(value);
