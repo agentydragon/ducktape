@@ -6,7 +6,7 @@ import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
-from main import DEFAULT_LIMIT, MAX_LIMIT, Settings, create_app
+from main import DEFAULT_LIMIT, MAX_LIMIT, UPSTREAM_TIMEOUT_S, Settings, create_app
 
 ALLOWLIST = frozenset({"flux-system", "monitoring", "kube-system"})
 
@@ -200,6 +200,37 @@ def test_upstream_status_and_body_passed_through(upstream: Upstream) -> None:
         resp = client.get(QUERY_RANGE, params={"query": '{namespace="monitoring"}'})
     assert resp.status_code == 500
     assert resp.content == upstream.content
+
+
+def _client_whose_upstream_raises(exc: Exception) -> TestClient:
+    def raise_it(request: httpx.Request) -> httpx.Response:
+        raise exc
+
+    settings = Settings(upstream_url="http://loki-gateway.test", namespace_allowlist=ALLOWLIST)
+    return TestClient(create_app(settings, transport=httpx.MockTransport(raise_it)))
+
+
+def test_upstream_timeout_is_504_not_500() -> None:
+    # Regression: httpx.TimeoutException propagated out of the handler, so a slow
+    # Loki query surfaced as a bare 500 with no body — indistinguishable from the
+    # proxy itself crashing. Observed live 2026-07-31 on {namespace="monitoring"}.
+    with _client_whose_upstream_raises(httpx.ReadTimeout("timed out")) as client:
+        resp = client.get(QUERY_RANGE, params={"query": '{namespace="monitoring"}'})
+    assert resp.status_code == 504
+    assert str(UPSTREAM_TIMEOUT_S) in resp.json()["detail"]
+
+
+def test_upstream_unreachable_is_502() -> None:
+    with _client_whose_upstream_raises(httpx.ConnectError("no route")) as client:
+        resp = client.get(QUERY_RANGE, params={"query": '{namespace="monitoring"}'})
+    assert resp.status_code == 502
+    assert "no route" in resp.json()["detail"]
+
+
+def test_upstream_timeout_takes_precedence_over_generic_request_error() -> None:
+    # TimeoutException subclasses RequestError, so ordering the except clauses the
+    # other way around would silently answer 502 for every timeout.
+    assert issubclass(httpx.TimeoutException, httpx.RequestError)
 
 
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:

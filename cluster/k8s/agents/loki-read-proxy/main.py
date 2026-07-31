@@ -13,6 +13,9 @@ allowlisted set of namespaces:
   matcher (see ``validate_query`` for the security argument).
 - ``limit`` is capped at ``MAX_LIMIT`` (rejected with 400 above it) and
   defaults to ``DEFAULT_LIMIT``; only known-safe parameters are forwarded.
+- An upstream that times out answers 504 and one that is unreachable answers
+  502, rather than the bare 500 an unhandled ``httpx`` error would produce.
+  Upstream responses that *arrive* pass through with their own status.
 
 The proxy has **no authentication of its own** — access control is the
 CiliumNetworkPolicy deployed next to it (ingress only from ``haku-sandbox``
@@ -42,6 +45,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_LIMIT = 1000
 MAX_LIMIT = 5000
+
+# Upstream read budget. Named because the 504 body quotes it: a caller told
+# "no response within 30s" can act on it, where a bare timeout cannot.
+UPSTREAM_TIMEOUT_S = 30.0
 
 # Loki read-API parameters forwarded verbatim; anything else is dropped so the
 # upstream only ever sees parameters this proxy understands. `time` is the
@@ -271,7 +278,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         nonlocal http_client
-        http_client = httpx.AsyncClient(base_url=settings.upstream_url, timeout=30.0, transport=transport)
+        http_client = httpx.AsyncClient(base_url=settings.upstream_url, timeout=UPSTREAM_TIMEOUT_S, transport=transport)
         yield
         await http_client.aclose()
         http_client = None
@@ -297,7 +304,21 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             name: value for name in _FORWARDED_PARAMS if (value := request.query_params.get(name)) is not None
         }
         assert http_client is not None, "httpx client not initialized (lifespan not started)"
-        resp = await http_client.get(upstream_path, params=forwarded)
+        try:
+            resp = await http_client.get(upstream_path, params=forwarded)
+        except httpx.TimeoutException as exc:
+            # Must precede RequestError: TimeoutException is a subclass of it.
+            logger.warning("upstream timed out after %ss for query %r", UPSTREAM_TIMEOUT_S, query)
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"Loki did not respond within {UPSTREAM_TIMEOUT_S}s. Narrow the time range, "
+                    "lower limit, or add a line filter."
+                ),
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.warning("upstream request failed for query %r: %s", query, exc)
+            raise HTTPException(status_code=502, detail=f"could not reach Loki: {exc}") from exc
         return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type"))
 
     @app.get("/loki/api/v1/query_range")
