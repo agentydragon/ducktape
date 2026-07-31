@@ -125,7 +125,7 @@ GEMINI_MODELS: list[str] = [
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see
-# plans/personal_agents/lab_notes.md F9.
+# plans/personal_agents/findings/harness_behaviour.md F9.
 #
 # Both are stable and their embedding spaces are **mutually incompatible**: vectors
 # from one cannot be compared against the other, so switching a consumer between

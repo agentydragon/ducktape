@@ -1,0 +1,14 @@
+# Kustomization for the credential-injecting proxy. The addon is a real .py so
+# it stays lintable and type-checkable; STYLE.md forbids code blobs over ~5 lines
+# embedded in YAML, and this one is ~40.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agent-lab
+configMapGenerator:
+  - name: lab-proxy-addon
+    files:
+      - allowlist.py=credential_injection_addon.py
+generatorOptions:
+  # mitmproxy loads the addon by path at startup and is not restarted by a hash
+  # change, so a suffixed name would strand it on the old ConfigMap.
+  disableNameSuffixHash: true
