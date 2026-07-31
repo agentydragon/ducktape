@@ -369,10 +369,17 @@ in
   # it and would grab all three cards (that's why seat0 defaults to GNOME above).
   # virtio stays a plain text/recovery VT console. Gotcha: udev TAGS persist in the
   # udev db — a VM reboot is needed to fully apply a change here.
+  # Rule 4: MT7921U Wi-Fi stick (CPAP ez Share sync) — disable USB runtime PM.
+  # On 2026-07-25 the stick failed a USB-autosuspend resume (`mt7921u ... resume
+  # error -110`), went electrically dark, and stayed dark through four warm
+  # reboots (VBUS holds through reboot); only a physical replug at the
+  # hypervisor revived it, and cpap-sync was down the whole week. Keeping the
+  # device out of autosuspend removes the resume path entirely.
   services.udev.extraRules = ''
     KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:00:01.0", TAG+="mutter-device-ignore"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", TAG+="mutter-device-ignore"
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="7961", TEST=="power/control", ATTR{power/control}="on"
   '';
   # Composite the cursor into frames instead of the hardware cursor plane —
   # Sunshine's KMS capture can't grab the cursor plane on virtio-gpu, so the
