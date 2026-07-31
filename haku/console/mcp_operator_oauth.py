@@ -690,13 +690,32 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
             action=OAuthRefreshFailureAction.RETRYING,
         ) from e
     except httpx.RequestError as e:
-        _observe_token_request("refresh", "outcome_unknown", started)
+        # The request was sent but no response arrived, so whether the server rotated the token is
+        # unknown. Retry rather than demanding a reconnect: the very next attempt resolves the
+        # ambiguity by itself, and neither outcome is worse than giving up here.
+        #
+        #   - the server never processed it  -> the retry simply succeeds
+        #   - the server rotated             -> `invalid_grant`, which classifies OAUTH_REJECTED /
+        #                                       RECONNECT below and stops the retries with a
+        #                                       definitive answer instead of a guessed one
+        #
+        # 2026_07_20_tana_refresh_rotation_timeout.md made this RECONNECT, but the failure it was
+        # reacting to was *unbounded* replay of an already-consumed token against a facade that
+        # answered `invalid_grant` forever. One retry that halts on that answer is a different
+        # thing. The cost when the token really was consumed is one rejected request plus the
+        # authorization server's own reuse-detection event; a server that also revoked the token
+        # family on reuse would only be cutting short an access token we were about to lose to a
+        # forced reconnect anyway. Authentik, which issues every association the console currently
+        # holds, rejects the single reused token and does not touch the family.
+        #
+        # Retries are bounded by the shared backoff in `oauth_token_state._store_failure`
+        # (30s doubling to a 15min cap) and end the moment any attempt returns a definitive answer.
         raise OAuthRefreshError(
             token_request_error_message(
                 label="MCP OAuth token refresh", request_error=e, timeout_seconds=token_client.timeout_seconds
             ),
             kind=OAuthRefreshFailureKind.OUTCOME_UNKNOWN,
-            action=OAuthRefreshFailureAction.RECONNECT,
+            action=OAuthRefreshFailureAction.RETRYING,
         ) from e
     if response.status_code >= 500:
         _observe_token_request("refresh", "upstream", started)

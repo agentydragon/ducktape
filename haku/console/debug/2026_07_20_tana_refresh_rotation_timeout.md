@@ -24,6 +24,11 @@ deadline; Tana execution latency was not involved.
 
 - Persist a sanitized refresh-failure episode, including its initiating and latest failures.
 - Stop replay after an ambiguous response timeout; require reconnection instead.
+  **Partly superseded 2026-07-31**: requiring a reconnect after _every_ ambiguous timeout cost an
+  association a manual reconnect for each transient one, and at a 10-minute access-token lifetime
+  that was ~150 chances a day. An ambiguous timeout is now retryable and stops on the first
+  definitive answer; unbounded replay, the actual failure here, is still prevented because
+  `invalid_grant` is terminal. Authentik does not revoke the token family on reuse.
 - Back off failures known to be retryable and make the remote MCP token timeout configurable.
 - Remove the facade from Haku's Tana path: Haku Console holds the Tana PAT and calls the internal
   MCP service, while the public facade remains available for external clients.

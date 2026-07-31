@@ -122,7 +122,11 @@ async def test_refresh_read_timeout_is_classified_as_ambiguous_and_uses_configur
         )
 
     assert raised.value.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
-    assert raised.value.action == OAuthRefreshFailureAction.RECONNECT
+    # Retryable, not terminal: a response that never arrived leaves rotation unknown, and the next
+    # attempt settles it — success if the server never processed the request, `invalid_grant` (which
+    # classifies RECONNECT) if it did. Giving up here instead cost an association a manual reconnect
+    # for every transient timeout.
+    assert raised.value.action == OAuthRefreshFailureAction.RETRYING
     assert str(raised.value) == "MCP OAuth token refresh timed out after 37 seconds"
 
 
@@ -370,7 +374,7 @@ async def test_operator_oauth_concurrent_callers_share_one_refresh(
     assert refresh_count == 1
 
 
-async def test_operator_oauth_timeout_is_persisted_and_not_replayed(
+async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_grant(
     migrated_engine: Engine,
     oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
     monkeypatch: pytest.MonkeyPatch,
@@ -400,28 +404,57 @@ async def test_operator_oauth_timeout_is_persisted_and_not_replayed(
 
     attempts = 0
 
-    async def timeout(_client: object, _refresh_token: str) -> OAuthToken:
+    async def refresh(_client: object, _refresh_token: str) -> OAuthToken:
         nonlocal attempts
         attempts += 1
+        if attempts == 1:
+            raise OAuthRefreshError(
+                "MCP OAuth token refresh timed out after 30 seconds",
+                kind=OAuthRefreshFailureKind.OUTCOME_UNKNOWN,
+                action=OAuthRefreshFailureAction.RETRYING,
+            )
+        # The server had in fact rotated the token, so the replay is refused — the definitive
+        # answer the retry existed to obtain.
         raise OAuthRefreshError(
-            "MCP OAuth token refresh timed out after 30 seconds",
-            kind=OAuthRefreshFailureKind.OUTCOME_UNKNOWN,
+            'MCP OAuth token refresh failed: 400 {"error":"invalid_grant"}',
+            kind=OAuthRefreshFailureKind.OAUTH_REJECTED,
             action=OAuthRefreshFailureAction.RECONNECT,
         )
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", timeout)
+    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh)
     with pytest.raises(OAuthRefreshError):
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
-    with pytest.raises(OAuthRefreshBlockedError):
-        await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
+    # An ambiguous timeout leaves the association retryable, not terminally wedged.
     status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
     assert isinstance(status.state, McpOperatorAuthDegraded)
     assert status.state.refresh_failure.initial.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
-    assert status.state.refresh_failure.latest.message == "MCP OAuth token refresh timed out after 30 seconds"
-    assert status.state.refresh_failure.resolution == "Reconnect the account before retrying."
-    assert status.state.refresh_failure.attempts == 1
+    assert status.state.refresh_failure.resolution == "Retry scheduled automatically."
+    assert status.state.refresh_failure.next_retry_at is not None
+
+    # Backoff still applies between attempts, so the association is blocked only until it is due.
+    with pytest.raises(OAuthRefreshBlockedError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
     assert attempts == 1
+
+    with sessionmaker(migrated_engine)() as session, session.begin():
+        association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        assert association is not None
+        association.token_state.refresh_retry_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+
+    with pytest.raises(OAuthRefreshError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+    assert attempts == 2
+
+    # `invalid_grant` is definitive, so the retries stop there and an operator is asked to reconnect.
+    status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
+    assert isinstance(status.state, McpOperatorAuthDegraded)
+    assert status.state.refresh_failure.latest.kind == OAuthRefreshFailureKind.OAUTH_REJECTED
+    assert status.state.refresh_failure.resolution == "Reconnect the account before retrying."
+    assert status.state.refresh_failure.next_retry_at is None
+    with pytest.raises(OAuthRefreshBlockedError):
+        await oauth_store.access_token_for(server=server, operator_id=operator_id)
+    assert attempts == 2
 
 
 async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_success(
