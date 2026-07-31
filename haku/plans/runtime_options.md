@@ -23,10 +23,12 @@ Anthropic-managed Claude Code in the cloud; **routines** fire on a schedule, a
 GitHub event, or an API call. This is essentially v0-plus-triggers (today Haku is
 a manual web session).
 
-- **Pros:** ~zero ops, the mature Claude Code harness, the Console session view.
+- **Pros:** ~zero ops, the mature Claude Code harness, the Console session view;
+  **flat subscription billing** — runs on the operator's Claude subscription
+  rather than metered API rates.
 - **Cons:** Anthropic-managed container **only** (no BYOC); full lock-in (loop +
   infra + model all Anthropic); in-cluster access only via the public
-  `kubeapi.allegedly.works` proxy (as today); subscription/seat billing.
+  `kubeapi.allegedly.works` proxy (as today).
 
 ### Runtime A variant — self-hosted Claude Code (Agent SDK)
 
