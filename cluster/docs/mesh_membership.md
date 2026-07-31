@@ -18,6 +18,26 @@ The mesh host roster is a single JSON file at the repo root,
 Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
 `//cluster/validation:test_nebula_mesh`.
 
+## SYNC(roaming-node-count) — adding or removing a _roaming_ k8s node
+
+The roster above is not the only thing a roaming node's count feeds. If the host
+is a roaming Kubernetes node (a laptop that joins/leaves — today `rugged` and
+`iguana`), also update `maxUnavailable` in **both**:
+
+- `cluster/k8s/monitoring/loki/promtail-helmrelease.yaml`
+- `cluster/k8s/monitoring/loki/promtail-journal-helmrelease.yaml`
+
+The value is _roaming node count + 1_. An offline roaming node's DaemonSet pod is
+deleted at rollout start and can never terminate (no kubelet to do it), so it
+consumes the unavailable budget permanently — with too small a value the rollout
+deadlocks and every node silently keeps the old config while the HelmRelease
+still reports success. Full rationale is in the promtail file; the incident that
+found it is
+`cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md`.
+
+There is no test enforcing this, so it is a real drift risk — nothing fails
+until the next promtail change silently fails to roll out.
+
 ## Schema cheatsheet
 
 ```json
