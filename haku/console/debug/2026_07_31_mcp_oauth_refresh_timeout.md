@@ -4,8 +4,9 @@ On 2026-07-31 the `home-assistant` MCP server was reported as having "lost its a
 The association was intact: `status: degraded`, holding the terminal `reconnect` state introduced
 by <2026_07_20_tana_refresh_rotation_timeout.md>. `kubectl-passthrough-mcp` was in the same state.
 
-One large latency contributor was found and fixed. **The 30s timeouts themselves are still not
-explained.**
+The disconnections are fixed and a large latency contributor with them. **The 30s timeouts
+themselves are still not explained** — the fixes make the system tolerate them rather than remove
+them, so this note stays open.
 
 ## Established
 
@@ -36,8 +37,42 @@ fired on schedule. That rules out event-loop starvation — and with it the cons
 (`vv7p6`=12, `xjl5b`=10 restarts over 7d; the previous ReplicaSet peaked at 383–441MB with 0
 restarts) as the cause. The OOM loop is a real but separate regression.
 
-A single blip is permanent: `REFRESH_SKEW` is 60s, so the sweep gets one attempt, and an ambiguous
-timeout is classified terminal `reconnect` with `refresh_retry_at = None`.
+## Why one blip was fatal, and why it happened so often
+
+Two independent things had to be true for a transient timeout to disconnect a server.
+
+**It was permanent.** An ambiguous timeout was classified terminal `reconnect` with
+`refresh_retry_at = None`, so `_claim` returned `_Blocked` forever. Note this was the _classification_,
+not the 60s `REFRESH_SKEW`: had the failure been `RETRYING`, the sweep would have kept retrying
+indefinitely, because an already-expired token still satisfies `token_expires_at <= now + 60s`.
+
+**It was frequent.** `access_token_validity` on these providers was `minutes=10` — the goauthentik
+Terraform provider's default, not Authentik's own `hours=1` model default, and none of the four
+console-linked providers set it. Renewal runs 60s before expiry, so each association refreshed
+**~150 times a day**, every one able to wedge it. At the ~0.3% failure rate measured above, that
+predicts a wedge every ~2 days; the observed failures were 07-28 and 07-30. The arithmetic ties out
+exactly: `kubectl-passthrough-mcp` failed at `03:57:52`, and its newest revoked refresh token was
+issued `2026-07-30 03:48:19` — one 9m33s cycle earlier.
+
+Both were fixed: the classification is now `RETRYING`, halting on `invalid_grant` (ducktape#3598),
+and validity moved to `hours=24`, about one renewal a day (ducktape#3595).
+
+### Authentik's rotation and reuse behaviour
+
+Retrying is safe here, which is what the terminal classification had assumed it was not:
+
+- **Rotation is unconditional.** `refresh_token_threshold` defaults to `seconds=0` and the `== 0`
+  short-circuit revokes the presented token on every refresh. Visible in the database as a large
+  pile of revoked rows against a handful of live ones — `grocy-mcp-sf` 1901 vs 13,
+  `kubectl-passthrough-mcp` 1565 vs 6, `ha-mcp` 1154 vs 4.
+- **Reuse is not escalated.** A revoked token raises `TokenError("invalid_grant")` and logs a
+  `SUSPICIOUS_REQUEST` event, without revoking the token family or session — Authentik does not
+  implement RFC 9700 §4.14 family invalidation. All 10 `suspicious_request` events in the whole
+  event history resolved to nothing beyond a rejection.
+
+So a retry after an ambiguous timeout either succeeds (the server never processed the request) or
+returns `invalid_grant` (it did), and the second case costs only a definitive answer in place of a
+guessed one.
 
 ## Refuted: the console's residential egress path
 
@@ -93,6 +128,10 @@ accounted for roughly 7–8 round trips, and **~0.75s of server-side time is som
 - The tail reaching **~17.8s** seen from both regions, matching the console's two production
   `upstream` failures.
 
+- **The console's 512Mi OOM loop**, unrelated to the timeouts (ruled out above) but unfixed.
+
 `haku_mcp_oauth_token_request_duration_seconds` was never scraped (no `/metrics` endpoint, no
-ServiceMonitor), which is why none of this was visible for three days. Fixed separately; that
-histogram is the instrument for everything above.
+ServiceMonitor), which is why none of this was visible for three days. That is fixed, so
+`outcome_unknown` on that histogram is now the tripwire for whether ambiguous timeouts still happen
+at all — and, since the retry makes them survivable, the only remaining signal that they do. There
+is still no `PrometheusRule` on it, so nothing pages.
