@@ -127,7 +127,6 @@ accounted for roughly 7–8 round trips, and **~0.75s of server-side time is som
   test load, and not placement-related.
 - The tail reaching **~17.8s** seen from both regions, matching the console's two production
   `upstream` failures.
-
 - **The console's 512Mi OOM loop**, unrelated to the timeouts (ruled out above) but unfixed.
 
 `haku_mcp_oauth_token_request_duration_seconds` was never scraped (no `/metrics` endpoint, no
