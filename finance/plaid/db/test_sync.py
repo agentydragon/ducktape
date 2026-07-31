@@ -65,40 +65,40 @@ class _FakeApiClient:
 
 
 class _FakeApi:
-    """PlaidApiLike fake; raises `errors[access_token]` from every endpoint for that item."""
+    """PlaidApiLike fake; raises `errors[endpoint, access_token]` from that one endpoint."""
 
-    def __init__(self, errors: dict[str, Exception] | None = None) -> None:
+    def __init__(self, errors: dict[tuple[str, str], Exception] | None = None) -> None:
         self.api_client = _FakeApiClient()
         self._errors = errors or {}
         self.liabilities_calls = 0
 
-    def _maybe_raise(self, access_token: str) -> None:
-        if access_token in self._errors:
-            raise self._errors[access_token]
+    def _maybe_raise(self, endpoint: str, access_token: str) -> None:
+        if (exc := self._errors.get((endpoint, access_token))) is not None:
+            raise exc
 
     def item_get(self, request: ItemGetRequest, /) -> object:
-        self._maybe_raise(request.access_token)
+        self._maybe_raise("item/get", request.access_token)
         return {"item": {}, "request_id": "req-item"}
 
     def accounts_get(self, request: AccountsGetRequest, /) -> object:
-        self._maybe_raise(request.access_token)
+        self._maybe_raise("accounts/get", request.access_token)
         return {"accounts": [], "request_id": "req-accounts"}
 
     def transactions_get(self, request: TransactionsGetRequest, /) -> object:
-        self._maybe_raise(request.access_token)
+        self._maybe_raise("transactions/get", request.access_token)
         return {"total_transactions": 0, "transactions": [], "request_id": "req-txn"}
 
     def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object:
-        self._maybe_raise(request.access_token)
+        self._maybe_raise("investments/holdings/get", request.access_token)
         return {"securities": [], "holdings": [], "request_id": "req-hold"}
 
     def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object:
-        self._maybe_raise(request.access_token)
+        self._maybe_raise("investments/transactions/get", request.access_token)
         return {"total_investment_transactions": 0, "investment_transactions": [], "request_id": "req-itxn"}
 
     def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object:
         self.liabilities_calls += 1
-        self._maybe_raise(request.access_token)
+        self._maybe_raise("liabilities/get", request.access_token)
         return {"liabilities": {}, "request_id": "req-liab"}
 
 
@@ -159,7 +159,7 @@ class _FakeSecrets:
 async def test_sync_link_tolerates_no_liability_accounts() -> None:
     link = _stored_link("item-merrill", ["transactions", "liabilities"])
     storage = _FakeStorage(links=[link])
-    api = _FakeApi(errors={"token-for-secret-item-merrill": _no_liability_accounts_error()})
+    api = _FakeApi(errors={("liabilities/get", "token-for-secret-item-merrill"): _no_liability_accounts_error()})
 
     await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
 
@@ -173,7 +173,7 @@ async def test_sync_link_reraises_other_liability_errors() -> None:
     exc.body = json.dumps({"error_type": "ITEM_ERROR", "error_code": "ITEM_LOGIN_REQUIRED"})
     link = _stored_link("item-merrill", ["liabilities"])
     storage = _FakeStorage(links=[link])
-    api = _FakeApi(errors={"token-for-secret-item-merrill": exc})
+    api = _FakeApi(errors={("liabilities/get", "token-for-secret-item-merrill"): exc})
 
     with pytest.raises(PlaidApiException):
         await sync_link(
@@ -187,7 +187,7 @@ async def test_sync_all_keeps_going_past_a_failing_link() -> None:
     failing = _stored_link("item-bad", ["transactions"])
     healthy = _stored_link("item-good", ["transactions"])
     storage = _FakeStorage(links=[failing, healthy])
-    api = _FakeApi(errors={"token-for-secret-item-bad": RuntimeError("bank exploded")})
+    api = _FakeApi(errors={("item/get", "token-for-secret-item-bad"): RuntimeError("bank exploded")})
 
     with pytest.raises(ExceptionGroup):
         await sync_all(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), trigger="test")
