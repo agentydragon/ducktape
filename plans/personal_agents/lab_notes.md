@@ -202,6 +202,43 @@ for the harness denylist to catch.
 OpenClaw is OOMKilled with exit 137 the moment it does real work. Set resources
 explicitly; production's 768Mi/4Gi is fine.
 
+### `public-coder-agent` after the cutover — the credential is out of the agent
+
+The lab shape shipped to production (#3582): iron-proxy 0.49.0 in `replace` mode
+holding the PAT, the agent holding `GH_PAT=proxy-github-placeholder`, the CA in
+the system trust store, and the destination allowlist deliberately off.
+
+| Check                       | Result                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Credential possession       | **pass** — 0 real-token matches in env and across `/proc/*/environ`           |
+| Placeholder authenticates   | **pass** — `api.github.com/user` returns `login: agentydragon-agent`          |
+| TLS with one CA variable    | **pass** — curl 200, git OK, node 200, only `NODE_EXTRA_CA_CERTS` set         |
+| Egress open, credential not | **pass** — `example.com` 200, `en.wikipedia.org` 301, neither given the token |
+| Proxy is the only route out | **pass** — direct egress with the proxy variables stripped still fails        |
+| S2 end to end               | **pass** — 12 tool calls, no insecure flags, PR opened on its own fork        |
+
+**The push is the part that had never been proven in production**, and the proxy
+audit log shows the whole handshake — including that a public read needs no
+credential, so an earlier `git ls-remote` proved nothing about substitution:
+
+```text
+GET  /agentydragon-agent/ducktape.git/info/refs        200  -                     (public read)
+POST /agentydragon-agent/ducktape.git/git-upload-pack  200  -                     (public fetch)
+GET  /agentydragon-agent/ducktape.git/info/refs        401  -                     (push challenged)
+GET  /agentydragon-agent/ducktape.git/info/refs        200  header:Authorization  (git retries with Basic)
+POST /agentydragon-agent/ducktape.git/git-receive-pack 200  header:Authorization  (the push itself)
+POST /repos/agentydragon-agent/ducktape/pulls          201  header:Authorization  (the PR)
+```
+
+That is the 401-challenge → retry-with-Basic → substitute sequence, on the real
+git transport, against real GitHub. Four requests in the whole run carried the
+credential, all of them GitHub, none of them `example.com` or `wikipedia.org` —
+so wide egress and a scoped credential coexist exactly as intended.
+
+**The agent was told the contract in chat, not in config**: that `$GH_PAT` is a
+placeholder to use as it would a real token. It did, first try, with no prompting
+about proxies or certificates.
+
 ## Findings
 
 Numbered in discovery order and cited by number from cluster manifests, so the IDs
