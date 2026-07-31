@@ -220,7 +220,24 @@ the runtimes differ in where the sandbox runs — see
   Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
   old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from
-  `haku-state` for replayability.
+  `haku-state` for replayability. If the loop ever runs on the **Claude Agent SDK**, the
+  supported mechanism is a `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`;
+  `append`/`load` required, `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys`
+  optional) — docs: <https://code.claude.com/docs/en/agent-sdk/session-storage>.
+  **Deliberately not done first:** the adapter runs _inside_ the sandbox, so pointing it at
+  the console's Postgres would give a deliberately fenced pod egress to — and credentials
+  for — a database outside its perimeter. That trades the force-proxy fence for convenience.
+  The direction to explore instead is inverting it: the sandbox keeps writing local JSONL
+  (`$CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<session-id>.jsonl`) and the console _pulls_,
+  or the transcript ships out over the MCP path that is already permitted. Worth knowing
+  before building either way: the store is a best-effort **mirror** of the local file, not a
+  replacement (a dropped batch surfaces only as a `{type:"system", subtype:"mirror_error"}`
+  message, so it needs handling if "all transcripts" is the goal); retries can re-deliver, so
+  dedupe on `entry.uuid`; `load()` returns the full raw history including pre-compaction turns
+  that `get_session_messages_from_store()` has already collapsed into a summary; and it refuses
+  to combine with `persist_session=False` or file checkpointing. A conformance suite ships in
+  the package (`claude_agent_sdk.testing.run_session_store_conformance`), so an adapter is
+  testable without any Anthropic credentials.
 - **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
   builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
   the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:
