@@ -36,9 +36,30 @@ spec:
       initContainers:
         # The gateway reads its config from the state dir, which is the PVC, so
         # the declarative config has to be planted there before startup.
+        #
+        # The `rm` is load-bearing, not tidying. The gateway keeps its own
+        # `last-good` backup and, on startup, compares the file it finds against
+        # it; a seeded config that lacks keys the gateway has since added to its
+        # own copy is treated as a destructive external edit, so the backup is
+        # restored and the seed is set aside as `openclaw.json.clobbered.<ts>`.
+        # Once anything writes config through the gateway — `openclaw config
+        # set`, the control UI, a plugin — every subsequent deploy of this
+        # ConfigMap is silently ignored. That is not hypothetical: it is why this
+        # agent ran without memory search while the correct config sat in git,
+        # and it hid for three restarts. Deleting the baseline makes the seeded
+        # config authoritative, which is what GitOps ownership means; git is the
+        # backup this file needs.
+        #
+        # Reproduction, the verified fix, and the upstream operator's identical
+        # exposure: plans/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
           image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
-          command: ["sh", "-c", "cp /cfg/openclaw.json /state/openclaw.json"]
+          command:
+            - sh
+            - -c
+            - |
+              cp /cfg/openclaw.json /state/openclaw.json
+              rm -f /state/openclaw.json.last-good /state/openclaw.json.bak*
           volumeMounts:
             - { name: cfg, mountPath: /cfg }
             - { name: data, mountPath: /state }
