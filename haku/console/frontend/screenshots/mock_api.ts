@@ -88,6 +88,15 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
+  // Push is configured on this console, and one *other* device is enrolled — the two facts the
+  // Notifications section exists to show. The headless browser has no real subscription, so
+  // "this browser" renders Off; a second device proves the per-device list renders.
+  if (url.includes("/api/push/config")) return jsonResponse({ application_server_key: "BEl62iUYgUivxIkv69yViEuiBIa" });
+  if (url.includes("/api/push/subscriptions")) {
+    return jsonResponse([
+      { endpoint: "https://push.example/phone", user_agent: "Pixel 9 · Chrome", created_at: "2026-07-18T09:00:00Z" },
+    ]);
+  }
   // Far enough out that the shell's session warning stays hidden; `session-expiring` drives the
   // warned state through ShellChrome props instead, so every other scene renders the calm rail.
   if (url.includes("/auth/me")) {
