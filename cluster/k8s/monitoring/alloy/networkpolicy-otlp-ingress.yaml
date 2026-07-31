@@ -10,14 +10,6 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow OTLP/HTTP from OpenClaw gateway pod.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: openclaw-gateway
-      ports:
-        - port: 4318
-          protocol: TCP
     # Allow OTLP/HTTP from Authentik embedded outpost (proxies external clients).
     - from:
         - namespaceSelector:

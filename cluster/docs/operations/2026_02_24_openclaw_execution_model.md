@@ -2,10 +2,11 @@
 
 **Date**: 2026-02-24
 
-> Historical note: this architecture was retired on 2026-07-15. OpenClaw now
-> sets `tools.exec.security: deny`; the node/direct-exec bridge and Airlock
-> approval integration no longer exist. See
-> <../openclaw_command_execution.md> for the current contract.
+> Historical note: this architecture was retired on 2026-07-15, and the OpenClaw
+> gateway it describes was deleted entirely on 2026-07-31 along with the whole
+> OpenShell stack. Kept as a dated record of how it worked, not as current
+> documentation. The agent that replaced it is `public-coder-agent`; the
+> reasoning is in `plans/personal_agents/verdicts.md`.
 
 ## Three Exec Host Modes
 

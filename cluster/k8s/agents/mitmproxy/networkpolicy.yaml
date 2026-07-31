@@ -17,8 +17,6 @@ spec:
                 operator: In
                 values:
                   - claude-sandbox
-                  - openclaw-sandbox
-                  - openclaw-gateway
       ports:
         - port: 8080
           protocol: TCP

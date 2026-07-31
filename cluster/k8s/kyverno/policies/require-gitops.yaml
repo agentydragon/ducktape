@@ -67,10 +67,6 @@ spec:
           # Allow operators that create child workloads from CRs deployed via GitOps
           - subjects:
               - kind: ServiceAccount
-                name: openclaw-operator
-                namespace: openclaw-operator
-          - subjects:
-              - kind: ServiceAccount
                 name: monitoring-operator
                 namespace: monitoring
           - subjects:

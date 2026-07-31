@@ -1,5 +1,5 @@
 # Fetches the InvenTree admin API token and writes it to the inventree namespace.
-# An ESO ClusterExternalSecret (token-eso.yaml) mirrors the Secret to openclaw-sandbox
+# An ESO ClusterExternalSecret (token-eso.yaml) mirrors the Secret to claude-sandbox
 # and claude-sandbox.
 # Script is baked into the InvenTree token-provisioner image via Bazel.
 apiVersion: batch/v1

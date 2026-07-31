@@ -2,48 +2,42 @@ version: 1
 metadata:
   name: SSO - OpenClaw
   labels:
-    blueprints.goauthentik.io/description: "OpenClaw proxy provider, application, and outpost"
+    blueprints.goauthentik.io/description: "Tombstone: removes the retired OpenClaw proxy provider, application, and policy bindings"
 
+# CLEANUP(added 2026-07-31): delete this file once Authentik shows no `openclaw`
+#   application or proxy provider across several worker reconciles (the worker
+#   re-applies blueprints hourly, so allow at least two).
+#
+# The OpenClaw gateway was deleted along with the whole OpenShell stack — the
+# instance was unused and wedged, and `public-coder-agent` is the reference
+# agent now. Removing the `state: present` entries alone would not remove
+# anything from Authentik; only these `state: absent` entries do.
+#
+# Order matters: the policy bindings reference the application, and the
+# application references the provider, so they are torn down innermost-first.
 entries:
-  - model: authentik_providers_proxy.proxyprovider
-    id: openclaw-provider
-    state: present
-    identifiers:
-      name: openclaw
-    attrs:
-      external_host: "https://openclaw.allegedly.works"
-      internal_host: "http://openclaw.openclaw-gateway.svc.cluster.local:18789"
-      mode: proxy
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      access_token_validity: "hours=1"
-
-  - model: authentik_core.application
-    id: openclaw-app
-    state: present
-    identifiers:
-      slug: openclaw
-    attrs:
-      name: OpenClaw
-      provider: !KeyOf openclaw-provider
-      meta_description: "OpenClaw AI Agent"
-      meta_icon: "https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/pixel-lobster.svg"
-      meta_launch_url: "https://openclaw.allegedly.works"
-      open_in_new_tab: true
-
-  - model: authentik_policies.policybinding
-    state: present
-    identifiers:
-      target: !KeyOf openclaw-app
-      user: !Find [authentik_core.user, [username, agentydragon]]
-      order: 0
-
-  # CLEANUP(added 2026-07-26): Remove after the old admin-group binding is
-  # confirmed absent in Authentik across multiple blueprint reconciles.
   - model: authentik_policies.policybinding
     state: absent
     identifiers:
-      target: !KeyOf openclaw-app
+      target: !Find [authentik_core.application, [slug, openclaw]]
+      user: !Find [authentik_core.user, [username, agentydragon]]
+      order: 0
+
+  # Superseded binding from the 2026-07-26 cleanup; it may already be gone, and
+  # an absent entry for a missing object is a no-op.
+  - model: authentik_policies.policybinding
+    state: absent
+    identifiers:
+      target: !Find [authentik_core.application, [slug, openclaw]]
       group: !Find [authentik_core.group, [name, authentik Admins]]
       order: 0
+
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: openclaw
+
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
+    identifiers:
+      name: openclaw

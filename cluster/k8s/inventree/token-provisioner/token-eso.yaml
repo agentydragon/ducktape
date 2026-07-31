@@ -30,7 +30,6 @@ metadata:
   name: inventree-api-token
 spec:
   namespaces:
-    - openclaw-sandbox
     - claude-sandbox
   externalSecretSpec:
     refreshInterval: 1m
