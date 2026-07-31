@@ -19,6 +19,14 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
       through mitmproxy unconditionally — a stricter posture giving full
       audit but losing the in-cluster bypass escape hatch.
 
+## OpenClaw secrets
+
+- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
+- [ ] Re-home the four retained OpenClaw-era credentials into
+      `agents/shared-secrets/` so the two workload-free namespaces can go. Needs
+      the cluster age key: each document pins its namespace in `metadata`, which
+      the MAC covers. See `agents/openclaw/README.md`.
+
 ## Stale `openclaw-sandbox` reflector targets in shared secrets
 
 Two SOPS-encrypted Secrets still name the deleted `openclaw-sandbox` namespace in

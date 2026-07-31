@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openclaw-gateway
+  annotations:
+    description: >-
+      Retained only to hold the OpenClaw-era API keys and bot token, whose SOPS
+      documents pin this namespace. No workloads run here since the
+      OpenClaw/OpenShell teardown on 2026-07-31.
+  labels:
+    name: openclaw-gateway
+    # No workloads, so nothing for Goldilocks to right-size.
+    goldilocks.fairwinds.com/enabled: "false"

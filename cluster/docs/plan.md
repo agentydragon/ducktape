@@ -43,8 +43,11 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   (`plans/personal_agents/findings/` F3), and `public-coder-agent` is now the
   reference agent — same OpenClaw image, plain Deployment, `sandbox.mode: "off"`.
   The `ghcr.io/agentydragon/openclaw` ImageRepository/ImagePolicy are deliberately
-  **kept**: that image is what `public-coder-agent` runs. Rationale and the
-  evaluated alternatives: `plans/personal_agents/verdicts.md`.
+  **kept**: that image is what `public-coder-agent` runs. The `openclaw-gateway`
+  and `openclaw-sandbox` namespaces also survive, holding only the unique
+  credentials (Anthropic/OpenAI keys, Telegram bot token, IBKR Flex) whose SOPS
+  documents pin those namespaces — see `agents/openclaw/README.md`. Rationale and
+  the evaluated alternatives: `plans/personal_agents/verdicts.md`.
 - **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
   currently used.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
