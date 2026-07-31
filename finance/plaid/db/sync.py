@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -23,6 +25,8 @@ from plaid.model.transactions_get_request_options import TransactionsGetRequestO
 from finance.plaid.db.link_profiles import Product, syncs_investment_transactions
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
 from finance.plaid.db.secret_store import SecretStore
+
+logger = logging.getLogger(__name__)
 
 
 class PlaidRequestLike(Protocol):
@@ -83,11 +87,23 @@ async def sync_all(
     trigger: str = "cron",
     windows: SyncWindows | None = None,
 ) -> list[UUID]:
+    """Sync every active link; one link's failure must not starve the links after it."""
     sync_windows = windows or SyncWindows()
-    return [
-        await sync_link(api=api, storage=storage, secrets=secrets, link=link, trigger=trigger, windows=sync_windows)
-        for link in await storage.list_active_links()
-    ]
+    run_ids: list[UUID] = []
+    failures: list[Exception] = []
+    for link in await storage.list_active_links():
+        try:
+            run_ids.append(
+                await sync_link(
+                    api=api, storage=storage, secrets=secrets, link=link, trigger=trigger, windows=sync_windows
+                )
+            )
+        except Exception as exc:
+            logger.exception("sync failed for item %s (%s)", link.item_id, link.institution_name)
+            failures.append(exc)
+    if failures:
+        raise ExceptionGroup(f"{len(failures)} link sync(s) failed", failures)
+    return run_ids
 
 
 async def sync_link(
@@ -190,18 +206,26 @@ async def _sync_link_inner(
             )
 
     if Product.LIABILITIES.value in link.products_requested:
-        liabilities = await _call(
-            api,
-            storage,
-            run_id,
-            "liabilities/get",
-            api.liabilities_get,
-            LiabilitiesGetRequest(access_token=access_token),
-            link.item_id,
-        )
-        await storage.append_liability_snapshots(
-            item_id=link.item_id, liabilities=liabilities.get("liabilities") or {}, captured_at=captured_at
-        )
+        try:
+            liabilities = await _call(
+                api,
+                storage,
+                run_id,
+                "liabilities/get",
+                api.liabilities_get,
+                LiabilitiesGetRequest(access_token=access_token),
+                link.item_id,
+            )
+        except PlaidApiException as exc:
+            if _plaid_error_code(exc) != "NO_LIABILITY_ACCOUNTS":
+                raise
+            # The item currently has no liability accounts (e.g. its last card or loan was
+            # closed); Plaid 400s instead of returning an empty set. Nothing to snapshot.
+            logger.warning("liabilities/get: item %s has no liability accounts; skipping", link.item_id)
+        else:
+            await storage.append_liability_snapshots(
+                item_id=link.item_id, liabilities=liabilities.get("liabilities") or {}, captured_at=captured_at
+            )
 
 
 async def _fetch_transactions(
@@ -314,9 +338,17 @@ def _request_json(request: PlaidRequestLike) -> dict[str, Any]:
 
 
 def _plaid_error_code(exc: Exception) -> str | None:
-    if isinstance(exc, PlaidApiException) and exc.status is not None:
-        return str(exc.status)
-    return None
+    """Plaid's machine-readable error_code (e.g. NO_LIABILITY_ACCOUNTS), or the HTTP status."""
+    if not isinstance(exc, PlaidApiException):
+        return None
+    try:
+        parsed = json.loads(exc.body)
+    except (TypeError, ValueError):
+        # Body absent or not JSON — not a structured Plaid error; fall through to the status.
+        parsed = None
+    if isinstance(parsed, dict) and isinstance(code := parsed.get("error_code"), str):
+        return code
+    return str(exc.status) if exc.status is not None else None
 
 
 def _extract_request_id(response: dict[str, Any]) -> str | None:
