@@ -45,9 +45,10 @@ that the controller can proceed on the healthy nodes.
 Cost: up to 3 nodes briefly without log shipping during a rollout. Promtail
 resumes from its positions file, so that is a freshness gap, not lost logs.
 
-This value is **not enforced by any test** and must be updated when the roaming
-node count changes. `SYNC(roaming-node-count)` markers are in
-<../../README.md> § Node Types and <../mesh_membership.md>.
+`//cluster/validation:test_roaming_daemonset_capacity` enforces the relation,
+deriving the roaming count from `nebula-mesh.json` (`role: "laptop"`) rather than
+trusting a comment. Its one remaining gap is coverage: a new roaming DaemonSet
+must be added to that test's list, or it is unprotected.
 
 ## Generalization
 

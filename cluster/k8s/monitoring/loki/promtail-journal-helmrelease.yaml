@@ -37,19 +37,10 @@ spec:
       - effect: NoSchedule
         operator: Exists
 
-    # SYNC(roaming-node-count): 2 roaming nodes (rugged, iguana) + 1 rollout slot.
-    # Kept identical to promtail-helmrelease.yaml — see the full rationale there.
-    # Update when the roaming node count changes; cluster/README.md § Node Types
-    # and cluster/docs/mesh_membership.md carry the matching SYNC marker.
-    #
-    # This DaemonSet is *more* exposed than the pod-log one, not less: its
-    # nodeSelector is NixOS-only, and two of the three NixOS nodes (rugged,
-    # iguana) are the roaming laptops. With the chart default maxUnavailable: 1 a
-    # single offline laptop deadlocks the rollout. It has not deadlocked yet only
-    # because its last change happened while those nodes were up.
-    #
-    # 3 exceeds the desired count here (Kubernetes clamps it), which is the
-    # intended effect: no roaming node should ever gate a journal rollout.
+    # Same rollout deadlock as promtail-helmrelease.yaml, and worse here: the
+    # nodeSelector above is NixOS-only, so two of the three candidate nodes are
+    # the roaming laptops. Exceeding the desired count is intended — Kubernetes
+    # clamps it, and no roaming node should ever gate a journal rollout.
     updateStrategy:
       type: RollingUpdate
       rollingUpdate:

@@ -10,9 +10,9 @@ Found 2026-07-31 with `maxUnavailable: 1` and two roaming nodes offline:
 `0 out of 9 new pods have been updated`, for an hour, with no failing signal
 anywhere. See cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
 
-This replaces the SYNC(roaming-node-count) comments' honour system with an actual
-assertion, so adding a third laptop fails here instead of silently breaking the
-next promtail rollout.
+This is what makes adding a third laptop fail here instead of silently breaking
+the next promtail rollout, so the docs point at it rather than restating the
+relation.
 """
 
 from __future__ import annotations

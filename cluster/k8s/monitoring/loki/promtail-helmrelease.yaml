@@ -23,27 +23,11 @@ spec:
         namespace: flux-system
       interval: 12h
   values:
-    # SYNC(roaming-node-count): 2 roaming nodes (rugged, iguana) + 1 rollout slot.
-    # Update when the roaming node count changes — see cluster/README.md § Node
-    # Types and cluster/docs/mesh_membership.md, which both carry the matching
-    # SYNC marker. The sibling promtail-journal-helmrelease.yaml has the same
-    # setting for the same reason.
-    #
-    # Why: a DaemonSet with the chart default maxUnavailable: 1 deadlocks
-    # whenever a roaming node is offline. Its pod is deleted at rollout start and
-    # can never terminate (no kubelet), so it consumes the entire unavailable
-    # budget and the controller never advances to the healthy nodes. Observed
-    # 2026-07-31: `0 out of 9 new pods have been updated` for an hour, with
-    # rugged and iguana both NotReady, silently leaving every node on the old
-    # config while the HelmRelease reported success.
-    #
-    # `upgrade.disableWait: true` above does NOT cover this — it stops *Helm*
-    # waiting on those pods, but the DaemonSet controller's rollout gating is a
-    # separate mechanism.
-    #
-    # Cost: up to 3 nodes briefly without log shipping during a rollout.
-    # Promtail resumes from its positions file, so that is a freshness gap, not
-    # lost logs.
+    # Must exceed the roaming-node count, or an offline laptop's undeletable pod
+    # holds the whole unavailable budget and the rollout deadlocks silently.
+    # Enforced by //cluster/validation:test_roaming_daemonset_capacity (which
+    # derives the count from nebula-mesh.json); incident write-up in
+    # cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md.
     updateStrategy:
       type: RollingUpdate
       rollingUpdate:

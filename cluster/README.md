@@ -51,13 +51,10 @@ join/leave the cluster frequently. `rugged` has taint
 `node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
 require persistent availability on roaming nodes.
 
-**SYNC(roaming-node-count):** changing how many roaming nodes exist (currently 2 —
-`iguana`, `rugged`) also requires updating `maxUnavailable` to _roaming count + 1_
-in `k8s/monitoring/loki/promtail-helmrelease.yaml` and
-`k8s/monitoring/loki/promtail-journal-helmrelease.yaml`. An offline roaming node
-holds a DaemonSet's unavailable budget forever — its pod can never terminate — so
-too small a value deadlocks the rollout while the HelmRelease still reports
-success. See <docs/mesh_membership.md> § SYNC(roaming-node-count).
+Changing how many roaming nodes exist also requires raising `maxUnavailable` on
+the DaemonSets that schedule onto them — `//cluster/validation:test_roaming_daemonset_capacity`
+fails with the details when it doesn't. See <docs/mesh_membership.md> § Roaming
+k8s nodes.
 
 Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`)
 lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
