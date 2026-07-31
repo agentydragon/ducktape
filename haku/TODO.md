@@ -223,7 +223,7 @@ the runtimes differ in where the sandbox runs — see
   `haku-state` for replayability. Prefer `OTEL_LOG_RAW_API_BODIES=file:<dir>` over
   parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join key
   back to the Loki events — see
-  [`transcript_collection.md`](../devinfra/claude/plans/transcript_collection.md) section *Raw API bodies*.
+  [`transcript_collection.md`](../devinfra/claude/plans/transcript_collection.md) section _Raw API bodies_.
 - **A memory-flush trigger.** Nothing currently nudges Haku to write durable notes
   into `haku-state` before compaction — it runs on model goodwill, unlike OpenClaw's
   pre-compaction flush (a silent turn reminding the agent to save to memory files).

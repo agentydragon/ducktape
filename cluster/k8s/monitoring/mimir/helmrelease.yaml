@@ -83,6 +83,16 @@ spec:
           max_global_series_per_user: 0
           ingestion_rate: 100000
           ingestion_burst_size: 500000
+          # Mimir defaults this to 20; kube-prometheus-stack's `node-exporter`
+          # group ships 26 alerts, so the whole group was rejected on every sync
+          # (`per-user rules per rule group limit (limit: 20 actual: 26)
+          # exceeded`) and silently never loaded — costing all the node-level
+          # alerts: NodeFilesystem{SpaceFillingUp,AlmostOutOfSpace,...},
+          # NodeRAID{Degraded,DiskFailure}, NodeClock*, NodeFileDescriptorLimit.
+          # Every other group stayed under the limit and evaluated fine, so the
+          # only symptom was a 5-minutely error in the Alloy log.
+          # Headroom, not unlimited (0 disables), so a runaway group still trips.
+          ruler_max_rules_per_rule_group: 60
 
     # --- Component replicas (minimal for small cluster) ---
     # All pinned to the OVH kimsufi workers. No CP tolerations — workers only.

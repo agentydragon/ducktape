@@ -109,4 +109,4 @@ All three Claude Code OTel legs are now accounted for:
 The logs leg was working all along; it only looked doubtful because the apiserver
 proxy path to Loki is broken (above). Raw-body truncation behaviour and the
 lossless file-mode alternative:
-[`transcript_collection.md`](../../../devinfra/claude/plans/transcript_collection.md) section *Raw API bodies*.
+[`transcript_collection.md`](../../../devinfra/claude/plans/transcript_collection.md) section _Raw API bodies_.
