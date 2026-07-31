@@ -23,6 +23,38 @@ js_library(
 # A request-side registry entry (the tool's zod arguments schema + a renderer over its parsed
 # value) plus the definePreview/renderPreview helpers. Leaf like :variant, so index.tsx and
 # every widget import it without a cycle.
+# Leaf: no imports at all, so both the React widget registry and the React-free action registry
+# can key off the same server ids.
+js_library(
+    name = "server_ids",
+    srcs = ["server_ids.ts"],
+)
+
+# Deliberately React-free — the service worker bundles it to describe push notifications. Depends
+# only on the generated schema catalog and the server ids.
+js_library(
+    name = "actions",
+    srcs = ["actions.ts"],
+    deps = [
+        ":server_ids",
+        "//:node_modules/zod",
+        "//haku/console/frontend:mcp_tool_schema",
+        "//haku/console/frontend/tool_rendering/kubectl:schemas",
+        "//haku/console/frontend/tool_rendering/tana:schemas",
+    ],
+)
+
+js_library(
+    name = "actions_test",
+    testonly = True,
+    srcs = ["actions.test.ts"],
+    deps = [
+        ":actions",
+        ":server_ids",
+        "//:node_modules/vitest",
+    ],
+)
+
 js_library(
     name = "entry",
     srcs = ["entry.tsx"],
@@ -70,6 +102,7 @@ js_library(
         ":call_entry",
         ":entry",
         ":result_entry",
+        ":server_ids",
         ":variant",
         "//:node_modules/react",
         "//:node_modules/zod",

@@ -28,7 +28,7 @@ import asyncio
 import base64
 import datetime
 import logging
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import httpx
@@ -40,11 +40,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from haku.console.config import WebPushConfig
+from haku.console.config import WebPushConfig, tool_call_console_url
 from haku.console.database_schema import PushSubscription
 from haku.console.tool_calls import ToolCallRecord, ToolCallStatus
 
 logger = logging.getLogger(__name__)
+
 
 # How long a push service should hold an undelivered message. A pending approval is a live
 # request someone is waiting on, not a bulletin: a phone that has been off for an hour should
@@ -61,12 +62,22 @@ _BODY_MAX_CHARS = 240
 
 
 class PushShow(BaseModel):
-    """Render (or replace) the notification for one pending tool call."""
+    """Render (or replace) the notification for one pending tool call.
+
+    The call's identity and arguments travel raw rather than pre-rendered: the service worker
+    describes it through the same registry the approvals card uses
+    (`frontend/tool_rendering/actions.ts`), so a notification reads "Gmail: Draft email" instead
+    of "gmail · drafts_create" and the two surfaces cannot drift into different phrasings for the
+    same call. The payload is encrypted to the subscription, so this exposes nothing the operator's
+    own browser would not already show.
+    """
 
     kind: Literal["show"] = "show"
     tool_call_id: str
-    title: str
-    body: str
+    server_id: str
+    tool_name: str
+    arguments: dict[str, Any]
+    rationale: str
     url: str = Field(description="Console deep link the notification opens when tapped.")
 
 
@@ -186,12 +197,9 @@ class PostgresPushSubscriptionStore:
                 subscription.last_failure_at = datetime.datetime.now(tz=datetime.UTC)
 
 
-def _notification_title(record: ToolCallRecord) -> str:
-    return record.title or f"{record.server_id} · {record.tool_name}"
-
-
 def _notification_body(record: ToolCallRecord) -> str:
-    body = record.rationale.strip() or f"{record.tool_name} is waiting for your approval."
+    """The rationale, trimmed to what a notification shade will actually show."""
+    body = record.rationale.strip() or record.title or "Waiting for your approval."
     return body if len(body) <= _BODY_MAX_CHARS else f"{body[: _BODY_MAX_CHARS - 1]}…"
 
 
@@ -231,9 +239,11 @@ class WebPushApprovalNotifier:
             operator_id,
             PushShow(
                 tool_call_id=record.tool_call_id,
-                title=_notification_title(record),
-                body=_notification_body(record),
-                url=f"{self._console_base_url}/_console/tool-calls/{record.tool_call_id}",
+                server_id=record.server_id,
+                tool_name=record.tool_name,
+                arguments=record.arguments,
+                rationale=_notification_body(record),
+                url=tool_call_console_url(self._console_base_url, record.tool_call_id),
             ),
         )
 

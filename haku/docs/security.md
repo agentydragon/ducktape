@@ -98,10 +98,21 @@ live source reads). Channels out, and what fences each:
    litmus test for console code: _does it hold a secret, perform a privileged action, or
    define the trust boundary?_ If not, it belongs to Haku.
 4. Consent moments happen on trusted top-level/top-layer shell surfaces only (the capability
-   confirm, the approval drawer for MCP tool calls and geolocation grants, and the `openLink`
-   off-whitelist confirm). Never move a confirm into agent-embeddable chrome; a persistent "trust
+   confirm, the approval drawer for MCP tool calls and geolocation grants, the `openLink`
+   off-whitelist confirm, and the OS notification the console's own service worker renders for a
+   pending tool call). Never move a confirm into agent-embeddable chrome; a persistent "trust
    badge" is not a control — and the console panel that withdraws a grant is not one either (it only
    reduces privilege).
+   The Web Push notification qualifies on the same terms as the others, and only on those terms:
+   the OS renders it, its Approve/Deny buttons are defined in reviewed console code
+   (`haku/console/frontend/sw.ts`), and acting on one is a same-origin credentialed fetch to
+   `POST /api/tool-calls/{id}/decision` under the operator's own Authentik session. The push
+   message itself carries no authority — intercepting one approves nothing. This is precisely why
+   approval notifications may not be delegated to a third-party notification service (ntfy,
+   Telegram, …) with action buttons: those would have to carry a deciding credential inside a
+   message on a server outside the trust boundary. Notification _body_ text is agent-influenced
+   (a tool call's title and rationale), which is acceptable because it is display-only — but the
+   buttons must never be derived from it.
 5. The `openLink` host whitelist lives in the shell (ducktape), never in haku-state.
 6. **The console stays the outer window.** Do not make haku-ui top-level: exfiltration
    containment (navigation channel above) depends on the embedding. Evaluated and rejected

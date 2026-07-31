@@ -7,15 +7,23 @@ package(default_visibility = ["//visibility:public"])
 # ../BUILD.bazel for the tree's shape).
 
 js_library(
+    name = "schemas",
+    srcs = ["schemas.ts"],
+    deps = ["//:node_modules/zod"],
+)
+
+js_library(
     name = "requests",
     srcs = ["requests.tsx"],
     deps = [
+        ":schemas",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
         "//haku/console/frontend/tool_rendering:entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )

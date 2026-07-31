@@ -16,3 +16,10 @@ The narrow `hostexec` exception is always operator-approved: node daemons initia
 outbound authenticated session to haku-console, and Settings surfaces their heartbeat-derived
 connection state. A daemon routing credential cannot authorize execution; every command still
 requires the approving operator's short-lived per-host Authentik authority.
+
+A tool call waiting on approval can reach the operator when the console is closed. Browsers
+enrolled from Settings → Notifications receive a Web Push notification carrying Approve and Deny,
+and it is retracted once the call leaves the queue by any route, so a stale notification never
+offers a decision that has already been made. The notification changes where the operator is
+asked, never who may answer: deciding from one is the operator's own authenticated session
+acting on the console's ordinary approval endpoint, so a push in transit authorizes nothing.

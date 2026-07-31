@@ -47,7 +47,7 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
-from haku.console.config import Settings
+from haku.console.config import Settings, tool_call_console_url
 from haku.console.mcp_approval import (
     DegradedReflection,
     DegradedServerState,
@@ -151,7 +151,7 @@ class ToolCallPromise(BaseModel):
 
     status: ToolCallStatus
     tool_call_id: str
-    url: str | None = Field(default=None, description="Operator-facing link to approve this call.")
+    url: str = Field(description="Operator-facing console link that opens this call for approval.")
     message: str
 
 
@@ -159,7 +159,7 @@ class ToolCallView(BaseModel):
     """A tool-call record plus its operator-facing deep link, for the read tools."""
 
     call: ToolCallRecord
-    url: str | None = None
+    url: str
 
 
 class StaticBearerAuthStatus(BaseModel):
@@ -242,10 +242,13 @@ class ApprovalRequestEnvelope(BaseModel):
     )
 
 
-def _tool_call_url(settings: Settings, tool_call_id: str) -> str | None:
-    if settings.ui_base_url is None:
-        return None
-    return f"{settings.ui_base_url.rstrip('/')}/tool-calls/{tool_call_id}"
+def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
+    """The console link handed to an agent whose call became a promise.
+
+    Shares one definition with the push notification's deep link so an operator following either
+    lands in the same place — the approvals drawer with this call expanded.
+    """
+    return tool_call_console_url(settings.public_base_url, tool_call_id)
 
 
 def _passive_server_connection_statuses(
@@ -346,13 +349,12 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
             return _failed_result(f"withdrawn: {record.withdrawal_reason or 'no reason given'}", result_meta)
         case ToolCallStatus.PENDING_APPROVAL | ToolCallStatus.RUNNING:
             url = _tool_call_url(settings, record.tool_call_id)
-            approve = f" Open {url} to approve." if url else ""
             promise = ToolCallPromise(
                 status=record.status,
                 tool_call_id=record.tool_call_id,
                 url=url,
                 message=(
-                    f"Sent for approval; pending as {record.tool_call_id}.{approve} "
+                    f"Sent for approval; pending as {record.tool_call_id}. Open {url} to approve. "
                     f"Poll get_tool_call('{record.tool_call_id}') for the result, or "
                     f"withdraw_tool_call('{record.tool_call_id}', reason) if you no longer want it."
                 ),

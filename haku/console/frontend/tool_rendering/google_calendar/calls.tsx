@@ -26,7 +26,5 @@ function CreateEventCall({
 
 /** Combined pending/finished widgets for the `google_calendar` server. */
 export const googleCalendarCallPreviews = {
-  create_event: defineCallPreview(zCreateCalendarEventArgs, zCreateEventResult, CreateEventCall, (args) => ({
-    text: args.recurrence?.length ? "Google Calendar: Create recurring event" : "Google Calendar: Create event",
-  })),
+  create_event: defineCallPreview(zCreateCalendarEventArgs, zCreateEventResult, CreateEventCall),
 } satisfies Record<string, ToolCallPreview>;

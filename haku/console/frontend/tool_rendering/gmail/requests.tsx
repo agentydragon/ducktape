@@ -26,6 +26,7 @@ import { MailIcon } from "../../icons.tsx";
 import { ExternalLink } from "../../link.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
+import { GMAIL_SERVER_ID } from "../server_ids.ts";
 import {
   COMPACT_ITEM_LIMIT,
   firstLines,
@@ -36,8 +37,6 @@ import {
   PreviewTitle,
   type PreviewProps,
 } from "../vocabulary.tsx";
-
-export const GMAIL_SERVER_ID = "gmail";
 
 const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
 export const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
@@ -278,12 +277,8 @@ function SearchGmailThreadsPreview({ args }: PreviewProps<SearchGmailThreadsArgs
  * remaining read tools (`labels_list`, `filters_list`, `drafts_list`, …) have no entry either —
  * their args are empty or self-descriptive, so the raw-JSON fallback serves. */
 export const gmailPreviews = {
-  threads_modify_labels: definePreview(zModifyGmailThreadLabelsArgs, ModifyGmailThreadLabelsPreview, (a) => ({
-    text: `Gmail: Relabel ${plural(a.thread_ids.length, "thread")}`,
-  })),
-  threads_get: definePreview(zGetGmailThreadArgs, GetGmailThreadPreview, () => ({ text: "Gmail: Get thread" })),
-  threads_list: definePreview(zSearchGmailThreadsArgs, SearchGmailThreadsPreview, () => ({
-    text: "Gmail: Search threads",
-  })),
-  messages_get: definePreview(zGetGmailMessageArgs, GetGmailMessagePreview, () => ({ text: "Gmail: Get message" })),
+  threads_modify_labels: definePreview(zModifyGmailThreadLabelsArgs, ModifyGmailThreadLabelsPreview),
+  threads_get: definePreview(zGetGmailThreadArgs, GetGmailThreadPreview),
+  threads_list: definePreview(zSearchGmailThreadsArgs, SearchGmailThreadsPreview),
+  messages_get: definePreview(zGetGmailMessageArgs, GetGmailMessagePreview),
 } satisfies Record<string, ToolPreview>;

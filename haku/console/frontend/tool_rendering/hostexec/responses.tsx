@@ -11,7 +11,7 @@ import { CodeBlock } from "../../code_block.tsx";
 import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewVariant } from "../vocabulary.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { HOSTEXEC_SERVER_ID } from "./requests.tsx";
+import { HOSTEXEC_SERVER_ID } from "../server_ids.ts";
 
 const zBashResult = mcpToolResultSchema(HOSTEXEC_SERVER_ID, "bash");
 

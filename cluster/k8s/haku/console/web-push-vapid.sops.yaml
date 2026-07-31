@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: haku-console-web-push-vapid
+    namespace: haku-console
+    annotations:
+        description: 'VAPID (RFC 8292) private key that identifies haku-console to browser push services. The console signs every Web Push notification of a pending tool-call approval with it; the public half is derived from this key and handed to each browser at subscribe time, which binds it to that subscription. Rotating this key therefore invalidates every stored push_subscriptions row and each device must re-subscribe from console Settings -> Notifications. Not an authorization credential: a push is a prompt to decide, and the decision still goes through the approving operator''s own Authentik session. Lives in haku-console (NOT haku-sandbox) like every other console secret, so Haku cannot read it. Rotate with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and re-sops this file. See haku/console/web_push.py.'
+type: Opaque
+stringData:
+    private-key-pem: ENC[AES256_GCM,data:IDJ5/8a6+8NIpYMuqtdIk9gDliKXeF+mzFGwHQaChzZt5lnPUSw1ro+A4eCqS8q+iBpdEkydT9T/WJ6Gr7jdK3WcLewIIYZIs06ecDmfRSnm50zN+dy4dLR6Qmwp1eVzF+vog8cnA84GpqMht8LHm8jD/emcb4cOApOpLqGTGmtO8thEqmRPrJHTxsGbGDjqrJZrIz3TL3cK13OeTY71owrmKbsQ2/bPOgaZQvjTRgnlg+xHMtaB3ySx8m6qx1ZwVxJnlDuF/re8WIs7eBqjpGdb+qu3AZ+gSEa/yegkpl3ROCJIMNXVbNxu3p74xQYAwQ==,iv:srszOA+RlEH7WBu5XGRWkxEIpj2/OF7QtCi0MK5Cy54=,tag:VXwFVn2EqDnHiOhtzbgY8w==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWMExEZ0pxMUY2SytwZktp
+            dmlNck5JWmk4ZUR1blBidWtrQnRtczZyczFZCi9MUXFjTEFzNjhtSWsxdWJNVnQ2
+            S1FBeE5rTXNyeVhpY1pLeGF1TDdxNVkKLS0tIGlJc2ZrQzhwTktSa0x3MWdHTFpy
+            YStVYjdvY2NYK2t3UkdWZG9pdDVzS2MKXEa34DgP/P3HMtPe15+x9YpuIKixYk/T
+            f3os+36UkGeCq7xcMidO8oeBuEA4kNLaR0gV2iXVStw2O20p47VMJg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxTVROTnU5Nzd4d3RKb3pk
+            T3NkL0p2SXhXOWc4c21FSHc4Vml6NzdSQjJNClhsNFhleGlGQjJPMi9CQlVVa0h0
+            ZzE3bjJENUZKTElYbG5JUjJBRkcrcGMKLS0tIGpsbWsrNzFDMGlTNjEvME9XdU4z
+            N1Qxa21ScU9hQVJNY0NlN3hJcnRvMGsKrN8s2AZccBf9YQRwuyKLug3P61AT6uJ8
+            o9xc/ASS1MOzJQ4pdd4v2PFtdo3RI8x3lpA8yqeY/Nmt2oBPPHgdmA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-07-31T05:12:34Z"
+    mac: ENC[AES256_GCM,data:JzPVsvX0r3/OvwoFY1TLVjGuLJIvRQ3tXYuEBgjQZYKjWASrGJrCTwlOZbO9HmtkhpmqK1TEYcQ6qzWfSsRjvL+FsT7W3iPzSXFZXCCNRqKDHdew8SNtadJQJMwues+6AgmvoHnZUSACS1hD9DL0MdJvxLgeRa5prXJummnr+4o=,iv:93KD1QHC97jnJSjw2wkUcRiXxYXTy4GDqzpYTeRmYcw=,tag:URoh9wPE7HUVFRgjwXHLAw==,type:str]
+    version: 3.13.3

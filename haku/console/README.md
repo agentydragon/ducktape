@@ -386,6 +386,47 @@ traffic fills the `HISTORY_LIMIT` window. The same `auto_approved` parameter is 
 `ToolCallApplicationService.list_tool_calls` to the agent-facing MCP `list_tool_calls` tool
 (`mcp_server.py`), so an agent reviewing its own call history can filter the same way.
 
+## Notifications — Web Push for pending approvals
+
+The console's event socket keeps open tabs current, but it reaches nobody when no browser has the
+console loaded — which is exactly when a queued call most needs to find the operator. **Web Push**
+covers that gap: the operator turns notifications on per browser in Settings → Notifications, and
+the console pushes an OS notification carrying **Approve** / **Deny** whenever a call enters the
+queue. Server half: `web_push.py` (delivery) plus `push_routes.py` (`/api/push/*`, subscriptions).
+Browser half: `frontend/sw.ts` (the service worker) plus `frontend/push_subscription.ts`.
+
+**No new authority.** A push is a prompt to decide, never the decision. The notification's buttons
+are defined in the console's own service worker and act through the ordinary
+`POST /api/tool-calls/{id}/decision`, as a same-origin credentialed fetch under the operator's
+Authentik session — the same endpoint and the same guard as a click in the approvals drawer.
+Intercepting a push therefore grants nothing. This is also why notifications go through Web Push
+from the console's own origin rather than a notification service (ntfy, Telegram) with action
+buttons: those would have to carry a deciding credential inside a message on a third-party server,
+against <../docs/security.md> invariant #4.
+
+**Notifications are retracted, not left to rot.** `PendingApprovalNotifier` (a port on
+`ToolCallApplicationService`) fires when a call enters the queue and again on each of the three
+exits — denied, approved, withdrawn — so a notification on the phone stops offering buttons for a
+call that was already decided at the desk. Retraction happens at the _decision_, not at execution:
+the ask is settled the moment it is approved. A retraction replaces the notification in place with
+its outcome rather than silently closing it, because Chrome requires a `userVisibleOnly`
+subscription to show something per push and substitutes its own "site updated in the background"
+notice once an origin's push budget is spent showing nothing. Calls that never queue —
+auto-approved or born-denied — are never notified and so never retracted.
+
+Two operational notes:
+
+- **The VAPID keypair is the console's identity to every push service.** Only the private half is
+  configured (`HAKU_CONSOLE_WEB_PUSH__PRIVATE_KEY_PEM`, from `haku-console-web-push-vapid`); the
+  public half is derived at startup, so the two cannot drift apart. Rotating it invalidates every
+  stored subscription — each device must re-subscribe from Settings.
+- **Operator sessions are short** (`OPERATOR_SESSION_MAX_AGE_SECONDS`, one hour), so a notification
+  acted on hours later routinely outlives the session that would authorize it. The service worker
+  treats that 401 as expected and opens the console at the call's deep link
+  (`/_console/tool-calls/<id>`) to re-authenticate, rather than reporting a failure. Deciding from
+  the lock screen is therefore one tap while the session is fresh and two taps otherwise; shortening
+  that would mean revisiting the session lifetime, not the push plumbing.
+
 ## Layout
 
 | Path                               | Role                                                                                                                                                                                                                                                                   |
@@ -399,6 +440,8 @@ traffic fills the `HISTORY_LIMIT` window. The same `auto_approved` parameter is 
 | `agents/`                          | Canonical Agent domain: naming, enrollment contracts/routes/APIs, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                                 |
 | `mcp_auth/`                        | Haku-owned FastMCP composition adapter and exact-version contract tests; contains the single accepted private `_code_store` seam.                                                                                                                                      |
 | `console_events.py`                | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                     |
+| `web_push.py`                      | Web Push delivery of pending-approval notifications: the VAPID identity, the per-Operator subscription store, and the notifier that shows and retracts one call's notification.                                                                                        |
+| `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                            |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, reflection adapter, and operator OAuth linkage.                                                                                         |
 | `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                               |
 | `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                              |

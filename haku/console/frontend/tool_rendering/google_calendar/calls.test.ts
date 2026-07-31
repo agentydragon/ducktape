@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { describeCallAction, renderCallPreview } from "../call_entry.tsx";
+import { toolActionDescription } from "../actions.ts";
+import { renderCallPreview } from "../call_entry.tsx";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
 import { googleCalendarCallPreviews } from "./calls.tsx";
 
 const RECURRING_ARGS = {
@@ -57,9 +59,12 @@ describe("googleCalendarCallPreviews.create_event", () => {
   });
 
   it("describes recurring creation distinctly from a one-off event", () => {
-    expect(describeCallAction(googleCalendarCallPreviews.create_event, RECURRING_ARGS)?.text).toContain("recurring");
+    expect(toolActionDescription(GOOGLE_CALENDAR_SERVER_ID, "create_event", RECURRING_ARGS)?.text).toContain(
+      "recurring"
+    );
     expect(
-      describeCallAction(googleCalendarCallPreviews.create_event, { ...RECURRING_ARGS, recurrence: undefined })?.text
+      toolActionDescription(GOOGLE_CALENDAR_SERVER_ID, "create_event", { ...RECURRING_ARGS, recurrence: undefined })
+        ?.text
     ).not.toContain("recurring");
   });
 });

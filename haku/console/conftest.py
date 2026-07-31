@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import textwrap
 import time
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
@@ -29,7 +30,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
-from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings, WebPushConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
 from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
@@ -66,6 +67,19 @@ TEST_OPERATOR_OIDC = OperatorOidcConfig(
     session_secret=SecretStr(_TEST_SESSION_SECRET),
 )
 TEST_OPERATOR_IDENTITY = OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1")
+
+# A throwaway P-256 VAPID key, generated for these tests only. A VAPID keypair is an
+# application's identity to a browser push service, not a secret shared with anyone, so a
+# checked-in test key discloses nothing. Shared here because both the delivery tests and the
+# subscription-route tests need a console that has push configured.
+TEST_VAPID_PEM = textwrap.dedent("""\
+    -----BEGIN PRIVATE KEY-----
+    MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg24QW6LTvVznZN4jU
+    BILIbhfwLSMUn0cFYt1jFuT6upehRANCAAQo3F6m6cvV2kLzc0dUok0RtwqSjmpe
+    xyCRbeJXwDklyWC0XHraZH5zUtaFz3p5PIiJiw61hBbrvg2YoQzSDroL
+    -----END PRIVATE KEY-----
+    """)
+TEST_WEB_PUSH = WebPushConfig(private_key_pem=SecretStr(TEST_VAPID_PEM), subject="mailto:operator@example.com")
 
 
 def operator_session_cookie(

@@ -11,8 +11,7 @@ import { Field } from "../../field.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary.tsx";
-
-export const HAKU_ROUTINE_SERVER_ID = "haku_routine";
+import { HAKU_ROUTINE_SERVER_ID } from "../server_ids.ts";
 
 const zLaunchRoutineArgs = mcpToolSchema(HAKU_ROUTINE_SERVER_ID, "launch_routine");
 type LaunchRoutineArgs = z.infer<typeof zLaunchRoutineArgs>;
@@ -28,5 +27,5 @@ function LaunchRoutinePreview({ args, variant }: PreviewProps<LaunchRoutineArgs>
 }
 
 export const hakuRoutinePreviews = {
-  launch_routine: definePreview(zLaunchRoutineArgs, LaunchRoutinePreview, () => ({ text: "Haku: Start a new run" })),
+  launch_routine: definePreview(zLaunchRoutineArgs, LaunchRoutinePreview),
 } satisfies Record<string, ToolPreview>;

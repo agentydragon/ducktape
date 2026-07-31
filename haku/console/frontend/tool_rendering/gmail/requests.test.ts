@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { describeAction, renderPreview } from "../entry.tsx";
+import { toolActionDescription } from "../actions.ts";
+import { renderPreview } from "../entry.tsx";
+import { GMAIL_SERVER_ID } from "../server_ids.ts";
 import { gmailPreviews } from "./requests.tsx";
 
 describe("gmailPreviews", () => {
@@ -19,7 +21,9 @@ describe("gmailPreviews", () => {
     const relabelArgs = { thread_ids: ["t1"], add: ["Follow up"], remove: null };
 
     expect(renderPreview(gmailPreviews.threads_modify_labels, relabelArgs, "compact")).not.toBeNull();
-    expect(describeAction(gmailPreviews.threads_modify_labels, relabelArgs)?.text).toBe("Gmail: Relabel 1 thread");
+    expect(toolActionDescription(GMAIL_SERVER_ID, "threads_modify_labels", relabelArgs)?.text).toBe(
+      "Gmail: Relabel 1 thread"
+    );
   });
 
   it("returns null when threads_modify_labels args are malformed", () => {

@@ -1,3 +1,4 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
@@ -170,6 +171,37 @@ js_library(
         ":operator_login",
         "//:node_modules/react",
     ],
+)
+
+js_library(
+    name = "push_subscription",
+    srcs = ["push_subscription.ts"],
+    deps = [
+        ":client",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "sw_lib",
+    srcs = ["sw.ts"],
+    deps = ["//haku/console/frontend/tool_rendering:actions"],
+)
+
+# The service worker is bundled on its own, not as part of :bundle, because its URL must be
+# stable across deploys (a fingerprinted name would read as a different worker every build) and
+# it must be served from the docroot root so its default scope covers the whole origin. The
+# console image copies it to /sw.js; see //haku/console:service_worker_files.
+esbuild(
+    name = "service_worker",
+    entry_point = "sw.ts",
+    format = "esm",
+    minify = True,
+    output = "sw.js",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":sw_lib"],
 )
 
 js_library(
@@ -348,7 +380,7 @@ js_library(
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering:actions",
     ],
 )
 
@@ -437,6 +469,7 @@ js_library(
         ":link",
         ":mcp_status_client",
         ":open_external",
+        ":push_subscription",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -555,6 +588,7 @@ filegroup(
         "oauth_result_page.tsx",
         "open_external.ts",
         "pending_tool_call_actions.tsx",
+        "push_subscription.ts",
         "routing.ts",
         "settings_panel.tsx",
         "shell_chrome.tsx",
@@ -740,6 +774,7 @@ tsc_bin.tsc_test(
         "open_external.test.ts",
         "operator_login.test.ts",
         "routing.test.ts",
+        ":sw_lib",
         "settings_panel.test.ts",
         "shell_chrome.test.ts",
         "tana_client.test.ts",
@@ -764,6 +799,7 @@ tsc_bin.tsc_test(
         "//haku/console/frontend/tool_rendering/google_calendar:requests_test",
         "//haku/console/frontend/tool_rendering/grocy:requests_test",
         "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
+        "//haku/console/frontend/tool_rendering:actions_test",
         "//haku/console/frontend/tool_rendering:index_test",
         "//haku/console/frontend/tool_rendering/hostexec:requests_test",
         "//haku/console/frontend/tool_rendering/hostexec:responses_test",
@@ -822,10 +858,12 @@ vitest_bin.vitest_test(
         ":screenshot_harness_lib",
         ":settings_panel",
         ":shell_chrome",
+        ":sw_lib",
         ":tana_client",
         ":tool_call_decision",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
+        "//haku/console/frontend/tool_rendering:actions_test",
         "//haku/console/frontend/tool_rendering:call_entry_test",
         "//haku/console/frontend/tool_rendering:index_test",
         "//haku/console/frontend/tool_rendering:result_entry_test",

@@ -16,8 +16,7 @@ import { ExternalLink } from "../../link.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
-
-export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
 
 export const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
 const zGetCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
@@ -291,13 +290,7 @@ function ListCalendarEventInstancesPreview({ args, variant }: PreviewProps<ListC
 /** Per-tool preview widgets for the `google_calendar` server. `create_event` has no entry here —
  * its pending/finished states are one combined widget (calls.tsx), not a separate args-only one. */
 export const googleCalendarPreviews = {
-  get_event: definePreview(zGetCalendarEventArgs, GetCalendarEventPreview, () => ({
-    text: "Google Calendar: Get event",
-  })),
-  list_events: definePreview(zListCalendarEventsArgs, ListCalendarEventsPreview, () => ({
-    text: "Google Calendar: List events",
-  })),
-  list_event_instances: definePreview(zListCalendarEventInstancesArgs, ListCalendarEventInstancesPreview, () => ({
-    text: "Google Calendar: List event instances",
-  })),
+  get_event: definePreview(zGetCalendarEventArgs, GetCalendarEventPreview),
+  list_events: definePreview(zListCalendarEventsArgs, ListCalendarEventsPreview),
+  list_event_instances: definePreview(zListCalendarEventInstancesArgs, ListCalendarEventInstancesPreview),
 } satisfies Record<string, ToolPreview>;

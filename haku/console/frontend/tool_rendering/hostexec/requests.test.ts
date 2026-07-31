@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { describeAction, renderPreview } from "../entry.tsx";
+import { toolActionDescription } from "../actions.ts";
+import { renderPreview } from "../entry.tsx";
+import { HOSTEXEC_SERVER_ID } from "../server_ids.ts";
 import { hostexecPreviews } from "./requests.tsx";
 
 const VALID_ARGS = {
@@ -25,7 +27,9 @@ describe("hostexecPreviews", () => {
   });
 
   it("describes the action with the host and run-as user", () => {
-    expect(describeAction(hostexecPreviews.bash, VALID_ARGS)?.text).toBe("hostexec: Run on wyrm2 as agentydragon");
+    expect(toolActionDescription(HOSTEXEC_SERVER_ID, "bash", VALID_ARGS)?.text).toBe(
+      "hostexec: Run on wyrm2 as agentydragon"
+    );
   });
 
   it("returns null when cmd is empty", () => {

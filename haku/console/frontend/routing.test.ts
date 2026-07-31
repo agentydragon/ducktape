@@ -11,6 +11,7 @@ import {
   rememberEmbedPath,
   SETTINGS_PATH,
   TOOL_CALLS_PATH,
+  toolCallIdForPathname,
   viewForPathname,
 } from "./routing.ts";
 
@@ -24,6 +25,18 @@ describe("viewForPathname", () => {
     expect(viewForPathname(`${OAUTH_RESULT_PATH_PREFIX}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBe("oauthResult");
     expect(viewForPathname(`${CONSOLE_ROOT_PATH}/unknown`)).toBe("notFound");
     expect(viewForPathname(CONSOLE_ROOT_PATH)).toBe("embed");
+  });
+
+  it("resolves a deep-linked tool call to the shell, which opens the drawer on that call", () => {
+    const id = "tc_0123456789abcdef01234567";
+    expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/${id}`)).toBe(id);
+    // Not the history page: a pending call is decided in the approvals drawer, which floats over
+    // the ordinary embed view.
+    expect(viewForPathname(`${TOOL_CALLS_PATH}/${id}`)).toBe("embed");
+    // Tool call ids are `tc_` + 24 hex, not UUIDs like the other id-bearing console routes.
+    expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBeNull();
+    expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBeNull();
+    expect(viewForPathname(`${TOOL_CALLS_PATH}/tc_short`)).toBe("notFound");
   });
 
   it("accepts only canonical UUIDv4 OAuth result routes", () => {

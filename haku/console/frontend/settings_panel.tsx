@@ -16,6 +16,7 @@ import {
 } from "./client.ts";
 import { useConsoleEvents } from "./console_events.ts";
 import { ExternalLink } from "./link.tsx";
+import { usePushNotifications, type PushState } from "./push_subscription.ts";
 import {
   getMcpServerStatus,
   listNodeDaemons,
@@ -284,6 +285,87 @@ function AgentCard({ agent }: { agent: AgentView }) {
   );
 }
 
+// Each state says what is true *and*, where the operator can change it, what to do about it.
+// "Blocked" in particular has to name the browser as the place to fix it — the console cannot
+// re-prompt for a permission the browser has already refused.
+const PUSH_STATE_DISPLAY: Record<PushState["status"], { label: string; color: string; description: string }> = {
+  on: { label: "On", color: "teal", description: "This browser will be notified about pending tool calls." },
+  off: { label: "Off", color: "gray", description: "This browser will not be notified." },
+  busy: { label: "…", color: "gray", description: "Checking this browser's notification state." },
+  denied: {
+    label: "Blocked",
+    color: "orange",
+    description: "This browser blocked notifications for the console. Re-allow them in its site settings.",
+  },
+  unsupported: {
+    label: "Unsupported",
+    color: "gray",
+    description: "This browser does not support Web Push notifications.",
+  },
+  disabled: {
+    label: "Unavailable",
+    color: "gray",
+    description: "This console has no push key configured, so it cannot send notifications.",
+  },
+  failed: { label: "Error", color: "red", description: "Could not read this browser's notification state." },
+};
+
+function PushNotificationCard() {
+  const { state, devices, enable, disable, forget } = usePushNotifications();
+  const display = PUSH_STATE_DISPLAY[state.status];
+  const actionable = state.status === "on" || state.status === "off" || state.status === "failed";
+  const thisEndpoint = state.status === "on" ? state.endpoint : null;
+  // Everything except this browser. Notifications fan out to all of them and are retracted from
+  // all of them, so the operator needs to see what else is enrolled — a laptop left registered at
+  // an old desk keeps lighting up with tool calls until someone forgets it here.
+  const others = devices.filter((device) => device.endpoint !== thisEndpoint);
+  return (
+    <>
+      <section className="haku-shell-card">
+        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+          <Stack gap={2} style={{ minWidth: 0 }}>
+            <Text fw={600}>This browser</Text>
+            <Text size="xs" c="dimmed">
+              {state.status === "failed" ? state.message : display.description}
+            </Text>
+          </Stack>
+          <Badge color={display.color} variant="light">
+            {display.label}
+          </Badge>
+        </Group>
+        {actionable && (
+          <Group justify="flex-end" gap="xs" mt="sm">
+            {state.status === "on" ? (
+              <Button size="compact-sm" variant="subtle" color="red" onClick={() => void disable()}>
+                Turn off
+              </Button>
+            ) : (
+              <Button size="compact-sm" variant="light" onClick={() => void enable()}>
+                Turn on
+              </Button>
+            )}
+          </Group>
+        )}
+      </section>
+      {others.map((device) => (
+        <section className="haku-shell-card" key={device.endpoint}>
+          <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+            <Stack gap={2} style={{ minWidth: 0 }}>
+              <Text fw={600}>{device.userAgent ?? "Unidentified browser"}</Text>
+              <Text size="xs" c="dimmed">
+                Also notified{shortDate(device.createdAt) ? ` · added ${shortDate(device.createdAt)}` : ""}
+              </Text>
+            </Stack>
+            <Button size="compact-sm" variant="subtle" color="red" onClick={() => void forget(device.endpoint)}>
+              Forget
+            </Button>
+          </Group>
+        </section>
+      ))}
+    </>
+  );
+}
+
 // Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
 // shell chrome's mutually exclusive panels.
 export function SettingsPanel() {
@@ -486,6 +568,11 @@ export function SettingsPanel() {
           {agents?.map((agent) => (
             <AgentCard key={agent.agent_id} agent={agent} />
           ))}
+          <SectionHeading
+            title="Notifications"
+            description="Get a notification on this device when a tool call needs your approval, including when the console is closed. Notifications are per-browser: turn this on once on each device you want reached."
+          />
+          <PushNotificationCard />
           <SectionHeading
             title="MCP servers"
             description="Live availability through the console's MCP reflection tools. Status refreshes automatically and may verify linked credentials."

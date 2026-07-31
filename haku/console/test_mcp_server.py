@@ -203,7 +203,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
             },
         },
     )
-    settings = console_settings(migrated_db_url, config_file=config_file, ui_base_url="https://haku.test")
+    settings = console_settings(migrated_db_url, config_file=config_file)
     in_process = {
         gmail_tools.GMAIL_SERVER_ID: const_in_process_server(gmail_tools.build_mcp(gmail_client)),
         calendar_tools.GOOGLE_CALENDAR_SERVER_ID: const_in_process_server(calendar_tools.build_mcp(calendar_client)),
@@ -424,14 +424,14 @@ async def test_request_tool_returns_promise_with_deep_link(agent_client: Client)
     assert result.meta is not None
     assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": tool_call_id}
     assert tool_call_id.startswith("tc_")
-    assert promise["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+    assert promise["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
 
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
     view = got.structured_content
     assert view is not None
     assert view["call"]["status"] == ToolCallStatus.PENDING_APPROVAL
     assert view["call"]["tool_name"] == "drafts_create"
-    assert view["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+    assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
 
 
 async def test_request_tool_preserves_explicit_zero_wait(
@@ -529,7 +529,7 @@ async def test_withdraw_tool_call_retracts_a_promise(agent_client: Client) -> No
     assert view is not None
     assert view["call"]["status"] == ToolCallStatus.WITHDRAWN
     assert view["call"]["withdrawal_reason"] == "superseded by a corrected draft"
-    assert view["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+    assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
 
     # The durable row is what the agent re-reads, so the retraction has to be visible there too.
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
@@ -604,9 +604,7 @@ def test_withdrawn_record_is_not_reported_as_a_promise() -> None:
     )
 
     # Pure result-mapping: `console_settings` only builds the model, so no database is contacted.
-    result = mcp_server_module._record_to_result(
-        record, console_settings("postgresql://unused/record-to-result", ui_base_url="https://haku.test")
-    )
+    result = mcp_server_module._record_to_result(record, console_settings("postgresql://unused/record-to-result"))
 
     assert result.is_error is True
     assert result.structured_content is None
@@ -655,7 +653,6 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
-            ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
         )
         app = create_app(settings)
@@ -1394,7 +1391,6 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
-            ui_base_url="https://haku.test",
             public_base_url=f"http://127.0.0.1:{console_port}",
             mcp_oauth=McpOAuthConfig(
                 oidc_issuer=oidc.issuer,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { describeCallAction, renderCallPreview } from "../call_entry.tsx";
+import { toolActionDescription } from "../actions.ts";
+import { renderCallPreview } from "../call_entry.tsx";
+import { GMAIL_SERVER_ID } from "../server_ids.ts";
 import { gmailCallPreviews } from "./calls.tsx";
 
 const ARGS = { to: ["a@example.com"], subject: "Hello", body: "Hi there" };
@@ -41,6 +43,6 @@ describe("gmailCallPreviews.drafts_create", () => {
   });
 
   it("describes the action from the arguments", () => {
-    expect(describeCallAction(gmailCallPreviews.drafts_create, ARGS)?.text).toBe("Gmail: Draft email");
+    expect(toolActionDescription(GMAIL_SERVER_ID, "drafts_create", ARGS)?.text).toBe("Gmail: Draft email");
   });
 });

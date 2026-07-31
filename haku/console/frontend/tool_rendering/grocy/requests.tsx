@@ -28,6 +28,7 @@ import { Field } from "../../field.tsx";
 import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client.ts";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
+import { GROCY_SERVER_ID } from "../server_ids.ts";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
@@ -38,8 +39,6 @@ import {
   type PreviewProps,
   type PreviewVariant,
 } from "../vocabulary.tsx";
-
-export const GROCY_SERVER_ID = "grocy-sf";
 
 // Argument validators generated from grocy_mcp's own Pydantic models (`grocy_mcp/mcp_types.py`):
 // the batch tools are reflected at build time (haku/console/export_mcp_tool_schemas.py) so these
@@ -750,40 +749,17 @@ function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingLis
 
 /** Per-tool preview widgets for the `grocy-sf` server's stock, product, and shopping-list tools. */
 export const grocyPreviews = {
-  stock_add: definePreview(zStockAddArgs, StockAddPreview, (a) => ({
-    text: `Grocy: Add ${plural(a.items.length, "item")} to stock`,
-  })),
-  stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview, (a) => ({
-    text: `Grocy: Remove ${plural(a.items.length, "item")} from stock`,
-  })),
-  stock_entry_edit: definePreview(zStockEntryEditArgs, StockEntryEditPreview, (a) => ({
-    text: `Grocy: Edit ${a.items.length} stock ${a.items.length === 1 ? "entry" : "entries"}`,
-  })),
-  stock_get: definePreview(zStockGetArgs, StockGetPreview, () => ({ text: "Grocy: View stock" })),
-  products_list: definePreview(zProductsListArgs, ProductsListPreview, () => ({ text: "Grocy: List products" })),
-  quantity_units_list: definePreview(zQuantityUnitsListArgs, QuantityUnitsListPreview, () => ({
-    text: "Grocy: List quantity units",
-  })),
-  get_system_info: definePreview(zGetSystemInfoArgs, GetSystemInfoPreview, () => ({
-    text: "Grocy: View system information",
-  })),
-  products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview, (a) => ({
-    text: `Grocy: Create ${plural(a.items.length, "product")}`,
-  })),
-  products_edit: definePreview(zProductsEditArgs, ProductsEditPreview, (a) => ({
-    text: `Grocy: Edit ${plural(a.items.length, "product")}`,
-  })),
-  shopping_list_get: definePreview(zShoppingListGetArgs, ShoppingListGetPreview, () => ({
-    text: "Grocy: View shopping list",
-  })),
-  shopping_list_items_add: definePreview(zShoppingListItemsAddArgs, ShoppingListItemsAddPreview, (a) => ({
-    text: `Grocy: Add ${plural(a.items.length, "item")} to shopping list`,
-  })),
-  shopping_list_items_remove: definePreview(zShoppingListItemsRemoveArgs, ShoppingListItemsRemovePreview, (a) => ({
-    text: `Grocy: Remove ${plural(a.item_ids.length, "shopping-list item")}`,
-    destructive: true,
-  })),
-  shopping_list_item_edit: definePreview(zShoppingListItemEditArgs, ShoppingListItemEditPreview, () => ({
-    text: "Grocy: Edit shopping list item",
-  })),
+  stock_add: definePreview(zStockAddArgs, StockAddPreview),
+  stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview),
+  stock_entry_edit: definePreview(zStockEntryEditArgs, StockEntryEditPreview),
+  stock_get: definePreview(zStockGetArgs, StockGetPreview),
+  products_list: definePreview(zProductsListArgs, ProductsListPreview),
+  quantity_units_list: definePreview(zQuantityUnitsListArgs, QuantityUnitsListPreview),
+  get_system_info: definePreview(zGetSystemInfoArgs, GetSystemInfoPreview),
+  products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview),
+  products_edit: definePreview(zProductsEditArgs, ProductsEditPreview),
+  shopping_list_get: definePreview(zShoppingListGetArgs, ShoppingListGetPreview),
+  shopping_list_items_add: definePreview(zShoppingListItemsAddArgs, ShoppingListItemsAddPreview),
+  shopping_list_items_remove: definePreview(zShoppingListItemsRemoveArgs, ShoppingListItemsRemovePreview),
+  shopping_list_item_edit: definePreview(zShoppingListItemEditArgs, ShoppingListItemEditPreview),
 } satisfies Record<string, ToolPreview>;

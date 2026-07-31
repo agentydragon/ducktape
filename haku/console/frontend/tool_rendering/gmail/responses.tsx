@@ -24,7 +24,8 @@ import {
   PreviewText,
   type PreviewVariant,
 } from "../vocabulary.tsx";
-import { CompactBody, GMAIL_SERVER_ID, gmailThreadUrl, type CreateGmailDraftArgs } from "./requests.tsx";
+import { GMAIL_SERVER_ID } from "../server_ids.ts";
+import { CompactBody, gmailThreadUrl, type CreateGmailDraftArgs } from "./requests.tsx";
 
 // Gmail's compose view opens a draft directly by its id.
 function gmailDraftUrl(draftId: string): string {

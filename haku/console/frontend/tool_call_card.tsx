@@ -1,5 +1,5 @@
 import { Badge, Group, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state.ts";
 import { ToolActionLine } from "./tool_action_line.tsx";
@@ -32,6 +32,7 @@ export function ToolCallCard({
   error = null,
   result,
   footer,
+  containerRef,
 }: {
   fields: ApprovalDisplayFields;
   args: Record<string, unknown>;
@@ -41,11 +42,13 @@ export function ToolCallCard({
   error?: string | null;
   result?: unknown;
   footer?: ReactNode;
+  /** Set by a surface that needs to scroll this specific card into view (a deep-linked call). */
+  containerRef?: Ref<HTMLElement>;
 }) {
   const detailed = variant === "detailed";
   const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
   return (
-    <section className="haku-shell-card">
+    <section className="haku-shell-card" ref={containerRef}>
       <Stack gap="sm">
         {/* The badge + Brief/Full selector float to the top-right so the title and subheads wrap
             under them on the first line(s) and reclaim the full width below, instead of the whole

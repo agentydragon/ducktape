@@ -12,39 +12,16 @@ import { ExternalLink } from "../../link.tsx";
 import { fetchTanaNodePreviews, type TanaNodePreview } from "../../tana_client.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary.tsx";
-
-export const TANA_RW_SERVER_ID = "tana-rw";
-
-const zEditOperation = z.object({
-  old_string: z.string(),
-  new_string: z.string(),
-  replace_all: z.boolean().optional(),
-});
-
-const zImportTanaPasteArgs = z.object({ parentNodeId: z.string(), content: z.string() });
-const zGetOrCreateCalendarNodeArgs = z.object({
-  workspaceId: z.string(),
-  granularity: z.enum(["day", "week", "month", "year"]),
-  date: z.string().optional(),
-});
-const zTrashNodeArgs = z.object({ nodeId: z.string() });
-const zEditNodeArgs = z
-  .object({ nodeId: z.string(), name: zEditOperation.optional(), description: zEditOperation.optional() })
-  .refine((args) => args.name !== undefined || args.description !== undefined);
-const zMoveNodeArgs = z.object({
-  nodeId: z.string(),
-  targetNodeId: z.string(),
-  sourceParentId: z.string().optional(),
-  position: z.enum(["start", "end", "after", "before"]).default("end"),
-  referenceNodeId: z.string().optional(),
-  keepSourceReference: z.boolean().default(false),
-});
-const zSetFieldOptionArgs = z.object({
-  nodeId: z.string(),
-  attributeId: z.string(),
-  optionId: z.string(),
-  mode: z.enum(["replace", "append"]).default("replace"),
-});
+import { TANA_RW_SERVER_ID } from "../server_ids.ts";
+import {
+  zEditNodeArgs,
+  zEditOperation,
+  zGetOrCreateCalendarNodeArgs,
+  zImportTanaPasteArgs,
+  zMoveNodeArgs,
+  zSetFieldOptionArgs,
+  zTrashNodeArgs,
+} from "./schemas.ts";
 
 type ImportTanaPasteArgs = z.infer<typeof zImportTanaPasteArgs>;
 type GetOrCreateCalendarNodeArgs = z.infer<typeof zGetOrCreateCalendarNodeArgs>;
@@ -202,16 +179,10 @@ function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
 }
 
 export const tanaPreviews = {
-  import_tana_paste: definePreview(zImportTanaPasteArgs, ImportTanaPastePreview, () => ({
-    text: "Tana: Import content",
-  })),
-  get_or_create_calendar_node: definePreview(zGetOrCreateCalendarNodeArgs, GetOrCreateCalendarNodePreview, () => ({
-    text: "Tana: Get or create calendar node",
-  })),
-  trash_node: definePreview(zTrashNodeArgs, TrashNodePreview, () => ({ text: "Tana: Trash node", destructive: true })),
-  edit_node: definePreview(zEditNodeArgs, EditNodePreview, () => ({ text: "Tana: Edit node" })),
-  move_node: definePreview(zMoveNodeArgs, MoveNodePreview, () => ({ text: "Tana: Move node" })),
-  set_field_option: definePreview(zSetFieldOptionArgs, SetFieldOptionPreview, (a) => ({
-    text: `Tana: ${a.mode === "append" ? "Append" : "Set"} field option`,
-  })),
+  import_tana_paste: definePreview(zImportTanaPasteArgs, ImportTanaPastePreview),
+  get_or_create_calendar_node: definePreview(zGetOrCreateCalendarNodeArgs, GetOrCreateCalendarNodePreview),
+  trash_node: definePreview(zTrashNodeArgs, TrashNodePreview),
+  edit_node: definePreview(zEditNodeArgs, EditNodePreview),
+  move_node: definePreview(zMoveNodeArgs, MoveNodePreview),
+  set_field_option: definePreview(zSetFieldOptionArgs, SetFieldOptionPreview),
 } satisfies Record<string, ToolPreview>;

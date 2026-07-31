@@ -1025,6 +1025,49 @@ py_test(
 )
 
 py_test(
+    name = "test_push_routes",
+    size = "medium",
+    srcs = ["test_push_routes.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_web_push",
+    size = "medium",
+    srcs = ["test_web_push.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":web_push",
+        "//:conftest",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//cryptography",
+        "@pypi//http_ece",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_tool_call_service",
     size = "medium",
     srcs = ["test_tool_call_service.py"],
@@ -1131,6 +1174,17 @@ pkg_files(
     strip_prefix = strip_prefix.files_only(),
 )
 
+# The service worker sits at the docroot root, beside index.html rather than under
+# /_console/assets/: its scope must cover the whole origin, and its URL must stay stable across
+# deploys (a fingerprinted name would register as a new worker every build). `location /` already
+# serves it `no-store`, which is what a worker script wants — see frontend/push_subscription.ts.
+pkg_files(
+    name = "service_worker_files",
+    srcs = ["//haku/console/frontend:service_worker"],
+    prefix = "/usr/share/nginx/html/dist",
+    strip_prefix = strip_prefix.files_only(),
+)
+
 pkg_files(
     name = "nginx_conf_files",
     srcs = ["default.conf.template"],
@@ -1142,6 +1196,7 @@ pkg_tar(
     name = "static_tar",
     srcs = [
         ":nginx_conf_files",
+        ":service_worker_files",
         ":web_files",
     ],
 )

@@ -16,7 +16,7 @@ import { useConsoleView } from "./routing.ts";
 export default function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { view, agentEnrollmentId, oauthResultId, navigate } = useConsoleView();
+  const { view, agentEnrollmentId, oauthResultId, toolCallId, navigate } = useConsoleView();
   useOAuthResultAnnouncement(view);
 
   useEffect(() => {
@@ -59,6 +59,7 @@ export default function App() {
       launchAvailable={config.launch_routine_url != null}
       view={view}
       agentEnrollmentId={agentEnrollmentId}
+      toolCallId={toolCallId}
       onNavigate={navigate}
     />
   );

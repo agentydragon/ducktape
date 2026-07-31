@@ -11,6 +11,7 @@ resources:
   - httproute.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
+  - web-push-vapid.sops.yaml
 
 configMapGenerator:
   - name: haku-console-config

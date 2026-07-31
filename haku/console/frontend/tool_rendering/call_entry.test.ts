@@ -2,16 +2,11 @@ import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { defineCallPreview, describeCallAction, renderCallPreview } from "./call_entry.tsx";
+import { defineCallPreview, renderCallPreview } from "./call_entry.tsx";
 
 const zArgs = z.object({ subject: z.string() });
 const zResult = z.object({ id: z.string() });
-const preview = defineCallPreview(
-  zArgs,
-  zResult,
-  ({ args }) => `widget:${args.subject}`,
-  (args) => ({ text: `Create: ${args.subject}` })
-);
+const preview = defineCallPreview(zArgs, zResult, ({ args }) => `widget:${args.subject}`);
 
 // `render` wraps the widget in a `<Widget .../>` element (so its own hooks work), like
 // entry.tsx's `renderPreview`/result_entry.tsx's `renderResultPreview` — so a dispatch test reads
@@ -57,20 +52,5 @@ describe("renderCallPreview", () => {
 
   it("returns null when the args themselves don't parse", () => {
     expect(renderCallPreview(preview, { subject: 5 }, null, "compact")).toBeNull();
-  });
-});
-
-describe("describeCallAction", () => {
-  it("returns the described action for parseable args", () => {
-    expect(describeCallAction(preview, { subject: "hi" })).toEqual({ text: "Create: hi" });
-  });
-
-  it("returns null when args don't parse", () => {
-    expect(describeCallAction(preview, { subject: 5 })).toBeNull();
-  });
-
-  it("returns null when the preview has no describe", () => {
-    const noDescribe = defineCallPreview(zArgs, zResult, ({ args }) => args.subject);
-    expect(describeCallAction(noDescribe, { subject: "hi" })).toBeNull();
   });
 });

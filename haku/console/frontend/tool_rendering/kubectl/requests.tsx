@@ -13,36 +13,12 @@ import { CodeBlock } from "../../code_block.tsx";
 import { Field } from "../../field.tsx";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { PreviewText, type PreviewProps } from "../vocabulary.tsx";
-
-export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
+import { KUBECTL_SERVER_ID } from "../server_ids.ts";
+import { zPodsDeleteArgs, zPodsLogArgs, zResourcesCreateOrUpdateArgs, zResourcesDeleteArgs } from "./schemas.ts";
 
 // kubectl-passthrough-mcp is a remote third-party binary
 // (containers/kubernetes-mcp-server), so its tools/list schemas are not available to the
 // build-time in-process catalog. These are hand-authored against the live advertised schema.
-const zResourcesCreateOrUpdateArgs = z.object({
-  resource: z.string(),
-});
-
-const zResourcesDeleteArgs = z.object({
-  apiVersion: z.string(),
-  kind: z.string(),
-  name: z.string(),
-  namespace: z.string().optional(),
-  gracePeriodSeconds: z.number().optional(),
-});
-
-const zPodsDeleteArgs = z.object({
-  name: z.string(),
-  namespace: z.string().optional(),
-});
-const zPodsLogArgs = z.object({
-  name: z.string(),
-  namespace: z.string().optional(),
-  container: z.string().optional(),
-  previous: z.boolean().optional(),
-  tail: z.number().int().optional(),
-});
-
 type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
@@ -123,16 +99,8 @@ function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
 /** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete). */
 export const kubectlPreviews = {
-  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview, () => ({
-    text: "kubectl: Apply resource",
-  })),
-  resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview, (a) => ({
-    text: `kubectl: Delete ${a.kind}`,
-    destructive: true,
-  })),
-  pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview, () => ({
-    text: "kubectl: Delete Pod",
-    destructive: true,
-  })),
-  pods_log: definePreview(zPodsLogArgs, PodsLogPreview, () => ({ text: "kubectl: View Pod logs" })),
+  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview),
+  resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview),
+  pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview),
+  pods_log: definePreview(zPodsLogArgs, PodsLogPreview),
 } satisfies Record<string, ToolPreview>;

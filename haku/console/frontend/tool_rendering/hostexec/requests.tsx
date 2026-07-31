@@ -13,8 +13,7 @@ import { CodeBlock } from "../../code_block.tsx";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
 import { definePreview, type ToolPreview } from "../entry.tsx";
 import { clampBlock, PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary.tsx";
-
-export const HOSTEXEC_SERVER_ID = "hostexec";
+import { HOSTEXEC_SERVER_ID } from "../server_ids.ts";
 
 const zBashArgs = mcpToolSchema(HOSTEXEC_SERVER_ID, "bash");
 
@@ -59,7 +58,5 @@ function BashPreview({ args, variant }: PreviewProps<BashArgs>) {
 }
 
 export const hostexecPreviews = {
-  bash: definePreview(zBashArgs, BashPreview, (a) => ({
-    text: `hostexec: Run on ${a.host} as ${a.run_as}`,
-  })),
+  bash: definePreview(zBashArgs, BashPreview),
 } satisfies Record<string, ToolPreview>;

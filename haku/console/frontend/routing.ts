@@ -13,6 +13,13 @@ const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 export type ConsoleNavigationView = "embed" | "settings" | "toolCalls";
 export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "notFound";
 
+// A single call, deep-linked — what a push notification's "Details" opens, and what the MCP
+// server advertises to an agent whose call is waiting. It resolves to the ordinary embed view
+// with the approvals drawer opened on that call, rather than to the history page: a pending call
+// is decided in the drawer, and that is what the operator followed the link to do. Tool call ids
+// are `tc_` + 24 hex (mcp_approval.py), not UUIDs like the other two id-bearing routes here.
+const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i");
+
 const OAUTH_RESULT_PATH = new RegExp(
   `^${OAUTH_RESULT_PATH_PREFIX}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
   "i"
@@ -21,6 +28,10 @@ const AGENT_ENROLLMENT_PATH = new RegExp(
   `^${AGENT_ENROLLMENT_PATH_PREFIX}/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`,
   "i"
 );
+
+export function toolCallIdForPathname(pathname: string): string | null {
+  return TOOL_CALL_PATH.exec(pathname)?.[1] ?? null;
+}
 
 export function oauthResultIdForPathname(pathname: string): string | null {
   return OAUTH_RESULT_PATH.exec(pathname)?.[1] ?? null;
@@ -35,6 +46,7 @@ export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
+  if (toolCallIdForPathname(pathname) !== null) return "embed";
   if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
   return "embed";
@@ -77,6 +89,7 @@ export function useConsoleView(): {
   view: ConsoleView;
   agentEnrollmentId: string | null;
   oauthResultId: string | null;
+  toolCallId: string | null;
   navigate: (view: ConsoleNavigationView) => void;
 } {
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -109,6 +122,7 @@ export function useConsoleView(): {
     view: viewForPathname(pathname),
     agentEnrollmentId: agentEnrollmentIdForPathname(pathname),
     oauthResultId: oauthResultIdForPathname(pathname),
+    toolCallId: toolCallIdForPathname(pathname),
     navigate,
   };
 }

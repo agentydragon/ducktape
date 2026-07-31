@@ -9,7 +9,6 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import type { ToolAction } from "./entry.tsx";
 import { unwrapToolResult } from "./result_entry.tsx";
 import type { PreviewVariant } from "./vocabulary.tsx";
 
@@ -24,7 +23,6 @@ export type ToolCallPreview<
   // ToolCallPreview>` holds every tool's entry. `renderCallPreview` is the one place that feeds
   // them the parsed output.
   render: (args: never, result: never | undefined, variant: PreviewVariant) => ReactNode;
-  describe?: (args: never) => ToolAction;
 };
 
 /** Bind a tool's argument and result schemas to one widget that renders both states. `Widget`
@@ -37,8 +35,7 @@ export function defineCallPreview<ArgsSchema extends z.ZodTypeAny, ResultSchema 
     args: z.infer<ArgsSchema>;
     result: z.infer<ResultSchema> | undefined;
     variant: PreviewVariant;
-  }) => ReactNode,
-  describe?: (args: z.infer<ArgsSchema>) => ToolAction
+  }) => ReactNode
 ): ToolCallPreview<ArgsSchema, ResultSchema> {
   const render = (
     args: z.infer<ArgsSchema>,
@@ -49,7 +46,6 @@ export function defineCallPreview<ArgsSchema extends z.ZodTypeAny, ResultSchema 
     argsSchema,
     resultSchema,
     render: render as ToolCallPreview["render"],
-    describe: describe as ToolCallPreview["describe"],
   };
 }
 
@@ -69,12 +65,4 @@ export function renderCallPreview(
   const parsedResult = unwrapped == null ? undefined : preview.resultSchema.safeParse(unwrapped);
   const result = parsedResult?.success ? parsedResult.data : undefined;
   return preview.render(parsedArgs.data as never, result as never, variant);
-}
-
-/** The tool's action description for the card identity line, or `null` if it has no `describe`
- * or its args don't parse. Mirrors entry.tsx's `describeAction`. */
-export function describeCallAction(preview: ToolCallPreview, args: Record<string, unknown>): ToolAction | null {
-  if (!preview.describe) return null;
-  const parsed = preview.argsSchema.safeParse(args);
-  return parsed.success ? preview.describe(parsed.data as never) : null;
 }

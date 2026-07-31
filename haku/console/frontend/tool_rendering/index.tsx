@@ -14,22 +14,31 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
-import { describeCallAction, renderCallPreview, type ToolCallPreview } from "./call_entry.tsx";
-import { describeAction, renderPreview, type ToolAction, type ToolPreview } from "./entry.tsx";
+import { renderCallPreview, type ToolCallPreview } from "./call_entry.tsx";
+import { renderPreview, type ToolPreview } from "./entry.tsx";
 import { gmailCallPreviews } from "./gmail/calls.tsx";
-import { GMAIL_SERVER_ID, gmailPreviews } from "./gmail/requests.tsx";
+import { gmailPreviews } from "./gmail/requests.tsx";
 import { gmailResultPreviews } from "./gmail/responses.tsx";
 import { googleCalendarCallPreviews } from "./google_calendar/calls.tsx";
-import { GOOGLE_CALENDAR_SERVER_ID, googleCalendarPreviews } from "./google_calendar/requests.tsx";
+import { googleCalendarPreviews } from "./google_calendar/requests.tsx";
 import { googleCalendarResultPreviews } from "./google_calendar/responses.tsx";
-import { GROCY_SERVER_ID, grocyPreviews } from "./grocy/requests.tsx";
+import { grocyPreviews } from "./grocy/requests.tsx";
 import { grocyResultPreviews } from "./grocy/responses.tsx";
-import { HAKU_ROUTINE_SERVER_ID, hakuRoutinePreviews } from "./haku_routine/requests.tsx";
-import { HOSTEXEC_SERVER_ID, hostexecPreviews } from "./hostexec/requests.tsx";
+import { hakuRoutinePreviews } from "./haku_routine/requests.tsx";
+import { hostexecPreviews } from "./hostexec/requests.tsx";
 import { hostexecResultPreviews } from "./hostexec/responses.tsx";
-import { KUBECTL_SERVER_ID, kubectlPreviews } from "./kubectl/requests.tsx";
+import { kubectlPreviews } from "./kubectl/requests.tsx";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry.tsx";
-import { TANA_RW_SERVER_ID, tanaPreviews } from "./tana/requests.tsx";
+import {
+  GMAIL_SERVER_ID,
+  GOOGLE_CALENDAR_SERVER_ID,
+  GROCY_SERVER_ID,
+  HAKU_ROUTINE_SERVER_ID,
+  HOSTEXEC_SERVER_ID,
+  KUBECTL_SERVER_ID,
+  TANA_RW_SERVER_ID,
+} from "./server_ids.ts";
+import { tanaPreviews } from "./tana/requests.tsx";
 import type { PreviewVariant } from "./vocabulary.tsx";
 
 const REGISTRY = {
@@ -129,16 +138,6 @@ export function toolPreview(
 
 /** A registered tool's action description for the card's identity line, or `null` when no widget
  * matches (the caller falls back to `serverId.toolName`). */
-export function toolActionDescription(
-  serverId: string,
-  toolName: string,
-  args: Record<string, unknown>
-): ToolAction | null {
-  const preview = RUNTIME_REGISTRY[serverId]?.[toolName];
-  if (preview) return describeAction(preview, args);
-  const callPreview = RUNTIME_CALL_REGISTRY[serverId]?.[toolName];
-  return callPreview ? describeCallAction(callPreview, args) : null;
-}
 
 /** The registered widget for one tool's unwrapped result payload, or `null` when no widget
  * matches (the caller falls back to the raw-JSON result field). */

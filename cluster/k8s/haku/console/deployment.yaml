@@ -82,6 +82,18 @@ spec:
                 secretKeyRef:
                   name: haku-routine-launch-token
                   key: token
+            # Web Push: the VAPID key the console signs approval notifications with. Its
+            # public half is derived at startup and handed to each browser at subscribe
+            # time, so rotating this key makes every enrolled device re-subscribe from
+            # Settings -> Notifications. Unset would simply disable notifications.
+            # See haku/console/web_push.py.
+            - name: HAKU_CONSOLE_WEB_PUSH__PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-web-push-vapid
+                  key: private-key-pem
+            - name: HAKU_CONSOLE_WEB_PUSH__SUBJECT
+              value: mailto:agentydragon@gmail.com
             # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI
             # service (haku-sandbox). The console embeds it in a sandboxed cross-origin
             # iframe and sets a CSP frame-src for it; it never renders Haku's UI itself.
@@ -191,10 +203,6 @@ spec:
                   name: haku-console-google-calendar-client-credentials
                   key: client_secret
                   optional: true
-            # Operator-facing origin, used to build the deep-link `url` the /mcp promise +
-            # read tools return (https://haku.allegedly.works/tool-calls/<id>, Authentik-gated).
-            - name: HAKU_CONSOLE_UI_BASE_URL
-              value: https://haku.allegedly.works
             # The Operator the `haku` static agent acts as when it reaches an operator_oauth server:
             # reflecting grocy-sf/kubectl schemas and executing its own auto-approved
             # operator_oauth calls (a machine agent has no operator token of its own). The value is the

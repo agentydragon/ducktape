@@ -11,7 +11,8 @@ import { ExternalLink } from "../../link.tsx";
 import { mcpToolResultSchema } from "../../mcp_tool_result_schema.ts";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
 import { COMPACT_ITEM_LIMIT, MoreLine, PreviewText, PreviewTitle } from "../vocabulary.tsx";
-import { formatEventDateTimeRange, GOOGLE_CALENDAR_SERVER_ID, RecurrenceField } from "./requests.tsx";
+import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids.ts";
+import { formatEventDateTimeRange, RecurrenceField } from "./requests.tsx";
 
 export const zCreateEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
 const zGetEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");

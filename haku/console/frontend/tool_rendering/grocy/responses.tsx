@@ -22,7 +22,7 @@ import {
   type PreviewVariant,
 } from "../vocabulary.tsx";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry.tsx";
-import { GROCY_SERVER_ID } from "./requests.tsx";
+import { GROCY_SERVER_ID } from "../server_ids.ts";
 
 // A batch result is a list of per-item rows: an ok variant (per-op details) or an error variant
 // (an `error` message). FastMCP emits the union as `anyOf`; both variants carry an optional `kind`

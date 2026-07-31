@@ -83,6 +83,7 @@ export function HakuUiEmbed({
   view,
   agentEnrollmentId,
   agentEnrollmentInitialChoice,
+  toolCallId,
   onNavigate,
 }: {
   uiUrl: string;
@@ -90,6 +91,7 @@ export function HakuUiEmbed({
   view: ConsoleView;
   agentEnrollmentId: string | null;
   agentEnrollmentInitialChoice?: EnrollmentChoice;
+  toolCallId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -107,6 +109,12 @@ export function HakuUiEmbed({
   const [screenshotApprovals, setScreenshotApprovals] = useState<ScreenshotApproval[]>([]);
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
+  // A deep-linked call opens the drawer on arrival — following the link *is* the request to
+  // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
+  // closed, while closing it on the same call leaves it closed.
+  useEffect(() => {
+    if (toolCallId) setApprovalsOpen(true);
+  }, [toolCallId]);
   const [decidingNonToolApprovalIds, setDecidingNonToolApprovalIds] = useState<string[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
@@ -549,6 +557,7 @@ export function HakuUiEmbed({
         view={view}
         onNavigate={onNavigate}
         approvalsOpen={approvalsOpen}
+        focusedToolCallId={toolCallId ?? null}
         onApprovalsOpenChange={setApprovalsOpen}
         liveStatus={liveStatus}
         syncError={syncError}

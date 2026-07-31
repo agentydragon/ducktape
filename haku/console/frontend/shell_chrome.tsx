@@ -1,5 +1,5 @@
 import { ActionIcon, Badge, Button, Group, Indicator, Loader, Stack, Text, Tooltip } from "@mantine/core";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   approvalDisplayFields,
@@ -42,6 +42,7 @@ export interface ShellChromeProps {
   // Approvals panel open-state, parent-controlled so a newly-arrived geolocation approval can
   // force it open.
   approvalsOpen: boolean;
+  focusedToolCallId?: string | null;
   onApprovalsOpenChange: (open: boolean) => void;
   pendingApprovals: ToolCallRecord[];
   geolocationApprovals: GeolocationApproval[];
@@ -283,13 +284,23 @@ function ToolApprovalCard({
   deciding,
   onApprove,
   onDeny,
+  focused = false,
 }: {
   approval: ToolCallRecord;
   deciding: boolean;
   onApprove: () => void;
   onDeny: (reason?: string) => void;
+  /** This card is the one a deep link (a push notification's Details, or the URL the MCP server
+   * advertised) named: it opens expanded and scrolls itself into view. */
+  focused?: boolean;
 }) {
-  const [variant, setVariant] = useVariant("compact");
+  // A deep-linked call opens detailed, because the operator followed a one-line notification here
+  // precisely to see the arguments they could not see there.
+  const [variant, setVariant] = useVariant(focused ? "detailed" : "compact");
+  const cardRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (focused) cardRef.current?.scrollIntoView({ block: "center" });
+  }, [focused]);
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
   return (
@@ -298,6 +309,7 @@ function ToolApprovalCard({
       args={approval.arguments}
       variant={variant}
       onVariantChange={setVariant}
+      containerRef={cardRef}
       status={{ label: deciding ? "Running" : "Pending", color: deciding ? "blue" : "yellow" }}
       footer={<PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />}
     />
@@ -459,6 +471,7 @@ function ApprovalsTab({
   onApproveScreenshot,
   onDenyScreenshot,
   onDismissRecentToolCall,
+  focusedToolCallId,
 }: Pick<
   ShellChromeProps,
   | "pendingApprovals"
@@ -473,7 +486,7 @@ function ApprovalsTab({
   | "onApproveScreenshot"
   | "onDenyScreenshot"
   | "onDismissRecentToolCall"
->) {
+> & { focusedToolCallId?: string | null }) {
   const items = useMemo(
     () => approvalQueueItems(pendingApprovals, geolocationApprovals, screenshotApprovals),
     [geolocationApprovals, pendingApprovals, screenshotApprovals]
@@ -510,6 +523,7 @@ function ApprovalsTab({
                   deciding={deciding.has(item.id)}
                   onApprove={() => onApproveTool(item.approval)}
                   onDeny={(reason) => onDenyTool(item.approval, reason)}
+                  focused={item.approval.tool_call_id === focusedToolCallId}
                 />
               );
             }

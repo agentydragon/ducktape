@@ -25,6 +25,22 @@ _PAGE_URL = "https://claude.ai/code/routines/{id}"
 # independently configurable public URL that can drift away from the actual mount.
 MCP_PATH = "/mcp"
 
+# The console's reserved SPA namespace (frontend/routing.ts's CONSOLE_ROOT_PATH). Trusted console
+# pages live under it; every other path belongs to the framed haku-ui.
+_CONSOLE_ROOT_PATH = "/_console"
+
+
+def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
+    """The console URL that opens one tool call: the approvals drawer, that call expanded.
+
+    One definition, because three things must agree on it — the link the MCP server hands an agent
+    when its call becomes a promise, the deep link a push notification opens, and the SPA route
+    that resolves it. They previously did not: the advertised link was built from a second,
+    separately configured origin and pointed at `/tool-calls/<id>`, a path the console mirrors into
+    the haku-ui frame rather than one of its own pages.
+    """
+    return f"{console_base_url.rstrip('/')}{_CONSOLE_ROOT_PATH}/tool-calls/{tool_call_id}"
+
 
 def _postgres_connection_identity(raw_url: str) -> tuple[object, ...]:
     """Return the authority-bearing parts of a Postgres URL, independent of its driver."""
@@ -276,11 +292,6 @@ class Settings(BaseSettings):
     # Namespace whose Gmail label mutations Haku may auto-approve. labels_list is
     # wholesale because Haku already has standing Gmail read authority.
     gmail_auto_approve_label_prefix: str = "haku/"
-
-    # Operator-facing console origin (e.g. https://haku.allegedly.works) used to build deep links
-    # to a specific tool call in the SPA, returned in the MCP server's promise/read-tool results.
-    # Unset → no link is included.
-    ui_base_url: str | None = None
 
     # VAPID identity for Web Push. Reads HAKU_CONSOLE_WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
     # Unset → the console never sends push notifications and the subscribe endpoints return 503.
