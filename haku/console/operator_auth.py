@@ -130,7 +130,7 @@ def _login_flows(conn: HTTPConnection) -> PostgresOperatorLoginFlowStore:
 
 
 def _rejected(conn: HTTPConnection, reason: str, **detail: object) -> None:
-    """Record why an operator session was refused, then yield the ``None`` callers expect.
+    """Record why an operator session was refused.
 
     Without this, every refusal reaches the browser as one indistinguishable 401 — an expired
     absolute deadline, a cookie the browser never sent, and a disabled identity all look identical,
@@ -153,30 +153,37 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
     Each refusal is logged with its distinguishing reason; see `_rejected`.
     """
     if "session" not in conn.scope:
-        return _rejected(conn, "no_session_middleware")
+        _rejected(conn, "no_session_middleware")
+        return None
     raw = conn.session.get(SESSION_USER_KEY)
     if not isinstance(raw, dict):
-        return _rejected(conn, "no_session_cookie")
+        _rejected(conn, "no_session_cookie")
+        return None
     try:
         operator_id = UUID(raw["operator_id"])
         identity_id = UUID(raw["identity_id"])
     except (KeyError, TypeError, ValueError):
-        return _rejected(conn, "malformed_identity")
+        _rejected(conn, "malformed_identity")
+        return None
     username = raw.get("username")
     if not isinstance(username, str) or not username:
-        return _rejected(conn, "malformed_username")
+        _rejected(conn, "malformed_username")
+        return None
     browser_session_id = raw.get("browser_session_id")
     if not isinstance(browser_session_id, str) or not browser_session_id:
-        return _rejected(conn, "malformed_browser_session")
+        _rejected(conn, "malformed_browser_session")
+        return None
     expires_at = raw.get("expires_at")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool):
-        return _rejected(conn, "malformed_expiry")
+        _rejected(conn, "malformed_expiry")
+        return None
     # Split from the type check above so an expired session is never reported as a malformed one:
     # the absolute deadline never slides, so "expired" is an ordinary outcome for a long-lived tab
     # and `expired_for` says immediately whether the deadline is what refused the request.
     now = int(time.time())
     if expires_at <= now:
-        return _rejected(conn, "expired", expired_for=datetime.timedelta(seconds=now - expires_at))
+        _rejected(conn, "expired", expired_for=datetime.timedelta(seconds=now - expires_at))
+        return None
     return SignedOperatorSession(
         operator_id=operator_id,
         identity_id=identity_id,
@@ -196,7 +203,8 @@ def operator_session(
     store = identity_store if identity_store is not None else _identity_store(conn)
     identity = store.resolve_active_session(operator_id=signed.operator_id, identity_id=signed.identity_id)
     if identity is None:
-        return _rejected(conn, "identity_inactive", operator_id=signed.operator_id)
+        _rejected(conn, "identity_inactive", operator_id=signed.operator_id)
+        return None
     return OperatorSession(
         operator_id=identity.operator_id,
         identity_id=identity.identity_id,
