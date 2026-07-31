@@ -3,7 +3,9 @@
 What [requirements.md](requirements.md) asked for, against what is deployed, with the
 evidence. Only the public coder is assessed: the personal-data agent and the
 knowledge-garden function are unbuilt, and their hard bars (C5, C6) are the two
-this agent does not demonstrate.
+this agent does not demonstrate. The personal-data agent's H1–H4 are assessed
+against a proposed design instead, in
+[personal_data_agent.md](personal_data_agent.md).
 
 Findings are cited by number; see [findings/](findings/README.md).
 

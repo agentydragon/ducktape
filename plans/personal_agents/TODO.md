@@ -353,3 +353,54 @@ aggregate endpoints (`/api/public/metrics/daily` returned a full day in 1.4s
 against a query that killed the pod).
 
 Until then: aggregates for counts, `limit<=5` and a tight window for bodies.
+
+## Verify iron-proxy's `oauth_token` transform before designing around it
+
+[personal_data_agent.md](personal_data_agent.md) puts iron-proxy's `oauth_token`
+transform (`grant: refresh_token`) at the centre of the personal-data agent's
+Google credential path, and every claim about it so far is read off the shipped
+example config rather than measured. Four things to test in the lab, in this
+order — each one invalidates the design if it fails:
+
+1. **A real refresh-token exchange through the proxy.** One Google client, one
+   read-only scope, `curl` from the agent side with no credential at all, and a
+   200 back from `gmail.googleapis.com`.
+2. **`require: true` against a CONNECT.** The same flag on the `secrets`
+   transform rejected every HTTPS request in tunnel mode (F15). The docs say this
+   one is per-entry with 502 semantics, which is a different code path — but that
+   is exactly the assumption F15 punished.
+3. **`paths:` scoping on an `oauth_token` rule**, and whether it needs a paired
+   `methods: ["CONNECT"]` entry the way allowlist rules do. Needed because
+   Calendar and Drive can both arrive on `www.googleapis.com`, so host rules may
+   not separate them.
+4. **Two holders of one refresh token.** Airlock refreshing on its 300s loop
+   while iron-proxy also exchanges the same token. Google is not supposed to
+   rotate refresh tokens on use; if it does, iron-proxy's env copy goes stale
+   between the Secret write and the reloader restart.
+
+## Stop mirroring a live Google access token into the sandboxes
+
+`cluster/k8s/agents/airlock/google-access-token-eso.yaml` puts a working Google
+access token into `claude-sandbox` and `haku-sandbox` on a 1-minute refresh, where
+an agent can read it. That is the same exposure class as F7/F10 — a credential
+readable from inside the agent, and so reachable by prompt injection from anything
+the agent reads — and it is the one the coder agent's proxy design exists to
+remove.
+
+Not urgent in itself: the grant is nine read-only scopes, so the blast radius is
+disclosure rather than modification. But it should not be the pattern the
+personal-data agent inherits, and the replacement (proxy-held or MCP-held) is
+already designed. Fold it in when that agent is built, and retire the mirror
+rather than adding a third namespace to it.
+
+## Ask whether Airlock's `google` provider should stay a union grant
+
+Its single provider entry requests nine read-only scopes across Gmail, Drive,
+Calendar, Tasks, Contacts, Docs, Sheets, Slides and YouTube. haku-console went the
+other way — separate Google Cloud projects and clients for Mail and Calendar,
+explicitly so their verification status and credential lifecycles stay
+independent, which is what stops Gmail's Testing-mode 7-day refresh expiry from
+dragging Calendar down with it.
+
+The union grant is fine while nothing consumes it. It stops being fine the moment
+a second consumer wants a subset, because there is no way to give it one.

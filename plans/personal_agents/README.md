@@ -5,7 +5,9 @@ Research record for self-hosted personal-agent infrastructure. The driving case 
 to one user, whose job is opening pull requests against public repositories as
 `agentydragon-agent`. Two further agent functions — a personal-data agent with network
 isolation and full traces, and a git-backed knowledge garden — are scoped in
-[requirements.md](requirements.md) but not built.
+[requirements.md](requirements.md) but not built. The first of those now has a design
+derived from what the coding agent taught us:
+[personal_data_agent.md](personal_data_agent.md).
 
 Four hard requirements: stand up, open a PR end to end unaided, remember instructions
 across sessions, and be confined to domain-level egress. A stronger sandbox around the
@@ -25,6 +27,7 @@ configurations that failed on the way, are in [lab_notes.md](lab_notes.md).
 | [requirements_status.md](requirements_status.md)           | Every stated requirement (C/P/W) against what is deployed, with evidence                            |
 | [success_criteria.md](success_criteria.md)                 | S1–S5: the observable pass conditions, and what a failure of each would force us to decide          |
 | [credential_proxy_options.md](credential_proxy_options.md) | Survey of credential-injecting proxies: three architectural camps, what was tested, where we landed |
+| [personal_data_agent.md](personal_data_agent.md)           | How we would build the personal-data agent today, and how its Google credentials would work         |
 | [TODO.md](TODO.md)                                         | Open work, each item carrying the evidence for why it matters                                       |
 | [requirements.md](requirements.md)                         | The original stated wants, cross-cutting and per-agent-function                                     |
 | [survey/](survey/README.md)                                | Requirement-to-implementation mapping with citations, from the phase that preceded the lab          |
