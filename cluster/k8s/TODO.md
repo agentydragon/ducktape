@@ -19,18 +19,37 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
       through mitmproxy unconditionally — a stricter posture giving full
       audit but losing the in-cluster bypass escape hatch.
 
-## OpenClaw secrets
+## Retire the `openclaw-*` namespaces
 
-- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
-- [ ] Re-home the four retained OpenClaw-era credentials into
-      `agents/shared-secrets/` so the two workload-free namespaces can go. Needs
-      the cluster age key: each document pins its namespace in `metadata`, which
-      the MAC covers. See `agents/openclaw/README.md`.
+The OpenClaw gateway and OpenShell stack were deleted on 2026-07-31, but
+`openclaw-gateway` and `openclaw-sandbox` survive as credential holders: four
+unique secrets pin those namespaces in `metadata`, and since the files set no
+`mac_only_encrypted` the document MAC covers that field, so re-homing them is a
+`sops` operation and not a text edit. Background: `agents/openclaw/README.md`.
 
-## Stale `openclaw-sandbox` reflector targets in shared secrets
+Two steps, in order — the second is blocked on the first:
 
-Two SOPS-encrypted Secrets still name the deleted `openclaw-sandbox` namespace in
-their emberstack reflector annotations:
+- [ ] **Move the credentials** (needs the cluster age key). Re-author each under
+      `agents/shared-secrets/` with the right namespace and `sops -e -i`:
+      `openclaw-{anthropic-api-key,openai-api-key,telegram-bot-token}` from
+      `openclaw-gateway`, `ibkr-flex-query-credentials` from `openclaw-sandbox`.
+      Update the reflector annotations and `docs/bootstrap_dependencies.md` rows
+      in the same change. Alternatively **revoke** any you no longer want — at the
+      Anthropic and OpenAI consoles, via @BotFather, and in IBKR Account
+      Management. Deleting only the Secret leaves a live credential in the wild.
+- [ ] **Then delete `agents/openclaw/` entirely** — all four flux kustomizations,
+      their root `kustomization.yaml` entries, and the `CLEANUP(added 2026-07-31)`
+      tombstones in both `namespace.yaml` files. The gate is
+      `grep -rl 'namespace: openclaw-' cluster/k8s/ --include='*.sops.yaml'`
+      returning nothing; it lists four files today.
+
+- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive); fold into the move above rather than making a separate `sops` trip
+
+## `openclaw-sandbox` reflector targets in shared secrets
+
+Two SOPS-encrypted Secrets name `openclaw-sandbox` in their emberstack reflector
+annotations. That namespace still exists (see above), so this is dormant rather
+than stale — it becomes stale the moment the namespace is retired:
 
 - [ ] `agents/shared-secrets/attic-push-token.sops.yaml` — drop `openclaw-sandbox`
       from `reflection-{allowed,auto}-namespaces`
@@ -42,9 +61,9 @@ so the document MAC covers metadata: a raw text edit of the annotations breaks
 decryption with a MAC mismatch. Fixing them needs the age key and a `sops -i`
 pass, which an agent without the key cannot do without rotating the value.
 
-Harmless in the meantime — reflecting into a namespace that does not exist is a
-no-op, so this is tidiness rather than a fault. Fold it into the next `sops` edit
-of either file rather than making a trip for it.
+Harmless either way: reflecting into a namespace that does not exist is a no-op,
+and while it does exist nothing there consumes these. Fold it into the same `sops`
+pass that re-homes the credentials rather than making a separate trip.
 
 ## Secret layout
 

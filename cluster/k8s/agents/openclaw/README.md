@@ -39,3 +39,8 @@ Either of these makes it dead weight — delete the whole tree then:
   and OpenAI keys at their consoles, the Telegram token via @BotFather, the IBKR
   Flex token in Account Management. Deleting the Secret alone leaves a live
   credential in the wild.
+
+Both `namespace.yaml` files carry a `CLEANUP(added 2026-07-31)` tombstone saying
+the same thing next to the resource itself. The sequenced version — what to move,
+what to update alongside it, and the grep that tells you the tree is safe to
+delete — is in <../../TODO.md> § "Retire the `openclaw-*` namespaces".
