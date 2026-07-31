@@ -48,6 +48,27 @@ The threshold above is about **which calls you submit at all**, not about this q
 split — an approval-gated call you submit directly still waits for the operator's own click; it's
 just that _you_ decided to put it in front of them rather than asking in chat whether to.
 
+## Retract a queued call you no longer want
+
+Submitting is not irreversible. While a call is still `pending_approval`, `withdraw_tool_call(tool_call_id, reason)`
+takes it back out of the queue. **Use it as soon as you know you don't want the call** — your plan
+changed, you submitted a near-duplicate, the operator did the thing by hand, or you got what you
+needed another way.
+
+Abandoning a promise is not free. A pending call you've moved on from doesn't disappear; it sits
+in the operator's approval queue until a human spends attention deciding on work nobody wants
+anymore. Retracting is the polite counterpart to submitting, and it costs you one call.
+
+- **Only works while pending.** Once the operator approves it, withdrawal fails and tells you the
+  real status. It never stops or undoes a call that is already running — read the outcome with
+  `get_tool_call` instead.
+- **It's terminal.** There is no un-withdraw; submit a fresh call if you change your mind back.
+- **The reason is shown to the operator**, so write a real one — "superseded by the corrected
+  call below", not "not needed".
+- **Don't withdraw out of impatience.** A pending call isn't stuck or failing; the operator simply
+  hasn't looked yet, and they may be about to. Withdraw when you no longer want the _call_, never
+  because you're tired of waiting for it.
+
 ## hostexec — root-level shell on the operator's own machines
 
 `hostexec` (in-process MCP server, tools reached as `hostexec__bash`) runs a bash script on an
