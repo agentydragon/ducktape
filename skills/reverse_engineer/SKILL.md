@@ -202,15 +202,16 @@ When a tool fails, follow this pattern:
 
 **Known-defeated techniques** (tools in `examples/`):
 
-| Technique                                       | What breaks                                                                                       | Fix                                                                                                                                  | File                   |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
-| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab                  | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                                                 | `examples/pclntool.go` |
-| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                                              | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below)                         | `examples/gosymtab.go` |
-| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction                 | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)                             | `examples/gosymtab.go` |
-| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors                | Dump process memory after package init and read the decrypted literals out of a core (see below)                                     | (recipe below)         |
-| garble `-literals` hides function-local strings | A local literal never decrypts unless its function runs, and running it means running the feature | The keys are binary-resident: emulate the decryptor over the mapped image (unicorn). Live-process probe only as fallback (see below) | (recipe below)         |
-| garble randomizes struct and field names        | `strings`-scraped tags lose which struct they belong to, plus field order and types               | `gotypes` walks `.typelink`/`abi.Type` to recover full struct definitions with offsets (see below)                                   | `examples/gotypes.go`  |
-| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                                 | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                                                  | (no file needed)       |
+| Technique                                       | What breaks                                                                                       | Fix                                                                                                                                  | File                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
+| garble XORs `.gopclntab` magic bytes (v0.13.0+) | `go tool objdump`, `redress`, `GoReSym`, `debug/gosym` all fail to parse pclntab                  | `pclntool patch` writes a repaired binary; `pclntool pc` maps a PC to its garbled fn                                                 | `examples/pclntool.go`       |
+| garble strips ELF `.symtab`                     | `go tool objdump`/`nm` fail with "no symbol section"                                              | `gosymtab` **synthesizes a real `.symtab`** from pclntab, restoring the whole standard toolchain (see below)                         | `examples/gosymtab.go`       |
+| `.text` does not start at the first Go function | Every symbol recovered from pclntab is shifted; disassembly lands mid-instruction                 | `gosymtab` scores both candidate text bases against real prologue bytes and picks the winner (see below)                             | `examples/gosymtab.go`       |
+| garble `-literals` encrypts string constants    | Help text, metric names, endpoints absent from `strings`; no static string anchors                | Dump process memory after package init and read the decrypted literals out of a core (see below)                                     | (recipe below)               |
+| garble `-literals` encrypts string data         | Enum values / protocol verbs absent from `strings`                                                | Strings compared **inline** are instruction operands, not data -- sweep `.text` and reassemble by displacement                       | `examples/inline_strings.py` |
+| garble `-literals` hides function-local strings | A local literal never decrypts unless its function runs, and running it means running the feature | The keys are binary-resident: emulate the decryptor over the mapped image (unicorn). Live-process probe only as fallback (see below) | (recipe below)               |
+| garble randomizes struct and field names        | `strings`-scraped tags lose which struct they belong to, plus field order and types               | `gotypes` walks `.typelink`/`abi.Type` to recover full struct definitions with offsets (see below)                                   | `examples/gotypes.go`        |
+| garble strips module info from `.go.buildinfo`  | `go version -m` returns `unknown`                                                                 | Use Go compiler version from `redress info` or `readelf` on `.go.buildinfo` section                                                  | (no file needed)             |
 
 When you encounter a new technique not in this table, defeat it and add a row.
 
@@ -363,6 +364,43 @@ if 2 <= ln <= 400 and ptr >= 0x400000:
 That yields `global_addr -> plaintext`, so any instruction RIP-referencing the
 global is a use of that literal and static cross-referencing works again. On
 `environment-manager` this resolved 9,203 globals.
+
+**Short literals are not encrypted at all if they are compared inline.** Before
+reaching for emulation, take the free ones. `-literals` encrypts string _data_,
+but a comparison against a short constant puts that constant in an
+**instruction operand**, where hiding it would mean changing the code. So the
+most interesting literals -- enum values, protocol verbs, mode names, error
+categories -- are sitting in `.text` in clear, and no decryption is needed.
+
+Go compiles the comparison as a length check plus compares at increasing
+displacements off the string's data pointer, so fragments reassemble by
+displacement, not by program order:
+
+```text
+cmpq    $0xd, 0x28(%rcx)              ; len(s) == 13
+movabsq $0x632d656d75736572, %r12     ; "resume-c"
+cmpq    %r12, (%rdx)
+cmpl    $0x65686361, 0x8(%rdx)        ; "ache"
+cmpb    $0x64, 0xc(%rdx)              ; 'd'      -> "resume-cached"
+```
+
+`examples/inline_strings.py` sweeps `.text` and does the reassembly:
+
+```bash
+gosymtab ./binary ./binary.sym
+go tool nm ./binary.sym | awk '$2=="T"||$2=="t"{print "0x"$1, $3}' | sort > funcs.txt
+inline_strings ./binary funcs.txt      # "function<TAB>pc<TAB>string"
+```
+
+On a real garbled target this recovered 714 strings, attributed to the function
+that compares them -- session modes, git provider tokens, an error taxonomy,
+version channels. It also corrected an earlier wrong conclusion: a function that
+compares a string _inline_ never references the string constant, so
+cross-referencing the data had reported only one consumer of a value that in
+fact had four.
+
+The length check is a free correctness signal -- if a reassembled string's
+length disagrees with the `cmpq $N` guarding it, the reassembly is wrong.
 
 **Function-local literals: emulate the decryptor, don't run it.** Locals stay
 encrypted unless their function executes, and you often cannot run the function

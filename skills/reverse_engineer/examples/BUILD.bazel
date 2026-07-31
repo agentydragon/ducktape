@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":defs.bzl", "garble_binary", "plain_binary")
 
@@ -9,6 +10,7 @@ exports_files(
         "garble_re_recipe.sh",
         "gosymtab.go",
         "gotypes.go",
+        "inline_strings.py",
         "pclntool.go",
     ],
     visibility = [
@@ -22,6 +24,24 @@ go_binary(
     srcs = ["pclntool.go"],
     pure = "on",
     deps = ["@com_github_spf13_cobra//:cobra"],
+)
+
+py_binary(
+    name = "inline_strings",
+    srcs = ["inline_strings.py"],
+)
+
+sh_test(
+    name = "test_inline_strings",
+    srcs = ["test_scaffold_inline_strings.sh"],
+    data = [
+        ":build_v2_garbled",
+        ":inline_strings",
+    ],
+    env = {
+        "INLINE_STRINGS": "$(rlocationpath :inline_strings)",
+        "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
+    },
 )
 
 go_binary(

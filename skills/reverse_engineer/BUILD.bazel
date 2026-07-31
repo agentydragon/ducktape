@@ -13,6 +13,7 @@ skill_package(
                 "//skills/reverse_engineer/examples:garble_re_recipe.sh",
                 "//skills/reverse_engineer/examples:gosymtab.go",
                 "//skills/reverse_engineer/examples:gotypes.go",
+                "//skills/reverse_engineer/examples:inline_strings.py",
                 "//skills/reverse_engineer/examples:pclntool.go",
             ],
             prefix = "examples",
