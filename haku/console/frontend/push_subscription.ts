@@ -33,21 +33,12 @@ function pushSupported(): boolean {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
-/** base64url → the Uint8Array `PushManager.subscribe` wants for `applicationServerKey`. */
-function decodeApplicationServerKey(key: string): Uint8Array {
-  const padded = key.padEnd(key.length + ((4 - (key.length % 4)) % 4), "=");
-  const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+/** base64url → bytes. The only hand-rolled codec left here: `subscribe` takes the server key as
+ * a base64url string and `toJSON()` hands back base64url keys, so this is needed solely to
+ * compare a stored subscription's key against the current one (see `subscribedWithCurrentKey`). */
+function decodeBase64Url(value: string): Uint8Array {
+  const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
-/** The subscription's own keys, base64url — what the server encrypts each payload to. */
-function subscriptionKey(subscription: PushSubscription, name: "p256dh" | "auth"): string {
-  const key = subscription.getKey(name);
-  if (!key) throw new Error(`push subscription is missing its ${name} key`);
-  return btoa(String.fromCharCode(...new Uint8Array(key)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
 }
 
 async function applicationServerKey(): Promise<string | null> {
@@ -73,22 +64,26 @@ export async function enablePush(): Promise<PushState> {
   // service no longer associates with us can never be delivered to. Re-subscribing is the only
   // repair, so drop a stale one rather than reporting success for a dead channel.
   const existing = await registration.pushManager.getSubscription();
-  if (existing && !applicationServerKeyMatches(existing, serverKey)) await existing.unsubscribe();
+  if (existing && !subscribedWithCurrentKey(existing, serverKey)) await existing.unsubscribe();
 
   const subscription =
     (await registration.pushManager.getSubscription()) ??
     (await registration.pushManager.subscribe({
       // Required by Chrome, and honest: every push this console sends shows a notification.
       userVisibleOnly: true,
-      applicationServerKey: decodeApplicationServerKey(serverKey),
+      // `subscribe` accepts the application server key as a base64url string, so it goes across
+      // exactly as the backend published it.
+      applicationServerKey: serverKey,
     }));
 
+  // `toJSON()` already yields the subscription's keys base64url-encoded, in the shape the Web
+  // Push spec defines and pywebpush consumes — no need to pull ArrayBuffers out of `getKey()`
+  // and re-encode them.
+  const { keys } = subscription.toJSON();
+  if (!keys?.p256dh || !keys.auth) throw new Error("push subscription is missing its encryption keys");
+
   const { error } = await api.POST("/api/push/subscriptions", {
-    body: {
-      endpoint: subscription.endpoint,
-      p256dh: subscriptionKey(subscription, "p256dh"),
-      auth: subscriptionKey(subscription, "auth"),
-    },
+    body: { endpoint: subscription.endpoint, p256dh: keys.p256dh, auth: keys.auth },
   });
   if (error) throw new Error(errorDetail(error, "Failed to register this browser for notifications"));
   return { status: "on", endpoint: subscription.endpoint };
@@ -110,10 +105,13 @@ export async function forgetPushDevice(endpoint: string): Promise<void> {
   if (error) throw new Error(errorDetail(error, "Failed to remove that browser"));
 }
 
-function applicationServerKeyMatches(subscription: PushSubscription, serverKey: string): boolean {
+/** Whether an existing subscription was signed up under the console's current VAPID key. The
+ * browser hands the key back as bytes regardless of how it was passed in, so this is the one
+ * place a decode is unavoidable. */
+function subscribedWithCurrentKey(subscription: PushSubscription, serverKey: string): boolean {
   const subscribed = subscription.options.applicationServerKey;
   if (!subscribed) return false;
-  const expected = decodeApplicationServerKey(serverKey);
+  const expected = decodeBase64Url(serverKey);
   const actual = new Uint8Array(subscribed);
   return actual.length === expected.length && actual.every((byte, index) => byte === expected[index]);
 }

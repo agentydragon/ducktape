@@ -3,6 +3,21 @@
 Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
 actionable checklist. Remove entries once done.
 
+## Notification text per tool kind
+
+A push notification is titled with the tool's shared action description
+(`frontend/tool_rendering/<server>/actions.ts`) — the same one-line summary the approvals card's
+identity line shows. That is the right default, but a notification is a different surface: no
+arguments visible, no expand affordance, read on a lock screen, and it is the one place a call
+can be approved without seeing its arguments at all. Some tools would be better served by
+notification-specific wording — naming the actual target ("Delete Pod haku-console-7f9 in
+haku-console") where the card can rely on the widget below it to show that.
+
+Add an optional per-tool notification override alongside the action description, falling back to
+it when absent. Deliberately not done in the change that introduced push: the shared description
+is the honest starting point, and which tools actually warrant divergence is worth learning from
+real notifications rather than guessing up front.
+
 ## `gmail` MCP server — Gmail API affordances not yet exposed
 
 The in-process `gmail` server (`tools/gmail.py`) currently mirrors a slice of Gmail's REST

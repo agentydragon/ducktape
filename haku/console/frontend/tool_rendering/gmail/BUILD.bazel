@@ -6,6 +6,16 @@ package(default_visibility = ["//visibility:public"])
 # The `gmail` server's tool-call rendering widgets (see ../BUILD.bazel for the tree's shape).
 
 js_library(
+    name = "actions",
+    srcs = ["actions.ts"],
+    deps = [
+        "//haku/console/frontend:mcp_tool_schema",
+        "//haku/console/frontend/tool_rendering:action_entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
+    ],
+)
+
+js_library(
     name = "requests",
     srcs = ["requests.tsx"],
     deps = [

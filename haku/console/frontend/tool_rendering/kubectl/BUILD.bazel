@@ -13,6 +13,15 @@ js_library(
 )
 
 js_library(
+    name = "actions",
+    srcs = ["actions.ts"],
+    deps = [
+        ":schemas",
+        "//haku/console/frontend/tool_rendering:action_entry",
+    ],
+)
+
+js_library(
     name = "requests",
     srcs = ["requests.tsx"],
     deps = [
