@@ -57,12 +57,14 @@
 //
 //	EnvManagerLogEventData: NO struct type in either binary carries the tag set
 //	{message, level, source, timestamp, nanos, fields}. The `nanos` tag in this
-//	build belongs to google.protobuf.Timestamp only. Treat the struct below as
-//	unverified.
+//	build belongs to google.protobuf.Timestamp only, and "env_manager_log"
+//	appears in neither binary nor either decrypted core. The type was invented;
+//	it has been removed (see the REMOVED note further down).
 //
-// TODO(re): rewrite the Go declarations in this file against the addresses
-// above. They are left as-is here to avoid clobbering another lane's work; only
-// this header was added.
+// The declarations below have been rewritten against the addresses above.
+// Types marked VERIFIED are field-for-field from the binary's type metadata:
+// the field names are garble-randomized, but the json tags, Go types and byte
+// offsets are exact.
 // ---------------------------------------------------------------------------
 
 package api
@@ -90,76 +92,125 @@ type SessionError interface {
 	IsFatal() bool
 }
 
-// EventData is the interface for event data payloads.
-// Known implementor: *EnvManagerLogEventData
+// EventData is the interface carried in SessionIngressEvent.Data.
 //
-// Binary itab:
+// Binary: fHxyBOR9qvy.GeaI7aFBat7, the declared type of the field at +0x20.
 //
-//	go:itab.*EnvManagerLogEventData,EventData at 0xf5b440
+// TODO(re): no implementor identified in the current binary. The itab
+// go:itab.*EnvManagerLogEventData,EventData cited here previously came from the
+// a6f96673 build and does not exist in 0b86a2a0 -- see the REMOVED note near
+// the bottom of this file.
 type EventData interface{}
 
-// MessageContent is the interface for message content in ingress events.
-// Known implementor: AssistantMessage
+// MessageContent is the interface carried in SessionIngressEvent.Message.
 //
-// Binary itab:
-//
-//	go:itab.AssistantMessage,MessageContent at 0xf5b420
+// Binary: fHxyBOR9qvy.CCaEAoszQG, the declared type of the field at +0x30.
+// AssistantMessage is an implementor.
 type MessageContent interface{}
 
 // ContentBlock represents a content block in a message.
-// Binary type eq: 0x832aa0
+//
+// Binary: fHxyBOR9qvy.IBq8n0_LLk, vaddr 0x27c1ec0, size 0x20. VERIFIED.
 type ContentBlock struct {
-	Type string `json:"type"` // e.g., "text"
-	Text string `json:"text"`
+	Type string `json:"type"`           // +0x00, e.g. "text"
+	Text string `json:"text,omitempty"` // +0x10
 }
 
-// PermissionDenial represents a permission denial event.
-// Binary type eq: 0x832da0
+// PermissionDenial records a tool invocation the user refused.
+//
+// Binary: fHxyBOR9qvy.Ai2IVr3VUa, vaddr 0x27e77e0, size 0x38. VERIFIED.
 type PermissionDenial struct {
-	// Fields inferred from type eq function
+	ToolName    string    `json:"tool_name"`    // +0x00
+	Reason      string    `json:"reason"`       // +0x10
+	RequestedAt time.Time `json:"requested_at"` // +0x20
+}
+
+// Usage is the per-message token accounting.
+//
+// Binary: fHxyBOR9qvy.TRepBeaLEAWm, vaddr 0x2883260, size 0x20. VERIFIED.
+type Usage struct {
+	InputTokens              int `json:"input_tokens"`                          // +0x00
+	OutputTokens             int `json:"output_tokens"`                         // +0x08
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"` // +0x10
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`     // +0x18
 }
 
 // AssistantMessage represents a synthetic assistant message.
-// Binary itab: go:itab.AssistantMessage,MessageContent at 0xf5b420
-type AssistantMessage struct {
-	Content []ContentBlock `json:"content"`
-}
-
-// DiagLogEntry represents a single diagnostic log entry for forwarding.
-// Used in slices.SortFunc (binary has pdqsort/insertionSort specializations for this type).
-// Binary signature: struct { Timestamp time.Time; Fields map[string]interface {} }
-type DiagLogEntry struct {
-	Timestamp time.Time              // offset 0x00 (Time is 3 words: wall, ext, loc)
-	Fields    map[string]interface{} // offset 0x18
-}
-
-// SessionIngressEvent is the top-level event structure sent to the session ingress API.
-type SessionIngressEvent struct {
-	Type string    `json:"type"` // offset 0x00: event type string (e.g., "env_manager_log")
-	ID   string    `json:"id"`   // offset 0x10: UUID string
-	Data EventData `json:"data"` // offset 0x20: interface (itab + data ptr)
-}
-
-// EnvManagerLogEventData is the data payload for env_manager_log events.
 //
-// Binary address (constructor): 0x831740
-type EnvManagerLogEventData struct {
-	Message   string            `json:"message"`   // offset 0x00 (string: ptr + len)
-	Level     string            `json:"level"`     // offset 0x10 (string: ptr + len)
-	Source    string            `json:"source"`    // offset 0x20 (string: ptr + len)
-	Timestamp time.Time         `json:"timestamp"` // offset 0x30 (wall), 0x38 (ext)
-	Nanos     int64             `json:"nanos"`     // offset 0x40
-	Fields    map[string]string `json:"fields"`    // offset 0x48
+// Binary: fHxyBOR9qvy.Labalu1jJu, vaddr 0x28a9c00, size 0x68. VERIFIED.
+type AssistantMessage struct {
+	Role       string         `json:"role"`        // +0x00
+	Model      string         `json:"model"`       // +0x10
+	Content    []ContentBlock `json:"content"`     // +0x20
+	StopReason string         `json:"stop_reason"` // +0x38
+	Usage      Usage          `json:"usage"`       // +0x48
 }
 
-// ResultEvent represents the result/completion event for a session.
-type ResultEvent struct {
-	Error        *SessionError `json:"error,omitempty"`         // offset 0x00 (interface ptr)
-	IsError      *bool         `json:"is_error,omitempty"`      // offset 0x08 + 0x08
-	HasError     *bool         `json:"has_error,omitempty"`     // offset somewhere
-	SessionError interface{}   `json:"session_error,omitempty"` // error details
-	// Additional fields for result event metadata
+// DiagLogEntry is a single diagnostic log entry for forwarding.
+// Used in slices.SortFunc (the binary has pdqsort/insertionSort specializations
+// for this type). Both fields are untagged: this type is sorted and inspected
+// in-process, never serialized directly.
+//
+// Binary: fHxyBOR9qvy.Ur1ssf, vaddr 0x27c1f60, size 0x20. VERIFIED.
+type DiagLogEntry struct {
+	Timestamp time.Time              // +0x00
+	Fields    map[string]interface{} // +0x18
 }
+
+// SessionActivityLog is the structured activity-log entry posted to the
+// ingress API. Distinct from DiagLogEntry, which is the in-process form.
+//
+// Binary: fHxyBOR9qvy.C55iIMbPNU, vaddr 0x28a9d00, size 0x50. VERIFIED.
+type SessionActivityLog struct {
+	Level     LogLevel               `json:"level"`     // +0x00
+	Category  LogCategory            `json:"category"`  // +0x10
+	Content   string                 `json:"content"`   // +0x20
+	Timestamp time.Time              `json:"timestamp"` // +0x30
+	Extra     map[string]interface{} `json:"extra"`     // +0x48
+}
+
+// LogLevel is the severity of a SessionActivityLog entry.
+//
+// TODO(re): underlying type is a named string (fHxyBOR9qvy.MAwWSLi5NPWF);
+// the constant set is garble -literals encrypted and was not recovered.
+type LogLevel string
+
+// SessionIngressEvent is the top-level event posted to the session ingress API.
+//
+// This is Claude Code's stream-json envelope, not a simple {type,id,data}
+// wrapper: the result-event metadata is carried inline on the envelope rather
+// than nested in Data. Every field below is read from the binary's own type
+// metadata, so the tags and offsets are exact.
+//
+// Binary: fHxyBOR9qvy.AIGJ5cph, vaddr 0x28eaa00, size 0xc0, 16 fields.
+// VERIFIED. Byte-for-byte identical in the previous binary
+// (viRrDTePbcGS.J4sedR @ 0x247a760), so this wire contract did not change.
+type SessionIngressEvent struct {
+	Type string `json:"type"` // +0x00
+	// UUID, not "id" -- the earlier reconstruction had the tag wrong.
+	UUID              string             `json:"uuid"`                         // +0x10
+	Data              EventData          `json:"data,omitempty"`               // +0x20
+	Message           MessageContent     `json:"message,omitempty"`            // +0x30
+	ParentToolUseID   *string            `json:"parent_tool_use_id,omitempty"` // +0x40
+	IsAPIErrorMessage *bool              `json:"isApiErrorMessage,omitempty"`  // +0x48
+	Subtype           *string            `json:"subtype,omitempty"`            // +0x50
+	IsError           *bool              `json:"is_error,omitempty"`           // +0x58
+	DurationMs        *int               `json:"duration_ms,omitempty"`        // +0x60
+	DurationAPIMs     *int               `json:"duration_api_ms,omitempty"`    // +0x68
+	NumTurns          *int               `json:"num_turns,omitempty"`          // +0x70
+	TotalCostUSD      *float64           `json:"total_cost_usd,omitempty"`     // +0x78
+	Errors            []string           `json:"errors,omitempty"`             // +0x80
+	ModelUsage        ModelUsage         `json:"modelUsage,omitempty"`         // +0x98
+	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"` // +0xa0
+	Usage             *Usage             `json:"usage,omitempty"`              // +0xb8
+}
+
+// ModelUsage is the per-model usage breakdown carried on a result event.
+//
+// TODO(re): named type fHxyBOR9qvy.CJFLueFJZ at +0x98 of the envelope,
+// occupying one word. Its definition was not recovered; a map keyed by model
+// name is the obvious shape but is NOT confirmed.
+type ModelUsage interface{}
 
 // ClaudeCodeExecutionError is a session error indicating Claude Code execution failed.
 // GetUserMessage returns a fixed string (116 = 0x74 bytes).
@@ -217,49 +268,27 @@ func (e SourceProcessingError) IsFatal() bool {
 	return e.Fatal
 }
 
-// NewEnvManagerLogEvent creates a new SessionIngressEvent of type "env_manager_log"
-// wrapping the given EnvManagerLogEventData.
+// REMOVED(0b86a2a0): EnvManagerLogEventData, NewEnvManagerLogEvent and
+// NewEnvManagerLogEventData used to live here. They were not reconstructions of
+// anything in the binary -- they were invented, and carried fabricated binary
+// addresses (0x831620 / 0x831740) that lend them unearned authority.
 //
-// Generates a UUID for the event ID using uuid.NewRandom(), encodes to hex string (36 chars).
-// Sets Type to "env_manager_log" (15 = 0x0f bytes).
+// The evidence against them, checked against both the current binary
+// (0b86a2a0) and the previous one (495ea204):
 //
-// Binary address: 0x831620
-func NewEnvManagerLogEvent(data *EnvManagerLogEventData) *SessionIngressEvent {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		panic(err)
-	}
-	idStr := id.String()
-
-	return &SessionIngressEvent{
-		Type: "env_manager_log",
-		ID:   idStr,
-		Data: data,
-	}
-}
-
-// NewEnvManagerLogEventData constructs a new EnvManagerLogEventData with the current timestamp.
+//   - The literal "env_manager_log" occurs in neither binary, and in neither
+//     binary's decrypted-literal core dump. An event type that is never named
+//     cannot be constructed.
+//   - No struct in either binary carries the claimed tag set
+//     {message, level, source, timestamp, nanos, fields}. The tag json:"source"
+//     does not appear on any of the 3014 struct types in the new binary at all.
+//   - The claimed SessionIngressEvent shape they built ({type, id, data}) is
+//     also wrong: the real envelope has 16 fields and its identifier tag is
+//     "uuid", not "id" (see SessionIngressEvent above).
 //
-// Parameters: message, level, source strings, extra fields map (may be nil - auto-created).
-// Calls time.Now() and normalizes the timestamp (monotonic clock handling).
-//
-// Binary address: 0x831740
-func NewEnvManagerLogEventData(message string, level string, source string, extraStr string, fields map[string]string) *EnvManagerLogEventData {
-	if fields == nil {
-		fields = make(map[string]string)
-	}
-
-	now := time.Now()
-	// The binary strips the monotonic clock reading and normalizes wall time.
-
-	return &EnvManagerLogEventData{
-		Message:   message,
-		Level:     level,
-		Source:    source,
-		Timestamp: now,
-		Fields:    fields,
-	}
-}
+// Diagnostic logs are carried by DiagLogEntry, whose shape *is* verified. If a
+// future binary reintroduces an env-manager log event, reconstruct it from
+// type metadata rather than restoring this code.
 
 // NewSyntheticAssistantMessage creates a SessionIngressEvent containing a synthetic
 // assistant message with a single "text" content block.
@@ -271,29 +300,23 @@ func NewEnvManagerLogEventData(message string, level string, source string, extr
 //
 // Binary address: 0x831900
 func NewSyntheticAssistantMessage(text string, model string) *SessionIngressEvent {
-	contentBlock := ContentBlock{
-		Type: "text",
-		Text: text,
-	}
-
 	id, err := uuid.NewRandom()
 	if err != nil {
 		panic(err)
 	}
-	idStr := id.String()
 
-	event := &SessionIngressEvent{
+	return &SessionIngressEvent{
 		Type: "assistant",
-		ID:   idStr,
+		UUID: id.String(),
+		Message: AssistantMessage{
+			// TODO(re): the role literal is garble -literals encrypted and was
+			// not recovered; "assistant" is the only value consistent with the
+			// envelope type but is NOT read from the binary.
+			Role:    "assistant",
+			Model:   model,
+			Content: []ContentBlock{{Type: "text", Text: text}},
+		},
 	}
-
-	msg := AssistantMessage{
-		Content: []ContentBlock{contentBlock},
-	}
-	_ = msg
-	_ = model
-
-	return event
 }
 
 // NewResultEvent creates a SessionIngressEvent for the session result/completion.
@@ -310,33 +333,28 @@ func NewSyntheticAssistantMessage(text string, model string) *SessionIngressEven
 //
 // Binary address: 0x831b20
 func NewResultEvent(sessionError SessionError, isFatal interface{}, exitCode interface{}) *SessionIngressEvent {
-	errorInfo := &struct{ SessionError }{}
-	_ = errorInfo
-
-	isError := isFatal != nil
-	_ = isError
-
-	hasError := false
-	_ = hasError
-
 	id, err := uuid.NewRandom()
 	if err != nil {
 		panic(err)
 	}
-	idStr := id.String()
 
+	isError := isFatal != nil
 	event := &SessionIngressEvent{
-		Type: "result",
-		ID:   idStr,
+		Type:    "result",
+		UUID:    id.String(),
+		IsError: &isError,
 	}
 
-	// The binary sets up multiple fields on the result event object:
-	// - session error pointer
-	// - is_error bool pointer
-	// - has_error bool pointer
-	// - metadata map (makemap_small)
-	// - exit code
-	// - additional type/itab references
+	// TODO(re): the binary populates more of the envelope here -- the result
+	// metadata now lives inline on SessionIngressEvent (subtype, duration_ms,
+	// duration_api_ms, num_turns, total_cost_usd, errors, modelUsage,
+	// permission_denials, usage) rather than in a nested payload, so this
+	// constructor is incomplete. The earlier reconstruction discarded every
+	// intermediate into `_ =` sinks, which hid that gap rather than recording
+	// it. Populating it needs the field-by-field disassembly of the constructor,
+	// which has not been done.
+	_ = sessionError
+	_ = exitCode
 
 	return event
 }
