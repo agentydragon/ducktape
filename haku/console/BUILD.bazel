@@ -798,6 +798,7 @@ py_library(
         "@pypi//fastmcp_slim",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous.
         "@pypi//itsdangerous",
+        "@pypi//prometheus_client",
         "@pypi//starlette",
         "@pypi//uvicorn",
         # uvicorn needs a WebSocket protocol impl at runtime or every /api/events/ws
