@@ -496,6 +496,7 @@ class McpToolCall(Base):
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    withdrawal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     auto_approval_evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

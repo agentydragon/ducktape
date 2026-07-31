@@ -88,6 +88,7 @@ function toolCall(overrides: Partial<ToolCallRecord> & Pick<ToolCallRecord, "too
     ]),
     error: null,
     denial_reason: null,
+    withdrawal_reason: null,
     ...overrides,
   };
 }
@@ -127,6 +128,18 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     result: null,
     caller: { kind: "operator" },
     arguments: KUBECTL_HISTORY_FIXTURE.args,
+  }),
+  // Retracted by the submitting agent before anyone decided it — the third exit from the queue.
+  toolCall({
+    tool_call_id: "tc_5",
+    server_id: "grocy-sf",
+    tool_name: "shopping_list_items_add",
+    title: "Add oat milk to the weekly list",
+    status: "withdrawn",
+    rationale: "Running low on oat milk after the weekend.",
+    withdrawal_reason: "Superseded by tc_9, which adds the whole Thrive reorder in one call.",
+    result: null,
+    arguments: { shopping_list_id: 1, product_id: 42, amount: 2 },
   }),
   // Unconditionally auto-approved (no operator decision) — exercises the history view's
   // "Show auto-approved" filter, which hides this row by default.

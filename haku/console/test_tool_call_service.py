@@ -27,6 +27,7 @@ from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
+    AgentActorRequiredError,
     BackendAccountNotConnectedError,
     OperatorActorRequiredError,
     ToolCallApplicationService,
@@ -568,6 +569,142 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
         await service.submit_and_wait(req=_request(owner="missing-auth"), actor=missing_auth_actor)
     after = {record.tool_call_id for record in service.list_tool_calls(actor=actors["oa"])}
     assert after == before
+
+
+async def test_withdraw_retracts_the_agents_own_pending_call(
+    actors: dict[str, ToolCallActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
+) -> None:
+    actor = actors["aa1"]
+    pending = await service.submit_and_wait(req=_request(owner="stale"), actor=actor)
+    assert pending.status is ToolCallStatus.PENDING_APPROVAL
+    publisher.publications.clear()
+
+    withdrawn = await service.withdraw(tool_call_id=pending.tool_call_id, reason="superseded", actor=actor)
+
+    assert withdrawn.status is ToolCallStatus.WITHDRAWN
+    assert withdrawn.withdrawal_reason == "superseded"
+    assert withdrawn.denial_reason is None
+    # Published to the owning operator, so their open approvals drawer drops the item live.
+    assert publisher.publications == [(actor.operator_id, pending.tool_call_id)]
+    assert service.pending_approvals(actor=actors["oa"]) == []
+
+
+async def test_withdraw_rejects_calls_that_are_no_longer_pending(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+) -> None:
+    actor = actors["aa1"]
+    pending = await service.submit_and_wait(req=_request(owner="raced"), actor=actor)
+    await service.decide(
+        tool_call_id=pending.tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+        actor=actors["oa"],
+    )
+
+    # The operator won the race; the agent is told the real status rather than silently succeeding.
+    with pytest.raises(ToolCallStateConflictError, match="not pending approval; status=running"):
+        await service.withdraw(tool_call_id=pending.tool_call_id, reason="too late", actor=actor)
+
+    withdrawn = await service.submit_and_wait(req=_request(owner="twice"), actor=actor)
+    await service.withdraw(tool_call_id=withdrawn.tool_call_id, reason="first", actor=actor)
+    with pytest.raises(ToolCallStateConflictError, match="not pending approval; status=withdrawn"):
+        await service.withdraw(tool_call_id=withdrawn.tool_call_id, reason="second", actor=actor)
+
+
+async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+) -> None:
+    actor = actors["aa1"]
+    pending = await service.submit_and_wait(req=_request(owner="mine"), actor=actor)
+
+    # An operator's verb is `deny`; letting one write `withdrawn` would record the agent as having
+    # retracted a request the operator in fact dismissed.
+    with pytest.raises(AgentActorRequiredError, match="agent actor required"):
+        await service.withdraw(tool_call_id=pending.tool_call_id, reason="not mine", actor=actors["oa"])
+
+    # A sibling agent under the same operator, and an unrelated operator's agent, both see only a
+    # not-found — no existence oracle for another agent's queue.
+    for other in (actors["aa2"], actors["ab1"]):
+        with pytest.raises(ToolCallNotFoundError, match="not found"):
+            await service.withdraw(tool_call_id=pending.tool_call_id, reason="not mine", actor=other)
+
+    assert service.get(pending.tool_call_id, actor=actor).status is ToolCallStatus.PENDING_APPROVAL
+
+
+async def test_withdraw_survives_credential_binding_rotation(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, migrated_db_url: str
+) -> None:
+    """An Agent that reconnected can still clear its predecessor binding's ask out of the queue.
+
+    Withdrawal is scoped to the Agent, not the exact binding — unlike `finish`/`authorize_execution`,
+    which gate external execution. Otherwise an OAuth reconnect would strand the old binding's
+    pending calls in the operator's queue forever.
+    """
+    original = actors["aa1"]
+    assert isinstance(original, AgentActor)
+    pending = await service.submit_and_wait(req=_request(owner="pre-rotation"), actor=original)
+
+    successor_id = uuid4()
+    now = datetime.datetime.now(datetime.UTC)
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as session, session.begin():
+            # `uq_credential_bindings_one_active_per_agent` allows one ACTIVE binding per Agent, so a
+            # reconnect retires the predecessor as it activates the successor — as production does.
+            predecessor = session.get_one(CredentialBinding, original.binding_id)
+            predecessor.status = CredentialBindingStatus.REVOKED
+            predecessor.ended_at = now
+            predecessor.end_reason = "superseded by reconnect"
+            predecessor.updated_at = now
+            session.flush()
+            session.add_all(
+                [
+                    CredentialBinding(
+                        binding_id=successor_id,
+                        agent_id=original.agent_id,
+                        kind=CredentialKind.STATIC,
+                        status=CredentialBindingStatus.ACTIVE,
+                        generation=2,
+                        supersedes_binding_id=original.binding_id,
+                        created_at=now,
+                        updated_at=now,
+                        issued_at=now,
+                        activated_at=now,
+                        ended_at=None,
+                        end_reason=None,
+                    ),
+                    StaticCredential(
+                        binding_id=successor_id,
+                        secret_reference=f"test-tool-call-service/{successor_id}",
+                        credential_fingerprint=hashlib.sha256(successor_id.bytes).digest(),
+                        created_at=now,
+                    ),
+                ]
+            )
+    finally:
+        engine.dispose()
+
+    reconnected = AgentActor(agent_id=original.agent_id, operator_id=original.operator_id, binding_id=successor_id)
+    withdrawn = await service.withdraw(
+        tool_call_id=pending.tool_call_id, reason="reconnected; no longer needed", actor=reconnected
+    )
+
+    assert withdrawn.status is ToolCallStatus.WITHDRAWN
+
+
+async def test_pending_wait_returns_when_the_agent_withdraws(
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+) -> None:
+    actor = actors["aa1"]
+    pending = await service.submit_and_wait(req=_request(owner="awaited"), actor=actor)
+
+    # A second connection holds the promise open while this one retracts it; WITHDRAWN must count as
+    # terminal or the waiter would block for the full wait_for_ms.
+    waiting = asyncio.create_task(service._wait_terminal(pending.tool_call_id, actor, 60_000))
+    await asyncio.sleep(0)
+    await service.withdraw(tool_call_id=pending.tool_call_id, reason="changed my mind", actor=actor)
+
+    settled = await asyncio.wait_for(waiting, timeout=5)
+    assert settled.status is ToolCallStatus.WITHDRAWN
 
 
 async def test_unknown_server_is_a_transport_independent_not_found(

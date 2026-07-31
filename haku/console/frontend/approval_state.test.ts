@@ -6,7 +6,10 @@ import {
   geolocationApprovalQueueId,
   makeRecentToolCall,
   recentToolCallCountdown,
+  recentToolCallTtlMs,
   screenshotApprovalQueueId,
+  statusColor,
+  terminalStatusLabel,
   toolApprovalQueueId,
   type GeolocationApproval,
   type ScreenshotApproval,
@@ -111,6 +114,21 @@ describe("approval queue state", () => {
     );
     expect(fields.approvalPolicyId).toBe("v1");
     expect(fields.autoApprovalEvaluation).toBe("approved: Gmail search/read operation");
+  });
+
+  it("labels an agent withdrawal distinctly from an operator denial", () => {
+    expect(terminalStatusLabel("withdrawn")).toBe("Withdrawn");
+    expect(terminalStatusLabel("denied")).toBe("Denied");
+    expect(statusColor("withdrawn")).toBe("gray");
+    expect(
+      approvalDisplayFields(pendingApproval({ status: "withdrawn", withdrawal_reason: "superseded" }))
+    ).toMatchObject({ withdrawalReason: "superseded", denialReason: null });
+  });
+
+  it("never shows a withdrawal as recent operator feedback", () => {
+    // The Recent list is fed only by the operator's own decisions, and a withdrawal is not one.
+    expect(recentToolCallTtlMs("withdrawn")).toBeNull();
+    expect(makeRecentToolCall(pendingApproval({ status: "withdrawn" }), 1_000)).toBeNull();
   });
 
   it("keeps terminal results only as short-lived recent feedback", () => {

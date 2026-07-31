@@ -455,6 +455,17 @@ def _submit_request(
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
+def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> dict[str, Any]:
+    app = cast(FastAPI, client.app)
+
+    async def withdraw() -> Any:
+        return await app.state.tool_call_service.withdraw(tool_call_id=tool_call_id, reason=reason, actor=actor)
+
+    assert client.portal is not None
+    record = client.portal.call(withdraw)
+    return cast(dict[str, Any], record.model_dump(mode="json"))
+
+
 def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
     engine = create_engine(app.state.settings.database_url.get_secret_value())
@@ -768,6 +779,65 @@ def test_list_tool_calls_filters_by_auto_approved(
     assert [c["tool_call_id"] for c in hidden] == [manual["tool_call_id"]]
     assert [c["tool_call_id"] for c in shown_only] == [auto["tool_call_id"]]
     assert {c["tool_call_id"] for c in unfiltered} == {manual["tool_call_id"], auto["tool_call_id"]}
+
+
+def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
+    return SubmitToolCallRequest(
+        server_id="grocy-sf",
+        tool_name="stock_add",
+        rationale="box is physically present",
+        arguments={"items": [{"product_id": 123, "amount": amount}]},
+        wait_for_ms=0,
+    )
+
+
+def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
+    make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_config: Path
+) -> None:
+    with (
+        make_client(config_file=console_config) as client,
+        make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
+    ):
+        agent = _static_agent_actor(client, _AGENT_TOKEN)
+        pending = _submit_request(client, _agent_stock_add(), actor=agent)
+        assert [c["tool_call_id"] for c in operator.get("/api/approvals/pending").json()["approvals"]] == [
+            pending["tool_call_id"]
+        ]
+
+        withdrawn = _withdraw(client, pending["tool_call_id"], "superseded by a corrected call", actor=agent)
+
+        assert operator.get("/api/approvals/pending").json()["approvals"] == []
+        history = operator.get("/api/tool-calls").json()["tool_calls"]
+        decision = operator.post(f"/api/tool-calls/{pending['tool_call_id']}/decision", json={"decision": "approve"})
+
+    assert withdrawn["status"] == "withdrawn"
+    assert withdrawn["withdrawal_reason"] == "superseded by a corrected call"
+    assert withdrawn["denial_reason"] is None
+    # Out of the queue, still in the ledger: withdrawal is an audit fact, not a delete.
+    assert [(c["tool_call_id"], c["status"]) for c in history] == [(pending["tool_call_id"], "withdrawn")]
+    # Deciding a call the agent already retracted is a conflict, not a silent re-approval.
+    assert decision.status_code == 409
+    assert "not pending approval" in decision.json()["detail"]
+
+
+def test_websocket_receives_agent_withdrawal_invalidation(
+    make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_config: Path
+) -> None:
+    with (
+        make_client(config_file=console_config) as client,
+        make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
+    ):
+        agent = _static_agent_actor(client, _AGENT_TOKEN)
+        with operator.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
+            assert ws.receive_json() == {"event_type": "hello"}
+            pending = _submit_request(client, _agent_stock_add(), actor=agent)
+            assert ws.receive_json() == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
+
+            _withdraw(client, pending["tool_call_id"], "no longer needed", actor=agent)
+            event = ws.receive_json()
+
+    # The operator's open drawer is woken by the retraction, so the card does not linger.
+    assert event == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
 
 
 def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(

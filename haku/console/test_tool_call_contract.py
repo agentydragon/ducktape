@@ -8,7 +8,21 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.tool_calls import ApprovalDecision, ApprovalDecisionRequest
+from haku.console.tool_calls import ApprovalDecision, ApprovalDecisionRequest, ToolCallStatus
+
+
+def test_tool_call_status_wire_values() -> None:
+    # Pins both the spelling haku-state parses off the wire and the declaration order, which the
+    # Postgres `tool_call_status` enum's label order must match (see
+    # test_mcp_approval.test_fresh_baseline_enum_values_match_domain_enums). Append only.
+    assert [status.value for status in ToolCallStatus] == [
+        "pending_approval",
+        "running",
+        "ok",
+        "error",
+        "denied",
+        "withdrawn",
+    ]
 
 
 @pytest.mark.parametrize(

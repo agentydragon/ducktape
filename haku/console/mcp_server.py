@@ -76,6 +76,7 @@ from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
+    AgentActorRequiredError,
     BackendAccountNotConnectedError,
     ToolCallApplicationService,
     ToolCallNotFoundError,
@@ -104,7 +105,8 @@ INSTRUCTIONS = (
     "wraps the real arguments in an `input` + `rationale` envelope submit Agent calls to the "
     "operator's approval queue: they return the result if approved within a few seconds, otherwise "
     "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
-    "resolve a promise. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
+    "resolve a promise, or `withdraw_tool_call(tool_call_id, reason)` to retract one you no longer "
+    "want before an operator decides it. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
     "by the console Operator's browser session execute directly and create no approval record. Call "
     "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials."
 )
@@ -113,7 +115,9 @@ _REQUEST_PREAMBLE = (
     "For Agent callers, submits `{tool}` on `{server}` through haku-console's operator-approval "
     "queue. Put the real tool arguments under `input`. Returns the result if approved within "
     "`wait_for_approval_ms`, otherwise a promise (a pending `tool_call_id` plus approval `url`) — "
-    "poll `get_tool_call(tool_call_id)` to resolve it. An authenticated console Operator call "
+    "poll `get_tool_call(tool_call_id)` to resolve it. If you stop wanting the call while it is "
+    "still pending, retract it with `withdraw_tool_call(tool_call_id, reason)` instead of leaving "
+    "it in the operator's queue. An authenticated console Operator call "
     "executes directly and creates no approval record."
 )
 
@@ -121,6 +125,13 @@ _REQUEST_PREAMBLE = (
 # world — never a downstream MCP/provider lookup) and mutate nothing, so advertise both axes.
 # Clients like claude.ai key off readOnlyHint to group these as read-only and skip approvals.
 _READ_ONLY_META = mcp_types.ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+
+# Console-native mutation of the console's own ledger: closed world (never a downstream MCP or
+# provider call), and non-destructive — it retracts a request the agent can simply resubmit, and
+# destroys no data. Spelled out because an unannotated tool reads to clients as an open-world
+# destructive write. No idempotentHint: a second withdrawal is a conflict, not a no-op, and
+# claiming idempotency would invite client retry loops.
+_LEDGER_MUTATION_META = mcp_types.ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
 
 
 @dataclass(frozen=True)
@@ -302,51 +313,55 @@ def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _failed_result(text: str, meta: dict[str, Any]) -> ToolResult:
+    return ToolResult(content=[mcp_types.TextContent(type="text", text=text)], meta=meta, is_error=True)
+
+
 def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
     """Map a (possibly non-terminal) tool-call record to an MCP tool result.
 
-    Terminal ok → the upstream result; error/denied → an MCP tool error; still pending/running →
-    a promise (pending id + approval url). Every outcome carries the canonical tool-call id in MCP
-    result metadata so non-interactive clients can resolve the audit record without a second
-    admission protocol.
+    Terminal ok → the upstream result; error/denied/withdrawn → an MCP tool error; still
+    pending/running → a promise (pending id + approval url). Every outcome carries the canonical
+    tool-call id in MCP result metadata so non-interactive clients can resolve the audit record
+    without a second admission protocol.
+
+    Exhaustive `match` on purpose: the promise is one named arm rather than a fallback, so adding a
+    status is a mypy error here instead of a terminal record silently reported as still pending.
     """
     result_meta = {
         MCP_TOOL_CALL_META_KEY: McpToolCallMetadata(tool_call_id=record.tool_call_id).model_dump(mode="json")
     }
-    if record.status == ToolCallStatus.OK:
-        upstream = mcp_types.CallToolResult.model_validate(record.result or {"content": []})
-        content: list[mcp_types.ContentBlock] = list(upstream.content) or [
-            mcp_types.TextContent(type="text", text="(tool returned no content)")
-        ]
-        return ToolResult(content=content, structured_content=upstream.structuredContent, meta=result_meta)
-    if record.status == ToolCallStatus.ERROR:
-        return ToolResult(
-            content=[mcp_types.TextContent(type="text", text=record.error or "tool call failed")],
-            meta=result_meta,
-            is_error=True,
-        )
-    if record.status == ToolCallStatus.DENIED:
-        return ToolResult(
-            content=[mcp_types.TextContent(type="text", text=f"denied: {record.denial_reason or 'no reason given'}")],
-            meta=result_meta,
-            is_error=True,
-        )
-    url = _tool_call_url(settings, record.tool_call_id)
-    approve = f" Open {url} to approve." if url else ""
-    promise = ToolCallPromise(
-        status=record.status,
-        tool_call_id=record.tool_call_id,
-        url=url,
-        message=(
-            f"Sent for approval; pending as {record.tool_call_id}.{approve} "
-            f"Poll get_tool_call('{record.tool_call_id}') for the result."
-        ),
-    )
-    return ToolResult(
-        content=[mcp_types.TextContent(type="text", text=promise.message)],
-        structured_content=promise.model_dump(mode="json"),
-        meta=result_meta,
-    )
+    match record.status:
+        case ToolCallStatus.OK:
+            upstream = mcp_types.CallToolResult.model_validate(record.result or {"content": []})
+            content: list[mcp_types.ContentBlock] = list(upstream.content) or [
+                mcp_types.TextContent(type="text", text="(tool returned no content)")
+            ]
+            return ToolResult(content=content, structured_content=upstream.structuredContent, meta=result_meta)
+        case ToolCallStatus.ERROR:
+            return _failed_result(record.error or "tool call failed", result_meta)
+        case ToolCallStatus.DENIED:
+            return _failed_result(f"denied: {record.denial_reason or 'no reason given'}", result_meta)
+        case ToolCallStatus.WITHDRAWN:
+            return _failed_result(f"withdrawn: {record.withdrawal_reason or 'no reason given'}", result_meta)
+        case ToolCallStatus.PENDING_APPROVAL | ToolCallStatus.RUNNING:
+            url = _tool_call_url(settings, record.tool_call_id)
+            approve = f" Open {url} to approve." if url else ""
+            promise = ToolCallPromise(
+                status=record.status,
+                tool_call_id=record.tool_call_id,
+                url=url,
+                message=(
+                    f"Sent for approval; pending as {record.tool_call_id}.{approve} "
+                    f"Poll get_tool_call('{record.tool_call_id}') for the result, or "
+                    f"withdraw_tool_call('{record.tool_call_id}', reason) if you no longer want it."
+                ),
+            )
+            return ToolResult(
+                content=[mcp_types.TextContent(type="text", text=promise.message)],
+                structured_content=promise.model_dump(mode="json"),
+                meta=result_meta,
+            )
 
 
 def _direct_to_result(result: dict[str, Any]) -> ToolResult:
@@ -688,6 +703,31 @@ def build_console_mcp(
         try:
             record = context.tool_calls.get(tool_call_id, actor=actor)
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
+            raise ToolError(str(error)) from error
+        return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
+
+    @mcp.tool(annotations=_LEDGER_MUTATION_META)
+    async def withdraw_tool_call(
+        tool_call_id: str, reason: str | None = None, actor: ToolCallActor = current_actor_dependency
+    ) -> ToolCallView:
+        """Retract one of your own tool calls that is still waiting for operator approval.
+
+        Use this as soon as you no longer want a pending call: your plan changed, the operator did
+        the thing by hand, you submitted a duplicate, or you got what you needed another way. It
+        takes the request out of the operator's approval queue so nobody is asked to decide on work
+        you have abandoned — an unwanted promise otherwise sits in that queue indefinitely.
+
+        Only works while the call is `pending_approval`. If the operator already approved it, this
+        fails and names the current status; withdrawing never stops or undoes an approved call, so
+        read the outcome with `get_tool_call` instead. You can only withdraw calls your own agent
+        submitted, and withdrawal is terminal — resubmit rather than expecting to un-withdraw.
+
+        `reason` is recorded on the audit row and shown to the operator, so prefer a real
+        explanation ("superseded by tc_… with the corrected label") over "not needed".
+        """
+        try:
+            record = await context.tool_calls.withdraw(tool_call_id=tool_call_id, reason=reason, actor=actor)
+        except (ToolCallNotFoundError, ToolCallStateConflictError, AgentActorRequiredError) as error:
             raise ToolError(str(error)) from error
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
 

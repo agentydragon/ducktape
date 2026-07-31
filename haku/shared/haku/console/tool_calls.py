@@ -30,11 +30,15 @@ class McpToolCallMetadata(BaseModel):
 
 
 class ToolCallStatus(StrEnum):
+    """Declaration order is the Postgres ``tool_call_status`` enum's label order — append only."""
+
     PENDING_APPROVAL = "pending_approval"
     RUNNING = "running"
     OK = "ok"
     ERROR = "error"
     DENIED = "denied"
+    # Terminal: the submitting Agent retracted the request before an operator decided it.
+    WITHDRAWN = "withdrawn"
 
 
 class ApprovalDecision(StrEnum):
@@ -83,6 +87,7 @@ class ToolCallRecord(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
     denial_reason: str | None = None
+    withdrawal_reason: str | None = None
     approval_policy_id: str | None = None
     auto_approval_evaluation: str | None = None
     approved_at: datetime.datetime | None = None

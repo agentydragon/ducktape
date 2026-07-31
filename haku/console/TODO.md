@@ -92,6 +92,18 @@ is specified in <../../plans/oauth_architecture.md>. The next product slices are
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
 
+## Tool-call cards — compact view
+
+- **Don't show why a call _wasn't_ auto-approved in compact view.** `tool_call_card.tsx` renders
+  `Auto-approval: {fields.autoApprovalEvaluation}` in both variants. For a call that was not
+  auto-approved that string only explains an absence — exactly the provenance the compact rules
+  say to omit — and it is the reason the operator is looking at the card at all. Keep it for
+  auto-approved calls and/or move it behind the detailed `Metadata` disclosure.
+- **A withdrawn call vanishes from the drawer with no explanation.** An agent withdrawal removes
+  the card from the queue mid-review; the operator sees a silent drop. Fixing it properly means
+  re-fetching disappeared ids in `applyToolApprovals` (`haku_ui_embed.tsx`) and surfacing the
+  withdrawal the way a decided call surfaces in "Recent".
+
 ## Operator browser auth — parked remainders
 
 From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #3516/#3519 except for:

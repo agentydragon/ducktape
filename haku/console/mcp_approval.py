@@ -291,10 +291,40 @@ class PostgresToolCallLedger:
             return [self._record_from_projection(*projection) for projection in projections]
 
     def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
-        return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING, actor=actor)
+        operator = self._require_operator_actor(actor)
+        with self._sessions.begin() as session:
+            row, principal = self._lock_pending(session, tool_call_id, operator)
+            self._require_executable_principal(session, principal, operator.operator_id)
+            row.status = ToolCallStatus.RUNNING
+            row.updated_at = row.approved_at = datetime.datetime.now(datetime.UTC)
+            return self._record_from_principal(row, principal)
 
     def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord:
-        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED, actor=actor, denial_reason=reason)
+        operator = self._require_operator_actor(actor)
+        with self._sessions.begin() as session:
+            row, principal = self._lock_pending(session, tool_call_id, operator)
+            row.status = ToolCallStatus.DENIED
+            row.updated_at = datetime.datetime.now(datetime.UTC)
+            row.denial_reason = reason
+            return self._record_from_principal(row, principal)
+
+    def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord:
+        """Retract the Agent's own still-pending call.
+
+        Scoped at the Agent rather than the exact credential binding (unlike `finish` /
+        `authorize_execution`, which gate external execution against the binding that queued the
+        work): withdrawal only moves a call toward a terminal state, and an Agent that reconnected
+        under a successor binding must still be able to clear its predecessor's ask out of the
+        operator's queue.
+        """
+        agent = self._require_agent_actor(actor)
+        with self._sessions.begin() as session:
+            row, principal = self._lock_pending(session, tool_call_id, agent)
+            self._require_active_agent_binding(session, agent)
+            row.status = ToolCallStatus.WITHDRAWN
+            row.updated_at = datetime.datetime.now(datetime.UTC)
+            row.withdrawal_reason = reason
+            return self._record_from_principal(row, principal)
 
     def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
@@ -336,24 +366,41 @@ class PostgresToolCallLedger:
                 case _:
                     raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
-    def _transition_pending_approval(
-        self, tool_call_id: str, status: ToolCallStatus, *, actor: OperatorActor, denial_reason: str | None = None
-    ) -> ToolCallRecord:
-        operator_id = self._operator_id(actor)
-        with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id, actor)
-            principal = self._principal(session, tool_call_id)
-            record = self._record_from_principal(row, principal)
-            if record.status != ToolCallStatus.PENDING_APPROVAL:
-                raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
-            if status is ToolCallStatus.RUNNING:
-                self._require_executable_principal(session, principal, operator_id)
-            row.status = status
-            row.updated_at = datetime.datetime.now(datetime.UTC)
-            row.denial_reason = denial_reason
-            if status == ToolCallStatus.RUNNING:
-                row.approved_at = row.updated_at
-            return self._record_from_principal(row, principal)
+    # The annotations already say which actor each exit belongs to; these re-check it at runtime
+    # because the ledger is reachable from adapters that resolve an actor dynamically. Each caller
+    # uses the narrowed value, so neither is a bare assertion.
+    @staticmethod
+    def _require_operator_actor(actor: ToolCallActor) -> OperatorActor:
+        match actor:
+            case OperatorActor():
+                return actor
+            case _:
+                raise TypeError(f"operator actor required, got {type(actor).__name__}")
+
+    @staticmethod
+    def _require_agent_actor(actor: ToolCallActor) -> AgentActor:
+        match actor:
+            case AgentActor():
+                return actor
+            case _:
+                raise TypeError(f"agent actor required, got {type(actor).__name__}")
+
+    def _lock_pending(
+        self, session: Session, tool_call_id: str, actor: ToolCallActor
+    ) -> tuple[McpToolCall, _ResolvedToolCallPrincipal]:
+        """Lock the actor's call and assert it is still pending, for one of its three exits.
+
+        The `SELECT ... FOR UPDATE` in `_row_by_tool_call_id` is what serializes operator-approve
+        against agent-withdraw: the loser re-reads the committed row and fails the check below
+        naming the winner's status. Each caller keeps its own actor type, so approve/deny stay
+        operator verbs and withdraw stays the requester's own.
+        """
+        row = self._row_by_tool_call_id(session, tool_call_id, actor)
+        principal = self._principal(session, tool_call_id)
+        record = self._record_from_principal(row, principal)
+        if record.status != ToolCallStatus.PENDING_APPROVAL:
+            raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
+        return row, principal
 
     def _row_by_tool_call_id(self, session: Session, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
         stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
@@ -417,6 +464,7 @@ class PostgresToolCallLedger:
             result_json=record.result,
             error=record.error,
             denial_reason=record.denial_reason,
+            withdrawal_reason=record.withdrawal_reason,
             approval_policy_id=record.approval_policy_id,
             auto_approval_evaluation=record.auto_approval_evaluation,
             approved_at=record.approved_at,
@@ -457,6 +505,7 @@ class PostgresToolCallLedger:
             result=row.result_json,
             error=row.error,
             denial_reason=row.denial_reason,
+            withdrawal_reason=row.withdrawal_reason,
             approval_policy_id=row.approval_policy_id,
             auto_approval_evaluation=row.auto_approval_evaluation,
             approved_at=row.approved_at,
@@ -563,14 +612,6 @@ class PostgresToolCallLedger:
             AgentActor(agent_id=principal.agent_id, operator_id=principal.operator_id, binding_id=principal.binding_id),
         )
         return operator_id
-
-    @staticmethod
-    def _operator_id(actor: OperatorActor) -> UUID:
-        match actor:
-            case OperatorActor(operator_id=operator_id):
-                return operator_id
-            case _:
-                raise TypeError(f"operator actor required, got {type(actor).__name__}")
 
 
 # TODO(naming): client-side dispatcher over fastmcp.client.Client, not a FastMCP Proxy/Provider

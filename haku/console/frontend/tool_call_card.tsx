@@ -69,6 +69,11 @@ export function ToolCallCard({
               Denied: {fields.denialReason}
             </Text>
           )}
+          {fields.withdrawalReason && (
+            <Text size="xs" c="dimmed">
+              Withdrawn: {fields.withdrawalReason}
+            </Text>
+          )}
           {fields.approvalPolicyId && (
             <Text size="xs" c="dimmed">
               Auto-approved by {fields.approvalPolicyId}

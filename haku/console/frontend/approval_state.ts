@@ -35,6 +35,7 @@ export interface ApprovalDisplayFields {
   callerAgentId: string | null;
   createdAt: string | null;
   denialReason: string | null;
+  withdrawalReason: string | null;
   approvalPolicyId: string | null;
   autoApprovalEvaluation: string | null;
 }
@@ -118,11 +119,14 @@ export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplay
     callerAgentId: approval.caller.kind === "agent" ? approval.caller.agent_id : null,
     createdAt: approval.created_at ?? null,
     denialReason: approval.denial_reason ?? null,
+    withdrawalReason: approval.withdrawal_reason ?? null,
     approvalPolicyId: approval.approval_policy_id ?? null,
     autoApprovalEvaluation: approval.auto_approval_evaluation ?? null,
   };
 }
 
+// The "Recent" list is fed only by the operator's own decisions (`finishToolDecision` in
+// haku_ui_embed.tsx), so `withdrawn` — an agent retraction — never enters it and gets no TTL.
 export function recentToolCallTtlMs(status: ToolCallRecord["status"]): number | null {
   if (status === "ok" || status === "denied") return RECENT_OK_TTL_MS;
   if (status === "error") return RECENT_ERROR_TTL_MS;
@@ -146,19 +150,32 @@ export function recentToolCallCountdown(recent: RecentToolCall, nowMs: number): 
   };
 }
 
+// Keyed maps rather than if-chains with a fallback: a new status is then a type error here instead
+// of silently rendering as a blue "Pending" badge.
+const STATUS_LABELS: Record<ToolCallRecord["status"], string> = {
+  pending_approval: "Pending",
+  running: "Running",
+  ok: "OK",
+  error: "Error",
+  denied: "Denied",
+  withdrawn: "Withdrawn",
+};
+
+const STATUS_COLORS: Record<ToolCallRecord["status"], string> = {
+  pending_approval: "blue",
+  running: "blue",
+  ok: "teal",
+  error: "red",
+  denied: "gray",
+  withdrawn: "gray",
+};
+
 export function terminalStatusLabel(status: ToolCallRecord["status"]): string {
-  if (status === "ok") return "OK";
-  if (status === "denied") return "Denied";
-  if (status === "error") return "Error";
-  if (status === "running") return "Running";
-  return "Pending";
+  return STATUS_LABELS[status];
 }
 
 export function statusColor(status: ToolCallRecord["status"]): string {
-  if (status === "ok") return "teal";
-  if (status === "error") return "red";
-  if (status === "denied") return "gray";
-  return "blue";
+  return STATUS_COLORS[status];
 }
 
 export function shortDate(value: string | null | undefined): string | null {

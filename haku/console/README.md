@@ -64,7 +64,18 @@ against the existing FastMCP tool's generated schema; its audit-safe evaluation 
 even when the call stays manual. A call whose arguments fail an owned **in-process** schema is
 persisted **born-denied** — the validation error returns to the MCP caller immediately and the call
 never enters the approval queue (it can never execute, so it must not consume operator attention);
-console-side lookup/schema errors still fail closed to manual review. haku-state stores only authored requests
+console-side lookup/schema errors still fail closed to manual review.
+
+A queued call has exactly three exits, and each belongs to one actor: the operator **approves** it
+(→ `running`) or **denies** it (→ `denied`), or the submitting Agent **withdraws** it
+(→ `withdrawn`) via the MCP `withdraw_tool_call` tool. Withdrawal is the requester retracting an
+ask it no longer wants — a superseded plan, a duplicate, something the operator already did by
+hand — so nobody is asked to decide on abandoned work. It is deliberately a separate status from
+`denied`, which records a human's judgment, and it is agent-only: an operator dismissing a call
+uses `deny`. Withdrawal is scoped to the owning **Agent**, not the exact credential binding, so an
+Agent that reconnected can still clear its predecessor binding's ask out of the queue. Only a
+`pending_approval` call can be withdrawn; approval and withdrawal race under the tool-call row lock,
+and the loser is told the winner's status. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 
@@ -146,7 +157,8 @@ transparent **pass-throughs** (original schema, real result); everything else ke
 `<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
 returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
 an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
-read tools. `list_mcp_servers` passively reports the
+read tools, or retracts via `withdraw_tool_call(tool_call_id, reason)` — the one console-native
+mutation, annotated `readOnlyHint=False`. `list_mcp_servers` passively reports the
 configured catalog plus each persisted per-Operator OAuth/provider status object. Each server's
 discriminated `backend` object mirrors the safe configuration shape (`remote_mcp` with URL/auth or
 `in_process` with credential kind); static-bearer secret references are deliberately omitted. These status objects
@@ -170,10 +182,13 @@ The promise-semantics preamble lives in each tool's
 an invalid bearer never falls back to an ambient browser cookie. FastMCP still owns DCR, PKCE,
 callback, code, and token-family
 machinery; Haku adds the Operator-authenticated Agent-enrollment ceremony and resolves both OAuth
-and static credentials through the same canonical Agent authority. The `/mcp` surface only
-submits/reads — there is no decision tool — so an OAuth caller cannot self-approve; approval stays
+and static credentials through the same canonical Agent authority. The `/mcp` surface submits,
+reads, and lets an Agent **withdraw its own still-pending call** — there is still no decision tool,
+so an OAuth caller cannot self-approve, and withdrawal only ever moves a call the caller itself
+queued toward a terminal state, never toward execution. Approval stays
 in trusted console chrome. Approved calls execute against the console's stored Operator credentials,
-so an incoming token's blast radius is "call the console's submit/read tools" and nothing else.
+so an incoming token's blast radius is "call the console's submit/read/withdraw-own tools" and
+nothing else.
 OAuth state is required to use the console's Postgres; Haku never falls back to FastMCP's
 process-local store or Valkey.
 

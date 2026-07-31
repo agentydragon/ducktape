@@ -42,7 +42,7 @@ from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 
 logger = logging.getLogger(__name__)
 
-TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
+TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED, ToolCallStatus.WITHDRAWN}
 
 
 class ToolCallRepository(Protocol):
@@ -73,6 +73,8 @@ class ToolCallRepository(Protocol):
     def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
 
     def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord: ...
+
+    def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord: ...
 
     def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
@@ -122,6 +124,10 @@ async def _no_gmail_client(_operator_id: UUID) -> GmailToolsClient | None:
 
 class OperatorActorRequiredError(PermissionError):
     """Raised when an AgentActor reaches an operator-only lifecycle operation."""
+
+
+class AgentActorRequiredError(PermissionError):
+    """Raised when an OperatorActor reaches an agent-only lifecycle operation."""
 
 
 class BackendAccountNotConnectedError(Exception):
@@ -357,6 +363,28 @@ class ToolCallApplicationService:
         self._dispatch_execution(record=running, server=server, auth_token=auth_token, actor=operator)
         return running
 
+    async def withdraw(self, *, tool_call_id: str, reason: str | None, actor: ToolCallActor) -> ToolCallRecord:
+        """Retract an Agent's own pending call. Operators decide; only the requester withdraws.
+
+        Deliberately not exposed to `OperatorActor`: an operator's verb is `deny`, and letting one
+        write `withdrawn` would record the agent as having retracted a request the operator in fact
+        dismissed — destroying the distinction the status exists to draw.
+        """
+        agent = self._require_agent(actor)
+        record = self._repository.withdraw(tool_call_id, reason, actor=agent)
+        logger.info(
+            "tool call %s withdrawn server=%s tool=%s agent=%s reason=%r",
+            record.tool_call_id,
+            record.server_id,
+            record.tool_name,
+            agent.agent_id,
+            reason,
+        )
+        # The owning operator is `agent.operator_id`: the repository's binding revalidation proves
+        # the agent is owned by it, so this is the same verified publication target `submit` uses.
+        await self._publish(agent.operator_id, record.tool_call_id)
+        return record
+
     async def _execute_and_publish(
         self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: ToolCallActor
     ) -> ToolCallRecord:
@@ -469,4 +497,10 @@ class ToolCallApplicationService:
     def _require_operator(actor: ToolCallActor) -> OperatorActor:
         if not isinstance(actor, OperatorActor):
             raise OperatorActorRequiredError("operator actor required")
+        return actor
+
+    @staticmethod
+    def _require_agent(actor: ToolCallActor) -> AgentActor:
+        if not isinstance(actor, AgentActor):
+            raise AgentActorRequiredError("agent actor required")
         return actor

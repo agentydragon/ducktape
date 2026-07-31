@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -46,6 +46,9 @@ from haku.console.tool_call_service import ToolCallApplicationService, ToolCallN
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
+    AgentToolCallCaller,
+    ApprovalDecision,
+    ApprovalDecisionRequest,
     SubmitToolCallRequest,
     ToolCallRecord,
     ToolCallStatus,
@@ -500,6 +503,112 @@ async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None
     )
     assert [call.tool_call_id for call in operator_calls] == call_ids[:2]
     assert [call.tool_call_id for call in other_operator_calls] == call_ids[2:]
+
+
+async def _submit_pending_draft(client: Client, subject: str = "s") -> str:
+    result = await client.call_tool(
+        "gmail__drafts_create",
+        {
+            "input": {"to": ["a@b.test"], "subject": subject, "body": "b"},
+            "rationale": "test",
+            "wait_for_approval_ms": 0,
+        },
+    )
+    assert result.structured_content is not None
+    return str(result.structured_content["tool_call_id"])
+
+
+async def test_withdraw_tool_call_retracts_a_promise(agent_client: Client) -> None:
+    tool_call_id = await _submit_pending_draft(agent_client)
+
+    result = await agent_client.call_tool(
+        "withdraw_tool_call", {"tool_call_id": tool_call_id, "reason": "superseded by a corrected draft"}
+    )
+
+    view = result.structured_content
+    assert view is not None
+    assert view["call"]["status"] == ToolCallStatus.WITHDRAWN
+    assert view["call"]["withdrawal_reason"] == "superseded by a corrected draft"
+    assert view["url"] == f"https://haku.test/tool-calls/{tool_call_id}"
+
+    # The durable row is what the agent re-reads, so the retraction has to be visible there too.
+    got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+    assert got.structured_content is not None
+    assert got.structured_content["call"]["status"] == ToolCallStatus.WITHDRAWN
+
+
+async def test_withdraw_tool_call_is_advertised_as_a_mutation(agent_client: Client) -> None:
+    """Guards against `withdraw_tool_call` being copy-pasted onto `_READ_ONLY_META`, which would let
+    clients treat a ledger write as a free read."""
+    tools = {tool.name: tool for tool in await agent_client.list_tools()}
+
+    annotations = tools["withdraw_tool_call"].annotations
+    assert annotations is not None
+    assert annotations.readOnlyHint is False
+    assert annotations.openWorldHint is False
+    assert tools["get_tool_call"].annotations.readOnlyHint is True
+
+
+async def test_withdraw_tool_call_after_approval_reports_the_real_status(
+    harness: _Harness, agent_client: Client
+) -> None:
+    tool_call_id = await _submit_pending_draft(agent_client)
+    await harness.tool_calls.decide(
+        tool_call_id=tool_call_id,
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
+        actor=OperatorActor(operator_id=harness.operator_id),
+    )
+
+    # Withdrawal never stops an approved call; the agent is told the real status and reads the
+    # outcome with get_tool_call instead.
+    with pytest.raises(ToolError, match="not pending approval"):
+        await agent_client.call_tool("withdraw_tool_call", {"tool_call_id": tool_call_id, "reason": "too late"})
+
+
+async def test_withdraw_tool_call_rejects_another_agents_call(harness: _Harness) -> None:
+    agents = (_AGENT_TOKEN, _SIBLING_AGENT_TOKEN, _OTHER_AGENT_TOKEN, _OTHER_SIBLING_AGENT_TOKEN)
+    call_ids = []
+    for token in agents:
+        async with Client(f"{harness.base}/mcp", auth=token) as client:
+            call_ids.append(await _submit_pending_draft(client, subject=token))
+
+    for token, own_call_id in zip(agents, call_ids, strict=True):
+        async with Client(f"{harness.base}/mcp", auth=token) as client:
+            # A sibling agent under the same operator is as foreign as another operator's agent:
+            # neither gets an existence oracle for a queue that isn't theirs.
+            for foreign_call_id in set(call_ids) - {own_call_id}:
+                with pytest.raises(ToolError, match="not found"):
+                    await client.call_tool(
+                        "withdraw_tool_call", {"tool_call_id": foreign_call_id, "reason": "not mine"}
+                    )
+            withdrawn = await client.call_tool("withdraw_tool_call", {"tool_call_id": own_call_id})
+            assert withdrawn.structured_content is not None
+            assert withdrawn.structured_content["call"]["status"] == ToolCallStatus.WITHDRAWN
+
+
+def test_withdrawn_record_is_not_reported_as_a_promise() -> None:
+    """A terminal record must never render as "still pending" — the promise is a named arm of
+    `_record_to_result`, not its fallback."""
+    record = ToolCallRecord(
+        tool_call_id="tc_withdrawn",
+        server_id="gmail",
+        tool_name="drafts_create",
+        caller=AgentToolCallCaller(agent_id=uuid4(), display_name="Haku"),
+        status=ToolCallStatus.WITHDRAWN,
+        created_at=datetime.datetime.now(datetime.UTC),
+        updated_at=datetime.datetime.now(datetime.UTC),
+        arguments={},
+        withdrawal_reason="superseded",
+    )
+
+    # Pure result-mapping: `console_settings` only builds the model, so no database is contacted.
+    result = mcp_server_module._record_to_result(
+        record, console_settings("postgresql://unused/record-to-result", ui_base_url="https://haku.test")
+    )
+
+    assert result.is_error is True
+    assert result.structured_content is None
+    assert "withdrawn: superseded" in result.content[0].text
 
 
 # ── End-to-end: real upstream MCP server + console served over HTTP + real Postgres ──────────
