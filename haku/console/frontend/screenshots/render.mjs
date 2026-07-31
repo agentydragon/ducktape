@@ -75,10 +75,13 @@ const SCENES = [
     frame: true,
   },
   {
+    // The only scene that renders the detailed variant: its first row is toggled to Full and that
+    // row's Metadata disclosure opened, so detail-only rendering is actually visually reviewed.
     name: "history",
     viewport: { width: 1200, height: 1500 },
     closeApprovals: true,
     clicks: ['[aria-label="Full"]', "summary::-p-text(Metadata)"],
+    expectVisible: ".haku-shell-disclosure[open] .haku-shell-disclosure-body",
     frame: true,
   },
   {
@@ -156,7 +159,17 @@ const assets = [];
 const mockHakuUi = readInput("MOCK_HAKU_UI", "mock_haku_ui.html");
 try {
   for (const colorScheme of COLOR_SCHEMES) {
-    for (const { name, viewport, click, clicks, closeApprovals, element, fullPage = false, frame } of SCENES) {
+    for (const {
+      name,
+      viewport,
+      click,
+      clicks,
+      closeApprovals,
+      expectVisible,
+      element,
+      fullPage = false,
+      frame,
+    } of SCENES) {
       const page = await browser.newPage();
       // Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
       // Date.now() into sampleRecentToolCalls, so without a frozen clock any date-relative text
@@ -185,6 +198,16 @@ try {
       // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
       // delay so they render enabled (animations are reduced above).
       await settle(700);
+      // Close the drawer BEFORE the clicks below, not after. The drawer renders its own tool-call
+      // cards, so while it is open its controls shadow the page's — `page.click` takes the first
+      // match in DOM order, and a scene meant to toggle a history row would silently toggle the
+      // drawer's card instead, then throw that state away when the drawer closed. No scene clicks
+      // anything inside the drawer, so establishing the closed baseline first is unambiguous.
+      if (closeApprovals) {
+        const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
+        if (drawerClose) await drawerClose.click();
+        await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
+      }
       // Some scenes need clicks to reveal state internal to a component: a popover's open state
       // (location-sharing control) or history rows toggled into their detailed view.
       // Each click re-renders the DOM, so re-settle before the next one.
@@ -192,10 +215,11 @@ try {
         await page.click(selector);
         await settle(300);
       }
-      if (closeApprovals) {
-        const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
-        if (drawerClose) await drawerClose.click();
-        await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
+      // A click that lands on the wrong element fails silently — `page.click` only throws when
+      // nothing matches at all. `expectVisible` is the scene's own proof that its clicks did what
+      // they were written to do.
+      if (expectVisible) {
+        await page.waitForSelector(expectVisible, { visible: true, timeout: 5_000 });
       }
       if (frame) {
         // haku_ui_embed.tsx's refreshToolApprovals() fires on mount and increments syncsInFlight

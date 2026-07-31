@@ -92,16 +92,6 @@ is specified in <../../plans/oauth_architecture.md>. The next product slices are
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
 
-## Screenshot harness — the detailed variant is never actually rendered
-
-The `history` scene (`screenshots/render.mjs`) clicks `[aria-label="Full"]` intending to put its
-first row into the detailed variant, but no card in the resulting PNG renders the detail-only
-`Metadata` disclosure, so the click is not reaching a history row (most likely it matches a
-control in the closed approvals drawer first, which `closeApprovals: true` hides but leaves in the
-DOM). Effect: **no scene visually reviews the detailed variant at all** — detail-only rendering
-regressions cannot be caught by looking at the screenshots. Scope the selector to the history list
-(or click the row's own control by index) and confirm `Metadata` appears in the PNG.
-
 ## Approvals drawer
 
 - **A withdrawn call vanishes from the drawer with no explanation.** An agent withdrawal removes
