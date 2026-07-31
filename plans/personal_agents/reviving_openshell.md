@@ -92,55 +92,34 @@ plugin work, does the policy apply, does the harness come up — are answerable
 on a local cluster without production RBAC, and only the questions that
 genuinely need cluster identity or cluster-only services justify the real one.
 
-## Leftovers from the teardown, and the order that matters
+## Leftovers from the teardown
 
-Deleting the manifests did not remove everything, because the namespace
-kustomizations carried `prune: false` and Helm does not remove CRDs on
-uninstall.
+`cluster/docs/troubleshooting.md` § "Removing a CRD Operator (Uninstall Runbook)"
+already covers this ground — Helm not removing CRDs, finalizers stalling once the
+controller is gone, the clear-the-finalizer patch, and a final verification
+checklist. #3607 did not follow it, and paid for all three: `kubectl delete ns
+openshell-system` hung in `Terminating` on an `OpenShellProvider` whose
+`openshell.lenshq.io/provider-cleanup` finalizer had no controller left, and the
+five CRDs outlived the uninstall.
 
-**The trap: #3607 deleted the operator while its custom resources still
-existed.** `OpenShellProvider/agentydragon-github` carries the finalizer
-`openshell.lenshq.io/provider-cleanup`, and the controller that would run it is
-gone — so `kubectl delete ns openshell-system` hangs in `Terminating` forever.
-The namespace tells you so itself:
+Read the runbook rather than this section. The one thing worth adding to it is
+recorded there now: the stall is **not** limited to deleting controller pods by
+hand. A pure GitOps removal hits it too when the operator and its custom
+resources are pruned in the same commit, which is the shape this project used.
 
-```text
-NamespaceContentRemaining     Some resources are remaining:
-                              openshellproviders.openshell.lenshq.io has 1 resource instances
-NamespaceFinalizersRemaining  Some content in the namespace has finalizers remaining:
-                              openshell.lenshq.io/provider-cleanup in 1 resource instances
-```
-
-Clear the orphaned finalizer, then everything else follows:
+For the record, what unstuck it:
 
 ```bash
 kubectl -n openshell-system patch openshellprovider agentydragon-github \
   --type=merge -p '{"metadata":{"finalizers":[]}}'
-# the namespace finalizes on its own; then the CRDs have no instances left
-kubectl delete crd \
-  openshellsandboxes.openshell.lenshq.io \
-  openshellpolicies.openshell.lenshq.io \
-  openshellproviders.openshell.lenshq.io \
-  openshellproviderprofiles.openshell.lenshq.io \
-  openshellworkspaces.openshell.lenshq.io
 ```
 
-Clearing a finalizer is safe **only because** the controller is gone and its
-cleanup — deregistering the provider from a gateway that no longer exists — is
-meaningless. Do **not** reach for the namespace's own `spec.finalizers` via the
-`/finalize` subresource, which is the widely-copied version of this fix: it
-deletes the namespace object while leaving its contents orphaned in etcd.
+Safe **only because** the controller was gone and its cleanup — deregistering a
+provider from a gateway that no longer exists — had become a no-op. Never reach
+for the namespace's own `spec.finalizers` via the `/finalize` subresource; that
+deletes the namespace object while orphaning its contents in etcd.
 
-**So tear down in dependency order next time:** delete the custom resources
-first and let their controller finalize them, then the operator, then the CRDs,
-then the namespace. Deleting the operator first is what turns a one-command
-teardown into manual finalizer surgery.
-
-Both steps need cluster-admin; the sandbox-scoped agent RBAC can neither delete
-namespaces and CRDs nor list `openshellproviders` once `agent-lab` is gone.
-Leaving the CRDs installed is the same trap as the orphaned `kagent.dev` CRDs —
-a CRD with no controller reads as an available capability while being inert
-YAML.
-
-`openclaw-operator` is a separate orphaned namespace from the same teardown,
-left by the OpenClaw operator rather than OpenShell.
+`openclaw-gateway` still carries the same debris from the same PR — a stuck
+`OpenClawInstance`, the StatefulSet it owns, 21Gi of PVCs and three
+`openclaw.rocks` CRDs — tracked in <../../cluster/k8s/TODO.md> § "Retire the
+`openclaw-*` namespaces".
