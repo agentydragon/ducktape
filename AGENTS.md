@@ -158,6 +158,20 @@ sufficient for repository-wide validation; do not duplicate them locally with
 `bbr build //...` or `bbr test //...` unless investigating a failure or the user
 explicitly asks for a full-tree run.
 
+**Gotcha: `bbr test` on a test target does not lint the libraries it depends on.**
+The mypy/ruff aspects only produce their output groups for the targets named on
+the command line, so `bbr test //pkg:test_foo` passes while `mypy //pkg:foo`
+fails in CI. Name the changed `py_library` targets too:
+
+```bash
+bbr test //pkg:test_foo
+bbr build //pkg:foo   # gates the mypy aspect on the library itself
+```
+
+Changing a file's imports also changes its `deps`, which no local check covers
+if `bb run //devinfra:gazelle` is unavailable — build the affected library to
+catch a missing `@pypi//...` before CI does.
+
 For changes that will not pass through the required PR checks, run the relevant
 repository-wide validation before hand-off.
 
