@@ -13,6 +13,14 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
   - `DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/runtime/claude_web_env/profile.yaml`
   - `SOPS_AGE_KEY=<the haku age key>` — decrypt it from
     `secrets/haku-age-key.sops.yaml` (readable with your user ssh key) and paste it.
+  - **The Claude Code native-telemetry block** from
+    <../../../devinfra/claude/README.md> § Web Setup. The `otel forwarder` background
+    command below only starts the localhost relay — nothing emits into it unless these
+    are set on the environment too. `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative`
+    is the load-bearing one: without it Claude Code emits delta-temporality metrics,
+    which Alloy's Prometheus exporter drops silently, and Haku's traces reach Tempo
+    while its metrics never reach Mimir. See
+    <../../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
 - **Prompt:** `Execute haku/runtime/claude_web_env/run.md`
 - **"Enable common package managers":** on.
 - **Allowed domains:** the [default allowed domains](https://code.claude.com/docs/en/claude-code-on-the-web#default-allowed-domains)

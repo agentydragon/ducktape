@@ -633,6 +633,14 @@ in
       env.OTEL_METRICS_EXPORTER = "otlp";
       env.OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
       env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://alloy-otlp.allegedly.works";
+      # Claude Code defaults to delta temporality, which Prometheus/Mimir cannot
+      # ingest: Alloy's otelcol.exporter.prometheus drops delta metrics silently
+      # (no error, no counter), so metrics vanish between the OTLP receiver and
+      # remote_write while traces and logs — which have no temporality — arrive
+      # fine. Converting server-side would need otelcol.processor.deltatocumulative,
+      # which is experimental and would force the whole Alloy instance to
+      # --stability.level=experimental. Setting it here is the supported knob.
+      env.OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "cumulative";
       env.OTEL_LOG_USER_PROMPTS = "1";
       env.OTEL_LOG_TOOL_DETAILS = "1";
       env.OTEL_LOG_TOOL_CONTENT = "1";

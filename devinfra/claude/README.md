@@ -205,11 +205,20 @@ OTEL_TRACES_EXPORTER=otlp
 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
 OTEL_LOG_USER_PROMPTS=1
 OTEL_LOG_TOOL_DETAILS=1
 OTEL_LOG_TOOL_CONTENT=1
 OTEL_LOG_RAW_API_BODIES=1
 ```
+
+**Gotcha: `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative` is load-bearing.**
+Claude Code defaults to **delta** temporality, which Prometheus/Mimir cannot ingest.
+Alloy's `otelcol.exporter.prometheus` drops delta metrics **silently** — no error, no
+counter, nothing in `otelcol_receiver_refused_*` — so metrics disappear between the OTLP
+receiver and `remote_write` while traces and logs arrive normally. Omit this var and the
+symptom is "telemetry doesn't work" with a completely healthy-looking pipeline. See
+<../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
 
 Content-inclusion knobs (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`,
 `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES`) are enabled for full logging
