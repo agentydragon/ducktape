@@ -47,6 +47,15 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
   Code web UI, so a code change does **not** propagate; each environment must be
   edited by hand.
 
+**Verified 2026-07-31** on `wyrm2`: one session with the variable set, and the
+previously-empty query returned all five metric families —
+`claude_code_active_time_total`, `claude_code_commit_count`,
+`claude_code_cost_usage`, `claude_code_session_count`, `claude_code_token_usage`.
+Delta temporality was the whole cause.
+
+When testing, set `OTEL_METRIC_EXPORT_INTERVAL=10000` — the 60 s default means a
+short session exports nothing and looks like a failure.
+
 ## Why not fix it server-side
 
 Converting in Alloy would need `otelcol.processor.deltatocumulative` between
