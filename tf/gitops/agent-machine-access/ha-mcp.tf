@@ -20,6 +20,16 @@ resource "authentik_provider_oauth2" "ha_mcp" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
+  # Deviation: set explicitly because the Terraform provider defaults this to `minutes=10`, far
+  # shorter than Authentik's own model default of `hours=1`. haku-console renews a linked account
+  # 60s before expiry, so a 10-minute token meant ~150 token-endpoint calls per day per
+  # association — and an ambiguous timeout on any single one of them permanently wedges that
+  # association until an operator reconnects by hand. That is what silently disconnected this
+  # server on 2026-07-28 and kubectl-passthrough-mcp on 2026-07-30. At 24h (matching the
+  # `grocy-sf` / `grocy-vallejo` / `haku-ui` providers) it is ~1 renewal per day, cutting the
+  # exposure ~144x. Refresh-token validity is unchanged at 30 days, so revocation is unaffected.
+  access_token_validity = "hours=24"
+
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,

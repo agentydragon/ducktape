@@ -20,6 +20,11 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
+  # Same reason as ha-mcp.tf: haku-console holds an operator OAuth association here, and the
+  # Terraform provider's `minutes=10` default made it renew ~150x/day, any one of which can
+  # permanently wedge the association. This server was wedged that way on 2026-07-30.
+  access_token_validity = "hours=24"
+
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
