@@ -2,10 +2,10 @@
 
 Every `tools/list` against the console fans out to each configured server and reflects it
 live, and each reflection is a fresh MCP connect: transport, `initialize`, `tools/list`,
-teardown. Measured against the deployed catalog that costs ~0.9 s for an in-cluster upstream
-and 2-3 s for one reached over its public URL, so the aggregate listing runs ~5.9 s -- and
-`stateless_http=True` means it is paid again on every request, with no session to amortize it
-over.
+teardown. The fan-out runs concurrently, so the cost of a listing is its slowest upstream --
+and an upstream reached over its public URL costs several times one reached in-cluster.
+`stateless_http=True` means the whole thing is paid again on every request, with no session
+to amortize it over.
 
 Two separate wins, and the second is the larger one in practice: a TTL lets a burst of
 listings reuse one reflection, and single-flight collapses *concurrent* listings of the same

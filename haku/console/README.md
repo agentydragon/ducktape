@@ -202,10 +202,11 @@ models in handwritten Zod.
 Reflection stays live and request-local, but a reflected catalog is reusable for
 `HAKU_CONSOLE_MCP_CATALOG_CACHE_TTL_SECONDS` (default 60) — see `mcp_reflection_cache.py`. Without
 it, every `tools/list` pays a full MCP connect (`initialize`, `tools/list`, teardown) to each
-configured server, and `stateless_http=True` means there is no session to amortize that over: the
-deployed catalog measures ~0.9 s per in-cluster upstream, 2–3 s for one reached over its public URL,
-and ~5.9 s for the aggregate listing. Single-flight matters at least as much as the TTL, because one
-client handshake opens several connections at once.
+configured server, and `stateless_http=True` means there is no session to amortize that over. The
+fan-out is concurrent, so a listing costs its slowest upstream — and an upstream addressed by its
+public URL costs several times one addressed in-cluster, because it hairpins out through the Gateway
+for a same-cluster service. Single-flight matters at least as much as the TTL, because one client
+handshake opens several connections at once.
 
 The cache key is `(server_id, config fingerprint, credential fingerprint)`, and that third component
 is what preserves the fail-closed property described above: credentials are resolved **before** the
