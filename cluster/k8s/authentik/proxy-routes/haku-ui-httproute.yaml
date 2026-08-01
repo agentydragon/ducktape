@@ -18,51 +18,35 @@ spec:
   hostnames:
     - "haku-ui.allegedly.works"
   rules:
-    # /jupyter/* — the Lab workbench haku-ui reverse-proxies — carries ONE relaxation
-    # over the strict SPA policy below: script-src gains 'unsafe-eval', because
-    # JupyterLab's settings registry compiles JSON-schema validators with
-    # `new Function` (ajv codegen); without it settings-dependent plugins fail
-    # activation and Lab white-screens (observed 2026-08-01: "EvalError: ...
-    # 'unsafe-eval' is not an allowed source of script: script-src 'self'").
-    # Scope rationale: Jupyter is the arbitrary-code workbench by design
-    # (operator-only behind Authentik) — eval in its pages adds nothing an open
-    # kernel doesn't already grant, and the no-eval policy stays on the SPA routes.
-    # worker-src blob: (Lab spawns blob: workers), img-src blob: (widget/canvas
-    # outputs), and an explicit wss: connect entry (older Safari doesn't fold wss
-    # into 'self') are included to avoid death-by-a-thousand-refreshes; the sidecar
-    # sets the same frame-ancestors list (jupyter/jupyter_server_config.py in
-    # haku-state) — this `set` overrides it at the edge, so keep them in sync.
-    # Gateway API precedence: longest PathPrefix wins, so this rule takes /jupyter/*
-    # and the catch-all below keeps everything else regardless of rule order.
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /jupyter/
-      filters:
-        - type: ResponseHeaderModifier
-          responseHeaderModifier:
-            set:
-              - name: Content-Security-Policy
-                value: >-
-                  default-src 'self'; script-src 'self' 'unsafe-eval';
-                  style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;
-                  font-src 'self' data:; connect-src 'self' wss://haku-ui.allegedly.works;
-                  worker-src 'self' blob:; form-action 'self';
-                  frame-ancestors 'self' https://haku.allegedly.works;
-                  base-uri 'none'; object-src 'none'; webrtc 'block'
-      backendRefs:
-        - name: authentik-server
-          port: 80
-    # Inject a strict CSP on every haku-ui response, from OUTSIDE Haku's write scope.
+    # Inject the CSP on every haku-ui response, from OUTSIDE Haku's write scope.
     # haku-ui's code is Haku-authored (adversarial under prompt injection); without this,
     # its JS in the operator's browser could silently beacon personal data to third
     # parties (fetch / <img> / sendBeacon) — subresource loads obey the DOCUMENT's own
     # CSP, not the embedding console's (whose frame-src only fences navigations). This
     # route is haku-ui's only public door and `set` overrides anything the backend
-    # sends, so the header is operator-enforced. Policy notes: 'unsafe-inline' style is
-    # for Mantine's injected <style> tags; everything the SPA legitimately loads is
-    # self-hosted (widen img-src by proxying, never by allowlisting third-party hosts);
-    # frame-ancestors permits only the trusted console (and self, for direct visits);
+    # sends, so the header is operator-enforced.
+    #
+    # The fence is a DESTINATION fence, not an execution fence (operator decision,
+    # 2026-08-01): every load/connect stays self / same-document — 'self' is
+    # Haku-authored by assumption, so constraining code CREATION bought nothing
+    # against the primary adversary. Execution is therefore relaxed route-wide:
+    # 'unsafe-eval' (JupyterLab's settings registry compiles JSON-schema validators
+    # via ajv `new Function`; without it Lab white-screens — observed live),
+    # worker-src blob: (Lab's workers), img-src blob: (widget/canvas outputs), and
+    # an explicit same-host wss: (older Safari doesn't fold wss into 'self').
+    # Accepted residuals of trading away no-eval, named so the decision is legible:
+    # (a) a string-to-eval gadget in the SPA or a dependency would let RENDERED
+    # external text execute directly, skipping the prompt-injection step; (b) such
+    # execution leaves no git commit (the PR path's audit property covers shipped
+    # code only); (c) no more loud CSP tripwire when a dependency grows an eval
+    # path. All bounded by the destination fence: whatever executes still can't
+    # beacon off-origin beyond the residuals below.
+    # Policy notes: 'unsafe-inline' style is for Mantine's injected <style> tags;
+    # everything the SPA legitimately loads is self-hosted (widen img-src by
+    # proxying, never by allowlisting third-party hosts); frame-ancestors permits
+    # only the trusted console (and self, for direct visits); the jupyter sidecar
+    # sets the same frame-ancestors list (jupyter/jupyter_server_config.py in
+    # haku-state) — this `set` overrides it at the edge, so keep them in sync.
     # `webrtc 'block'` is CSP3 future-proofing only — no current browser enforces it
     # (Chromium 141 logs "Unrecognized Content-Security-Policy directive 'webrtc'";
     # Firefox/Safari never shipped it), so the WebRTC channel is an accepted residual.
@@ -73,9 +57,11 @@ spec:
             set:
               - name: Content-Security-Policy
                 value: >-
-                  default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
-                  img-src 'self' data:; font-src 'self' data:; connect-src 'self';
-                  form-action 'self'; frame-ancestors 'self' https://haku.allegedly.works;
+                  default-src 'self'; script-src 'self' 'unsafe-eval';
+                  style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;
+                  font-src 'self' data:; connect-src 'self' wss://haku-ui.allegedly.works;
+                  worker-src 'self' blob:; form-action 'self';
+                  frame-ancestors 'self' https://haku.allegedly.works;
                   base-uri 'none'; object-src 'none'; webrtc 'block'
       backendRefs:
         - name: authentik-server
