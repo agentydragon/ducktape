@@ -143,7 +143,7 @@ class ConsoleMcpContext:
     tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
     provider_store: PostgresProviderConnectionStore
-    metadata_provider: McpServerClient
+    server_client: McpServerClient
     node_daemons: NodeDaemonService | None = None
 
 
@@ -506,7 +506,7 @@ class OperatorServerCatalog:
         return await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
-            metadata_provider=self._context.metadata_provider,
+            server_client=self._context.server_client,
             oauth_store=self._context.oauth_store,
             provider_store=self._context.provider_store,
         )
@@ -698,7 +698,7 @@ def build_console_mcp(
         reflection = await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
-            metadata_provider=context.metadata_provider,
+            server_client=context.server_client,
             oauth_store=context.oauth_store,
             provider_store=context.provider_store,
         )

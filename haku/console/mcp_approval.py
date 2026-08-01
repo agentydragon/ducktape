@@ -1,7 +1,8 @@
 """Operator-approved MCP tool calls owned by haku-console.
 
 This module contains the FastAPI/wire adapter plus the current Postgres repository,
-MCP executor, and metadata-reflection adapters. `ToolCallApplicationService` owns the
+and `McpServerClient`, the one client for the configured MCP servers -- it both executes
+tool calls and reflects catalogs. `ToolCallApplicationService` owns the
 actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
 others wait for an operator decision in trusted console chrome. The connected-server
 catalog lives in `mcp_config`; operator OAuth account linkage lives in
@@ -787,7 +788,7 @@ async def metadata_for_operator(
     *,
     operator_id: UUID,
     server: McpServerEntry,
-    metadata_provider: McpServerClient,
+    server_client: McpServerClient,
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> ServerReflection:
@@ -796,7 +797,7 @@ async def metadata_for_operator(
     )
     if isinstance(resolution, _DegradedAuth):
         return DegradedReflection(failure_stage="credential_resolution", degraded_reason=resolution.reason)
-    return await metadata_provider.metadata(server, resolution.token)
+    return await server_client.metadata(server, resolution.token)
 
 
 @router.get("/api/tool-calls")

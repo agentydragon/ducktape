@@ -3,7 +3,7 @@
 The console's deploy-time YAML names the MCP servers Haku may drive through the approval
 queue; this module models that config, looks entries up by id, and resolves how to reach
 each one — the in-process `FastMCP` transport or remote URL, and the static bearer
-credential where one applies. The tool-call application service, reflection adapter
+credential where one applies. The tool-call application service, `McpServerClient`
 (`mcp_approval`), and operator OAuth linkage (`mcp_operator_oauth`) build on this shared substrate.
 """
 
