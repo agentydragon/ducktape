@@ -77,6 +77,20 @@ async def test_concurrent_reflections_of_one_server_collapse_into_a_single_upstr
     assert all([tool.name for tool in result] == ["stock_add"] for result in results)
 
 
+async def test_a_caller_mutating_the_returned_catalog_cannot_corrupt_the_cache() -> None:
+    """Every caller gets its own list. The cached one is handed to every later caller too, so a
+    consumer that sorts or filters in place would otherwise change what everyone else sees."""
+    cache = ReflectionCache(NEVER_EXPIRES)
+    reflect = _CountingReflector(_tools("stock_add", "echo"))
+
+    first = await cache.reflect(_key(), reflect)
+    first.clear()
+    second = await cache.reflect(_key(), reflect)
+
+    assert [tool.name for tool in second] == ["stock_add", "echo"]
+    assert reflect.calls == 1
+
+
 async def test_a_different_credential_does_not_reuse_the_cached_catalog() -> None:
     """The fail-closed property: reflection is request-local so a client cannot keep calling tools
     after its Operator disconnects a server. A catalog must never outlive the credential that read
