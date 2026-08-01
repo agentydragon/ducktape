@@ -187,8 +187,9 @@
       "haku-console": {
         "url": "https://haku.allegedly.works/mcp",
         "transport": "streamable-http",
+        "requestTimeoutMs": 60000,
         "headers": {
-          "Authorization": "Bearer proxy-haku-console-placeholder"
+          "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
         }
       }
     }
