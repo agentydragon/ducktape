@@ -963,13 +963,13 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     fetch_metadata = AsyncMock(side_effect=AssertionError("list_mcp_servers must not contact an MCP server"))
     oauth_store.access_token_for = refresh_remote
     provider_store.access_token_for = refresh_provider
-    server_client = Mock(metadata=fetch_metadata)
+    dispatcher = Mock(metadata=fetch_metadata)
     context = mcp_server_module.ConsoleMcpContext(
         settings=settings,
         tool_calls=Mock(),
         oauth_store=oauth_store,
         provider_store=provider_store,
-        server_client=server_client,
+        dispatcher=dispatcher,
     )
     actor = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
 
@@ -1304,7 +1304,7 @@ async def test_tool_dispatch_reflects_only_target_server(
             tool_calls=app.state.tool_call_service,
             oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
-            server_client=app.state.mcp_server_client,
+            dispatcher=app.state.mcp_dispatcher,
         ),
         actor_resolver,
     )
@@ -1353,7 +1353,7 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
             tool_calls=app.state.tool_call_service,
             oauth_store=app.state.mcp_operator_oauth_store,
             provider_store=app.state.provider_connection_store,
-            server_client=app.state.mcp_server_client,
+            dispatcher=app.state.mcp_dispatcher,
         ),
         actor_resolver,
     )

@@ -51,7 +51,7 @@ from haku.console.config import Settings, tool_call_console_url
 from haku.console.mcp_approval import (
     DegradedReflection,
     DegradedServerState,
-    McpServerClient,
+    McpServerDispatcher,
     ServerMetadata,
     ServerReflection,
     metadata_for_operator,
@@ -143,7 +143,7 @@ class ConsoleMcpContext:
     tool_calls: ToolCallApplicationService
     oauth_store: PostgresMcpOperatorOAuthStore
     provider_store: PostgresProviderConnectionStore
-    server_client: McpServerClient
+    dispatcher: McpServerDispatcher
     node_daemons: NodeDaemonService | None = None
 
 
@@ -506,7 +506,7 @@ class OperatorServerCatalog:
         return await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
-            server_client=self._context.server_client,
+            dispatcher=self._context.dispatcher,
             oauth_store=self._context.oauth_store,
             provider_store=self._context.provider_store,
         )
@@ -698,7 +698,7 @@ def build_console_mcp(
         reflection = await metadata_for_operator(
             operator_id=actor.operator_id,
             server=server,
-            server_client=context.server_client,
+            dispatcher=context.dispatcher,
             oauth_store=context.oauth_store,
             provider_store=context.provider_store,
         )

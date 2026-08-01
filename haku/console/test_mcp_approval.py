@@ -50,7 +50,7 @@ from haku.console.database_schema import (
 )
 from haku.console.mcp_approval import (
     DegradedReflection,
-    McpServerClient,
+    McpServerDispatcher,
     PostgresToolCallLedger,
     _execution_auth,
     _mcp_result_to_json,
@@ -1588,8 +1588,8 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     assert baseline_values == current_values
 
 
-# --- In-process MCP servers (McpServerClient in-process registration) ---
-# Unit tests only: no postgres/network fixtures, exercising McpServerClient
+# --- In-process MCP servers (McpServerDispatcher in-process registration) ---
+# Unit tests only: no postgres/network fixtures, exercising McpServerDispatcher
 # directly (over a fresh `_build_test_mcp_server()` instance, in-memory — no HTTP)
 # rather than through the FastAPI app.
 
@@ -1695,7 +1695,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    executor = McpServerClient({"google": registration})
+    executor = McpServerDispatcher({"google": registration})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1705,7 +1705,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
 
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
-    executor = McpServerClient({})
+    executor = McpServerDispatcher({})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1713,16 +1713,16 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
         await executor.execute(server, "echo", {}, auth_token=None)
 
 
-async def test_server_client_reflects_in_process_server_tools() -> None:
+async def test_dispatcher_reflects_in_process_server_tools() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    server_client = McpServerClient({"google": registration})
+    dispatcher = McpServerDispatcher({"google": registration})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    metadata = await server_client.metadata(server, auth_token=None)
+    metadata = await dispatcher.metadata(server, auth_token=None)
     assert isinstance(metadata, list)
     assert {tool.name for tool in metadata} == {
         "stock_add",
@@ -1741,7 +1741,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     provider_store = Mock()
     provider_store.is_connected.return_value = True
     builder = Mock(return_value=_build_test_mcp_server())
-    server_client = McpServerClient(
+    dispatcher = McpServerDispatcher(
         {
             "google": InProcessServerRegistration(
                 builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
@@ -1754,11 +1754,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     )
 
     metadata = await metadata_for_operator(
-        operator_id=operator,
-        server=server,
-        server_client=server_client,
-        oauth_store=Mock(),
-        provider_store=provider_store,
+        operator_id=operator, server=server, dispatcher=dispatcher, oauth_store=Mock(), provider_store=provider_store
     )
 
     assert isinstance(metadata, list)
@@ -1767,18 +1763,18 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     provider_store.access_token_for.assert_not_called()
 
 
-async def test_server_client_reuses_a_reflected_catalog_within_the_ttl() -> None:
+async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    server_client = McpServerClient({"google": registration}, catalog_cache_ttl_seconds=3600.0)
+    dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=3600.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
 
-    first = await server_client.metadata(server, auth_token=None)
-    second = await server_client.metadata(server, auth_token=None)
+    first = await dispatcher.metadata(server, auth_token=None)
+    second = await dispatcher.metadata(server, auth_token=None)
 
     assert isinstance(first, list)
     assert isinstance(second, list)
@@ -1786,16 +1782,16 @@ async def test_server_client_reuses_a_reflected_catalog_within_the_ttl() -> None
     builder.assert_called_once_with(None)
 
 
-async def test_server_client_does_not_cache_a_degraded_reflection() -> None:
+async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
     """A server that failed must be retried on the next listing, not held degraded for the TTL."""
-    server_client = McpServerClient({}, catalog_cache_ttl_seconds=3600.0)
+    dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=3600.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
 
-    assert isinstance(await server_client.metadata(server, auth_token=None), DegradedReflection)
+    assert isinstance(await dispatcher.metadata(server, auth_token=None), DegradedReflection)
 
-    registered = McpServerClient(
+    registered = McpServerDispatcher(
         {
             "google": InProcessServerRegistration(
                 builder=Mock(return_value=_build_test_mcp_server()),
@@ -1807,26 +1803,26 @@ async def test_server_client_does_not_cache_a_degraded_reflection() -> None:
     assert isinstance(await registered.metadata(server, auth_token=None), list)
 
 
-async def test_server_client_does_not_serve_one_credentials_catalog_to_another() -> None:
+async def test_dispatcher_does_not_serve_one_credentials_catalog_to_another() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
-    server_client = McpServerClient(
+    dispatcher = McpServerDispatcher(
         {"google": InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)},
         catalog_cache_ttl_seconds=3600.0,
     )
     server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
 
-    await server_client.metadata(server, auth_token="operator-a-token")
-    await server_client.metadata(server, auth_token="operator-b-token")
+    await dispatcher.metadata(server, auth_token="operator-a-token")
+    await dispatcher.metadata(server, auth_token="operator-b-token")
 
     assert builder.call_args_list == [call("operator-a-token"), call("operator-b-token")]
 
 
-async def test_server_client_degrades_when_in_process_backend_is_not_registered() -> None:
-    server_client = McpServerClient({})
+async def test_dispatcher_degrades_when_in_process_backend_is_not_registered() -> None:
+    dispatcher = McpServerDispatcher({})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    metadata = await server_client.metadata(server, auth_token=None)
+    metadata = await dispatcher.metadata(server, auth_token=None)
     assert isinstance(metadata, DegradedReflection)
 
 

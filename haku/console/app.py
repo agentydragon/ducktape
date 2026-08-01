@@ -286,17 +286,17 @@ def create_app(
             InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
-    # The console's one client for the configured MCP servers. Executing a tool and reflecting a
-    # catalog are two calls against the same servers over the same transports, so they are one
-    # object: executing and reflecting are not separate roles with separate wiring.
-    server_client = mcp_approval.McpServerClient(
+    # The console's one path out to its configured MCP servers. Executing a tool and reflecting a
+    # catalog are the same dispatch over the same transports, so they are one object: executing and
+    # reflecting are not separate roles with separate wiring.
+    dispatcher = mcp_approval.McpServerDispatcher(
         in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_cache_ttl_seconds
     )
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
         invalidation_publisher=console_event_hub,
-        executor=server_client,
+        executor=dispatcher,
         oauth_store=mcp_operator_oauth_store,
         in_process_servers=in_process_servers,
         gmail_client_provider=gmail_client_provider,
@@ -313,7 +313,7 @@ def create_app(
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
-        server_client=server_client,
+        dispatcher=dispatcher,
         node_daemons=node_daemon_service,
     )
 
@@ -379,7 +379,7 @@ def create_app(
     app.state.claude_chat_store = claude_chat_store
     app.state.claude_chat_service = claude_chat_service
     app.state.in_process_servers = in_process_servers
-    app.state.mcp_server_client = server_client
+    app.state.mcp_dispatcher = dispatcher
     app.state.node_daemon_service = node_daemon_service
     app.state.push_subscription_store = push_subscription_store
     app.state.web_push_identity = web_push_identity

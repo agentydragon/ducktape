@@ -3,7 +3,7 @@
 The console's deploy-time YAML names the MCP servers Haku may drive through the approval
 queue; this module models that config, looks entries up by id, and resolves how to reach
 each one — the in-process `FastMCP` transport or remote URL, and the static bearer
-credential where one applies. The tool-call application service, `McpServerClient`
+credential where one applies. The tool-call application service, `McpServerDispatcher`
 (`mcp_approval`), and operator OAuth linkage (`mcp_operator_oauth`) build on this shared substrate.
 """
 
@@ -464,8 +464,8 @@ def _credential_token(server_id: str, bearer_token_secret: str) -> str:
 
 # A server reached over an in-process FastMCP instance instead of a remote URL (see
 # McpServerEntry.backend). `fastmcp.client.Client` accepts a `FastMCP` instance
-# directly and opens an in-memory `FastMCPTransport` — so both `McpServerClient` and
-# `McpServerClient` run the exact same `Client(...)` calls either way; only this
+# directly and opens an in-memory `FastMCPTransport` — so both `McpServerDispatcher` and
+# `McpServerDispatcher` run the exact same `Client(...)` calls either way; only this
 # lookup differs.
 #
 # The registry holds *builders*, not prebuilt instances: a provider-backed server (gmail,

@@ -1,8 +1,8 @@
 """Operator-approved MCP tool calls owned by haku-console.
 
-This module contains the FastAPI/wire adapter plus the current Postgres repository,
-and `McpServerClient`, the one client for the configured MCP servers -- it both executes
-tool calls and reflects catalogs. `ToolCallApplicationService` owns the
+This module contains the FastAPI/wire adapter, the current Postgres repository, and
+`McpServerDispatcher` — the one path from the console to its configured MCP servers, for
+both executing tool calls and reflecting catalogs. `ToolCallApplicationService` owns the
 actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
 others wait for an operator decision in trusted console chrome. The connected-server
 catalog lives in `mcp_config`; operator OAuth account linkage lives in
@@ -617,20 +617,23 @@ class PostgresToolCallLedger:
         return operator_id
 
 
-# TODO(naming): client-side dispatcher over fastmcp.client.Client, not a FastMCP Proxy/Provider
-#   (those are server-side concepts). Revisit the name against FastMCP terminology.
-class McpServerClient:
-    """Reaches a configured MCP server (in-process or remote) for tool execution and metadata
-    reflection, sharing one in-process registry and transport/Client lifecycle. The two operations
-    differ only in call and error policy — `execute` raises on tool error; `metadata` degrades on
-    transport error so one unreachable server can't break the capabilities listing."""
+class McpServerDispatcher:
+    """Dispatches the console's calls to whichever configured MCP server they name.
+
+    Not itself a client — it owns the in-process registry, resolves each entry to a transport and
+    credential, and drives a `fastmcp.client.Client` per call. Executing and reflecting are the same
+    dispatch differing only in call and error policy: `execute` raises on tool error, while
+    `metadata` degrades on transport error so one unreachable server can't break the whole
+    capabilities listing. Reflected catalogs are reused for `catalog_cache_ttl_seconds`.
+    """
 
     def __init__(
         self,
         in_process_servers: InProcessServers | None = None,
+        *,
+        # 0 still collapses concurrent reflections of one server; it disables only reuse across
+        # requests. See `mcp_reflection_cache`.
         catalog_cache_ttl_seconds: float = 0.0,
-        # A TTL of 0 still collapses concurrent reflections of the same server; only reuse across
-        # requests is disabled. See `mcp_reflection_cache`.
     ) -> None:
         self._in_process = in_process_servers or {}
         self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
@@ -788,7 +791,7 @@ async def metadata_for_operator(
     *,
     operator_id: UUID,
     server: McpServerEntry,
-    server_client: McpServerClient,
+    dispatcher: McpServerDispatcher,
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> ServerReflection:
@@ -797,7 +800,7 @@ async def metadata_for_operator(
     )
     if isinstance(resolution, _DegradedAuth):
         return DegradedReflection(failure_stage="credential_resolution", degraded_reason=resolution.reason)
-    return await server_client.metadata(server, resolution.token)
+    return await dispatcher.metadata(server, resolution.token)
 
 
 @router.get("/api/tool-calls")
