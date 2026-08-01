@@ -48,6 +48,7 @@ manifest:
     asgi_lifespan: asgi_lifespan
     asgiref: asgiref
     asttokens: asttokens
+    async_lru: async_lru
     asyncpg: asyncpg
     asyncvnc: asyncvnc
     atomicwrites: atomicwrites
@@ -59,6 +60,7 @@ manifest:
     aw_datastore: aw_core
     aw_query: aw_core
     aw_transform: aw_core
+    babel: babel
     backoff: backoff
     bcrypt: bcrypt
     beancount: beancount
@@ -138,6 +140,8 @@ manifest:
     fsspec: fsspec
     genai_prices: genai_prices
     gepa: gepa
+    git: gitpython
+    gitdb: gitdb
     github: pygithub
     glide: valkey_glide
     glide_shared: valkey_glide
@@ -252,6 +256,7 @@ manifest:
     ipykernel: ipykernel
     ipykernel_launcher: ipykernel
     ipython_pygments_lexers: ipython_pygments_lexers
+    ipywidgets: ipywidgets
     iso8601: iso8601
     isoduration: isoduration
     isympy: sympy
@@ -282,6 +287,7 @@ manifest:
     jupyter_core: jupyter_core
     jupyter_events: jupyter_events
     jupyter_kernel_client: jupyter_kernel_client
+    jupyter_lsp: jupyter_lsp
     jupyter_mcp_server: jupyter_mcp_server
     jupyter_mcp_tools: jupyter_mcp_tools
     jupyter_mimetypes: jupyter_mimetypes
@@ -291,7 +297,12 @@ manifest:
     jupyter_server_nbmodel: jupyter_server_nbmodel
     jupyter_server_terminals: jupyter_server_terminals
     jupyter_ydoc: jupyter_ydoc
+    jupyterlab: jupyterlab
+    jupyterlab_git: jupyterlab_git
+    jupyterlab_git_core: jupyterlab_git_core
     jupyterlab_pygments: jupyterlab_pygments
+    jupyterlab_server: jupyterlab_server
+    jupyterlab_widgets: jupyterlab_widgets
     jwt: pyjwt
     kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
@@ -375,12 +386,15 @@ manifest:
     nacl: pynacl
     nbclient: nbclient
     nbconvert: nbconvert
+    nbdime: nbdime
     nbformat: nbformat
     nest_asyncio: nest_asyncio
     nest_asyncio2: nest_asyncio2
     networkx: networkx
     nio: matrix_nio
     nodeenv: nodeenv
+    notebook: notebook
+    notebook_shim: notebook_shim
     nulltype: nulltype
     numpy: numpy
     numpyro: numpyro
@@ -538,6 +552,7 @@ manifest:
     simplejson: simplejson
     six: six
     slugify: python_slugify
+    smmap: smmap
     sniffio: sniffio
     sortedcontainers: sortedcontainers
     soupsieve: soupsieve
@@ -653,6 +668,7 @@ manifest:
     websocket: websocket_client
     websockets: websockets
     werkzeug: werkzeug
+    widgetsnbextension: widgetsnbextension
     wrapt: wrapt
     wsproto: wsproto
     xdist: pytest_xdist
@@ -665,4 +681,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 09af7d2eaca852d6af13b16cc58a10326660717b5aadcf910c47d56643eaee9b
+integrity: 1b63d2ae87cf34be560075f70e07c0c72f30961b183c4a5109b5ced5d3cc1fd2

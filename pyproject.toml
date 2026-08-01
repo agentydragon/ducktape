@@ -114,6 +114,13 @@ dependencies = [
     "ipykernel>=6",
     "jupyter-mcp-server>=0.11.0",
     "jupyter-server",
+    # haku-state's jupyter sidecar (one server+kernel py_binary) builds against this
+    # hub, sharing one provider per package with the finance/augur targets it also
+    # depends on: lab UI, Notebook-7 document mode, git integration, widgets.
+    "jupyterlab>=4.4",
+    "notebook>=7.4",
+    "jupyterlab-git>=0.51",
+    "ipywidgets>=8.1",
 
     # Matrix
     "mautrix>=0.20.0",
