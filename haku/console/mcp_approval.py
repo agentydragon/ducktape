@@ -11,6 +11,7 @@ catalog lives in `mcp_config`; operator OAuth account linkage lives in
 from __future__ import annotations
 
 import datetime
+import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ from haku.console.mcp_config import (
     _transport,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.mcp_reflection_cache import ReflectionCache, ReflectionCacheKey
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -622,8 +624,15 @@ class McpServerClient:
     differ only in call and error policy — `execute` raises on tool error; `metadata` degrades on
     transport error so one unreachable server can't break the capabilities listing."""
 
-    def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
+    def __init__(
+        self,
+        in_process_servers: InProcessServers | None = None,
+        catalog_cache_ttl_seconds: float = 0.0,
+        # A TTL of 0 still collapses concurrent reflections of the same server; only reuse across
+        # requests is disabled. See `mcp_reflection_cache`.
+    ) -> None:
         self._in_process = in_process_servers or {}
+        self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(
         self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
@@ -637,13 +646,34 @@ class McpServerClient:
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerReflection:
         try:
-            transport, transport_auth = _transport(server, self._in_process, auth_token)
-            async with Client(transport, auth=transport_auth) as client:
-                tools: list[mcp_types.Tool] = await client.list_tools()
-                return tools
+            # A raise propagates out of the cache, so only successful catalogs are ever stored and
+            # a recovered server is retried on the next listing rather than staying degraded.
+            return await self._catalogs.reflect(
+                _reflection_cache_key(server, auth_token), lambda: self._reflect(server, auth_token)
+            )
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
             return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))
+
+    async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> list[mcp_types.Tool]:
+        transport, transport_auth = _transport(server, self._in_process, auth_token)
+        async with Client(transport, auth=transport_auth) as client:
+            tools: list[mcp_types.Tool] = await client.list_tools()
+            return tools
+
+
+def _reflection_cache_key(server: McpServerEntry, auth_token: str | None) -> ReflectionCacheKey:
+    return ReflectionCacheKey(
+        server_id=server.id,
+        config_fingerprint=_fingerprint(server.model_dump_json()),
+        # Digest, not the credential: a cached catalog must belong to exactly the credential that
+        # fetched it, but the key itself is ordinary in-memory state and must not hold a bearer.
+        credential_fingerprint="unauthenticated" if auth_token is None else _fingerprint(auth_token),
+    )
+
+
+def _fingerprint(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:

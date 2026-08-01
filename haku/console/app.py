@@ -288,10 +288,15 @@ def create_app(
             InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
-    if tool_call_executor is None:
-        tool_call_executor = mcp_approval.McpServerClient(in_process_servers)
-    if tool_call_metadata_provider is None:
-        tool_call_metadata_provider = mcp_approval.McpServerClient(in_process_servers)
+    if tool_call_executor is None or tool_call_metadata_provider is None:
+        # One client for both roles: `McpServerClient` holds the in-process registry and the
+        # reflection cache, and execution and reflection differ only in call and error policy.
+        # The two parameters stay separate so a test can substitute one and keep the other real.
+        server_client = mcp_approval.McpServerClient(
+            in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_cache_ttl_seconds
+        )
+        tool_call_executor = tool_call_executor or server_client
+        tool_call_metadata_provider = tool_call_metadata_provider or server_client
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,

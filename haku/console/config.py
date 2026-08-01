@@ -332,6 +332,14 @@ class Settings(BaseSettings):
     # than httpx's historical 10-second default while retaining a bounded deployment knob.
     mcp_operator_oauth_token_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
 
+    # How long one upstream server's reflected tool catalog stays reusable. `tools/list` reflects
+    # every configured server live and `stateless_http=True` means that happens on every request,
+    # so without this the aggregate listing pays a full MCP connect per server per request.
+    # Bounded low because nothing invalidates on an upstream adding a tool: this is a staleness
+    # budget, not a cache lifetime. 0 disables reuse across requests but still collapses concurrent
+    # reflections of the same server.
+    mcp_catalog_cache_ttl_seconds: float = Field(default=60.0, ge=0.0, le=900.0)
+
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
     # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus

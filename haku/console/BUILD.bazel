@@ -517,6 +517,12 @@ py_library(
 )
 
 py_library(
+    name = "mcp_reflection_cache",
+    srcs = ["mcp_reflection_cache.py"],
+    deps = ["@pypi//mcp"],
+)
+
+py_library(
     name = "mcp_approval",
     srcs = ["mcp_approval.py"],
     deps = [
@@ -526,6 +532,7 @@ py_library(
         ":mcp_config",
         ":mcp_mount",
         ":mcp_operator_oauth",
+        ":mcp_reflection_cache",
         ":operator_auth",
         ":operator_identity",
         ":provider_connection",
@@ -548,6 +555,20 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_mcp_reflection_cache",
+    srcs = ["test_mcp_reflection_cache.py"],
+    deps = [
+        ":mcp_reflection_cache",
+        "//:conftest",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Pytest async auto mode is configured by the root conftest hooks.
+        "@pypi//pytest_asyncio",
     ],
 )
 

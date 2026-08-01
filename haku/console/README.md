@@ -197,6 +197,28 @@ result-schema catalog used by Gmail, Google Calendar, Grocy, and routine rendere
 generated from the Python response models at build time; the frontend does not restate those wire
 models in handwritten Zod.
 
+#### Catalog reuse
+
+Reflection stays live and request-local, but a reflected catalog is reusable for
+`HAKU_CONSOLE_MCP_CATALOG_CACHE_TTL_SECONDS` (default 60) — see `mcp_reflection_cache.py`. Without
+it, every `tools/list` pays a full MCP connect (`initialize`, `tools/list`, teardown) to each
+configured server, and `stateless_http=True` means there is no session to amortize that over: the
+deployed catalog measures ~0.9 s per in-cluster upstream, 2–3 s for one reached over its public URL,
+and ~5.9 s for the aggregate listing. Single-flight matters at least as much as the TTL, because one
+client handshake opens several connections at once.
+
+The cache key is `(server_id, config fingerprint, credential fingerprint)`, and that third component
+is what preserves the fail-closed property described above: credentials are resolved **before** the
+cache is consulted, so a disconnected Operator never reaches a cached entry, and a rotated credential
+lands on a different key rather than reusing the previous holder's catalog. The key holds a digest,
+never a bearer. Only successful reflections are stored — a degraded server is retried on the next
+listing rather than held degraded for the TTL.
+
+Nothing invalidates when an upstream _adds_ a tool, so the TTL is a staleness budget, not a cache
+lifetime; that is why it is bounded low. Picking up an upstream `notifications/tools/list_changed`
+would need persistent upstream sessions, which is the natural next step (it would also remove the
+per-reflection connect entirely).
+
 ### Canonical Agent authority and enrollment
 
 Alembic revision `0010` is the single forward-only database baseline. It directly installs one
@@ -454,6 +476,7 @@ Two operational notes:
 | `web_push.py`                      | Web Push delivery of pending-approval notifications: the VAPID identity, the per-Operator subscription store, and the notifier that shows and retracts one call's notification.                                                                                        |
 | `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                            |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, reflection adapter, and operator OAuth linkage.                                                                                         |
+| `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                        |
 | `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                               |
 | `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                              |
 | `provider_connection.py`           | Deploy-named per-Operator connections to well-known external OAuth providers: fixed-client authorization-code + PKCE flow, connection-specific metadata, and the `/api/operator-connections/*` endpoints. Provider catalog: `provider_connection_registry.py`.         |
