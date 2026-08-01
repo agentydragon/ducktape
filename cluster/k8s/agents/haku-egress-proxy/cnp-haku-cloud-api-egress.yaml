@@ -104,6 +104,9 @@ spec:
     # toolchain — the haku-ci Bazel cold-fetch closure (NO RBE). Added ahead of the
     # haku-ci rehoming (next PR) so the proxy allowlist is ready when the runner
     # starts egressing through it.
+    # snapshot.debian.org: rules_distroless apt manifests in haku-state (the jupyter
+    # sidecar's git layer — haku-state PR #68's follow-up) resolve + fetch debs from
+    # the dated snapshot at Bazel fetch time, on haku-ci and in Haku's sandboxes alike.
     - toFQDNs:
         - matchName: releases.bazel.build
         - matchName: bcr.bazel.build
@@ -114,6 +117,7 @@ spec:
         - matchName: raw.githubusercontent.com
         - matchName: ftp.gnu.org
         - matchName: nodejs.org
+        - matchName: snapshot.debian.org
       toPorts:
         - ports:
             - port: "443"
