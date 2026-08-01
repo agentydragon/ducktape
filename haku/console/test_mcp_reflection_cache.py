@@ -91,6 +91,22 @@ async def test_a_caller_mutating_the_returned_catalog_cannot_corrupt_the_cache()
     assert reflect.calls == 1
 
 
+async def test_a_caller_mutating_a_returned_tool_cannot_corrupt_the_cache() -> None:
+    """The nested half, which a new list alone does not cover: a `Tool` is mutable and its
+    `inputSchema` is a plain dict that `_build_proxy_tool` hands straight to a passthrough tool."""
+    cache = ReflectionCache(NEVER_EXPIRES)
+    reflect = _CountingReflector()
+
+    (borrowed,) = await cache.reflect(_key(), reflect)
+    borrowed.name = "renamed"
+    borrowed.inputSchema["properties"] = {"injected": {"type": "string"}}
+    (fresh,) = await cache.reflect(_key(), reflect)
+
+    assert fresh.name == "stock_add"
+    assert fresh.inputSchema == {"type": "object"}
+    assert reflect.calls == 1
+
+
 async def test_a_different_credential_does_not_reuse_the_cached_catalog() -> None:
     """The fail-closed property: reflection is request-local so a client cannot keep calling tools
     after its Operator disconnects a server. A catalog must never outlive the credential that read

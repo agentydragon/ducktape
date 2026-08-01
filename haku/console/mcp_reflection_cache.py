@@ -52,6 +52,18 @@ class _CachedCatalog:
     expires_at: float
 
 
+def _detached(tools: list[mcp_types.Tool]) -> list[mcp_types.Tool]:
+    """A catalog sharing no mutable state with the retained one.
+
+    A new list is not enough: `mcp_types.Tool` is a mutable model whose `inputSchema` is a plain
+    dict, and `_build_proxy_tool` passes that dict straight through as a passthrough tool's
+    parameters. Before caching, every reflection produced fresh objects and that aliasing was
+    harmless — caching is what turns one caller's in-place edit into every later caller's catalog,
+    across Operators. The copy is cheap next to the MCP connect it replaces.
+    """
+    return [tool.model_copy(deep=True) for tool in tools]
+
+
 class ReflectionCache:
     """Per-replica TTL cache with single-flight.
 
@@ -71,7 +83,7 @@ class ReflectionCache:
         """Return a fresh cached catalog, join an in-flight reflection, or start one."""
         cached = self._catalogs.get(key)
         if cached is not None and cached.expires_at > time.monotonic():
-            return list(cached.tools)
+            return _detached(cached.tools)
         task = self._in_flight.get(key)
         if task is None:
             task = asyncio.create_task(self._load(key, load))
@@ -79,7 +91,7 @@ class ReflectionCache:
         # Shielded so one caller giving up (client disconnect, an outer timeout) does not cancel
         # the reflection every other caller is waiting on.
         tools = await asyncio.shield(task)
-        return list(tools)
+        return _detached(tools)
 
     async def _load(
         self, key: ReflectionCacheKey, load: Callable[[], Awaitable[list[mcp_types.Tool]]]
