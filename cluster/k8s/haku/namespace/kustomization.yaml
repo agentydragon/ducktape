@@ -3,5 +3,3 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - networkpolicy.yaml
-  - networkpolicy-jupyter.yaml
-  - networkpolicy-sandbox.yaml

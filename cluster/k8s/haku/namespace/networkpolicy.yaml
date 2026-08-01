@@ -1,31 +1,44 @@
-# Restrict ingress to Haku's UI service to the Authentik proxy outpost only.
+# One ingress boundary for the whole namespace: haku-sandbox is a single trust
+# domain (Haku's code at Haku's privilege — operator ruling 2026-07-30), and the only
+# way in from outside is the Authentik proxy outpost. Selecting every endpoint flips
+# the namespace to default-deny ingress; the union of allows below is exactly
+# {same-namespace, outpost}.
 #
-# haku-sandbox has default-allow ingress (the mitmproxy fence is egress-only), so
-# without this any in-cluster pod could reach svc/haku-ui directly. Haku's UI backend
-# trusts the `X-authentik-username` forward-auth header to identify the operator — so a
-# direct in-cluster call could forge operator intent (clicks/feedback). Admitting
-# ingress to `haku-ui` ONLY from the authentik-server pods (which run the embedded
-# outpost) makes those headers trustworthy. External access is gateway→Authentik either
-# way; this is the in-cluster defense-in-depth the design doc + cluster TODO flagged.
+# This replaces the three per-service policies that grew here one incident at a time
+# (operator, 2026-08-01: "only authentik can talk to the whole namespace, and things
+# within the namespace talk to each other"):
+#   - haku-ui-ingress-authentik-only — its real threat was CROSS-namespace forgery of
+#     the X-authentik-username header haku-ui trusts; that stays blocked. In-namespace
+#     forgery is a non-threat: same actor, nothing to gain over its own git credential.
+#   - haku-ui-ingress-sandbox — subsumed by the same-namespace rule.
+#   - (planned) haku-jupyter-ingress — the jupyter sidecar is an unauthenticated exec
+#     listener; this fence is what stands between it and the rest of the cluster. Its
+#     only legitimate caller is haku-ui's /jupyter/* reverse proxy (same namespace).
 #
-# Operator-owned (Haku has no route/netpol RBAC), and it selects the `app: haku-ui`
-# label Haku's Deployment uses (haku-state k8s/haku-ui).
-# Security model: haku/docs/security.md (enforcement inventory #12).
+# Posture deltas vs. before: haku-anki and haku-jupyter TIGHTEN (they sat open under
+# the namespace's default-allow ingress); haku-ui widens to all same-namespace pods
+# (fine per the trust ruling above).
+#
+# Enumerated non-breakage (2026-08-01): the console never dials into this namespace
+# (ui-backend is a CLIENT of haku-console, not a server to it); haku-mailbox lives in
+# its own namespace; no monitoring scrape configs target haku-sandbox; kubelet
+# probes and operator `kubectl port-forward` arrive via the host entity, which Cilium
+# admits independently of these rules (the old haku-ui fence proved that daily).
+# A future cross-namespace consumer = one explicit fromEndpoints entry here.
+#
+# Egress is unchanged — the mitmproxy CCNP owns that direction.
+# Operator-owned (Haku has no netpol RBAC). Security model: haku/docs/security.md.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: haku-ui-ingress-authentik-only
+  name: haku-sandbox-ingress
   namespace: haku-sandbox
 spec:
-  endpointSelector:
-    matchLabels:
-      app: haku-ui
+  endpointSelector: {}
   ingress:
     - fromEndpoints:
         - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+        - matchLabels:
             k8s:io.kubernetes.pod.namespace: authentik
             app.kubernetes.io/name: authentik
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP

@@ -257,6 +257,8 @@ fragment back into the frame `src` so F5 / a deep link restores the view. Rules:
 
 Haku's backend reads `X-authentik-username` on requests arriving through its gated route.
 Those headers are only forgeable by a direct in-cluster call to the Service — which the
-`haku-ui-ingress-authentik-only` CiliumNetworkPolicy
-(<../../../cluster/k8s/haku/namespace/networkpolicy.yaml>) blocks: ingress to `haku-ui` is
-admitted only from the authentik-server pods running the outpost.
+`haku-sandbox-ingress` CiliumNetworkPolicy
+(<../../../cluster/k8s/haku/namespace/networkpolicy.yaml>) blocks: the whole namespace
+admits ingress only from itself and the authentik-server pods running the outpost.
+(Same-namespace pods are Haku's own code at Haku's privilege — in-namespace forgery
+gains nothing over the git credential those pods already hold.)
