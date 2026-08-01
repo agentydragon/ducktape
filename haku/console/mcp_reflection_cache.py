@@ -71,20 +71,21 @@ class ReflectionCache:
         """Return a fresh cached catalog, join an in-flight reflection, or start one."""
         cached = self._catalogs.get(key)
         if cached is not None and cached.expires_at > time.monotonic():
-            return cached.tools
+            return list(cached.tools)
         task = self._in_flight.get(key)
         if task is None:
             task = asyncio.create_task(self._load(key, load))
             self._in_flight[key] = task
         # Shielded so one caller giving up (client disconnect, an outer timeout) does not cancel
         # the reflection every other caller is waiting on.
-        return await asyncio.shield(task)
+        tools = await asyncio.shield(task)
+        return list(tools)
 
     async def _load(
         self, key: ReflectionCacheKey, load: Callable[[], Awaitable[list[mcp_types.Tool]]]
     ) -> list[mcp_types.Tool]:
         try:
-            tools = await load()
+            tools = list(await load())
             self._prune()
             self._catalogs[key] = _CachedCatalog(tools=tools, expires_at=time.monotonic() + self._ttl_seconds)
             return tools
