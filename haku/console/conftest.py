@@ -195,7 +195,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     @contextmanager
     def _make(
         *,
-        tool_call_executor: Any | None = None,
         gmail_client: Any | None = None,
         in_process_servers: Any | None = None,
         config_file: Path | None = None,
@@ -215,12 +214,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             config_file=config_file if config_file is not None else default_config,
             **settings_overrides,
         )
-        app = create_app(
-            settings,
-            tool_call_executor=tool_call_executor,
-            gmail_client=gmail_client,
-            in_process_servers=in_process_servers,
-        )
+        app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process_servers)
         operator_identity = None
         if operator:
             operator_identity = app.state.operator_identity_store.resolve_verified_identity(

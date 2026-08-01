@@ -133,10 +133,6 @@ def create_app(
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
     static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
-    # Not a second MCP client — the `ToolExecutor` port, stubbed by tests that assert on what a tool
-    # call *does* without standing up real servers. Production never passes it: the one
-    # `McpServerClient` below fills the port.
-    tool_call_executor: tool_call_service.ToolExecutor | None = None,
     gmail_client: gmail_tools.GmailToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
@@ -300,7 +296,7 @@ def create_app(
         settings=settings,
         repository=tool_call_ledger,
         invalidation_publisher=console_event_hub,
-        executor=tool_call_executor if tool_call_executor is not None else server_client,
+        executor=server_client,
         oauth_store=mcp_operator_oauth_store,
         in_process_servers=in_process_servers,
         gmail_client_provider=gmail_client_provider,
