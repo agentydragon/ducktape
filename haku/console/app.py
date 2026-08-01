@@ -133,8 +133,10 @@ def create_app(
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
     static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
-    tool_call_executor: mcp_approval.McpServerClient | None = None,
-    tool_call_metadata_provider: mcp_approval.McpServerClient | None = None,
+    # Not a second MCP client — the `ToolExecutor` port, stubbed by tests that assert on what a tool
+    # call *does* without standing up real servers. Production never passes it: the one
+    # `McpServerClient` below fills the port.
+    tool_call_executor: tool_call_service.ToolExecutor | None = None,
     gmail_client: gmail_tools.GmailToolsClient | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> FastAPI:
@@ -288,20 +290,17 @@ def create_app(
             InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
-    if tool_call_executor is None or tool_call_metadata_provider is None:
-        # One client for both roles: `McpServerClient` holds the in-process registry and the
-        # reflection cache, and execution and reflection differ only in call and error policy.
-        # The two parameters stay separate so a test can substitute one and keep the other real.
-        server_client = mcp_approval.McpServerClient(
-            in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_cache_ttl_seconds
-        )
-        tool_call_executor = tool_call_executor or server_client
-        tool_call_metadata_provider = tool_call_metadata_provider or server_client
+    # The console's one client for the configured MCP servers. Executing a tool and reflecting a
+    # catalog are two calls against the same servers over the same transports, so they are one
+    # object: there is no production split between an "executor" and a "metadata provider".
+    server_client = mcp_approval.McpServerClient(
+        in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_cache_ttl_seconds
+    )
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
         invalidation_publisher=console_event_hub,
-        executor=tool_call_executor,
+        executor=tool_call_executor if tool_call_executor is not None else server_client,
         oauth_store=mcp_operator_oauth_store,
         in_process_servers=in_process_servers,
         gmail_client_provider=gmail_client_provider,
@@ -318,7 +317,7 @@ def create_app(
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
-        metadata_provider=tool_call_metadata_provider,
+        metadata_provider=server_client,
         node_daemons=node_daemon_service,
     )
 
@@ -384,7 +383,7 @@ def create_app(
     app.state.claude_chat_store = claude_chat_store
     app.state.claude_chat_service = claude_chat_service
     app.state.in_process_servers = in_process_servers
-    app.state.tool_call_metadata_provider = tool_call_metadata_provider
+    app.state.tool_call_metadata_provider = server_client
     app.state.node_daemon_service = node_daemon_service
     app.state.push_subscription_store = push_subscription_store
     app.state.web_push_identity = web_push_identity

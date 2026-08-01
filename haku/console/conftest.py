@@ -196,7 +196,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     def _make(
         *,
         tool_call_executor: Any | None = None,
-        tool_call_metadata_provider: Any | None = None,
         gmail_client: Any | None = None,
         in_process_servers: Any | None = None,
         config_file: Path | None = None,
@@ -219,7 +218,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         app = create_app(
             settings,
             tool_call_executor=tool_call_executor,
-            tool_call_metadata_provider=tool_call_metadata_provider,
             gmail_client=gmail_client,
             in_process_servers=in_process_servers,
         )
