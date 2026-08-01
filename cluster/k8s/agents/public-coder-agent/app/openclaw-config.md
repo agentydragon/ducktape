@@ -23,3 +23,21 @@ pins every declaration in the repo to the same measured numbers.
 `bind` is an enum -- `loopback`, `lan`, `tailnet`, `auto`, `custom`. `"all"` is
 not a member and the gateway exits with
 `Invalid --bind. Use "loopback", "lan", "tailnet", "auto", or "custom".`
+
+The haku-console MCP `Authorization` header carries the literal
+`proxy-haku-console-placeholder`, not `${HAKU_CONSOLE_TOKEN}`. Not every code path
+that reads this file interpolates `${...}`: the gateway's own MCP client does, but
+`mcp doctor` and `bundle-mcp` send the string unexpanded -- `mcp doctor` even says so
+("headers.Authorization contains a literal sensitive value"). The console answers an
+unrecognized bearer with `401` plus
+`WWW-Authenticate: Bearer ... resource_metadata=".../.well-known/oauth-protected-resource/mcp"`,
+which sends the MCP client into OAuth discovery and dynamic client registration. Nothing
+headless can finish that dance, so the request hangs until the client gives up with
+`McpError -32001: Request timed out` -- a timeout whose cause is an auth failure, which is
+why it reads like a network problem and is not one.
+
+Inlining the literal is safe because this value is not a credential: it is the
+placeholder that ../proxy/iron.yaml swaps for the real static-Agent bearer, and only in
+the `Authorization` header for `haku.allegedly.works`. The `HAKU_CONSOLE_TOKEN` env var
+in deployment.yaml stays -- it is what the agent presents on its own `curl`s to the
+console -- it is simply no longer on the path that has to survive interpolation.
