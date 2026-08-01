@@ -79,3 +79,52 @@ policy had to allow **5000**, the pod's container port. See
 port — compare that to the ports your `toPorts` allows.
 
 Origin: oci-cache pull-through mirror wiring (2026-07-04).
+
+## Egress to `*.allegedly.works`: `world` excludes our own nodes
+
+`toEntities: [world]` does not mean "any address outside this pod". Cilium carves
+the cluster's own nodes out of `world` and gives them `reserved:remote-node`
+(other nodes) or `reserved:host` (the node the pod runs on). Because the public
+Gateway binds Envoy on the OVH nodes in `hostNetwork` mode, **every**
+`*.allegedly.works` name resolves to those five node ExternalIPs — so a
+`world`-only egress rule can reach the entire internet and still not reach any of
+our own public services.
+
+### Symptom: a hang, not a refusal
+
+A dial that hangs for the client's full connect timeout and fails with `i/o
+timeout` (not `connection refused`), to a host that resolves and that an
+unrestricted pod on the same node reaches without trouble.
+
+### Pattern: name the node entities
+
+```yaml
+- toEntities:
+    - world
+    - remote-node
+    - host
+  toPorts:
+    - ports:
+        - port: "443"
+          protocol: TCP
+```
+
+`toEntities: [cluster]` also covers it — `cluster` expands to include
+`remote-node` and `host` — and is why `haku-egress-proxy` reaches these IPs
+today (<../k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml>). Prefer
+the narrower pair when the pod is deliberately barred from in-cluster pod-to-pod
+egress.
+
+**A `toFQDNs`/`toCIDR` rule cannot substitute.** `policy-cidr-match-mode` is unset
+cluster-wide, so CIDR-derived selectors do not match node IPs at all — a
+`toFQDNs: matchName: <something>.allegedly.works` rule looks correct, validates,
+and still drops.
+
+### Debugging: check the destination's identity
+
+`cilium-dbg ip get <ip>/32` (note: CIDR form, a bare IP is rejected) prints the
+identity. `reserved:remote-node` on the destination against a `world`-only rule is
+the whole diagnosis. A true-world address is simply absent from the ipcache.
+
+Origin: public-coder-agent's Haku Console MCP server timing out at 30s while the
+same proxy reached GitHub and BuildBuddy fine (2026-08-01).

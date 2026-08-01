@@ -42,8 +42,21 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
+    # `world` alone does not mean "everywhere". Cilium carves the cluster's own
+    # nodes out of it: every `*.allegedly.works` name resolves to the five OVH
+    # node ExternalIPs (Envoy binds 80/443 there in hostNetwork mode), and those
+    # addresses carry `reserved:remote-node`, not `reserved:world`. A
+    # `world`-only rule therefore black-holes the SYN and the dial times out —
+    # which is how this proxy could reach the entire internet yet not
+    # haku.allegedly.works. `host` is here too because this Deployment has no
+    # nodeSelector: on an OVH node, that node's own IP is `reserved:host`.
+    # Widening a CIDR/FQDN rule cannot substitute — `policy-cidr-match-mode` is
+    # unset cluster-wide, so CIDR-derived selectors never match node IPs.
+    # See ../../../../docs/cilium_network_policy.md.
     - toEntities:
         - world
+        - remote-node
+        - host
       toPorts:
         - ports:
             - port: "443"
