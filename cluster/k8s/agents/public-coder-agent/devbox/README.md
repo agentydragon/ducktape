@@ -12,8 +12,19 @@ ClusterIP Service:
 public-coder-devbox-ssh.public-coder-agent.svc.cluster.local:22
 ```
 
-The OpenClaw Deployment mounts the matching SSH key and config as
-`public-coder-devbox`, so the normal command is:
+The OpenClaw Deployment exposes the matching SSH key and config read-only at
+`/run/secrets/public-coder-devbox-ssh`. Kubernetes Secret volumes are root-owned
+and group-readable, which OpenSSH correctly rejects for a private key. Copy the
+files into the agent's writable home with strict permissions before connecting:
+
+```bash
+install -d -m 0700 ~/.ssh
+install -m 0600 /run/secrets/public-coder-devbox-ssh/id_ed25519 ~/.ssh/id_ed25519
+install -m 0644 /run/secrets/public-coder-devbox-ssh/known_hosts ~/.ssh/known_hosts
+install -m 0644 /run/secrets/public-coder-devbox-ssh/config ~/.ssh/config
+```
+
+The normal command is then:
 
 ```bash
 ssh public-coder-devbox

@@ -34,23 +34,6 @@ spec:
       securityContext:
         fsGroup: 1000
       initContainers:
-        # The devbox SSH key is delivered by a SOPS-decrypted Secret, then
-        # copied into a writable, uid-1000-owned directory so OpenSSH sees the
-        # private key with mode 0600 rather than the Secret volume's group mode.
-        - name: install-devbox-ssh
-          image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
-          command:
-            - sh
-            - -c
-            - |
-              set -eu
-              install -d -m 0700 -o 1000 -g 1000 /ssh
-              install -m 0600 -o 1000 -g 1000 /secrets/id_ed25519 /ssh/id_ed25519
-              install -m 0644 -o 1000 -g 1000 /secrets/known_hosts /ssh/known_hosts
-              install -m 0644 -o 1000 -g 1000 /secrets/config /ssh/config
-          volumeMounts:
-            - { name: devbox-ssh-secret, mountPath: /secrets, readOnly: true }
-            - { name: devbox-ssh, mountPath: /ssh }
         # The gateway reads its config from the state dir, which is the PVC, so
         # the declarative config has to be planted there before startup.
         #
@@ -80,7 +63,6 @@ spec:
           volumeMounts:
             - { name: cfg, mountPath: /cfg }
             - { name: data, mountPath: /state }
-            - { name: devbox-ssh, mountPath: /home/openclaw/.ssh }
       containers:
         - name: openclaw
           image: ghcr.io/agentydragon/openclaw:devel-20260728182008-17ba82d
@@ -175,7 +157,7 @@ spec:
               containerPort: 18789
           volumeMounts:
             - { name: data, mountPath: /home/openclaw/.openclaw }
-            - { name: devbox-ssh, mountPath: /home/openclaw/.ssh, readOnly: true }
+            - { name: devbox-ssh-secret, mountPath: /run/secrets/public-coder-devbox-ssh, readOnly: true }
             # Over the system trust store, not alongside it. The Bundle is built
             # with useDefaultCAs, so it already contains the public roots plus the
             # cluster root plus this proxy's interception root — replacing the
@@ -206,11 +188,10 @@ spec:
         - name: devbox-ssh-secret
           secret:
             secretName: public-coder-devbox-ssh
-            # The pod's fsGroup makes this group-readable by the non-root
-            # initContainer (uid 1000), which copies the key into a 0600 file.
+            # The pod's fsGroup makes these source files readable by the
+            # non-root agent (uid 1000), which copies the key into its writable
+            # home with mode 0600 before using SSH.
             defaultMode: 0440
-        - name: devbox-ssh
-          emptyDir: {}
         - name: cfg
           configMap:
             name: public-coder-agent-config
