@@ -1,11 +1,10 @@
 # Ship Talos service logs off-node to the in-cluster Vector receiver.
 #
 # Talos has no journald; machine.logging.destinations streams newline-delimited JSON to a
-# local endpoint. The vector-talos-logs DaemonSet (cluster/k8s/vector-talos-logs/) runs a
-# node-local pod listening on hostPort 13333; Cilium socket-LB (full kubeProxyReplacement,
-# cilium-values.yaml) routes this host-loopback connection to that pod, which forwards the
-# logs to cluster Loki. The node-vendor=talos label scopes that DaemonSet to Talos nodes
-# (NixOS nodes ship their journal via the promtail-journal HelmRelease instead).
+# local endpoint. The vector-talos-logs DaemonSet (cluster/k8s/vector-talos-logs/) joins
+# the host network and binds only host loopback on :13333, which forwards the logs to
+# cluster Loki. The node-vendor=talos label scopes that DaemonSet to Talos nodes (NixOS
+# nodes ship their journal via the promtail-journal HelmRelease instead).
 #
 # machine.logging and machine.nodeLabels are non-reboot fields, applied live. Land the
 # DaemonSet before applying this so the endpoint has a listener (see

@@ -1,4 +1,4 @@
-# Receives Talos service logs on a node-local hostPort and forwards them to Loki.
+# Receives Talos service logs on host loopback and forwards them to Loki.
 # Scoped to Talos nodes via the node-vendor=talos label (set by the Talos machineconfig
 # in cluster/terraform/main/logging.tf). NixOS nodes ship their journal via the separate
 # promtail-journal HelmRelease instead.
@@ -18,6 +18,10 @@ spec:
       labels:
         app: vector-talos-logs
     spec:
+      # hostNetwork lets Vector bind the actual host loopback address. A Cilium
+      # hostPort would also expose the listener on the node's public addresses.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       nodeSelector:
         node-vendor: talos
       # Talos control-plane nodes carry the control-plane NoSchedule taint; tolerate all
@@ -37,14 +41,10 @@ spec:
                   fieldPath: spec.nodeName
             - name: VECTOR_LOG
               value: warn
-          ports:
-            - name: talos-logs
-              containerPort: 13333
-              hostPort: 13333
-              protocol: TCP
           readinessProbe:
             tcpSocket:
-              port: talos-logs
+              host: 127.0.0.1
+              port: 13333
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:

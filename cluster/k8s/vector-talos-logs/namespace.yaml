@@ -5,7 +5,9 @@ metadata:
   labels:
     # Fixed-resource DaemonSet — opt out of Goldilocks/VPA recommendations.
     goldilocks.fairwinds.com/enabled: "false"
-    # hostPort is allowed under baseline PSA; Vector runs unprivileged (no hostNetwork).
-    pod-security.kubernetes.io/enforce: baseline
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
+    # The receiver joins the host network so it can bind only 127.0.0.1:13333;
+    # baseline forbids hostNetwork. This is an operator-only namespace: Flux is
+    # its sole writer, while the Vector container itself remains unprivileged.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

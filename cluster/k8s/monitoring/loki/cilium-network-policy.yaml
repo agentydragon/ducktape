@@ -40,11 +40,12 @@ spec:
             - port: "3100"
               protocol: TCP
 
-    # Vector Talos-log receiver → Loki (Talos node logs)
-    - fromEndpoints:
-        - matchLabels:
-            app: vector-talos-logs
-            k8s:io.kubernetes.pod.namespace: vector-talos-logs
+    # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
+    # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
+    # host on the local node and remote-node after a cross-node service hop.
+    - fromEntities:
+        - host
+        - remote-node
       toPorts:
         - ports:
             - port: "3100"

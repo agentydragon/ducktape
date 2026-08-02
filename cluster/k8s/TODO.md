@@ -299,11 +299,10 @@ detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
       `promtail-journal` HelmRelease (`monitoring/loki/promtail-journal-helmrelease.yaml`),
       scoped by the `node-vendor=nixos` kubelet label.
 - [ ] **Talos nodes** (optiplex, ovh-\*): service logs → Loki via `machine.logging`.
-      **Manifests + Terraform are committed and the sink is live** — the `vector-talos-logs`
-      DaemonSet is deployed (0 pods, waiting for the `node-vendor=talos` label) and the shared
-      `machine.logging` destination + label patch is in `terraform/main/logging.tf`. **Not yet
-      rolled out**: the persisted Nebula identity migration is complete; proceed with the
-      per-node `tofu apply` only after this change is merged.
+      The shared `machine.logging` destination + label patch is in `terraform/main/logging.tf`.
+      The `vector-talos-logs` receiver runs host-networked but binds only
+      `127.0.0.1:13333`; wait for Flux to reconcile it and for the canary's Vector pod + Loki
+      arrival before continuing the per-node rollout.
       Roll out one node at a time (`tofu apply -target='talos_machine_configuration_apply.kimsufi["<node>"]'`),
       starting with a worker (`ovh-ns103711`/`ovh-ns102453`), then the 3 control-plane nodes,
       with a Ready/etcd-quorum/Loki-arrival health gate between each. **Skip

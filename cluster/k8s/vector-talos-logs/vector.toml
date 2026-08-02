@@ -1,16 +1,16 @@
 # Talos service-log receiver.
 #
 # Talos has no journald; machine.logging.destinations (cluster/terraform/main/logging.tf)
-# streams newline-delimited JSON to tcp://127.0.0.1:13333 on each Talos node. Cilium
-# socket-LB (full kubeProxyReplacement) routes that host-loopback connection to the
-# node-local pod of this DaemonSet, which forwards the logs to Loki. The per-node label
+# streams newline-delimited JSON to tcp://127.0.0.1:13333 on each Talos node. This
+# DaemonSet uses host networking and binds that exact loopback address, so the receiver
+# is not reachable through a node's Nebula, LAN, or public address. The per-node label
 # comes from the downward-API NODE_NAME env (each pod only ever receives its own node's
 # logs, so the DaemonSet's node identity is authoritative).
 
 [sources.talos]
 type = "socket"
 mode = "tcp"
-address = "0.0.0.0:13333"
+address = "127.0.0.1:13333"
 
 # Talos emits one JSON object per line; the default newline framing + JSON decoding turns
 # each line into a structured event.
