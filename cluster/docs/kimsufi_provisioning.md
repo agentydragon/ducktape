@@ -83,8 +83,7 @@ tofu apply \
   -target='null_resource.install_talos_kimsufi' \
   -target='ovh_dedicated_server_update.kimsufi_harddisk' \
   -target='ovh_dedicated_server_reboot_task.kimsufi_to_talos' \
-  -target='talos_machine_configuration_apply.kimsufi' \
-  -target='null_resource.nebula_node_cert'
+  -target='talos_machine_configuration_apply.kimsufi'
 ```
 
 The OVH chain runs only for the slot whose `service_name` changed from `""` to
@@ -104,7 +103,7 @@ plans for OVH only and leave Proxmox-managed resources in state. Once
 Proxmox is reachable again, run a reviewed full plan from `cluster/terraform/main`
 to converge the now-empty `local.proxmox_nodes` map, destroy
 `proxmox_virtual_environment_vm.talos["pve_cp0"]`, and prune the retired local
-Nebula cert null-resources.
+Nebula identity files once no surviving node configuration refers to them.
 
 ## 4. Verify
 

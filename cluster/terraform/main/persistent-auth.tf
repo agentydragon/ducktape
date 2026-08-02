@@ -84,89 +84,44 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 
   lifecycle { prevent_destroy = true }
 }
-# NEBULA MESH PKI — CA + per-node certificates
+# NEBULA MESH PKI — persisted CA + per-node certificate material
 
 locals {
-  nebula_cert_dir = "${path.module}/nebula-certs"
-
   # Tofu-managed Talos nodes — derived from the mesh roster
-  # (../../../nebula-mesh.json). Tofu issues certs and embeds them in machine
-  # config patches (nebula.tf). To add a new Talos node, edit the roster — see
-  # cluster/docs/mesh_membership.md.
+  # (../../../nebula-mesh.json). The already-issued certificates and keys live
+  # in secrets/nebula/, and Tofu embeds them in machine config patches
+  # (nebula.tf). To add a new Talos node, persist its identity first, then edit
+  # the roster — see cluster/docs/mesh_membership.md.
   #
   # Cert names use FQDN under nebula.allegedly.works so that systemd-resolved
   # can route queries via ~nebula.allegedly.works without +DefaultRoute (which
   # breaks public DNS when cluster nodes are unreachable).
   #
-  # Non-tofu nodes (atlas, wyrm2, rugged, iguana, pixel6) have certs in
-  # secrets/nebula/. See docs/secrets.md "Nebula Certs for Non-Talos Nodes".
+  # Every Nebula node uses secrets/nebula/. Private keys are SOPS-encrypted;
+  # public certificates are plaintext. See cluster/docs/secrets.md.
   talos_nebula_nodes = {
     for name, h in local.nebula_hosts :
-    "${name}.nebula.allegedly.works" => {
-      ip     = "${h.nebula_ip}/16"
-      groups = join(",", try(h.cert_groups, []))
-    }
+    name => {}
     if startswith(try(h.managed_by, ""), "tofu-")
   }
 }
 
-# Nebula CA — plaintext cert + SOPS binary key (secrets/nebula/).
+# Nebula CA public certificate.
 data "local_file" "nebula_ca_crt" {
   filename = "${path.module}/../../../secrets/nebula/ca.crt"
 }
 
-data "sops_file" "nebula_ca_key" {
-  source_file = "${path.module}/../../../secrets/nebula/ca.sops.key"
-  input_type  = "raw"
-}
-
-resource "local_sensitive_file" "nebula_ca_key" {
-  content  = data.sops_file.nebula_ca_key.raw
-  filename = "${local.nebula_cert_dir}/ca.key"
-}
-
-resource "local_file" "nebula_ca_crt" {
-  content  = data.local_file.nebula_ca_crt.content
-  filename = "${local.nebula_cert_dir}/ca.crt"
-}
-
-# Generate per-node certs signed by the CA.
-resource "null_resource" "nebula_node_cert" {
-  for_each = local.talos_nebula_nodes
-
-  triggers = {
-    ca_hash = sha256(local_file.nebula_ca_crt.content)
-    ip      = each.value.ip
-    groups  = each.value.groups
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      nebula-cert sign \
-        -ca-crt ${local.nebula_cert_dir}/ca.crt \
-        -ca-key ${local.nebula_cert_dir}/ca.key \
-        -name "${each.key}" \
-        -ip "${each.value.ip}" \
-        -groups "${each.value.groups}" \
-        -out-crt ${local.nebula_cert_dir}/${each.key}.crt \
-        -out-key ${local.nebula_cert_dir}/${each.key}.key
-    EOT
-  }
-
-  depends_on = [local_file.nebula_ca_crt, local_sensitive_file.nebula_ca_key]
-}
-
+# Per-node identities are durable input material, not local-exec output. This
+# keeps a fresh Terraform workstation from silently rotating a live node key.
 data "local_file" "nebula_node_crt" {
-  for_each   = local.talos_nebula_nodes
-  filename   = "${local.nebula_cert_dir}/${each.key}.crt"
-  depends_on = [null_resource.nebula_node_cert]
+  for_each = local.talos_nebula_nodes
+  filename = "${path.module}/../../../secrets/nebula/${each.key}.crt"
 }
 
-data "local_sensitive_file" "nebula_node_key" {
-  for_each   = local.talos_nebula_nodes
-  filename   = "${local.nebula_cert_dir}/${each.key}.key"
-  depends_on = [null_resource.nebula_node_cert]
+data "sops_file" "nebula_node_key" {
+  for_each    = local.talos_nebula_nodes
+  source_file = "${path.module}/../../../secrets/nebula/${each.key}.sops.key"
+  input_type  = "raw"
 }
 
 # SOPS AGE KEYPAIR — cluster k8s secrets

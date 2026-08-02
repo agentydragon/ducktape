@@ -302,29 +302,14 @@ detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
       **Manifests + Terraform are committed and the sink is live** — the `vector-talos-logs`
       DaemonSet is deployed (0 pods, waiting for the `node-vendor=talos` label) and the shared
       `machine.logging` destination + label patch is in `terraform/main/logging.tf`. **Not yet
-      rolled out**: the per-node `tofu apply` is blocked (see the nebula-cert item below).
+      rolled out**: the persisted Nebula identity migration is complete; proceed with the
+      per-node `tofu apply` only after this change is merged.
       Roll out one node at a time (`tofu apply -target='talos_machine_configuration_apply.kimsufi["<node>"]'`),
       starting with a worker (`ovh-ns103711`/`ovh-ns102453`), then the 3 control-plane nodes,
       with a Ready/etcd-quorum/Loki-arrival health gate between each. **Skip
       `proxmox["pve_cp0"]`** — it's stale state for a retired VM, not a live node. **optiplex**
       has no `talos_machine_configuration_apply` resource in state (only the data source), so
       applying it is a first-time create — handle separately after the OVH nodes.
-- [ ] **Fix: persist tofu-managed nebula node keys (blocks the Talos rollout above).**
-      Root cause of the blocked apply: for tofu-managed Talos nodes (optiplex + OVH), the
-      nebula cert **and private key** are generated on the fly by `nebula-cert sign`
-      (`persistent-auth.tf` `null_resource.nebula_node_cert`) into the local
-      `terraform/main/nebula-certs/` dir and read back via `data.local_file` /
-      `data.local_sensitive_file` — **not stored in SOPS** (unlike the non-tofu nodes
-      wyrm2/rugged/iguana/atlas, whose keys live in `secrets/nebula/`). Consequences:
-      the key is a single machine-local copy (only on whichever machine last ran the apply),
-      re-running `nebula-cert sign` (no `-in-pub`) mints a **new** keypair (rotation, not
-      reproduction), and any machine missing a node's local file can't even `tofu plan`
-      (the data source errors — currently `optiplex.nebula.allegedly.works.{crt,key}` is
-      absent locally, which is exactly what's blocking the rollout). Fix: persist each
-      generated node key the same way as the non-tofu nodes — store in SOPS (or sign a
-      persisted key via `-in-pub`) so any machine can apply without rotation and there's no
-      single-copy-on-one-laptop risk. Until then, the Talos rollout must run from the machine
-      that holds the current `nebula-certs/`.
 - [ ] **atlas host journal** — the remaining log gap. atlas is the Proxmox/PVE hypervisor,
       **not a k8s node**, so no in-cluster DaemonSet can reach its journal. Ship it with a
       host-level promtail/alloy systemd unit on atlas pushing to Loki over the Nebula mesh

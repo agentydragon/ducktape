@@ -278,8 +278,8 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
       others) should be encrypted to admin + 4 user keys, but the files in git still have
       only admin. Discovered 2026-05-13 trying to provision the Kimsufi node from rugged.
-      Blocks: `tofu apply` of any resource needing the Nebula CA (e.g. `null_resource.nebula_node_cert`
-      for the Kimsufi worker). Also blocks `tofu init` (PG backend creds in
+      Nebula CA access now blocks certificate rotation only; it no longer blocks routine
+      Tofu applies. The PG backend credentials still block `tofu init` in
       `tofu-state/db/credentials.sops.yaml`). - Partial workaround for PG backend: fetch creds from k8s instead of SOPS in
       `cluster/.envrc` — `kubectl -n tofu-state get secret tofu-state-db-credentials`
       works with current agent RBAC base/user kubeconfig. - Real fix when wyrm2 is back: `sops updatekeys` on every file where `.sops.yaml`

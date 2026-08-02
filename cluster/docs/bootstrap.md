@@ -18,10 +18,11 @@ See <../README.md> for architecture overview, node topology, and networking deta
 
 ### Persistent Auth Resources
 
-Persistent-auth resources (Proxmox API tokens, Nebula node certs, SOPS age key
-deployment) live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
-Core secrets (Nebula CA, cluster age keypair) are SOPS-encrypted
-in `secrets/` and read by tofu via the `sops` provider.
+Persistent Terraform resources (Proxmox API tokens and SOPS age key deployment)
+live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
+Nebula node identities are durable inputs: public certificates and SOPS-encrypted
+private keys in `secrets/nebula/`, read by tofu via the `sops` provider rather
+than generated during an apply.
 Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
 See <bootstrap_dependencies.md> for the full dependency graph.
 
@@ -42,7 +43,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 
 ### Phase 1: Persistent Auth (`tofu apply -target=<persistent-auth resources>`)
 
-- Proxmox API tokens, Nebula CA → node certs, SOPS age key deployment
+- Proxmox API tokens and SOPS age key deployment; reads persisted Nebula identities
 - Resources have `lifecycle { prevent_destroy = true }` — preserved across cycles
 
 ### Phase 2: Infrastructure (`tofu apply -target=<infra resources>` + health checks)

@@ -92,8 +92,8 @@ tofu apply \
   -target='data.talos_machine_configuration.home_worker["optiplex"]'
 ```
 
-The dependency graph signs `optiplex.nebula.allegedly.works` from the existing
-Nebula CA and embeds that certificate, its private key, the Nebula client
+The dependency graph reads the persisted `optiplex` Nebula certificate and
+SOPS-encrypted private key, then embeds that identity, the Nebula client
 configuration, and the existing Talos cluster machine secrets in the generated
 worker configuration.
 

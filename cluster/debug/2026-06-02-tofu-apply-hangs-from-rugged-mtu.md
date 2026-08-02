@@ -200,6 +200,12 @@ becomes preferentially unreachable.
 
 ## Permanent fixes to consider (separate from immediate unblock)
 
+> **Superseded for Nebula identity recovery (2026-08-02):** Talos node
+> certificate material now persists as `secrets/nebula/<host>.crt` plus
+> `secrets/nebula/<host>.sops.key`; do not follow this note's local
+> `nebula-certs/` deletion/regeneration instructions. The network observations
+> below remain historical evidence.
+
 In order of preference:
 
 1. **Run tofu from inside the cluster.** A pod scheduled on any kimsufi node

@@ -10,8 +10,8 @@ The mesh host roster is a single JSON file at the repo root,
 - `cluster/terraform/main/nebula.tf` — per-node ExtensionServiceConfig YAMLs,
   per-node MTU route patches, plus a `check {}` block asserting that roster
   endpoints match the live OVH IPs
-- `cluster/terraform/main/persistent-auth.tf` — issues per-host Nebula certs
-  for every tofu-managed entry
+- `cluster/terraform/main/persistent-auth.tf` — reads persisted per-host Nebula
+  certificate material for every tofu-managed entry
 - `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
 
@@ -69,10 +69,12 @@ any TF apply.
 3. Add the host to `local.kimsufi_servers` in
    `cluster/terraform/main/ovh-nodes.tf`; the Terraform-managed Nebula host set
    is derived from that inventory.
-4. `bazel run //cluster:bootstrap` — `persistent-auth` issues the cert,
-   `nebula.tf` builds the per-node config, the drift `check` verifies the
-   endpoint matches live OVH data.
-5. Restart Nebula on roaming/NixOS hosts (or wait for next `nixos-rebuild
+4. Generate and persist `secrets/nebula/<host>.crt` and
+   `secrets/nebula/<host>.sops.key` with the exact FQDN, Nebula IP, and groups
+   from the new roster entry; see <secrets.md> "Generating a new cert".
+5. `bazel run //cluster:bootstrap` — `nebula.tf` builds the per-node config,
+   and the drift `check` verifies the endpoint matches live OVH data.
+6. Restart Nebula on roaming/NixOS hosts (or wait for next `nixos-rebuild
 switch`) so they pick up the new `static_host_map`.
 
 ### NixOS / Ansible / laptop / mobile (manual cert)
@@ -119,15 +121,18 @@ are neither lighthouses nor relays.
 3. Remove the matching inventory entry from `local.kimsufi_servers` (or the
    legacy `local.kimsufi_cp_servers`) in `cluster/terraform/main/ovh-nodes.tf`.
 4. `bazel run //cluster:bootstrap`. TF destroys the underlying resource and
-   prunes the cert; remaining Talos nodes get refreshed configs.
-5. **Restart Nebula on remaining lighthouses** (e.g., `talosctl service nebula
+   refreshes remaining Talos node configs.
+5. Delete `secrets/nebula/<host>.crt` and
+   `secrets/nebula/<host>.sops.key` once no surviving node configuration refers
+   to the removed identity.
+6. **Restart Nebula on remaining lighthouses** (e.g., `talosctl service nebula
 restart -n <ip>`). Without this, the lighthouses sit in silent
    handshake-timeout loops for the dead peer, which manifests as Chrome /
    client-side NetworkChangeNotifier churn on roaming hosts until the entry
    ages out.
-6. `nixos-rebuild switch` on roaming/NixOS hosts to refresh `staticHostMap`
+7. `nixos-rebuild switch` on roaming/NixOS hosts to refresh `staticHostMap`
    and `controlPlaneEndpoints`.
-7. Run the Nebula role on Atlas if the removed host had `destination_mtu`.
+8. Run the Nebula role on Atlas if the removed host had `destination_mtu`.
 
 ### NixOS / laptop / mobile host
 

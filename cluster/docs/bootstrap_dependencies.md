@@ -15,13 +15,13 @@ L1  SOPS Secrets in Git ──────────────────�
         │  encrypted with: admin age key (L0)
         │
 L2  Persistent Auth (tofu state) ────────────────────────────────────────
-    (Proxmox users/tokens, nebula node certs, k8s SOPS secret)
+    (Proxmox users/tokens, k8s SOPS secret)
         │  reads: L1 SOPS files
-        │  writes to: Proxmox API, local disk (nebula-certs/)
+        │  writes to: Proxmox API, Kubernetes API
         │
 L3  Infrastructure ──────────────────────────────────────────────────────
     (Talos machine secrets, OVH Kimsufi nodes, Proxmox VM, kubeconfig)
-        │  reads: L0 tokens, L2 nebula certs
+        │  reads: L0 tokens, L1 Nebula identities, L2 persistent auth
         │
 L4  Cluster Networking ──────────────────────────────────────────────────
     (Gateway API CRDs, Cilium CNI, node readiness)
@@ -57,27 +57,28 @@ No downstream regeneration needed — these are read-only inputs.
 Encrypted with admin age key (L0). These are the source of truth for
 secrets that Flux and tofu consume.
 
-| File                                                      | Contents                                                                   | Depends On                                                     | Depended On By                                                                                                     |
-| --------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `secrets/nebula/ca.crt`                                   | Nebula CA public cert (plaintext)                                          | None                                                           | L2: tofu node cert signing; L7: NixOS workers, ansible                                                             |
-| `secrets/nebula/ca.sops.key`                              | Nebula CA private key (SOPS bin)                                           | Admin age key                                                  | L2: tofu node cert signing                                                                                         |
-| `secrets/nebula/*.sops.key`                               | Nebula host private keys (binary)                                          | Admin age key + host age key, or admin-only for mobile clients | L7: NixOS worker nebula mesh, ansible, mobile import generation                                                    |
-| `secrets/nebula/*.crt`                                    | Nebula host public certs (plain)                                           | None                                                           | L7: NixOS worker nebula mesh, ansible, mobile import generation                                                    |
-| `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)                                             | Admin age key + cluster-secrets + ci                           | L6: Flux private/write git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
-| `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)                                             | Admin age key                                                  | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                                   |
-| `secrets/shared/cluster-tokens.yaml`                      | Proxmox API token; legacy HCloud token retained for account-history access | Admin age key + user age keys                                  | `.envrc` -> `PROXMOX_VE_API_TOKEN`                                                                                 |
-| `secrets/ovh-credentials.sops.yaml`                       | OVH API credentials (AK/AS/CK)                                             | Admin age key + user age keys                                  | `terraform.tf` OVH provider → `ovh-nodes.tf` Kimsufi provisioning                                                  |
-| `ssh_keys/*-forgejo.sops.key`                             | Per-host Forgejo SSH private keys for `agentydragon`                       | Admin age key + owning host's user age key                     | Home Manager Forgejo SSH config; L6: `forgejo-agentydragon` attaches matching public keys                          |
-| `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                           | L7: kubelet TLS on NixOS workers                                                                                   |
-| `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                  | L7: kubelet TLS bootstrap on NixOS workers                                                                         |
-| `cluster/k8s/**/*.sops.yaml`                              | App credentials, generated service identities, API keys, tokens            | Admin age key + cluster age key                                | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                                      |
-| `secrets/home/*/activitywatch-syncthing.cert.pem`         | Per-host Syncthing public certificate for ActivityWatch device sync        | None                                                           | L7: Home Manager Syncthing config for ActivityWatch sync                                                           |
-| `secrets/home/*/activitywatch-syncthing.sops.key`         | Per-host Syncthing private key for ActivityWatch device sync               | Admin age key + owning host user age key                       | L7: Home Manager Syncthing config for ActivityWatch sync                                                           |
+| File                                                      | Contents                                                                   | Depends On                                                                  | Depended On By                                                                                                     |
+| --------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `secrets/nebula/ca.crt`                                   | Nebula CA public cert (plaintext)                                          | None                                                                        | L3: Talos machine configuration; L7: NixOS workers, ansible                                                        |
+| `secrets/nebula/ca.sops.key`                              | Nebula CA private key (SOPS bin)                                           | Admin age key                                                               | Explicit certificate rotation only                                                                                 |
+| `secrets/nebula/*.sops.key`                               | Nebula host private keys (binary)                                          | Operator recipients for Talos; host recipients for NixOS; admin-only mobile | L3: Talos machine configuration; L7: NixOS worker mesh, ansible, mobile import generation                          |
+| `secrets/nebula/*.crt`                                    | Nebula host public certs (plain)                                           | None                                                                        | L3: Talos machine configuration; L7: NixOS worker mesh, ansible, mobile import generation                          |
+| `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)                                             | Admin age key + cluster-secrets + ci                                        | L6: Flux private/write git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
+| `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)                                             | Admin age key                                                               | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                                   |
+| `secrets/shared/cluster-tokens.yaml`                      | Proxmox API token; legacy HCloud token retained for account-history access | Admin age key + user age keys                                               | `.envrc` -> `PROXMOX_VE_API_TOKEN`                                                                                 |
+| `secrets/ovh-credentials.sops.yaml`                       | OVH API credentials (AK/AS/CK)                                             | Admin age key + user age keys                                               | `terraform.tf` OVH provider → `ovh-nodes.tf` Kimsufi provisioning                                                  |
+| `ssh_keys/*-forgejo.sops.key`                             | Per-host Forgejo SSH private keys for `agentydragon`                       | Admin age key + owning host's user age key                                  | Home Manager Forgejo SSH config; L6: `forgejo-agentydragon` attaches matching public keys                          |
+| `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                                        | L7: kubelet TLS on NixOS workers                                                                                   |
+| `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                               | L7: kubelet TLS bootstrap on NixOS workers                                                                         |
+| `cluster/k8s/**/*.sops.yaml`                              | App credentials, generated service identities, API keys, tokens            | Admin age key + cluster age key                                             | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                                      |
+| `secrets/home/*/activitywatch-syncthing.cert.pem`         | Per-host Syncthing public certificate for ActivityWatch device sync        | None                                                                        | L7: Home Manager Syncthing config for ActivityWatch sync                                                           |
+| `secrets/home/*/activitywatch-syncthing.sops.key`         | Per-host Syncthing private key for ActivityWatch device sync               | Admin age key + owning host user age key                                    | L7: Home Manager Syncthing config for ActivityWatch sync                                                           |
 
 **If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
 to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
-Then regenerate all node certs (L2) and update all NixOS worker nebula
-files (L7).
+Then explicitly regenerate and persist every node certificate/key under
+`secrets/nebula/`, apply the Talos machine configuration, and update all NixOS
+worker Nebula files (L7).
 
 **If `secrets/shared/cluster-secrets-age.yaml` is lost**: regenerate and redeploy per
 <secrets.md> § "Rotating the Cluster Age Key".
@@ -100,21 +101,22 @@ SOPS-encrypt, commit, push. Flux picks it up automatically.
 Created by `tofu apply` Phase 1 (persistent-auth targets). Stored in PG
 backend. Resources have `lifecycle { prevent_destroy = true }`.
 
-| Resource                                                          | Reads                                         | Creates                                  | Depended On By                          |
-| ----------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------- | --------------------------------------- |
-| `proxmox_virtual_environment_role.persistent`                     | L0: Proxmox token                             | Proxmox roles (CSI, TerraformAdmin)      | L2: Proxmox users                       |
-| `proxmox_virtual_environment_user.persistent`                     | L2: roles                                     | Proxmox users (terraform@pve)            | L2: tokens                              |
-| `proxmox_virtual_environment_user_token.persistent`               | L2: users                                     | API tokens for CSI + terraform           | L3: Proxmox VM creation; L6: CSI driver |
-| `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula/ca.{crt,sops.key}`        | CA cert/key on disk                      | L2: node cert signing                   |
-| `null_resource.nebula_node_cert` (Tofu-managed Talos nodes)       | L2: CA on disk                                | Per-node cert+key at `nebula-certs/`     | L3: Talos machine config (embedded)     |
-| `talos_machine_secrets.cluster`                                   | `var.talos_version`                           | CA keypairs, bootstrap token, etcd certs | L3: all Talos machine configs           |
-| `kubernetes_namespace.flux_system`                                | L3: kubeconfig                                | `flux-system` namespace                  | L2: SOPS age secret; L5: Flux           |
-| `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/shared/cluster-secrets-age.yaml` | k8s secret in flux-system                | L5: Flux SOPS decryption                |
+| Resource                                                                                        | Reads                                         | Creates                                  | Depended On By                          |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------- | --------------------------------------- |
+| `proxmox_virtual_environment_role.persistent`                                                   | L0: Proxmox token                             | Proxmox roles (CSI, TerraformAdmin)      | L2: Proxmox users                       |
+| `proxmox_virtual_environment_user.persistent`                                                   | L2: roles                                     | Proxmox users (terraform@pve)            | L2: tokens                              |
+| `proxmox_virtual_environment_user_token.persistent`                                             | L2: users                                     | API tokens for CSI + terraform           | L3: Proxmox VM creation; L6: CSI driver |
+| `data.local_file.nebula_ca_crt`                                                                 | L1: `secrets/nebula/ca.crt`                   | CA public cert in Terraform              | L3: Talos machine config (embedded)     |
+| `data.local_file.nebula_node_crt` / `data.sops_file.nebula_node_key` (Tofu-managed Talos nodes) | L1: `secrets/nebula/{host}.{crt,sops.key}`    | Persisted per-node cert/key in Terraform | L3: Talos machine config (embedded)     |
+| `talos_machine_secrets.cluster`                                                                 | `var.talos_version`                           | CA keypairs, bootstrap token, etcd certs | L3: all Talos machine configs           |
+| `kubernetes_namespace.flux_system`                                                              | L3: kubeconfig                                | `flux-system` namespace                  | L2: SOPS age secret; L5: Flux           |
+| `kubernetes_secret.sops_age_cluster_secrets`                                                    | L1: `secrets/shared/cluster-secrets-age.yaml` | k8s secret in flux-system                | L5: Flux SOPS decryption                |
 
 **If tofu state is lost**: All L2 resources must be recreated. Proxmox
 roles/users/tokens that still exist on Proxmox must be deleted first (tofu
-can't create over existing). Nebula node certs on disk must be deleted
-(nebula-cert refuses to overwrite). Then run bootstrap Phase 1.
+can't create over existing). Nebula identities remain recoverable in
+`secrets/nebula/`; do not regenerate them as part of state recovery. Then run
+bootstrap Phase 1.
 
 **If only Proxmox tokens are lost** (but state intact): `tofu apply` with
 persistent-auth targets regenerates them. Update the SOPS CSI secret.
@@ -331,10 +333,9 @@ re-enter from the external service and SOPS-encrypt.
 
 1. Generate new CA: `nebula-cert ca -name "allegedly.works"`
 2. Write cert to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`
-3. `tofu apply` (persistent-auth targets) — regenerates all Talos node certs
-4. Regenerate non-Talos node certs (see <secrets.md> "Generating a new cert")
+3. Regenerate and persist every node identity (see <secrets.md> "Generating a new cert")
+4. `tofu apply` to embed the new Talos node certificates and keys
 5. `nixos-rebuild switch` on NixOS workers; `ansible-playbook atlas.yaml --tags nebula`
-6. Talos nodes get new certs via machine config apply (automatic in tofu)
 
 ### Lost cluster age key
 

@@ -11,7 +11,7 @@
 # roster (filtered to tofu-managed hosts).
 
 locals {
-  nebula_ca_cert = local_file.nebula_ca_crt.content
+  nebula_ca_cert = data.local_file.nebula_ca_crt.content
 
   # Single source of truth for the mesh roster.
   nebula_mesh  = jsondecode(file("${path.module}/../../../nebula-mesh.json"))
@@ -37,17 +37,11 @@ locals {
     h.nebula_ip => [h.endpoint] if can(h.endpoint)
   }
 
-  # Map host → certificate file name.
-  nebula_node_names = {
-    for host in local.nebula_managed_hosts :
-    host => "${host}.nebula.allegedly.works"
-  }
-
   nebula_certs = {
-    for key, name in local.nebula_node_names :
+    for key, cert in data.local_file.nebula_node_crt :
     key => {
-      cert = data.local_file.nebula_node_crt[name].content
-      key  = data.local_sensitive_file.nebula_node_key[name].content
+      cert = cert.content
+      key  = data.sops_file.nebula_node_key[key].raw
     }
   }
 
@@ -196,7 +190,7 @@ locals {
   # kind: ExtensionServiceConfig): mount Nebula certs + config into the extension
   # service's filesystem. The extension runs: nebula -config /usr/local/etc/nebula/config.yml
   nebula_extension_config = {
-    for key, _ in local.nebula_node_names :
+    for key in local.nebula_managed_hosts :
     key => yamlencode({
       apiVersion = "v1alpha1"
       kind       = "ExtensionServiceConfig"
@@ -224,7 +218,7 @@ locals {
 
   # Combined list of patches per node (used in config_patches concat).
   nebula_machine_patches = {
-    for key in keys(local.nebula_node_names) :
+    for key in local.nebula_managed_hosts :
     key => concat(
       [local.nebula_extension_config[key]],
       local.nebula_destination_mtu_patches[key],

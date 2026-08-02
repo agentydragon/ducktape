@@ -218,6 +218,18 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
+  # Tofu reads Talos node keys while assembling machine configuration; Talos
+  # itself never decrypts these files. Keep them recoverable by every operator
+  # identity that can run the Terraform root, rather than by a host-only key.
+  - path_regex: secrets/nebula/(optiplex|ovh-[a-z0-9-]+)\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   - path_regex: secrets/nebula/wyrm2\.sops\.key$
     store_type: binary
     key_groups:

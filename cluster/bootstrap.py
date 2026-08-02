@@ -40,14 +40,13 @@ logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:
 log = logging.getLogger(__name__)
 
 # Resources that must exist before infrastructure can be deployed.
-# These are the persistent-auth resources (Proxmox users, tokens, keypairs, PKI).
+# These are persistent Terraform resources (Proxmox users/tokens and Talos
+# machine secrets). Nebula identities are durable SOPS inputs, not local-exec
+# output, so they intentionally do not appear in this target list.
 PERSISTENT_AUTH_TARGETS = [
     "proxmox_virtual_environment_role.persistent",
     "proxmox_virtual_environment_user.persistent",
     "proxmox_virtual_environment_user_token.persistent",
-    "local_file.nebula_ca_crt",
-    "local_sensitive_file.nebula_ca_key",
-    "null_resource.nebula_node_cert",
     "talos_machine_secrets.cluster",
 ]
 
@@ -133,7 +132,7 @@ def preflight(root: Path) -> None:
 
 
 def deploy_persistent_auth() -> None:
-    """Deploy persistent-auth resources (Proxmox users, tokens, keypairs, PKI).
+    """Deploy persistent Terraform resources (Proxmox users, tokens, machine secrets).
 
     These are idempotent — if they already exist, tofu apply is a no-op.
     On fresh bootstrap, they're created first so infrastructure can use them.
