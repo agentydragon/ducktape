@@ -61,3 +61,16 @@ data "talos_machine_configuration" "home_worker" {
     [local.talos_node_logging_patch],
   )
 }
+
+# The initial maintenance-mode installation is intentionally operator-driven, but once
+# installed each home worker must receive subsequent machine-config changes through the
+# same Tofu resource as the OVH nodes.  In particular, this applies the shared logging
+# and node-vendor patch to OptiPlex without relying on an untracked local config file.
+resource "talos_machine_configuration_apply" "home_worker" {
+  for_each = local.home_nodes
+
+  client_configuration        = local.client_configuration
+  machine_configuration_input = data.talos_machine_configuration.home_worker[each.key].machine_configuration
+  apply_mode                  = "staged_if_needing_reboot"
+  node                        = each.value.nebula_ip
+}
