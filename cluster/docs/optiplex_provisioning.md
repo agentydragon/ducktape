@@ -150,6 +150,24 @@ Expected results:
 - the Nebula extension service is running;
 - Cilium and the cluster DaemonSets become healthy on the node.
 
+## Ongoing machine configuration
+
+After the initial installation, Tofu owns subsequent OptiPlex machine-config changes through
+`talos_machine_configuration_apply.home_worker["optiplex"]`. This reaches the installed node
+over its Nebula address and uses `staged_if_needing_reboot`, which dry-runs the change and
+applies non-rebooting changes automatically. For a routine update, review a targeted plan and
+apply the saved plan; do not repeat the insecure maintenance-mode installation command:
+
+```bash
+tofu plan -target='talos_machine_configuration_apply.home_worker["optiplex"]' \
+  -out=/tmp/optiplex.tfplan
+tofu apply /tmp/optiplex.tfplan
+```
+
+The shared `machine.logging` patch is one such live change. It assigns
+`node-vendor=talos` and streams JSON service logs to the local
+`vector-talos-logs` receiver at `127.0.0.1:13333`.
+
 Talos v1.12.3's Linux 6.18 kernel can emit a non-fatal
 `REG INVARIANTS VIOLATION` warning while Cilium loads its BPF programs. This is
 the upstream kernel verifier regression tracked in

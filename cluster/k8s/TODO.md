@@ -295,20 +295,11 @@ the RTX 5090 `Xid 79 "GPU has fallen off the bus"` events — never leave a node
 journal, leaving no cluster-side history to quantify GPU fall-off frequency. Broader
 detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
 
-- [x] **NixOS nodes** (wyrm2, rugged, iguana): journal → Loki via the journal-only
-      `promtail-journal` HelmRelease (`monitoring/loki/promtail-journal-helmrelease.yaml`),
-      scoped by the `node-vendor=nixos` kubelet label.
-- [ ] **Talos nodes** (optiplex, ovh-\*): service logs → Loki via `machine.logging`.
-      The shared `machine.logging` destination + label patch is in `terraform/main/logging.tf`.
-      The `vector-talos-logs` receiver runs host-networked but binds only
-      `127.0.0.1:13333`; wait for Flux to reconcile it and for the canary's Vector pod + Loki
-      arrival before continuing the per-node rollout.
-      Roll out one node at a time (`tofu apply -target='talos_machine_configuration_apply.kimsufi["<node>"]'`),
-      starting with a worker (`ovh-ns103711`/`ovh-ns102453`), then the 3 control-plane nodes,
-      with a Ready/etcd-quorum/Loki-arrival health gate between each. **Skip
-      `proxmox["pve_cp0"]`** — it's stale state for a retired VM, not a live node. **optiplex**
-      has no `talos_machine_configuration_apply` resource in state (only the data source), so
-      applying it is a first-time create — handle separately after the OVH nodes.
+- [ ] **Unblock clean full OpenTofu plans.** Targeted Talos plans converge, but a
+      no-target `tofu plan` still stalls during provider refresh even after regenerating the
+      ignored `terraform/main/kubeconfig` with `https://api.allegedly.works:6443`. Identify the
+      blocking provider and restore a bounded full-plan path before relying on global drift
+      output for a rollout gate.
 - [ ] **atlas host journal** — the remaining log gap. atlas is the Proxmox/PVE hypervisor,
       **not a k8s node**, so no in-cluster DaemonSet can reach its journal. Ship it with a
       host-level promtail/alloy systemd unit on atlas pushing to Loki over the Nebula mesh
