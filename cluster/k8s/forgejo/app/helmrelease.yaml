@@ -46,8 +46,8 @@ spec:
     # the same SeaweedFS volume concurrently (RWX multi-mount + cross-node git
     # lock/rename semantics verified 2026-06-28), so a rolling update is safe — the
     # old RWO Recreate-only deadlock (RollingUpdate + RWO = stuck init container)
-    # no longer applies. Session lives in Postgres and cache/queue in the shared
-    # valkey (../cache), so neither replica holds per-instance state.
+    # no longer applies. Session and issue search live in Postgres, and cache/queue
+    # in the shared valkey (../cache), so neither replica holds per-instance state.
     replicaCount: 2
     strategy:
       type: RollingUpdate
@@ -139,6 +139,14 @@ spec:
         queue:
           TYPE: redis
           CONN_STR: redis://forgejo-valkey-ovh-master.forgejo.svc.cluster.local:6379/0
+
+        # Bleve is a local file-backed issue index. With two Forgejo replicas,
+        # both can open the same index on the shared RWX volume; issues.bleve
+        # became corrupted and left one replica crash-looping on 2026-08-02.
+        # Forgejo's PostgreSQL-backed issue index is shared safely by both
+        # replicas and needs no rebuildable filesystem state.
+        indexer:
+          ISSUE_INDEXER_TYPE: db
 
         # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
         # registered act_runner (cluster/k8s/haku-ci) executes workflows. Used so
