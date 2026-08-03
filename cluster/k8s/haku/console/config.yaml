@@ -97,7 +97,9 @@ auto_approval_policies:
         - ha_config_list_dashboard_resources
         - ha_config_list_groups
         - ha_config_list_helpers
-        - ha_eval_template
+        # ha_eval_template is deliberately absent: evaluating arbitrary Jinja
+        # inside Home Assistant is execution, not a read, so it does not belong
+        # in standing authority. It stays available under operator approval.
         - ha_get_addon
         - ha_get_automation_traces
         - ha_get_blueprint
