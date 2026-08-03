@@ -92,14 +92,21 @@ _ADDITIVELY_ANCHORED_KINDS: frozenset[LevelSeriesKind] = frozenset(
 )
 
 
-def _key_subid(key: LevelSeriesKey) -> str:
+def _key_subid(key: LevelSeriesKey) -> str | int:
+    """The key's sub-id in its frame column's OWN dtype.
+
+    A tenor column is `Int64`, not `Utf8`, so a stringified tenor would neither build a
+    frame nor match a `pl.col(...) == ...` filter. Callers comparing against stringified
+    column values must `str()` this themselves.
+    """
+
     match key:
         case CryptoKey(symbol=symbol):
             return str(symbol)
         case HomeValueKey(location_id=location_id) | RentKey(location_id=location_id):
             return str(location_id)
         case NominalYieldKey(tenor_months=tenor) | MuniRatioKey(tenor_months=tenor):
-            return str(int(tenor))
+            return int(tenor)
         case InflationKey() | SP500Key():
             raise ValueError(f"{key.kind} is a singleton level series and has no sub-id")
 
@@ -542,7 +549,7 @@ def _bundle_has_key(sampled: SampledExogenousBundle, key: LevelSeriesKey) -> boo
     subid_column = _SUBID_COLUMN_BY_KIND[key.kind]
     if subid_column is None:
         return True
-    return _key_subid(key) in _string_values(frame, subid_column)
+    return str(_key_subid(key)) in _string_values(frame, subid_column)
 
 
 _EMPTY_LEVEL_ANCHORS: Mapping[LevelSeriesKey, float] = {}
@@ -574,7 +581,7 @@ def anchor_sampled_series_levels(
     private_equity = _anchor_private_equity_marks(sampled.private_equity, pe_anchors_typed)
 
     # Partition anchors by kind -> {sub-id-or-None: target month-0 value}.
-    anchors_by_kind: dict[LevelSeriesKind, dict[str | None, float]] = {kind: {} for kind in LevelSeriesKind}
+    anchors_by_kind: dict[LevelSeriesKind, dict[str | int | None, float]] = {kind: {} for kind in LevelSeriesKind}
     for key, value in level_anchors_typed.items():
         subid = None if _SUBID_COLUMN_BY_KIND[key.kind] is None else _key_subid(key)
         anchors_by_kind[key.kind][subid] = float(value)
@@ -597,7 +604,7 @@ def anchor_sampled_series_levels(
 
 
 def _anchor_level_frame(
-    frame: pl.DataFrame, kind: LevelSeriesKind, anchors_for_kind: Mapping[str | None, float]
+    frame: pl.DataFrame, kind: LevelSeriesKind, anchors_for_kind: Mapping[str | int | None, float]
 ) -> pl.DataFrame:
     """Re-base one per-kind frame so each series' per-rollout month-0 value matches its anchor.
 

@@ -185,6 +185,7 @@ py_library(
     deps = [
         ":conditioning",
         ":exogenous",
+        ":factor_dynamics",
         ":private_equity_bundle",
         ":private_equity_protocol",
         ":provenance",
@@ -506,4 +507,33 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+)
+
+py_library(
+    name = "factor_dynamics",
+    srcs = ["factor_dynamics.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        ":state_space_factor",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "factor_dynamics_test",
+    srcs = ["factor_dynamics_test.py"],
+    deps = [
+        ":conditioning",
+        ":conftest",
+        ":exogenous",
+        ":factor_dynamics",
+        ":series",
+        ":state_space",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

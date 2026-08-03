@@ -35,6 +35,12 @@ from finance.augur.model.exogenous import (
     partition_level_blocks,
     validate_sample_satisfies_request,
 )
+from finance.augur.model.factor_dynamics import (
+    FactorDynamics,
+    MeanReversionParams,
+    dynamics_for_factor,
+    to_innovation_space,
+)
 from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.private_equity_protocol import (
@@ -69,6 +75,14 @@ class StateSpaceModelArtifact(FrozenModel):
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
     filtered_log_state_mean: dict[str, float] = Field(min_length=1)
     filtered_log_state_cov: tuple[tuple[float, ...], ...]
+    mean_reversion_by_factor: dict[str, MeanReversionParams] = Field(
+        default_factory=dict,
+        description=(
+            "Ornstein-Uhlenbeck parameters for exactly the rate factors. Which factors need "
+            "an entry is not a choice — it follows from the factor's typed identity via "
+            "`dynamics_for_factor`, and `_validate_shapes` enforces the equality."
+        ),
+    )
     private_equity_event_priors: dict[str, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
     private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
@@ -89,8 +103,19 @@ class StateSpaceModelArtifact(FrozenModel):
         n = len(self.factor_names)
         _require_square_matrix(self.monthly_log_return_cov, n, "monthly_log_return_cov")
         _require_square_matrix(self.filtered_log_state_cov, n, "filtered_log_state_cov")
-        if any(self.latest_level_by_factor[factor] <= 0 for factor in self.factor_names):
-            raise ValueError("latest_level_by_factor values must be positive")
+        rate_factors = {
+            factor
+            for factor, key in zip(self.factor_names, self.factor_classifications, strict=True)
+            if dynamics_for_factor(key) is FactorDynamics.MEAN_REVERTING_RATE
+        }
+        if set(self.mean_reversion_by_factor) != rate_factors:
+            raise ValueError(
+                "mean_reversion_by_factor must have an entry for exactly the rate factors "
+                f"{sorted(rate_factors)}, got {sorted(self.mean_reversion_by_factor)}"
+            )
+        # A rate is exempt: it may sit at or below zero, which is why it does not compound.
+        if any(self.latest_level_by_factor[factor] <= 0 for factor in factors - rate_factors):
+            raise ValueError("latest_level_by_factor values must be positive for non-rate factors")
         private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
@@ -133,6 +158,10 @@ class StateSpaceAdditionalFactor:
     monthly_log_return_mu: float
     monthly_log_return_sigma: float
     covariance_with_factors: Mapping[str, float] = field(default_factory=dict)
+    # Required for a rate factor and rejected for any other, mirroring the artifact
+    # validator. A rate's `latest_level` is the rate itself, not a positive level, and
+    # `monthly_log_return_mu`/`_sigma` are read as its additive innovation mean/scale.
+    mean_reversion: MeanReversionParams | None = None
     source_ids: tuple[str, ...] = ()
     private_equity_issuer_id: str | None = None
     private_equity_event_prior: StateSpacePrivateEquityEventPrior | None = None
@@ -203,11 +232,20 @@ class StateSpaceModel:
         scale_priors: dict[str, TrainedPrivateEquityScalePrior] = {}
         covariance = cov
 
+        mean_reversion: dict[str, MeanReversionParams] = {}
         for extra in additional_factors:
             if extra.factor_name in factor_names:
                 raise ValueError(f"additional factor duplicates fitted factor {extra.factor_name!r}")
-            if extra.latest_level <= 0:
-                raise ValueError(f"additional factor {extra.factor_name!r} latest_level must be positive")
+            is_rate = dynamics_for_factor(parse_factor_key(extra.factor_name)) is FactorDynamics.MEAN_REVERTING_RATE
+            if is_rate:
+                if extra.mean_reversion is None:
+                    raise ValueError(f"rate factor {extra.factor_name!r} needs mean_reversion parameters")
+                mean_reversion[extra.factor_name] = extra.mean_reversion
+            else:
+                if extra.mean_reversion is not None:
+                    raise ValueError(f"non-rate factor {extra.factor_name!r} must not carry mean_reversion parameters")
+                if extra.latest_level <= 0:
+                    raise ValueError(f"additional factor {extra.factor_name!r} latest_level must be positive")
             factor_names.append(extra.factor_name)
             latest_levels[extra.factor_name] = float(extra.latest_level)
             mean_by_factor[extra.factor_name] = float(extra.monthly_log_return_mu)
@@ -243,8 +281,17 @@ class StateSpaceModel:
             latest_level_by_factor=latest_levels,
             monthly_log_return_mu=mean_by_factor,
             monthly_log_return_cov=_matrix_to_tuple(covariance),
-            filtered_log_state_mean={factor: math.log(latest_levels[factor]) for factor in factor_names},
+            filtered_log_state_mean={
+                factor: to_innovation_space(
+                    latest_levels[factor],
+                    FactorDynamics.MEAN_REVERTING_RATE
+                    if factor in mean_reversion
+                    else FactorDynamics.GEOMETRIC_RANDOM_WALK,
+                )
+                for factor in factor_names
+            },
             filtered_log_state_cov=_matrix_to_tuple(filtered_cov),
+            mean_reversion_by_factor=mean_reversion,
             private_equity_event_priors=event_priors,
             private_equity_scale_priors=scale_priors,
             source_manifest=merged_source_manifest,
@@ -368,38 +415,71 @@ class StateSpaceModel:
 
     def _sample_factor_levels(self, request: ExogenousSamplingRequest) -> np.ndarray:
         factor_names = self.artifact.factor_names
-        x0 = np.asarray([math.log(level) for level in self._conditioned_start_levels().values()], dtype=np.float64)
+        rate_indexes = self._rate_factor_indexes()
+        # State is per-factor "innovation space": log-level for a compounding factor,
+        # the rate itself for a mean-reverting one. Both advance off the SAME joint
+        # innovation draw, which is what preserves the cross-factor correlation —
+        # sampling rates separately could not produce 2022 (equities and bonds down
+        # together), the state a bond floor exists to survive.
+        is_rate = np.zeros(len(factor_names), dtype=bool)
+        for factor_index, _ in rate_indexes:
+            is_rate[factor_index] = True
+        x0 = np.asarray(
+            [
+                to_innovation_space(
+                    level,
+                    FactorDynamics.MEAN_REVERTING_RATE
+                    if is_rate[factor_index]
+                    else FactorDynamics.GEOMETRIC_RANDOM_WALK,
+                )
+                for factor_index, level in enumerate(self._conditioned_start_levels().values())
+            ],
+            dtype=np.float64,
+        )
         mean = np.asarray([self.artifact.monthly_log_return_mu[factor] for factor in factor_names], dtype=np.float64)
         cov = np.asarray(self.artifact.monthly_log_return_cov, dtype=np.float64)
         levels = np.empty((request.rollout_count, request.horizon_months + 1, len(factor_names)), dtype=np.float64)
         private_equity_scale_indexes = self._private_equity_scale_indexes()
+        stepwise = bool(private_equity_scale_indexes or rate_indexes)
         for rollout_idx, seed in enumerate(request.rollout_seeds):
             rng = np.random.default_rng(seed)
-            log_path = np.empty((request.horizon_months + 1, len(factor_names)), dtype=np.float64)
-            log_path[0, :] = x0
+            state = np.empty((request.horizon_months + 1, len(factor_names)), dtype=np.float64)
+            state[0, :] = x0
             if request.horizon_months:
                 increments = rng.multivariate_normal(mean=mean, cov=cov, size=request.horizon_months)
-                if private_equity_scale_indexes:
+                if stepwise:
                     for month_idx, raw_increment in enumerate(increments, start=1):
                         increment = np.asarray(raw_increment, dtype=np.float64).copy()
                         for factor_index, scale_prior in private_equity_scale_indexes:
                             increment[factor_index] -= private_equity_soft_cap_penalty(
-                                log_price=float(log_path[month_idx - 1, factor_index]),
+                                log_price=float(state[month_idx - 1, factor_index]),
                                 log_current_price=float(x0[factor_index]),
                                 scale_prior=scale_prior,
                             )
-                        log_path[month_idx, :] = log_path[month_idx - 1, :] + increment
+                        state[month_idx, :] = state[month_idx - 1, :] + increment
+                        for factor_index, params in rate_indexes:
+                            previous = float(state[month_idx - 1, factor_index])
+                            state[month_idx, factor_index] = (
+                                previous + params.kappa * (params.theta - previous) + increment[factor_index]
+                            )
                 else:
-                    log_path[1:, :] = x0 + np.cumsum(increments, axis=0)
+                    state[1:, :] = x0 + np.cumsum(increments, axis=0)
             try:
                 with np.errstate(over="raise", invalid="raise"):
-                    level_path = np.exp(log_path)
+                    level_path = np.where(is_rate, state, np.exp(np.where(is_rate, 0.0, state)))
             except FloatingPointError as error:
                 raise ValueError("state-space model produced non-finite levels") from error
-            if not np.all(np.isfinite(level_path)) or np.any(level_path <= 0.0):
+            if not np.all(np.isfinite(level_path)) or np.any(level_path[:, ~is_rate] <= 0.0):
                 raise ValueError("state-space model produced invalid levels")
             levels[rollout_idx, :, :] = level_path
         return levels
+
+    def _rate_factor_indexes(self) -> tuple[tuple[int, MeanReversionParams], ...]:
+        return tuple(
+            (factor_index, self.artifact.mean_reversion_by_factor[factor])
+            for factor_index, factor in enumerate(self.artifact.factor_names)
+            if factor in self.artifact.mean_reversion_by_factor
+        )
 
     def _conditioned_start_levels(self) -> dict[str, float]:
         factor_by_series = self._series_factor_map()
