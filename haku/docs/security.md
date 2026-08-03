@@ -98,6 +98,14 @@ live source reads). Channels out, and what fences each:
    hard-rule inventory; any other write capability requires its own closure-style server (per #7)
    and an inventory update. In particular, `haku-mail-token` may mutate only the contents of
    Haku's `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
+   **This is load-bearing, not defence in depth.** `haku_v1` auto-approves `exec_sandbox`, so the
+   sandbox's mounted credential bundle _is_ Haku's standing, un-gated authority — the approval
+   queue governs only what the sandbox cannot reach by itself. A write scope added here silently
+   removes that whole surface from operator review, with no change to `haku_v1` and nothing in the
+   diff that reads as a policy change. The bundle is three credentials
+   (<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku.yaml>): the all-`.readonly` Google
+   token, Haku's own Forgejo principal, and the console bearer — whose authority is `haku_v1`
+   itself, so it grants the sandbox nothing it did not already have.
 3. The console renders **no** Haku-authored content, and the one haku-state credential it holds
    (Haku's own, for the `haku_index` git corpus) it only ever fetches with; the
    litmus test for console code: _does it hold a secret, perform a privileged action, or
@@ -144,6 +152,26 @@ live source reads). Channels out, and what fences each:
   verification).
 - **Gateway `allowedRoutes` still `from: All`** — belt-and-suspenders tightening deferred,
   fenced meanwhile by Kyverno (#4); see `cluster/k8s/TODO.md`.
+- **DNS is an un-allowlisted egress channel.** `haku-sandbox` reaches `kube-dns`
+  (<../../cluster/k8s/agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml>), and the proxy's own
+  DNS rule is `matchPattern: "*"`. CoreDNS resolves recursively, so lookups under an
+  attacker-controlled zone reach that zone's authoritative nameserver. Bandwidth is low, but
+  enough for a credential or a summary, and no HTTP control touches it — the FQDN allowlist
+  bounds bulk exfiltration, not this. Accepted rather than fixed: the mitigations (a resolver
+  allowlist, or forwarding only names the agent is meant to reach) cost more than the channel
+  is worth while laundered exfil through operator-visible surfaces remains open anyway.
+- **`ha_eval_template` and `ha_get_camera_image` carry standing authority.** Both sit in the
+  `home_assistant_reads` atom of `haku_v1`
+  (<../../cluster/k8s/haku/console/config.yaml>), so both auto-approve. Template evaluation is
+  arbitrary Jinja execution inside Home Assistant, and camera reads capture the operator's home;
+  neither is a read in the sense the atom's name implies. Decide deliberately whether they belong
+  in standing authority rather than inheriting them as "reads".
+- **Invariant #2's read-only rule is review-defended, not test-enforced.** Every scope in
+  Airlock's `google` grant is `.readonly` today
+  (<../../cluster/k8s/agents/airlock/config.yaml>), and that is what makes the auto-approved
+  `exec_sandbox` safe — but nothing fails if a write scope is added, and the PR that adds one
+  will look like a feature. A `cluster/validation` assertion over that scope list would make the
+  invariant structural.
 - **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox
   location — inherent to using hosted models; acknowledged in
   <../runtime/managed_agent/anthropic_hosted/README.md>.
