@@ -300,11 +300,14 @@ class StateSpaceModel:
                     )
                 continue
             level_by_key[classification] = levels
-        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(level_by_key.items())
+        asset_price_blocks, property_value_blocks, index_blocks, discount_rate_blocks = partition_level_blocks(
+            level_by_key.items()
+        )
         frames = assemble_level_magisteria(
             asset_price_blocks=asset_price_blocks,
             property_value_blocks=property_value_blocks,
             index_blocks=index_blocks,
+            discount_rate_blocks=discount_rate_blocks,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
         )

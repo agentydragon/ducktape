@@ -26,6 +26,7 @@ from finance.augur.model.schemas import FrozenModel
 IssuerId = NewType("IssuerId", str)
 LocationId = NewType("LocationId", str)
 CryptoSymbol = NewType("CryptoSymbol", str)
+TenorMonths = NewType("TenorMonths", int)
 
 
 class LevelSeriesKind(StrEnum):
@@ -44,6 +45,8 @@ class LevelSeriesKind(StrEnum):
     HOME_VALUE = "home_value"
     RENT = "rent"
     CRYPTO = "crypto"
+    NOMINAL_YIELD = "nominal_yield"
+    MUNI_RATIO = "muni_ratio"
 
 
 class _LevelKeyBase(FrozenModel):
@@ -95,6 +98,38 @@ class CryptoKey(_LevelKeyBase):
         return f"crypto:{self.symbol}"
 
 
+class NominalYieldKey(_LevelKeyBase):
+    """Par yield on a nominal Treasury at one tenor, as a decimal rate (0.0241 = 2.41%).
+
+    Unlike every other level series this is a RATE, not a positive level: it may sit at or
+    below zero, and it is anchored ADDITIVELY to the observed curve rather than scaled. See
+    `augur/model/exogenous.py` for the per-magisterium anchoring split.
+    """
+
+    kind: Literal[LevelSeriesKind.NOMINAL_YIELD] = LevelSeriesKind.NOMINAL_YIELD
+    tenor_months: TenorMonths
+
+    @property
+    def wire_id(self) -> str:
+        return f"nominal_yield:{self.tenor_months}"
+
+
+class MuniRatioKey(_LevelKeyBase):
+    """Muni/Treasury yield ratio at one tenor (0.73 = muni yields 73% of the Treasury).
+
+    Modelled as the ratio rather than as an independent muni curve because the ratio is
+    what actually mean-reverts, and it is the quantity every after-tax muni comparison is
+    already written in. Muni yield = ratio x nominal yield at the same tenor.
+    """
+
+    kind: Literal[LevelSeriesKind.MUNI_RATIO] = LevelSeriesKind.MUNI_RATIO
+    tenor_months: TenorMonths
+
+    @property
+    def wire_id(self) -> str:
+        return f"muni_ratio:{self.tenor_months}"
+
+
 # Magisteria: non-PE level series partition by WHAT REFERENCES them. The split is
 # load-bearing typing — a reference field annotated with one magisterium cannot be
 # wired to a series from another (a lot priced by inflation, rent escalated by
@@ -109,8 +144,15 @@ type PropertyValueKey = Annotated[HomeValueKey, Field(discriminator="kind")]
 type IndexSeriesKey = Annotated[InflationKey | RentKey, Field(discriminator="kind")]
 """Escalates a recurring amount: CPI inflation or a location's rent series."""
 
+type DiscountRateKey = Annotated[NominalYieldKey | MuniRatioKey, Field(discriminator="kind")]
+"""Discounts and marks a fixed-income instrument: the nominal par curve, or the muni ratio
+off it. Its own magisterium because a rate is neither a price (nothing is valued by holding
+one) nor an index (nothing is escalated by one) — and because rates alone may be non-positive
+and anchor additively."""
+
 type LevelSeriesKey = Annotated[
-    InflationKey | SP500Key | HomeValueKey | RentKey | CryptoKey, Field(discriminator="kind")
+    InflationKey | SP500Key | HomeValueKey | RentKey | CryptoKey | NominalYieldKey | MuniRatioKey,
+    Field(discriminator="kind"),
 ]
 
 
@@ -163,6 +205,13 @@ def parse_level_series_key(wire_id: str) -> LevelSeriesKey:
             return RentKey(location_id=LocationId(suffix))
         case "crypto":
             return CryptoKey(symbol=CryptoSymbol(suffix))
+        case "nominal_yield" | "muni_ratio":
+            if not suffix.isdigit():
+                raise ValueError(f"{prefix} wire id needs an integer tenor in months, got {wire_id!r}")
+            tenor = TenorMonths(int(suffix))
+            return (
+                NominalYieldKey(tenor_months=tenor) if prefix == "nominal_yield" else MuniRatioKey(tenor_months=tenor)
+            )
     raise ValueError(f"unrecognized level-series wire id {wire_id!r}")
 
 

@@ -82,12 +82,15 @@ class MirroringSampler:
             )
             for mirror in self.mirror_series
         ]
-        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(target_blocks)
+        asset_price_blocks, property_value_blocks, index_blocks, discount_rate_blocks = partition_level_blocks(
+            target_blocks
+        )
         mirror_bundle = SampledExogenousBundle(
             **assemble_level_magisteria(
                 asset_price_blocks=asset_price_blocks,
                 property_value_blocks=property_value_blocks,
                 index_blocks=index_blocks,
+                discount_rate_blocks=discount_rate_blocks,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             ).as_bundle_kwargs()

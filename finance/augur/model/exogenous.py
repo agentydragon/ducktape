@@ -30,6 +30,7 @@ from finance.augur.model.series import (
     AssetPriceKey,
     CryptoKey,
     CryptoSymbol,
+    DiscountRateKey,
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
@@ -37,19 +38,26 @@ from finance.augur.model.series import (
     LevelSeriesKey,
     LevelSeriesKind,
     LocationId,
+    MuniRatioKey,
+    NominalYieldKey,
     PropertyValueKey,
     RentKey,
     SP500Key,
+    TenorMonths,
 )
 
-# Three frame SHAPES (the field name carries the kind; home_value and rent share
-# the LOCATION shape but are distinct frames in different magisteria).
+# Four frame SHAPES (the field name carries the kind; home_value and rent share the LOCATION
+# shape, nominal_yield and muni_ratio share the TENOR shape, but each is a distinct frame in
+# its own magisterium).
 SCALAR_LEVELS_SCHEMA = pl.Schema({"rollout_index": pl.Int64(), "month_index": pl.Int64(), "value": pl.Float64()})
 SYMBOL_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "symbol": pl.Utf8(), "value": pl.Float64()}
 )
 LOCATION_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "location_id": pl.Utf8(), "value": pl.Float64()}
+)
+TENOR_LEVELS_SCHEMA = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "tenor_months": pl.Int64(), "value": pl.Float64()}
 )
 
 # Per-kind frame metadata, keyed by the StrEnum kind (whose value equals the
@@ -60,6 +68,8 @@ _SCHEMA_BY_KIND: dict[LevelSeriesKind, pl.Schema] = {
     LevelSeriesKind.CRYPTO: SYMBOL_LEVELS_SCHEMA,
     LevelSeriesKind.HOME_VALUE: LOCATION_LEVELS_SCHEMA,
     LevelSeriesKind.RENT: LOCATION_LEVELS_SCHEMA,
+    LevelSeriesKind.NOMINAL_YIELD: TENOR_LEVELS_SCHEMA,
+    LevelSeriesKind.MUNI_RATIO: TENOR_LEVELS_SCHEMA,
 }
 _SUBID_COLUMN_BY_KIND: dict[LevelSeriesKind, str | None] = {
     LevelSeriesKind.INFLATION: None,
@@ -67,7 +77,17 @@ _SUBID_COLUMN_BY_KIND: dict[LevelSeriesKind, str | None] = {
     LevelSeriesKind.CRYPTO: "symbol",
     LevelSeriesKind.HOME_VALUE: "location_id",
     LevelSeriesKind.RENT: "location_id",
+    LevelSeriesKind.NOMINAL_YIELD: "tenor_months",
+    LevelSeriesKind.MUNI_RATIO: "tenor_months",
 }
+
+# Rates are the one magisterium anchored ADDITIVELY. Every other level series is a positive
+# level whose month-0 value scales the path; a yield may legitimately sit at or near zero, so
+# scaling is both undefined and wrong -- shifting the whole curve onto today's observed level
+# is what a rate anchor means.
+_ADDITIVELY_ANCHORED_KINDS: frozenset[LevelSeriesKind] = frozenset(
+    {LevelSeriesKind.NOMINAL_YIELD, LevelSeriesKind.MUNI_RATIO}
+)
 
 
 def _key_subid(key: LevelSeriesKey) -> str:
@@ -76,6 +96,8 @@ def _key_subid(key: LevelSeriesKey) -> str:
             return str(symbol)
         case HomeValueKey(location_id=location_id) | RentKey(location_id=location_id):
             return str(location_id)
+        case NominalYieldKey(tenor_months=tenor) | MuniRatioKey(tenor_months=tenor):
+            return str(int(tenor))
         case InflationKey() | SP500Key():
             raise ValueError(f"{key.kind} is a singleton level series and has no sub-id")
 
@@ -99,6 +121,7 @@ class ExogenousSamplingRequest:
     required_asset_prices: frozenset[AssetPriceKey] = frozenset()
     required_property_values: frozenset[PropertyValueKey] = frozenset()
     required_index_series: frozenset[IndexSeriesKey] = frozenset()
+    required_discount_rates: frozenset[DiscountRateKey] = frozenset()
     required_private_equity_issuers: frozenset[IssuerId] = frozenset()
 
     def __post_init__(self) -> None:
@@ -122,7 +145,12 @@ class ExogenousSamplingRequest:
     def required_level_series(self) -> frozenset[LevelSeriesKey]:
         """All required non-PE level series, unioned across the three magisteria."""
 
-        return frozenset(self.required_asset_prices | self.required_property_values | self.required_index_series)
+        return frozenset(
+            self.required_asset_prices
+            | self.required_property_values
+            | self.required_index_series
+            | self.required_discount_rates
+        )
 
 
 @dataclass(frozen=True)
@@ -142,6 +170,14 @@ class IndexSeriesFrames:
 
 
 @dataclass(frozen=True)
+class DiscountRateFrames:
+    """Discount-rate magisterium: the nominal par curve and the muni ratio off it, by tenor."""
+
+    nominal_yield: pl.DataFrame = field(default_factory=TENOR_LEVELS_SCHEMA.to_frame)
+    muni_ratio: pl.DataFrame = field(default_factory=TENOR_LEVELS_SCHEMA.to_frame)
+
+
+@dataclass(frozen=True)
 class SampledExogenousBundle:
     """Polars-native joint sample of exogenous levels and PE protocol.
 
@@ -154,6 +190,7 @@ class SampledExogenousBundle:
     asset_prices: AssetPriceFrames = field(default_factory=AssetPriceFrames)
     property_values: pl.DataFrame = field(default_factory=LOCATION_LEVELS_SCHEMA.to_frame)
     index_series: IndexSeriesFrames = field(default_factory=IndexSeriesFrames)
+    discount_rates: DiscountRateFrames = field(default_factory=DiscountRateFrames)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
     metadata: Mapping[str, object] = field(default_factory=dict)
 
@@ -173,6 +210,10 @@ class SampledExogenousBundle:
                 return self.index_series.inflation
             case LevelSeriesKind.RENT:
                 return self.index_series.rent
+            case LevelSeriesKind.NOMINAL_YIELD:
+                return self.discount_rates.nominal_yield
+            case LevelSeriesKind.MUNI_RATIO:
+                return self.discount_rates.muni_ratio
 
     def level_matrix(self, key: LevelSeriesKey, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
@@ -192,11 +233,12 @@ class SampledExogenousBundle:
 
 
 class LevelRequestChannels(TypedDict):
-    """The three magisterium request channels of `ExogenousSamplingRequest`."""
+    """The four magisterium request channels of `ExogenousSamplingRequest`."""
 
     required_asset_prices: frozenset[AssetPriceKey]
     required_property_values: frozenset[PropertyValueKey]
     required_index_series: frozenset[IndexSeriesKey]
+    required_discount_rates: frozenset[DiscountRateKey]
 
 
 def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelRequestChannels:
@@ -210,6 +252,7 @@ def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelReques
     asset_prices: set[AssetPriceKey] = set()
     property_values: set[PropertyValueKey] = set()
     index_series: set[IndexSeriesKey] = set()
+    discount_rates: set[DiscountRateKey] = set()
     for key in keys:
         match key:
             case SP500Key() | CryptoKey():
@@ -218,10 +261,13 @@ def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelReques
                 property_values.add(key)
             case InflationKey() | RentKey():
                 index_series.add(key)
+            case NominalYieldKey() | MuniRatioKey():
+                discount_rates.add(key)
     return {
         "required_asset_prices": frozenset(asset_prices),
         "required_property_values": frozenset(property_values),
         "required_index_series": frozenset(index_series),
+        "required_discount_rates": frozenset(discount_rates),
     }
 
 
@@ -231,12 +277,13 @@ def partition_level_blocks(
     list[tuple[AssetPriceKey, np.ndarray]],
     list[tuple[PropertyValueKey, np.ndarray]],
     list[tuple[IndexSeriesKey, np.ndarray]],
+    list[tuple[DiscountRateKey, np.ndarray]],
 ]:
-    """Partition flat `(LevelSeriesKey, matrix)` blocks into the three magisterium groups.
+    """Partition flat `(LevelSeriesKey, matrix)` blocks into the four magisterium groups.
 
     The typed fan-out sibling of `level_series_request_channels` (which partitions bare
     keys). For callers whose level identity is still flat — the trained models keyed by a
-    flat factor tuple — this routes each sampled block to its magisterium so the three lists
+    flat factor tuple — this routes each sampled block to its magisterium so the four lists
     can be splatted into `assemble_level_magisteria`. The primary per-series providers never
     need it: they hold their specs magisterium-separated from the start.
     """
@@ -244,6 +291,7 @@ def partition_level_blocks(
     asset_price_blocks: list[tuple[AssetPriceKey, np.ndarray]] = []
     property_value_blocks: list[tuple[PropertyValueKey, np.ndarray]] = []
     index_blocks: list[tuple[IndexSeriesKey, np.ndarray]] = []
+    discount_rate_blocks: list[tuple[DiscountRateKey, np.ndarray]] = []
     for key, matrix in blocks:
         match key:
             case SP500Key() | CryptoKey():
@@ -252,7 +300,9 @@ def partition_level_blocks(
                 property_value_blocks.append((key, matrix))
             case InflationKey() | RentKey():
                 index_blocks.append((key, matrix))
-    return asset_price_blocks, property_value_blocks, index_blocks
+            case NominalYieldKey() | MuniRatioKey():
+                discount_rate_blocks.append((key, matrix))
+    return asset_price_blocks, property_value_blocks, index_blocks, discount_rate_blocks
 
 
 class Sampler(Protocol):
@@ -309,21 +359,24 @@ class LevelBundleKwargs(TypedDict):
     asset_prices: AssetPriceFrames
     property_values: pl.DataFrame
     index_series: IndexSeriesFrames
+    discount_rates: DiscountRateFrames
 
 
 @dataclass(frozen=True)
 class LevelMagisteria:
-    """The three level magisteria, assembled and ready to splat into a bundle."""
+    """The four level magisteria, assembled and ready to splat into a bundle."""
 
     asset_prices: AssetPriceFrames
     property_values: pl.DataFrame
     index_series: IndexSeriesFrames
+    discount_rates: DiscountRateFrames
 
     def as_bundle_kwargs(self) -> LevelBundleKwargs:
         return {
             "asset_prices": self.asset_prices,
             "property_values": self.property_values,
             "index_series": self.index_series,
+            "discount_rates": self.discount_rates,
         }
 
 
@@ -332,10 +385,11 @@ def assemble_level_magisteria(
     asset_price_blocks: Iterable[tuple[AssetPriceKey, np.ndarray]],
     property_value_blocks: Iterable[tuple[PropertyValueKey, np.ndarray]],
     index_blocks: Iterable[tuple[IndexSeriesKey, np.ndarray]],
+    discount_rate_blocks: Iterable[tuple[DiscountRateKey, np.ndarray]] = (),
     rollout_count: int,
     horizon_months: int,
 ) -> LevelMagisteria:
-    """Assemble sampled `(key, matrix)` blocks into the three magisterium frame groups.
+    """Assemble sampled `(key, matrix)` blocks into the four magisterium frame groups.
 
     Blocks arrive already separated by magisterium — there is no cross-magisterium
     bucket to route. Within a magisterium the singleton-vs-keyed split (sp500 vs
@@ -358,6 +412,12 @@ def assemble_level_magisteria(
 
     home_value_rows = [row(property_key, property_matrix) for property_key, property_matrix in property_value_blocks]
 
+    nominal_yield_rows: list[pl.DataFrame] = []
+    muni_ratio_rows: list[pl.DataFrame] = []
+    for rate_key, rate_matrix in discount_rate_blocks:
+        target = nominal_yield_rows if isinstance(rate_key, NominalYieldKey) else muni_ratio_rows
+        target.append(row(rate_key, rate_matrix))
+
     return LevelMagisteria(
         asset_prices=AssetPriceFrames(
             sp500=concat_frames(sp500_rows, SCALAR_LEVELS_SCHEMA),
@@ -367,6 +427,10 @@ def assemble_level_magisteria(
         index_series=IndexSeriesFrames(
             inflation=concat_frames(inflation_rows, SCALAR_LEVELS_SCHEMA),
             rent=concat_frames(rent_rows, LOCATION_LEVELS_SCHEMA),
+        ),
+        discount_rates=DiscountRateFrames(
+            nominal_yield=concat_frames(nominal_yield_rows, TENOR_LEVELS_SCHEMA),
+            muni_ratio=concat_frames(muni_ratio_rows, TENOR_LEVELS_SCHEMA),
         ),
     )
 
@@ -389,6 +453,9 @@ def merge_level_magisteria(left: SampledExogenousBundle, right: SampledExogenous
         asset_prices=AssetPriceFrames(sp500=merge(LevelSeriesKind.SP500), crypto=merge(LevelSeriesKind.CRYPTO)),
         property_values=merge(LevelSeriesKind.HOME_VALUE),
         index_series=IndexSeriesFrames(inflation=merge(LevelSeriesKind.INFLATION), rent=merge(LevelSeriesKind.RENT)),
+        discount_rates=DiscountRateFrames(
+            nominal_yield=merge(LevelSeriesKind.NOMINAL_YIELD), muni_ratio=merge(LevelSeriesKind.MUNI_RATIO)
+        ),
     ).as_bundle_kwargs()
 
 
@@ -426,6 +493,13 @@ def level_value_rows(sampled: SampledExogenousBundle) -> list[tuple[LevelSeriesK
             "rollout_index", "month_index", "value"
         )
         rows.append((RentKey(location_id=LocationId(loc)), frame))
+    for rate_frame, rate_key_type in (
+        (sampled.discount_rates.nominal_yield, NominalYieldKey),
+        (sampled.discount_rates.muni_ratio, MuniRatioKey),
+    ):
+        for tenor in sorted(int(value) for value in _string_values(rate_frame, "tenor_months")):
+            frame = rate_frame.filter(pl.col("tenor_months") == tenor).select("rollout_index", "month_index", "value")
+            rows.append((rate_key_type(tenor_months=TenorMonths(tenor)), frame))
     return rows
 
 
@@ -512,6 +586,9 @@ def anchor_sampled_series_levels(
         index_series=IndexSeriesFrames(
             inflation=rescale(LevelSeriesKind.INFLATION), rent=rescale(LevelSeriesKind.RENT)
         ),
+        discount_rates=DiscountRateFrames(
+            nominal_yield=rescale(LevelSeriesKind.NOMINAL_YIELD), muni_ratio=rescale(LevelSeriesKind.MUNI_RATIO)
+        ),
         private_equity=private_equity,
         metadata={**sampled.metadata, **metadata_extras},
     )
@@ -520,45 +597,61 @@ def anchor_sampled_series_levels(
 def _anchor_level_frame(
     frame: pl.DataFrame, kind: LevelSeriesKind, anchors_for_kind: Mapping[str | None, float]
 ) -> pl.DataFrame:
-    """Rescale one per-kind frame so each series' per-rollout month-0 value matches its anchor."""
+    """Re-base one per-kind frame so each series' per-rollout month-0 value matches its anchor.
+
+    Two anchoring modes, by magisterium. Levels (prices, property values, indices) are
+    **rescaled** — the path is multiplicative, so matching month 0 means scaling the whole
+    series. Rates (`_ADDITIVELY_ANCHORED_KINDS`) are **shifted** — a yield curve is not a
+    positive level, dividing by a near-zero month-0 yield would explode the path, and the
+    financially meaningful operation is to move the sampled curve onto today's observed one.
+    """
 
     if frame.is_empty() or not anchors_for_kind:
         return frame
     schema = _SCHEMA_BY_KIND[kind]
     subid_column = _SUBID_COLUMN_BY_KIND[kind]
+    additive = kind in _ADDITIVELY_ANCHORED_KINDS
+
+    def rebased(value: pl.Expr, base: pl.Expr, anchor: pl.Expr) -> pl.Expr:
+        return value - base + anchor if additive else value * anchor / base
 
     if subid_column is None:
         anchor_value = next(iter(anchors_for_kind.values()))
         bases = frame.filter(pl.col("month_index") == 0).select("rollout_index", pl.col("value").alias("_base_value"))
-        if not bases.filter(pl.col("_base_value") == 0.0).is_empty():
+        if not additive and not bases.filter(pl.col("_base_value") == 0.0).is_empty():
             raise ValueError(f"sampled series {kind!r} has zero month-0 value and cannot be anchored")
         return (
             frame.join(bases, on="rollout_index", how="left")
-            .with_columns(value=pl.col("value") * anchor_value / pl.col("_base_value"))
+            .with_columns(value=rebased(pl.col("value"), pl.col("_base_value"), pl.lit(anchor_value)))
             .select(schema.names())
         )
 
     active = {sub: val for sub, val in anchors_for_kind.items() if sub is not None}
     if not active:
         return frame
+    # The sub-id column's dtype is the frame's, not always Utf8 (tenor_months is Int64), so
+    # the anchor frame is built against the schema rather than assuming strings.
+    subid_dtype = schema[subid_column]
+    subid_values: list[object] = [int(sub) if subid_dtype == pl.Int64() else sub for sub in active]
     anchor_frame = pl.DataFrame(
-        {subid_column: list(active), "_anchor_value": list(active.values())},
-        schema={subid_column: pl.Utf8(), "_anchor_value": pl.Float64()},
+        {subid_column: subid_values, "_anchor_value": list(active.values())},
+        schema={subid_column: subid_dtype, "_anchor_value": pl.Float64()},
     )
     bases = (
         frame.filter(pl.col("month_index") == 0)
         .join(anchor_frame, on=subid_column, how="inner")
         .select("rollout_index", subid_column, "_anchor_value", pl.col("value").alias("_base_value"))
     )
-    zero_bases = bases.filter(pl.col("_base_value") == 0.0)
-    if not zero_bases.is_empty():
-        bad = sorted(set(zero_bases.get_column(subid_column).to_list()))
-        raise ValueError(f"sampled {kind} series have zero month-0 value and cannot be anchored: {bad}")
+    if not additive:
+        zero_bases = bases.filter(pl.col("_base_value") == 0.0)
+        if not zero_bases.is_empty():
+            bad = sorted(str(v) for v in set(zero_bases.get_column(subid_column).to_list()))
+            raise ValueError(f"sampled {kind} series have zero month-0 value and cannot be anchored: {bad}")
     return (
         frame.join(bases, on=["rollout_index", subid_column], how="left")
         .with_columns(
             value=pl.when(pl.col("_anchor_value").is_not_null())
-            .then(pl.col("value") * pl.col("_anchor_value") / pl.col("_base_value"))
+            .then(rebased(pl.col("value"), pl.col("_base_value"), pl.col("_anchor_value")))
             .otherwise(pl.col("value"))
         )
         .select(schema.names())

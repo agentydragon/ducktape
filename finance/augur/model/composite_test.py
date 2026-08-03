@@ -39,15 +39,16 @@ class _StaticSampler:
         def matrix(value: float) -> np.ndarray:
             return np.full((request.rollout_count, request.horizon_months + 1), value, dtype=np.float64)
 
-        # Route this fixture's flat constant levels into the three magisterium block-groups
+        # Route this fixture's flat constant levels into the four magisterium block-groups
         # (a typed fan-out, not a merge) before assembling the bundle frames.
-        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(
+        asset_price_blocks, property_value_blocks, index_blocks, discount_rate_blocks = partition_level_blocks(
             (key, matrix(value)) for key, value in self.levels.items()
         )
         frames = assemble_level_magisteria(
             asset_price_blocks=asset_price_blocks,
             property_value_blocks=property_value_blocks,
             index_blocks=index_blocks,
+            discount_rate_blocks=discount_rate_blocks,
             rollout_count=request.rollout_count,
             horizon_months=request.horizon_months,
         )

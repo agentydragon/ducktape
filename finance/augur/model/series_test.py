@@ -7,9 +7,12 @@ from pydantic import TypeAdapter, ValidationError
 from finance.augur.model.series import (
     AssetPriceKey,
     CryptoKey,
+    DiscountRateKey,
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
+    MuniRatioKey,
+    NominalYieldKey,
     PropertyValueKey,
     RentKey,
     SP500Key,
@@ -20,6 +23,7 @@ from finance.augur.model.series import (
 _INDEX_ADAPTER: TypeAdapter[IndexSeriesKey] = TypeAdapter(IndexSeriesKey)
 _ASSET_PRICE_ADAPTER: TypeAdapter[AssetPriceKey] = TypeAdapter(AssetPriceKey)
 _PROPERTY_VALUE_ADAPTER: TypeAdapter[PropertyValueKey] = TypeAdapter(PropertyValueKey)
+_DISCOUNT_RATE_ADAPTER: TypeAdapter[DiscountRateKey] = TypeAdapter(DiscountRateKey)
 
 
 def test_level_series_key_round_trip_through_wire_id() -> None:
@@ -29,6 +33,8 @@ def test_level_series_key_round_trip_through_wire_id() -> None:
         HomeValueKey(location_id="san_francisco_ca"),
         RentKey(location_id="vallejo_ca"),
         CryptoKey(symbol="btc"),
+        NominalYieldKey(tenor_months=120),
+        MuniRatioKey(tenor_months=360),
     ):
         assert parse_level_series_key(key.wire_id) == key
 
@@ -79,6 +85,33 @@ def test_magisteria_unions_accept_their_members_and_reject_others() -> None:
         _ASSET_PRICE_ADAPTER.validate_python(RentKey(location_id="sf").model_dump())
     with pytest.raises(ValidationError):
         _PROPERTY_VALUE_ADAPTER.validate_python(CryptoKey(symbol="btc").model_dump())
+
+
+def test_discount_rate_keys_are_their_own_magisterium() -> None:
+    # A rate is neither a price nor an index: nothing is valued by holding one and nothing is
+    # escalated by one, so wiring a bond's discount curve to inflation (or a lot's price to a
+    # yield) must not typecheck OR validate.
+    assert _DISCOUNT_RATE_ADAPTER.validate_python(NominalYieldKey(tenor_months=120).model_dump()) == NominalYieldKey(
+        tenor_months=120
+    )
+    assert _DISCOUNT_RATE_ADAPTER.validate_python(MuniRatioKey(tenor_months=120).model_dump()) == MuniRatioKey(
+        tenor_months=120
+    )
+
+    with pytest.raises(ValidationError):
+        _DISCOUNT_RATE_ADAPTER.validate_python(InflationKey().model_dump())
+    with pytest.raises(ValidationError):
+        _INDEX_ADAPTER.validate_python(NominalYieldKey(tenor_months=120).model_dump())
+    with pytest.raises(ValidationError):
+        _ASSET_PRICE_ADAPTER.validate_python(NominalYieldKey(tenor_months=120).model_dump())
+
+
+def test_rate_wire_ids_require_an_integer_tenor() -> None:
+    # The tenor is part of the identity, so a malformed one must fail loudly rather than
+    # silently parsing as some default tenor.
+    assert try_parse_level_series_key("nominal_yield:abc") is None
+    assert try_parse_level_series_key("muni_ratio:") is None
+    assert try_parse_level_series_key("nominal_yield:120") == NominalYieldKey(tenor_months=120)
 
 
 if __name__ == "__main__":
