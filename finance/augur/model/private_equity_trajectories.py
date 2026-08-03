@@ -147,6 +147,7 @@ class PreSampledPrivateEquitySampler:
             required_asset_prices=request.required_asset_prices,
             required_property_values=request.required_property_values,
             required_index_series=request.required_index_series,
+            required_discount_rates=request.required_discount_rates,
         )
         bundle = self.underlying.sample(underlying_request)
         if not self.trajectories_by_issuer:

@@ -184,6 +184,9 @@ def required_level_series(
         "required_asset_prices": frozenset(asset_prices),
         "required_property_values": frozenset(property_values),
         "required_index_series": frozenset(index_series),
+        # Empty until the product surface can hold fixed income: nothing a scenario
+        # can express today is priced off a yield curve or the muni ratio.
+        "required_discount_rates": frozenset(),
     }
 
 

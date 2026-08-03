@@ -46,13 +46,13 @@ ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field
 def sample_independent_levels(
     groups: LevelSeriesMagisteria[ScalarSeriesSpec], request: ExogenousSamplingRequest
 ) -> LevelMagisteria:
-    """Sample every level spec across the three magisteria into the assembled level frames.
+    """Sample every level spec across the four magisteria into the assembled level frames.
 
     Each magisterium is sampled from its own typed key->spec view and stays separate all the
     way into `assemble_level_magisteria`; nothing is merged into a cross-magisterium bucket.
     Seed substreams are keyed on the stable wire id so a series' path is identical regardless
     of config-dict ordering. Shared by `IndependentSeriesModels` (sim/bench) and
-    `IndependentModel` (the YAML provider) — the same three magisteria, sampled once.
+    `IndependentModel` (the YAML provider) — the same four magisteria, sampled once.
     """
 
     def blocks[KeyT: LevelSeriesKey](keyed: Mapping[KeyT, ScalarSeriesSpec]) -> list[tuple[KeyT, np.ndarray]]:
@@ -71,6 +71,7 @@ def sample_independent_levels(
         asset_price_blocks=blocks(groups.asset_prices.by_asset_price_key()),
         property_value_blocks=blocks(groups.property_values.by_property_value_key()),
         index_blocks=blocks(groups.index_series.by_index_series_key()),
+        discount_rate_blocks=blocks(groups.discount_rates.by_discount_rate_key()),
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
     )
@@ -79,8 +80,8 @@ def sample_independent_levels(
 class IndependentSeriesModels(LevelSeriesMagisteria[ScalarSeriesSpec]):
     """Joint model composed from independent per-series scalar level models.
 
-    Inherits the three magisterium sub-groups from `LevelSeriesMagisteria`
-    (`asset_prices`/`property_values`/`index_series`; each series maps to a
+    Inherits the four magisterium sub-groups from `LevelSeriesMagisteria`
+    (`asset_prices`/`property_values`/`index_series`/`discount_rates`; each series maps to a
     Constant / Deterministic / GBM scalar spec). `kind` is the `SeriesModelSpec`
     discriminator.
     """

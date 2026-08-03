@@ -29,6 +29,8 @@ from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
     IssuerId,
+    MuniRatioKey,
+    NominalYieldKey,
     RentKey,
     SP500Key,
     try_parse_level_series_key,
@@ -52,8 +54,21 @@ class PrivateEquityMarkKey(FrozenModel):
         return f"private_equity:{self.issuer_id}"
 
 
+# Spelled out flat rather than as `LevelSeriesKey | PrivateEquityMarkKey` so the
+# discriminated union stays one level deep — nesting an already-`Annotated` union
+# inside another loses the single `kind` discriminator. Keep in sync with
+# `LevelSeriesKey`: every level-series variant must appear here, because
+# `parse_factor_key` returns whatever `try_parse_level_series_key` decodes.
 type FactorKey = Annotated[
-    InflationKey | SP500Key | HomeValueKey | RentKey | CryptoKey | PrivateEquityMarkKey, Field(discriminator="kind")
+    InflationKey
+    | SP500Key
+    | HomeValueKey
+    | RentKey
+    | CryptoKey
+    | NominalYieldKey
+    | MuniRatioKey
+    | PrivateEquityMarkKey,
+    Field(discriminator="kind"),
 ]
 """A state-space covariance-basis factor: any non-PE level series, or a private-equity issuer's mark."""
 

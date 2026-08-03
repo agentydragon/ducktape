@@ -308,6 +308,16 @@ class VecmModel:
         multipliers, scale by deployment `latest_observations`, and emit a
         `SampledExogenousBundle`. Each factor's identity is its typed `LevelSeriesKey`;
         a level series is sampled from the factor that *is* its key."""
+        # The VECM fits `log(levels)` and scales a latest observation by a multiplier, which
+        # is meaningless for a rate: rates may sit at or below zero and anchor additively.
+        # Refuse the channel outright rather than emit a bundle silently missing it.
+        if request.required_discount_rates:
+            raise ValueError(
+                "VecmModel cannot emit discount rates "
+                f"({sorted(key.wire_id for key in request.required_discount_rates)}) — "
+                "the log-level VECM basis is multiplicative and rates anchor additively; "
+                "fit them in the state-space factor basis instead"
+            )
         rollout_count = request.rollout_count
         horizon_months = request.horizon_months
         if rollout_count == 0:

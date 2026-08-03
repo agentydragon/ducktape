@@ -121,7 +121,7 @@ def test_realized_model_keeps_magisterium_structure(example_config: IndependentP
     assert not model.asset_prices.crypto
     assert set(model.pe_marks) == {"private_equity_x"}
     # The level series surface as typed FactorKeys (a subset of which are LevelSeriesKeys),
-    # one per series across all three magisteria.
+    # one per series across the three magisteria this fixture configures (no rates here).
     assert {key.wire_id for key in model.factor_names} == {
         "inflation",
         "sp500",

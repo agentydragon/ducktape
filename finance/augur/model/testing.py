@@ -69,12 +69,13 @@ class ConstantFrameModel:
                 for key in sorted(keys, key=lambda key: key.wire_id)
             ]
 
-        # Sample each of the request's three typed channels separately; the bundle's
+        # Sample each of the request's typed channels separately; the bundle's
         # magisteria never pass through one merged level-key set.
         frames = assemble_level_magisteria(
             asset_price_blocks=blocks(request.required_asset_prices),
             property_value_blocks=blocks(request.required_property_values),
             index_blocks=blocks(request.required_index_series),
+            discount_rate_blocks=blocks(request.required_discount_rates),
             rollout_count=request.rollout_count,
             horizon_months=request.horizon_months,
         )

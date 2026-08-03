@@ -125,5 +125,6 @@ class MirroringSampler:
             required_asset_prices=to_sources(request.required_asset_prices),
             required_property_values=to_sources(request.required_property_values),
             required_index_series=to_sources(request.required_index_series),
+            required_discount_rates=to_sources(request.required_discount_rates),
             required_private_equity_issuers=request.required_private_equity_issuers,
         )

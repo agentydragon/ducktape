@@ -2,14 +2,16 @@
 
 Non-PE level series are grouped by **magisterium** — the concern that
 references them (see `augur/plans/typed_series_config.md`). A sampled bundle
-carries three level magisteria plus the PE bundle:
+carries four level magisteria plus the PE bundle:
 
 - `asset_prices` — `sp500` (scalar) + `crypto` (symbol-keyed); price a lot.
 - `property_values` — `home_value` (location-keyed); value a property.
 - `index_series` — `inflation` (scalar) + `rent` (location-keyed); escalate an amount.
+- `discount_rates` — `nominal_yield` + `muni_ratio` (both tenor-keyed); discount and
+  mark a fixed-income instrument.
 
-Each magisterium's frame carries only a sub-id column (symbol / location_id) or
-nothing for a singleton — never a magic-prefix `series_id` string. The model's
+Each magisterium's frame carries only a sub-id column (symbol / location_id /
+tenor_months) or nothing for a singleton — never a magic-prefix `series_id` string. The model's
 sample/consume path is typed by `LevelSeriesKey` (the magisterium sum), which
 routes internally to the right frame.
 """
@@ -112,7 +114,7 @@ class ExogenousSamplingRequest:
     (escalate an amount). PE issuers (carrying the whole `PrivateEquityBundle`
     per issuer) are required by `required_private_equity_issuers`; PE tender
     events and protocol channels are part of the PE bundle, not separate
-    channels. `required_level_series` unions the three level magisteria for the
+    channels. `required_level_series` unions the four level magisteria for the
     provider/validate code that ranges over all non-PE level series uniformly.
     """
 
@@ -143,7 +145,7 @@ class ExogenousSamplingRequest:
 
     @property
     def required_level_series(self) -> frozenset[LevelSeriesKey]:
-        """All required non-PE level series, unioned across the three magisteria."""
+        """All required non-PE level series, unioned across the four magisteria."""
 
         return frozenset(
             self.required_asset_prices

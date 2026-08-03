@@ -31,7 +31,7 @@ class CompositeModel:
         return self.macro.emittable_private_equity_issuers() | self.private_equity.emittable_private_equity_issuers()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # Non-PE level series (all three magisteria) route to the macro provider;
+        # Non-PE level series (all four magisteria) route to the macro provider;
         # PE routes via `required_private_equity_issuers` to the PE provider.
         macro_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
@@ -39,6 +39,7 @@ class CompositeModel:
             required_asset_prices=request.required_asset_prices,
             required_property_values=request.required_property_values,
             required_index_series=request.required_index_series,
+            required_discount_rates=request.required_discount_rates,
             required_private_equity_issuers=frozenset(),
         )
         pe_request = ExogenousSamplingRequest(
