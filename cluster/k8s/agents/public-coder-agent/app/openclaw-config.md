@@ -25,7 +25,12 @@ not a member and the gateway exits with
 `Invalid --bind. Use "loopback", "lan", "tailnet", "auto", or "custom".`
 
 `requestTimeoutMs` on the haku-console server is load-bearing, and its absence is not
-a slow-server problem. OpenClaw gives the startup catalog listing a hardcoded
+a slow-server problem. It is deliberately **70,000 ms**: Haku Console permits a maximum
+`wait_for_result_ms` of 60,000 ms, and the extra 10 seconds lets Haku return its normal
+non-terminal pending stub after that wait instead of OpenClaw racing it with an MCP protocol-level
+timeout. Keep this client timeout above Haku's maximum synchronous result wait.
+
+OpenClaw gives the startup catalog listing a hardcoded
 `BUNDLE_MCP_CATALOG_LIST_TIMEOUT_MS = 1500` ms **unless the server entry declares
 `requestTimeoutMs` or `timeout`** -- `getCatalogListTimeoutMs` in
 `agent-bundle-mcp-runtime`. Declaring either one makes the catalog use the server's

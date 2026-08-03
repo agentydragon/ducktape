@@ -141,7 +141,7 @@ Agent and calls connected-server tools through `ToolCallApplicationService.submi
 trusted console frontend enters as its current Operator and calls the same tools through
 `execute_direct`, resolving downstream authentication in that Operator's context (an
 operator-linked OAuth token where configured, otherwise the server's configured credential).
-Direct Operator calls do not create tool-call rows, approval events, or promises; they exist so
+Direct Operator calls do not create tool-call rows, approval events, or non-terminal stubs; they exist so
 trusted renderers can resolve reference data through the real MCP surface instead of bespoke HTTP
 fetchers.
 
@@ -154,10 +154,14 @@ auto-approves (Gmail and Google Calendar reads, read-only grocy-sf, tana's read 
 `get_tag_schema`, plus the idempotent `get_or_create_calendar_node`, and postscanmail-mcp
 reads) appear as
 transparent **pass-throughs** (original schema, real result); everything else keeps the same
-`<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_approval_ms?}` that
-returns the real result if approved within the wait, else a **promise** (a pending `tool_call_id` +
-an operator-facing deep-link `url`) the agent resolves via the `get_tool_call` / `list_tool_calls`
-read tools, or retracts via `withdraw_tool_call(tool_call_id, reason)` — the one console-native
+`<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_result_ms?}` that
+returns the real result if approval and execution reach a terminal state within the wait, else a
+**non-terminal stub** (a `tool_call_id` + an operator-facing deep-link `url`) the agent resolves via
+the `get_tool_call` / `list_tool_calls` read tools. A `pending_approval` stub means the operator did
+not approve or deny before the requested wait ended; it is not an expiry or cancellation. The call
+remains in the queue, may be approved or denied later, and executes if later approved. A `running`
+stub means approval happened within the wait but downstream execution is still in progress. The
+agent can retract a still-pending stub via `withdraw_tool_call(tool_call_id, reason)` — the one console-native
 mutation, annotated `readOnlyHint=False`. `list_mcp_servers` passively reports the
 configured catalog plus each persisted per-Operator OAuth/provider status object. Each server's
 discriminated `backend` object mirrors the safe configuration shape (`remote_mcp` with URL/auth or
@@ -175,7 +179,7 @@ omits the potentially large input schemas; callers opt in with `include_tool_sch
 resolution and downstream discovery failures return distinct degraded stages and reasons rather than
 failing the reflection call; direct calls in a known
 `<server>__<tool>` namespace return the same actionable error instead of appearing as an unknown tool.
-The promise-semantics preamble lives in each tool's
+The stub-semantics preamble lives in each tool's
 **description** (many MCP clients, claude.ai included, never surface a server's `instructions`). Auth is a Haku-owned
 `HakuAgentOAuthProxy` composed with the configured `static_agents` through
 `HakuFailurePreservingMultiAuth`. An explicit `Authorization` header always selects Agent admission;

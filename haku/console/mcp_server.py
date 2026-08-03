@@ -3,7 +3,7 @@
 An interactive Agent MCP client (the claude.ai custom connector or the ``claude`` CLI) connects here
 and calls the console's connected-server tools through the approval lifecycle. The trusted console
 frontend uses this same endpoint with its Operator browser session; those calls execute directly and
-do not create tool-call rows, approval events, or promises.
+do not create tool-call rows, approval events, or non-terminal stubs.
 
 Each request exposes only servers connected by that principal's canonical Operator. Within that
 Operator-specific surface, the authenticated Agent's auto-approval policy divides tools into two
@@ -18,8 +18,8 @@ precedence over ``annotations.title`` for clients:
 - **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): the upstream
   schema and description unchanged, so they behave like the real tool and return the real result.
 - **Request** — everything else: an envelope schema (``input`` + ``rationale`` + optional
-  ``title``/``wait_for_approval_ms``) and a promise-semantics preamble in the description;
-  returns the real result *or* a promise.
+  ``title``/``wait_for_result_ms``) and a stub-semantics preamble in the description;
+  returns the real result *or* a non-terminal stub.
 
 For Agents both buckets run through ``submit_and_wait``. Operators bypass that lifecycle only after
 the transport has established a DB-revalidated, exact-Origin-gated browser principal.
@@ -96,7 +96,7 @@ from haku.console.tool_calls import (
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "haku-console"
-# Synchronous hold budget (ms) before a call returns a promise; overridable per envelope call.
+# Synchronous hold budget (ms) before a call returns a non-terminal stub; overridable per envelope call.
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
 TOOL_NAME_SEPARATOR = "__"
@@ -104,20 +104,27 @@ TOOL_NAME_SEPARATOR = "__"
 INSTRUCTIONS = (
     "haku-console tool proxy. Every proxied tool is named `<server>__<tool>`. Tools whose schema "
     "wraps the real arguments in an `input` + `rationale` envelope submit Agent calls to the "
-    "operator's approval queue: they return the result if approved within a few seconds, otherwise "
-    "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
-    "resolve a promise, or `withdraw_tool_call(tool_call_id, reason)` to retract one you no longer "
-    "want before an operator decides it. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
+    "operator's approval queue: they return the result if approved and completed within the "
+    "synchronous wait, otherwise a non-terminal stub with a `tool_call_id` and approval link. A "
+    "`pending_approval` stub means the operator did not approve or deny before that wait ended; the "
+    "call remains queued, may be approved or denied later, and will execute if later approved. A "
+    "`running` stub means it was approved but execution has not finished. Poll "
+    "`get_tool_call(tool_call_id)` to resolve a stub, or "
+    "`withdraw_tool_call(tool_call_id, reason)` to retract one you no longer want before an operator "
+    "decides it. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
     "by the console Operator's browser session execute directly and create no approval record. Call "
     "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials."
 )
 
 _REQUEST_PREAMBLE = (
     "For Agent callers, submits `{tool}` on `{server}` through haku-console's operator-approval "
-    "queue. Put the real tool arguments under `input`. Returns the result if approved within "
-    "`wait_for_approval_ms`, otherwise a promise (a pending `tool_call_id` plus approval `url`) — "
-    "poll `get_tool_call(tool_call_id)` to resolve it. If you stop wanting the call while it is "
-    "still pending, retract it with `withdraw_tool_call(tool_call_id, reason)` instead of leaving "
+    "queue. Put the real tool arguments under `input`. Returns the result if approved and completed "
+    "within `wait_for_result_ms`; otherwise returns a non-terminal stub with a `tool_call_id` plus "
+    "approval `url`. A `pending_approval` stub means the operator did not approve or deny before the "
+    "specified wait ended; the request remains queued, may be approved or denied later, and will "
+    "execute if later approved. A `running` stub means approval happened but execution has not "
+    "finished. Poll `get_tool_call(tool_call_id)` to resolve the stub. If you stop wanting the call "
+    "while it is still pending, retract it with `withdraw_tool_call(tool_call_id, reason)` instead of leaving "
     "it in the operator's queue. An authenticated console Operator call "
     "executes directly and creates no approval record."
 )
@@ -147,12 +154,12 @@ class ConsoleMcpContext:
     node_daemons: NodeDaemonService | None = None
 
 
-class ToolCallPromise(BaseModel):
-    """Returned by an approval-envelope tool when the call is not yet terminal."""
+class ToolCallStub(BaseModel):
+    """Returned by an approval-envelope tool when the synchronous wait ends before terminal state."""
 
     status: ToolCallStatus
     tool_call_id: str
-    url: str = Field(description="Operator-facing console link that opens this call for approval.")
+    url: str = Field(description="Operator-facing console link that opens this call's approval or status view.")
     message: str
 
 
@@ -231,20 +238,23 @@ class ApprovalRequestEnvelope(BaseModel):
     """The approval-request envelope. One model drives both the generated input schema
     (`_envelope_schema`) and parsing the incoming call (`ProxyTool.run`)."""
 
+    model_config = ConfigDict(extra="forbid")
+
     input: dict[str, Any] = Field(description="The real arguments for the upstream tool.")
     rationale: str = Field(description="Why you are requesting this call. Shown to the operator.")
     title: str | None = Field(default=None, description="Short human-facing title for the operator's approval queue.")
-    wait_for_approval_ms: int | None = Field(
+    wait_for_result_ms: int | None = Field(
         default=None,
         description=(
-            "How long to wait synchronously for approval before returning a promise "
+            "How long to wait synchronously for approval and execution before returning a non-terminal stub. "
+            "Returning a stub does not cancel or expire the queued call "
             f"(default {DEFAULT_WAIT_MS}, max {MAX_WAIT_MS})."
         ),
     )
 
 
 def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
-    """The console link handed to an agent whose call became a promise.
+    """The console link handed to an agent whose call returned a non-terminal stub.
 
     Shares one definition with the push notification's deep link so an operator following either
     lands in the same place — the approvals drawer with this call expanded.
@@ -310,7 +320,7 @@ def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
 def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     """The approval-request envelope schema: `ApprovalRequestEnvelope`'s generated schema with the
     ``input`` property replaced by the upstream tool's own schema (nested unchanged, so its fields
-    can't collide with the envelope's ``rationale``/``title``/``wait_for_approval_ms``)."""
+    can't collide with the envelope's ``rationale``/``title``/``wait_for_result_ms``)."""
     schema = ApprovalRequestEnvelope.model_json_schema()
     schema["properties"]["input"] = copy.deepcopy(original_schema)
     schema.pop("title", None)  # the model class title; the object schema itself needs none
@@ -325,11 +335,11 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
     """Map a (possibly non-terminal) tool-call record to an MCP tool result.
 
     Terminal ok → the upstream result; error/denied/withdrawn → an MCP tool error; still
-    pending/running → a promise (pending id + approval url). Every outcome carries the canonical
+    pending/running → a non-terminal stub (pending id + approval url). Every outcome carries the canonical
     tool-call id in MCP result metadata so non-interactive clients can resolve the audit record
     without a second admission protocol.
 
-    Exhaustive `match` on purpose: the promise is one named arm rather than a fallback, so adding a
+    Exhaustive `match` on purpose: the stub is one named arm rather than a fallback, so adding a
     status is a mypy error here instead of a terminal record silently reported as still pending.
     """
     result_meta = {
@@ -348,21 +358,42 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
             return _failed_result(f"denied: {record.denial_reason or 'no reason given'}", result_meta)
         case ToolCallStatus.WITHDRAWN:
             return _failed_result(f"withdrawn: {record.withdrawal_reason or 'no reason given'}", result_meta)
-        case ToolCallStatus.PENDING_APPROVAL | ToolCallStatus.RUNNING:
+        case ToolCallStatus.PENDING_APPROVAL:
             url = _tool_call_url(settings, record.tool_call_id)
-            promise = ToolCallPromise(
+            stub = ToolCallStub(
                 status=record.status,
                 tool_call_id=record.tool_call_id,
                 url=url,
                 message=(
-                    f"Sent for approval; pending as {record.tool_call_id}. Open {url} to approve. "
+                    "The operator did not approve or deny before the synchronous wait ended, so this is a "
+                    f"non-terminal pending stub for {record.tool_call_id}, not a timeout or cancellation. "
+                    "The request remains queued and the operator may approve or deny it later; if approved, "
+                    f"the tool call will execute. Open {url} to decide. "
                     f"Poll get_tool_call('{record.tool_call_id}') for the result, or "
                     f"withdraw_tool_call('{record.tool_call_id}', reason) if you no longer want it."
                 ),
             )
             return ToolResult(
-                content=[mcp_types.TextContent(type="text", text=promise.message)],
-                structured_content=promise.model_dump(mode="json"),
+                content=[mcp_types.TextContent(type="text", text=stub.message)],
+                structured_content=stub.model_dump(mode="json"),
+                meta=result_meta,
+            )
+        case ToolCallStatus.RUNNING:
+            url = _tool_call_url(settings, record.tool_call_id)
+            stub = ToolCallStub(
+                status=record.status,
+                tool_call_id=record.tool_call_id,
+                url=url,
+                message=(
+                    f"The operator approved {record.tool_call_id}, but execution did not finish before the "
+                    "synchronous wait ended, so this is a non-terminal running stub, not a timeout. "
+                    f"Execution continues in the background. Poll get_tool_call('{record.tool_call_id}') "
+                    "for the result."
+                ),
+            )
+            return ToolResult(
+                content=[mcp_types.TextContent(type="text", text=stub.message)],
+                structured_content=stub.model_dump(mode="json"),
                 meta=result_meta,
             )
 
@@ -401,7 +432,7 @@ class ProxyTool(Tool):
         else:
             env = ApprovalRequestEnvelope.model_validate(arguments)
             call_args, rationale, title = env.input, env.rationale, env.title
-            wait_ms = DEFAULT_WAIT_MS if env.wait_for_approval_ms is None else env.wait_for_approval_ms
+            wait_ms = DEFAULT_WAIT_MS if env.wait_for_result_ms is None else env.wait_for_result_ms
         ctx = self.context
         req = SubmitToolCallRequest(
             server_id=self.server_id,
@@ -456,10 +487,10 @@ def _build_proxy_tool(
         description=description,
         parameters=parameters,
         # TODO: proxied tools intentionally declare no output schema. A call can return either the
-        # upstream result or, when execution outlasts `wait_for_approval_ms`, a `ToolCallPromise`;
+        # upstream result or, when approval/execution outlasts `wait_for_result_ms`, a `ToolCallStub`;
         # modeling that union as a top-level `oneOf` is rejected by claude.ai, which requires
         # `outputSchema.type == "object"` (anthropics/claude-ai-mcp#400). outputSchema is optional
-        # in MCP, so omitting it is conformant; the promise behavior is described in the tool
+        # in MCP, so omitting it is conformant; the stub behavior is described in the tool
         # description. Restore a single conformant object shape if a client needs structured typing.
         output_schema=None,
         # Icons are opaque display assets (URLs/data URIs) — no server identity to prefix, so they
@@ -713,7 +744,7 @@ def build_console_mcp(
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
-        """Read one tool call (resolve a promise): status, result/error, and its approval link."""
+        """Read one tool call (resolve a non-terminal stub): status, result/error, and approval link."""
         try:
             record = await context.tool_calls.get(tool_call_id, actor=actor)
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
@@ -729,7 +760,7 @@ def build_console_mcp(
         Use this as soon as you no longer want a pending call: your plan changed, the operator did
         the thing by hand, you submitted a duplicate, or you got what you needed another way. It
         takes the request out of the operator's approval queue so nobody is asked to decide on work
-        you have abandoned — an unwanted promise otherwise sits in that queue indefinitely.
+        you have abandoned — an unwanted pending stub otherwise sits in that queue indefinitely.
 
         Only works while the call is `pending_approval`. If the operator already approved it, this
         fails and names the current status; withdrawing never stops or undoes an approved call, so

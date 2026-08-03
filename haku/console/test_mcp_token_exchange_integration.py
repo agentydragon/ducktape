@@ -106,7 +106,7 @@ class _TokenChainHarness:
         async with Client(f"{self.operator.base_url}/mcp", auth=_AGENT_TOKEN) as agent:
             tool_name = next(tool.name for tool in await agent.list_tools() if tool.name.endswith("__get_system_info"))
             submitted = await agent.call_tool(
-                tool_name, {"input": {}, "rationale": "verify Grocy connectivity", "wait_for_approval_ms": 0}
+                tool_name, {"input": {}, "rationale": "verify Grocy connectivity", "wait_for_result_ms": 0}
             )
         assert submitted.structured_content is not None
         tool_call_id = str(submitted.structured_content["tool_call_id"])

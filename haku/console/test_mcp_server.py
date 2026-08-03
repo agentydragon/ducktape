@@ -320,7 +320,8 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert "gmail__drafts_create" in tools
     envelope = tools["gmail__drafts_create"].inputSchema
     assert set(envelope["required"]) == {"input", "rationale"}
-    assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_approval_ms"}
+    assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_result_ms"}
+    assert envelope["additionalProperties"] is False
     gmail_write_meta = tools["gmail__drafts_create"].meta
     assert gmail_write_meta is not None
     assert gmail_write_meta[MCP_TOOL_META_KEY] == {
@@ -355,10 +356,12 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         assert ann is not None
         assert ann.readOnlyHint is True
         assert ann.openWorldHint is False
-    # The promise preamble is in the envelope tool's description.
+    # The non-terminal stub semantics are in the envelope tool's description.
     gmail_write_description = tools["gmail__drafts_create"].description
     assert gmail_write_description is not None
     assert "operator-approval queue" in gmail_write_description
+    assert "did not approve or deny before the specified wait ended" in gmail_write_description
+    assert "will execute if later approved" in gmail_write_description
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
     # prefix supplies "calendar", so no tool repeats it in the local name.
     assert "google_calendar__get_event" in tools
@@ -373,6 +376,13 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     for tool in tools.values():
         _assert_valid_json_schema(tool.inputSchema)
         _assert_valid_json_schema(tool.outputSchema)
+
+
+def test_approval_envelope_rejects_old_wait_field_name() -> None:
+    with pytest.raises(ValidationError, match="wait_for_approval_ms"):
+        mcp_server_module.ApprovalRequestEnvelope.model_validate(
+            {"input": {}, "rationale": "test", "wait_for_approval_ms": 0}
+        )
 
 
 async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Harness) -> None:
@@ -440,12 +450,12 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
 
 async def test_list_tool_calls_tool_filters_by_auto_approved(agent_client: Client) -> None:
     await agent_client.call_tool("gmail__labels_list", {})
-    promise = await agent_client.call_tool(
+    stub = await agent_client.call_tool(
         "gmail__drafts_create",
-        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_approval_ms": 0},
+        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_result_ms": 0},
     )
-    assert promise.structured_content is not None
-    manual_id = promise.structured_content["tool_call_id"]
+    assert stub.structured_content is not None
+    manual_id = stub.structured_content["tool_call_id"]
 
     hidden = await agent_client.call_tool("list_tool_calls", {"auto_approved": False})
     shown_only = await agent_client.call_tool("list_tool_calls", {"auto_approved": True})
@@ -495,19 +505,22 @@ async def test_calendar_read_is_transparent_and_audited(harness: _Harness, agent
     assert calls[0]["tool_name"] == "get_event"
 
 
-async def test_request_tool_returns_promise_with_deep_link(agent_client: Client) -> None:
+async def test_request_tool_returns_pending_stub_with_deep_link(agent_client: Client) -> None:
     result = await agent_client.call_tool(
         "gmail__drafts_create",
-        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_approval_ms": 0},
+        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_result_ms": 0},
     )
-    promise = result.structured_content
-    assert promise is not None
-    assert promise["status"] == ToolCallStatus.PENDING_APPROVAL
-    tool_call_id = promise["tool_call_id"]
+    stub = result.structured_content
+    assert stub is not None
+    assert stub["status"] == ToolCallStatus.PENDING_APPROVAL
+    tool_call_id = stub["tool_call_id"]
     assert result.meta is not None
     assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": tool_call_id}
     assert tool_call_id.startswith("tc_")
-    assert promise["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
+    assert stub["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
+    assert "did not approve or deny before the synchronous wait ended" in stub["message"]
+    assert "may approve or deny it later" in stub["message"]
+    assert "if approved, the tool call will execute" in stub["message"]
 
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
     view = got.structured_content
@@ -531,11 +544,7 @@ async def test_request_tool_preserves_explicit_zero_wait(
     with pytest.raises(ToolError, match="captured request"):
         await agent_client.call_tool(
             "gmail__drafts_create",
-            {
-                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
-                "rationale": "test",
-                "wait_for_approval_ms": 0,
-            },
+            {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_result_ms": 0},
         )
 
     assert submitted_waits == [0]
@@ -554,7 +563,7 @@ async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None
                 {
                     "input": {"to": ["a@b.test"], "subject": subject, "body": "body"},
                     "rationale": "test agent read isolation",
-                    "wait_for_approval_ms": 0,
+                    "wait_for_result_ms": 0,
                 },
             )
         assert result.structured_content is not None
@@ -591,17 +600,13 @@ async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None
 async def _submit_pending_draft(client: Client, subject: str = "s") -> str:
     result = await client.call_tool(
         "gmail__drafts_create",
-        {
-            "input": {"to": ["a@b.test"], "subject": subject, "body": "b"},
-            "rationale": "test",
-            "wait_for_approval_ms": 0,
-        },
+        {"input": {"to": ["a@b.test"], "subject": subject, "body": "b"}, "rationale": "test", "wait_for_result_ms": 0},
     )
     assert result.structured_content is not None
     return str(result.structured_content["tool_call_id"])
 
 
-async def test_withdraw_tool_call_retracts_a_promise(agent_client: Client) -> None:
+async def test_withdraw_tool_call_retracts_a_pending_stub(agent_client: Client) -> None:
     tool_call_id = await _submit_pending_draft(agent_client)
 
     result = await agent_client.call_tool(
@@ -668,8 +673,8 @@ async def test_withdraw_tool_call_rejects_another_agents_call(harness: _Harness)
             assert withdrawn.structured_content["call"]["status"] == ToolCallStatus.WITHDRAWN
 
 
-def test_withdrawn_record_is_not_reported_as_a_promise() -> None:
-    """A terminal record must never render as "still pending" — the promise is a named arm of
+def test_withdrawn_record_is_not_reported_as_a_stub() -> None:
+    """A terminal record must never render as "still pending" — the stub is a named arm of
     `_record_to_result`, not its fallback."""
     record = ToolCallRecord(
         tool_call_id="tc_withdrawn",
@@ -691,6 +696,27 @@ def test_withdrawn_record_is_not_reported_as_a_promise() -> None:
     block = result.content[0]
     assert isinstance(block, TextContent)
     assert "withdrawn: superseded" in block.text
+
+
+def test_running_record_is_reported_as_a_non_terminal_stub() -> None:
+    record = ToolCallRecord(
+        tool_call_id="tc_running",
+        server_id="gmail",
+        tool_name="drafts_create",
+        caller=AgentToolCallCaller(agent_id=uuid4(), display_name="Haku"),
+        status=ToolCallStatus.RUNNING,
+        created_at=datetime.datetime.now(datetime.UTC),
+        updated_at=datetime.datetime.now(datetime.UTC),
+        arguments={},
+    )
+
+    result = mcp_server_module._record_to_result(record, console_settings("postgresql://unused/record-to-result"))
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["status"] == ToolCallStatus.RUNNING
+    assert "approved" in result.structured_content["message"]
+    assert "execution continues in the background" in result.structured_content["message"].lower()
 
 
 # ── End-to-end: real upstream MCP server + console served over HTTP + real Postgres ──────────
@@ -749,7 +775,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 )
             assert unauth.status_code == 401
 
-            # The agent (bearer) sees the upstream tool behind the approval envelope and gets a promise.
+            # The agent (bearer) sees the upstream tool behind the approval envelope and gets a stub.
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 tools = {t.name: t for t in await client.list_tools()}
                 assert "standin__echo" in tools
@@ -763,14 +789,14 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 assert tools["standin__echo"].title == "standin: Echo text"
                 # Icons are opaque display assets — propagate unchanged, no server prefix.
                 assert tools["standin__echo"].icons == [Icon(src="https://example.invalid/echo.png")]
-                # Proxied tools declare no output schema: the result-or-promise union can't be
+                # Proxied tools declare no output schema: the result-or-stub union can't be
                 # modeled as a conformant outputSchema (claude.ai requires type == "object";
-                # anthropics/claude-ai-mcp#400), and outputSchema is optional. The promise
-                # behavior is described in the tool description, not its output schema.
+                # anthropics/claude-ai-mcp#400), and outputSchema is optional. The stub behavior is
+                # described in the tool description, not its output schema.
                 assert tools["standin__echo"].outputSchema is None
                 _assert_valid_json_schema(tools["standin__echo"].inputSchema)
                 result = await client.call_tool(
-                    "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
+                    "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_result_ms": 0}
                 )
                 assert result.structured_content is not None
                 assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
@@ -842,7 +868,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
             # decide records the approval and dispatches execution in the background — it returns RUNNING.
             assert decided.json()["tool_call"]["status"] == "running"
 
-            # The agent resolves its promise; execution runs in the background on the server loop, so
+            # The agent resolves its stub; execution runs in the background on the server loop, so
             # poll get_tool_call until it terminalizes, then check the real upstream result.
             terminal = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED}
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
