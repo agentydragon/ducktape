@@ -19,6 +19,26 @@ tools.
 - The pod has no Kubernetes service-account token. Privileged or external work
   remains behind the ordinary Haku Console MCP approval boundary.
 
+## TLS trust
+
+The interception root reaches clients as the **system bundle** at
+`/etc/ssl/certs/ca-certificates.crt` (mounted from `haku-egress-proxy-ca-cert`),
+which covers everything that reads it — OpenSSL, `curl`, and GnuTLS/git. Three
+runtimes bundle their own roots instead and are pointed at that file explicitly:
+
+| Runtime                | How it is pointed at the bundle                   |
+| ---------------------- | ------------------------------------------------- |
+| Node                   | `NODE_EXTRA_CA_CERTS`                             |
+| Bazel's JVM downloader | PKCS12 truststore planted by the init container   |
+| Python / pip           | `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `PIP_CERT` |
+
+**Gotcha: a missing entry here presents as unreachability, not as a trust
+error.** `pypi.org` and `files.pythonhosted.org` are both on the egress
+allowlist, so before pip was pointed at the bundle its failures read as "no
+route to PyPI" — a wrong diagnosis that reached committed guidance before it was
+retested. Which CA variable each TLS backend actually honours was measured in
+<../../../../plans/personal_agents/findings/egress_and_tls.md>.
+
 ## Persistent workspace
 
 The 30 GiB PVC is mounted as `/home/openclaw`. It contains both:

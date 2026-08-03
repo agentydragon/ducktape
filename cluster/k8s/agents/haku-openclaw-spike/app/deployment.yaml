@@ -81,11 +81,22 @@ spec:
                 fi
               done
               rm -rf "$tmp"
+              #
+              # rules_python shells out to a pip that trusts only its vendored
+              # certifi, so the container also exports PIP_CERT and friends.
+              # Repository rules inherit the pod environment anyway, but an
+              # undeclared variable never enters a repo's marker file, so a
+              # repository cached from a pre-fix TLS failure would keep serving
+              # that failure; --repo_env ties the cached fetch to the trust
+              # settings and refetches when they change.
               cat > /home/openclaw/.bazelrc <<BAZELRC
               startup --host_jvm_args=-Djavax.net.ssl.trustStore=$truststore
               startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
               startup --host_jvm_args=-Djavax.net.ssl.trustStoreType=PKCS12
               build --disk_cache=/home/openclaw/.cache/bazel-disk
+              build --repo_env=SSL_CERT_FILE
+              build --repo_env=REQUESTS_CA_BUNDLE
+              build --repo_env=PIP_CERT
               BAZELRC
           env:
             - name: HOME
@@ -162,6 +173,19 @@ spec:
             - name: no_proxy
               value: 127.0.0.1,localhost
             - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            # Python is the other runtime that ignores the mounted system
+            # bundle: pip trusts only its vendored certifi, and the hermetic
+            # interpreter rules_python downloads carries its own OpenSSL whose
+            # compiled-in CA path is not Debian's. Without these, every pip
+            # fetch fails TLS against the egress proxy even though pypi.org and
+            # files.pythonhosted.org are allowlisted -- which reads as "no route
+            # to PyPI" rather than as a trust fault.
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: PIP_CERT
               value: /etc/ssl/certs/ca-certificates.crt
           ports:
             - name: gateway
