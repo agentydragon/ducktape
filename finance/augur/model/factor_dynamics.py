@@ -44,6 +44,12 @@ class MeanReversionParams(FrozenModel):
     """Monthly Ornstein-Uhlenbeck parameters for a rate factor.
 
     `rate_t = rate_{t-1} + kappa * (theta - rate_{t-1}) + innovation_t`
+
+    `theta` is the long-run level only when the innovation is zero-mean: with mean `mu` the
+    recursion settles at `theta + mu / kappa`, so a drifting innovation would silently move
+    the level the rate reverts to. Rather than document that trap, the artifact requires a
+    rate factor's `monthly_log_return_mu` to be zero — leaving exactly one parameter that
+    sets where a rate ends up.
     """
 
     kappa: float = Field(gt=0.0, le=1.0, description="Monthly pull toward theta; 1.0 snaps there in one month.")

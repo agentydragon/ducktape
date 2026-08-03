@@ -142,6 +142,22 @@ def test_a_rate_series_round_trips_through_level_matrix() -> None:
     assert matrix[0, 0] == pytest.approx(0.05)
 
 
+def test_artifact_rejects_a_drifting_rate_innovation() -> None:
+    # theta would no longer be where the rate settles: the recursion would land at
+    # theta + mu/kappa, so two parameters would both control the long-run level.
+    with pytest.raises(ValueError, match="must have monthly_log_return_mu == 0"):
+        StateSpaceModelArtifact(
+            factor_names=(SP500Key().wire_id, TEN_YEAR.wire_id),
+            trained_through_month="2026-07",
+            latest_level_by_factor={SP500Key().wire_id: 100.0, TEN_YEAR.wire_id: 0.04},
+            monthly_log_return_mu={SP500Key().wire_id: 0.005, TEN_YEAR.wire_id: 0.0001},
+            monthly_log_return_cov=((0.0016, 0.0), (0.0, 1e-6)),
+            filtered_log_state_mean={SP500Key().wire_id: math.log(100.0), TEN_YEAR.wire_id: 0.04},
+            filtered_log_state_cov=((0.0016, 0.0), (0.0, 1e-6)),
+            mean_reversion_by_factor={TEN_YEAR.wire_id: MeanReversionParams(kappa=0.1, theta=0.03)},
+        )
+
+
 def test_artifact_rejects_a_rate_factor_without_mean_reversion_parameters() -> None:
     with pytest.raises(ValueError, match="mean_reversion_by_factor must have an entry"):
         StateSpaceModelArtifact(

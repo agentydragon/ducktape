@@ -116,6 +116,15 @@ class StateSpaceModelArtifact(FrozenModel):
         # A rate is exempt: it may sit at or below zero, which is why it does not compound.
         if any(self.latest_level_by_factor[factor] <= 0 for factor in factors - rate_factors):
             raise ValueError("latest_level_by_factor values must be positive for non-rate factors")
+        # A rate's long-run level must be `theta` alone. A non-zero innovation mean would
+        # settle the recursion at `theta + mu / kappa`, giving two parameters that both move
+        # it — so the drift of a mean-reverting factor lives entirely in `theta`.
+        drifting_rates = sorted(factor for factor in rate_factors if self.monthly_log_return_mu[factor] != 0.0)
+        if drifting_rates:
+            raise ValueError(
+                f"rate factors {drifting_rates} must have monthly_log_return_mu == 0; a rate's "
+                "long-run level is set by its mean-reversion theta, not by an innovation drift"
+            )
         private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
@@ -240,6 +249,11 @@ class StateSpaceModel:
             if is_rate:
                 if extra.mean_reversion is None:
                     raise ValueError(f"rate factor {extra.factor_name!r} needs mean_reversion parameters")
+                if extra.monthly_log_return_mu != 0.0:
+                    raise ValueError(
+                        f"rate factor {extra.factor_name!r} must have monthly_log_return_mu == 0; its "
+                        "long-run level is set by mean_reversion.theta"
+                    )
                 mean_reversion[extra.factor_name] = extra.mean_reversion
             else:
                 if extra.mean_reversion is not None:
