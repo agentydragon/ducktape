@@ -210,6 +210,8 @@ class SampledExogenousBundle:
         spec = LEVEL_KIND_SPECS[key.kind]
         frame = self.levels.frame(key.kind)
         if spec.subid_column is not None:
+            if key.subid is None:
+                raise ValueError(f"{key.wire_id!r} is keyed by {spec.subid_column} but has subid=None")
             frame = frame.filter(pl.col(spec.subid_column) == key.subid)
         return _matrix_from_long_frame(
             frame,
