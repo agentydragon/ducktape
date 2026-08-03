@@ -1,6 +1,6 @@
 """Per-magisterium grouping of level-series values, shared by the independent-provider family.
 
-The non-PE level series partition into four disjoint magisteria by *what references them*
+The non-PE level series partition into disjoint magisteria by *what references them*
 (see `augur/model/series.py`): asset-price (`sp500`, `crypto`), property-value (`home_value`),
 index (`inflation`, `rent`), and discount-rate (`nominal_yield`, `muni_ratio`). Specs that map each level series to some value — the
 independent exogenous provider and its sim/bench twin map each to a scalar model spec — all
@@ -94,7 +94,7 @@ class DiscountRateGroups[ValueT](FrozenModel):
 
 
 class LevelSeriesMagisteria[ValueT](FrozenModel):
-    """Level-series values separated into the four magisteria, mirroring `SampledExogenousBundle`.
+    """Level-series values separated by magisterium, mirroring `SampledExogenousBundle`.
 
     Each magisterium is its own typed sub-group (asset-price / property-value / index) rather
     than one flat per-kind bucket, so a cross-magisterium miswiring is unrepresentable.
@@ -103,8 +103,8 @@ class LevelSeriesMagisteria[ValueT](FrozenModel):
     silently parsing — the desired fail-loud on pre-migration configs.
 
     There is intentionally no `by_level_key` flattening: a consumer that needs every level
-    series reaches through the four magisterium fields (`asset_prices` / `property_values` /
-    `index_series` / `discount_rates`) and their per-magisterium projections, keeping the
+    series reaches through the magisterium fields declared below and their per-magisterium
+    projections, keeping the
     magisterium boundary structural rather than collapsing it into one opaque keyspace.
     """
 

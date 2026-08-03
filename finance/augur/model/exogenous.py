@@ -2,7 +2,7 @@
 
 Non-PE level series are grouped by **magisterium** — the concern that
 references them (see `augur/plans/typed_series_config.md`). A sampled bundle
-carries four level magisteria plus the PE bundle:
+carries these level magisteria plus the PE bundle:
 
 - `asset_prices` — `sp500` (scalar) + `crypto` (symbol-keyed); price a lot.
 - `property_values` — `home_value` (location-keyed); value a property.
@@ -48,7 +48,7 @@ from finance.augur.model.series import (
     TenorMonths,
 )
 
-# Four frame SHAPES (the field name carries the kind; home_value and rent share the LOCATION
+# Frame SHAPES (the field name carries the kind; home_value and rent share the LOCATION
 # shape, nominal_yield and muni_ratio share the TENOR shape, but each is a distinct frame in
 # its own magisterium).
 SCALAR_LEVELS_SCHEMA = pl.Schema({"rollout_index": pl.Int64(), "month_index": pl.Int64(), "value": pl.Float64()})
@@ -109,13 +109,12 @@ class ExogenousSamplingRequest:
     """Request metadata passed to an exogenous path model sample.
 
     Required non-PE level series are split by magisterium so a consumer states
-    exactly which kind of series it needs: `required_asset_prices` (price a
-    lot), `required_property_values` (value a property), `required_index_series`
-    (escalate an amount). PE issuers (carrying the whole `PrivateEquityBundle`
-    per issuer) are required by `required_private_equity_issuers`; PE tender
-    events and protocol channels are part of the PE bundle, not separate
-    channels. `required_level_series` unions the four level magisteria for the
-    provider/validate code that ranges over all non-PE level series uniformly.
+    exactly which kind of series it needs; each `required_*` field below names its
+    magisterium. PE issuers (carrying the whole `PrivateEquityBundle` per issuer) are
+    required by `required_private_equity_issuers`; PE tender events and protocol
+    channels are part of the PE bundle, not separate channels. `required_level_series`
+    unions the level magisteria for the provider/validate code that ranges over all
+    non-PE level series uniformly.
     """
 
     horizon_months: int
@@ -145,7 +144,7 @@ class ExogenousSamplingRequest:
 
     @property
     def required_level_series(self) -> frozenset[LevelSeriesKey]:
-        """All required non-PE level series, unioned across the four magisteria."""
+        """All required non-PE level series, unioned across the magisteria."""
 
         return frozenset(
             self.required_asset_prices
@@ -235,7 +234,7 @@ class SampledExogenousBundle:
 
 
 class LevelRequestChannels(TypedDict):
-    """The four magisterium request channels of `ExogenousSamplingRequest`."""
+    """The magisterium request channels of `ExogenousSamplingRequest`."""
 
     required_asset_prices: frozenset[AssetPriceKey]
     required_property_values: frozenset[PropertyValueKey]
@@ -281,11 +280,11 @@ def partition_level_blocks(
     list[tuple[IndexSeriesKey, np.ndarray]],
     list[tuple[DiscountRateKey, np.ndarray]],
 ]:
-    """Partition flat `(LevelSeriesKey, matrix)` blocks into the four magisterium groups.
+    """Partition flat `(LevelSeriesKey, matrix)` blocks into their magisterium groups.
 
     The typed fan-out sibling of `level_series_request_channels` (which partitions bare
     keys). For callers whose level identity is still flat — the trained models keyed by a
-    flat factor tuple — this routes each sampled block to its magisterium so the four lists
+    flat factor tuple — this routes each sampled block to its magisterium so the lists
     can be splatted into `assemble_level_magisteria`. The primary per-series providers never
     need it: they hold their specs magisterium-separated from the start.
     """
@@ -366,7 +365,7 @@ class LevelBundleKwargs(TypedDict):
 
 @dataclass(frozen=True)
 class LevelMagisteria:
-    """The four level magisteria, assembled and ready to splat into a bundle."""
+    """The level magisteria, assembled and ready to splat into a bundle."""
 
     asset_prices: AssetPriceFrames
     property_values: pl.DataFrame
@@ -391,7 +390,7 @@ def assemble_level_magisteria(
     rollout_count: int,
     horizon_months: int,
 ) -> LevelMagisteria:
-    """Assemble sampled `(key, matrix)` blocks into the four magisterium frame groups.
+    """Assemble sampled `(key, matrix)` blocks into their magisterium frame groups.
 
     Blocks arrive already separated by magisterium — there is no cross-magisterium
     bucket to route. Within a magisterium the singleton-vs-keyed split (sp500 vs
@@ -601,7 +600,7 @@ def _anchor_level_frame(
 ) -> pl.DataFrame:
     """Re-base one per-kind frame so each series' per-rollout month-0 value matches its anchor.
 
-    Two anchoring modes, by magisterium. Levels (prices, property values, indices) are
+    Anchoring differs by magisterium. Levels (prices, property values, indices) are
     **rescaled** — the path is multiplicative, so matching month 0 means scaling the whole
     series. Rates (`_ADDITIVELY_ANCHORED_KINDS`) are **shifted** — a yield curve is not a
     positive level, dividing by a near-zero month-0 yield would explode the path, and the

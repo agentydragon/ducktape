@@ -55,7 +55,7 @@ def test_discount_rate_groups_project_by_tenor() -> None:
 
 
 def test_magisteria_keep_each_series_in_its_own_group() -> None:
-    # The four magisteria stay separate; each projects only to its own typed-key view,
+    # The magisteria stay separate; each projects only to its own typed-key view,
     # and there is deliberately no cross-magisterium merge into one keyspace. Every
     # magisterium is exercised here on purpose: a group that no test populates is one a
     # sampler can silently forget to emit.

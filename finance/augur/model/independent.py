@@ -34,7 +34,7 @@ from finance.augur.model.series_model import ScalarSeriesSpec, sample_independen
 class IndependentProviderConfig(LevelSeriesMagisteria[ScalarSeriesSpec]):
     """YAML provider that enumerates every level series and PE mark explicitly.
 
-    Level series are the three magisterium sub-groups inherited from
+    Level series are the magisterium sub-groups inherited from
     `LevelSeriesMagisteria` (`asset_prices` = `sp500`/`crypto`; `property_values` =
     `home_value`; `index_series` = `inflation`/`rent`). `private_equity_marks` carries
     per-issuer mark specs separately — PE marks are not level series. `extra="forbid"`
@@ -61,7 +61,7 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
     Implements `Sampler` (the runtime sampling contract) and `Scorable` (the
     metric battery contract). No `Fittable` — params are YAML-set, not fit.
 
-    Holds the level-series specs as the three magisterium sub-groups inherited from
+    Holds the level-series specs as the magisterium sub-groups inherited from
     `LevelSeriesMagisteria` (`asset_prices`/`property_values`/`index_series`) — the same
     magisterium-separated shape as the config and the sampled bundle, so nothing is flattened
     to an opaque key/value map. `pe_marks` is keyed by typed `IssuerId`. The level-vs-PE split
@@ -137,7 +137,7 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
     def _level_specs_by_level_key(self) -> dict[LevelSeriesKey, ScalarSeriesSpec]:
         """The provider's level specs keyed by their typed `LevelSeriesKey`.
 
-        The three magisterium projections (each keyed within its own magisterium) union
+        The magisterium projections (each keyed within its own magisterium) union
         into one `LevelSeriesKey`-keyed map for `factor_names` / `predictive`.
         """
 
