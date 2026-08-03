@@ -110,7 +110,7 @@ def test_independent_provider_config_roundtrips_through_discriminated_union(
 
 
 def test_realized_model_keeps_magisterium_structure(example_config: IndependentProviderConfig) -> None:
-    # The runtime model holds level specs as the three magisterium sub-groups (same shape
+    # The runtime model holds level specs as the magisterium sub-groups (same shape
     # as config / the sampled bundle), not a flattened opaque key map. The config-only
     # `private_equity_marks` sibling travels separately as `pe_marks`.
     model = example_config.realize_model()
@@ -121,7 +121,7 @@ def test_realized_model_keeps_magisterium_structure(example_config: IndependentP
     assert not model.asset_prices.crypto
     assert set(model.pe_marks) == {"private_equity_x"}
     # The level series surface as typed FactorKeys (a subset of which are LevelSeriesKeys),
-    # one per series across the three magisteria this fixture configures (no rates here).
+    # one per series across the magisteria this fixture configures (no rates here).
     assert {key.wire_id for key in model.factor_names} == {
         "inflation",
         "sp500",

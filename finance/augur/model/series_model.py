@@ -46,13 +46,13 @@ ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field
 def sample_independent_levels(
     groups: LevelSeriesMagisteria[ScalarSeriesSpec], request: ExogenousSamplingRequest
 ) -> LevelMagisteria:
-    """Sample every level spec across the four magisteria into the assembled level frames.
+    """Sample every level spec across the magisteria into the assembled level frames.
 
     Each magisterium is sampled from its own typed key->spec view and stays separate all the
     way into `assemble_level_magisteria`; nothing is merged into a cross-magisterium bucket.
     Seed substreams are keyed on the stable wire id so a series' path is identical regardless
     of config-dict ordering. Shared by `IndependentSeriesModels` (sim/bench) and
-    `IndependentModel` (the YAML provider) — the same four magisteria, sampled once.
+    `IndependentModel` (the YAML provider) — the same magisteria, sampled once.
     """
 
     def blocks[KeyT: LevelSeriesKey](keyed: Mapping[KeyT, ScalarSeriesSpec]) -> list[tuple[KeyT, np.ndarray]]:
@@ -80,7 +80,7 @@ def sample_independent_levels(
 class IndependentSeriesModels(LevelSeriesMagisteria[ScalarSeriesSpec]):
     """Joint model composed from independent per-series scalar level models.
 
-    Inherits the four magisterium sub-groups from `LevelSeriesMagisteria`
+    Inherits the magisterium sub-groups from `LevelSeriesMagisteria`
     (`asset_prices`/`property_values`/`index_series`/`discount_rates`; each series maps to a
     Constant / Deterministic / GBM scalar spec). `kind` is the `SeriesModelSpec`
     discriminator.
@@ -118,7 +118,7 @@ class SeriesModelBundle(BaseModel):
         property_values: PropertyValueGroups[ScalarSeriesSpec] | None = None,
         index_series: IndexSeriesGroups[ScalarSeriesSpec] | None = None,
     ) -> SeriesModelBundle:
-        """Build an independent-model bundle from the three magisterium groups.
+        """Build an independent-model bundle from the magisterium groups.
 
         Callers pass only the magisteria they populate (each defaults to empty), so the
         construction is magisterium-structured end to end — no flat `LevelSeriesKey` map
