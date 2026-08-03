@@ -13,10 +13,8 @@ keys; the level/PE split and magisterium grouping are structural.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
 from typing import Annotated, Literal
 
-import numpy as np
 import polars as pl
 from pydantic import BaseModel, Field
 
@@ -24,10 +22,10 @@ from finance.augur.frames import concat_frames
 from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
-    LevelMagisteria,
+    LevelFrames,
     SampledExogenousBundle,
     Sampler,
-    assemble_level_magisteria,
+    assemble_level_frames,
     level_series_request_channels,
     level_value_rows,
 )
@@ -45,18 +43,16 @@ ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field
 
 def sample_independent_levels(
     groups: LevelSeriesMagisteria[ScalarSeriesSpec], request: ExogenousSamplingRequest
-) -> LevelMagisteria:
-    """Sample every level spec across the three magisteria into the assembled level frames.
+) -> LevelFrames:
+    """Sample every level spec the groups carry into the assembled per-kind frames.
 
-    Each magisterium is sampled from its own typed key->spec view and stays separate all the
-    way into `assemble_level_magisteria`; nothing is merged into a cross-magisterium bucket.
-    Seed substreams are keyed on the stable wire id so a series' path is identical regardless
-    of config-dict ordering. Shared by `IndependentSeriesModels` (sim/bench) and
-    `IndependentModel` (the YAML provider) — the same three magisteria, sampled once.
+    Seed substreams are keyed on the stable wire id so a series' path is identical
+    regardless of config-dict ordering. Shared by `IndependentSeriesModels` (sim/bench) and
+    `IndependentModel` (the YAML provider).
     """
 
-    def blocks[KeyT: LevelSeriesKey](keyed: Mapping[KeyT, ScalarSeriesSpec]) -> list[tuple[KeyT, np.ndarray]]:
-        return [
+    return assemble_level_frames(
+        (
             (
                 key,
                 spec.sample_levels(
@@ -64,13 +60,8 @@ def sample_independent_levels(
                     horizon_months=request.horizon_months,
                 ),
             )
-            for key, spec in keyed.items()
-        ]
-
-    return assemble_level_magisteria(
-        asset_price_blocks=blocks(groups.asset_prices.by_asset_price_key()),
-        property_value_blocks=blocks(groups.property_values.by_property_value_key()),
-        index_blocks=blocks(groups.index_series.by_index_series_key()),
+            for key, spec in groups.by_level_key().items()
+        ),
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
     )
@@ -88,14 +79,10 @@ class IndependentSeriesModels(LevelSeriesMagisteria[ScalarSeriesSpec]):
     kind: Literal["independent"] = "independent"
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        return SampledExogenousBundle(**sample_independent_levels(self, request).as_bundle_kwargs())
+        return SampledExogenousBundle(levels=sample_independent_levels(self, request))
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        return frozenset(
-            self.asset_prices.by_asset_price_key().keys()
-            | self.property_values.by_property_value_key().keys()
-            | self.index_series.by_index_series_key().keys()
-        )
+        return frozenset(self.by_level_key())
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
         return frozenset()

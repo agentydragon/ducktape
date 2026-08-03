@@ -94,7 +94,7 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
         # — the inherited magisterium groups carry only level series.
         frames = sample_independent_levels(self, request)
         return SampledExogenousBundle(
-            **frames.as_bundle_kwargs(),
+            levels=frames,
             metadata={"model_id": self.label, "private_equity_prices_usd": self._private_equity_prices_usd()},
         )
 
@@ -137,21 +137,11 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
     def _level_specs_by_level_key(self) -> dict[LevelSeriesKey, ScalarSeriesSpec]:
         """The provider's level specs keyed by their typed `LevelSeriesKey`.
 
-        The three magisterium projections (each keyed within its own magisterium) union
-        into one `LevelSeriesKey`-keyed map for `factor_names` / `predictive`.
+        The magisterium projections union into one `LevelSeriesKey`-keyed map for
+        `factor_names` / `predictive`.
         """
 
-        # The explicit `dict[LevelSeriesKey, ...]` annotation gives the `dict(...)` its key-type
-        # context, so the narrow per-magisterium keys widen cleanly (dict keys are invariant,
-        # so an unannotated `{**a, **b}` would not unify them into `LevelSeriesKey`).
-        specs: dict[LevelSeriesKey, ScalarSeriesSpec] = dict(
-            (
-                *self.asset_prices.by_asset_price_key().items(),
-                *self.property_values.by_property_value_key().items(),
-                *self.index_series.by_index_series_key().items(),
-            )
-        )
-        return specs
+        return self.by_level_key()
 
     def _private_equity_prices_usd(self) -> dict[str, float]:
         return {str(issuer_id): _month_zero_level(spec) for issuer_id, spec in self.pe_marks.items()}

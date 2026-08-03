@@ -21,9 +21,8 @@ from finance.augur.model.exogenous import (
     SampledExogenousBundle,
     Sampler,
     anchor_sampled_series_levels,
-    assemble_level_magisteria,
-    merge_level_magisteria,
-    partition_level_blocks,
+    assemble_level_frames,
+    merge_level_frames,
     validate_sample_satisfies_request,
 )
 from finance.augur.model.schemas import FrozenModel
@@ -82,18 +81,9 @@ class MirroringSampler:
             )
             for mirror in self.mirror_series
         ]
-        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(target_blocks)
-        mirror_bundle = SampledExogenousBundle(
-            **assemble_level_magisteria(
-                asset_price_blocks=asset_price_blocks,
-                property_value_blocks=property_value_blocks,
-                index_blocks=index_blocks,
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
-            ).as_bundle_kwargs()
-        )
+        mirror_levels = assemble_level_frames(target_blocks, rollout_count=rollout_count, horizon_months=horizon_months)
         merged = SampledExogenousBundle(
-            **merge_level_magisteria(bundle, mirror_bundle),
+            levels=merge_level_frames(bundle.levels, mirror_levels),
             private_equity=bundle.private_equity,
             metadata=bundle.metadata,
         )

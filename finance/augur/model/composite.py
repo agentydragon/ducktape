@@ -9,7 +9,7 @@ from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
-    merge_level_magisteria,
+    merge_level_frames,
     validate_sample_satisfies_request,
 )
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
@@ -50,7 +50,7 @@ class CompositeModel:
         macro_bundle = self.macro.sample(macro_request)
         pe_bundle = self.private_equity.sample(pe_request)
         sampled = SampledExogenousBundle(
-            **merge_level_magisteria(macro_bundle, pe_bundle),
+            levels=merge_level_frames(macro_bundle.levels, pe_bundle.levels),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
             metadata={
                 "model_id": self.label,

@@ -31,8 +31,7 @@ from finance.augur.model.conditioning import (
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    assemble_level_magisteria,
-    partition_level_blocks,
+    assemble_level_frames,
     validate_sample_satisfies_request,
 )
 from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
@@ -300,14 +299,7 @@ class StateSpaceModel:
                     )
                 continue
             level_by_key[classification] = levels
-        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(level_by_key.items())
-        frames = assemble_level_magisteria(
-            asset_price_blocks=asset_price_blocks,
-            property_value_blocks=property_value_blocks,
-            index_blocks=index_blocks,
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-        )
+        frames = assemble_level_frames(level_by_key.items(), rollout_count=rollout_count, horizon_months=horizon_months)
         private_equity_parts = [
             neutral_private_equity_issuer_bundle(
                 issuer_id,
@@ -323,7 +315,7 @@ class StateSpaceModel:
             PrivateEquityBundle.combine(private_equity_parts) if private_equity_parts else PrivateEquityBundle.empty()
         )
         sampled = SampledExogenousBundle(
-            **frames.as_bundle_kwargs(),
+            levels=frames,
             private_equity=private_equity,
             metadata={
                 "model_version_id": self.model_version_id,

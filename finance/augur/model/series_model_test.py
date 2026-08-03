@@ -9,13 +9,21 @@ from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    assemble_level_magisteria,
+    assemble_level_frames,
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
-from finance.augur.model.series import CryptoKey, CryptoSymbol, HomeValueKey, InflationKey, LocationId, SP500Key
+from finance.augur.model.series import (
+    CryptoKey,
+    CryptoSymbol,
+    HomeValueKey,
+    InflationKey,
+    LevelSeriesKind,
+    LocationId,
+    SP500Key,
+)
 from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
 from finance.augur.model.testing import ConstantFrameModel
 
@@ -45,7 +53,7 @@ def test_independent_model_samples_deterministic_levels_for_each_rollout() -> No
 
     sampled = model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(101, 102)))
 
-    crypto = sampled.asset_prices.crypto.sort(["rollout_index", "month_index"])
+    crypto = sampled.levels.frame(LevelSeriesKind.CRYPTO).sort(["rollout_index", "month_index"])
     assert crypto.columns == ["rollout_index", "month_index", "symbol", "value"]
     assert crypto.to_dicts() == [
         {"rollout_index": 0, "month_index": 0, "symbol": "vti", "value": 100.0},
@@ -134,16 +142,12 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
     request = ExogenousSamplingRequest(
         horizon_months=2, rollout_seeds=(101,), **level_series_request_channels(frozenset({SP500Key()}))
     )
-    frames = assemble_level_magisteria(
-        asset_price_blocks=[(SP500Key(), np.ones((1, 3)))],
-        property_value_blocks=[(HomeValueKey(location_id=LocationId("extra_level")), np.ones((1, 3)))],
-        index_blocks=[],
+    frames = assemble_level_frames(
+        [(SP500Key(), np.ones((1, 3))), (HomeValueKey(location_id=LocationId("extra_level")), np.ones((1, 3)))],
         rollout_count=1,
         horizon_months=2,
     )
-    sampled = SampledExogenousBundle(
-        asset_prices=frames.asset_prices, property_values=frames.property_values, index_series=frames.index_series
-    )
+    sampled = SampledExogenousBundle(levels=frames)
 
     validate_sample_satisfies_request(request, sampled)
 

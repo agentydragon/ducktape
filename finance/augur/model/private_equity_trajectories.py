@@ -175,9 +175,7 @@ class PreSampledPrivateEquitySampler:
             )
 
         sampled = SampledExogenousBundle(
-            asset_prices=bundle.asset_prices,
-            property_values=bundle.property_values,
-            index_series=bundle.index_series,
+            levels=bundle.levels,
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             metadata={**bundle.metadata, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )

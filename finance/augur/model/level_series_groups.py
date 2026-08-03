@@ -10,13 +10,14 @@ groups so each consumer holds typed, magisterium-separated fields (mirroring the
 `dict[str, ValueT]`.
 
 Field names are exactly the `LevelSeriesKind` values. Each magisterium projects to its *own*
-typed-key view (`by_asset_price_key` / `by_property_value_key` / `by_index_series_key`); there
-is deliberately no cross-magisterium merge into one `dict[LevelSeriesKey, ValueT]` — a consumer
-that needs all three iterates them separately so the magisterium each series belongs to stays
-visible at the call site.
+typed-key view (`by_asset_price_key` / `by_property_value_key` / `by_index_series_key`) so a
+consumer that wants exactly one magisterium gets it typed; `by_level_key` flattens all of them
+for consumers that genuinely range over every spec.
 """
 
 from __future__ import annotations
+
+import itertools
 
 from pydantic import Field
 
@@ -28,6 +29,7 @@ from finance.augur.model.series import (
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
+    LevelSeriesKey,
     LocationId,
     PropertyValueKey,
     RentKey,
@@ -75,7 +77,7 @@ class IndexSeriesGroups[ValueT](FrozenModel):
 
 
 class LevelSeriesMagisteria[ValueT](FrozenModel):
-    """Level-series values separated into the three magisteria, mirroring `SampledExogenousBundle`.
+    """Level-series values separated by magisterium, mirroring `SampledExogenousBundle`.
 
     Each magisterium is its own typed sub-group (asset-price / property-value / index) rather
     than one flat per-kind bucket, so a cross-magisterium miswiring is unrepresentable.
@@ -83,12 +85,28 @@ class LevelSeriesMagisteria[ValueT](FrozenModel):
     `"crypto:btc"`, or a kind field placed in the wrong magisterium, fail at load instead of
     silently parsing — the desired fail-loud on pre-migration configs.
 
-    There is intentionally no `by_level_key` flattening: a consumer that needs every level
-    series reaches through the three magisterium fields (`asset_prices` / `property_values` /
-    `index_series`) and their per-magisterium projections, keeping the magisterium boundary
-    structural rather than collapsing it into one opaque keyspace.
+    The nesting is the CONFIG shape — it is what a deployment writes and what makes a
+    misplaced kind fail at load. It is not a claim that consumers should re-walk it: a
+    `LevelSeriesKey` already carries its kind, and its kind already carries its magisterium
+    (`LEVEL_KIND_SPECS`), so `by_level_key()` flattens without losing anything. Producers
+    that genuinely range over every spec use that instead of unioning the three projections
+    by hand.
     """
 
     asset_prices: AssetPriceGroups[ValueT] = Field(default_factory=AssetPriceGroups)
     property_values: PropertyValueGroups[ValueT] = Field(default_factory=PropertyValueGroups)
     index_series: IndexSeriesGroups[ValueT] = Field(default_factory=IndexSeriesGroups)
+
+    def by_level_key(self) -> dict[LevelSeriesKey, ValueT]:
+        """Every spec across all magisteria, keyed by its typed `LevelSeriesKey`."""
+
+        # Rebuilt entry-by-entry rather than `**`-merged: a `dict[AssetPriceKey, V]` is not a
+        # `dict[LevelSeriesKey, V]` because dict keys are invariant, even though every key in
+        # it IS a `LevelSeriesKey`.
+        return dict(
+            itertools.chain(
+                self.asset_prices.by_asset_price_key().items(),
+                self.property_values.by_property_value_key().items(),
+                self.index_series.by_index_series_key().items(),
+            )
+        )

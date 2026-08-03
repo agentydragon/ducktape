@@ -13,7 +13,7 @@ from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
-    assemble_level_magisteria,
+    assemble_level_frames,
 )
 from finance.augur.model.private_equity_trajectories import (
     PreSampledPrivateEquitySampler,
@@ -220,18 +220,8 @@ def test_sampler_overlay_layered_pe_bundle_uses_artifact() -> None:
 def test_sampler_overlay_preserves_underlying_non_pe_series() -> None:
     """Non-PE level series from the underlying flow through unchanged."""
 
-    frames = assemble_level_magisteria(
-        asset_price_blocks=[(SP500Key(), np.array([[1.0, 1.02, 1.05]]))],
-        property_value_blocks=[],
-        index_blocks=[],
-        rollout_count=1,
-        horizon_months=2,
-    )
-    underlying = _MinimalSampler(
-        bundle=SampledExogenousBundle(
-            asset_prices=frames.asset_prices, property_values=frames.property_values, index_series=frames.index_series
-        )
-    )
+    frames = assemble_level_frames([(SP500Key(), np.array([[1.0, 1.02, 1.05]]))], rollout_count=1, horizon_months=2)
+    underlying = _MinimalSampler(bundle=SampledExogenousBundle(levels=frames))
     sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={})
     bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(0,)))
 

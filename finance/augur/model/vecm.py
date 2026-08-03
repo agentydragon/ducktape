@@ -47,7 +47,7 @@ from numpyro.infer.autoguide import AutoDelta
 from numpyro.optim import Adam
 from pydantic import Field
 
-from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_magisteria
+from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
@@ -318,21 +318,16 @@ class VecmModel:
             factor: multipliers[:, :, factor_index] for factor_index, factor in enumerate(self.factor_names)
         }
 
-        def blocks[KeyT: LevelSeriesKey](keys: frozenset[KeyT]) -> list[tuple[KeyT, np.ndarray]]:
-            return [
+        frames = assemble_level_frames(
+            (
                 (key, self._level_series(key, path_by_factor=path_by_factor))
-                for key in sorted(keys, key=lambda key: key.wire_id)
-            ]
-
-        frames = assemble_level_magisteria(
-            asset_price_blocks=blocks(request.required_asset_prices),
-            property_value_blocks=blocks(request.required_property_values),
-            index_blocks=blocks(request.required_index_series),
+                for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
+            ),
             rollout_count=rollout_count,
             horizon_months=horizon_months,
         )
         return SampledExogenousBundle(
-            **frames.as_bundle_kwargs(),
+            levels=frames,
             metadata={
                 "model_version_id": self.model_version_id,
                 "model_id": self.label,

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
 
-from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_magisteria
+from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
@@ -63,18 +63,11 @@ class ConstantFrameModel:
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
 
-        def blocks[KeyT: LevelSeriesKey](keys: frozenset[KeyT]) -> list[tuple[KeyT, np.ndarray]]:
-            return [
+        frames = assemble_level_frames(
+            (
                 (key, _level_matrix(self._require_level(key), request))
-                for key in sorted(keys, key=lambda key: key.wire_id)
-            ]
-
-        # Sample each of the request's three typed channels separately; the bundle's
-        # magisteria never pass through one merged level-key set.
-        frames = assemble_level_magisteria(
-            asset_price_blocks=blocks(request.required_asset_prices),
-            property_value_blocks=blocks(request.required_property_values),
-            index_blocks=blocks(request.required_index_series),
+                for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
+            ),
             rollout_count=request.rollout_count,
             horizon_months=request.horizon_months,
         )
@@ -83,7 +76,7 @@ class ConstantFrameModel:
             for issuer_id in sorted(request.required_private_equity_issuers)
         ]
         return SampledExogenousBundle(
-            **frames.as_bundle_kwargs(),
+            levels=frames,
             private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
             metadata=dict(self.metadata),
         )

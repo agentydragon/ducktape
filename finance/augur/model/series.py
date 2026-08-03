@@ -51,6 +51,16 @@ class _LevelKeyBase(FrozenModel):
     def wire_id(self) -> str:
         raise NotImplementedError
 
+    @property
+    def subid(self) -> str | None:
+        """This key's value in its frame's sub-id column, or `None` for a singleton kind.
+
+        A key knows its own sub-id; the per-kind table in `exogenous.py` only has to know
+        which *column* that sub-id lands in and how to rebuild a key from one.
+        """
+
+        return None
+
 
 class InflationKey(_LevelKeyBase):
     kind: Literal[LevelSeriesKind.INFLATION] = LevelSeriesKind.INFLATION
@@ -76,6 +86,10 @@ class HomeValueKey(_LevelKeyBase):
     def wire_id(self) -> str:
         return f"home_value:{self.location_id}"
 
+    @property
+    def subid(self) -> str | None:
+        return str(self.location_id)
+
 
 class RentKey(_LevelKeyBase):
     kind: Literal[LevelSeriesKind.RENT] = LevelSeriesKind.RENT
@@ -85,6 +99,10 @@ class RentKey(_LevelKeyBase):
     def wire_id(self) -> str:
         return f"rent:{self.location_id}"
 
+    @property
+    def subid(self) -> str | None:
+        return str(self.location_id)
+
 
 class CryptoKey(_LevelKeyBase):
     kind: Literal[LevelSeriesKind.CRYPTO] = LevelSeriesKind.CRYPTO
@@ -93,6 +111,10 @@ class CryptoKey(_LevelKeyBase):
     @property
     def wire_id(self) -> str:
         return f"crypto:{self.symbol}"
+
+    @property
+    def subid(self) -> str | None:
+        return str(self.symbol)
 
 
 # Magisteria: non-PE level series partition by WHAT REFERENCES them. The split is

@@ -2,24 +2,28 @@
 
 Non-PE level series are grouped by **magisterium** — the concern that
 references them (see `augur/plans/typed_series_config.md`). A sampled bundle
-carries three level magisteria plus the PE bundle:
+carries one frame per `LevelSeriesKind` plus the PE bundle.
 
-- `asset_prices` — `sp500` (scalar) + `crypto` (symbol-keyed); price a lot.
-- `property_values` — `home_value` (location-keyed); value a property.
-- `index_series` — `inflation` (scalar) + `rent` (location-keyed); escalate an amount.
+Which magisterium a kind belongs to — asset-price (prices a lot), property-value
+(values a property), index (escalates an amount) — is a row in `LEVEL_KIND_SPECS`,
+not a shape in the storage. That table also carries each kind's frame schema, its
+sub-id column, and how to rebuild a key from a sub-id, so the partition is stated
+once and every helper below derives from it rather than restating it. Adding a kind
+is a row; adding a magisterium is a row plus a request channel.
 
-Each magisterium's frame carries only a sub-id column (symbol / location_id) or
-nothing for a singleton — never a magic-prefix `series_id` string. The model's
-sample/consume path is typed by `LevelSeriesKey` (the magisterium sum), which
-routes internally to the right frame.
+Frames carry only a sub-id column (symbol / location_id) or nothing for a singleton
+— never a magic-prefix `series_id` string. The sample/consume path is typed by
+`LevelSeriesKey`, and the typed per-magisterium request channels keep a lot from
+being priced by inflation as a mypy error rather than a convention.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from numbers import Integral
-from typing import Protocol, TypedDict
+from typing import Protocol, TypedDict, cast
 
 import numpy as np
 import polars as pl
@@ -42,8 +46,8 @@ from finance.augur.model.series import (
     SP500Key,
 )
 
-# Three frame SHAPES (the field name carries the kind; home_value and rent share
-# the LOCATION shape but are distinct frames in different magisteria).
+# Frame SHAPES. Several kinds share a shape (home_value and rent are both location-keyed);
+# the shape is a property of the sub-id, not of the magisterium.
 SCALAR_LEVELS_SCHEMA = pl.Schema({"rollout_index": pl.Int64(), "month_index": pl.Int64(), "value": pl.Float64()})
 SYMBOL_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "symbol": pl.Utf8(), "value": pl.Float64()}
@@ -52,32 +56,95 @@ LOCATION_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "location_id": pl.Utf8(), "value": pl.Float64()}
 )
 
-# Per-kind frame metadata, keyed by the StrEnum kind (whose value equals the
-# bundle field name). `subid_column` is None for singletons.
-_SCHEMA_BY_KIND: dict[LevelSeriesKind, pl.Schema] = {
-    LevelSeriesKind.INFLATION: SCALAR_LEVELS_SCHEMA,
-    LevelSeriesKind.SP500: SCALAR_LEVELS_SCHEMA,
-    LevelSeriesKind.CRYPTO: SYMBOL_LEVELS_SCHEMA,
-    LevelSeriesKind.HOME_VALUE: LOCATION_LEVELS_SCHEMA,
-    LevelSeriesKind.RENT: LOCATION_LEVELS_SCHEMA,
-}
-_SUBID_COLUMN_BY_KIND: dict[LevelSeriesKind, str | None] = {
-    LevelSeriesKind.INFLATION: None,
-    LevelSeriesKind.SP500: None,
-    LevelSeriesKind.CRYPTO: "symbol",
-    LevelSeriesKind.HOME_VALUE: "location_id",
-    LevelSeriesKind.RENT: "location_id",
+
+class Magisterium(StrEnum):
+    """What a level series is referenced BY — the partition `LevelSeriesKey` is split along.
+
+    Values are the request-channel/bundle field stems (`required_asset_prices`,
+    `asset_prices`), so the wire vocabulary follows from the enum rather than being
+    repeated next to it.
+    """
+
+    ASSET_PRICES = "asset_prices"
+    PROPERTY_VALUES = "property_values"
+    INDEX_SERIES = "index_series"
+
+
+@dataclass(frozen=True)
+class LevelKindSpec:
+    """Everything that varies per level-series kind, in one place.
+
+    This table is the whole reason the magisterium partition is not restated in every
+    helper below. Adding a kind is a row here; adding a magisterium is a row here plus a
+    request channel on `ExogenousSamplingRequest`. Nothing else fans out by hand.
+    """
+
+    magisterium: Magisterium
+    schema: pl.Schema
+    subid_column: str | None
+    key_for_subid: Callable[[str], LevelSeriesKey]
+
+
+LEVEL_KIND_SPECS: Mapping[LevelSeriesKind, LevelKindSpec] = {
+    LevelSeriesKind.SP500: LevelKindSpec(Magisterium.ASSET_PRICES, SCALAR_LEVELS_SCHEMA, None, lambda _: SP500Key()),
+    LevelSeriesKind.CRYPTO: LevelKindSpec(
+        Magisterium.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: CryptoKey(symbol=CryptoSymbol(s))
+    ),
+    LevelSeriesKind.HOME_VALUE: LevelKindSpec(
+        Magisterium.PROPERTY_VALUES,
+        LOCATION_LEVELS_SCHEMA,
+        "location_id",
+        lambda s: HomeValueKey(location_id=LocationId(s)),
+    ),
+    LevelSeriesKind.INFLATION: LevelKindSpec(
+        Magisterium.INDEX_SERIES, SCALAR_LEVELS_SCHEMA, None, lambda _: InflationKey()
+    ),
+    LevelSeriesKind.RENT: LevelKindSpec(
+        Magisterium.INDEX_SERIES, LOCATION_LEVELS_SCHEMA, "location_id", lambda s: RentKey(location_id=LocationId(s))
+    ),
 }
 
 
-def _key_subid(key: LevelSeriesKey) -> str:
-    match key:
-        case CryptoKey(symbol=symbol):
-            return str(symbol)
-        case HomeValueKey(location_id=location_id) | RentKey(location_id=location_id):
-            return str(location_id)
-        case InflationKey() | SP500Key():
-            raise ValueError(f"{key.kind} is a singleton level series and has no sub-id")
+def magisterium_of(key: LevelSeriesKey) -> Magisterium:
+    return LEVEL_KIND_SPECS[key.kind].magisterium
+
+
+@dataclass(frozen=True)
+class LevelFrames:
+    """Sampled level frames, one per `LevelSeriesKind`, flat.
+
+    Flat by kind rather than nested by magisterium: the magisterium is a property of the
+    kind (`LEVEL_KIND_SPECS`), so nesting it in the storage shape would force every
+    producer, merger and consumer to restate the partition. Callers that want one
+    magisterium ask for it (`by_magisterium`); callers that want one series ask by kind.
+    """
+
+    by_kind: Mapping[LevelSeriesKind, pl.DataFrame]
+
+    def __post_init__(self) -> None:
+        missing = set(LevelSeriesKind) - set(self.by_kind)
+        if missing:
+            raise ValueError(f"LevelFrames missing kinds {sorted(missing)}")
+        for kind, frame in self.by_kind.items():
+            _require_schema(frame, LEVEL_KIND_SPECS[kind].schema, frame_name=str(kind))
+
+    @classmethod
+    def empty(cls) -> LevelFrames:
+        return cls(by_kind={kind: spec.schema.to_frame() for kind, spec in LEVEL_KIND_SPECS.items()})
+
+    @classmethod
+    def from_partial(cls, frames: Mapping[LevelSeriesKind, pl.DataFrame]) -> LevelFrames:
+        """Build from the kinds a caller actually produced; the rest default to empty."""
+
+        return cls(by_kind={kind: frames.get(kind, spec.schema.to_frame()) for kind, spec in LEVEL_KIND_SPECS.items()})
+
+    def frame(self, kind: LevelSeriesKind) -> pl.DataFrame:
+        return self.by_kind[kind]
+
+    def by_magisterium(self, magisterium: Magisterium) -> dict[LevelSeriesKind, pl.DataFrame]:
+        return {
+            kind: frame for kind, frame in self.by_kind.items() if LEVEL_KIND_SPECS[kind].magisterium is magisterium
+        }
 
 
 @dataclass(frozen=True)
@@ -126,61 +193,24 @@ class ExogenousSamplingRequest:
 
 
 @dataclass(frozen=True)
-class AssetPriceFrames:
-    """Asset-price magisterium: per-unit price paths that value a holding/lot."""
-
-    sp500: pl.DataFrame = field(default_factory=SCALAR_LEVELS_SCHEMA.to_frame)
-    crypto: pl.DataFrame = field(default_factory=SYMBOL_LEVELS_SCHEMA.to_frame)
-
-
-@dataclass(frozen=True)
-class IndexSeriesFrames:
-    """Index magisterium: level paths that escalate a recurring amount."""
-
-    inflation: pl.DataFrame = field(default_factory=SCALAR_LEVELS_SCHEMA.to_frame)
-    rent: pl.DataFrame = field(default_factory=LOCATION_LEVELS_SCHEMA.to_frame)
-
-
-@dataclass(frozen=True)
 class SampledExogenousBundle:
     """Polars-native joint sample of exogenous levels and PE protocol.
 
-    Level series are grouped by magisterium; `property_values` is the single
-    `home_value` frame (location-keyed). Each frame's identity is its kind, so
-    rows carry only a sub-id column (symbol / location_id) or nothing for a
-    singleton. `private_equity` carries the typed PE protocol bundle per issuer.
+    `levels` holds one frame per kind (see `LevelFrames`); `private_equity` carries the
+    typed PE protocol bundle per issuer.
     """
 
-    asset_prices: AssetPriceFrames = field(default_factory=AssetPriceFrames)
-    property_values: pl.DataFrame = field(default_factory=LOCATION_LEVELS_SCHEMA.to_frame)
-    index_series: IndexSeriesFrames = field(default_factory=IndexSeriesFrames)
+    levels: LevelFrames = field(default_factory=LevelFrames.empty)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
     metadata: Mapping[str, object] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        for kind in LevelSeriesKind:
-            _require_schema(self._frame_for_kind(kind), _SCHEMA_BY_KIND[kind], frame_name=str(kind))
-
-    def _frame_for_kind(self, kind: LevelSeriesKind) -> pl.DataFrame:
-        match kind:
-            case LevelSeriesKind.SP500:
-                return self.asset_prices.sp500
-            case LevelSeriesKind.CRYPTO:
-                return self.asset_prices.crypto
-            case LevelSeriesKind.HOME_VALUE:
-                return self.property_values
-            case LevelSeriesKind.INFLATION:
-                return self.index_series.inflation
-            case LevelSeriesKind.RENT:
-                return self.index_series.rent
 
     def level_matrix(self, key: LevelSeriesKey, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
 
-        frame = self._frame_for_kind(key.kind)
-        subid_column = _SUBID_COLUMN_BY_KIND[key.kind]
-        if subid_column is not None:
-            frame = frame.filter(pl.col(subid_column) == _key_subid(key))
+        spec = LEVEL_KIND_SPECS[key.kind]
+        frame = self.levels.frame(key.kind)
+        if spec.subid_column is not None:
+            frame = frame.filter(pl.col(spec.subid_column) == key.subid)
         return _matrix_from_long_frame(
             frame,
             value_column="value",
@@ -192,7 +222,12 @@ class SampledExogenousBundle:
 
 
 class LevelRequestChannels(TypedDict):
-    """The three magisterium request channels of `ExogenousSamplingRequest`."""
+    """The magisterium request channels of `ExogenousSamplingRequest`.
+
+    Typed per magisterium (not one flat set) so a consumer cannot ask for a rent series
+    where a lot price is expected. That type safety is the one thing worth restating the
+    partition for; everything mechanical derives from `LEVEL_KIND_SPECS`.
+    """
 
     required_asset_prices: frozenset[AssetPriceKey]
     required_property_values: frozenset[PropertyValueKey]
@@ -202,57 +237,23 @@ class LevelRequestChannels(TypedDict):
 def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelRequestChannels:
     """Partition a mixed set of level keys into the magisterium request channels.
 
-    For callers that hold a `LevelSeriesKey` set (e.g. a sanity spec listing
-    required series across magisteria) and want to splat it into the request:
+    For callers that hold a `LevelSeriesKey` set (e.g. a sanity spec listing required
+    series across magisteria) and want to splat it into the request:
     `ExogenousSamplingRequest(..., **level_series_request_channels(keys))`.
     """
 
-    asset_prices: set[AssetPriceKey] = set()
-    property_values: set[PropertyValueKey] = set()
-    index_series: set[IndexSeriesKey] = set()
+    by_magisterium: dict[Magisterium, set[LevelSeriesKey]] = {m: set() for m in Magisterium}
     for key in keys:
-        match key:
-            case SP500Key() | CryptoKey():
-                asset_prices.add(key)
-            case HomeValueKey():
-                property_values.add(key)
-            case InflationKey() | RentKey():
-                index_series.add(key)
+        by_magisterium[magisterium_of(key)].add(key)
+    # The casts are the one place the runtime partition meets the static one; every key
+    # routed here came from `LEVEL_KIND_SPECS`, so membership is exactly the union.
     return {
-        "required_asset_prices": frozenset(asset_prices),
-        "required_property_values": frozenset(property_values),
-        "required_index_series": frozenset(index_series),
+        "required_asset_prices": cast("frozenset[AssetPriceKey]", frozenset(by_magisterium[Magisterium.ASSET_PRICES])),
+        "required_property_values": cast(
+            "frozenset[PropertyValueKey]", frozenset(by_magisterium[Magisterium.PROPERTY_VALUES])
+        ),
+        "required_index_series": cast("frozenset[IndexSeriesKey]", frozenset(by_magisterium[Magisterium.INDEX_SERIES])),
     }
-
-
-def partition_level_blocks(
-    blocks: Iterable[tuple[LevelSeriesKey, np.ndarray]],
-) -> tuple[
-    list[tuple[AssetPriceKey, np.ndarray]],
-    list[tuple[PropertyValueKey, np.ndarray]],
-    list[tuple[IndexSeriesKey, np.ndarray]],
-]:
-    """Partition flat `(LevelSeriesKey, matrix)` blocks into the three magisterium groups.
-
-    The typed fan-out sibling of `level_series_request_channels` (which partitions bare
-    keys). For callers whose level identity is still flat — the trained models keyed by a
-    flat factor tuple — this routes each sampled block to its magisterium so the three lists
-    can be splatted into `assemble_level_magisteria`. The primary per-series providers never
-    need it: they hold their specs magisterium-separated from the start.
-    """
-
-    asset_price_blocks: list[tuple[AssetPriceKey, np.ndarray]] = []
-    property_value_blocks: list[tuple[PropertyValueKey, np.ndarray]] = []
-    index_blocks: list[tuple[IndexSeriesKey, np.ndarray]] = []
-    for key, matrix in blocks:
-        match key:
-            case SP500Key() | CryptoKey():
-                asset_price_blocks.append((key, matrix))
-            case HomeValueKey():
-                property_value_blocks.append((key, matrix))
-            case InflationKey() | RentKey():
-                index_blocks.append((key, matrix))
-    return asset_price_blocks, property_value_blocks, index_blocks
 
 
 class Sampler(Protocol):
@@ -291,105 +292,50 @@ def _level_row_frame(
     if levels.shape != expected_shape:
         raise ValueError(f"series {key.wire_id!r} produced levels with shape {levels.shape}; expected {expected_shape}")
     rollout_idx, month_idx = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
+    spec = LEVEL_KIND_SPECS[key.kind]
     columns: dict[str, object] = {"rollout_index": rollout_idx, "month_index": month_idx}
-    subid_column = _SUBID_COLUMN_BY_KIND[key.kind]
-    if subid_column is not None:
-        columns[subid_column] = [_key_subid(key)] * (rollout_count * (horizon_months + 1))
+    if spec.subid_column is not None:
+        columns[spec.subid_column] = [key.subid] * (rollout_count * (horizon_months + 1))
     columns["value"] = levels.reshape(-1)
-    return pl.DataFrame(columns, schema=_SCHEMA_BY_KIND[key.kind])
+    return pl.DataFrame(columns, schema=spec.schema)
 
 
-class LevelBundleKwargs(TypedDict):
-    """The level-magisterium fields of `SampledExogenousBundle`, splattable into it.
+def assemble_level_frames(
+    blocks: Iterable[tuple[LevelSeriesKey, np.ndarray]], *, rollout_count: int, horizon_months: int
+) -> LevelFrames:
+    """Assemble sampled `(key, matrix)` blocks into per-kind frames.
 
-    A `TypedDict` (not `dict[str, object]`) so `SampledExogenousBundle(**kwargs,
-    private_equity=…, metadata=…)` typechecks at every producer/merger call site.
+    One flat iterable, because each key already knows its kind and each kind already
+    knows its magisterium. Producers used to hand a separate list per magisterium and
+    every one of them had to remember all of them — which is exactly how a channel gets
+    silently dropped.
     """
 
-    asset_prices: AssetPriceFrames
-    property_values: pl.DataFrame
-    index_series: IndexSeriesFrames
-
-
-@dataclass(frozen=True)
-class LevelMagisteria:
-    """The three level magisteria, assembled and ready to splat into a bundle."""
-
-    asset_prices: AssetPriceFrames
-    property_values: pl.DataFrame
-    index_series: IndexSeriesFrames
-
-    def as_bundle_kwargs(self) -> LevelBundleKwargs:
-        return {
-            "asset_prices": self.asset_prices,
-            "property_values": self.property_values,
-            "index_series": self.index_series,
-        }
-
-
-def assemble_level_magisteria(
-    *,
-    asset_price_blocks: Iterable[tuple[AssetPriceKey, np.ndarray]],
-    property_value_blocks: Iterable[tuple[PropertyValueKey, np.ndarray]],
-    index_blocks: Iterable[tuple[IndexSeriesKey, np.ndarray]],
-    rollout_count: int,
-    horizon_months: int,
-) -> LevelMagisteria:
-    """Assemble sampled `(key, matrix)` blocks into the three magisterium frame groups.
-
-    Blocks arrive already separated by magisterium — there is no cross-magisterium
-    bucket to route. Within a magisterium the singleton-vs-keyed split (sp500 vs
-    crypto, inflation vs rent) is a local `isinstance` on that magisterium's own key
-    union; the property-value magisterium has the single `home_value` kind.
-    """
-
-    def row(key: LevelSeriesKey, matrix: np.ndarray) -> pl.DataFrame:
-        return _level_row_frame(key, matrix, rollout_count=rollout_count, horizon_months=horizon_months)
-
-    sp500_rows: list[pl.DataFrame] = []
-    crypto_rows: list[pl.DataFrame] = []
-    for asset_key, asset_matrix in asset_price_blocks:
-        (sp500_rows if isinstance(asset_key, SP500Key) else crypto_rows).append(row(asset_key, asset_matrix))
-
-    inflation_rows: list[pl.DataFrame] = []
-    rent_rows: list[pl.DataFrame] = []
-    for index_key, index_matrix in index_blocks:
-        (inflation_rows if isinstance(index_key, InflationKey) else rent_rows).append(row(index_key, index_matrix))
-
-    home_value_rows = [row(property_key, property_matrix) for property_key, property_matrix in property_value_blocks]
-
-    return LevelMagisteria(
-        asset_prices=AssetPriceFrames(
-            sp500=concat_frames(sp500_rows, SCALAR_LEVELS_SCHEMA),
-            crypto=concat_frames(crypto_rows, SYMBOL_LEVELS_SCHEMA),
-        ),
-        property_values=concat_frames(home_value_rows, LOCATION_LEVELS_SCHEMA),
-        index_series=IndexSeriesFrames(
-            inflation=concat_frames(inflation_rows, SCALAR_LEVELS_SCHEMA),
-            rent=concat_frames(rent_rows, LOCATION_LEVELS_SCHEMA),
-        ),
+    rows_by_kind: dict[LevelSeriesKind, list[pl.DataFrame]] = {kind: [] for kind in LEVEL_KIND_SPECS}
+    for key, matrix in blocks:
+        rows_by_kind[key.kind].append(
+            _level_row_frame(key, matrix, rollout_count=rollout_count, horizon_months=horizon_months)
+        )
+    return LevelFrames(
+        by_kind={kind: concat_frames(rows, LEVEL_KIND_SPECS[kind].schema) for kind, rows in rows_by_kind.items()}
     )
 
 
-def merge_level_magisteria(left: SampledExogenousBundle, right: SampledExogenousBundle) -> LevelBundleKwargs:
+def merge_level_frames(left: LevelFrames, right: LevelFrames) -> LevelFrames:
     """Per-kind concat of two bundles' level frames, rejecting duplicate sub-ids / singleton collisions."""
 
     def merge(kind: LevelSeriesKind) -> pl.DataFrame:
-        left_frame = left._frame_for_kind(kind)
-        right_frame = right._frame_for_kind(kind)
-        subid_column = _SUBID_COLUMN_BY_KIND[kind]
-        if subid_column is None:
+        spec = LEVEL_KIND_SPECS[kind]
+        left_frame = left.frame(kind)
+        right_frame = right.frame(kind)
+        if spec.subid_column is None:
             if not left_frame.is_empty() and not right_frame.is_empty():
                 raise ValueError(f"composite exogenous providers both produced the singleton {kind} series")
         else:
-            _reject_duplicate_subids(left_frame, right_frame, subid_column=subid_column, label=f"{kind} series")
-        return concat_frames([left_frame, right_frame], _SCHEMA_BY_KIND[kind])
+            _reject_duplicate_subids(left_frame, right_frame, subid_column=spec.subid_column, label=f"{kind} series")
+        return concat_frames([left_frame, right_frame], spec.schema)
 
-    return LevelMagisteria(
-        asset_prices=AssetPriceFrames(sp500=merge(LevelSeriesKind.SP500), crypto=merge(LevelSeriesKind.CRYPTO)),
-        property_values=merge(LevelSeriesKind.HOME_VALUE),
-        index_series=IndexSeriesFrames(inflation=merge(LevelSeriesKind.INFLATION), rent=merge(LevelSeriesKind.RENT)),
-    ).as_bundle_kwargs()
+    return LevelFrames(by_kind={kind: merge(kind) for kind in LEVEL_KIND_SPECS})
 
 
 def _reject_duplicate_subids(left: pl.DataFrame, right: pl.DataFrame, *, subid_column: str, label: str) -> None:
@@ -401,31 +347,27 @@ def _reject_duplicate_subids(left: pl.DataFrame, right: pl.DataFrame, *, subid_c
 def level_value_rows(sampled: SampledExogenousBundle) -> list[tuple[LevelSeriesKey, pl.DataFrame]]:
     """Yield `(key, (rollout_index, month_index, value) frame)` for every distinct series.
 
-    The model-side export the sim handoff builds its flat index from — the sim
-    stamps `series_id = key.wire_id` (or builds a typed intern table). No
-    `series_id` strings are constructed here.
+    The model-side export the sim handoff builds its flat index from — the sim stamps
+    `series_id = key.wire_id` (or builds a typed intern table). No `series_id` strings are
+    constructed here.
     """
 
     rows: list[tuple[LevelSeriesKey, pl.DataFrame]] = []
-    if not sampled.index_series.inflation.is_empty():
-        rows.append((InflationKey(), sampled.index_series.inflation))
-    if not sampled.asset_prices.sp500.is_empty():
-        rows.append((SP500Key(), sampled.asset_prices.sp500))
-    for symbol in sorted(_string_values(sampled.asset_prices.crypto, "symbol")):
-        frame = sampled.asset_prices.crypto.filter(pl.col("symbol") == symbol).select(
-            "rollout_index", "month_index", "value"
+    for kind, spec in LEVEL_KIND_SPECS.items():
+        frame = sampled.levels.frame(kind)
+        if frame.is_empty():
+            continue
+        if spec.subid_column is None:
+            rows.append((spec.key_for_subid(""), frame))
+            continue
+        subid_column = spec.subid_column
+        rows.extend(
+            (
+                spec.key_for_subid(subid),
+                frame.filter(pl.col(subid_column) == subid).select("rollout_index", "month_index", "value"),
+            )
+            for subid in sorted(_string_values(frame, subid_column))
         )
-        rows.append((CryptoKey(symbol=CryptoSymbol(symbol)), frame))
-    for loc in sorted(_string_values(sampled.property_values, "location_id")):
-        frame = sampled.property_values.filter(pl.col("location_id") == loc).select(
-            "rollout_index", "month_index", "value"
-        )
-        rows.append((HomeValueKey(location_id=LocationId(loc)), frame))
-    for loc in sorted(_string_values(sampled.index_series.rent, "location_id")):
-        frame = sampled.index_series.rent.filter(pl.col("location_id") == loc).select(
-            "rollout_index", "month_index", "value"
-        )
-        rows.append((RentKey(location_id=LocationId(loc)), frame))
     return rows
 
 
@@ -460,13 +402,13 @@ def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled
 
 
 def _bundle_has_key(sampled: SampledExogenousBundle, key: LevelSeriesKey) -> bool:
-    frame = sampled._frame_for_kind(key.kind)
+    spec = LEVEL_KIND_SPECS[key.kind]
+    frame = sampled.levels.frame(key.kind)
     if frame.is_empty():
         return False
-    subid_column = _SUBID_COLUMN_BY_KIND[key.kind]
-    if subid_column is None:
+    if spec.subid_column is None:
         return True
-    return _key_subid(key) in _string_values(frame, subid_column)
+    return str(key.subid) in _string_values(frame, spec.subid_column)
 
 
 _EMPTY_LEVEL_ANCHORS: Mapping[LevelSeriesKey, float] = {}
@@ -498,19 +440,16 @@ def anchor_sampled_series_levels(
     private_equity = _anchor_private_equity_marks(sampled.private_equity, pe_anchors_typed)
 
     # Partition anchors by kind -> {sub-id-or-None: target month-0 value}.
-    anchors_by_kind: dict[LevelSeriesKind, dict[str | None, float]] = {kind: {} for kind in LevelSeriesKind}
+    anchors_by_kind: dict[LevelSeriesKind, dict[str | None, float]] = {kind: {} for kind in LEVEL_KIND_SPECS}
     for key, value in level_anchors_typed.items():
-        subid = None if _SUBID_COLUMN_BY_KIND[key.kind] is None else _key_subid(key)
-        anchors_by_kind[key.kind][subid] = float(value)
-
-    def rescale(kind: LevelSeriesKind) -> pl.DataFrame:
-        return _anchor_level_frame(sampled._frame_for_kind(kind), kind, anchors_by_kind[kind])
+        anchors_by_kind[key.kind][key.subid] = float(value)
 
     return SampledExogenousBundle(
-        asset_prices=AssetPriceFrames(sp500=rescale(LevelSeriesKind.SP500), crypto=rescale(LevelSeriesKind.CRYPTO)),
-        property_values=rescale(LevelSeriesKind.HOME_VALUE),
-        index_series=IndexSeriesFrames(
-            inflation=rescale(LevelSeriesKind.INFLATION), rent=rescale(LevelSeriesKind.RENT)
+        levels=LevelFrames(
+            by_kind={
+                kind: _anchor_level_frame(sampled.levels.frame(kind), kind, anchors_by_kind[kind])
+                for kind in LEVEL_KIND_SPECS
+            }
         ),
         private_equity=private_equity,
         metadata={**sampled.metadata, **metadata_extras},
@@ -524,8 +463,8 @@ def _anchor_level_frame(
 
     if frame.is_empty() or not anchors_for_kind:
         return frame
-    schema = _SCHEMA_BY_KIND[kind]
-    subid_column = _SUBID_COLUMN_BY_KIND[kind]
+    schema = LEVEL_KIND_SPECS[kind].schema
+    subid_column = LEVEL_KIND_SPECS[kind].subid_column
 
     if subid_column is None:
         anchor_value = next(iter(anchors_for_kind.values()))
