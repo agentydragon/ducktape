@@ -4,7 +4,16 @@
 # agent runtime. The image also carries the same local build/authoring tools as
 # the Haku sandbox so the initial agent can reshape its persistent workspace and
 # work on haku-state without provisioning a second exec target.
-FROM ghcr.io/openclaw/openclaw:2026.7.1
+# CLEANUP(added 2026-08-03): move back to the stable channel once 2026.7.2
+#   ships stable (npm dist-tag `latest` leaves 2026.7.1-2). This is pinned to a
+#   beta because it is the first release that knows Claude Opus 5 exists:
+#   2026.7.1 has no `claude-opus-5` row in `CLAUDE_CLI_CONTEXT_WINDOWS`, so the
+#   catalog falls back to `DEFAULT_CONTEXT_WINDOW = 2e5` and the session
+#   compacts at a fifth of the real window. The beta adds the row at 1e6 and
+#   moves `CLAUDE_CLI_DEFAULT_MODEL_REF` to `claude-cli/claude-opus-5`.
+#   2026.7.1-1 and -2 are npm-only patches with no image on GHCR, so there is
+#   no newer stable tag to take instead.
+FROM ghcr.io/openclaw/openclaw:2026.7.2-beta.7
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 USER root
