@@ -160,12 +160,12 @@ live source reads). Channels out, and what fences each:
   bounds bulk exfiltration, not this. Accepted rather than fixed: the mitigations (a resolver
   allowlist, or forwarding only names the agent is meant to reach) cost more than the channel
   is worth while laundered exfil through operator-visible surfaces remains open anyway.
-- **`ha_eval_template` and `ha_get_camera_image` carry standing authority.** Both sit in the
-  `home_assistant_reads` atom of `haku_v1`
-  (<../../cluster/k8s/haku/console/config.yaml>), so both auto-approve. Template evaluation is
-  arbitrary Jinja execution inside Home Assistant, and camera reads capture the operator's home;
-  neither is a read in the sense the atom's name implies. Decide deliberately whether they belong
-  in standing authority rather than inheriting them as "reads".
+- **`ha_get_camera_image` carries standing authority.** It sits in the `home_assistant_reads`
+  atom of `haku_v1` (<../../cluster/k8s/haku/console/config.yaml>), so it auto-approves: Haku can
+  capture the operator's home with no approval event. Kept deliberately — it is a genuine read and
+  gating it would tax routine use — but that is a preference, so record it rather than let the
+  atom's name imply it. `ha_eval_template` sat in the same atom and was removed (#3700):
+  evaluating arbitrary Jinja inside Home Assistant is execution, not a read.
 - **Invariant #2's read-only rule is review-defended, not test-enforced.** Every scope in
   Airlock's `google` grant is `.readonly` today
   (<../../cluster/k8s/agents/airlock/config.yaml>), and that is what makes the auto-approved
