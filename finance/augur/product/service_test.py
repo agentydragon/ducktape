@@ -107,7 +107,7 @@ class MissingRequiredExogenousModel:
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
-        # Empty bundle (all magisteria default to typed-empty frames) — models the
+        # Empty bundle (all roles default to typed-empty frames) — models the
         # provider that fails to satisfy the request's required level series.
         return SampledExogenousBundle()
 

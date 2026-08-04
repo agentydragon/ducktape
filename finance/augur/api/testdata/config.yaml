@@ -60,7 +60,7 @@ models:
       #   monthly_log_return_sigma = annual_vol / sqrt(12)
       #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
       type: independent
-      # Typed magisterium groups: asset_prices (sp500 singleton + crypto by symbol),
+      # Typed role groups: asset_prices (sp500 singleton + crypto by symbol),
       # property_values (home_value by location), index_series (inflation singleton + rent
       # by location). No magic-prefix keys.
       asset_prices:

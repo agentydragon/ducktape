@@ -34,9 +34,9 @@ class LevelSeriesKind(StrEnum):
     `StrEnum` (not `IntEnum`) so the discriminator renders as a human-readable
     `kind: crypto` wherever a `LevelSeriesKey` is Pydantic-serialized (config,
     API wire, trained artifacts). The values double as the per-kind field names
-    within each magisterium group (`AssetPriceGroups.sp500`/`.crypto`, etc.) and
+    within each role group (`AssetPriceGroups.sp500`/`.crypto`, etc.) and
     on the sampled-levels bundle, so `key.kind` is both the discriminator and the
-    in-magisterium attribute name.
+    in-role attribute name.
     """
 
     INFLATION = "inflation"
@@ -117,8 +117,8 @@ class CryptoKey(_LevelKeyBase):
         return str(self.symbol)
 
 
-# Magisteria: non-PE level series partition by WHAT REFERENCES them. The split is
-# load-bearing typing — a reference field annotated with one magisterium cannot be
+# Series roles: non-PE level series partition by WHAT REFERENCES them. The split is
+# load-bearing typing — a reference field annotated with one role cannot be
 # wired to a series from another (a lot priced by inflation, rent escalated by
 # sp500, …), so those cross-wirings are mypy errors. `LevelSeriesKey` is the sum,
 # used only where a helper genuinely ranges over all non-PE level series.

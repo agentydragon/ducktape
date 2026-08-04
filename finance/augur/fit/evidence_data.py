@@ -203,7 +203,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     case_shiller = loading.monthly_last(_fred_frame(sources.FRED_SFXRSA))
     fhfa = loading.monthly_last(_fred_frame(sources.FRED_FHFA_SF))
     mortgage30 = _fred_frame(sources.FRED_MORTGAGE30)
-    # Home-value and rent evidence stay keyed by LocationId (their magisterium-natural key); the
+    # Home-value and rent evidence stay keyed by LocationId (their role-natural key); the
     # flat factor wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
     # boundaries below.
     home_values = {

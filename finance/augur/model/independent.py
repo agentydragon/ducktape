@@ -1,7 +1,7 @@
 """Independent-per-series exogenous provider configured from YAML.
 
 The provider enumerates every external series the simulator may request, grouped
-by magisterium (asset-price `sp500`/`crypto`; property-value `home_value`; index
+by role (asset-price `sp500`/`crypto`; property-value `home_value`; index
 `inflation`/`rent`), each mapped to a scalar level model (Constant / Deterministic
 / GBM). Private-equity marks are a separate `private_equity_marks` map keyed by
 issuer id — they are not level series and travel via the typed PE bundle /
@@ -25,17 +25,17 @@ from pydantic import Field
 from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.gbm import GeometricBrownian
-from finance.augur.model.level_series_groups import LevelSeriesMagisteria
+from finance.augur.model.level_series_groups import LevelSeriesGroups
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 from finance.augur.model.series_model import ScalarSeriesSpec, sample_independent_levels
 
 
-class IndependentProviderConfig(LevelSeriesMagisteria[ScalarSeriesSpec]):
+class IndependentProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
     """YAML provider that enumerates every level series and PE mark explicitly.
 
-    Level series are the three magisterium sub-groups inherited from
-    `LevelSeriesMagisteria` (`asset_prices` = `sp500`/`crypto`; `property_values` =
+    Level series are the role sub-groups inherited from
+    `LevelSeriesGroups` (`asset_prices` = `sp500`/`crypto`; `property_values` =
     `home_value`; `index_series` = `inflation`/`rent`). `private_equity_marks` carries
     per-issuer mark specs separately — PE marks are not level series. `extra="forbid"`
     (from `FrozenModel`) rejects stray keys, including legacy `"crypto:btc"`-style wire ids.
@@ -45,7 +45,7 @@ class IndependentProviderConfig(LevelSeriesMagisteria[ScalarSeriesSpec]):
     private_equity_marks: dict[IssuerId, ScalarSeriesSpec] = Field(default_factory=dict)
 
     def realize_model(self) -> IndependentModel:
-        # Pass the magisterium sub-groups through structurally (no flatten/re-expand), dropping
+        # Pass the role sub-groups through structurally (no flatten/re-expand), dropping
         # the config-only `type` sibling; PE marks travel separately as `pe_marks`.
         return IndependentModel(
             asset_prices=self.asset_prices,
@@ -55,15 +55,15 @@ class IndependentProviderConfig(LevelSeriesMagisteria[ScalarSeriesSpec]):
         )
 
 
-class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
+class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
     """Runtime exogenous model built from an `IndependentProviderConfig`.
 
     Implements `Sampler` (the runtime sampling contract) and `Scorable` (the
     metric battery contract). No `Fittable` — params are YAML-set, not fit.
 
-    Holds the level-series specs as the three magisterium sub-groups inherited from
-    `LevelSeriesMagisteria` (`asset_prices`/`property_values`/`index_series`) — the same
-    magisterium-separated shape as the config and the sampled bundle, so nothing is flattened
+    Holds the level-series specs as the role sub-groups inherited from
+    `LevelSeriesGroups` (`asset_prices`/`property_values`/`index_series`) — the same
+    role-separated shape as the config and the sampled bundle, so nothing is flattened
     to an opaque key/value map. `pe_marks` is keyed by typed `IssuerId`. The level-vs-PE split
     is structural (it came from typed config), so this model never parses a prefix.
     """
@@ -90,8 +90,8 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
         return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # PE marks travel via the typed PE bundle / metadata, never a level magisterium
-        # — the inherited magisterium groups carry only level series.
+        # PE marks travel via the typed PE bundle / metadata, never a level role
+        # — the inherited role groups carry only level series.
         frames = sample_independent_levels(self, request)
         return SampledExogenousBundle(
             levels=frames,
@@ -137,7 +137,7 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
     def _level_specs_by_level_key(self) -> dict[LevelSeriesKey, ScalarSeriesSpec]:
         """The provider's level specs keyed by their typed `LevelSeriesKey`.
 
-        The magisterium projections union into one `LevelSeriesKey`-keyed map for
+        The role projections union into one `LevelSeriesKey`-keyed map for
         `factor_names` / `predictive`.
         """
 

@@ -281,10 +281,10 @@ class StateSpaceModel:
             issuer_id: self._private_equity_event_series(issuer_id, request)
             for issuer_id in sorted(self.artifact.private_equity_event_priors)
         }
-        # PE marks live in the canonical PrivateEquityBundle below; the level magisteria
+        # PE marks live in the canonical PrivateEquityBundle below; the level roles
         # carry only non-PE series. Each on-disk factor name is classified once to its typed
         # FactorKey; post-collapse a level factor *is* its level key, so it routes straight
-        # into the right magisterium with no source-name indirection.
+        # into the right role with no source-name indirection.
         level_by_key: dict[LevelSeriesKey, np.ndarray] = {}
         observed_mark_by_issuer: dict[str, np.ndarray] = {}
         for factor_name, classification in zip(

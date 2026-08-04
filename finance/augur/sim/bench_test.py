@@ -64,8 +64,8 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
     )
-    # Extend the (all-crypto) base model in place within its asset-price magisterium —
-    # add one new crypto symbol, leaving the other magisteria untouched.
+    # Extend the (all-crypto) base model in place within its asset-price role —
+    # add one new crypto symbol, leaving the other roles untouched.
     base_model = base.external_series.model
     extended_model = base_model.model_copy(
         update={

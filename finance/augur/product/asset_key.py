@@ -93,7 +93,7 @@ def asset_price_key(asset: AssetKey) -> AssetPriceKey:
     """Map a tradable `AssetKey` (a lot/sale identifier) to its asset-price series key.
 
     A lot is priced by an asset-price series, so the result is narrowed to the
-    `AssetPriceKey` magisterium — never an index or property-value series. Private
+    `AssetPriceKey` role — never an index or property-value series. Private
     equity is priced by its own typed `PrivateEquityBundle`, not a level series, so
     it has no asset-price key and raises.
     """

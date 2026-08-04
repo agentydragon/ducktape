@@ -21,7 +21,7 @@ _DEFAULT_SYMBOL = CryptoSymbol("vti")
 @pytest.fixture
 def deterministic_series_bundle() -> DeterministicSeriesModelBundleFactory:
     def build(levels: Sequence[float], *, symbol: CryptoSymbol = _DEFAULT_SYMBOL) -> SeriesModelBundle:
-        # The fixture's series lives in the asset-price magisterium (a crypto symbol); all
+        # The fixture's series lives in the asset-price role (a crypto symbol); all
         # callers take the default. No flat LevelSeriesKey map is constructed.
         return SeriesModelBundle.independent(
             asset_prices=AssetPriceGroups(crypto={symbol: Deterministic(levels=list(levels))})

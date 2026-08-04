@@ -14,7 +14,7 @@ prediction-market prices, scoring `D_KL(market ‖ model)` per market.
 
 The augur model is really a **single joint generative distribution** over many
 observables over time — `sp500`, `inflation`, `crypto:*`, `home_value:*`,
-`rent:*` (the level magisteria) **plus** per-issuer PE event/valuation paths.
+`rent:*` (the level roles) **plus** per-issuer PE event/valuation paths.
 Each prediction market is a **marginal**: a (usually Bernoulli, sometimes
 categorical) functional of one rollout's trajectory, with a market-implied
 probability. We want to measure how well the joint model reproduces the

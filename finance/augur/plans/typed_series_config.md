@@ -28,7 +28,7 @@ The clean config surfaces are largely typed already:
 
 - `LevelSeriesKind` and `AssetKind` are string enums.
 - `LevelSeriesGroups[ValueT]` represents level-series config by structural
-  magisteria.
+  roles.
 - Independent provider config, independent series models, portfolio
   `value_series`, and `sample_sanity` checks accept typed keys.
 - `SampledExogenousBundle` already has per-kind level fields plus a typed

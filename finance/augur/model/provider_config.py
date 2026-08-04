@@ -44,10 +44,10 @@ issuers:
 
 ```yaml
 # Independent-per-series provider. Every level series is enumerated inside its
-# magisterium group (asset_prices / property_values / index_series); singletons are
+# role group (asset_prices / property_values / index_series); singletons are
 # scalar, crypto/home_value/rent are keyed by sub-id. PE issuer marks live in their own
 # `private_equity_marks` map keyed by issuer id — they are not level series, so they are
-# not enumerated in any magisterium. No magic-prefix keys anywhere.
+# not enumerated in any role. No magic-prefix keys anywhere.
 type: independent
 asset_prices:
   sp500: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00477, monthly_log_return_sigma: 0.04619}

@@ -5,9 +5,9 @@ driver. Simple marginal models such as deterministic levels and GBM are
 components; the model API is joint so calibrated providers can sample
 correlated trajectories in one call.
 
-Series are grouped by magisterium (asset-price sp500/crypto; property-value home_value;
-index inflation/rent) via `LevelSeriesMagisteria` — there are no magic-prefix string
-keys; the level/PE split and magisterium grouping are structural.
+Series are grouped by role (asset-price sp500/crypto; property-value home_value;
+index inflation/rent) via `LevelSeriesGroups` — there are no magic-prefix string
+keys; the level/PE split and role grouping are structural.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import (
     AssetPriceGroups,
     IndexSeriesGroups,
-    LevelSeriesMagisteria,
+    LevelSeriesGroups,
     PropertyValueGroups,
 )
 from finance.augur.model.series import IssuerId, LevelSeriesKey
@@ -42,7 +42,7 @@ ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field
 
 
 def sample_independent_levels(
-    groups: LevelSeriesMagisteria[ScalarSeriesSpec], request: ExogenousSamplingRequest
+    groups: LevelSeriesGroups[ScalarSeriesSpec], request: ExogenousSamplingRequest
 ) -> LevelFrames:
     """Sample every level spec the groups carry into the assembled per-kind frames.
 
@@ -67,10 +67,10 @@ def sample_independent_levels(
     )
 
 
-class IndependentSeriesModels(LevelSeriesMagisteria[ScalarSeriesSpec]):
+class IndependentSeriesModels(LevelSeriesGroups[ScalarSeriesSpec]):
     """Joint model composed from independent per-series scalar level models.
 
-    Inherits the three magisterium sub-groups from `LevelSeriesMagisteria`
+    Inherits the role sub-groups from `LevelSeriesGroups`
     (`asset_prices`/`property_values`/`index_series`; each series maps to a
     Constant / Deterministic / GBM scalar spec). `kind` is the `SeriesModelSpec`
     discriminator.
@@ -104,10 +104,10 @@ class SeriesModelBundle(BaseModel):
         property_values: PropertyValueGroups[ScalarSeriesSpec] | None = None,
         index_series: IndexSeriesGroups[ScalarSeriesSpec] | None = None,
     ) -> SeriesModelBundle:
-        """Build an independent-model bundle from the three magisterium groups.
+        """Build an independent-model bundle from the role groups.
 
-        Callers pass only the magisteria they populate (each defaults to empty), so the
-        construction is magisterium-structured end to end — no flat `LevelSeriesKey` map
+        Callers pass only the roles they populate (each defaults to empty), so the
+        construction is role-structured end to end — no flat `LevelSeriesKey` map
         gets partitioned back into groups.
         """
 
@@ -147,7 +147,7 @@ def materialize_series_values(
     """Project the bundle's sampled levels into the sim external-series frame.
 
     CLEANUP: sim handoff shim until Phase 2 stage D. Rebuilds the legacy flat
-    `series_id`-keyed frame from the typed per-magisterium frames by stamping
+    `series_id`-keyed frame from the typed per-role frames by stamping
     `series_id = key.wire_id`. `augur/sim/external_series.py` is the only
     consumer; it gets retyped against the typed bundle in stage D, after which
     this shim (and the legacy schema) can be deleted.

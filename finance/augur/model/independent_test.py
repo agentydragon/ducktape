@@ -12,8 +12,8 @@ from finance.augur.model.series import HomeValueKey, InflationKey, LocationId, R
 
 @pytest.fixture
 def example_config() -> IndependentProviderConfig:
-    # Typed magisterium config: no magic-prefix keys. Each level series sits inside its
-    # magisterium sub-group (asset_prices / property_values / index_series); singletons are
+    # Typed role config: no magic-prefix keys. Each level series sits inside its
+    # role sub-group (asset_prices / property_values / index_series); singletons are
     # scalar, crypto/home_value/rent are keyed by sub-id. PE marks live in their own
     # issuer-keyed map (they are not level series).
     return IndependentProviderConfig.model_validate(
@@ -109,8 +109,8 @@ def test_independent_provider_config_roundtrips_through_discriminated_union(
     ] == {"private_equity_x": 50.0}
 
 
-def test_realized_model_keeps_magisterium_structure(example_config: IndependentProviderConfig) -> None:
-    # The runtime model holds level specs as the three magisterium sub-groups (same shape
+def test_realized_model_keeps_role_structure(example_config: IndependentProviderConfig) -> None:
+    # The runtime model holds level specs as the role sub-groups (same shape
     # as config / the sampled bundle), not a flattened opaque key map. The config-only
     # `private_equity_marks` sibling travels separately as `pe_marks`.
     model = example_config.realize_model()
@@ -121,7 +121,7 @@ def test_realized_model_keeps_magisterium_structure(example_config: IndependentP
     assert not model.asset_prices.crypto
     assert set(model.pe_marks) == {"private_equity_x"}
     # The level series surface as typed FactorKeys (a subset of which are LevelSeriesKeys),
-    # one per series across all three magisteria.
+    # one per series across all roles.
     assert {key.wire_id for key in model.factor_names} == {
         "inflation",
         "sp500",

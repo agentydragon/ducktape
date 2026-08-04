@@ -58,8 +58,8 @@ def test_try_parse_level_series_key_returns_none_for_pe_wire_ids() -> None:
     assert try_parse_level_series_key("private_equity_regime_code:acme") is None
 
 
-def test_magisteria_unions_accept_their_members_and_reject_others() -> None:
-    # The magisterium split is enforced statically by mypy on reference fields;
+def test_roles_unions_accept_their_members_and_reject_others() -> None:
+    # The role split is enforced statically by mypy on reference fields;
     # the discriminated unions also reject foreign members at runtime. A series
     # only escalates amounts if it's an index; only prices a lot if asset-price;
     # only values a property if home-value.
@@ -71,7 +71,7 @@ def test_magisteria_unions_accept_their_members_and_reject_others() -> None:
         location_id="sf"
     )
 
-    # Cross-magisterium values are rejected: sp500 (asset price) is not an index,
+    # Cross-role values are rejected: sp500 (asset price) is not an index,
     # rent (index) is not an asset price, crypto (asset price) is not a property value.
     with pytest.raises(ValidationError):
         _INDEX_ADAPTER.validate_python(SP500Key().model_dump())

@@ -1,17 +1,17 @@
-"""Per-magisterium grouping of level-series values, shared by the independent-provider family.
+"""Per-role grouping of level-series values, shared by the independent-provider family.
 
-The non-PE level series partition into three disjoint magisteria by *what references them*
+The non-PE level series partition into disjoint roles by *what references them*
 (see `augur/model/series.py`): asset-price (`sp500`, `crypto`), property-value (`home_value`),
 and index (`inflation`, `rent`). Specs that map each level series to some value — the
 independent exogenous provider and its sim/bench twin map each to a scalar model spec — all
-range over that same magisterium-structured set. The structure lives here once as generic
-groups so each consumer holds typed, magisterium-separated fields (mirroring the runtime
+range over that same role-structured set. The structure lives here once as generic
+groups so each consumer holds typed, role-separated fields (mirroring the runtime
 `SampledExogenousBundle`) rather than one flat per-kind bucket or a prefix-parsed
 `dict[str, ValueT]`.
 
-Field names are exactly the `LevelSeriesKind` values. Each magisterium projects to its *own*
+Field names are exactly the `LevelSeriesKind` values. Each role projects to its *own*
 typed-key view (`by_asset_price_key` / `by_property_value_key` / `by_index_series_key`) so a
-consumer that wants exactly one magisterium gets it typed; `by_level_key` flattens all of them
+consumer that wants exactly one role gets it typed; `by_level_key` flattens all of them
 for consumers that genuinely range over every spec.
 """
 
@@ -38,7 +38,7 @@ from finance.augur.model.series import (
 
 
 class AssetPriceGroups[ValueT](FrozenModel):
-    """Asset-price magisterium values: the `sp500` singleton + `crypto` keyed by symbol."""
+    """Asset-price role values: the `sp500` singleton + `crypto` keyed by symbol."""
 
     sp500: ValueT | None = None
     crypto: dict[CryptoSymbol, ValueT] = Field(default_factory=dict)
@@ -53,7 +53,7 @@ class AssetPriceGroups[ValueT](FrozenModel):
 
 
 class PropertyValueGroups[ValueT](FrozenModel):
-    """Property-value magisterium values: `home_value` keyed by location."""
+    """Property-value role values: `home_value` keyed by location."""
 
     home_value: dict[LocationId, ValueT] = Field(default_factory=dict)
 
@@ -62,7 +62,7 @@ class PropertyValueGroups[ValueT](FrozenModel):
 
 
 class IndexSeriesGroups[ValueT](FrozenModel):
-    """Index magisterium values: the `inflation` singleton + `rent` keyed by location."""
+    """Index role values: the `inflation` singleton + `rent` keyed by location."""
 
     inflation: ValueT | None = None
     rent: dict[LocationId, ValueT] = Field(default_factory=dict)
@@ -76,18 +76,18 @@ class IndexSeriesGroups[ValueT](FrozenModel):
         return result
 
 
-class LevelSeriesMagisteria[ValueT](FrozenModel):
-    """Level-series values separated by magisterium, mirroring `SampledExogenousBundle`.
+class LevelSeriesGroups[ValueT](FrozenModel):
+    """Level-series values separated by role, mirroring `SampledExogenousBundle`.
 
-    Each magisterium is its own typed sub-group (asset-price / property-value / index) rather
-    than one flat per-kind bucket, so a cross-magisterium miswiring is unrepresentable.
+    Each role is its own typed sub-group (asset-price / property-value / index) rather
+    than one flat per-kind bucket, so a cross-role miswiring is unrepresentable.
     `extra="forbid"` (from `FrozenModel`) makes a stray top-level wire-id key such as
-    `"crypto:btc"`, or a kind field placed in the wrong magisterium, fail at load instead of
+    `"crypto:btc"`, or a kind field placed in the wrong role, fail at load instead of
     silently parsing — the desired fail-loud on pre-migration configs.
 
     The nesting is the CONFIG shape — it is what a deployment writes and what makes a
     misplaced kind fail at load. It is not a claim that consumers should re-walk it: a
-    `LevelSeriesKey` already carries its kind, and its kind already carries its magisterium
+    `LevelSeriesKey` already carries its kind, and its kind already carries its role
     (`LEVEL_KIND_SPECS`), so `by_level_key()` flattens without losing anything. Producers
     that genuinely range over every spec use that instead of unioning the three projections
     by hand.
@@ -98,7 +98,7 @@ class LevelSeriesMagisteria[ValueT](FrozenModel):
     index_series: IndexSeriesGroups[ValueT] = Field(default_factory=IndexSeriesGroups)
 
     def by_level_key(self) -> dict[LevelSeriesKey, ValueT]:
-        """Every spec across all magisteria, keyed by its typed `LevelSeriesKey`."""
+        """Every spec across all roles, keyed by its typed `LevelSeriesKey`."""
 
         # Rebuilt entry-by-entry rather than `**`-merged: a `dict[AssetPriceKey, V]` is not a
         # `dict[LevelSeriesKey, V]` because dict keys are invariant, even though every key in

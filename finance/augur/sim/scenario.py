@@ -68,7 +68,7 @@ class SeriesIndexedAmount(BaseModel):
 
     `series` is a typed `IndexSeriesKey` (inflation or a location's rent) —
     the index whose level path scales the amount. Asset prices, home values,
-    and PE marks are never amount indices, so the magisterium type makes
+    and PE marks are never amount indices, so the role type makes
     `series=SP500Key()` / `series=HomeValueKey(...)` a type error.
     """
 

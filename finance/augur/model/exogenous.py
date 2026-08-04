@@ -1,19 +1,19 @@
 """Shared API for exogenous path models consumed by the simulator.
 
-Non-PE level series are grouped by **magisterium** — the concern that
+Non-PE level series are grouped by **role** — the concern that
 references them (see `augur/plans/typed_series_config.md`). A sampled bundle
 carries one frame per `LevelSeriesKind` plus the PE bundle.
 
-Which magisterium a kind belongs to — asset-price (prices a lot), property-value
+Which role a kind belongs to — asset-price (prices a lot), property-value
 (values a property), index (escalates an amount) — is a row in `LEVEL_KIND_SPECS`,
 not a shape in the storage. That table also carries each kind's frame schema, its
 sub-id column, and how to rebuild a key from a sub-id, so the partition is stated
 once and every helper below derives from it rather than restating it. Adding a kind
-is a row; adding a magisterium is a row plus a request channel.
+is a row; adding a role is a row plus a request channel.
 
 Frames carry only a sub-id column (symbol / location_id) or nothing for a singleton
 — never a magic-prefix `series_id` string. The sample/consume path is typed by
-`LevelSeriesKey`, and the typed per-magisterium request channels keep a lot from
+`LevelSeriesKey`, and the typed per-role request channels keep a lot from
 being priced by inflation as a mypy error rather than a convention.
 """
 
@@ -47,7 +47,7 @@ from finance.augur.model.series import (
 )
 
 # Frame SHAPES. Several kinds share a shape (home_value and rent are both location-keyed);
-# the shape is a property of the sub-id, not of the magisterium.
+# the shape is a property of the sub-id, not of the role.
 SCALAR_LEVELS_SCHEMA = pl.Schema({"rollout_index": pl.Int64(), "month_index": pl.Int64(), "value": pl.Float64()})
 SYMBOL_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "symbol": pl.Utf8(), "value": pl.Float64()}
@@ -57,7 +57,7 @@ LOCATION_LEVELS_SCHEMA = pl.Schema(
 )
 
 
-class Magisterium(StrEnum):
+class SeriesRole(StrEnum):
     """What a level series is referenced BY — the partition `LevelSeriesKey` is split along.
 
     Values are the request-channel/bundle field stems (`required_asset_prices`,
@@ -74,49 +74,49 @@ class Magisterium(StrEnum):
 class LevelKindSpec:
     """Everything that varies per level-series kind, in one place.
 
-    This table is the whole reason the magisterium partition is not restated in every
-    helper below. Adding a kind is a row here; adding a magisterium is a row here plus a
+    This table is the whole reason the role partition is not restated in every
+    helper below. Adding a kind is a row here; adding a role is a row here plus a
     request channel on `ExogenousSamplingRequest`. Nothing else fans out by hand.
     """
 
-    magisterium: Magisterium
+    role: SeriesRole
     schema: pl.Schema
     subid_column: str | None
     key_for_subid: Callable[[str], LevelSeriesKey]
 
 
 LEVEL_KIND_SPECS: Mapping[LevelSeriesKind, LevelKindSpec] = {
-    LevelSeriesKind.SP500: LevelKindSpec(Magisterium.ASSET_PRICES, SCALAR_LEVELS_SCHEMA, None, lambda _: SP500Key()),
+    LevelSeriesKind.SP500: LevelKindSpec(SeriesRole.ASSET_PRICES, SCALAR_LEVELS_SCHEMA, None, lambda _: SP500Key()),
     LevelSeriesKind.CRYPTO: LevelKindSpec(
-        Magisterium.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: CryptoKey(symbol=CryptoSymbol(s))
+        SeriesRole.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: CryptoKey(symbol=CryptoSymbol(s))
     ),
     LevelSeriesKind.HOME_VALUE: LevelKindSpec(
-        Magisterium.PROPERTY_VALUES,
+        SeriesRole.PROPERTY_VALUES,
         LOCATION_LEVELS_SCHEMA,
         "location_id",
         lambda s: HomeValueKey(location_id=LocationId(s)),
     ),
     LevelSeriesKind.INFLATION: LevelKindSpec(
-        Magisterium.INDEX_SERIES, SCALAR_LEVELS_SCHEMA, None, lambda _: InflationKey()
+        SeriesRole.INDEX_SERIES, SCALAR_LEVELS_SCHEMA, None, lambda _: InflationKey()
     ),
     LevelSeriesKind.RENT: LevelKindSpec(
-        Magisterium.INDEX_SERIES, LOCATION_LEVELS_SCHEMA, "location_id", lambda s: RentKey(location_id=LocationId(s))
+        SeriesRole.INDEX_SERIES, LOCATION_LEVELS_SCHEMA, "location_id", lambda s: RentKey(location_id=LocationId(s))
     ),
 }
 
 
-def magisterium_of(key: LevelSeriesKey) -> Magisterium:
-    return LEVEL_KIND_SPECS[key.kind].magisterium
+def series_role(key: LevelSeriesKey) -> SeriesRole:
+    return LEVEL_KIND_SPECS[key.kind].role
 
 
 @dataclass(frozen=True)
 class LevelFrames:
     """Sampled level frames, one per `LevelSeriesKind`, flat.
 
-    Flat by kind rather than nested by magisterium: the magisterium is a property of the
+    Flat by kind rather than nested by role: the role is a property of the
     kind (`LEVEL_KIND_SPECS`), so nesting it in the storage shape would force every
     producer, merger and consumer to restate the partition. Callers that want one
-    magisterium ask for it (`by_magisterium`); callers that want one series ask by kind.
+    role ask for it (`by_role`); callers that want one series ask by kind.
     """
 
     by_kind: Mapping[LevelSeriesKind, pl.DataFrame]
@@ -141,23 +141,21 @@ class LevelFrames:
     def frame(self, kind: LevelSeriesKind) -> pl.DataFrame:
         return self.by_kind[kind]
 
-    def by_magisterium(self, magisterium: Magisterium) -> dict[LevelSeriesKind, pl.DataFrame]:
-        return {
-            kind: frame for kind, frame in self.by_kind.items() if LEVEL_KIND_SPECS[kind].magisterium is magisterium
-        }
+    def by_role(self, role: SeriesRole) -> dict[LevelSeriesKind, pl.DataFrame]:
+        return {kind: frame for kind, frame in self.by_kind.items() if LEVEL_KIND_SPECS[kind].role is role}
 
 
 @dataclass(frozen=True)
 class ExogenousSamplingRequest:
     """Request metadata passed to an exogenous path model sample.
 
-    Required non-PE level series are split by magisterium so a consumer states
+    Required non-PE level series are split by role so a consumer states
     exactly which kind of series it needs: `required_asset_prices` (price a
     lot), `required_property_values` (value a property), `required_index_series`
     (escalate an amount). PE issuers (carrying the whole `PrivateEquityBundle`
     per issuer) are required by `required_private_equity_issuers`; PE tender
     events and protocol channels are part of the PE bundle, not separate
-    channels. `required_level_series` unions the three level magisteria for the
+    channels. `required_level_series` unions the level roles for the
     provider/validate code that ranges over all non-PE level series uniformly.
     """
 
@@ -187,7 +185,7 @@ class ExogenousSamplingRequest:
 
     @property
     def required_level_series(self) -> frozenset[LevelSeriesKey]:
-        """All required non-PE level series, unioned across the three magisteria."""
+        """All required non-PE level series, unioned across the roles."""
 
         return frozenset(self.required_asset_prices | self.required_property_values | self.required_index_series)
 
@@ -224,9 +222,9 @@ class SampledExogenousBundle:
 
 
 class LevelRequestChannels(TypedDict):
-    """The magisterium request channels of `ExogenousSamplingRequest`.
+    """The role request channels of `ExogenousSamplingRequest`.
 
-    Typed per magisterium (not one flat set) so a consumer cannot ask for a rent series
+    Typed per role (not one flat set) so a consumer cannot ask for a rent series
     where a lot price is expected. That type safety is the one thing worth restating the
     partition for; everything mechanical derives from `LEVEL_KIND_SPECS`.
     """
@@ -237,24 +235,22 @@ class LevelRequestChannels(TypedDict):
 
 
 def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelRequestChannels:
-    """Partition a mixed set of level keys into the magisterium request channels.
+    """Partition a mixed set of level keys into the role request channels.
 
     For callers that hold a `LevelSeriesKey` set (e.g. a sanity spec listing required
-    series across magisteria) and want to splat it into the request:
+    series across roles) and want to splat it into the request:
     `ExogenousSamplingRequest(..., **level_series_request_channels(keys))`.
     """
 
-    by_magisterium: dict[Magisterium, set[LevelSeriesKey]] = {m: set() for m in Magisterium}
+    by_role: dict[SeriesRole, set[LevelSeriesKey]] = {m: set() for m in SeriesRole}
     for key in keys:
-        by_magisterium[magisterium_of(key)].add(key)
+        by_role[series_role(key)].add(key)
     # The casts are the one place the runtime partition meets the static one; every key
     # routed here came from `LEVEL_KIND_SPECS`, so membership is exactly the union.
     return {
-        "required_asset_prices": cast("frozenset[AssetPriceKey]", frozenset(by_magisterium[Magisterium.ASSET_PRICES])),
-        "required_property_values": cast(
-            "frozenset[PropertyValueKey]", frozenset(by_magisterium[Magisterium.PROPERTY_VALUES])
-        ),
-        "required_index_series": cast("frozenset[IndexSeriesKey]", frozenset(by_magisterium[Magisterium.INDEX_SERIES])),
+        "required_asset_prices": cast("frozenset[AssetPriceKey]", frozenset(by_role[SeriesRole.ASSET_PRICES])),
+        "required_property_values": cast("frozenset[PropertyValueKey]", frozenset(by_role[SeriesRole.PROPERTY_VALUES])),
+        "required_index_series": cast("frozenset[IndexSeriesKey]", frozenset(by_role[SeriesRole.INDEX_SERIES])),
     }
 
 
@@ -308,7 +304,7 @@ def assemble_level_frames(
     """Assemble sampled `(key, matrix)` blocks into per-kind frames.
 
     One flat iterable, because each key already knows its kind and each kind already
-    knows its magisterium. Producers used to hand a separate list per magisterium and
+    knows its role. Producers used to hand a separate list per role and
     every one of them had to remember all of them — which is exactly how a channel gets
     silently dropped.
     """
@@ -374,7 +370,7 @@ def level_value_rows(sampled: SampledExogenousBundle) -> list[tuple[LevelSeriesK
 
 
 def level_keys_in_bundle(sampled: SampledExogenousBundle) -> frozenset[LevelSeriesKey]:
-    """The distinct typed keys present across all level magisteria."""
+    """The distinct typed keys present across all level roles."""
 
     return frozenset(key for key, _ in level_value_rows(sampled))
 

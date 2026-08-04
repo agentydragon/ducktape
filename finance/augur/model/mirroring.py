@@ -98,7 +98,7 @@ class MirroringSampler:
     def _inner_request(self, request: ExogenousSamplingRequest) -> ExogenousSamplingRequest:
         # A consumer may require a mirror target, but the inner model only knows the source.
         # Rewrite each required target to its source; source and target share a kind, so each
-        # key stays in its own magisterium request channel.
+        # key stays in its own role request channel.
         source_by_target: dict[LevelSeriesKey, LevelSeriesKey] = {
             mirror.target: mirror.source for mirror in self.mirror_series
         }

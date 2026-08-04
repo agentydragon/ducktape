@@ -45,7 +45,7 @@ def test_sampling_request_requires_explicit_rollout_seeds() -> None:
 
 def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:
     # Series are grouped by typed kind: a crypto series lives in the asset-price
-    # magisterium's `crypto` frame keyed by its `symbol` sub-id, never a
+    # role's `crypto` frame keyed by its `symbol` sub-id, never a
     # `"crypto:vti"` magic-prefix `series_id` string.
     model = IndependentSeriesModels(
         asset_prices=AssetPriceGroups(crypto={CryptoSymbol("vti"): Deterministic(levels=[100.0, 110.0, 120.0])})
@@ -96,7 +96,7 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
     second = materialize_series_values(bundle, rollout_seeds=(11, 12, 13), horizon_months=2)
 
     # `materialize_series_values` is the sim-handoff shim that rebuilds the legacy
-    # flat `series_id`-keyed frame from the typed per-magisterium frames.
+    # flat `series_id`-keyed frame from the typed per-role frames.
     assert first.columns == ["rollout_index", "month_index", "series_id", "value"]
     assert first.height == 27
     assert first.equals(second)

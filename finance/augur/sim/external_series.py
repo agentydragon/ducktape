@@ -26,14 +26,14 @@ from finance.augur.model.series_model import SeriesModelBundle, materialize_seri
 # CLEANUP(added 2026-05-30): Phase 2 stage D retypes the sim intern table + the
 # projections asset↔series join to typed keys; this flat `series_id`-string frame
 # (and `series_values_from_bundle_shim`) go away then. Until then the sim keeps
-# its single flat working frame, rebuilt from the bundle's per-magisterium frames.
+# its single flat working frame, rebuilt from the bundle's per-role frames.
 SERIES_VALUES_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
 
 
 def _series_values_from_bundle_shim(bundle: SampledExogenousBundle) -> pl.DataFrame:
-    """Rebuild the legacy flat `series_id`-keyed frame from per-magisterium frames.
+    """Rebuild the legacy flat `series_id`-keyed frame from per-role frames.
 
     Stamps each per-kind frame's rows with `series_id = key.wire_id`. Sim
     handoff shim — removed with the stage-D intern/join retype.
@@ -97,7 +97,7 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
     The typed `PrivateEquityBundle` is the canonical source of PE protocol
     state — the engine reads PE channels directly from `pe_channels` arrays
     compiled out of the bundle. Non-PE level series are flattened from the
-    bundle's per-magisterium frames into the sim's single working frame.
+    bundle's per-role frames into the sim's single working frame.
     """
 
     return ExternalSeriesContext(
