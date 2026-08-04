@@ -67,6 +67,7 @@ py_library(
     srcs = ["jurisdictions.py"],
     data = [":jurisdiction_data"],
     deps = [
+        ":enums",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

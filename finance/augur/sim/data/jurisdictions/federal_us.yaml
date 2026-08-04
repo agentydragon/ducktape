@@ -30,3 +30,11 @@ ltcg_brackets:
 
 standard_deduction:
   single: 14600.0
+
+level: federal
+
+# IRC 103 excludes interest on state and local obligations from federal gross income —
+# any state's munis, not just the holder's. Treasury interest is NOT exempt from itself,
+# hence exempts_own_issue is left false.
+exempt_interest_from_levels:
+  - state

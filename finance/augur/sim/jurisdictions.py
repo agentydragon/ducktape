@@ -12,10 +12,20 @@ runfiles tree (which preserves the source layout) can find them.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
+
+
+class JurisdictionLevel(StrEnum):
+    """Where a taxing authority sits. Load-bearing because exemptions are stated by level:
+    "interest from any STATE issuer" is a rule federal law actually contains."""
+
+    FEDERAL = "federal"
+    STATE = "state"
+
 
 _DATA_DIR = Path(__file__).parent / "data" / "jurisdictions"
 
@@ -42,6 +52,36 @@ class Jurisdiction(BaseModel):
     ordinary_income_brackets: dict[str, list[TaxBracket]]
     ltcg_brackets: dict[str, list[TaxBracket]] | None = Field(default=None)
     standard_deduction: dict[str, float]
+    level: JurisdictionLevel
+    exempt_interest_from_levels: frozenset[JurisdictionLevel] = Field(
+        default=frozenset(),
+        description=(
+            "Issuer LEVELS whose interest this jurisdiction does not tax. Federal exempts "
+            "interest from any state issuer (IRC 103); a state exempts interest from federal "
+            "obligations (31 USC 3124)."
+        ),
+    )
+    exempts_own_issue: bool = Field(
+        default=False,
+        description=(
+            "Whether this jurisdiction exempts interest on debt IT issued — the honest form of "
+            '"in-state muni". California exempts California munis; the federal government does '
+            "NOT exempt Treasuries."
+        ),
+    )
+
+    def taxes_interest_from(self, issuer_jurisdiction_id: str | None, issuer_level: JurisdictionLevel | None) -> bool:
+        """Whether interest issued by `issuer_jurisdiction_id` is taxable HERE.
+
+        `None` issuer means a non-governmental issuer (a corporate bond), which no jurisdiction
+        exempts. "In-state" never appears as data — it is `issuer_jurisdiction_id == self`.
+        """
+
+        if issuer_jurisdiction_id is None or issuer_level is None:
+            return True
+        if issuer_jurisdiction_id == self.jurisdiction_id:
+            return not self.exempts_own_issue
+        return issuer_level not in self.exempt_interest_from_levels
 
 
 def load_jurisdiction(jurisdiction_id: str) -> Jurisdiction:

@@ -22,3 +22,12 @@ ordinary_income_brackets:
 
 standard_deduction:
   single: 5363.0
+
+level: state
+
+# 31 USC 3124 bars states from taxing federal obligations, so Treasury interest is exempt.
+# CA-issued munis are exempt as own-issue; munis from OTHER states are neither, so they
+# stay taxable here — the case a single ordinary-income bucket could not represent.
+exempt_interest_from_levels:
+  - federal
+exempts_own_issue: true
