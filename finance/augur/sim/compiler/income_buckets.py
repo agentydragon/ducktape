@@ -83,6 +83,16 @@ class IncomeBuckets:
         offset = self.source_ids.index(OrdinaryIncome())
         return np.where(indices == NO_CODE, NO_CODE, indices * len(self.source_ids) + offset)
 
+    def split_rows(self, rows: NDArray[np.int64]) -> tuple[NDArray[np.int64], NDArray[np.int64]]:
+        """Inverse of `bucket`: row indices back to `(profile indices, source indices)`.
+
+        The read model has to undo the flattening to label a row, and doing that division
+        at the decode site would put half the mapping outside this class, free to drift
+        from the half that writes it.
+        """
+
+        return np.divmod(np.asarray(rows, dtype=np.int64), len(self.source_ids))
+
     def source_wire_ids(self) -> tuple[str, ...]:
         """Human-readable per-source labels, for the decoded read model only."""
 

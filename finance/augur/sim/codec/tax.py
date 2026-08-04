@@ -31,13 +31,13 @@ def decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers)
     state = r_first_view(buffers.state.ordinary_state)  # (H+1, r, bucket)
     h1, r, bucket_count = state.shape
     months, rollouts, buckets = state_axes(h1, r, bucket_count)
-    source_ids = np.asarray(plan.tax.buckets.source_wire_ids())
+    profiles, sources = plan.tax.buckets.split_rows(buckets)
     return state_history_frame_from_columns(
         {
             "rollout_index": rollouts,
             "month_index": months,
-            "agent_id": codes_to_strings(plan, plan.tax.profile_agent)[buckets // len(source_ids)],
-            "income_source": source_ids[buckets % len(source_ids)],
+            "agent_id": codes_to_strings(plan, plan.tax.profile_agent)[profiles],
+            "income_source": np.asarray(plan.tax.buckets.source_wire_ids())[sources],
             "ordinary_income_usd": usd_column(state.reshape(-1)),
         },
         ORDINARY_INCOME_YTD_FRAME,

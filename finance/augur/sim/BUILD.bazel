@@ -145,6 +145,18 @@ py_test(
     ],
 )
 
+py_test(
+    name = "income_buckets_test",
+    srcs = ["compiler/income_buckets_test.py"],
+    deps = [
+        ":compiler",
+        ":scenario",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "scenario",
     srcs = ["scenario.py"],
