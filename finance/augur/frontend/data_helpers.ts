@@ -485,10 +485,22 @@ export function eventTitle(event, currencyDisplay) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), currencyDisplay)}`;
 }
 
-// Holdings a sell order may name, in portfolio order. Matches the backend: private equity is
-// excluded because it has no symbol to name — it leaves only through a tender event.
-export function sellablePositions(portfolio) {
-  return (portfolio?.holdings ?? []).filter((position) => !isPrivateSecurityPosition(position));
+// Rows a sell order may name, in portfolio order, keyed by the SERIES symbol the sim acts on —
+// not the holding's display ticker, which can differ (a VOO holding is priced by the SPY series)
+// and which the backend would then fail to match, silently disabling auto-sale. Two holdings
+// sharing one series collapse into a single row, because the sim cannot tell them apart either.
+// Private equity is absent because its key carries no symbol: it leaves only via a tender event.
+export function sellableSecurities(portfolio) {
+  const bySymbol = new Map();
+  for (const position of portfolio?.holdings ?? []) {
+    const symbol = isPrivateSecurityPosition(position) ? null : position.valueSeries?.symbol;
+    if (!symbol) continue;
+    const label = position.label || position.symbol || symbol;
+    const row = bySymbol.get(symbol);
+    if (row) row.labels.push(label);
+    else bySymbol.set(symbol, { symbol, labels: [label] });
+  }
+  return [...bySymbol.values()].map(({ symbol, labels }) => ({ symbol, label: labels.join(" + ") }));
 }
 
 export function isPrivateSecurityPosition(position) {

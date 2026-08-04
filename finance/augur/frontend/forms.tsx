@@ -3,7 +3,7 @@ import { Button, Checkbox } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls";
 import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format";
 import { LIFECYCLE_KINDS, SELL_ORDER_SEPARATOR, defaultLifecycleEvent, splitSellOrder } from "./input_helpers";
-import { sellablePositions, isPrivateSecurityPosition } from "./data_helpers";
+import { sellableSecurities, isPrivateSecurityPosition } from "./data_helpers";
 
 function firstSaleMonth(events) {
   let earliest = null;
@@ -244,11 +244,11 @@ export function SellOrderControl({
   //
   // `sellOrder == null` is the default and means "any sellable holding" — shown as every row
   // enabled in portfolio order, so the control renders the same thing the backend would do.
-  const sellable = sellablePositions(portfolio);
-  const bySymbol = new Map(sellable.map((position) => [position.symbol, position]));
+  const sellable = sellableSecurities(portfolio);
+  const bySymbol = new Map(sellable.map((row) => [row.symbol, row]));
   const enabledSymbols = [];
   const seen = new Set();
-  for (const symbol of sellOrder == null ? sellable.map((position) => position.symbol) : splitSellOrder(sellOrder)) {
+  for (const symbol of sellOrder == null ? sellable.map((row) => row.symbol) : splitSellOrder(sellOrder)) {
     if (bySymbol.has(symbol) && !seen.has(symbol)) {
       enabledSymbols.push(symbol);
       seen.add(symbol);
@@ -256,7 +256,7 @@ export function SellOrderControl({
   }
   const visible = [
     ...enabledSymbols.map((symbol) => bySymbol.get(symbol)),
-    ...sellable.filter((position) => !seen.has(position.symbol)),
+    ...sellable.filter((row) => !seen.has(row.symbol)),
   ];
   if (visible.length === 0) return null;
 
@@ -275,22 +275,22 @@ export function SellOrderControl({
     emit(next);
   };
 
-  const firstDisabledSymbol = visible.find((position) => !seen.has(position.symbol))?.symbol ?? null;
+  const firstDisabledSymbol = visible.find((row) => !seen.has(row.symbol))?.symbol ?? null;
   return (
     <div className={compact ? "" : "mt-3"}>
       {label && <div className="augur-field-label mb-2">{label}</div>}
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
-        {visible.map((position) => {
-          const label = position.label || position.symbol;
-          const enabledIdx = enabledSymbols.indexOf(position.symbol);
+        {visible.map((row) => {
+          const label = row.label;
+          const enabledIdx = enabledSymbols.indexOf(row.symbol);
           const isEnabled = enabledIdx >= 0;
           const canMoveUp = isEnabled && enabledIdx > 0;
           const canMoveDown = isEnabled && enabledIdx < enabledSymbols.length - 1;
           // Visual separator between "in order" and "shelved" groups.
-          const shelfBoundary = position.symbol === firstDisabledSymbol && enabledSymbols.length > 0;
+          const shelfBoundary = row.symbol === firstDisabledSymbol && enabledSymbols.length > 0;
           return (
             <li
-              key={position.symbol}
+              key={row.symbol}
               className={`flex items-center gap-2 px-2 py-1 ${isEnabled ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"} ${
                 shelfBoundary ? "border-t-2 border-t-slate-300 dark:border-t-slate-600" : ""
               }`}
@@ -305,7 +305,7 @@ export function SellOrderControl({
                     type="button"
                     aria-label={`Move ${label} up`}
                     disabled={!canMoveUp}
-                    onClick={() => swap(position.symbol, -1)}
+                    onClick={() => swap(row.symbol, -1)}
                     className="px-1 text-xs augur-muted disabled:opacity-30"
                   >
                     ▲
@@ -314,7 +314,7 @@ export function SellOrderControl({
                     type="button"
                     aria-label={`Move ${label} down`}
                     disabled={!canMoveDown}
-                    onClick={() => swap(position.symbol, 1)}
+                    onClick={() => swap(row.symbol, 1)}
                     className="px-1 text-xs augur-muted disabled:opacity-30"
                   >
                     ▼
@@ -322,7 +322,7 @@ export function SellOrderControl({
                   <button
                     type="button"
                     aria-label={`Remove ${label} from sell order`}
-                    onClick={() => setEnabled(position.symbol, false)}
+                    onClick={() => setEnabled(row.symbol, false)}
                     className="ml-1 rounded px-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/30"
                   >
                     ×
@@ -332,7 +332,7 @@ export function SellOrderControl({
                 <button
                   type="button"
                   aria-label={`Add ${label} to sell order`}
-                  onClick={() => setEnabled(position.symbol, true)}
+                  onClick={() => setEnabled(row.symbol, true)}
                   className="rounded px-1.5 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
                 >
                   +

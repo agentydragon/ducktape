@@ -241,7 +241,7 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert sp500["label"] == "SP500 Proxy"
     assert sp500["symbol"] == "VOO"
     assert sp500["security_kind"] == "etf"
-    assert sp500["value_series_id"] == "security:SPY"
+    assert sp500["value_series"] == {"kind": "security", "symbol": "SPY"}
     assert sp500["unit_value_usd"] == 500.0
     assert sp500["quantity"] == 1_500.0
     assert sp500["current_value_usd"] == 750_000.0
@@ -254,19 +254,19 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     btc = positions_by_id["btc_holding"]
     assert btc["symbol"] == "BTC"
     assert btc["security_kind"] == "cryptocurrency"
-    assert btc["value_series_id"] == "security:btc"
+    assert btc["value_series"] == {"kind": "security", "symbol": "btc"}
     assert btc["unit_value_usd"] == 75_000.0
     assert btc["current_value_usd"] == 75_000.0
     eth = positions_by_id["eth_holding"]
     assert eth["symbol"] == "ETH"
     assert eth["security_kind"] == "cryptocurrency"
-    assert eth["value_series_id"] == "security:eth"
+    assert eth["value_series"] == {"kind": "security", "symbol": "eth"}
     assert eth["unit_value_usd"] == 2_100.0
     assert eth["current_value_usd"] == 10_500.0
     pha = positions_by_id["private_holding_a"]
     assert pha["symbol"] == "PHA"
     assert pha["security_kind"] == "private_equity"
-    assert pha["value_series_id"] == "private_equity:private_holding_a"
+    assert pha["value_series"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
     assert pha["unit_value_usd"] == 25.0
     assert pha["current_value_usd"] == 25_000.0
     assert pha["total_cost_basis_usd"] == 5_000.0
@@ -467,7 +467,7 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 20_000.0,
-            "sell_order": ["stocks"],
+            "sell_order": ["SPY"],
         },
     }
 
@@ -516,7 +516,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 500_000.0,
-            "sell_order": ["stocks"],
+            "sell_order": ["SPY"],
         },
     }
 

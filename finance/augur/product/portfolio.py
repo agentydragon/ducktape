@@ -7,6 +7,7 @@ from pydantic import NonNegativeFloat, NonNegativeInt
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import HoldingPositionConfig, PortfolioConfig
 from finance.augur.api.schemas import ApiModel
+from finance.augur.product.asset_key import AssetKey
 
 
 class ProductPublicSecurityLot(ApiModel):
@@ -24,7 +25,7 @@ class ProductPublicSecurityPosition(ApiModel):
     label: str | None = None
     symbol: str
     security_kind: str
-    value_series_id: str
+    value_series: AssetKey
     unit_value_usd: NonNegativeFloat
     quantity: NonNegativeFloat
     current_value_usd: NonNegativeFloat
@@ -63,9 +64,10 @@ def _holding_position(position: HoldingPositionConfig, *, account_label: str | N
         label=position.label,
         symbol=position.symbol,
         security_kind=str(position.security_kind),
-        # Product wire field stays a wire string until the Phase 4 API-wire retype;
-        # derive it from the now-typed config `value_series`.
-        value_series_id=position.value_series.wire_id,
+        # Typed, not a wire string: the sell-order UI keys rows by the SERIES symbol, which can
+        # differ from the holding's display ticker (a VOO holding is priced by the SPY series).
+        # Shipping the string would put prefix-parsing back in the frontend to recover it.
+        value_series=position.value_series,
         unit_value_usd=float(position.unit_value_usd),
         quantity=float(position.total_quantity),
         current_value_usd=float(position.current_value_usd),

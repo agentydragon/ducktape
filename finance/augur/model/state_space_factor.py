@@ -52,8 +52,7 @@ class PrivateEquityMarkKey(FrozenModel):
 
 
 type FactorKey = Annotated[
-    InflationKey | SecurityKey | HomeValueKey | RentKey | SecurityKey | PrivateEquityMarkKey,
-    Field(discriminator="kind"),
+    InflationKey | SecurityKey | HomeValueKey | RentKey | PrivateEquityMarkKey, Field(discriminator="kind")
 ]
 """A state-space covariance-basis factor: any non-PE level series, or a private-equity issuer's mark."""
 
