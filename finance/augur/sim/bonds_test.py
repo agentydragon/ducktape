@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.sim.bonds import coupon_amount_cents, coupon_months, is_held
+from finance.augur.sim.bonds import coupon_amount_cents, coupon_months, is_on_books
 from finance.augur.sim.scenario import BondHolding
 
 
@@ -72,13 +72,17 @@ def test_zero_coupon_pays_nothing_until_maturity() -> None:
     assert coupon_amount_cents(face_value_usd=100_000.0, annual_coupon_rate=0.0, coupon_period_months=6) == 0
 
 
-def test_maturity_month_still_counts_as_held() -> None:
-    """The face comes back during the maturity month, so the position is still on the
-    balance sheet when that month's net worth is struck."""
+def test_the_bond_is_off_the_books_by_the_end_of_its_maturity_month() -> None:
+    """The face is redeemed into cash DURING the maturity month, so counting the bond as
+    held that month would put the same dollars in net worth twice — once as the bond and
+    once as the cash it just became."""
 
-    assert is_held(month_index=120, purchase_month_index=0, maturity_month_index=120)
-    assert not is_held(month_index=121, purchase_month_index=0, maturity_month_index=120)
-    assert not is_held(month_index=-1, purchase_month_index=0, maturity_month_index=120)
+    on_books = {
+        month: is_on_books(month_index=month, purchase_month_index=0, maturity_month_index=120)
+        for month in (-1, 0, 119, 120, 121)
+    }
+
+    assert on_books == {-1: False, 0: True, 119: True, 120: False, 121: False}
 
 
 def test_non_par_purchase_is_rejected_naming_phase_2() -> None:

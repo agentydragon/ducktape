@@ -164,6 +164,18 @@ py_test(
 )
 
 py_test(
+    name = "test_bond_e2e",
+    srcs = ["test_bond_e2e.py"],
+    deps = [
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "income_buckets_test",
     srcs = ["compiler/income_buckets_test.py"],
     deps = [
@@ -262,6 +274,7 @@ py_library(
     srcs = [
         "compiler/__init__.py",
         "compiler/assets.py",
+        "compiler/bonds.py",
         "compiler/deductions.py",
         "compiler/helpers.py",
         "compiler/income_buckets.py",
@@ -279,6 +292,7 @@ py_library(
         "compiler/transfers.py",
     ],
     deps = [
+        ":bonds",
         ":enums",
         ":external_series",
         ":fixed_point",

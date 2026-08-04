@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
 from finance.augur.sim.compiler.assets import SaleCompileOutput, compile_sales
+from finance.augur.sim.compiler.bonds import BondCompileOutput, compile_bonds
 from finance.augur.sim.compiler.deductions import (
     MIDCompileOutput,
     SaltCompileOutput,
@@ -71,6 +72,7 @@ class SlotPlan:
     agent_count: int
     cash_count: int
     lot_count: int
+    bond_count: int
     tax_profile_count: int
     # Rows of the YTD income tensor: one per (profile, income source), so a jurisdiction can
     # include a wage dollar and exclude a muni coupon for the same agent.
@@ -130,6 +132,7 @@ class CompiledSimulation:
     tax_liabilities: TaxLiabilityCompileOutput
     transfers: TransferCompileOutput
     property_cashflows: PropertyCashflowCompileOutput
+    bonds: BondCompileOutput
     properties: PropertyCompileOutput
     # Per-property rented_fraction (0..1). Primary-residence use is tracked separately per agent.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
@@ -239,6 +242,7 @@ def compile_simulation(
         property_slot_by_id,
         tax.buckets,
     )
+    bonds = compile_bonds(scenario, strings, account_slot_by_key, profile_index_by_agent, tax.buckets)
     property_rented_fraction = np.array(
         [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
     )
@@ -366,6 +370,7 @@ def compile_simulation(
         agent_count=len(agent_codes),
         cash_count=len(cash_initial_balance),
         lot_count=len(lot_id_codes),
+        bond_count=len(scenario.initial_bonds),
         tax_profile_count=tax.profile_agent.shape[0],
         income_bucket_count=tax.buckets.row_count,
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
@@ -413,6 +418,7 @@ def compile_simulation(
         tax_liabilities=tax_liabilities,
         transfers=transfers,
         property_cashflows=property_cashflows,
+        bonds=bonds,
         properties=properties,
         liabilities=liabilities,
         # Ordinary-bucket ROWS, not profile indices: these scatter deductions into the YTD

@@ -284,6 +284,7 @@ class _Operands(NamedTuple):
     # Whole-horizon static tables sliced by the traced month.
     tr: dict[str, jnp.ndarray]
     pc: dict[str, jnp.ndarray]
+    bond: dict[str, jnp.ndarray]
     og: dict[str, jnp.ndarray]
     acc: dict[str, jnp.ndarray]
     # Scheduled-sale stacked static data.
@@ -733,6 +734,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "income_profile": jnp.asarray(pcf.income_profile),
         "deduction_profile": jnp.asarray(pcf.deduction_profile),
     }
+    bd = plan.bonds
+    bond = {
+        "coupon": jnp.asarray(bd.coupon),
+        "redemption": jnp.asarray(bd.redemption),
+        "to_slot": jnp.asarray(bd.to_slot),
+        "income_row": jnp.asarray(bd.income_row),
+    }
     ob = plan.obligations
     og = {
         "cause": jnp.asarray(ob.cause),
@@ -1022,6 +1030,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         liab0=_zeros_i64((p.liability_count, r)),
         tr=tr,
         pc=pc,
+        bond=bond,
         og=og,
         acc=acc,
         sale_months_t=sale_months_t,
@@ -1210,6 +1219,7 @@ def _program_impl(
     liab0 = baked.liab0
     tr = dict(baked.tr)  # copy: `fixed`/`base` are overwritten with the traced cfg values below
     pc = dict(baked.pc)
+    bond = baked.bond
     og = baked.og
     acc = baked.acc
     sale_months_t = baked.sale_months_t
@@ -1529,6 +1539,19 @@ def _program_impl(
             active,
             external_values,
             month,
+        )
+
+        # Bond coupons and redemptions, after transfers and before obligations settle: a coupon
+        # is income arriving this month and must be able to fund this month's outflows, the same
+        # ordering a paycheck gets.
+        cash, ordinary = _bond_cashflows_jit(
+            bond["coupon"][month],
+            bond["redemption"][month],
+            bond["to_slot"],
+            bond["income_row"],
+            cash,
+            ordinary,
+            active,
         )
 
         # Property purchases (after transfers, before sales — eager order). Vectorized over all real
@@ -2485,6 +2508,33 @@ def _property_cashflows_jit(
     ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
     ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
     return cash, ordinary_ytd, fire, amounts
+
+
+@jax.jit
+def _bond_cashflows_jit(
+    coupon: jnp.ndarray,
+    redemption: jnp.ndarray,
+    to_slot: jnp.ndarray,
+    income_row: jnp.ndarray,
+    cash: jnp.ndarray,
+    ordinary_ytd: jnp.ndarray,
+    active: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """This month's bond cashflows. `coupon`/`redemption` are `(bond,)` slices of compile-time
+    tables — at par and held to maturity nothing about a bond depends on a rollout, so there is
+    no per-rollout arithmetic here and no bond state in the carry.
+
+    Both reach cash; only the coupon reaches income. Redeeming the face is a return of capital,
+    and at par against a par basis it is not a capital gain either, so it touches no tax tensor.
+
+    There is no payer slot: the issuer is not a modeled agent, so a coupon is an inflow from
+    outside the simulation the way a paycheck is from an unmodeled employer.
+    """
+
+    coupons = jnp.where(active[None, :], coupon[:, None], 0)
+    redemptions = jnp.where(active[None, :], redemption[:, None], 0)
+    cash = _scatter_rows(cash, to_slot, coupons + redemptions)
+    return cash, _scatter_rows(ordinary_ytd, income_row, coupons)
 
 
 def _fifo_sell_units(

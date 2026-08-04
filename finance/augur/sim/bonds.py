@@ -56,11 +56,13 @@ def coupon_amount_cents(*, face_value_usd: float, annual_coupon_rate: float, cou
     return np.int64((period * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-def is_held(*, month_index: int, purchase_month_index: int, maturity_month_index: int) -> bool:
-    """Whether the bond is on the books this month.
+def is_on_books(*, month_index: int, purchase_month_index: int, maturity_month_index: int) -> bool:
+    """Whether the bond is still an asset at the END of `month_index`.
 
-    Maturity month inclusive: the face is returned during that month, so the position is
-    still an asset at the point the month's balance sheet is struck.
+    Maturity is EXCLUSIVE. The face is redeemed into cash during the maturity month, so by
+    the time that month's balance sheet is struck the position is cash, not a bond. Counting
+    the maturity month as held would double-count the face — once as the bond and once as
+    the cash it just became.
     """
 
-    return purchase_month_index <= month_index <= maturity_month_index
+    return purchase_month_index <= month_index < maturity_month_index
