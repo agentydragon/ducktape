@@ -37,9 +37,9 @@ resource "kubernetes_secret" "litellm_master_key" {
     namespace = "litellm"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-sandbox,openclaw-sandbox,props"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-sandbox,props"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-sandbox,openclaw-sandbox,props"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-sandbox,props"
     }
   }
 

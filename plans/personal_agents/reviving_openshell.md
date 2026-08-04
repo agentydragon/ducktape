@@ -106,8 +106,8 @@ Read the runbook rather than this section. It had one gap, which is why I read
 it as not applying: it attributed the stall to deleting controller pods by hand,
 and a pure GitOps removal hits it just as reliably when the operator and its
 custom resources are pruned in the same commit — the shape this project used.
-That correction, and the `openclaw-gateway` cleanup below, ship separately as
-operational changes rather than in this research PR.
+That correction and the later `openclaw-gateway` cleanup shipped separately as
+operational changes.
 
 For the record, what unstuck it:
 
@@ -121,7 +121,7 @@ provider from a gateway that no longer exists — had become a no-op. Never reac
 for the namespace's own `spec.finalizers` via the `/finalize` subresource; that
 deletes the namespace object while orphaning its contents in etcd.
 
-`openclaw-gateway` still carries the same debris from the same PR — a stuck
-`OpenClawInstance`, the StatefulSet it owns, 21Gi of PVCs and three
-`openclaw.rocks` CRDs — tracked in <../../cluster/k8s/TODO.md> § "Retire the
-`openclaw-*` namespaces".
+The same cleanup was later required for `openclaw-gateway`: a stuck
+`OpenClawInstance`, the StatefulSet it owned, 21 GiB of PVCs, and three
+`openclaw.rocks` CRDs. The completed teardown is recorded in
+<../../cluster/archive/2026_08_openclaw_namespace_retirement.md>.

@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: openclaw-anthropic-api-key
+    namespace: claude-sandbox
+    annotations:
+        description: Anthropic API key — workspace 'Cluster OpenClaw', $300/mo limit
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:VvZkmYXKDsMNBN+dtf4LJjZ6VxgnwyKijfhHUa6YfxGUnDK04NdJzlHioj4A8n3AZbTu03Em7CoGJwiT4usHK+jSDDTv3CpPIECyEIEyOy/bOfUHJHVxASEbUGir78gypKkug+4sJyuGy6Dh,iv:4QJ4KY6u4Lrtt/VHsCvWrEYiFi7lfO5V0mrwW8Ye3qc=,tag:Tr0X7lTRCk0MS2I8YNUbVA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmTFBMT3NVUXV6bHdraDU2
+            QjRxRGxKZkpDREJMc2E5NzErWG5qZ3hpR0dnClZjL3JqM0NPbmlMWDIxSEZkWGti
+            bkFvM1Z4UkFxeTErUEw2Ty8xVzRWaHMKLS0tIGF6TGx1VkJYWHRBbjhaYkU4OW8v
+            bkJYS09RTDhadCt0WTE5aTMzcE9GQ3MKnNtue815D21bNqCzy0JFv9PwZ/ovH+f/
+            JE3QCa1d6AFCqLky5E3u4R2n3i48eWjztyuZhLpBc2SLsAwIeqSY4A==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBiSEdxdE5xRkZQdHNkMytl
+            Mk4yYWpqUUU0RjkwcmZkcXk3N3VZbENDc21RCjZ4WC9lVGNyY0V6aFZRMXV5RFpL
+            WkVXQjZ1bE9acEFwU2V2YkNJZXdsdncKLS0tIE5lR0ZkUUxabFRHNjlFZkxCRjJI
+            ZlhVald4bkdmalAwbHhQc0tQUEpuUDgKe4qouMn9fgiGFbxQS3hu7Dl+Q6LNb9Qi
+            zttL7MbwJ6wL2G7xSSTrQyFQI1pdvPXJB1wM4OXkipfAY6mxd6vg3A==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-04T22:07:12Z"
+    mac: ENC[AES256_GCM,data:53DbAOfXSjRQtQWSS5syRtadXxOBei3ACTKePfyiYVnOzEijg9V39mC2cjgY2dGZ4jQbZYtGp1kDMaRFKo+vsAfHIyYXQln9ItdYkriro5scVuWgWZlsQo5oDHkSVwQDLX8A165IpAcMEziu8/jIhDdF6dTVZtDWaNTL1Rf/dUs=,iv:WZ6NKGcDZMtslShQbPoN3n9mkcCb3YGZlChKuHYVX+0=,tag:QWCEMH/Jbq1wGcEHdTMgMw==,type:str]
+    version: 3.12.1

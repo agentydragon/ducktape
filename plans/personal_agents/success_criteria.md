@@ -13,9 +13,9 @@ is that the agent's _hands_ (its execution) sit in a separate, stronger sandbox
 rather than the whole harness living in one; running the whole harness under a
 single sandbox is an acceptable outcome, just a weaker one.
 
-The criteria are deliberately about the _agent as deployed_, not about OpenClaw
-in the abstract: every one of them is run against the live
-`openclaw-gateway` + OpenShell sandbox in this cluster.
+The criteria were deliberately about the _agent as deployed_, not about OpenClaw
+in the abstract: the initial experiment ran against the former
+`openclaw-gateway` plus OpenShell sandbox in this cluster.
 
 ## S1 — An agent is stood up and drives itself
 

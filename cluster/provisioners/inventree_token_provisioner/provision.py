@@ -3,7 +3,7 @@
 Creates a non-privileged sandbox-agent user in InvenTree (if absent), issues
 a named API token for that user as superuser, and writes the token to a K8s
 Secret in the inventree namespace. An ESO ClusterExternalSecret mirrors the
-Secret to openclaw-sandbox and claude-sandbox (token-eso.yaml) — distribution is
+Secret to claude-sandbox (token-eso.yaml) — distribution is
 decoupled from this provisioner, so it just writes one plain Secret.
 
 On subsequent runs (CronJob), checks the token expiry via the InvenTree API
@@ -128,7 +128,7 @@ def main() -> None:
         )
         print(f"Secret {SECRET_NAME} created in {INVENTREE_NS}.")
 
-    print("ESO ClusterExternalSecret mirrors the Secret to openclaw-sandbox and claude-sandbox.")
+    print("ESO ClusterExternalSecret mirrors the Secret to claude-sandbox.")
 
 
 if __name__ == "__main__":

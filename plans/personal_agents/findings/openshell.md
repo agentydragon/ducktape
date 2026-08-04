@@ -162,9 +162,9 @@ via proxy api.github.com:                200
 
 **Confinement in the operator shape is therefore advisory.** It depends on the
 workload honouring `HTTP_PROXY`/`HTTPS_PROXY`; a process that ignores them — or
-one `env -u` — has unrestricted HTTPS. **This applies to production
-`openclaw-gateway` as well**, whose egress control is the same Kyverno-injected
-proxy variables plus this same policy.
+one `env -u` — has unrestricted HTTPS. **This also applied to the former
+production `openclaw-gateway`**, whose egress control used the same
+Kyverno-injected proxy variables plus this same policy.
 
 Consequence for the plan: a conforming S4 setup needs a shape where the
 NetworkPolicy is ours. Since the operator is not a requirement, the next

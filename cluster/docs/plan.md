@@ -43,11 +43,11 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   (`plans/personal_agents/findings/` F3), and `public-coder-agent` is now the
   reference agent — same OpenClaw image, plain Deployment, `sandbox.mode: "off"`.
   The `ghcr.io/agentydragon/openclaw` ImageRepository/ImagePolicy are deliberately
-  **kept**: that image is what `public-coder-agent` runs. The `openclaw-gateway`
-  and `openclaw-sandbox` namespaces also survive, holding only the unique
-  credentials (Anthropic/OpenAI keys, Telegram bot token) whose SOPS
-  documents pin those namespaces — see `agents/openclaw/README.md`. Rationale and
-  the evaluated alternatives: `plans/personal_agents/verdicts.md`.
+  **kept**: that image is what `public-coder-agent` runs. The former
+  `openclaw-gateway` and `openclaw-sandbox` namespaces were retired after their
+  retained credentials moved to `agents/shared-secrets`; see
+  <../archive/2026_08_openclaw_namespace_retirement.md>. Rationale and the evaluated
+  alternatives: `plans/personal_agents/verdicts.md`.
 - **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
   currently used.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
@@ -461,20 +461,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       <docs/plans/offline_node_daemonset_health.md>.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
       `proxmox-proxy`, `props`/`props-registry`)
-- [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
-- [ ] OpenClaw: eliminate the custom `ghcr.io/agentydragon/openclaw` image if the
+- [ ] Public coder agent: eliminate the custom `ghcr.io/agentydragon/openclaw` image if the
       upstream image ever bundles the external OpenShell sandbox plugin and CLI.
       The old Matrix-specific customization and `openclaw-matrix` image are retired.
-- [ ] OpenClaw: StatefulSet RollingUpdate won't replace crash-looping pods. The K8s
-      StatefulSet controller counts a crash-looping pod as unavailable, and with default
-      `maxUnavailable: 1` the budget is already spent, so it refuses to delete the pod
-      for update. This means image updates (e.g. from Flux image automation) are never
-      rolled out while the pod is unhealthy. The openclaw-operator (v0.11.1, checked
-      through v0.26.2) doesn't set `MaxUnavailable` and exposes no CRD knob for it.
-      Workaround: `kubectl delete pod openclaw-0 -n openclaw-gateway`.
-      Fix: upstream the operator to set `maxUnavailable: "100%"` for single-replica
-      StatefulSets, or add a `spec.updateStrategy` passthrough field.
-- [ ] OpenClaw: eliminate one-time token entry
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
       hostNetwork gateways currently report `AddressNotAssigned` even though traffic
       works through the hostNetwork Envoy listeners. Current workaround is Route 53
@@ -614,7 +603,7 @@ applying.
 
 All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed
 but only with the Kubernetes provider, mirroring a small number of secrets cross-namespace
-(authentik, openclaw-gateway/sandbox, openhands). Stakater Reloader restarts pods on
+(authentik, agent sandboxes, openhands). Stakater Reloader restarts pods on
 changes. Vault was decommissioned 2026-04-19 — see
 <../archive/2026_04_19_vault_migration.md>.
 
@@ -758,7 +747,7 @@ encryption to S3.
 
 Via `inventree-token-provisioner` Job. SOPS-managed sandbox-agent password ->
 Job execs into pod, creates user via Django ORM -> `inventree-api-token` Secret
-in `openclaw-sandbox` and `claude-sandbox`.
+in `claude-sandbox`.
 
 ### CNPG Backup Strategy
 

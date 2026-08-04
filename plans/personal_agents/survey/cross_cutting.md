@@ -5,8 +5,9 @@
 Reuse: `haku/console/` is a FastAPI+Postgres "operator console" with an embedded React
 UI (`haku_ui_embed.tsx`) already serving as Haku's approval-queue + tool-call-history
 front end (`haku/console/frontend/haku_ui_embed.tsx`; ledger model in
-`haku/shared/haku/console/tool_calls.py:72-89`). OpenClaw ships its own custom UI
-(`cluster/k8s/agents/openclaw/gateway/openclawinstance.yaml`). kagent ships a built-in
+`haku/shared/haku/console/tool_calls.py:72-89`). The retired OpenClaw gateway shipped
+its own custom UI (see <../../../cluster/archive/2026_08_openclaw_namespace_retirement.md>).
+kagent ships a built-in
 Next.js+Nginx chat UI, but kagent itself is retired here (see kagent section below). For
 the public-coder function specifically, `docs/self_hosted_coding_agent_platforms.md`
 already ranks web-UI options — no new research needed there.
@@ -88,12 +89,12 @@ Deliberately implementation-neutral ("could swap to Squid").
 
 **OpenClaw is covered too**, by two separate mechanisms:
 
-1. **OpenClaw's gateway pod** is already forced through the shared mitmproxy:
+1. **OpenClaw's former gateway pod** was forced through the shared mitmproxy:
    `security.networkPolicy.additionalEgress` allows exactly three destinations —
    the `agents-mitmproxy` namespace (":8080 — Internet egress is forced through
    the shared mitmproxy"), the OpenShell gateway, and LiteLLM
-   (`cluster/k8s/agents/openclaw/gateway/openclawinstance.yaml`, `security:`
-   block). Same mitmproxy Haku uses; not a Haku-only mechanism.
+   (the retired `OpenClawInstance` `security:` block). Same mitmproxy Haku uses;
+   not a Haku-only mechanism.
 2. **OpenShell's sandboxes do their own L7 interception, and now own their egress
    outright.** The sandbox proxy "auto-detects TLS by peeking the first bytes of
    each connection and terminates it for inspected HTTPS traffic", issuing
@@ -109,10 +110,10 @@ Deliberately implementation-neutral ("could swap to Squid").
    **Gotcha — the two mechanisms are deliberately _not_ chained.** The
    `openshell-sandboxes` namespace is **excluded** from the generic mitmproxy
    injection and the force-proxy Cilium policy, precisely because routing an
-   OpenShell sandbox through the generic proxy as well breaks it. Only the legacy
-   `openclaw-sandbox` namespace still gets the generic policy. So "which proxy
-   governs this pod" depends on which namespace it lands in — don't assume the
-   mitmproxy covers everything under `agents/`.
+   OpenShell sandbox through the generic proxy as well breaks it. The retired
+   `openclaw-sandbox` namespace used the generic policy instead. Thus "which proxy
+   governs this pod" depended on its namespace; mitmproxy did not cover everything
+   under `agents/`.
 
    The effective sandbox policy is **GitOps-owned**, not inherited from the
    image: `cluster/k8s/agents/openshell/openclaw/policy.yaml` is packaged into an
@@ -206,9 +207,9 @@ it**, and the harness already running here delivers it twice over.
 This is where the user's frustration is most validated by research, not resolved by
 it:
 
-- **OpenClaw operator**: chart source is `oci://ghcr.io/paperclipinc/charts`,
+- **OpenClaw operator**: chart source was `oci://ghcr.io/paperclipinc/charts`,
   chart `openclaw-operator` v0.38.1
-  (`cluster/k8s/agents/openclaw/operator/helmrepository.yaml`); the CRDs it
+  (see <../../../cluster/archive/2026_08_openclaw_namespace_retirement.md>); the CRDs it
   installs are in the **`openclaw.rocks`** API group — `openclawinstances`,
   `openclawclusterdefaults`, `openclawselfconfigs` (verified live via
   `kubectl get crds`). So it is the `openclaw-rocks` operator project, with the

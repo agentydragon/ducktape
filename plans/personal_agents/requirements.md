@@ -118,9 +118,9 @@ equivalent.
   remote-mode deployments; issue
   [#115057](https://github.com/openclaw/openclaw/issues/115057) is a thinner
   duplicate, closed as `needs-info`/`needs-product-decision`, and is not where the
-  fix lives. Ducktape already ships a CLI-boundary shim
-  (`cluster/k8s/agents/openclaw/gateway/openshell-cli-compat.yaml`) that tracks
-  that same PR. Detail in `findings.md`.
+  fix lives. The retired OpenClaw/OpenShell deployment carried a CLI-boundary
+  shim tracking that same PR. Detail in `findings.md` and
+  <../../cluster/archive/2026_08_openclaw_namespace_retirement.md>.
 - **B2 — an option, not a blocker.** Nvidia's "NemoClaw" setup reportedly runs the
   _entire_ agent harness (not just the exec step) _inside_ OpenShell. This is an
   **acceptable outcome**, merely the less preferred one: a functioning harness that

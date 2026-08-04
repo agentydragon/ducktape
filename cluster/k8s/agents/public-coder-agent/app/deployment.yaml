@@ -1,6 +1,6 @@
 # OpenClaw as a plain Deployment rather than an OpenClawInstance.
 #
-# Deviation from agents/openclaw/gateway, and the reason for it: the operator's
+# Deviation from the retired operator-managed gateway, and the reason for it: the operator's
 # generated NetworkPolicy always contains an egress rule for 443/TCP with no
 # destination selector, and spec.security.networkPolicy offers only additive
 # fields (additionalEgress, allowedEgressCIDRs) with no way to disable it.

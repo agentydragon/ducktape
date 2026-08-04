@@ -32,16 +32,9 @@ Subject is the group `oidc-ksbx-groups:haku`. The pre-existing agent bindings
 target `oidc-ksbx-groups:kubectl-sandbox-users`, which this session's identity
 (`oidc-ksbx:haku-k8s`) is not a member of.
 
-**`kubectl auth can-i` lies here.** It answers `yes` for `pods/log` in
-`openclaw-gateway` and for `pods/exec` in `openshell-sandboxes` while the real
-requests return 403. Verify a permission with the actual call, never with
-`can-i` — an earlier diagnosis was wrong because it trusted `can-i` over a real 403.
-
-**Caveat worth knowing before merging**: the OpenShell operator places all
-sandbox pods in `openshell-sandboxes` (chart value `server.sandboxNamespace`),
-so lab sandboxes are only observable there — and that namespace also holds the
-production OpenClaw agent's sandbox. Splitting the lab onto its own
-`sandboxNamespace` is the right fix if this ever outlives its removal date.
+**`kubectl auth can-i` can lie here.** It has answered `yes` for permissions while
+the real requests returned 403. Verify a permission with the actual call, never
+with `can-i` alone.
 
 ## Model access
 

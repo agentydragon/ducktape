@@ -184,17 +184,6 @@ deleted. #3575 added the models, #3576 granted them to the openclaw key.
 `public-coder-agent` is done too — #3586 made its seeded config authoritative and
 the index built on the next restart, with semantic recall confirmed live.
 
-One consumer left, and it is a config change rather than new infrastructure:
-
-- **The main `openclaw` gateway** still uses a direct OpenAI Platform key
-  (`OPENAI_API_KEY`, `memorySearch.provider: openai`). Moving it puts embeddings
-  through Langfuse with every other model call and retires a standing credential.
-  **This one is a re-embed, not a config edit**: its index is populated and the
-  two embedding spaces are incompatible, so plan for `openclaw memory index` to
-  rebuild and confirm recall afterwards. Retire
-  `cluster/k8s/agents/openclaw/gateway-secrets/openai-api-key.sops.yaml` only
-  after that is confirmed.
-
 ## Verify OpenClaw configs against the shipped schema **in CI**
 
 Two config values on `public-coder-agent` were accepted by the file and rejected
@@ -214,11 +203,9 @@ Until this exists, shape verification is a manual step and therefore skippable -
 see the rough edge in [lab_notes.md](lab_notes.md). The point of the TODO is to
 stop relying on remembering.
 
-Scope: both configs that declare OpenClaw settings --
-`cluster/k8s/agents/public-coder-agent/app/openclaw.json` and the `spec.config.raw`
-block of `cluster/k8s/agents/openclaw/gateway/openclawinstance.yaml`. The second is
-easy to forget because it is a CRD field rather than a config file, and it is the
-production agent.
+Scope: `cluster/k8s/agents/public-coder-agent/app/openclaw.json`. The retired
+operator-managed gateway also embedded config in a CRD field, but that second
+configuration no longer exists.
 
 Caveat to handle deliberately: a committed schema drifts from the image. Record the
 source image tag next to it and regenerate when the image pin moves. Prefer that
