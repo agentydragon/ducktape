@@ -21,7 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.bonds import coupon_amount_cents, coupon_months, is_on_books
-from finance.augur.sim.compiler.helpers import NO_CODE, StringTable, require_slot
+from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.scenario import BondHolding, InterestIncome, Scenario
@@ -56,7 +56,7 @@ def bond_income_categories(scenario: Scenario) -> set[InterestIncome]:
 def compile_bonds(
     scenario: Scenario,
     strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
+    account_slot_by_key: AccountSlots,
     profile_index_by_agent: dict[str, int],
     buckets: IncomeBuckets,
 ) -> BondCompileOutput:
@@ -99,7 +99,7 @@ def compile_bonds(
         agent=np.asarray([strings.require(bond.agent_id) for bond in bonds], dtype=np.int64),
         to_slot=np.asarray(
             [
-                require_slot(account_slot_by_key, bond.agent_id, bond.account_id, owner=f"bond {bond.bond_id!r}")
+                account_slot_by_key.require(bond.agent_id, bond.account_id, owner=f"bond {bond.bond_id!r}")
                 for bond in bonds
             ],
             dtype=np.int64,

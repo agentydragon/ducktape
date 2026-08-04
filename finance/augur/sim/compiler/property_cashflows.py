@@ -18,10 +18,10 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
+    AccountSlots,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
-    slot,
 )
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.scenario import RecurringPropertyCashflow, Scenario, ScheduledPropertyCashflow
@@ -54,7 +54,7 @@ class PropertyCashflowCompileOutput:
 def compile_property_cashflows(
     scenario: Scenario,
     strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
+    account_slot_by_key: AccountSlots,
     profile_index_by_agent: dict[str, int],
     series_index_by_id: dict[LevelSeriesKey, int],
     property_slot_by_id: dict[str, int],
@@ -93,10 +93,10 @@ def compile_property_cashflows(
             cause[month, idx] = strings.require(cashflow.cause_id)
             from_agent[month, idx] = strings.require(cashflow.from_agent_id)
             from_account[month, idx] = strings.require(cashflow.from_account_id)
-            from_slot[month, idx] = slot(account_slot_by_key, cashflow.from_agent_id, cashflow.from_account_id)
+            from_slot[month, idx] = account_slot_by_key.resolve(cashflow.from_agent_id, cashflow.from_account_id)
             to_agent[month, idx] = strings.require(cashflow.to_agent_id)
             to_account[month, idx] = strings.require(cashflow.to_account_id)
-            to_slot[month, idx] = slot(account_slot_by_key, cashflow.to_agent_id, cashflow.to_account_id)
+            to_slot[month, idx] = account_slot_by_key.resolve(cashflow.to_agent_id, cashflow.to_account_id)
             try:
                 property_slot[month, idx] = property_slot_by_id[cashflow.property_id]
             except KeyError as exc:

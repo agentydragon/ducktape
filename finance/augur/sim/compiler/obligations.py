@@ -19,10 +19,10 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
+    AccountSlots,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
-    slot,
 )
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
 from finance.augur.sim.compiler.tax import TaxCompileOutput
@@ -80,7 +80,7 @@ def estimated_tax_quarter(month: int) -> int | None:
 def compile_obligation_slots(
     scenario: Scenario,
     strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
+    account_slot_by_key: AccountSlots,
     series_index_by_id: dict[LevelSeriesKey, int],
     properties: PropertyCompileOutput,
     property_slot_by_id: dict[str, int],
@@ -169,10 +169,10 @@ def compile_obligation_slots(
                 obligation_type[month, idx] = strings.require(config.obligation_type)
                 agent[month, idx] = strings.require(config.agent_id)
                 from_account[month, idx] = strings.require(config.from_account_id)
-                from_slot[month, idx] = slot(account_slot_by_key, config.agent_id, config.from_account_id)
+                from_slot[month, idx] = account_slot_by_key.resolve(config.agent_id, config.from_account_id)
                 to_agent[month, idx] = strings.require(config.to_agent_id)
                 to_account[month, idx] = strings.require(config.to_account_id)
-                to_slot[month, idx] = slot(account_slot_by_key, config.to_agent_id, config.to_account_id)
+                to_slot[month, idx] = account_slot_by_key.resolve(config.to_agent_id, config.to_account_id)
                 kind, fixed, base, series, base_month, period = amount_arrays_cents(
                     config.amount_due_usd, series_index_by_id
                 )
@@ -215,11 +215,11 @@ def compile_obligation_slots(
                 obligation_type[month, idx] = strings.require("mortgage_payment")
                 agent[month, idx] = strings.require(purchase.buyer_agent_id)
                 from_account[month, idx] = strings.require(purchase.buyer_account_id)
-                from_slot[month, idx] = slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
+                from_slot[month, idx] = account_slot_by_key.resolve(purchase.buyer_agent_id, purchase.buyer_account_id)
                 to_agent[month, idx] = strings.require(purchase.mortgage.lender_agent_id)
                 to_account[month, idx] = strings.require(purchase.mortgage.lender_account_id)
-                to_slot[month, idx] = slot(
-                    account_slot_by_key, purchase.mortgage.lender_agent_id, purchase.mortgage.lender_account_id
+                to_slot[month, idx] = account_slot_by_key.resolve(
+                    purchase.mortgage.lender_agent_id, purchase.mortgage.lender_account_id
                 )
             elif kind == 2:
                 prop_slot = int(spec["source"])
@@ -243,11 +243,11 @@ def compile_obligation_slots(
                 obligation_type[month, idx] = strings.require("property_tax")
                 agent[month, idx] = strings.require(policy.owner_agent_id)
                 from_account[month, idx] = strings.require(policy.from_account_id)
-                from_slot[month, idx] = slot(account_slot_by_key, policy.owner_agent_id, policy.from_account_id)
+                from_slot[month, idx] = account_slot_by_key.resolve(policy.owner_agent_id, policy.from_account_id)
                 to_agent[month, idx] = strings.require(policy.tax_authority_agent_id)
                 to_account[month, idx] = strings.require(policy.tax_authority_account_id)
-                to_slot[month, idx] = slot(
-                    account_slot_by_key, policy.tax_authority_agent_id, policy.tax_authority_account_id
+                to_slot[month, idx] = account_slot_by_key.resolve(
+                    policy.tax_authority_agent_id, policy.tax_authority_account_id
                 )
                 property_tax_annual_rate[month, idx] = (
                     float(policy.annual_tax_rate) if policy.annual_tax_rate is not None else np.nan
@@ -283,11 +283,13 @@ def compile_obligation_slots(
                 obligation_type[month, idx] = strings.require(obligation_type_text)
                 agent[month, idx] = strings.require(tax_profile.agent_id)
                 from_account[month, idx] = strings.require(tax_profile.payment_account_id)
-                from_slot[month, idx] = slot(account_slot_by_key, tax_profile.agent_id, tax_profile.payment_account_id)
+                from_slot[month, idx] = account_slot_by_key.resolve(
+                    tax_profile.agent_id, tax_profile.payment_account_id
+                )
                 to_agent[month, idx] = strings.require(tax_profile.tax_authority_agent_id)
                 to_account[month, idx] = strings.require(tax_profile.tax_authority_account_id)
-                to_slot[month, idx] = slot(
-                    account_slot_by_key, tax_profile.tax_authority_agent_id, tax_profile.tax_authority_account_id
+                to_slot[month, idx] = account_slot_by_key.resolve(
+                    tax_profile.tax_authority_agent_id, tax_profile.tax_authority_account_id
                 )
     return ObligationCompileOutput(
         cause=cause,

@@ -17,7 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.bonds import bond_income_categories
-from finance.augur.sim.compiler.helpers import StringTable, slot
+from finance.augur.sim.compiler.helpers import AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, load_jurisdiction
@@ -133,10 +133,7 @@ def _source_is_taxed_by(
 
 
 def compile_tax(
-    scenario: Scenario,
-    strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
-    jurisdictions: dict[str, Jurisdiction],
+    scenario: Scenario, strings: StringTable, account_slot_by_key: AccountSlots, jurisdictions: dict[str, Jurisdiction]
 ) -> TaxCompileOutput:
     profile_agent: list[int] = []
     payment_slot: list[int] = []
@@ -157,7 +154,7 @@ def compile_tax(
     max_ltcg = 1
     for profile_index, profile in enumerate(scenario.tax_profiles):
         profile_agent.append(strings.require(profile.agent_id))
-        payment_slot.append(slot(account_slot_by_key, profile.agent_id, profile.payment_account_id))
+        payment_slot.append(account_slot_by_key.resolve(profile.agent_id, profile.payment_account_id))
         payment_account.append(strings.require(profile.payment_account_id))
         authority_agent.append(strings.require(profile.tax_authority_agent_id))
         authority_account.append(strings.require(profile.tax_authority_account_id))

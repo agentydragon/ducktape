@@ -22,7 +22,14 @@ from finance.augur.sim.compiler.deductions import (
     compile_federal_salt_deductions,
     compile_mortgage_interest_deductions,
 )
-from finance.augur.sim.compiler.helpers import NO_CODE, AssetTable, StringTable
+from finance.augur.sim.compiler.helpers import (
+    EXTERNAL_ACCOUNT_ID,
+    EXTERNAL_AGENT_ID,
+    NO_CODE,
+    AccountSlots,
+    AssetTable,
+    StringTable,
+)
 from finance.augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
 from finance.augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_liquidity_policies
 from finance.augur.sim.compiler.obligations import ObligationCompileOutput, compile_obligation_slots
@@ -201,6 +208,16 @@ def compile_simulation(
         cash_account_codes.append(strings.require(entry.account_id))
         cash_initial_balance.append(usd_to_cents(entry.balance_usd))
 
+    # One more cash row than the scenario declares: the rest of the world. Every counterparty
+    # the scenario does not model settles here, so no flow is discarded and total cash across
+    # all rows is conserved. It opens at zero and goes steeply negative, which is what a contra
+    # account funding every paycheck is supposed to do.
+    external_slot = len(cash_initial_balance)
+    cash_agent_codes.append(strings.require(EXTERNAL_AGENT_ID))
+    cash_account_codes.append(strings.require(EXTERNAL_ACCOUNT_ID))
+    cash_initial_balance.append(np.int64(0))
+    account_slots = AccountSlots(by_key=account_slot_by_key, external=external_slot)
+
     agent_slot_by_id: dict[str, int] = {}
     agent_codes: list[int] = []
     for agent in scenario.agents:
@@ -215,12 +232,12 @@ def compile_simulation(
     )
 
     profile_index_by_agent = {profile.agent_id: idx for idx, profile in enumerate(scenario.tax_profiles)}
-    tax = compile_tax(scenario, strings, account_slot_by_key, jurisdictions)
+    tax = compile_tax(scenario, strings, account_slots, jurisdictions)
     (capital_gain_agent_codes, tax_profile_capital_gain_index) = compile_capital_gain_agents(scenario, strings)
 
     tax_liabilities = compile_tax_liability_slots(horizon, tax)
 
-    properties, liabilities = compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
+    properties, liabilities = compile_properties_and_liabilities(scenario, strings, account_slots, locations)
 
     # Per-liability rented_fraction: each liability is tied to one property via
     # liabilities.property_slot; the property's rented_fraction (0..1) drives both the MID
@@ -231,18 +248,12 @@ def compile_simulation(
         p.property_id: i for i, p in enumerate(scenario.scheduled_property_purchases)
     }
     transfers = compile_transfer_slots(
-        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, tax.buckets
+        scenario, strings, account_slots, profile_index_by_agent, series_index_by_id, tax.buckets
     )
     property_cashflows = compile_property_cashflows(
-        scenario,
-        strings,
-        account_slot_by_key,
-        profile_index_by_agent,
-        series_index_by_id,
-        property_slot_by_id,
-        tax.buckets,
+        scenario, strings, account_slots, profile_index_by_agent, series_index_by_id, property_slot_by_id, tax.buckets
     )
-    bonds = compile_bonds(scenario, strings, account_slot_by_key, profile_index_by_agent, tax.buckets)
+    bonds = compile_bonds(scenario, strings, account_slots, profile_index_by_agent, tax.buckets)
     property_rented_fraction = np.array(
         [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
     )
@@ -295,13 +306,13 @@ def compile_simulation(
     mid = compile_mortgage_interest_deductions(scenario, strings, tax=tax, liabilities=liabilities)
     salt = compile_federal_salt_deductions(scenario, strings, tax=tax)
 
-    sales = compile_sales(scenario, strings, assets, account_slot_by_key, series_index_by_id)
+    sales = compile_sales(scenario, strings, assets, account_slots, series_index_by_id)
 
     obligations = compile_obligation_slots(
-        scenario, strings, account_slot_by_key, series_index_by_id, properties, property_slot_by_id, liabilities, tax
+        scenario, strings, account_slots, series_index_by_id, properties, property_slot_by_id, liabilities, tax
     )
 
-    liquidity_policies = compile_liquidity_policies(scenario, strings, assets, account_slot_by_key, series_index_by_id)
+    liquidity_policies = compile_liquidity_policies(scenario, strings, assets, account_slots, series_index_by_id)
 
     lot_id_codes: list[int] = []
     lot_agent_codes: list[int] = []

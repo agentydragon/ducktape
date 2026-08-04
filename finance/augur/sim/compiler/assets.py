@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key
-from finance.augur.sim.compiler.helpers import NO_CODE, AssetTable, StringTable, slot
+from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable, StringTable
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, usd_to_cents
 from finance.augur.sim.scenario import Scenario
 
@@ -37,7 +37,7 @@ def compile_sales(
     scenario: Scenario,
     strings: StringTable,
     assets: AssetTable,
-    account_slot_by_key: dict[tuple[str, str], int],
+    account_slot_by_key: AccountSlots,
     series_index_by_id: dict[LevelSeriesKey, int],
 ) -> SaleCompileOutput:
     count = len(scenario.scheduled_asset_sales)
@@ -61,7 +61,7 @@ def compile_sales(
         quantity_scale[idx] = quantity_scale_for_asset(sale.asset)
         quantity[idx] = quantity_to_quanta(sale.quantity, scale=int(quantity_scale[idx]))
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
-        proceeds_slot[idx] = slot(account_slot_by_key, sale.agent_id, sale.proceeds_account_id)
+        proceeds_slot[idx] = account_slot_by_key.resolve(sale.agent_id, sale.proceeds_account_id)
         if sale.price_per_unit_usd is not None:
             price_fixed[idx] = usd_to_cents(sale.price_per_unit_usd)
         else:

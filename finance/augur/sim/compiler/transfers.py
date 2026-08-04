@@ -12,10 +12,10 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
+    AccountSlots,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
-    slot,
 )
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.scenario import RecurringTransfer, Scenario, ScheduledTransfer
@@ -50,7 +50,7 @@ class TransferCompileOutput:
 def compile_transfer_slots(
     scenario: Scenario,
     strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
+    account_slot_by_key: AccountSlots,
     profile_index_by_agent: dict[str, int],
     series_index_by_id: dict[LevelSeriesKey, int],
     buckets: IncomeBuckets,
@@ -85,10 +85,10 @@ def compile_transfer_slots(
             cause[month, idx] = strings.require(transfer.cause_id)
             from_agent[month, idx] = strings.require(transfer.from_agent_id)
             from_account[month, idx] = strings.require(transfer.from_account_id)
-            from_slot[month, idx] = slot(account_slot_by_key, transfer.from_agent_id, transfer.from_account_id)
+            from_slot[month, idx] = account_slot_by_key.resolve(transfer.from_agent_id, transfer.from_account_id)
             to_agent[month, idx] = strings.require(transfer.to_agent_id)
             to_account[month, idx] = strings.require(transfer.to_account_id)
-            to_slot[month, idx] = slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
+            to_slot[month, idx] = account_slot_by_key.resolve(transfer.to_agent_id, transfer.to_account_id)
             if transfer.income_category is not None:
                 income_profile[month, idx] = buckets.bucket(
                     profile_index_by_agent.get(transfer.to_agent_id, NO_CODE), transfer.income_category

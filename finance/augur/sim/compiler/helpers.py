@@ -8,6 +8,8 @@ so per-domain files can import these without pulling in the orchestrator
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -68,32 +70,57 @@ class AssetTable:
         return self.intern(asset)
 
 
-def slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str) -> int:
-    return account_slot_by_key.get((agent_id, account_id), NO_CODE)
+EXTERNAL_AGENT_ID = "external"
+EXTERNAL_ACCOUNT_ID = "rest_of_world"
 
 
-def require_slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str, *, owner: str) -> int:
-    """`slot`, but for cashflows that MUST land somewhere real.
+@dataclass(frozen=True)
+class AccountSlots:
+    """Cash-slot resolution, including the row the rest of the world settles against.
 
-    `slot` resolves an unknown (agent, account) to `NO_CODE`, which is right for transfers:
-    paying an unmodeled employer or tax authority legitimately leaves the modeled world, and
-    the engine's scatter sends those to a dump row on purpose.
+    Every cashflow is double-entry: it debits one cash row and credits another. Counterparties
+    the scenario does not model — an employer, a landlord, a bond issuer, a tax authority — are
+    not holes in that scheme, they are the `external` row. A paycheck is a transfer FROM the
+    rest of the world, not cash conjured from nothing.
 
-    A position held BY a modeled agent is not that case. `NO_CODE` there means the position's
-    own cashflows are scattered into the dump row and silently disappear — the simulation runs
-    clean and the money is simply gone. A typo'd account must be rejected at compile time
-    instead.
+    Before this, an unmodeled counterparty resolved to `NO_CODE`, and the engine's scatter sent
+    those rows to a padding row it then sliced off. That silently discarded the money, which is
+    exactly what made a leak invisible: nothing failed, the total just did not add up. With every
+    flow landing on a real row, total cash is conserved, and one assertion over that total
+    catches any leak anywhere — including ones nobody thought to guard.
+
+    `NO_CODE` keeps its other meaning untouched: a padding entry in a `(month, slot)` table for
+    a month where nothing fires is a genuine no-op, not a flow to anywhere.
     """
 
-    resolved = account_slot_by_key.get((agent_id, account_id))
-    if resolved is None:
-        known = ", ".join(sorted(f"{agent}/{account}" for agent, account in account_slot_by_key)) or "<none>"
-        raise ValueError(
-            f"{owner} pays into account {account_id!r} of agent {agent_id!r}, which has no cash "
-            f"account in this scenario, so its cashflows would be silently discarded. "
-            f"Known (agent/account) pairs: {known}"
-        )
-    return resolved
+    by_key: Mapping[tuple[str, str], int]
+    external: int
+
+    def resolve(self, agent_id: str, account_id: str) -> int:
+        """The row a flow to/from this (agent, account) settles on.
+
+        An unknown pair is neither an error nor a hole — it is outside the model, so it settles
+        against `external`.
+        """
+
+        return self.by_key.get((agent_id, account_id), self.external)
+
+    def require(self, agent_id: str, account_id: str, *, owner: str) -> int:
+        """`resolve`, for a position held BY a modeled agent, where "outside the model" is not
+        a possible answer.
+
+        A bond whose account does not exist is a typo, not a counterparty: settling its coupons
+        against the rest of the world would hand the agent's own income to nobody.
+        """
+
+        resolved = self.by_key.get((agent_id, account_id))
+        if resolved is None:
+            known = ", ".join(sorted(f"{agent}/{account}" for agent, account in self.by_key)) or "<none>"
+            raise ValueError(
+                f"{owner} pays into account {account_id!r} of agent {agent_id!r}, which has no cash "
+                f"account in this scenario. Known (agent/account) pairs: {known}"
+            )
+        return resolved
 
 
 def amount_arrays(

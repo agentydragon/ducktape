@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.sim.compiler.helpers import NO_CODE, StringTable, slot
+from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment_usd
@@ -71,10 +71,7 @@ class LiabilityCompileOutput:
 
 
 def compile_properties_and_liabilities(
-    scenario: Scenario,
-    strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
-    locations: dict[str, Location],
+    scenario: Scenario, strings: StringTable, account_slot_by_key: AccountSlots, locations: dict[str, Location]
 ) -> tuple[PropertyCompileOutput, LiabilityCompileOutput]:
     prop_count = len(scenario.scheduled_property_purchases)
     cause = np.full((int(scenario.horizon_months), max(1, prop_count)), NO_CODE, dtype=np.int64)
@@ -128,10 +125,10 @@ def compile_properties_and_liabilities(
         month_array[idx] = int(purchase.month)
         buyer_agent[idx] = strings.require(purchase.buyer_agent_id)
         buyer_account[idx] = strings.require(purchase.buyer_account_id)
-        buyer_slot[idx] = slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
+        buyer_slot[idx] = account_slot_by_key.resolve(purchase.buyer_agent_id, purchase.buyer_account_id)
         seller_agent[idx] = strings.require(purchase.seller_agent_id)
         seller_account[idx] = strings.require(purchase.seller_account_id)
-        seller_slot[idx] = slot(account_slot_by_key, purchase.seller_agent_id, purchase.seller_account_id)
+        seller_slot[idx] = account_slot_by_key.resolve(purchase.seller_agent_id, purchase.seller_account_id)
         mortgage_principal = purchase.mortgage.principal_usd if purchase.mortgage is not None else 0.0
         purchase_price[idx] = usd_to_cents(purchase.purchase_price_usd)
         closing_cost[idx] = usd_to_cents(purchase.buyer_closing_cost_usd)
@@ -146,11 +143,13 @@ def compile_properties_and_liabilities(
             liability_property_slot.append(idx)
             liability_agent.append(strings.require(purchase.buyer_agent_id))
             liability_payment_account.append(strings.require(purchase.buyer_account_id))
-            liability_payment_slot.append(slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id))
+            liability_payment_slot.append(
+                account_slot_by_key.resolve(purchase.buyer_agent_id, purchase.buyer_account_id)
+            )
             liability_counterparty_agent.append(strings.require(mortgage.lender_agent_id))
             liability_counterparty_account.append(strings.require(mortgage.lender_account_id))
             liability_counterparty_slot.append(
-                slot(account_slot_by_key, mortgage.lender_agent_id, mortgage.lender_account_id)
+                account_slot_by_key.resolve(mortgage.lender_agent_id, mortgage.lender_account_id)
             )
             liability_principal.append(usd_to_cents(mortgage.principal_usd))
             liability_rate.append(float(mortgage.annual_interest_rate))

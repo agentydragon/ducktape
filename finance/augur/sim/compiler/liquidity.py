@@ -11,7 +11,14 @@ from numpy.typing import NDArray
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key_or_none
-from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_cents, slot
+from finance.augur.sim.compiler.helpers import (
+    AMOUNT_FIXED,
+    NO_CODE,
+    AccountSlots,
+    AssetTable,
+    StringTable,
+    amount_arrays_cents,
+)
 from finance.augur.sim.scenario import Scenario
 
 
@@ -48,7 +55,7 @@ def compile_liquidity_policies(
     scenario: Scenario,
     strings: StringTable,
     asset_table: AssetTable,
-    account_slot_by_key: dict[tuple[str, str], int],
+    account_slot_by_key: AccountSlots,
     series_index_by_id: dict[LevelSeriesKey, int],
 ) -> LiquidityPolicyCompileOutput:
     policy_count = len(scenario.liquidity_policies)
@@ -79,7 +86,7 @@ def compile_liquidity_policies(
     for idx, policy in enumerate(scenario.liquidity_policies):
         agent[idx] = strings.require(policy.agent_id)
         account[idx] = strings.require(policy.account_id)
-        cash_slot[idx] = slot(account_slot_by_key, policy.agent_id, policy.account_id)
+        cash_slot[idx] = account_slot_by_key.resolve(policy.agent_id, policy.account_id)
         for source_idx, source_account_id in enumerate(policy.source_account_ids or (policy.account_id,)):
             source_accounts[idx, source_idx] = strings.require(source_account_id)
         (
