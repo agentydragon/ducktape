@@ -18,6 +18,7 @@ from finance.augur.model.exogenous import (
     SampledExogenousBundle,
     Sampler,
     anchor_sampled_series_levels,
+    level_series_request_channels,
     validate_sample_satisfies_request,
 )
 from finance.augur.product.decode import (
@@ -30,7 +31,6 @@ from finance.augur.product.scenarios import (
     asset_label_by_series_id,
     build_scenario,
     initial_lots_from_portfolio,
-    required_level_series,
     required_private_equity_issuers,
 )
 from finance.augur.product.wire import (
@@ -45,6 +45,7 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler import compile_simulation
+from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import ProductSummary, run_jax_product_summary
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
@@ -212,9 +213,9 @@ class ProductService:
         sampling_request = ExogenousSamplingRequest(
             horizon_months=int(scenario_key.horizon_months),
             rollout_seeds=seeds,
-            **required_level_series(
-                scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
-            ),
+            # Derived from the scenario the simulator will actually compile, not re-derived
+            # from the wire type — one answer to "what does this need", not two that must agree.
+            **level_series_request_channels(scenario_level_series_keys(scenario)),
             required_private_equity_issuers=required_private_equity_issuers(self._initial_lots),
         )
         sampled = self._models[scenario_key.model_id].sample(sampling_request)

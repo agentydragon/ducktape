@@ -13,16 +13,75 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from finance.augur.model.series import LevelSeriesKey, try_parse_level_series_key
+from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, try_parse_level_series_key
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 
 
+def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]:
+    """Every level series the scenario REFERENCES — its exogenous demand.
+
+    Derivable before anything is sampled, which is the point: it lets the caller ask the
+    exogenous model for exactly this set instead of re-deriving the same fact from the
+    product wire type in a second, drifting implementation.
+
+    Must stay exhaustive over the compiler's series lookups. Each entry below corresponds to
+    a `series_index_by_id[...]` in `compiler/`; a demand missing here surfaces as a `NO_CODE`
+    series index, which the engine rejects for holdings and which
+    `_reject_missing_property_sale_home_values` rejects for property sales.
+    """
+
+    keys: list[LevelSeriesKey] = []
+    seen: set[LevelSeriesKey] = set()
+
+    def add(key: LevelSeriesKey | None) -> None:
+        if key is not None and key not in seen:
+            seen.add(key)
+            keys.append(key)
+
+    # Holdings are marked every month off their asset-price series (`plan.lot_asset_series_index`).
+    for lot in scenario.initial_lots:
+        add(asset_price_key_or_none(lot.asset))
+    for scheduled_transfer in scenario.scheduled_transfers:
+        _add_amount_series_key(scheduled_transfer.amount_usd, add)
+    for recurring_transfer in scenario.recurring_transfers:
+        _add_amount_series_key(recurring_transfer.amount_usd, add)
+    for scheduled_cashflow in scenario.scheduled_property_cashflows:
+        _add_amount_series_key(scheduled_cashflow.amount_usd, add)
+    for recurring_cashflow in scenario.recurring_property_cashflows:
+        _add_amount_series_key(recurring_cashflow.amount_usd, add)
+    for scheduled_obligation in scenario.scheduled_obligations:
+        _add_amount_series_key(scheduled_obligation.amount_due_usd, add)
+    for recurring_obligation in scenario.recurring_obligations:
+        _add_amount_series_key(recurring_obligation.amount_due_usd, add)
+    for sale in scenario.scheduled_asset_sales:
+        if sale.price_per_unit_usd is None:
+            add(asset_price_key(sale.asset))
+    for policy in scenario.liquidity_policies:
+        for asset in policy.asset_preference_chain:
+            add(asset_price_key_or_none(asset))
+        _add_amount_series_key(policy.cash_buffer_trigger_below_usd, add)
+        _add_amount_series_key(policy.cash_buffer_sale_usd, add)
+    for pe_policy in scenario.private_equity_tender_policies:
+        _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
+    # A property is valued at sale off its location's home-value series.
+    for purchase in scenario.scheduled_property_purchases:
+        add(HomeValueKey(location_id=LocationId(purchase.location_id)))
+    return tuple(keys)
+
+
 def collect_level_series_keys(scenario: Scenario, external_series: ExternalSeriesContext) -> tuple[LevelSeriesKey, ...]:
-    """Distinct typed level-series keys the cube must carry: every series materialized in the
-    external frame, plus the typed key each scenario reference resolves to (amount indices, sale
-    /liquidity asset prices). PE assets resolve to `None` (priced off-series) and are skipped."""
+    """Distinct typed level-series keys the compiled cube carries a row for.
+
+    Deliberately NOT `scenario_level_series_keys`: that is the scenario's *demand*, this is
+    what the cube can actually serve. A demanded series nobody sampled must stay absent here
+    so it resolves to `NO_CODE` and fails as "no modeled price series" — naming the real
+    problem — rather than getting an all-NaN row and failing later as a non-finite price.
+
+    The scenario walk below is only for lookups the compiler does with `[]` rather than
+    `.get(..., NO_CODE)`, which would otherwise raise `KeyError`.
+    """
 
     keys: list[LevelSeriesKey] = []
     seen: set[LevelSeriesKey] = set()

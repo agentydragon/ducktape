@@ -9,18 +9,8 @@ from more_itertools import one
 from finance.augur.api.config import Config, LocationConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.exogenous import LevelRequestChannels
-from finance.augur.model.series import (
-    AssetPriceKey,
-    HomeValueKey,
-    IndexSeriesKey,
-    InflationKey,
-    IssuerId,
-    LocationId,
-    PropertyValueKey,
-    RentKey,
-)
-from finance.augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey, asset_price_key
+from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
+from finance.augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -132,58 +122,6 @@ def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     return {
         position.value_series.wire_id: f"{position.label or position.symbol} ({position.symbol})"
         for position in portfolio.holdings
-    }
-
-
-def required_level_series(
-    scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...], properties_by_id: dict[str, Property]
-) -> LevelRequestChannels:
-    """The non-PE level series a scenario needs, as the magisterium request channels —
-    splattable straight into `ExogenousSamplingRequest(**required_level_series(...))`."""
-    # PE lot asset_ids (`private_equity:<issuer>`) flow through the typed
-    # PrivateEquityBundle, not through the level-series channels — they're
-    # surfaced via `required_private_equity_issuers` instead.
-    asset_prices: set[AssetPriceKey] = set()
-    property_values: set[PropertyValueKey] = set()
-    index_series: set[IndexSeriesKey] = set()
-    for lot in initial_lots:
-        if isinstance(lot.asset, PrivateEquityAssetKey):
-            continue
-        asset_prices.add(asset_price_key(lot.asset))
-    if scenario_key.spend_index == "inflation":
-        index_series.add(InflationKey())
-    if scenario_key.monthly_rent_usd > 0:
-        assert scenario_key.rental_location_id is not None  # wire validator guarantees
-        index_series.add(RentKey(location_id=LocationId(scenario_key.rental_location_id)))
-    if scenario_key.property_purchase is not None:
-        property_ = properties_by_id[scenario_key.property_purchase.property_id]
-        property_values.add(HomeValueKey(location_id=LocationId(property_.location_id)))
-        if property_.hoa_monthly_usd > 0:
-            index_series.add(InflationKey())
-        if scenario_key.annual_insurance_pct > 0:
-            index_series.add(InflationKey())
-        if scenario_key.annual_maintenance_pct > 0:
-            index_series.add(InflationKey())
-        if scenario_key.property_purchase.initial_rental is not None or _has_positive_rented_fraction_event(
-            scenario_key.property_purchase
-        ):
-            index_series.add(RentKey(location_id=LocationId(property_.location_id)))
-    # PE tender policy with an inflation-indexed floor needs the CPI series.
-    if (
-        scenario_key.pe_tender_policy.liquid_net_worth_floor_usd > 0
-        and scenario_key.pe_tender_policy.index_floor_to_inflation
-    ):
-        index_series.add(InflationKey())
-    # Cash-buffer trigger / sale, when inflation-indexed, also need the CPI series.
-    funding_policy = scenario_key.funding_policy
-    if funding_policy.cash_buffer_index_to_inflation and (
-        funding_policy.cash_buffer_trigger_below_usd > 0 or funding_policy.cash_buffer_sale_usd > 0
-    ):
-        index_series.add(InflationKey())
-    return {
-        "required_asset_prices": frozenset(asset_prices),
-        "required_property_values": frozenset(property_values),
-        "required_index_series": frozenset(index_series),
     }
 
 
