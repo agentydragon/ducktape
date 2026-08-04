@@ -15,6 +15,33 @@
 # idempotency check, so re-evaluating on UPDATE would duplicate volume/env/mount
 # entries and the API server would reject the request (and break the Job
 # controller's finalizer PATCH). Injection only needs to happen at pod creation.
+#
+# NO_PROXY entry by entry, injected identically into containers and
+# initContainers:
+#
+#   127.0.0.1, localhost    Loopback. A pod's own sidecars and health checks must
+#                           not be shipped to a proxy in another pod.
+#   .svc                    In-cluster Service names, in all three forms clients
+#   .svc.cluster.local      actually construct. Suffix matching is literal, so
+#   kubernetes.default.svc  the short forms do not match the qualified suffix and
+#                           need listing separately — without them
+#                           `https://kubernetes.default.svc`, the URL in-cluster
+#                           client libraries build by default, goes to the proxy
+#                           and hangs until timeout (diagnosed from a haku
+#                           sandbox, 2026-07-24).
+#   10.0.0.0/8              Pod and Service CIDRs — the same destinations reached
+#                           by IP rather than by name.
+#
+# Everything on this list is reached with no proxy in the path and no egress
+# allowlist applied. Accepted: it is all cluster addressing, and in-cluster
+# services authenticate their own callers.
+#
+# This is the same cluster-addressing set as the other two injection policies,
+# asserted by //cluster/validation:test_proxy_injection. It deliberately does not
+# carry inject-haku-egress-proxy's `*.allegedly.works` and `*.forgejo` groups:
+# zone workers never touch haku-state (git write implies read), so they have no
+# reason to bypass the proxy for Forgejo, and keeping our own public names in the
+# proxy path keeps them inside the zones' allowlist.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -74,7 +101,7 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -132,7 +159,7 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:

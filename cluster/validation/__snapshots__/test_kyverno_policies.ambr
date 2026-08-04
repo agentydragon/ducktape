@@ -30,7 +30,7 @@
       - name: HTTPS_PROXY
         value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
-        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+        value: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8
       - name: SSL_CERT_FILE
         value: /mitmproxy-ca/ca-certificates.crt
       - name: CURL_CA_BUNDLE
@@ -72,7 +72,7 @@
       - name: HTTPS_PROXY
         value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
-        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+        value: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8
       - name: SSL_CERT_FILE
         value: /mitmproxy-ca/ca-certificates.crt
       - name: CURL_CA_BUNDLE
@@ -98,7 +98,7 @@
       - name: HTTPS_PROXY
         value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
-        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+        value: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8
       - name: SSL_CERT_FILE
         value: /mitmproxy-ca/ca-certificates.crt
       - name: CURL_CA_BUNDLE
@@ -135,7 +135,7 @@
       - name: HTTPS_PROXY
         value: http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080
       - name: NO_PROXY
-        value: 127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8
+        value: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8
       - name: SSL_CERT_FILE
         value: /mitmproxy-ca/ca-certificates.crt
       - name: CURL_CA_BUNDLE

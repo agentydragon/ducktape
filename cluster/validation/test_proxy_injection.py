@@ -20,11 +20,10 @@ list across the two, so that duplication is structural and this is what keeps th
 copies equal.
 
 Values differ per policy and are declared per policy. `NO_PROXY` is declared as a
-union of named groups rather than a string, because the three policies genuinely
-differ there and the difference should be legible: `inject-mitmproxy` and the
-zones policy omit `CLUSTER_SHORT_FORMS`, which is the exact omission that made
-`https://kubernetes.default.svc` hang from a haku sandbox in 2026-07-24 before
-that policy gained them.
+union of named groups rather than a string, so that what the policies share and
+what they deliberately do not is legible instead of buried in a diff between long
+comma-separated strings. All three carry `CLUSTER_ADDRESSING`; the two groups
+that stay haku-only are named with the reason they cannot be unified.
 
 Not covered here: the deployments and Jobs that set the same variables by hand
 (`haku-openclaw-spike`, `public-coder-agent`, `haku-ci`, the agent-sdk smoke
@@ -57,12 +56,21 @@ INJECTED = PROXY_VARS | CA_VARS
 
 # `NO_PROXY` groups. Suffix matching is literal and the syntax differs across
 # curl, Go, Python, node and git, which is why several of these carry the same
-# name in two forms.
+# name in more than one form.
 LOOPBACK = frozenset({"127.0.0.1", "localhost"})
-CLUSTER_ADDRESSING = frozenset({".svc.cluster.local", "10.0.0.0/8"})
-# The short in-cluster forms. `.svc.cluster.local` does not match them, so a
-# client that builds `https://kubernetes.default.svc` reaches the proxy and hangs.
-CLUSTER_SHORT_FORMS = frozenset({".svc", "kubernetes.default.svc"})
+
+# Every way a pod addresses something inside the cluster. Carried by all three
+# policies: in-cluster traffic is deliberately unfenced, so there is no reason
+# for one sandbox to bypass less of it than another. The short Service forms are
+# listed because `.svc.cluster.local` does not match them — without them a client
+# that builds `https://kubernetes.default.svc`, which is what in-cluster
+# libraries do by default, reaches the proxy and hangs until timeout.
+CLUSTER_ADDRESSING = frozenset({".svc", ".svc.cluster.local", "kubernetes.default.svc", "10.0.0.0/8"})
+
+# The two groups that are NOT shared, and must not be. `*.allegedly.works` would
+# break `claude-sandbox`'s docker-ci path, which is supposed to go *through* the
+# proxy to be raw-tunnelled; `*.forgejo` exists because haku clones haku-state,
+# which zone workers never do.
 OWN_DOMAINS = frozenset({"*.allegedly.works", ".allegedly.works"})
 FORGEJO = frozenset({"*.forgejo", ".forgejo"})
 
@@ -83,7 +91,7 @@ POLICIES: dict[str, Injection] = {
         namespace="haku-sandbox",
         proxy="http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080",
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
-        bypasses=LOOPBACK | CLUSTER_ADDRESSING | CLUSTER_SHORT_FORMS | OWN_DOMAINS | FORGEJO,
+        bypasses=LOOPBACK | CLUSTER_ADDRESSING | OWN_DOMAINS | FORGEJO,
     ),
     "cluster/k8s/kyverno/policies/inject-mitmproxy.yaml": Injection(
         namespace="claude-sandbox",
