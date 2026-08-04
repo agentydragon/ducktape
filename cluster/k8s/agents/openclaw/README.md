@@ -29,11 +29,13 @@ A server-side apply cannot do it — `metadata.finalizers` is a set-type list, a
 SSA will not remove an entry owned by another field manager, so the apply reports
 success and changes nothing.
 
-What remains in `openclaw-gateway` is a second layer from the OpenShell stack
-deleted the same day (a ConfigMap, the `openshell-gateway-certgen` SA/Role/
-RoleBinding, and four `openshell-*` TLS/JWT Secrets). None of it is managed by
-Flux, Helm or the reflector. It is tracked in <../../TODO.md> § "Retire the
-`openclaw-*` namespaces".
+A second layer surfaced underneath it, from the OpenShell stack deleted the same
+day — a ConfigMap, the `openshell-gateway-certgen` SA/Role/RoleBinding, and four
+`openshell-*` TLS/JWT Secrets, none managed by Flux, Helm or the reflector. Those
+went the same day.
+
+`openclaw-gateway` now holds only the three credentials above, two reflector
+mirrors (`github-token`, `litellm-key-openclaw`) and the cluster built-ins.
 
 **`ibkr-flex-query-credentials` was deleted on 2026-08-04**, along with its
 `sandbox-secrets` Kustomization and the two `*.interactivebrokers.com` hosts in
@@ -48,9 +50,9 @@ that field.** Re-homing them into `shared-secrets` is not a text edit — it nee
 cluster age key and a `sops` round-trip. Keeping the namespaces was the option that
 loses nothing and requires no key.
 
-`openclaw-sandbox` is genuinely empty; `openclaw-gateway` is not, per the note
-above. The privileged Pod Security labels that `openclaw-sandbox` carried for
-OpenShell's supervisor are gone, and
+Neither namespace runs anything since the 2026-08-04 cleanup; both hold only
+Secrets — the three above plus reflector mirrors. The privileged Pod Security
+labels that `openclaw-sandbox` carried for OpenShell's supervisor are gone, and
 `openclaw-gateway` opts out of Goldilocks since there is nothing to right-size.
 
 Not to be confused with the `openclaw` **ImageRepository/ImagePolicy** under

@@ -27,32 +27,35 @@ unique secrets pin those namespaces in `metadata`, and since the files set no
 `mac_only_encrypted` the document MAC covers that field, so re-homing them is a
 `sops` operation and not a text edit. Background: `agents/openclaw/README.md`.
 
-The OpenClaw teardown debris was cleared on 2026-08-04: the stuck
-`OpenClawInstance/openclaw`, the `StatefulSet` and 21Gi of PVCs it held, the
-objects GC took with it (Service, NetworkPolicy, PDB, Role/RoleBinding,
-ServiceAccount, ConfigMap, gateway token), and the three `openclaw.rocks` CRDs
-Helm left behind. One gotcha worth keeping: clearing the dangling finalizer needs
-a **merge patch** (`finalizers: null`) and cluster-admin. A server-side apply
-cannot do it — `metadata.finalizers` is a set-type list, and SSA will not remove
-an entry owned by a different field manager, so the apply reports success and
-changes nothing.
+All live teardown debris was cleared on 2026-08-04, in two passes. First the
+OpenClaw layer: the stuck `OpenClawInstance/openclaw`, the `StatefulSet` and 21Gi
+of PVCs it held, the objects GC took with it (Service, NetworkPolicy, PDB,
+Role/RoleBinding, ServiceAccount, ConfigMap, gateway token), and the three
+`openclaw.rocks` CRDs Helm left behind. Then the OpenShell layer that surfaced
+underneath it — `ConfigMap/openshell-openshell-operator-oidc-jwks`, the
+`openshell-gateway-certgen` ServiceAccount/Role/RoleBinding, and the Secrets
+`openshell-{client-tls,server-tls,gateway-jwt-keys,openshell-operator-token}`,
+none of which carried a Flux label, Helm release annotation or reflector
+annotation.
 
-What is left in `openclaw-gateway` is a second layer, from the OpenShell stack
-deleted the same day. None of it carries a Flux label, a Helm release annotation
-or a reflector annotation, so nothing in git manages it and nothing recreates it:
+`openclaw-gateway` now holds only the three retained credentials, two reflector
+mirrors (`github-token`, `litellm-key-openclaw` — leave both alone, deleting them
+only makes the reflector recreate them) and the cluster built-ins. A cluster-wide
+sweep found no other `openshell`/`openclaw` remnants: both the
+`openshell-sandboxes` and `openshell-system` namespaces are gone, and neither
+`openshell.lenshq.io` nor `openclaw.rocks` has any CRD left.
 
-- [ ] Delete the unmanaged OpenShell remnants (needs cluster-admin):
-      `ConfigMap/openshell-openshell-operator-oidc-jwks`,
-      `ServiceAccount`+`Role`+`RoleBinding/openshell-gateway-certgen`, and the
-      Secrets `openshell-{client-tls,server-tls,gateway-jwt-keys,openshell-operator-token}`.
-      These are TLS/JWT material for a stack that no longer exists; `certgen`
-      would re-mint them if OpenShell ever returned.
+Two gotchas worth keeping:
 
-      Leave `github-token` and `litellm-key-openclaw` alone — both are reflector
-      mirrors (`claude-sandbox/github-token`, `litellm/litellm-key-openclaw`), so
-      deleting them only makes the reflector recreate them.
+- Clearing a dangling finalizer needs a **merge patch** (`finalizers: null`) and
+  cluster-admin. A server-side apply cannot do it — `metadata.finalizers` is a
+  set-type list, and SSA will not remove an entry owned by a different field
+  manager, so the apply reports success and changes nothing.
+- `agent-lab`'s RBAC still grants `openshell.lenshq.io` **and** `openclaw.rocks`;
+  both API groups now have zero CRDs, so both grants are inert. The
+  `openclaw.rocks` one only became inert with the CRD deletion above.
 
-Then two steps, in order — the second is blocked on the first:
+What remains here is git-side, in order — the second is blocked on the first:
 
 - [ ] **Move the credentials** (needs the cluster age key). Re-author each under
       `agents/shared-secrets/` with the right namespace and `sops -e -i`:
