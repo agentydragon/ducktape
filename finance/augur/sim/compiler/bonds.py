@@ -1,4 +1,4 @@
-"""Bond compile output. Pairs with `codec/bonds.py`.
+"""Bond compile output.
 
 Every bond quantity in phase 1 is fixed by the terms: par purchase, held to maturity, no
 default and no marking, so nothing a bond does depends on a rollout. The whole schedule is

@@ -97,6 +97,19 @@ def test_par_purchase_is_accepted() -> None:
     assert _bond().purchase_price_usd == 100_000.0
 
 
+def test_par_is_decided_at_cent_precision_not_by_float_equality() -> None:
+    """A price that differs from the face by less than a cent is the same money. The scenario
+    surface speaks in dollars, so a value arriving from JSON as 99999.999999999985 must not be
+    rejected as a discount purchase — a cent is the precision the engine accounts in.
+    """
+
+    assert _bond(purchase_price_usd=99_999.999999999985).purchase_price_usd != 100_000.0
+
+    # Still a real boundary, though: one cent off IS off par.
+    with pytest.raises(ValidationError, match="phase 2"):
+        _bond(purchase_price_usd=99_999.99)
+
+
 def test_stub_period_is_rejected() -> None:
     with pytest.raises(ValidationError, match="whole number"):
         _bond(maturity_month_index=121)

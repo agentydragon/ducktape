@@ -28,6 +28,7 @@ from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import AssetKey
 from finance.augur.sim.enums import IncomeCategory
+from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
@@ -349,7 +350,11 @@ class BondHolding(BaseModel):
 
     @model_validator(mode="after")
     def _reject_non_par_purchase(self) -> BondHolding:
-        if self.purchase_price_usd != self.face_value_usd:
+        # Compared in cents, not as floats: the scenario surface speaks in dollars, and two
+        # amounts that are the same money can differ in binary floating point (a price that
+        # round-trips through JSON as 99999.99999999999 is par). A cent is the precision the
+        # rest of the engine accounts in, so it is the precision "at par" should mean.
+        if usd_to_cents(self.purchase_price_usd) != usd_to_cents(self.face_value_usd):
             raise ValueError(
                 f"bond {self.bond_id!r} was bought away from par "
                 f"({self.purchase_price_usd=} vs {self.face_value_usd=}). Phase 1 supports par "
