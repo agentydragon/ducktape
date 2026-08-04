@@ -12,7 +12,7 @@ metadata:
   annotations:
     description: >-
       Empty since ibkr-flex-query-credentials was deleted on 2026-08-04. Retained
-      only because two shared Secrets still name it in their emberstack reflector
+      only because one shared Secret still names it in its emberstack reflector
       annotations (see ../../../TODO.md). Nothing should run here since the
       OpenClaw/OpenShell teardown on
       2026-07-31 — the privileged Pod Security labels OpenShell's supervisor

@@ -34,8 +34,8 @@ day — a ConfigMap, the `openshell-gateway-certgen` SA/Role/RoleBinding, and fo
 `openshell-*` TLS/JWT Secrets, none managed by Flux, Helm or the reflector. Those
 went the same day.
 
-`openclaw-gateway` now holds only the three credentials above, two reflector
-mirrors (`github-token`, `litellm-key-openclaw`) and the cluster built-ins.
+`openclaw-gateway` now holds only the three credentials above, the
+`litellm-key-openclaw` reflector mirror and the cluster built-ins.
 
 **`ibkr-flex-query-credentials` was deleted on 2026-08-04**, along with its
 `sandbox-secrets` Kustomization and the two `*.interactivebrokers.com` hosts in

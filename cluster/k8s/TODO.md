@@ -38,9 +38,9 @@ underneath it — `ConfigMap/openshell-openshell-operator-oidc-jwks`, the
 none of which carried a Flux label, Helm release annotation or reflector
 annotation.
 
-`openclaw-gateway` now holds only the three retained credentials, two reflector
-mirrors (`github-token`, `litellm-key-openclaw` — leave both alone, deleting them
-only makes the reflector recreate them) and the cluster built-ins. A cluster-wide
+`openclaw-gateway` now holds only the three retained credentials, the
+`litellm-key-openclaw` reflector mirror (deleting it only makes the reflector
+recreate it), and the cluster built-ins. A cluster-wide
 sweep found no other `openshell`/`openclaw` remnants: both the
 `openshell-sandboxes` and `openshell-system` namespaces are gone, and neither
 `openshell.lenshq.io` nor `openclaw.rocks` has any CRD left.
@@ -72,21 +72,21 @@ What remains here is git-side, in order — the second is blocked on the first:
       `grep -rl 'namespace: openclaw-' cluster/k8s/ --include='*.sops.yaml'`
       returning nothing; it lists four files today.
 
-## `openclaw-sandbox` reflector targets in shared secrets
+## `openclaw-sandbox` reflector target in a shared secret
 
-Two SOPS-encrypted Secrets name `openclaw-sandbox` in their emberstack reflector
-annotations. That namespace still exists (see above), so this is dormant rather
-than stale — it becomes stale the moment the namespace is retired:
+One SOPS-encrypted Secret still names `openclaw-sandbox` in its emberstack
+reflector annotations. That namespace still exists (see above), so this is
+dormant rather than stale — it becomes stale the moment the namespace is
+retired:
 
-- [ ] `agents/shared-secrets/attic-push-token.sops.yaml` — drop `openclaw-sandbox`
-      from `reflection-{allowed,auto}-namespaces`
 - [ ] `agents/shared-secrets/buildbuddy-api-key.sops.yaml` — same, leaving
       `codex-pod,public-coder-agent`
 
-Not done alongside the deletion because these files set no `mac_only_encrypted`,
-so the document MAC covers metadata: a raw text edit of the annotations breaks
-decryption with a MAC mismatch. Fixing them needs the age key and a `sops -i`
-pass, which an agent without the key cannot do without rotating the value.
+The `attic-push-token` target was removed on 2026-08-04. The remaining file sets
+no `mac_only_encrypted`, so the document MAC covers metadata: a raw text edit of
+the annotations breaks decryption with a MAC mismatch. Fixing it needs the age
+key and a `sops -i` pass, which an agent without the key cannot do without
+rotating the value.
 
 Harmless either way: reflecting into a namespace that does not exist is a no-op,
 and while it does exist nothing there consumes these. Fold it into the same `sops`
