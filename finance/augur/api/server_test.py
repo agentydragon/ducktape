@@ -265,7 +265,7 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert eth["current_value_usd"] == 10_500.0
     pha = positions_by_id["private_holding_a"]
     assert pha["symbol"] == "PHA"
-    assert pha["security_kind"] is None
+    assert pha.get("security_kind") is None
     assert pha["asset"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
     assert pha["unit_value_usd"] == 25.0
     assert pha["current_value_usd"] == 25_000.0
@@ -363,7 +363,7 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
         "month_index": 0,
         "amount_usd": 50_000.0,
         "kind": "holding_sale",
-        "asset": {"kind": "security", "symbol": "SPY"},
+        "asset": {"kind": "security", "symbol": "VOO"},
         "asset_label": "SP500 Proxy (VOO)",
         "units": pytest.approx(100.0),
         "proceeds_usd": 50_000.0,
@@ -467,7 +467,7 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 20_000.0,
-            "sell_order": ["SPY"],
+            "sell_order": ["VOO"],
         },
     }
 
@@ -516,7 +516,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 500_000.0,
-            "sell_order": ["SPY"],
+            "sell_order": ["VOO"],
         },
     }
 

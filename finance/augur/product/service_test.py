@@ -14,9 +14,8 @@ from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig
+from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig
 from finance.augur.model.series import (
-    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     IssuerId,
@@ -193,8 +192,10 @@ def test_product_fails_when_sample_is_missing_required_series(
     model = MissingRequiredExogenousModel()
     product = make_product_service(model)
 
+    # The portfolio's index-proxy holding is VOO; that it tracks SPY is the model's mirror, so
+    # the scenario's DEMAND is for VOO — the holding's own symbol.
     with pytest.raises(
-        ValueError, match=f"missing required level series: .*{SecurityKey(symbol=SP500_SYMBOL).wire_id}"
+        ValueError, match=f"missing required level series: .*{SecurityKey(symbol=SecuritySymbol('VOO')).wire_id}"
     ):
         product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
@@ -206,18 +207,26 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
 ) -> None:
     provider = augur_config.models[augur_config.default_model_id]
     assert isinstance(provider, CompositeProviderConfig)
-    assert isinstance(provider.macro, IndependentProviderConfig)
+    # The fixture's macro provider is a mirroring wrapper (VOO mirrors SPY), so the series
+    # specs live one level down on `.model`.
+    assert isinstance(provider.macro, MirroringProviderConfig)
+    inner = provider.macro.model
+    assert isinstance(inner, IndependentProviderConfig)
     model = provider.model_copy(
         update={
             "macro": provider.macro.model_copy(
                 update={
-                    "asset_prices": provider.macro.asset_prices.model_copy(
+                    "model": inner.model_copy(
                         update={
-                            "security": {
-                                symbol: spec
-                                for symbol, spec in provider.macro.asset_prices.security.items()
-                                if symbol != "btc"
-                            }
+                            "asset_prices": inner.asset_prices.model_copy(
+                                update={
+                                    "security": {
+                                        symbol: spec
+                                        for symbol, spec in inner.asset_prices.security.items()
+                                        if symbol != "btc"
+                                    }
+                                }
+                            )
                         }
                     )
                 }
@@ -267,7 +276,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
     assert counting_model.sample_requests[0].required_level_series == frozenset(
         {
-            SecurityKey(symbol=SP500_SYMBOL),
+            SecurityKey(symbol=SecuritySymbol("VOO")),
             SecurityKey(symbol=SecuritySymbol("btc")),
             SecurityKey(symbol=SecuritySymbol("eth")),
         }
