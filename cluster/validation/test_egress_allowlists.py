@@ -13,14 +13,10 @@ forbids: the value under test is not a literal copied back from the manifest, it
 is the claim *"this consumer reaches these groups and nothing else."* A host
 added without saying which group it joins is exactly the failure being caught.
 
-Unions only — a consumer that carries part of a group names those hosts
-directly rather than subtracting from a larger set, so what a fence permits is
-read top-to-bottom in one place.
-
-The pin records what is **deployed**, not what ought to be. Consumers hold
-overlapping-but-unequal slices of the build groups; deciding which of those
-differences are deliberate is follow-up work, and this test is what stops the
-baseline moving underneath it.
+There are four groups, and only four axes on which the fences differ: whether a
+fence builds code (`BUILD_REGISTRIES`), which model APIs it reaches, whether it
+can write to GitHub (`GITHUB_API`), and whether it touches the operator's own
+accounts (`OPERATOR_DATA`). Everything else is one or two named hosts.
 
 `toFQDNs` entries only. The `matchPattern: "*"` under `toPorts.rules.dns` is a
 DNS *query* filter, not an egress allowlist; it is a known gap recorded in
@@ -46,19 +42,44 @@ def hosts(*names: str) -> frozenset[str]:
     return frozenset(names)
 
 
-GITHUB_SOURCE = hosts("github.com", "codeload.github.com", "objects.githubusercontent.com", "raw.githubusercontent.com")
-GITHUB_RELEASE_ASSETS = hosts("release-assets.githubusercontent.com")
-# A write surface: anonymous github.com is read-only, while the API is what
-# makes gists, issues and pushes reachable. Separate so granting it is explicit.
+# The shared build-registry bucket: public package, source and toolchain
+# registries. Every fence that builds code carries the whole set — see
+# `test_build_registries_are_all_or_none`. They share one trust level (public,
+# read-only, credential-gated to publish to), so splitting them into nine groups
+# bought a precision nobody used while letting the fences quietly drift apart.
+BUILD_REGISTRIES = hosts(
+    # Source and release artifacts
+    "github.com",
+    "codeload.github.com",
+    "objects.githubusercontent.com",
+    "raw.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+    "ftp.gnu.org",
+    # Language package registries and toolchains
+    "pypi.org",
+    "files.pythonhosted.org",
+    "registry.npmjs.org",
+    "nodejs.org",
+    # Nix
+    "cache.nixos.org",
+    "nixos.org",
+    "channels.nixos.org",
+    # Bazel
+    "releases.bazel.build",
+    "bcr.bazel.build",
+    # Container images and OS packages
+    "ghcr.io",
+    "pkg-containers.githubusercontent.com",
+    "snapshot.debian.org",
+    # Forgejo's own public release/CDN hosts, not the in-cluster instance
+    "code.forgejo.org",
+    "data.forgejo.org",
+)
+
+# A write surface, deliberately outside the bucket: anonymous github.com is
+# read-only, while the API is what makes gists, issues and pushes reachable.
+# Folding it in would hand every build fence a way to publish at once.
 GITHUB_API = hosts("api.github.com")
-LANGUAGE_REGISTRIES = hosts("pypi.org", "files.pythonhosted.org", "registry.npmjs.org")
-TOOLCHAIN_DOWNLOADS = hosts("nodejs.org", "ftp.gnu.org")
-NIX = hosts("cache.nixos.org", "nixos.org", "channels.nixos.org")
-BAZEL = hosts("releases.bazel.build", "bcr.bazel.build")
-CONTAINER_REGISTRIES = hosts("ghcr.io", "pkg-containers.githubusercontent.com")
-OS_PACKAGES = hosts("snapshot.debian.org")
-# Forgejo's own public release/CDN hosts, not the in-cluster instance.
-FORGEJO_RELEASES = hosts("code.forgejo.org", "data.forgejo.org")
 
 ANTHROPIC = hosts("api.anthropic.com")
 
@@ -100,52 +121,25 @@ ALLOWLISTS: dict[str, Confined | Unconfined] = {
     # only one carrying every build group.
     "haku-sandbox": Confined(
         path="agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
-        allows=GITHUB_SOURCE
-        | GITHUB_RELEASE_ASSETS
-        | LANGUAGE_REGISTRIES
-        | TOOLCHAIN_DOWNLOADS
-        | NIX
-        | BAZEL
-        | CONTAINER_REGISTRIES
-        | OS_PACKAGES
-        | FORGEJO_RELEASES
-        | ANTHROPIC
-        | OPERATOR_DATA
-        | hosts("alloy-otlp.allegedly.works"),
+        allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works"),
     ),
     # The OpenClaw + Claude Code spike. Its two singleton hosts are in-cluster
     # services it reaches through iron rather than directly.
     "openclaw-spike": Confined(
         path="agents/haku-egress-proxy/openclaw-spike-iron.yaml",
-        allows=GITHUB_SOURCE
-        | GITHUB_RELEASE_ASSETS
-        | LANGUAGE_REGISTRIES
-        | TOOLCHAIN_DOWNLOADS
-        | NIX
-        | BAZEL
-        | OS_PACKAGES
-        | FORGEJO_RELEASES
-        | ANTHROPIC
-        | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
+        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
         iron_transform=True,
     ),
     # Console-owned Claude runner: deliberately the tightest fence in the
     # cluster — one host. Widening it is a security change.
     "claude-runner": Confined(path="agents/haku-egress-proxy/cnp-haku-claude-egress.yaml", allows=ANTHROPIC),
-    # Predates the build groups: it has `github.com` but none of the hosts that
-    # serve tarballs or raw files, so `git clone` works here and release fetches
-    # silently do not.
     "claude-sandbox": Confined(
         path="agents/mitmproxy/cnp-cloud-api-egress.yaml",
-        allows=hosts("github.com")
-        | LANGUAGE_REGISTRIES
+        allows=BUILD_REGISTRIES
         | ANTHROPIC
         | hosts("api.openai.com", "generativelanguage.googleapis.com", "docker-ci.allegedly.works"),
     ),
-    "zones": Confined(
-        path="agents/haku-zones-mitmproxy/cnp-zones-egress.yaml",
-        allows=GITHUB_SOURCE | GITHUB_API | LANGUAGE_REGISTRIES,
-    ),
+    "zones": Confined(path="agents/haku-zones-mitmproxy/cnp-zones-egress.yaml", allows=BUILD_REGISTRIES | GITHUB_API),
     "public-coder": Unconfined(
         path="agents/public-coder-agent/proxy/cnp-egress.yaml",
         reason=(
@@ -188,6 +182,18 @@ def test_allowlist_matches_its_declared_host_set(name: str, k8s_dir: Path) -> No
         return
     actual = _iron_hosts(document) if allowlist.iron_transform else _cilium_hosts(document)
     assert actual == set(allowlist.allows)
+
+
+def test_build_registries_are_all_or_none() -> None:
+    """No fence carries part of the bucket.
+
+    The hosts are grouped because they share a trust level, so a fence holding a
+    subset is drift rather than a decision — which is exactly how the fences
+    diverged before they were pinned.
+    """
+    for name, allowlist in ALLOWLISTS.items():
+        held = allowlist.allows & BUILD_REGISTRIES
+        assert held in (frozenset(), BUILD_REGISTRIES), name
 
 
 def test_operator_data_reaches_only_haku_sandbox() -> None:

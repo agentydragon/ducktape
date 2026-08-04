@@ -22,23 +22,40 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
+    # The shared build-registry bucket: public package, source and toolchain
+    # registries, granted all-or-none. Pinned as one set by
+    # //cluster/validation:test_egress_allowlists (BUILD_REGISTRIES) -- add a host
+    # there and here together, or the test fails.
     - toFQDNs:
-        - matchName: generativelanguage.googleapis.com
-        - matchName: api.openai.com
-        - matchName: api.anthropic.com
+        - matchName: bcr.bazel.build
+        - matchName: cache.nixos.org
+        - matchName: channels.nixos.org
+        - matchName: code.forgejo.org
+        - matchName: codeload.github.com
+        - matchName: data.forgejo.org
+        - matchName: files.pythonhosted.org
+        - matchName: ftp.gnu.org
+        - matchName: ghcr.io
         - matchName: github.com
+        - matchName: nixos.org
+        - matchName: nodejs.org
+        - matchName: objects.githubusercontent.com
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: pypi.org
+        - matchName: raw.githubusercontent.com
+        - matchName: registry.npmjs.org
+        - matchName: release-assets.githubusercontent.com
+        - matchName: releases.bazel.build
+        - matchName: snapshot.debian.org
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
-    # Package registries for ad-hoc tooling installs inside sandbox pods
-    # (e.g. `pip install fastmcp`, `npx <mcp-server>`). PyPI: `pypi.org`
-    # (index/metadata) + `files.pythonhosted.org` (wheels/sdists); npm:
-    # `registry.npmjs.org`.
+    # Model provider APIs reached directly from sandbox pods.
     - toFQDNs:
-        - matchName: pypi.org
-        - matchName: files.pythonhosted.org
-        - matchName: registry.npmjs.org
+        - matchName: generativelanguage.googleapis.com
+        - matchName: api.openai.com
+        - matchName: api.anthropic.com
       toPorts:
         - ports:
             - port: "443"

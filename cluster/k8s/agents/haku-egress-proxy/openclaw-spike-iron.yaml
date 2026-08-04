@@ -34,6 +34,8 @@ transforms:
         - "snapshot.debian.org"
         - "code.forgejo.org"
         - "data.forgejo.org"
+        - "ghcr.io"
+        - "pkg-containers.githubusercontent.com"
   - name: secrets
     config:
       secrets:
