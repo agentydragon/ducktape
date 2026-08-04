@@ -66,6 +66,22 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
+# Every egress allowlist in the cluster, pinned by
+# //cluster/validation:test_egress_allowlists.
+filegroup(
+    name = "egress_allowlist_files",
+    srcs = [
+        "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml",
+        "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
+        "agents/haku-egress-proxy/openclaw-spike-iron.yaml",
+        "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml",
+        "agents/mitmproxy/cnp-cloud-api-egress.yaml",
+        "agents/public-coder-agent/proxy/cnp-egress.yaml",
+        "kustomization.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 filegroup(
     name = "ntfy_manifest_contract_files",
     srcs = ["flux-webhook/ntfy-webhook.sops.yaml"],
