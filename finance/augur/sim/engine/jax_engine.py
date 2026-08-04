@@ -954,11 +954,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
             if sel.size:
                 tax_slot_table_np[m, link] = int(sel[0])
     tax_slot_table = jnp.asarray(tax_slot_table_np)
+    # Ordinary-bucket ROWS, not profile indices: the §1211 ordinary offset scatters into the
+    # YTD income tensor, whose rows are (profile, source) pairs.
     cg_rep_profile = np.full(max(1, p.capital_gain_agent_count), NO_CODE, dtype=np.int64)
     for profile in range(profile_count):
         gp = int(plan.tax_profile_capital_gain_index[profile])
         if gp >= 0 and cg_rep_profile[gp] < 0:
-            cg_rep_profile[gp] = profile
+            cg_rep_profile[gp] = plan.tax.buckets.ordinary_bucket(profile)
     salt_link_active = plan.salt.link_active  # bool array per link
     cap_year_index_by_month = np.minimum(np.arange(horizon) // 12, plan.salt.cap_by_year.shape[1] - 1)
     # Per-(link, month) SALT cap (cap_by_year indexed by the month's tax year), so the traced month
@@ -1119,6 +1121,9 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         link_tax_static=link_tax_static,
         link_profile=tuple(int(taxc.link_profile[link]) for link in range(link_count)),
         profile_gain_index=tuple(int(x) for x in plan.tax_profile_capital_gain_index),
+        profile_ordinary_bucket=tuple(
+            plan.tax.buckets.ordinary_bucket(profile) for profile in range(p.tax_profile_count)
+        ),
     )
 
     meta = _ScanMeta(
@@ -1175,6 +1180,7 @@ def _program_impl(
     link_tax_static = structure.link_tax_static
     link_profile = structure.link_profile
     profile_gain_index = structure.profile_gain_index
+    profile_ordinary_bucket = structure.profile_ordinary_bucket
     cg_profiles_by_agent = {ct.agent_code: ct.profiles for ct in structure.cg_targets}
     # Static index/selection arrays (rebuilt from the hashable tuples carried in `structure`).
     sale_pslot = np.asarray(structure.sale_pslot, dtype=np.int64).reshape(n_sales)
@@ -1370,7 +1376,7 @@ def _program_impl(
             cols = [
                 dec.astype(jnp.int64),  # accrual_active flag (->bool post-scan)
                 jnp.where(dec, tax, 0),
-                jnp.where(dec, ordinary[profile], 0),
+                jnp.where(dec, ordinary[profile_ordinary_bucket[profile]], 0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0),
                 jnp.where(dec, tcfg.link_standard_deduction[link], 0),  # traced value
@@ -2936,7 +2942,7 @@ def _compute_tax_for_link(
     # Sum only the income buckets THIS jurisdiction includes. The mask is compiled from the
     # jurisdiction's own exemption rules, so a Treasury coupon reaches the federal link and not
     # the California one without either link knowing what a Treasury is.
-    ordinary = _round_int64(tcfg.link_income_mask[link] @ ordinary_ytd)
+    ordinary = tcfg.link_income_mask[link] @ ordinary_ytd
     ltcg = capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM]
     stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
     recapture = recapture_section_1250_ytd[profile]

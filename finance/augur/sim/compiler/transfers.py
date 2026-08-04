@@ -12,14 +12,12 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
-    ORDINARY_INCOME_SOURCE,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
-    income_source_id,
     slot,
 )
-from finance.augur.sim.compiler.tax import TaxCompileOutput
+from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.scenario import RecurringTransfer, Scenario, ScheduledTransfer
 
 type TransferLike = ScheduledTransfer | RecurringTransfer
@@ -55,7 +53,7 @@ def compile_transfer_slots(
     account_slot_by_key: dict[tuple[str, str], int],
     profile_index_by_agent: dict[str, int],
     series_index_by_id: dict[LevelSeriesKey, int],
-    tax: TaxCompileOutput,
+    buckets: IncomeBuckets,
 ) -> TransferCompileOutput:
     by_month: list[list[TransferLike]] = []
     max_slots = 0
@@ -92,21 +90,12 @@ def compile_transfer_slots(
             to_account[month, idx] = strings.require(transfer.to_account_id)
             to_slot[month, idx] = slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
             if transfer.income_category is not None:
-                # The row is a (profile, source) BUCKET, so a coupon lands in a different row
-                # than wages for the same agent and each jurisdiction can include one and not
-                # the other. Deductions still target the ordinary bucket.
-                profile_index = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
-                income_profile[month, idx] = (
-                    NO_CODE
-                    if profile_index == NO_CODE
-                    else tax.income_bucket(profile_index, income_source_id(transfer.income_category))
+                income_profile[month, idx] = buckets.bucket(
+                    profile_index_by_agent.get(transfer.to_agent_id, NO_CODE), transfer.income_category
                 )
             if transfer.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
-                deduction_index = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
-                deduction_profile[month, idx] = (
-                    NO_CODE
-                    if deduction_index == NO_CODE
-                    else tax.income_bucket(deduction_index, ORDINARY_INCOME_SOURCE)
+                deduction_profile[month, idx] = buckets.ordinary_bucket(
+                    profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
                 )
             kind, fixed, base, series, base_month, period = amount_arrays_cents(transfer.amount_usd, series_index_by_id)
             amount_kind[month, idx] = kind

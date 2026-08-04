@@ -26,8 +26,16 @@ CASH_BALANCES_SCHEMA = pl.Schema(
 # year, per `(rollout_index, agent_id)`. Reset to 0 by year-end
 # tax accrual events. Only taxed agents have rows here (the engine
 # initializes one row per `TaxProfile.agent_id` per rollout).
+# `income_source` splits the row further: `__ordinary__`, an issuing jurisdiction id, or
+# `__corporate__`. Two agents' wages and their muni coupons are separate rows because the
+# jurisdictions disagree about the latter, and a single per-agent total could not say so.
 ORDINARY_INCOME_YTD_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "agent_id": pl.Utf8(), "ordinary_income_usd": pl.Float64()}
+    {
+        "rollout_index": pl.Int64(),
+        "agent_id": pl.Utf8(),
+        "income_source": pl.Utf8(),
+        "ordinary_income_usd": pl.Float64(),
+    }
 )
 
 # Outstanding tax liabilities — money owed to a tax authority that

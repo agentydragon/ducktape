@@ -13,7 +13,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
 
 from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
@@ -89,7 +89,13 @@ type AmountSpec = float | AmountSchedule
 
 
 class OrdinaryIncome(BaseModel):
-    """Wages, rent, and everything else every jurisdiction taxes."""
+    """Wages, rent, and everything else every jurisdiction taxes.
+
+    Frozen because the tag is a value, not a record: the compiler puts these in a set to
+    derive the income-bucket axis, so two `OrdinaryIncome()` must be one key.
+    """
+
+    model_config = ConfigDict(frozen=True)
 
     category: Literal[IncomeCategory.ORDINARY] = IncomeCategory.ORDINARY
 
@@ -101,6 +107,8 @@ class InterestIncome(BaseModel):
     jurisdiction (`Jurisdiction.taxes_interest_from`), so the same California muni coupon is
     exempt for a Californian and taxable for a New Yorker without the instrument changing.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
     issuer_jurisdiction_id: str | None = Field(

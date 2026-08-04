@@ -62,8 +62,9 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             cash_state=np.zeros((s, p.cash_count, r), dtype=np.int64),
             # lot_state[S, L, R]
             lot_state=np.zeros((s, p.lot_count, r), dtype=np.int64),
-            # ordinary_state[S, P, R]
-            ordinary_state=np.zeros((s, p.tax_profile_count, r), dtype=np.int64),
+            # ordinary_state[S, B, R] — B is the income BUCKET count (profile x source), not
+            # the profile count. They coincide only while nothing emits interest.
+            ordinary_state=np.zeros((s, p.income_bucket_count, r), dtype=np.int64),
             # capital_gain_*_state[S, G, classification, R]
             capital_gain_active_state=np.zeros((s, p.capital_gain_agent_count, 2, r), dtype=np.bool_),
             capital_gain_state=np.zeros((s, p.capital_gain_agent_count, 2, r), dtype=np.int64),

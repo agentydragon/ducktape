@@ -234,6 +234,7 @@ py_library(
         "compiler/assets.py",
         "compiler/deductions.py",
         "compiler/helpers.py",
+        "compiler/income_buckets.py",
         "compiler/lifecycle.py",
         "compiler/liquidity.py",
         "compiler/obligations.py",
@@ -442,6 +443,19 @@ py_test(
         ":simulate",
         "@pypi//polars",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_income_category_e2e",
+    size = "medium",
+    srcs = ["test_income_category_e2e.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
 )

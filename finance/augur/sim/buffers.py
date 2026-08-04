@@ -65,7 +65,7 @@ class StateHistoryBuffers:
         r = plan.rollout_count
         _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.int64)
         _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.int64)
-        _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.tax_profile_count, r), dtype=np.int64)
+        _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.income_bucket_count, r), dtype=np.int64)
         _expect_array(
             "capital_gain_active_state",
             self.capital_gain_active_state,

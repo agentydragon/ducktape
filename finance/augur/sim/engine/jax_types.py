@@ -170,6 +170,9 @@ class _Static:
     link_tax_static: tuple[_LinkTaxStatic, ...]
     link_profile: tuple[int, ...]
     profile_gain_index: tuple[int, ...]
+    # Row of the YTD income tensor holding each profile's ORDINARY income. Not the profile
+    # index: tensor rows are (profile, income source) pairs.
+    profile_ordinary_bucket: tuple[int, ...]
 
 
 @dataclass(frozen=True)

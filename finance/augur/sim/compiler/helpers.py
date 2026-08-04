@@ -15,29 +15,12 @@ import numpy as np
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import AssetKey
 from finance.augur.sim.fixed_point import usd_to_cents
-from finance.augur.sim.scenario import FixedAmount, InterestIncome, SeriesIndexedAmount, TransferIncomeCategory
+from finance.augur.sim.scenario import FixedAmount, SeriesIndexedAmount
 
 NO_CODE = -1
 AMOUNT_FIXED = 0
 AMOUNT_SERIES_INDEXED = 1
 ORDINARY_DEDUCTION_CATEGORY = "ordinary"
-
-# Income accrues into a BUCKET, not a tax profile: one row per (profile, income source), where
-# a source is "ordinary" or a specific interest issuer. Flattening (profile, source) into a
-# single row index is what keeps the engine's existing `_scatter_rows` machinery working
-# unchanged — the compiler emits a different row number and nothing downstream re-learns a
-# dimension. `_compute_tax_for_link` then sums the buckets its own jurisdiction includes.
-CORPORATE_ISSUER_SOURCE = "__corporate__"
-ORDINARY_INCOME_SOURCE = "__ordinary__"
-
-
-def income_source_id(category: TransferIncomeCategory) -> str:
-    """The source-axis key for a scenario income tag."""
-
-    if isinstance(category, InterestIncome):
-        issuer = category.issuer_jurisdiction_id
-        return CORPORATE_ISSUER_SOURCE if issuer is None else issuer
-    return ORDINARY_INCOME_SOURCE
 
 
 class StringTable:

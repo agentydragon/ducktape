@@ -228,10 +228,16 @@ def compile_simulation(
         p.property_id: i for i, p in enumerate(scenario.scheduled_property_purchases)
     }
     transfers = compile_transfer_slots(
-        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, tax
+        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, tax.buckets
     )
     property_cashflows = compile_property_cashflows(
-        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, property_slot_by_id, tax
+        scenario,
+        strings,
+        account_slot_by_key,
+        profile_index_by_agent,
+        series_index_by_id,
+        property_slot_by_id,
+        tax.buckets,
     )
     property_rented_fraction = np.array(
         [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
@@ -361,7 +367,7 @@ def compile_simulation(
         cash_count=len(cash_initial_balance),
         lot_count=len(lot_id_codes),
         tax_profile_count=tax.profile_agent.shape[0],
-        income_bucket_count=tax.income_bucket_count,
+        income_bucket_count=tax.buckets.row_count,
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
         tax_link_count=max(1, tax.link_profile.shape[0]),
         tax_liability_count=tax_liabilities.profile_index.shape[0],
@@ -409,10 +415,12 @@ def compile_simulation(
         property_cashflows=property_cashflows,
         properties=properties,
         liabilities=liabilities,
-        liability_owner_profile_index=liability_owner_profile_index,
+        # Ordinary-bucket ROWS, not profile indices: these scatter deductions into the YTD
+        # income tensor, whose rows are (profile, source) pairs.
+        liability_owner_profile_index=tax.buckets.ordinary_rows(liability_owner_profile_index),
         property_rented_fraction=property_rented_fraction,
         property_building_basis=property_building_basis,
-        property_owner_profile_index=property_owner_profile_index,
+        property_owner_profile_index=tax.buckets.ordinary_rows(property_owner_profile_index),
         property_owner_agent_index=property_owner_agent_index,
         property_home_value_series_index=property_home_value_series_index,
         initial_primary_residence_property_index=initial_primary_residence_property_index,
