@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from finance.augur.model.series import SP500_SYMBOL, LevelSeriesKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import LevelSeriesKey, SecurityKey, SecuritySymbol
 
 # Placeholder values for the level series the test config
-# (`augur/api/testdata/config.yaml`) holds — security:SPY, security:btc, security:eth.
+# (`augur/api/testdata/config.yaml`) holds — security:VOO, security:btc, security:eth.
 # Tests that exercise PE behavior only need these present; tests that
-# exercise crypto/sp500 price behavior seed their own values explicitly.
+# exercise per-symbol price behavior seed their own values explicitly.
 TEST_CONFIG_LEVEL_PLACEHOLDERS: Mapping[LevelSeriesKey, float] = {
-    SecurityKey(symbol=SP500_SYMBOL): 1.0,
+    SecurityKey(symbol=SecuritySymbol("VOO")): 1.0,
     SecurityKey(symbol=SecuritySymbol("btc")): 1.0,
     SecurityKey(symbol=SecuritySymbol("eth")): 1.0,
 }
