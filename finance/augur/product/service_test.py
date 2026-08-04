@@ -38,7 +38,7 @@ from finance.augur.model.testing import (
     level_matrix_with_step,
 )
 from finance.augur.product import decode, service
-from finance.augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey
+from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.scenarios import build_scenario, resolve_primary_agent_id
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
@@ -236,7 +236,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
             InitialLot(
                 lot_id="unpriced_lot",
                 agent_id="agent_a",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("missing")),
+                asset=CryptoKey(symbol=CryptoSymbol("missing")),
                 purchase_month_index=-1,
                 quantity=2.0,
                 cost_basis_per_unit_usd=1.0,

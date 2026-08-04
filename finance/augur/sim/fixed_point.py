@@ -13,7 +13,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.product.asset_key import AssetKey, CryptoAssetKey
+from finance.augur.model.series import CryptoKey
+from finance.augur.product.asset_key import AssetKey
 
 USD_CENTS = 100
 BTC_SATOSHIS = 100_000_000
@@ -47,7 +48,7 @@ def cents_array_to_usd(values: Any) -> NDArray[np.float64]:
 
 
 def quantity_scale_for_asset(asset: AssetKey) -> int:
-    if isinstance(asset, CryptoAssetKey):
+    if isinstance(asset, CryptoKey):
         symbol = str(asset.symbol).lower()
         if symbol == "btc":
             return BTC_SATOSHIS

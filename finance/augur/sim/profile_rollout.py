@@ -25,7 +25,7 @@ import time
 
 import jax
 
-from finance.augur.product.asset_key import SP500AssetKey
+from finance.augur.model.series import SP500Key
 from finance.augur.sim.bench_scenario import build_bench_scenario
 from finance.augur.sim.external_series import materialize_external_series
 from finance.augur.sim.locations import Location
@@ -57,7 +57,7 @@ def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scen
             lot_id=f"scale_lot_{i}",
             agent_id="alice",
             account_id=f"scale_brk_{i}",
-            asset=SP500AssetKey(),
+            asset=SP500Key(),
             purchase_month_index=-24,
             quantity=100.0,
             cost_basis_per_unit_usd=80.0,
@@ -70,7 +70,7 @@ def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scen
             cause_id=f"scale_sale_{i}",
             agent_id="alice",
             source_account_id=f"scale_brk_{i}",
-            asset=SP500AssetKey(),
+            asset=SP500Key(),
             quantity=100.0,
             price_per_unit_usd=120.0,
             proceeds_account_id="checking",

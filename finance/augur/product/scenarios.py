@@ -9,8 +9,8 @@ from more_itertools import one
 from finance.augur.api.config import Config, LocationConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
-from finance.augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey
+from finance.augur.model.series import CryptoKey, InflationKey, IssuerId, LocationId, RentKey
+from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -769,7 +769,7 @@ def _asset_preference_chain_from_sell_order(
     """Translate the wire's `sell_order` tuple to a deduplicated `AssetKey` list for the sim.
 
     `stocks` covers anything that isn't crypto or private equity — ETFs, individual stocks,
-    mutual funds; `crypto` covers `CryptoAssetKey` holdings. Private equity is *never* included
+    mutual funds; `crypto` covers `CryptoKey` holdings. Private equity is *never* included
     in any liquidity-sale bucket: it's only saleable at sparse tender events, dispatched by
     `PrivateEquityTenderPolicy` outside the liquidity-policy path. A bucket absent from
     `sell_order` means "don't auto-sell from this bucket"; an empty `sell_order` yields an
@@ -780,10 +780,10 @@ def _asset_preference_chain_from_sell_order(
     for bucket in funding_policy.sell_order:
         if bucket == "stocks":
             assets.extend(
-                lot.asset for lot in initial_lots if not isinstance(lot.asset, CryptoAssetKey | PrivateEquityAssetKey)
+                lot.asset for lot in initial_lots if not isinstance(lot.asset, CryptoKey | PrivateEquityAssetKey)
             )
         elif bucket == "crypto":
-            assets.extend(lot.asset for lot in initial_lots if isinstance(lot.asset, CryptoAssetKey))
+            assets.extend(lot.asset for lot in initial_lots if isinstance(lot.asset, CryptoKey))
         else:
             raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
     return list(dict.fromkeys(assets))

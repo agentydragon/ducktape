@@ -13,9 +13,8 @@ import polars as pl
 import pytest_bazel
 
 from finance.augur.model.deterministic import Deterministic
-from finance.augur.model.series import CryptoSymbol
+from finance.augur.model.series import CryptoKey, CryptoSymbol
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.product.asset_key import CryptoAssetKey
 from finance.augur.sim.bench_scenario import build_bench_scenario
 from finance.augur.sim.scenario import InitialLot
 from finance.augur.sim.simulate import simulate
@@ -59,7 +58,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     new_lot = InitialLot(
         lot_id="alice_efv",
         agent_id="alice",
-        asset=CryptoAssetKey(symbol=CryptoSymbol("efv")),
+        asset=CryptoKey(symbol=CryptoSymbol("efv")),
         purchase_month_index=-12,
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
@@ -86,10 +85,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
             "liquidity_policies": [
                 p.model_copy(
                     update={
-                        "asset_preference_chain": [
-                            *p.asset_preference_chain,
-                            CryptoAssetKey(symbol=CryptoSymbol("efv")),
-                        ]
+                        "asset_preference_chain": [*p.asset_preference_chain, CryptoKey(symbol=CryptoSymbol("efv"))]
                     }
                 )
                 for p in base.liquidity_policies

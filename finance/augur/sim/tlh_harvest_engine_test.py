@@ -15,8 +15,7 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import CryptoSymbol
-from finance.augur.product.asset_key import CryptoAssetKey, SP500AssetKey
+from finance.augur.model.series import CryptoKey, CryptoSymbol, SP500Key
 from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
@@ -74,7 +73,7 @@ def _harvest_scenario(
             lot_id="alice_sp500",
             agent_id="alice",
             account_id="brokerage",
-            asset=SP500AssetKey(),
+            asset=SP500Key(),
             purchase_month_index=purchase_month_index,
             quantity=quantity,
             cost_basis_per_unit_usd=cost_basis_per_unit_usd,
@@ -87,7 +86,7 @@ def _harvest_scenario(
             HarvestPolicy(
                 owner_agent_id="alice",
                 account_id="brokerage",
-                asset=SP500AssetKey(),
+                asset=SP500Key(),
                 yield_params=_PARAMS,
                 short_term_fraction=short_term_fraction,
             )
@@ -188,7 +187,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         lot_id="alice_gain",
         agent_id="alice",
         account_id="brokerage",
-        asset=CryptoAssetKey(symbol=CryptoSymbol("gainco")),
+        asset=CryptoKey(symbol=CryptoSymbol("gainco")),
         purchase_month_index=-3,  # short-term when sold at month 6
         quantity=100.0,
         cost_basis_per_unit_usd=100.0,
@@ -198,7 +197,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         cause_id="alice_gain_sale",
         agent_id="alice",
         source_account_id="brokerage",
-        asset=CryptoAssetKey(symbol=CryptoSymbol("gainco")),
+        asset=CryptoKey(symbol=CryptoSymbol("gainco")),
         quantity=100.0,
         price_per_unit_usd=400.0,  # $30k short-term gain
         proceeds_account_id="checking",
@@ -247,7 +246,7 @@ def test_give_back_makes_sale_gain_larger_by_cumulative_harvest_and_is_bounded()
         cause_id="alice_sp500_liquidate",
         agent_id="alice",
         source_account_id="brokerage",
-        asset=SP500AssetKey(),
+        asset=SP500Key(),
         quantity=1000.0,
         price_per_unit_usd=1.0,
         proceeds_account_id="checking",
@@ -302,7 +301,7 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
             cause_id="alice_sp500_half",
             agent_id="alice",
             source_account_id="brokerage",
-            asset=SP500AssetKey(),
+            asset=SP500Key(),
             quantity=500.0,
             price_per_unit_usd=1.0,
             proceeds_account_id="checking",
@@ -312,7 +311,7 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
             cause_id="alice_sp500_rest",
             agent_id="alice",
             source_account_id="brokerage",
-            asset=SP500AssetKey(),
+            asset=SP500Key(),
             quantity=500.0,
             price_per_unit_usd=1.0,
             proceeds_account_id="checking",

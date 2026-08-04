@@ -26,9 +26,8 @@ from __future__ import annotations
 
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
-from finance.augur.model.series import CryptoSymbol
+from finance.augur.model.series import CryptoKey, CryptoSymbol
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.product.asset_key import CryptoAssetKey
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,
@@ -64,7 +63,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-36,
                 quantity=300.0,
                 cost_basis_per_unit_usd=180.0,
@@ -72,7 +71,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_qqq",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("qqq")),
+                asset=CryptoKey(symbol=CryptoSymbol("qqq")),
                 purchase_month_index=-24,
                 quantity=120.0,
                 cost_basis_per_unit_usd=300.0,
@@ -80,7 +79,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_btc",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("btc")),
+                asset=CryptoKey(symbol=CryptoSymbol("btc")),
                 purchase_month_index=-18,
                 quantity=2.0,
                 cost_basis_per_unit_usd=25_000.0,
@@ -136,9 +135,9 @@ def build_bench_scenario(
                 agent_id="alice",
                 account_id="checking",
                 asset_preference_chain=[
-                    CryptoAssetKey(symbol=CryptoSymbol("vti")),
-                    CryptoAssetKey(symbol=CryptoSymbol("qqq")),
-                    CryptoAssetKey(symbol=CryptoSymbol("btc")),
+                    CryptoKey(symbol=CryptoSymbol("vti")),
+                    CryptoKey(symbol=CryptoSymbol("qqq")),
+                    CryptoKey(symbol=CryptoSymbol("btc")),
                 ],
                 cash_buffer_trigger_below_usd=floor_usd,
                 cash_buffer_sale_usd=floor_usd,

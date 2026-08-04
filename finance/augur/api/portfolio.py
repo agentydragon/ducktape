@@ -16,7 +16,7 @@ from functools import cached_property
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, model_validator
 
 from finance.augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
-from finance.augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey, SP500AssetKey
+from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.sim.scenario import InitialLot
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
@@ -154,9 +154,9 @@ class PortfolioConfig(PortfolioConfigModel):
             asset_key = position.value_series
             if isinstance(asset_key, PrivateEquityAssetKey):
                 private_equity_anchors[asset_key.issuer_id] = unit_value
-            elif isinstance(asset_key, SP500AssetKey):
+            elif isinstance(asset_key, SP500Key):
                 level_series_anchors[SP500Key()] = unit_value
-            elif isinstance(asset_key, CryptoAssetKey):
+            elif isinstance(asset_key, CryptoKey):
                 level_series_anchors[CryptoKey(symbol=asset_key.symbol)] = unit_value
         return PortfolioLevelAnchors(
             level_series_anchors=level_series_anchors, private_equity_anchors=private_equity_anchors

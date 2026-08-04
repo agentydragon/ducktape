@@ -23,7 +23,7 @@ from finance.augur.api.portfolio_source_config import (
     PlaidPortfolioSourceConfig,
     PlaidSp500ProxyGroupConfig,
 )
-from finance.augur.product.asset_key import SP500AssetKey
+from finance.augur.model.series import SP500Key
 from finance.augur.sim.scenario import HarvestPolicy
 from finance.plaid.db.read_model import (
     CurrentCashBalance,
@@ -161,7 +161,7 @@ def _harvest_policy(group: PlaidSp500ProxyGroupConfig) -> HarvestPolicy:
     return HarvestPolicy(
         owner_agent_id=group.owner_agent_id,
         account_id=group.portfolio_account_id,
-        asset=SP500AssetKey(),
+        asset=SP500Key(),
         yield_params=tlh_model.yield_params,
         short_term_fraction=short_term_fraction,
     )
@@ -232,7 +232,7 @@ def _sp500_proxy_holding(
         label=group.label,
         symbol=group.symbol,
         security_kind=group.security_kind,
-        value_series=SP500AssetKey(),
+        value_series=SP500Key(),
         unit_value_usd=float(group.unit_value_usd),
         lots=_proxy_lots(group, total_value_usd=total_value_usd, total_cost_basis_usd=total_cost_basis_usd),
     )

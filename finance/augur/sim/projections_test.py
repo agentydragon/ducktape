@@ -4,8 +4,7 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import CryptoSymbol
-from finance.augur.product.asset_key import CryptoAssetKey
+from finance.augur.model.series import CryptoKey, CryptoSymbol
 from finance.augur.sim.locations import Location
 from finance.augur.sim.projections import project_simulation_run
 from finance.augur.sim.scenario import (
@@ -37,7 +36,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -58,9 +57,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],
@@ -154,7 +151,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -178,7 +175,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",

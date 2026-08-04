@@ -19,6 +19,7 @@ from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
+    CryptoKey,
     CryptoSymbol,
     IssuerId,
     LocationId,
@@ -27,7 +28,7 @@ from finance.augur.model.series import (
     RentKey,
 )
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey
+from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from finance.augur.sim.fixed_point import cents_to_usd, usd_to_cents
 from finance.augur.sim.locations import Location
@@ -273,12 +274,12 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
                 LiquidityPolicy(
                     agent_id="alice",
                     account_id="checking",
-                    asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                    asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))],
                 ),
                 LiquidityPolicy(
                     agent_id="alice",
                     account_id="checking",
-                    asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("qqq"))],
+                    asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("qqq"))],
                 ),
             ],
             tax_profiles=[],
@@ -384,7 +385,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                 InitialLot(
                     lot_id="old_a",
                     agent_id="alice",
-                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    asset=CryptoKey(symbol=CryptoSymbol("vti")),
                     purchase_month_index=-12,
                     quantity=10.0,
                     cost_basis_per_unit_usd=80.0,
@@ -392,7 +393,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                 InitialLot(
                     lot_id="old_b",
                     agent_id="alice",
-                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    asset=CryptoKey(symbol=CryptoSymbol("vti")),
                     purchase_month_index=-12,
                     quantity=5.0,
                     cost_basis_per_unit_usd=90.0,
@@ -412,7 +413,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 lot_id="taxable_old",
                 agent_id="alice",
                 account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
                 cost_basis_per_unit_usd=80.0,
@@ -421,7 +422,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 lot_id="ira_old",
                 agent_id="alice",
                 account_id="ira",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
                 cost_basis_per_unit_usd=70.0,
@@ -469,7 +470,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                 InitialLot(
                     lot_id="seed",
                     agent_id="alice",
-                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    asset=CryptoKey(symbol=CryptoSymbol("vti")),
                     purchase_month_index=0,
                     quantity=1.0,
                     cost_basis_per_unit_usd=100.0,
@@ -480,7 +481,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     month=2,
                     cause_id="late_sale",
                     agent_id="alice",
-                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    asset=CryptoKey(symbol=CryptoSymbol("vti")),
                     quantity=1.0,
                     proceeds_account_id="checking",
                     price_per_unit_usd=100.0,
@@ -499,7 +500,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     month=-1,
                     cause_id="pre_sale",
                     agent_id="alice",
-                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    asset=CryptoKey(symbol=CryptoSymbol("vti")),
                     quantity=1.0,
                     proceeds_account_id="checking",
                     price_per_unit_usd=100.0,
@@ -1133,7 +1134,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
             InitialLot(
                 lot_id="alice_vti_seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1144,7 +1145,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
                 month=3,
                 cause_id="alice_partial_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=30.0,
                 price_per_unit_usd=120.0,
                 proceeds_account_id="checking",
@@ -1199,7 +1200,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
             InitialLot(
                 lot_id="alice_vti_seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-12,
                 quantity=100.0,
                 cost_basis_per_unit_usd=90.0,
@@ -1210,7 +1211,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
                 month=2,
                 cause_id="full_liquidation",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=100.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1243,7 +1244,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=0,
                 quantity=50.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1254,7 +1255,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
                 month=1,
                 cause_id="sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=20.0,
                 price_per_unit_usd=110.0,
                 proceeds_account_id="checking",
@@ -1287,7 +1288,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
             InitialLot(
                 lot_id="lot_a_old",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-6,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1295,7 +1296,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
             InitialLot(
                 lot_id="lot_b_younger",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=2,
                 quantity=50.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1306,7 +1307,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 month=8,
                 cause_id="big_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=120.0,
                 price_per_unit_usd=200.0,
                 proceeds_account_id="checking",
@@ -1360,7 +1361,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
             InitialLot(
                 lot_id="old",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1368,7 +1369,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
             InitialLot(
                 lot_id="new",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-6,
                 quantity=100.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1379,7 +1380,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 month=1,
                 cause_id="first_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=70.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1388,7 +1389,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 month=1,
                 cause_id="second_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=70.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1429,7 +1430,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
             InitialLot(
                 lot_id="long_held",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("btc")),
+                asset=CryptoKey(symbol=CryptoSymbol("btc")),
                 purchase_month_index=-12,
                 quantity=2.0,
                 cost_basis_per_unit_usd=20000.0,
@@ -1437,7 +1438,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
             InitialLot(
                 lot_id="short_held",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("btc")),
+                asset=CryptoKey(symbol=CryptoSymbol("btc")),
                 purchase_month_index=2,
                 quantity=1.0,
                 cost_basis_per_unit_usd=40000.0,
@@ -1448,7 +1449,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
                 month=6,
                 cause_id="liquidate",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("btc")),
+                asset=CryptoKey(symbol=CryptoSymbol("btc")),
                 quantity=2.5,
                 price_per_unit_usd=60000.0,
                 proceeds_account_id="checking",
@@ -1486,7 +1487,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
             InitialLot(
                 lot_id="vti_lot",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1494,7 +1495,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
             InitialLot(
                 lot_id="qqq_lot",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("qqq")),
+                asset=CryptoKey(symbol=CryptoSymbol("qqq")),
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=200.0,
@@ -1505,7 +1506,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 month=2,
                 cause_id="sell_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=4.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1514,7 +1515,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 month=5,
                 cause_id="sell_qqq",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("qqq")),
+                asset=CryptoKey(symbol=CryptoSymbol("qqq")),
                 quantity=3.0,
                 price_per_unit_usd=250.0,
                 proceeds_account_id="checking",
@@ -1549,7 +1550,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 lot_id="taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1558,7 +1559,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 lot_id="ira_vti",
                 agent_id="alice",
                 account_id="ira",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
                 cost_basis_per_unit_usd=70.0,
@@ -1570,7 +1571,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 cause_id="taxable_sale",
                 agent_id="alice",
                 source_account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=8.0,
                 price_per_unit_usd=100.0,
                 proceeds_account_id="checking",
@@ -1603,7 +1604,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 lot_id="taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1615,7 +1616,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 cause_id="oversell",
                 agent_id="alice",
                 source_account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=6.0,
                 price_per_unit_usd=100.0,
                 proceeds_account_id="checking",
@@ -1643,7 +1644,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-3,
                 quantity=10.0,
                 cost_basis_per_unit_usd=90.0,
@@ -1654,7 +1655,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
                 month=4,
                 cause_id="sampled_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=4.0,
                 proceeds_account_id="checking",
             )
@@ -1697,7 +1698,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=0,
                 quantity=5.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1708,7 +1709,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
                 month=3,
                 cause_id="sampled_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=5.0,
                 proceeds_account_id="checking",
             )
@@ -1844,7 +1845,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1868,7 +1869,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",
@@ -1928,7 +1929,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1952,7 +1953,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",
@@ -2029,7 +2030,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=100.0,
@@ -2037,7 +2038,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
             InitialLot(
                 lot_id="alice_short_ixus",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("ixus")),
+                asset=CryptoKey(symbol=CryptoSymbol("ixus")),
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2061,7 +2062,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=100.0,
                 price_per_unit_usd=200.0,
                 proceeds_account_id="checking",
@@ -2070,7 +2071,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 month=6,
                 cause_id="alice_short_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("ixus")),
+                asset=CryptoKey(symbol=CryptoSymbol("ixus")),
                 quantity=10.0,
                 price_per_unit_usd=200.0,
                 proceeds_account_id="checking",
@@ -2128,7 +2129,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
             InitialLot(
                 lot_id="alice_vti_seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=100.0,
@@ -2169,9 +2170,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         ],
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         horizon_months=13,
@@ -2395,7 +2394,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2416,9 +2415,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],
@@ -2461,7 +2458,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2481,9 +2478,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
         ],
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],
@@ -2516,7 +2511,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 lot_id="alice_taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=5.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2525,7 +2520,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 lot_id="alice_ira_vti",
                 agent_id="alice",
                 account_id="ira",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2546,9 +2541,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="taxable",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="taxable", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],
@@ -2582,7 +2575,7 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
                 lot_id="alice_taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=5.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2606,7 +2599,7 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
                 agent_id="alice",
                 account_id="checking",
                 source_account_ids=("taxable",),
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))],
             )
         ],
         tax_profiles=[],
@@ -2767,7 +2760,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2814,7 +2807,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2837,7 +2830,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
             LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))],
                 cash_buffer_trigger_below_usd=2000.0,
                 cash_buffer_sale_usd=5000.0,
             )
@@ -2871,7 +2864,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2894,7 +2887,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
             LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))],
                 cash_buffer_trigger_below_usd=2000.0,
                 cash_buffer_sale_usd=5000.0,
             )
@@ -3000,7 +2993,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -3011,7 +3004,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
                 month=1,
                 cause_id="fixed_sale",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 quantity=3.0,
                 price_per_unit_usd=99.0,
                 proceeds_account_id="checking",
@@ -3256,7 +3249,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-1,
                 quantity=200.0,
                 cost_basis_per_unit_usd=50.0,
@@ -3277,9 +3270,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
         external_series=deterministic_series_bundle([100.0] * 4),
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],
@@ -3316,7 +3307,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-1,
                 quantity=5.0,  # only $500 of VTI at $100/unit
                 cost_basis_per_unit_usd=80.0,
@@ -3337,9 +3328,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],
@@ -3378,7 +3367,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                asset=CryptoKey(symbol=CryptoSymbol("vti")),
                 purchase_month_index=-1,
                 quantity=1.0,
                 cost_basis_per_unit_usd=80.0,
@@ -3411,9 +3400,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
         external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
             )
         ],
         tax_profiles=[],

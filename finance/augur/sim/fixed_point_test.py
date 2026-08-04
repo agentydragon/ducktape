@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
-from finance.augur.product.asset_key import CryptoAssetKey, SP500AssetKey
+from finance.augur.model.series import CryptoKey, SP500Key
 from finance.augur.sim.fixed_point import (
     BTC_SATOSHIS,
     DEFAULT_UNIT_QUANTA,
@@ -31,9 +31,9 @@ def test_usd_array_round_trips_for_public_float_surface() -> None:
 
 
 def test_asset_quantity_scales_include_crypto_quanta() -> None:
-    assert quantity_scale_for_asset(CryptoAssetKey(symbol="btc")) == BTC_SATOSHIS
-    assert quantity_scale_for_asset(CryptoAssetKey(symbol="eth")) == ETH_GWEI
-    assert quantity_scale_for_asset(SP500AssetKey()) == DEFAULT_UNIT_QUANTA
+    assert quantity_scale_for_asset(CryptoKey(symbol="btc")) == BTC_SATOSHIS
+    assert quantity_scale_for_asset(CryptoKey(symbol="eth")) == ETH_GWEI
+    assert quantity_scale_for_asset(SP500Key()) == DEFAULT_UNIT_QUANTA
     assert quantity_to_quanta("2.46761356", scale=BTC_SATOSHIS) == np.int64(246_761_356)
     assert quantity_to_quanta("43.31454407", scale=ETH_GWEI) == np.int64(43_314_544_070)
 

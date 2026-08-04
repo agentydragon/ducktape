@@ -9,7 +9,7 @@ from finance.augur.api.portfolio import (
     PortfolioAccountConfig,
     PortfolioConfig,
 )
-from finance.augur.product.asset_key import SP500AssetKey
+from finance.augur.model.series import SP500Key
 from finance.augur.product.portfolio import product_portfolio_response
 
 
@@ -27,7 +27,7 @@ def test_product_portfolio_response_includes_holding_positions_and_lots() -> Non
                     label="SP500 Proxy",
                     symbol="VOO",
                     security_kind="etf",
-                    value_series=SP500AssetKey(),
+                    value_series=SP500Key(),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(

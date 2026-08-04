@@ -645,7 +645,7 @@ class HarvestPolicy(BaseModel):
 
     owner_agent_id: str
     account_id: str = "checking"
-    asset: AssetKey = Field(description="Index-tracking asset whose lots this policy harvests (e.g. an SP500AssetKey).")
+    asset: AssetKey = Field(description="Index-tracking asset whose lots this policy harvests (e.g. an SP500Key).")
     yield_params: HarvestYieldParams
     short_term_fraction: float = Field(
         default=1.0,
