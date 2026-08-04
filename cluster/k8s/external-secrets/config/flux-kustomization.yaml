@@ -13,11 +13,14 @@ spec:
     name: flux-system
   timeout: 5m0s
   wait: true
-  # Health check ensures ClusterSecretStores are ready before dependents.
+  # Health check ensures ClusterSecretStores are ready before dependents. Any one
+  # store stands in for the set: they are applied by this Kustomization together,
+  # so one reaching Valid means the operator is reconciling them. This was
+  # kubernetes-secret-store until that store was deleted as unused.
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ClusterSecretStore
-      name: kubernetes-secret-store
+      name: kubernetes-flux-system-secret-store
   dependsOn:
     - name: external-secrets-operator
       namespace: flux-system
