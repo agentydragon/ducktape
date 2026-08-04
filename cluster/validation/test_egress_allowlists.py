@@ -23,8 +23,64 @@ can write to GitHub (`GITHUB_API`), and whether it touches the operator's own
 accounts (`OPERATOR_DATA`). Everything else is one or two named hosts.
 
 `toFQDNs` entries only. The `matchPattern: "*"` under `toPorts.rules.dns` is a
-DNS *query* filter, not an egress allowlist; it is a known gap recorded in
-`haku/docs/security.md`.
+DNS *query* filter, not an egress allowlist.
+
+Known gaps
+----------
+
+What the pins above cover is one slice: the host set each proxy may reach. These
+are the things known to be wrong or unverified around them as of 2026-08-04.
+Recorded here because this is the file anyone touching a fence opens; the
+operator-facing version is in `haku/docs/security.md`.
+
+- TODO: collapse the fences. Six manifests express about three distinct
+  policies — one host (`api.anthropic.com`), build registries plus a model API,
+  and the operator-data tier. `agents/haku-zones-mitmproxy` fences a single
+  namespace (`haku-sandbox-zai`) whose future is undecided, and
+  `agents/public-coder-agent` is a waiver rather than a fence. Done when the
+  dict below has one entry per policy, not one per proxy deployment.
+- TODO: converge on one proxy. mitmproxy (`agents/haku-egress-proxy`,
+  `agents/mitmproxy`, `agents/haku-zones-mitmproxy`) has no credential
+  placeholders, so `haku-sandbox` sends real unredacted tokens upstream where
+  iron would send a placeholder and substitute in a trusted pod. Moving those to
+  iron is blocked on three mitmproxy behaviours whose iron equivalents are
+  unverified: `--set stream_large_bodies=1m` (dind image layers were buffered
+  whole into memory and OOM-killed the pod), and two `--ignore-hosts` raw TLS
+  passthroughs — `api.anthropic.com`, because interception breaks the Managed
+  Agents HTTP/2 session stream, and `docker-ci.allegedly.works`, because docker
+  mTLS must reach the daemon end to end. Verify those first.
+- TODO: enforce at two layers, not one. Every fence today is single-layer.
+  The mitmproxy fences confine only via Cilium `toFQDNs` — the mitmproxy
+  container itself has no allowlist. The iron fences confine only in app config:
+  `openclaw-spike-cnp-egress.yaml` opens `toEntities: [world, remote-node,
+  host]` on 443, and `claude-iron.yaml` carries a `secrets` transform with no
+  `allowlist`. Defence in depth wants both wherever iron's allowlist and a
+  Cilium FQDN policy can express the same set.
+- TODO: route cluster-internal traffic through the proxies too. The Kyverno
+  injection (`kyverno/policies/inject-haku-egress-proxy.yaml`) sets `NO_PROXY`
+  to `*.allegedly.works`, `*.forgejo`, `.svc`, `.svc.cluster.local` and
+  `10.0.0.0/8`, so anything under the operator's own domains or the cluster
+  network is reached with no proxy in the path and no allowlist applied. It is
+  also why the same service is referenced by its public name in one manifest and
+  its cluster name in another.
+- TODO: allowlist DNS. Five of the six fences carry `matchPattern: "*"` under
+  `toPorts.rules.dns`, so a resolvable name is an egress channel regardless of
+  what `toFQDNs` permits. Only `cnp-haku-claude-egress.yaml` pins its DNS rule
+  (`matchName: api.anthropic.com`) — that is the shape the others should take.
+- TODO: record traffic, including rejections. The proxies filter and substitute
+  credentials but keep no request log, so there is no record of what an agent
+  actually reached and a blocked request is invisible after the fact. Rejections
+  are the more valuable half: they are how a fence being too tight, or an agent
+  trying somewhere it should not, becomes observable at all.
+
+Deliberately out of scope here: which pod is *routed* through which proxy. That
+pairing lives in the force-proxy `CiliumClusterwideNetworkPolicy` manifests
+(`agents/haku-egress-proxy/ccnp-haku-{proxy,claude-sandbox}-egress.yaml`,
+`agents/haku-zones-mitmproxy/ccnp-zones-force-proxy-egress.yaml`,
+`agents/mitmproxy/ccnp-sandbox-proxy-egress.yaml`,
+`haku-ci/ccnp-force-proxy-egress.yaml`) and is unverified — a selector that
+matches nothing bypasses the fence entirely while every assertion here stays
+green.
 """
 
 from __future__ import annotations
