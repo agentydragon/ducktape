@@ -20,6 +20,31 @@
 # Jobs from transitioning to Complete. Since proxy injection only needs to
 # happen at pod creation, matching CREATE-only avoids the re-mutation
 # entirely.
+#
+# NO_PROXY entry by entry — `127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8`,
+# injected identically into containers and initContainers:
+#
+#   127.0.0.1, localhost   Loopback. A pod's own sidecars and health checks must
+#                          not be shipped to a proxy in another pod.
+#   .svc.cluster.local     In-cluster Service names, fully qualified.
+#   10.0.0.0/8             Pod and Service CIDRs — the same destinations reached
+#                          by IP rather than by name.
+#
+# Everything on this list is reached with no proxy in the path and no egress
+# allowlist applied. Accepted: it is all cluster addressing, and in-cluster
+# services authenticate their own callers.
+#
+# Deviation from inject-haku-egress-proxy, worth knowing before copying either:
+#
+#   - No `.svc` / `kubernetes.default.svc`. Suffix matching is literal, so
+#     `https://kubernetes.default.svc` — the URL in-cluster client libraries
+#     build by default — is NOT matched here and goes to the proxy. That is the
+#     exact shape of the bug fixed in the haku policy on 2026-07-24 (it hung
+#     until timeout). Whether it bites in claude-sandbox depends on whether
+#     anything there uses the short form; unverified, and a candidate fix.
+#   - No `*.allegedly.works`. Deliberate for this sandbox: the loom/gym eval
+#     driver is supposed to reach docker-ci.allegedly.works *through* the proxy,
+#     which raw-tunnels it so docker mTLS survives.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:

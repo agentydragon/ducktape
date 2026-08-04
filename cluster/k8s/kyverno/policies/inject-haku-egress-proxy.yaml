@@ -38,6 +38,38 @@
 # apiserver URL every in-cluster client library builds — went to the proxy and hung
 # until it timed out (found from a haku sandbox, 2026-07-24). The FQDN form worked
 # all along; this makes both work.
+#
+# NO_PROXY entry by entry — the value below is one flat string, so this is its
+# key. Both env patches (containers and initContainers) inject the same value.
+#
+#   127.0.0.1, localhost    Loopback. A pod's own sidecars, health checks and
+#                           127.0.0.1-bound helpers must not be shipped to a
+#                           proxy living in another pod.
+#   *.allegedly.works       Our own public names. Bypassed because of the
+#   .allegedly.works        Gateway hairpin described above, not because they are
+#                           trusted more than the internet. Two forms because
+#                           NO_PROXY matching differs across curl, Go, Python,
+#                           node and git.
+#   *.forgejo               In-cluster Forgejo. Bypassed because git smart-HTTP
+#   .forgejo                streams packs chunked, which defeats the proxy's
+#                           stream_large_bodies sizing (above). Proxy-specific:
+#                           iron-proxy handles this host fine today in the
+#                           openclaw spike, so this entry is a mitmproxy
+#                           workaround rather than a standing decision.
+#   .svc                    In-cluster Service names, in all three forms clients
+#   .svc.cluster.local      actually construct. See the 2026-07-24 note above for
+#   kubernetes.default.svc  why the short forms are listed separately.
+#   10.0.0.0/8              Pod and Service CIDRs — the same in-cluster
+#                           destinations, reached by IP instead of by name (a
+#                           kubeconfig with a ClusterIP server, a hard-coded pod
+#                           IP). Broadest entry here; it is what makes the list
+#                           "all cluster addressing" rather than an enumeration.
+#
+# Everything on this list reaches its destination with no proxy in the path and
+# no egress allowlist applied. That is accepted rather than overlooked: each
+# entry is cluster-internal or cluster-published, and those services authenticate
+# their own callers (bearer, mTLS, SSO). The fence this policy sets up is a fence
+# over the public internet.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
