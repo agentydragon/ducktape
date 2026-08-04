@@ -15,11 +15,13 @@ bug breaks exactly that invariant.
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     Agent,
@@ -62,13 +64,13 @@ MULTI_PROPERTY_LOCATIONS = {
 }
 
 
-def _series_context(*, levels_by_series: dict[str, list[float]]) -> ExternalSeriesContext:
-    rows = [
-        {"rollout_index": 0, "month_index": month, "series_id": series_id, "value": value}
-        for series_id, levels in levels_by_series.items()
-        for month, value in enumerate(levels)
-    ]
-    return ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)))
+def _series_context(*, levels_by_series: dict[LevelSeriesKey, list[float]]) -> ExternalSeriesContext:
+    horizon_months = max(len(levels) for levels in levels_by_series.values()) - 1
+    return ExternalSeriesContext.from_level_blocks(
+        [(key, np.asarray([levels], dtype=np.float64)) for key, levels in levels_by_series.items()],
+        rollout_count=1,
+        horizon_months=horizon_months,
+    )
 
 
 def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
@@ -237,8 +239,9 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     )
     ctx = _series_context(
         levels_by_series={
-            f"home_value:{HOME_LOCATION_ID}": [1.0] * (horizon + 1),
-            f"home_value:{RENTAL_LOCATION_ID}": [1.0] * rental_sale_month + [1.5] * (horizon + 1 - rental_sale_month),
+            HomeValueKey(location_id=LocationId(HOME_LOCATION_ID)): [1.0] * (horizon + 1),
+            HomeValueKey(location_id=LocationId(RENTAL_LOCATION_ID)): [1.0] * rental_sale_month
+            + [1.5] * (horizon + 1 - rental_sale_month),
         }
     )
 

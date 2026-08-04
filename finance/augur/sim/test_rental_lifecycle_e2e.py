@@ -11,12 +11,13 @@ expected cashflow is exact-math predictable.
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import LocationId, RentKey
-from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment_usd
 from finance.augur.sim.scenario import (
@@ -51,37 +52,33 @@ TENANT_AGENT_ID = "tenant"
 OWNER_AGENT_ID = "owner"
 MGMT_AGENT_ID = "property_management_agency"
 RENT_SERIES_KEY = RentKey(location_id=LocationId("test_location"))
-# Frame helpers (_flat_series / _multi_series) still key the series_values frame
-# by the wire string; SeriesIndexedAmount now takes the typed key directly.
-RENT_SERIES_ID = RENT_SERIES_KEY.wire_id
+SF_HOME_VALUE_KEY = HomeValueKey(location_id=LocationId("san_francisco"))
 
 
-def _flat_series(*, series_id: str, value: float, months: int, rollouts: int) -> ExternalSeriesContext:
+def _flat_series(*, key: LevelSeriesKey, value: float, months: int, rollouts: int) -> ExternalSeriesContext:
     """Build an exogenous bundle with one series held flat at `value`."""
 
-    rows = [
-        {"rollout_index": rollout, "month_index": month, "series_id": series_id, "value": value}
-        for rollout in range(rollouts)
-        for month in range(months)
-    ]
-    return ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)))
+    return ExternalSeriesContext.from_level_blocks(
+        [(key, np.full((rollouts, months), value, dtype=np.float64))], rollout_count=rollouts, horizon_months=months - 1
+    )
 
 
-def _multi_series(*, levels_by_series: dict[str, dict[int, list[float]]]) -> ExternalSeriesContext:
-    """Build an exogenous bundle with multiple series, indexed by (series_id, rollout) → levels.
+def _multi_series(*, levels_by_series: dict[LevelSeriesKey, dict[int, list[float]]]) -> ExternalSeriesContext:
+    """Build an exogenous bundle with multiple series, indexed by (key, rollout) -> levels.
 
-    `levels_by_series[series_id][rollout]` is a list of length `horizon_months + 1` (the engine
+    `levels_by_series[key][rollout]` is a list of length `horizon_months + 1` (the engine
     indexes external_values up through the horizon end).
     """
 
-    rows = []
-    for series_id, by_rollout in levels_by_series.items():
+    rollout_count = max(rollout for by_rollout in levels_by_series.values() for rollout in by_rollout) + 1
+    horizon_months = max(len(levels) for by_rollout in levels_by_series.values() for levels in by_rollout.values()) - 1
+    blocks = []
+    for key, by_rollout in levels_by_series.items():
+        matrix = np.full((rollout_count, horizon_months + 1), np.nan, dtype=np.float64)
         for rollout_index, levels in by_rollout.items():
-            for month_index, value in enumerate(levels):
-                rows.append(
-                    {"rollout_index": rollout_index, "month_index": month_index, "series_id": series_id, "value": value}
-                )
-    return ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)))
+            matrix[rollout_index, : len(levels)] = levels
+        blocks.append((key, matrix))
+    return ExternalSeriesContext.from_level_blocks(blocks, rollout_count=rollout_count, horizon_months=horizon_months)
 
 
 def _mortgage_balance_and_interest_after_payments(
@@ -183,9 +180,7 @@ def _rental_scenario(
 def _run(scenario: Scenario, rollouts: int = 1, rent_level: float = 1.0):
     """Run the scenario against a flat rent series at `rent_level` for all rollouts/months."""
 
-    ctx = _flat_series(
-        series_id=RENT_SERIES_ID, value=rent_level, months=scenario.horizon_months + 1, rollouts=rollouts
-    )
+    ctx = _flat_series(key=RENT_SERIES_KEY, value=rent_level, months=scenario.horizon_months + 1, rollouts=rollouts)
     return simulate_with_external_series(scenario, external_series=ctx, rollout_count=rollouts, locations={})
 
 
@@ -228,7 +223,7 @@ class TestRentalIncome:
         scenario = _rental_scenario(horizon_months=24, monthly_rent=5_000.0)
         # Build a per-month rent series: 1.0 for months 0..11, 2.0 for months 12..24.
         levels = [1.0] * 12 + [2.0] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: levels}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: levels}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations={})
         transfers = (
             run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
@@ -393,7 +388,7 @@ class TestRentalLifecycleCashflows:
         )
         run = simulate_with_external_series(
             scenario,
-            external_series=_flat_series(series_id=RENT_SERIES_ID, value=1.0, months=13, rollouts=1),
+            external_series=_flat_series(key=RENT_SERIES_KEY, value=1.0, months=13, rollouts=1),
             rollout_count=1,
             locations={
                 "test_location": Location(
@@ -704,9 +699,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 13}, SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -781,9 +774,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=24,
         )
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: [1.0] * 25}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -894,7 +885,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
         return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
 
@@ -960,9 +951,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=24,
         )
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: [1.0] * 25}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1034,7 +1023,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1109,7 +1098,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1138,9 +1127,7 @@ class TestRentalIncomeTaxation:
         Loss → no recapture, no LTCG."""
 
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 14}, "home_value:san_francisco": {0: [1.0] * 14}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 14}, SF_HOME_VALUE_KEY: {0: [1.0] * 14}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1154,7 +1141,7 @@ class TestRentalIncomeTaxation:
 
     def test_property_sale_requires_home_value_series(self, san_francisco_location: Location):
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
-        ctx = ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.empty())
+        ctx = ExternalSeriesContext()
 
         with pytest.raises(
             KeyError, match=r"property sale for property_id 'p1'.*home-value series 'home_value:san_francisco'"
@@ -1177,7 +1164,7 @@ class TestRentalIncomeTaxation:
         scenario = self._sale_scenario(horizon=24, sale_month=12)
         # Home value series steps up at month 12.
         levels = [1.0] * 12 + [1.5] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1282,8 +1269,8 @@ class TestRentalIncomeTaxation:
         }
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_ID: {0: [1.0] * (horizon + 1), 1: [1.0] * (horizon + 1)},
-                "home_value:san_francisco": home_values_by_rollout,
+                RENT_SERIES_KEY: {0: [1.0] * (horizon + 1), 1: [1.0] * (horizon + 1)},
+                SF_HOME_VALUE_KEY: home_values_by_rollout,
             }
         )
         run = simulate_with_external_series(
@@ -1480,8 +1467,8 @@ class TestRentalIncomeTaxation:
         )
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_ID: {0: [1.0] * (horizon + 1)},
-                "home_value:san_francisco": {0: [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)},
+                RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)},
+                SF_HOME_VALUE_KEY: {0: [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)},
             }
         )
         run = simulate_with_external_series(
@@ -1581,8 +1568,8 @@ class TestRentalIncomeTaxation:
         levels = [1.0] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_ID: {0: [1.0] * (scenario.horizon_months + 1)},
-                "home_value:san_francisco": {0: levels},
+                RENT_SERIES_KEY: {0: [1.0] * (scenario.horizon_months + 1)},
+                SF_HOME_VALUE_KEY: {0: levels},
             }
         )
         run = simulate_with_external_series(
@@ -1701,8 +1688,8 @@ class TestRentalIncomeTaxation:
         levels = [1.0] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_ID: {0: [1.0] * (scenario.horizon_months + 1)},
-                "home_value:san_francisco": {0: levels},
+                RENT_SERIES_KEY: {0: [1.0] * (scenario.horizon_months + 1)},
+                SF_HOME_VALUE_KEY: {0: levels},
             }
         )
         run = simulate_with_external_series(
@@ -1752,7 +1739,7 @@ class TestRentalIncomeTaxation:
 
         scenario = self._sale_scenario(horizon=24, sale_month=12)
         levels = [1.0] * 12 + [1.5] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1796,7 +1783,7 @@ class TestRentalIncomeTaxation:
 
         scenario = self._sale_scenario(horizon=24, sale_month=12, year2_wage_usd=250_000.0)
         levels = [1.0] * 12 + [1.5] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1866,7 +1853,7 @@ class TestRentalIncomeTaxation:
         # Home value 1.4× at sale time.
         home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -1948,7 +1935,7 @@ class TestRentalIncomeTaxation:
         )
         home_values = [1.0] * sale_month + [1.4]
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -2008,7 +1995,7 @@ class TestRentalIncomeTaxation:
         )
         home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -2059,7 +2046,7 @@ class TestRentalIncomeTaxation:
         )
         home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -2096,8 +2083,8 @@ class TestRentalIncomeTaxation:
         home_values = [1.0] * sale_month + [1.4] * (scenario.horizon_months + 1 - sale_month)
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_ID: {0: [1.0] * (scenario.horizon_months + 1)},
-                "home_value:san_francisco": {0: home_values},
+                RENT_SERIES_KEY: {0: [1.0] * (scenario.horizon_months + 1)},
+                SF_HOME_VALUE_KEY: {0: home_values},
             }
         )
         run = simulate_with_external_series(
@@ -2124,9 +2111,7 @@ class TestRentalIncomeTaxation:
 
         scenario = self._sale_scenario(horizon=36, sale_month=30)
         home_values = [1.0] * 30 + [1.4] * 7
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 37}, "home_value:san_francisco": {0: home_values}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 37}, SF_HOME_VALUE_KEY: {0: home_values}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -2178,9 +2163,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=24,
         )
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: [1.0] * 25}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -2367,7 +2350,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -2466,9 +2449,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 13}, SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
         return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
 
@@ -2563,9 +2544,7 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         # Series needs home_value:san_francisco too for property purchase.
-        ctx = _multi_series(
-            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
-        )
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 13}, SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )

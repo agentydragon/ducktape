@@ -12,12 +12,13 @@ from finance.augur.model.series import (
     CryptoKey,
     CryptoSymbol,
     IssuerId,
+    LevelSeriesKey,
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
     SP500Key,
 )
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,
@@ -34,17 +35,13 @@ from finance.augur.sim.simulate import simulate, simulate_with_external_series
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
-def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> ExternalSeriesContext:
-    return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
-            pl.DataFrame(
-                [
-                    {"rollout_index": rollout, "month_index": month, "series_id": series_id, "value": level}
-                    for rollout, levels in enumerate(levels_by_rollout)
-                    for month, level in enumerate(levels)
-                ]
-            )
-        )
+def _external_series_context_for_levels(
+    key: LevelSeriesKey, levels_by_rollout: list[list[float]]
+) -> ExternalSeriesContext:
+    return ExternalSeriesContext.from_level_blocks(
+        [(key, np.asarray(levels_by_rollout, dtype=np.float64))],
+        rollout_count=len(levels_by_rollout),
+        horizon_months=len(levels_by_rollout[0]) - 1,
     )
 
 
@@ -95,9 +92,7 @@ def _pe_external_with_channel_value(
         .otherwise(pl.col(channel))
         .alias(channel)
     )
-    return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), private_equity=PrivateEquityBundle(patched)
-    )
+    return ExternalSeriesContext(private_equity=PrivateEquityBundle(patched))
 
 
 @pytest.mark.parametrize(
@@ -184,7 +179,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
         ],
         horizon_months=horizon,
     )
-    external = _external_series_context_for_levels("sp500", [[1.0, 1.0, -1.0]])
+    external = _external_series_context_for_levels(SP500Key(), [[1.0, 1.0, -1.0]])
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
@@ -265,7 +260,7 @@ def test_liquidity_invalid_asset_price_leaves_obligation_unfunded(bad_price: flo
         tax_profiles=[],
         horizon_months=1,
     )
-    external = _external_series_context_for_levels("crypto:vti", [[bad_price, bad_price]])
+    external = _external_series_context_for_levels(CryptoKey(symbol=CryptoSymbol("vti")), [[bad_price, bad_price]])
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 

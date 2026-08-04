@@ -24,11 +24,11 @@ py_library(
     name = "external_series",
     srcs = ["external_series.py"],
     deps = [
-        "//finance/augur:frames",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
         "//finance/augur/model:series_model",
-        "@pypi//polars",
+        "@pypi//numpy",
     ],
 )
 
@@ -285,6 +285,7 @@ py_library(
         "codec/plan.py",
         "codec/primary_residence.py",
         "codec/properties.py",
+        "codec/series.py",
         "codec/tax.py",
         "codec/transfers.py",
     ],
@@ -296,6 +297,8 @@ py_library(
         ":external_series",
         ":fixed_point",
         ":state",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/product:asset_key",
         "@pypi//numpy",

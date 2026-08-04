@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
-from finance.augur.model.exogenous import ExogenousSamplingRequest, level_keys_in_bundle, level_series_request_channels
+from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
@@ -85,7 +85,7 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
         )
     )
 
-    assert level_keys_in_bundle(sampled) == {
+    assert sampled.levels.series_keys() == {
         InflationKey(),
         SP500Key(),
         HomeValueKey(location_id=LocationId("san_francisco_ca")),

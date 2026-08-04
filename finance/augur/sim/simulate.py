@@ -40,6 +40,11 @@ def simulate_with_external_series(
     )
 
 
+_EMPTY_SERIES_ROWS = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "value": pl.Float64()}
+).to_frame()
+
+
 def _validate_series_indexed_amounts(
     scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
 ) -> None:
@@ -56,10 +61,7 @@ def _validate_series_indexed_amounts(
         # that dict is millions of entries built from a Python row loop, all for nothing.
         return
 
-    # Only the referenced series matter; filtering first keeps the work small even when the
-    # external frame carries many unrelated series (asset prices, etc.).
-    needed_wire_ids = {amount.series.wire_id for _, amount, _ in uses}
-    relevant = external_series.series_values.filter(pl.col("series_id").is_in(list(needed_wire_ids)))
+    rows_by_key = dict(external_series.levels.value_rows())
 
     for label, amount, months in uses:
         before_base = [month for month in months if month < amount.base_month_index]
@@ -68,7 +70,6 @@ def _validate_series_indexed_amounts(
                 f"series-indexed amount {label} is active at month {before_base[0]} "
                 f"before base month {amount.base_month_index}"
             )
-        # `relevant` carries the wire-string series_id (typed in a later phase).
         wire_id = amount.series.wire_id
         base_month = int(amount.base_month_index)
         # An amount only indexes into its reset anchors (one per adjustment period) plus its base
@@ -76,7 +77,10 @@ def _validate_series_indexed_amounts(
         # rollout coverage with a columnar group/count instead of materializing a
         # per-(series, month, rollout) Python dict over the full external frame.
         required_months = sorted({base_month, *(amount._reset_month(month) for month in months)})
-        series_rows = relevant.filter((pl.col("series_id") == wire_id) & pl.col("month_index").is_in(required_months))
+        key_rows = rows_by_key.get(amount.series)
+        series_rows = (
+            _EMPTY_SERIES_ROWS if key_rows is None else key_rows.filter(pl.col("month_index").is_in(required_months))
+        )
         present_count = dict(
             series_rows.filter(pl.col("value").is_not_null())
             .group_by("month_index")

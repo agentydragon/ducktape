@@ -11,9 +11,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import polars as pl
 
-from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, try_parse_level_series_key
+from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
@@ -91,17 +90,12 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
             seen.add(key)
             keys.append(key)
 
-    # `.sort()` after `.unique()`: polars `unique` returns rows in non-deterministic hash order, which
-    # would assign series row-indices differently per compile. Those indices are baked into the jitted
-    # program's STATIC structure (e.g. `_FoldedPE.floor_series`), so a non-deterministic order busts the
-    # native `jax.jit` compile cache (every other compile re-traces). Sorting makes the index assignment
-    # deterministic so identical scenarios produce an identical structure → one compile, then cache hits.
-    for series_id in (
-        external_series.series_values.select("series_id").unique().get_column("series_id").sort().to_list()
-    ):
-        # Boundary parse: the external frame is still series_id-string keyed (typed in the frame
-        # pass). Every row is a non-PE level series, so the parse must succeed.
-        add(_require_level_series_key(str(series_id)))
+    # `value_rows()` is ordered by wire id. Series row-indices are assigned from that order and
+    # baked into the jitted program's STATIC structure (e.g. `_FoldedPE.floor_series`), so a
+    # content-independent order would bust the native `jax.jit` compile cache (every other compile
+    # re-traces); a deterministic one gives identical scenarios one compile, then cache hits.
+    for key, _ in external_series.levels.value_rows():
+        add(key)
     for scheduled_transfer in scenario.scheduled_transfers:
         _add_amount_series_key(scheduled_transfer.amount_usd, add)
     for recurring_transfer in scenario.recurring_transfers:
@@ -123,13 +117,6 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     return tuple(keys)
 
 
-def _require_level_series_key(series_id: str) -> LevelSeriesKey:
-    key = try_parse_level_series_key(series_id)
-    if key is None:
-        raise ValueError(f"external series frame carries non-level-series id {series_id!r}")
-    return key
-
-
 def _add_amount_series_key(amount: Any, add: Any) -> None:
     if isinstance(amount, SeriesIndexedAmount):
         add(amount.series)
@@ -143,26 +130,22 @@ def external_values_cube(
     horizon_months: int,
 ) -> np.ndarray:
     values = np.full((len(series_index_by_id), rollout_count, horizon_months + 1), np.nan, dtype=np.float64)
-    frame = external_series.series_values
-    if frame.is_empty():
-        return values
-    # The external frame is still keyed by series_id wire strings; bridge to the typed index
-    # once via wire_id (removed when the frame itself goes typed). Vectorized scatter: map
-    # series_id → compiled index columnwise, then a single fancy-index assignment, instead of
-    # a Python loop over every (rollout, month, series) row (millions at a 100-year horizon).
-    index_by_wire_id = {key.wire_id: index for key, index in series_index_by_id.items()}
-    series_index = (
-        frame.get_column("series_id").replace_strict(index_by_wire_id, default=-1, return_dtype=pl.Int64).to_numpy()
-    )
-    rollout_index = frame.get_column("rollout_index").to_numpy()
-    month_index = frame.get_column("month_index").to_numpy()
-    value = frame.get_column("value").to_numpy()
-    keep = (
-        (series_index >= 0)
-        & (rollout_index >= 0)
-        & (rollout_index < rollout_count)
-        & (month_index >= 0)
-        & (month_index <= horizon_months)
-    )
-    values[series_index[keep], rollout_index[keep], month_index[keep]] = value[keep]
+    # Loop over series (tens), scatter each one's rows in a single fancy-index assignment —
+    # never a Python loop over the (rollout, month, series) rows themselves, which number in
+    # the millions at a 100-year horizon. Series the cube has no row for are skipped; a series
+    # whose rows do not cover every (rollout, month) keeps NaN there, which the engine rejects
+    # at the point of use.
+    for key, frame in external_series.levels.value_rows():
+        index = series_index_by_id.get(key)
+        if index is None:
+            continue
+        rollout_index = frame.get_column("rollout_index").to_numpy()
+        month_index = frame.get_column("month_index").to_numpy()
+        keep = (
+            (rollout_index >= 0)
+            & (rollout_index < rollout_count)
+            & (month_index >= 0)
+            & (month_index <= horizon_months)
+        )
+        values[index, rollout_index[keep], month_index[keep]] = frame.get_column("value").to_numpy()[keep]
     return values

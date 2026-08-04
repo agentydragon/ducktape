@@ -430,19 +430,16 @@ def _reject_missing_property_sale_home_values(scenario: Scenario, external_serie
     if not scenario.property_lifecycle_events:
         return
     property_by_id = {property_.property_id: property_ for property_ in scenario.scheduled_property_purchases}
-    available_series_ids = {
-        str(series_id)
-        for series_id in external_series.series_values.select("series_id").unique().get_column("series_id").to_list()
-    }
+    available = external_series.levels.series_keys()
     for event in scenario.property_lifecycle_events:
         if not isinstance(event, PropertySaleEvent):
             continue
         property_ = property_by_id[event.property_id]
-        required_series_id = HomeValueKey(location_id=LocationId(property_.location_id)).wire_id
-        if required_series_id in available_series_ids:
+        required = HomeValueKey(location_id=LocationId(property_.location_id))
+        if required in available:
             continue
         msg = (
             f"property sale for property_id {event.property_id!r} at month {event.month} requires external "
-            f"home-value series {required_series_id!r}"
+            f"home-value series {required.wire_id!r}"
         )
         raise KeyError(msg)

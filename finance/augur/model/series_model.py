@@ -15,10 +15,8 @@ from __future__ import annotations
 import hashlib
 from typing import Annotated, Literal
 
-import polars as pl
 from pydantic import BaseModel, Field
 
-from finance.augur.frames import concat_frames
 from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
@@ -27,7 +25,6 @@ from finance.augur.model.exogenous import (
     Sampler,
     assemble_level_frames,
     level_series_request_channels,
-    level_value_rows,
 )
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import (
@@ -134,31 +131,6 @@ class SeriesModelBundle(BaseModel):
                 **level_series_request_channels(required_level_series),
             )
         )
-
-
-_LEGACY_SERIES_VALUES_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
-)
-
-
-def materialize_series_values(
-    bundle: SeriesModelBundle, *, rollout_seeds: tuple[int, ...], horizon_months: int
-) -> pl.DataFrame:
-    """Project the bundle's sampled levels into the sim external-series frame.
-
-    CLEANUP: sim handoff shim until Phase 2 stage D. Rebuilds the legacy flat
-    `series_id`-keyed frame from the typed per-role frames by stamping
-    `series_id = key.wire_id`. `augur/sim/external_series.py` is the only
-    consumer; it gets retyped against the typed bundle in stage D, after which
-    this shim (and the legacy schema) can be deleted.
-    """
-
-    sampled = bundle.sample(rollout_seeds=rollout_seeds, horizon_months=horizon_months)
-    blocks = [
-        frame.with_columns(series_id=pl.lit(key.wire_id)).select(_LEGACY_SERIES_VALUES_SCHEMA.names())
-        for key, frame in level_value_rows(sampled)
-    ]
-    return concat_frames(blocks, _LEGACY_SERIES_VALUES_SCHEMA)
 
 
 def derive_stream_rollout_seeds(rollout_seeds: tuple[int, ...], *, stream_id: str) -> tuple[int, ...]:

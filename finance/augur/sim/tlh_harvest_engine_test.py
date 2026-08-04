@@ -11,12 +11,13 @@ correctness properties:
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
 
 from finance.augur.model.series import CryptoKey, CryptoSymbol, SP500Key
-from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,
@@ -38,16 +39,10 @@ _PARAMS = HarvestYieldParams(
 
 
 def _sp500_levels(levels_by_rollout: list[list[float]]) -> ExternalSeriesContext:
-    return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
-            pl.DataFrame(
-                [
-                    {"rollout_index": r, "month_index": m, "series_id": "sp500", "value": level}
-                    for r, levels in enumerate(levels_by_rollout)
-                    for m, level in enumerate(levels)
-                ]
-            )
-        )
+    return ExternalSeriesContext.from_level_blocks(
+        [(SP500Key(), np.asarray(levels_by_rollout, dtype=np.float64))],
+        rollout_count=len(levels_by_rollout),
+        horizon_months=len(levels_by_rollout[0]) - 1,
     )
 
 
@@ -205,16 +200,13 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
     # SP500 sleeve drops then recovers so harvesting books meaningful losses through the year.
     sp500_levels = [1.0, 0.85, 0.85, 0.9, 0.9, 0.9, 0.95] + [0.95] * 7
     gain_levels = [400.0] * 14
-    external_series = ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
-            pl.DataFrame(
-                [
-                    {"rollout_index": 0, "month_index": m, "series_id": series_id, "value": value}
-                    for series_id, values in (("sp500", sp500_levels), ("crypto:gainco", gain_levels))
-                    for m, value in enumerate(values)
-                ]
-            )
-        )
+    external_series = ExternalSeriesContext.from_level_blocks(
+        [
+            (SP500Key(), np.asarray([sp500_levels], dtype=np.float64)),
+            (CryptoKey(symbol=CryptoSymbol("gainco")), np.asarray([gain_levels], dtype=np.float64)),
+        ],
+        rollout_count=1,
+        horizon_months=len(sp500_levels) - 1,
     )
 
     def year_tax(with_harvest: bool) -> float:

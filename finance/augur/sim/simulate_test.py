@@ -22,6 +22,7 @@ from finance.augur.model.series import (
     CryptoKey,
     CryptoSymbol,
     IssuerId,
+    LevelSeriesKey,
     LocationId,
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
@@ -29,7 +30,7 @@ from finance.augur.model.series import (
 )
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import cents_to_usd, usd_to_cents
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
@@ -69,17 +70,13 @@ def _engine_usd(value: float) -> float:
     return cents_to_usd(usd_to_cents(value))
 
 
-def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> ExternalSeriesContext:
-    return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
-            pl.DataFrame(
-                [
-                    {"rollout_index": rollout_index, "month_index": month_index, "series_id": series_id, "value": level}
-                    for rollout_index, levels in enumerate(levels_by_rollout)
-                    for month_index, level in enumerate(levels)
-                ]
-            )
-        )
+def _external_series_context_for_levels(
+    key: LevelSeriesKey, levels_by_rollout: list[list[float]]
+) -> ExternalSeriesContext:
+    return ExternalSeriesContext.from_level_blocks(
+        [(key, np.asarray(levels_by_rollout, dtype=np.float64))],
+        rollout_count=len(levels_by_rollout),
+        horizon_months=len(levels_by_rollout[0]) - 1,
     )
 
 
@@ -194,9 +191,7 @@ def test_series_indexed_amount_cannot_fire_before_base_month() -> None:
         ),
         horizon_months=2,
     )
-    external_series = _external_series_context_for_levels(
-        rent_series_id.wire_id, levels_by_rollout=[[100.0, 110.0, 120.0]]
-    )
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0, 110.0, 120.0]])
 
     with pytest.raises(ValueError, match="before base month 1"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
@@ -210,7 +205,7 @@ def test_series_indexed_amount_requires_external_series_coverage() -> None:
         ),
         horizon_months=13,
     )
-    external_series = _external_series_context_for_levels(rent_series_id.wire_id, levels_by_rollout=[[100.0] * 12])
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0] * 12])
 
     with pytest.raises(KeyError, match="missing rollout"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
@@ -224,7 +219,7 @@ def test_series_indexed_amount_rejects_zero_base_level() -> None:
         ),
         horizon_months=1,
     )
-    external_series = _external_series_context_for_levels(rent_series_id.wire_id, levels_by_rollout=[[0.0, 100.0]])
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[0.0, 100.0]])
 
     with pytest.raises(ValueError, match="zero base level"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
@@ -2485,7 +2480,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
         horizon_months=1,
     )
     external_series = _external_series_context_for_levels(
-        "crypto:vti", levels_by_rollout=[[100.0, 100.0], [200.0, 200.0]]
+        CryptoKey(symbol=CryptoSymbol("vti")), levels_by_rollout=[[100.0, 100.0], [200.0, 200.0]]
     )
 
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
@@ -2643,7 +2638,7 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
         horizon_months=13,
     )
     external_series = _external_series_context_for_levels(
-        rent_series_id.wire_id, levels_by_rollout=[[100.0] * 12 + [110.0], [100.0] * 12 + [90.0]]
+        rent_series_id, levels_by_rollout=[[100.0] * 12 + [110.0], [100.0] * 12 + [90.0]]
     )
 
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
@@ -2689,9 +2684,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
         tax_profiles=[],
         horizon_months=13,
     )
-    external_series = _external_series_context_for_levels(
-        rent_series_id.wire_id, levels_by_rollout=[[200.0] * 12 + [240.0]]
-    )
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0]])
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
@@ -4106,7 +4099,6 @@ def _pe_external_series(
         horizon_months=horizon_months, rollouts=rollout_count, value=value
     )
     return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(),
         private_equity=PrivateEquityBundle.from_issuer_arrays(
             "acme",
             mark_usd_per_unit=levels,
@@ -4129,7 +4121,7 @@ def _pe_external_series(
             company_valuation_usd=default_float(0.0),
             rollout_count=rollout_count,
             horizon_months=horizon_months,
-        ),
+        )
     )
 
 
@@ -4454,7 +4446,7 @@ def test_pe_tender_missing_protocol_series_fails_loudly() -> None:
     # The scenario holds a `private_equity:acme` lot but the materialized
     # ExternalSeriesContext omits the typed PrivateEquityBundle entirely —
     # the compiler must reject this loudly.
-    external = ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.empty())
+    external = ExternalSeriesContext()
 
     with pytest.raises(ValueError, match=r"private-equity bundle missing required issuer 'acme'"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
@@ -4489,9 +4481,7 @@ def test_pe_missing_typed_protocol_fails_loudly() -> None:
     )
     # An empty PE bundle on the ExternalSeriesContext (engine sees an issuer
     # with no PE channels) is rejected at compile time.
-    external = ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), private_equity=PrivateEquityBundle.empty()
-    )
+    external = ExternalSeriesContext(private_equity=PrivateEquityBundle.empty())
 
     with pytest.raises(ValueError, match=r"private-equity bundle missing required issuer 'acme'"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})

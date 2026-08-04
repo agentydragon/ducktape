@@ -31,6 +31,7 @@ from finance.augur.sim.codec.lifecycle import decode_lifecycle_events
 from finance.augur.sim.codec.obligations import decode_obligations
 from finance.augur.sim.codec.primary_residence import decode_primary_residence_events
 from finance.augur.sim.codec.properties import decode_property_purchases, decode_property_stakes, decode_property_state
+from finance.augur.sim.codec.series import decode_series_values
 from finance.augur.sim.codec.tax import (
     decode_capital_gains,
     decode_ordinary_income,
@@ -101,7 +102,7 @@ class SimulationRun:
 
     @cached_property
     def series_values(self) -> pl.DataFrame:
-        return self.external_series.series_values
+        return decode_series_values(self.external_series.levels)
 
     @cached_property
     def events_log(self) -> EventLog:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-import polars as pl
 import pytest
 import pytest_bazel
 
@@ -24,7 +23,7 @@ from finance.augur.model.series import (
     LocationId,
     SP500Key,
 )
-from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
+from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle
 from finance.augur.model.testing import ConstantFrameModel
 
 
@@ -92,20 +91,21 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
         }
     )
 
-    first = materialize_series_values(bundle, rollout_seeds=(11, 12, 13), horizon_months=2)
-    second = materialize_series_values(bundle, rollout_seeds=(11, 12, 13), horizon_months=2)
+    first = bundle.sample(rollout_seeds=(11, 12, 13), horizon_months=2)
+    second = bundle.sample(rollout_seeds=(11, 12, 13), horizon_months=2)
 
-    # `materialize_series_values` is the sim-handoff shim that rebuilds the legacy
-    # flat `series_id`-keyed frame from the typed per-role frames.
-    assert first.columns == ["rollout_index", "month_index", "series_id", "value"]
-    assert first.height == 27
-    assert first.equals(second)
-    assert first.filter((pl.col("series_id") == "crypto:qqq") & (pl.col("month_index") == 0))["value"].to_list() == [
-        200.0,
-        200.0,
-        200.0,
-    ]
-    assert first.filter(pl.col("series_id") == "crypto:bnd")["value"].to_list() == [95.0] * 9
+    assert first.levels.series_keys() == {CryptoKey(symbol=CryptoSymbol(symbol)) for symbol in ("vti", "bnd", "qqq")}
+    for key, frame in first.levels.value_rows():
+        assert frame.equals(dict(second.levels.value_rows())[key])
+    # The GBM component starts at its configured anchor on every rollout; the constant holds flat.
+    np.testing.assert_allclose(
+        first.level_matrix(CryptoKey(symbol=CryptoSymbol("qqq")), rollout_count=3, horizon_months=2)[:, 0],
+        np.full(3, 200.0),
+    )
+    np.testing.assert_allclose(
+        first.level_matrix(CryptoKey(symbol=CryptoSymbol("bnd")), rollout_count=3, horizon_months=2),
+        np.full((3, 3), 95.0),
+    )
 
 
 def test_deterministic_model_rejects_wrong_horizon_length() -> None:

@@ -16,7 +16,7 @@ import yaml
 from pydantic import TypeAdapter
 
 from finance.augur.fit.main import main as train_main
-from finance.augur.model.exogenous import ExogenousSamplingRequest, level_keys_in_bundle, level_series_request_channels
+from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.provider_config import ProviderConfig
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, RentKey
 from finance.augur.model.state_space import StateSpaceProviderConfig
@@ -58,7 +58,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
     )
 
     assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
-    assert level_keys_in_bundle(sampled) == set(required_level_series)
+    assert sampled.levels.series_keys() == set(required_level_series)
     for home_loc in home_locations:
         assert sampled.level_matrix(HomeValueKey(location_id=home_loc), rollout_count=2, horizon_months=12).shape == (
             2,
@@ -97,7 +97,7 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
 
     assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
     assert sampled.metadata["source_manifest"]
-    assert level_keys_in_bundle(sampled) >= set(required_level_series)
+    assert sampled.levels.series_keys() >= set(required_level_series)
 
 
 if __name__ == "__main__":

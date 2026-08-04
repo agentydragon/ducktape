@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
-from finance.augur.model.exogenous import ExogenousSamplingRequest, level_keys_in_bundle, level_series_request_channels
+from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import (
     CryptoKey,
     CryptoSymbol,
@@ -38,7 +38,7 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
         )
     )
 
-    level_keys = level_keys_in_bundle(sampled)
+    level_keys = sampled.levels.series_keys()
     # Post-collapse, every level factor is its own key; there is no aliased extra location
     # (the artifact has a single home_value:san_francisco_ca factor, not a mare-island alias).
     assert level_keys >= {

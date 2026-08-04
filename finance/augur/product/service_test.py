@@ -71,7 +71,7 @@ from finance.augur.product.wire import (
     TerminalDistributionRequest,
 )
 from finance.augur.sim.engine.jax_engine import ProductSummary
-from finance.augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from finance.augur.sim.simulate import simulate_with_external_series
 
@@ -246,10 +246,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         horizon_months=1,
     )
     dense = simulate_with_external_series(
-        scenario,
-        rollout_count=1,
-        external_series=ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.empty()),
-        locations={},
+        scenario, rollout_count=1, external_series=ExternalSeriesContext(), locations={}
     )
 
     with pytest.raises(ValueError, match=r"holding asset 'crypto:missing' has no modeled price series"):
