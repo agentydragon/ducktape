@@ -51,7 +51,7 @@ Anything fully shipped is removed — git history is the record of done work.
   contribution ledgers, tax allocation, and sale proceeds together with
   focused simulator tests before exposing fractional ownership again.
 - Define the month-0 anchoring rule for every model-driven level series
-  in one place. Implementations exist (sp500, crypto, home_value, rent,
+  in one place. Implementations exist (security, home_value, rent,
   PE, inflation), but no single document says whether a configured value
   is a sim-month-0 level or a fixed contract value.
 - Replace float dollar/share accounting in the dense engine with integer
@@ -217,9 +217,9 @@ recovery cashouts. Still missing:
 - Replace the VECM wrapper's ad-hoc latest-observation lookup with a
   typed evidence-artifact / runtime-state boundary. The model should
   receive factor-keyed current levels and provenance metadata directly,
-  not infer `sp500`, home-value, rent, and inflation values from
+  not infer security, home-value, rent, and inflation values from
   source-specific `latest_observations` maps. The current branchy
-  `_latest_factor_value` (with the recent `crypto:*` addition) is the
+  `_latest_factor_value` (and its per-symbol anchor-name table) is the
   shape of the problem.
 - **Mortgage-rate path sampling**. Today the mortgage rate is a single
   PMMS survey number at scenario time; required-series introspection

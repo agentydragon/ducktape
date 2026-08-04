@@ -35,9 +35,10 @@ class HoldingKind(StrEnum):
     STOCK = "stock"
     MUTUAL_FUND = "mutual_fund"
     # Crypto holdings (BTC, ETH, …) flow through the same position/lot machinery as stocks —
-    # FIFO cost basis, cap-gains treatment, sampled price series via the VECM `crypto:*`
-    # factors. Calling them "public securities" is a slight misnomer for crypto, but the
-    # sim doesn't distinguish, so we lean on this enum value for display routing only.
+    # FIFO cost basis, cap-gains treatment, a sampled `security:*` price series. Calling them
+    # "public securities" is a slight misnomer for crypto, but the sim doesn't distinguish —
+    # this enum value routes display AND the sell-order bucket, both of which are the owner's
+    # own tagging rather than a fact about the price series.
     CRYPTOCURRENCY = "cryptocurrency"
     # Private equity (pre-IPO company shares). Like crypto, leans on the same lot machinery
     # for FIFO + cap gains. Diverges from stocks in two ways the sim cares about:
@@ -77,7 +78,7 @@ class HoldingPositionConfig(PortfolioConfigModel):
     value_series: AssetKey = Field(
         description=(
             "Typed sim/model unit-value series used to value this security: an `AssetKey` "
-            "discriminated union (`{kind: sp500}`, `{kind: crypto, symbol: btc}`, "
+            "discriminated union (`{kind: security, symbol: SPY}`, `{kind: security, symbol: btc}`, "
             "`{kind: private_equity, issuer_id: ...}`). Authored typed in YAML — no wire-string prefix."
         )
     )

@@ -7,14 +7,14 @@ depend on binary floating-point exactness.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.model.series import CryptoKey
-from finance.augur.product.asset_key import AssetKey
+from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 
 USD_CENTS = 100
 BTC_SATOSHIS = 100_000_000
@@ -47,14 +47,17 @@ def cents_array_to_usd(values: Any) -> NDArray[np.float64]:
     return np.asarray(values, dtype=np.float64) / float(USD_CENTS)
 
 
+# Quantity quanta by symbol: the smallest fraction of a unit the ledger tracks. BTC and ETH
+# are held in fractions far below a whole coin, so they get their native subdivision; everything
+# else settles at the default. Per-symbol data, not per-asset-class: two crypto symbols already
+# disagree here, and a fractional-share equity would join this table without needing a new type.
+QUANTITY_SCALE_BY_SYMBOL: Mapping[str, int] = {"btc": BTC_SATOSHIS, "eth": ETH_GWEI}
+
+
 def quantity_scale_for_asset(asset: AssetKey) -> int:
-    if isinstance(asset, CryptoKey):
-        symbol = str(asset.symbol).lower()
-        if symbol == "btc":
-            return BTC_SATOSHIS
-        if symbol == "eth":
-            return ETH_GWEI
-    return DEFAULT_UNIT_QUANTA
+    if isinstance(asset, PrivateEquityAssetKey):
+        return DEFAULT_UNIT_QUANTA
+    return QUANTITY_SCALE_BY_SYMBOL.get(str(asset.symbol).lower(), DEFAULT_UNIT_QUANTA)
 
 
 def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:

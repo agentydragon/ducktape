@@ -325,17 +325,15 @@ const dueWithShortfallDetail = (event, currencyDisplay) =>
   formatDueWithShortfall(event.amountDueUsd, event.shortfallUsd, currencyDisplay);
 
 // A human-friendly name for the typed `AssetKey` an event carries — the display fallback when
-// no curated `assetLabel` is set. Derived from the kind's own identifying field (crypto ticker,
-// PE issuer, the S&P index name), not the old `crypto:btc`-style wire string.
+// no curated `assetLabel` is set. Derived from the kind's own identifying field (the security's
+// symbol, the PE issuer), not the old `crypto:btc`-style wire string.
 function assetDisplayName(asset) {
   if (!asset) return undefined;
   switch (asset.kind) {
-    case "crypto":
+    case "security":
       return asset.symbol.toUpperCase();
     case "private_equity":
       return asset.issuerId;
-    case "sp500":
-      return "S&P 500";
     default:
       return undefined;
   }

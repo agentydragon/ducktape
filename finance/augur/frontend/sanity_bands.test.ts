@@ -8,7 +8,7 @@ import { sortSanityBands, sanityPassCount, fmtBandValue, fmtExpectedBand, fmtObs
 function band(overrides) {
   return {
     label: "band",
-    seriesId: "sp500",
+    seriesId: "security:SPY",
     kind: "percentile_range",
     month: null,
     expectedLower: null,

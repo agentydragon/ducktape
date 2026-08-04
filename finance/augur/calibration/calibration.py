@@ -146,7 +146,7 @@ class CleanRow(BaseModel):
     url: str
     platform: str
     # The model channel that scored this market: a PE issuer id (for event markets) or a
-    # level-series wire id ("sp500", "inflation"). `= None` keeps it optional on the wire schema.
+    # level-series wire id ("security:SPY", "inflation"). `= None` keeps it optional on the wire schema.
     channel: str | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon

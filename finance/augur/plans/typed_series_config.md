@@ -7,7 +7,7 @@ safe.
 
 ## Goal
 
-Augur still has legacy identities like `crypto:btc`,
+Augur still has legacy identities like `security:btc`,
 `home_value:san_francisco_ca`, `rent:vallejo_ca`, and
 `private_equity:openai`. Those strings encode the kind in a prefix and require
 parsing at boundaries. The endpoint is structural identity everywhere:
@@ -51,8 +51,8 @@ real:
 Each level-series kind owns its own frame. The frame name is the kind; rows carry
 only the sub-id needed for that kind.
 
-- Scalar levels: `inflation`, `sp500`; columns are rollout, month, value.
-- Symbol levels: `crypto`; columns are rollout, month, symbol, value.
+- Scalar levels: `inflation`; columns are rollout, month, value.
+- Symbol levels: `security`; columns are rollout, month, symbol, value.
 - Location levels: `home_value`, `rent`; columns are rollout, month,
   location_id, value.
 - Private equity: `private_equity`; already its own bundle keyed by issuer.

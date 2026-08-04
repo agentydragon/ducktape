@@ -22,7 +22,7 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
-from finance.augur.model.series import SP500Key
+from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.plaid.db.read_model import CurrentCashBalance, CurrentHolding
 
 
@@ -120,7 +120,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
         label="SP500 proxy",
         symbol="SP500",
         security_kind="other",
-        value_series=SP500Key(),
+        value_series=SecurityKey(symbol=SP500_SYMBOL),
         unit_value_usd=1000.0,
         lots=(
             HoldingTaxLotConfig(

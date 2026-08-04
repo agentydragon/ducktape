@@ -21,7 +21,7 @@ from finance.augur.model.private_equity_trajectories import (
     TenderEvent,
     read_private_equity_trajectories_jsonl,
 )
-from finance.augur.model.series import IssuerId, LevelSeriesKey, SP500Key
+from finance.augur.model.series import SP500_SYMBOL, IssuerId, LevelSeriesKey, SecurityKey
 from util.testing.jsonl import write_jsonl
 
 
@@ -220,13 +220,16 @@ def test_sampler_overlay_layered_pe_bundle_uses_artifact() -> None:
 def test_sampler_overlay_preserves_underlying_non_pe_series() -> None:
     """Non-PE level series from the underlying flow through unchanged."""
 
-    frames = assemble_level_frames([(SP500Key(), np.array([[1.0, 1.02, 1.05]]))], rollout_count=1, horizon_months=2)
+    frames = assemble_level_frames(
+        [(SecurityKey(symbol=SP500_SYMBOL), np.array([[1.0, 1.02, 1.05]]))], rollout_count=1, horizon_months=2
+    )
     underlying = _MinimalSampler(bundle=SampledExogenousBundle(levels=frames))
     sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={})
     bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(0,)))
 
     np.testing.assert_array_equal(
-        bundle.level_matrix(SP500Key(), rollout_count=1, horizon_months=2), np.array([[1.0, 1.02, 1.05]])
+        bundle.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=1, horizon_months=2),
+        np.array([[1.0, 1.02, 1.05]]),
     )
 
 

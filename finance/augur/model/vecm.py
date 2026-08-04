@@ -52,16 +52,22 @@ from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import (
-    CryptoKey,
+    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     IssuerId,
     LevelSeriesKey,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
     parse_level_series_key,
 )
 from util.bazel.runfiles import get_required_path
+
+_SECURITY_ANCHOR_OBSERVATIONS: Mapping[SecuritySymbol, tuple[str, str | None]] = {
+    SP500_SYMBOL: ("spy_adjusted_close_latest", "sp500_price_latest")
+}
+
 
 # Runfile location of the checked-in trained VECM blob. Used as a fallback
 # when the deployment config leaves `trained_blob` unset — see
@@ -469,12 +475,15 @@ class VecmModel:
         if isinstance(direct, (int, float)):
             return float(direct)
         match key:
-            case SP500Key():
-                return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
             case InflationKey():
                 return self._latest_observation_value("cpi_latest")
-            case CryptoKey(symbol=symbol):
-                return self._latest_observation_value(f"{symbol}_close_latest")
+            case SecurityKey(symbol=symbol):
+                # A security's anchor is its own latest close. SPY is the one symbol whose
+                # evidence arrives under two names (the Yahoo adjusted close, with the FRED
+                # index level as fallback), so it gets an explicit row rather than the
+                # `{symbol}_close_latest` convention.
+                primary, fallback = _SECURITY_ANCHOR_OBSERVATIONS.get(symbol, (f"{symbol}_close_latest", None))
+                return self._latest_observation_value(primary, fallback_key=fallback)
             case HomeValueKey() | RentKey():
                 for obs_key in (
                     "zillow_home_value_latest_by_factor",

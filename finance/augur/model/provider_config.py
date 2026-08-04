@@ -50,8 +50,8 @@ issuers:
 # not enumerated in any role. No magic-prefix keys anywhere.
 type: independent
 asset_prices:
-  sp500: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00477, monthly_log_return_sigma: 0.04619}
-  crypto:
+  security:
+    SPY: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00477, monthly_log_return_sigma: 0.04619}
     btc: {kind: constant, value: 75000.0}
 index_series:
   inflation: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00237, monthly_log_return_sigma: 0.00433}

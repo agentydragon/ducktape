@@ -9,13 +9,13 @@ import pytest_bazel
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
-    CryptoKey,
-    CryptoSymbol,
+    SP500_SYMBOL,
     IssuerId,
     LevelSeriesKey,
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -150,7 +150,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
                 lot_id="alice_sp500",
                 agent_id="alice",
                 account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=0,
                 quantity=100.0,
                 cost_basis_per_unit_usd=1.0,
@@ -160,7 +160,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
             HarvestPolicy(
                 owner_agent_id="alice",
                 account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 yield_params=HarvestYieldParams(
                     peak_annual_yield=0.12,
                     floor_annual_yield=0.004,
@@ -179,7 +179,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
         ],
         horizon_months=horizon,
     )
-    external = _external_series_context_for_levels(SP500Key(), [[1.0, 1.0, -1.0]])
+    external = _external_series_context_for_levels(SecurityKey(symbol=SP500_SYMBOL), [[1.0, 1.0, -1.0]])
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
@@ -195,7 +195,7 @@ def test_scheduled_sale_oversell_validation() -> None:
                 lot_id="taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset=CryptoKey(symbol=CryptoSymbol("vti")),
+                asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
                 cost_basis_per_unit_usd=80.0,
@@ -207,7 +207,7 @@ def test_scheduled_sale_oversell_validation() -> None:
                 cause_id="oversell",
                 agent_id="alice",
                 source_account_id="taxable",
-                asset=CryptoKey(symbol=CryptoSymbol("vti")),
+                asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=6.0,
                 price_per_unit_usd=100.0,
                 proceeds_account_id="checking",
@@ -234,7 +234,7 @@ def test_liquidity_invalid_asset_price_leaves_obligation_unfunded(bad_price: flo
                 lot_id="alice_vti",
                 agent_id="alice",
                 account_id="checking",
-                asset=CryptoKey(symbol=CryptoSymbol("vti")),
+                asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -254,13 +254,15 @@ def test_liquidity_invalid_asset_price_leaves_obligation_unfunded(bad_price: flo
         ],
         liquidity_policies=[
             LiquidityPolicy(
-                agent_id="alice", account_id="checking", asset_preference_chain=[CryptoKey(symbol=CryptoSymbol("vti"))]
+                agent_id="alice",
+                account_id="checking",
+                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
             )
         ],
         tax_profiles=[],
         horizon_months=1,
     )
-    external = _external_series_context_for_levels(CryptoKey(symbol=CryptoSymbol("vti")), [[bad_price, bad_price]])
+    external = _external_series_context_for_levels(SecurityKey(symbol=SecuritySymbol("vti")), [[bad_price, bad_price]])
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 

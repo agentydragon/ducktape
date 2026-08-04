@@ -9,9 +9,14 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from finance.augur.model.series import HomeValueKey, LocationId, RentKey
+from finance.augur.model.series import SP500_KEY, HomeValueKey, LocationId, RentKey, SecurityKey, SecuritySymbol
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel
+
+# The crypto symbols this fit models. Which securities get fitted is the fit's own choice;
+# the series type does not distinguish them from any other symbol.
+BTC_KEY = SecurityKey(symbol=SecuritySymbol("btc"))
+ETH_KEY = SecurityKey(symbol=SecuritySymbol("eth"))
 
 # Home-value location -> (Zillow RegionName, State) for the ZHVI city rows to read.
 ZILLOW_HOME_VALUE_REGIONS: dict[LocationId, tuple[str, str]] = {
@@ -218,12 +223,19 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     rent_factor_wire_id = {location_id: RentKey(location_id=location_id).wire_id for location_id in rents}
     home_factor_names = tuple(home_factor_wire_id.values())
     rent_factor_names = tuple(rent_factor_wire_id.values())
-    factor_names = ("sp500", "crypto:btc", "crypto:eth", *home_factor_names, *rent_factor_names, "inflation")
+    factor_names = (
+        SP500_KEY.wire_id,
+        BTC_KEY.wire_id,
+        ETH_KEY.wire_id,
+        *home_factor_names,
+        *rent_factor_names,
+        "inflation",
+    )
     aligned = _align_inner(
         {
-            "sp500": _monthly_unit_returns(sp500_total_return),
-            "crypto:btc": _monthly_unit_returns(btc_price),
-            "crypto:eth": _monthly_unit_returns(eth_price),
+            SP500_KEY.wire_id: _monthly_unit_returns(sp500_total_return),
+            BTC_KEY.wire_id: _monthly_unit_returns(btc_price),
+            ETH_KEY.wire_id: _monthly_unit_returns(eth_price),
             **{home_factor_wire_id[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
             **{rent_factor_wire_id[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
             "inflation": _monthly_unit_returns(cpi),
@@ -242,9 +254,9 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     fhfa_returns = _period_return_frame(fhfa)
     cpi_returns = _period_return_frame(cpi)
     marginal = {
-        "sp500": _returns(sp500_returns),
-        "crypto:btc": _returns(btc_returns),
-        "crypto:eth": _returns(eth_returns),
+        SP500_KEY.wire_id: _returns(sp500_returns),
+        BTC_KEY.wire_id: _returns(btc_returns),
+        ETH_KEY.wire_id: _returns(eth_returns),
         **{home_factor_wire_id[loc]: _returns(returns) for loc, returns in home_value_returns.items()},
         **{rent_factor_wire_id[loc]: _returns(returns) for loc, returns in rent_returns.items()},
         "inflation": _returns(cpi_returns),
@@ -279,7 +291,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             "value": float(mortgage30["value"].to_list()[-1]),
             "source": sources.FRED_MORTGAGE30.provenance_label,
         },
-        "spy_adjusted_close_monthly_return_count": len(marginal["sp500"].log_returns),
+        "spy_adjusted_close_monthly_return_count": len(marginal[SP500_KEY.wire_id].log_returns),
         "housing_return_sources": {
             "zillow_city_zhvi_by_factor": {
                 home_factor_wire_id[loc]: {
@@ -337,10 +349,10 @@ def load_exogenous_evidence() -> ExogenousEvidence:
 # Macro level wire id -> the absolute series anchored against it. Home-value series are absent:
 # they are not anchored against today.
 _ABSOLUTE_LEVEL_SOURCES: dict[str, sources.EvidenceSource] = {
-    "sp500": sources.FRED_SP500,
+    SP500_KEY.wire_id: sources.FRED_SP500,
     "inflation": sources.FRED_CPI,
-    "crypto:btc": sources.YAHOO_BTC,
-    "crypto:eth": sources.YAHOO_ETH,
+    BTC_KEY.wire_id: sources.YAHOO_BTC,
+    ETH_KEY.wire_id: sources.YAHOO_ETH,
     "rent:san_francisco_ca": sources.FRED_SF_RENT_CPI,
 }
 

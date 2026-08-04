@@ -60,16 +60,16 @@ models:
       #   monthly_log_return_sigma = annual_vol / sqrt(12)
       #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
       type: independent
-      # Typed role groups: asset_prices (sp500 singleton + crypto by symbol),
-      # property_values (home_value by location), index_series (inflation singleton + rent
-      # by location). No magic-prefix keys.
+      # Typed role groups: asset_prices (security by symbol), property_values
+      # (home_value by location), index_series (inflation singleton + rent by
+      # location). No magic-prefix keys.
       asset_prices:
-        sp500: # annual return 7%, vol 16%
-          kind: gbm
-          initial_value: 1.0
-          monthly_log_return_mu: 0.0047666667
-          monthly_log_return_sigma: 0.0461880215
-        crypto:
+        security:
+          SPY: # annual return 7%, vol 16%
+            kind: gbm
+            initial_value: 1.0
+            monthly_log_return_mu: 0.0047666667
+            monthly_log_return_sigma: 0.0461880215
           btc:
             kind: constant
             value: 75000.0
@@ -183,7 +183,7 @@ portfolio_sources:
           security_kind: etf
           symbol: VOO
           unit_value_usd: 500.0
-          value_series: { kind: sp500 }
+          value_series: { kind: security, symbol: SPY }
         - position_id: btc_holding
           account_id: taxable_brokerage
           label: Bitcoin
@@ -195,7 +195,7 @@ portfolio_sources:
           security_kind: cryptocurrency
           symbol: BTC
           unit_value_usd: 75000.0
-          value_series: { kind: crypto, symbol: btc }
+          value_series: { kind: security, symbol: btc }
         - position_id: eth_holding
           account_id: taxable_brokerage
           label: Ethereum
@@ -207,7 +207,7 @@ portfolio_sources:
           security_kind: cryptocurrency
           symbol: ETH
           unit_value_usd: 2100.0
-          value_series: { kind: crypto, symbol: eth }
+          value_series: { kind: security, symbol: eth }
         - position_id: private_holding_a
           account_id: taxable_brokerage
           label: Private Holding A

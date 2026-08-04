@@ -7,24 +7,26 @@ from pydantic import TypeAdapter, ValidationError
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.provider_config import ProviderConfig
-from finance.augur.model.series import HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
+from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, InflationKey, LocationId, RentKey, SecurityKey
 
 
 @pytest.fixture
 def example_config() -> IndependentProviderConfig:
     # Typed role config: no magic-prefix keys. Each level series sits inside its
     # role sub-group (asset_prices / property_values / index_series); singletons are
-    # scalar, crypto/home_value/rent are keyed by sub-id. PE marks live in their own
+    # scalar, security/home_value/rent are keyed by sub-id. PE marks live in their own
     # issuer-keyed map (they are not level series).
     return IndependentProviderConfig.model_validate(
         {
             "type": "independent",
             "asset_prices": {
-                "sp500": {
-                    "kind": "gbm",
-                    "initial_value": 1.0,
-                    "monthly_log_return_mu": 0.0047333327,
-                    "monthly_log_return_sigma": 0.0461880215,
+                "security": {
+                    "SPY": {
+                        "kind": "gbm",
+                        "initial_value": 1.0,
+                        "monthly_log_return_mu": 0.0047333327,
+                        "monthly_log_return_sigma": 0.0461880215,
+                    }
                 }
             },
             "property_values": {
@@ -76,7 +78,7 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
                 frozenset(
                     {
                         InflationKey(),
-                        SP500Key(),
+                        SecurityKey(symbol=SP500_SYMBOL),
                         HomeValueKey(location_id=LocationId("san_francisco_ca")),
                         RentKey(location_id=LocationId("san_francisco_ca")),
                     }
@@ -87,7 +89,7 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
 
     assert sampled.levels.series_keys() == {
         InflationKey(),
-        SP500Key(),
+        SecurityKey(symbol=SP500_SYMBOL),
         HomeValueKey(location_id=LocationId("san_francisco_ca")),
         RentKey(location_id=LocationId("san_francisco_ca")),
     }
@@ -115,16 +117,15 @@ def test_realized_model_keeps_role_structure(example_config: IndependentProvider
     # `private_equity_marks` sibling travels separately as `pe_marks`.
     model = example_config.realize_model()
     assert model.index_series.inflation is not None
-    assert model.asset_prices.sp500 is not None
+    assert set(model.asset_prices.security) == {"SPY"}
     assert set(model.property_values.home_value) == {"san_francisco_ca"}
     assert set(model.index_series.rent) == {"san_francisco_ca"}
-    assert not model.asset_prices.crypto
     assert set(model.pe_marks) == {"private_equity_x"}
     # The level series surface as typed FactorKeys (a subset of which are LevelSeriesKeys),
     # one per series across all roles.
     assert {key.wire_id for key in model.factor_names} == {
         "inflation",
-        "sp500",
+        "security:SPY",
         "home_value:san_francisco_ca",
         "rent:san_francisco_ca",
     }
@@ -135,7 +136,7 @@ def test_legacy_prefix_keys_are_rejected() -> None:
     # level must fail loudly (extra="forbid"), not be silently prefix-parsed.
     with pytest.raises(ValidationError):
         IndependentProviderConfig.model_validate(
-            {"type": "independent", "crypto:btc": {"kind": "constant", "value": 75000.0}}
+            {"type": "independent", "security:btc": {"kind": "constant", "value": 75000.0}}
         )
 
 

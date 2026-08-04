@@ -48,7 +48,7 @@ from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from finance.augur.model.series import InflationKey, IssuerId, PrivateEquityEventKindCode, SP500Key
+from finance.augur.model.series import SP500_SYMBOL, InflationKey, IssuerId, PrivateEquityEventKindCode, SecurityKey
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 from finance.evidence.markets import Platform
 
@@ -210,7 +210,7 @@ def _sp500_levels(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
 def macro_model() -> ConstantFrameModel:
     """A model emitting both the issuer's PE bundle and an sp500 level series (no inflation)."""
     return ConstantFrameModel(
-        levels={SP500Key(): _sp500_levels},
+        levels={SecurityKey(symbol=SP500_SYMBOL): _sp500_levels},
         private_equity={
             IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
         },
@@ -221,20 +221,20 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
     """A point-in-time S&P threshold market scores against the anchored sp500 channel, and a
     market on an unmodeled series (inflation) surfaces as `unmodeled` rather than failing."""
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        metadata={"as_of": "2026-05-27", "anchors": {"security:SPY": _SP500_ANCHOR}},
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX"),
                 resolution_deadline=date(2026, 12, 31),
                 mapping=LevelAtDateMapping(
-                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                    series="security:SPY", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
                 ),
             ),
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX-TOUCH"),
                 resolution_deadline=date(2026, 12, 31),
                 mapping=LevelByDateMapping(
-                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, by_date=date(2026, 12, 31)
+                    series="security:SPY", threshold=7500.0, direction=Direction.ABOVE, by_date=date(2026, 12, 31)
                 ),
             ),
             ExactMarket(
@@ -250,13 +250,13 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
         ExogenousSamplingRequest(
             horizon_months=_HORIZON,
             rollout_seeds=seeds,
-            required_asset_prices=frozenset({SP500Key()}),
+            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
             required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
         )
     )
     level_paths = build_anchored_level_paths(
         sampled,
-        anchors={"sp500": _SP500_ANCHOR},
+        anchors={"security:SPY": _SP500_ANCHOR},
         requested_wire_ids=catalog.referenced_level_series(),
         rollout_count=4,
         horizon_months=_HORIZON,
@@ -272,14 +272,14 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
     )
     clean = {row.market_id: row for row in result.clean}
     spx = clean["SPX"]
-    assert spx.channel == "sp500"
+    assert spx.channel == "security:SPY"
     # month 7 values [7000,7600,8000,5000] >= 7500 -> 2 of 4 YES.
     assert spx.p_model == 0.5
     assert spx.p_market == 0.30
     assert spx.kl_bits is not None
     # level_by_date (touch): the anchored path only deviates at month 7 here, so the same 2 of 4
     # rollouts touch 7500 by the deadline -> p_model 0.5 (dispatch + scoring wired end to end).
-    assert clean["SPX-TOUCH"].channel == "sp500"
+    assert clean["SPX-TOUCH"].channel == "security:SPY"
     assert clean["SPX-TOUCH"].p_model == 0.5
     # inflation isn't emitted by this preset -> surfaced as unmodeled, never 500.
     cpi = {row.market_id: row for row in result.surfaced}["CPI"]
@@ -289,14 +289,14 @@ async def test_macro_level_market_scored_over_full_rollouts(macro_model: Constan
 
 async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) -> None:
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        metadata={"as_of": "2026-05-27", "anchors": {"security:SPY": _SP500_ANCHOR}},
         markets=[],
         bucket_families=[
             BucketFamily(
                 family_id="spx_eoy",
                 question="S&P 500 close on 2026-12-31",
                 platform=Platform.KALSHI,
-                series="sp500",
+                series="security:SPY",
                 at_date=date(2026, 12, 31),
                 buckets=[
                     BucketMember(market_id="B-LO", label="<7000", high=7000.0),
@@ -311,13 +311,13 @@ async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameMod
         ExogenousSamplingRequest(
             horizon_months=_HORIZON,
             rollout_seeds=seeds,
-            required_asset_prices=frozenset({SP500Key()}),
+            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
             required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
         )
     )
     level_paths = build_anchored_level_paths(
         sampled,
-        anchors={"sp500": _SP500_ANCHOR},
+        anchors={"security:SPY": _SP500_ANCHOR},
         requested_wire_ids=catalog.referenced_level_series(),
         rollout_count=4,
         horizon_months=_HORIZON,
@@ -334,7 +334,7 @@ async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameMod
     )
     assert len(result.categorical) == 1
     family = result.categorical[0]
-    assert family.channel == "sp500"
+    assert family.channel == "security:SPY"
     assert family.n_resolved == 4
     # Quarters are exact in float; market shares need rounding (0.2/0.3 aren't).
     assert [b.p_model for b in family.buckets] == [0.25, 0.5, 0.25]
@@ -579,12 +579,12 @@ async def test_none_probability_and_degenerate_family_are_dropped(macro_model: C
     """A market whose quote carries no probability, and a categorical family whose bucket prices
     sum to zero, are both dropped (logged) rather than 500-ing via require_implied_probability()."""
     catalog = MarketCatalog(
-        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        metadata={"as_of": "2026-05-27", "anchors": {"security:SPY": _SP500_ANCHOR}},
         markets=[
             ExactMarket(
                 platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
                 mapping=LevelAtDateMapping(
-                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                    series="security:SPY", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
                 ),
             )
         ],
@@ -593,7 +593,7 @@ async def test_none_probability_and_degenerate_family_are_dropped(macro_model: C
                 family_id="degenerate",
                 question="S&P 500 buckets with no liquidity",
                 platform=Platform.POLYMARKET,
-                series="sp500",
+                series="security:SPY",
                 at_date=date(2026, 12, 31),
                 buckets=[
                     BucketMember(market_id="Z-LO", label="<7000", high=7000.0),
@@ -607,13 +607,13 @@ async def test_none_probability_and_degenerate_family_are_dropped(macro_model: C
         ExogenousSamplingRequest(
             horizon_months=_HORIZON,
             rollout_seeds=seeds,
-            required_asset_prices=frozenset({SP500Key()}),
+            required_asset_prices=frozenset({SecurityKey(symbol=SP500_SYMBOL)}),
             required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
         )
     )
     level_paths = build_anchored_level_paths(
         sampled,
-        anchors={"sp500": _SP500_ANCHOR},
+        anchors={"security:SPY": _SP500_ANCHOR},
         requested_wire_ids=catalog.referenced_level_series(),
         rollout_count=4,
         horizon_months=_HORIZON,

@@ -11,7 +11,7 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from finance.augur.model.series import SP500Key
+from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment_usd
 from finance.augur.sim.scenario import (
@@ -192,7 +192,7 @@ def test_scheduled_sale_scan() -> None:
                 lot_id="alice_sp500",
                 agent_id="alice",
                 account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,  # long-term when sold at month 3
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -204,7 +204,7 @@ def test_scheduled_sale_scan() -> None:
                 cause_id="alice_sells_sp500",
                 agent_id="alice",
                 source_account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
                 price_per_unit_usd=120.0,
                 proceeds_account_id="checking",

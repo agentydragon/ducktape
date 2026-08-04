@@ -15,13 +15,13 @@ from finance.augur.model.exogenous import (
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import (
-    CryptoKey,
-    CryptoSymbol,
+    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     LevelSeriesKind,
     LocationId,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 from finance.augur.model.series_model import IndependentSeriesModels, SeriesModelBundle
 from finance.augur.model.testing import ConstantFrameModel
@@ -43,18 +43,18 @@ def test_sampling_request_requires_explicit_rollout_seeds() -> None:
 
 
 def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:
-    # Series are grouped by typed kind: a crypto series lives in the asset-price
-    # role's `crypto` frame keyed by its `symbol` sub-id, never a
-    # `"crypto:vti"` magic-prefix `series_id` string.
+    # Series are grouped by typed kind: a security lives in the asset-price
+    # role's `security` frame keyed by its `symbol` sub-id, never a
+    # `"security:vti"` magic-prefix `series_id` string.
     model = IndependentSeriesModels(
-        asset_prices=AssetPriceGroups(crypto={CryptoSymbol("vti"): Deterministic(levels=[100.0, 110.0, 120.0])})
+        asset_prices=AssetPriceGroups(security={SecuritySymbol("vti"): Deterministic(levels=[100.0, 110.0, 120.0])})
     )
 
     sampled = model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(101, 102)))
 
-    crypto = sampled.levels.frame(LevelSeriesKind.CRYPTO).sort(["rollout_index", "month_index"])
-    assert crypto.columns == ["rollout_index", "month_index", "symbol", "value"]
-    assert crypto.to_dicts() == [
+    security = sampled.levels.frame(LevelSeriesKind.SECURITY).sort(["rollout_index", "month_index"])
+    assert security.columns == ["rollout_index", "month_index", "symbol", "value"]
+    assert security.to_dicts() == [
         {"rollout_index": 0, "month_index": 0, "symbol": "vti", "value": 100.0},
         {"rollout_index": 0, "month_index": 1, "symbol": "vti", "value": 110.0},
         {"rollout_index": 0, "month_index": 2, "symbol": "vti", "value": 120.0},
@@ -63,7 +63,7 @@ def test_independent_model_samples_deterministic_levels_for_each_rollout() -> No
         {"rollout_index": 1, "month_index": 2, "symbol": "vti", "value": 120.0},
     ]
     np.testing.assert_allclose(
-        sampled.level_matrix(CryptoKey(symbol=CryptoSymbol("vti")), rollout_count=2, horizon_months=2),
+        sampled.level_matrix(SecurityKey(symbol=SecuritySymbol("vti")), rollout_count=2, horizon_months=2),
         np.array([[100.0, 110.0, 120.0], [100.0, 110.0, 120.0]]),
     )
 
@@ -76,7 +76,7 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
             "model": {
                 "kind": "independent",
                 "asset_prices": {
-                    "crypto": {
+                    "security": {
                         "vti": {"kind": "deterministic", "levels": [100.0, 100.0, 100.0]},
                         "bnd": {"kind": "constant", "value": 95.0},
                         "qqq": {
@@ -94,23 +94,25 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
     first = bundle.sample(rollout_seeds=(11, 12, 13), horizon_months=2)
     second = bundle.sample(rollout_seeds=(11, 12, 13), horizon_months=2)
 
-    assert first.levels.series_keys() == {CryptoKey(symbol=CryptoSymbol(symbol)) for symbol in ("vti", "bnd", "qqq")}
+    assert first.levels.series_keys() == {
+        SecurityKey(symbol=SecuritySymbol(symbol)) for symbol in ("vti", "bnd", "qqq")
+    }
     for key, frame in first.levels.value_rows():
         assert frame.equals(dict(second.levels.value_rows())[key])
     # The GBM component starts at its configured anchor on every rollout; the constant holds flat.
     np.testing.assert_allclose(
-        first.level_matrix(CryptoKey(symbol=CryptoSymbol("qqq")), rollout_count=3, horizon_months=2)[:, 0],
+        first.level_matrix(SecurityKey(symbol=SecuritySymbol("qqq")), rollout_count=3, horizon_months=2)[:, 0],
         np.full(3, 200.0),
     )
     np.testing.assert_allclose(
-        first.level_matrix(CryptoKey(symbol=CryptoSymbol("bnd")), rollout_count=3, horizon_months=2),
+        first.level_matrix(SecurityKey(symbol=SecuritySymbol("bnd")), rollout_count=3, horizon_months=2),
         np.full((3, 3), 95.0),
     )
 
 
 def test_deterministic_model_rejects_wrong_horizon_length() -> None:
     model = IndependentSeriesModels(
-        asset_prices=AssetPriceGroups(crypto={CryptoSymbol("vti"): Deterministic(levels=[100.0, 110.0])})
+        asset_prices=AssetPriceGroups(security={SecuritySymbol("vti"): Deterministic(levels=[100.0, 110.0])})
     )
 
     with pytest.raises(ValueError, match=r"need 3"):
@@ -118,13 +120,13 @@ def test_deterministic_model_rejects_wrong_horizon_length() -> None:
 
 
 def test_constant_frame_fixture_samples_seeded_level_keys() -> None:
-    model = ConstantFrameModel(levels={InflationKey(): 1.0, SP500Key(): 2.0})
+    model = ConstantFrameModel(levels={InflationKey(): 1.0, SecurityKey(symbol=SP500_SYMBOL): 2.0})
 
     sampled = model.sample(
         ExogenousSamplingRequest(
             horizon_months=2,
             rollout_seeds=(101, 102),
-            **level_series_request_channels(frozenset({InflationKey(), SP500Key()})),
+            **level_series_request_channels(frozenset({InflationKey(), SecurityKey(symbol=SP500_SYMBOL)})),
         )
     )
 
@@ -132,7 +134,7 @@ def test_constant_frame_fixture_samples_seeded_level_keys() -> None:
         [1.0, 1.0, 1.0],
         [1.0, 1.0, 1.0],
     ]
-    assert sampled.level_matrix(SP500Key(), rollout_count=2, horizon_months=2).tolist() == [
+    assert sampled.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=2, horizon_months=2).tolist() == [
         [2.0, 2.0, 2.0],
         [2.0, 2.0, 2.0],
     ]
@@ -140,10 +142,15 @@ def test_constant_frame_fixture_samples_seeded_level_keys() -> None:
 
 def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None:
     request = ExogenousSamplingRequest(
-        horizon_months=2, rollout_seeds=(101,), **level_series_request_channels(frozenset({SP500Key()}))
+        horizon_months=2,
+        rollout_seeds=(101,),
+        **level_series_request_channels(frozenset({SecurityKey(symbol=SP500_SYMBOL)})),
     )
     frames = assemble_level_frames(
-        [(SP500Key(), np.ones((1, 3))), (HomeValueKey(location_id=LocationId("extra_level")), np.ones((1, 3)))],
+        [
+            (SecurityKey(symbol=SP500_SYMBOL), np.ones((1, 3))),
+            (HomeValueKey(location_id=LocationId("extra_level")), np.ones((1, 3))),
+        ],
         rollout_count=1,
         horizon_months=2,
     )

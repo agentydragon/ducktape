@@ -69,7 +69,7 @@ class SeriesIndexedAmount(BaseModel):
     `series` is a typed `IndexSeriesKey` (inflation or a location's rent) —
     the index whose level path scales the amount. Asset prices, home values,
     and PE marks are never amount indices, so the role type makes
-    `series=SP500Key()` / `series=HomeValueKey(...)` a type error.
+    `series=SecurityKey(symbol=SP500_SYMBOL)` / `series=HomeValueKey(...)` a type error.
     """
 
     kind: Literal["series_indexed"] = "series_indexed"
@@ -645,7 +645,7 @@ class HarvestPolicy(BaseModel):
 
     owner_agent_id: str
     account_id: str = "checking"
-    asset: AssetKey = Field(description="Index-tracking asset whose lots this policy harvests (e.g. an SP500Key).")
+    asset: AssetKey = Field(description="Index-tracking asset whose lots this policy harvests (e.g. an SecurityKey).")
     yield_params: HarvestYieldParams
     short_term_fraction: float = Field(
         default=1.0,

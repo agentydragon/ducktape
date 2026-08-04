@@ -12,7 +12,7 @@ once and every helper below derives from it rather than restating it. Adding a k
 is a row; adding a role is a row plus a request channel.
 
 Frames carry only a sub-id column (symbol / location_id) or nothing for a singleton
-— never a magic-prefix `series_id` string. The sample/consume path is typed by
+kind — never a magic-prefix `series_id` string. The sample/consume path is typed by
 `LevelSeriesKey`, and the typed per-role request channels keep a lot from
 being priced by inflation as a mypy error rather than a convention.
 """
@@ -32,8 +32,6 @@ from finance.augur.frames import concat_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
     AssetPriceKey,
-    CryptoKey,
-    CryptoSymbol,
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
@@ -43,7 +41,8 @@ from finance.augur.model.series import (
     LocationId,
     PropertyValueKey,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 
 # Frame SHAPES. Several kinds share a shape (home_value and rent are both location-keyed);
@@ -86,9 +85,8 @@ class LevelKindSpec:
 
 
 LEVEL_KIND_SPECS: Mapping[LevelSeriesKind, LevelKindSpec] = {
-    LevelSeriesKind.SP500: LevelKindSpec(SeriesRole.ASSET_PRICES, SCALAR_LEVELS_SCHEMA, None, lambda _: SP500Key()),
-    LevelSeriesKind.CRYPTO: LevelKindSpec(
-        SeriesRole.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: CryptoKey(symbol=CryptoSymbol(s))
+    LevelSeriesKind.SECURITY: LevelKindSpec(
+        SeriesRole.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: SecurityKey(symbol=SecuritySymbol(s))
     ),
     LevelSeriesKind.HOME_VALUE: LevelKindSpec(
         SeriesRole.PROPERTY_VALUES,

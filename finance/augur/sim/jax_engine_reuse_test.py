@@ -16,7 +16,7 @@ import numpy as np
 import pytest_bazel
 from numpy.typing import NDArray
 
-from finance.augur.model.series import SP500Key
+from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import compile_simulation
 from finance.augur.sim.compiler.plan import CompiledSimulation
@@ -91,7 +91,7 @@ def _sale_scenario() -> Scenario:
                 lot_id="alice_sp500",
                 agent_id="alice",
                 account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -103,7 +103,7 @@ def _sale_scenario() -> Scenario:
                 cause_id="alice_sells_sp500",
                 agent_id="alice",
                 source_account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
                 price_per_unit_usd=120.0,
                 proceeds_account_id="checking",
@@ -288,7 +288,7 @@ def _multi_series_scenario() -> Scenario:
                 lot_id="alice_sp500",
                 agent_id="alice",
                 account_id="brokerage",
-                asset=SP500Key(),
+                asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,

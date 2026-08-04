@@ -241,7 +241,7 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert sp500["label"] == "SP500 Proxy"
     assert sp500["symbol"] == "VOO"
     assert sp500["security_kind"] == "etf"
-    assert sp500["value_series_id"] == "sp500"
+    assert sp500["value_series_id"] == "security:SPY"
     assert sp500["unit_value_usd"] == 500.0
     assert sp500["quantity"] == 1_500.0
     assert sp500["current_value_usd"] == 750_000.0
@@ -254,13 +254,13 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     btc = positions_by_id["btc_holding"]
     assert btc["symbol"] == "BTC"
     assert btc["security_kind"] == "cryptocurrency"
-    assert btc["value_series_id"] == "crypto:btc"
+    assert btc["value_series_id"] == "security:btc"
     assert btc["unit_value_usd"] == 75_000.0
     assert btc["current_value_usd"] == 75_000.0
     eth = positions_by_id["eth_holding"]
     assert eth["symbol"] == "ETH"
     assert eth["security_kind"] == "cryptocurrency"
-    assert eth["value_series_id"] == "crypto:eth"
+    assert eth["value_series_id"] == "security:eth"
     assert eth["unit_value_usd"] == 2_100.0
     assert eth["current_value_usd"] == 10_500.0
     pha = positions_by_id["private_holding_a"]
@@ -363,7 +363,7 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
         "month_index": 0,
         "amount_usd": 50_000.0,
         "kind": "holding_sale",
-        "asset": {"kind": "sp500"},
+        "asset": {"kind": "security", "symbol": "SPY"},
         "asset_label": "SP500 Proxy (VOO)",
         "units": pytest.approx(100.0),
         "proceeds_usd": 50_000.0,

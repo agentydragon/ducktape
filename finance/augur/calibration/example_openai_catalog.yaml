@@ -388,15 +388,15 @@ markets:
 
   # ============================================================================
   # EXACT -- macro level markets (whole-model calibration). Scored against the
-  # model's sp500 / inflation LEVEL channels, not the OpenAI PE bundle, anchored
+  # model's security:SPY / inflation LEVEL channels, not the OpenAI PE bundle, anchored
   # to metadata.anchors. See augur/plans/whole_model_calibration.md.
   # ============================================================================
   - manifold_id: hISQySnLnu
     # question: "[ACX 2026] Will the S&P 500 close above 7,500 at the end of 2026?"
     resolution_deadline: "2026-12-31"
     mappability: exact
-    mapping: { kind: level_at_date, series: sp500, threshold: 7500, direction: above, at_date: "2026-12-31" }
-    notes: "Point-in-time threshold on the sp500 channel; p_model = share of rollouts with anchored sp500 >= 7500 at 2026-12-31."
+    mapping: { kind: level_at_date, series: "security:SPY", threshold: 7500, direction: above, at_date: "2026-12-31" }
+    notes: "Point-in-time threshold on the security:SPY channel; p_model = share of rollouts with anchored security:SPY >= 7500 at 2026-12-31."
 
   # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
   # `at_date`. The path starts at model_anchor_date, so a 2026 year-ending date looks back
@@ -411,31 +411,31 @@ markets:
     notes: "Trailing-12mo window looks back past as_of; the denominator is the vendored pre-anchor CPI-U."
 
   # ============================================================================
-  # EXACT -- crypto markets (scored against the model's crypto:btc level channel).
+  # EXACT -- crypto markets (scored against the model's security:btc level channel).
   # ============================================================================
   - manifold_id: 2q2qZNLRlE
     # question: "Will Bitcoin be higher than $88,888 at the end of 2026?"
     resolution_deadline: "2026-12-31"
     mappability: exact
-    mapping: { kind: level_at_date, series: "crypto:btc", threshold: 88888, direction: above, at_date: "2026-12-31" }
-    notes: "Point-in-time threshold on the crypto:btc channel."
+    mapping: { kind: level_at_date, series: "security:btc", threshold: 88888, direction: above, at_date: "2026-12-31" }
+    notes: "Point-in-time threshold on the security:btc channel."
 
   - manifold_id: 9PuIhuRZEc
     # question: "Bitcoin $100k before end of June 2026?"
     resolution_deadline: "2026-06-30"
     mappability: exact
-    mapping: { kind: level_by_date, series: "crypto:btc", threshold: 100000, direction: above, by_date: "2026-06-30" }
-    notes: "Ever-by-date (touch) on crypto:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the deadline."
+    mapping: { kind: level_by_date, series: "security:btc", threshold: 100000, direction: above, by_date: "2026-06-30" }
+    notes: "Ever-by-date (touch) on security:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the deadline."
 
 # Categorical (multinomial) bucket families: mutually-exclusive ranges over one level series
 # at a single date, scored as one multinomial D_KL(market ‖ model).
 bucket_families:
-  # Kalshi S&P 500 year-end range market (KXINXY): tiling [low, high) buckets on the sp500
+  # Kalshi S&P 500 year-end range market (KXINXY): tiling [low, high) buckets on the security:SPY
   # close at 2026-12-31. Each bucket is a separately-priced Kalshi binary market.
   - family_id: sp500_eoy_2026
     question: "S&P 500 closing level on 2026-12-31 (Kalshi KXINXY range)"
     platform: kalshi
-    series: sp500
+    series: "security:SPY"
     at_date: "2026-12-31"
     buckets:
       - { market_id: KXINXY-26DEC31H1600-T4000, label: "3,999.99 or below", low: null, high: 4000 }
@@ -466,12 +466,12 @@ bucket_families:
       - { market_id: KXINXY-26DEC31H1600-B8900, label: "8,800 to 9,000", low: 8800, high: 9000 }
       - { market_id: KXINXY-26DEC31H1600-T9000, label: "9,000.01 or above", low: 9000, high: null }
 
-  # Kalshi BTC year-end range market (KXBTCY): tiling [low, high) buckets on the crypto:btc
+  # Kalshi BTC year-end range market (KXBTCY): tiling [low, high) buckets on the security:btc
   # close at year-end 2026 (resolves 2027-01-01), scored as one multinomial.
   - family_id: btc_eoy_2026
     question: "Bitcoin closing level at year-end 2026 (Kalshi KXBTCY range)"
     platform: kalshi
-    series: "crypto:btc"
+    series: "security:btc"
     at_date: "2027-01-01"
     buckets:
       - { market_id: KXBTCY-27JAN0100-T20000.00, label: "19,999.99 or below", low: null, high: 20000 }

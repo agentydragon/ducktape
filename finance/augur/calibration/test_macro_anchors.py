@@ -34,7 +34,7 @@ def _catalog(*, anchors: dict[str, float] | None = None, inflation_history: list
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX"),
                 mapping=LevelAtDateMapping(
-                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                    series="security:SPY", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
                 ),
             ),
             ExactMarket(
@@ -54,8 +54,8 @@ def test_derives_anchor_and_history_from_evidence(synthetic_evidence_dir: Path) 
     # observation on or before the anchor month, and the history is the 12 months immediately
     # preceding that same observation (oldest first) — not hardcoded index values.
     anchor_month = ANCHOR_DATE.replace(day=1)
-    levels = load_absolute_monthly_levels({"sp500", "inflation"})
-    for wire in ("sp500", "inflation"):
+    levels = load_absolute_monthly_levels({"security:SPY", "inflation"})
+    for wire in ("security:SPY", "inflation"):
         on_or_before = [obs for obs in levels[wire] if obs.month <= anchor_month]
         assert resolved.anchors[wire] == on_or_before[-1].value
     cpi = [obs for obs in levels["inflation"] if obs.month <= anchor_month]
@@ -65,8 +65,8 @@ def test_derives_anchor_and_history_from_evidence(synthetic_evidence_dir: Path) 
 
 def test_explicit_anchor_overrides_derived_value(synthetic_evidence_dir: Path) -> None:
     # An explicit per-series anchor wins; the unspecified series still derives from evidence.
-    resolved = resolve_anchors(_catalog(anchors={"sp500": 1234.5}))
-    assert resolved.anchors["sp500"] == 1234.5
+    resolved = resolve_anchors(_catalog(anchors={"security:SPY": 1234.5}))
+    assert resolved.anchors["security:SPY"] == 1234.5
     anchor_month = ANCHOR_DATE.replace(day=1)
     cpi = [obs for obs in load_absolute_monthly_levels({"inflation"})["inflation"] if obs.month <= anchor_month]
     assert resolved.anchors["inflation"] == cpi[-1].value

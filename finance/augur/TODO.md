@@ -8,7 +8,7 @@ this file as a backlog, not a second ordered roadmap.
 
 ## Eliminate magic-prefix series/asset strings (staged)
 
-Roadmap + design: <augur/plans/typed_series_config.md>. Goal: no `crypto:` /
+Roadmap + design: <augur/plans/typed_series_config.md>. Goal: no `security:` /
 `home_value:` / `rent:` / `private_equity:` prefix strings anywhere — kind
 carried structurally (typed config unions; per-kind frames carrying only a
 sub-id column; typed artifact factors). Staged; each phase lands green on its

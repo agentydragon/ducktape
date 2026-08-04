@@ -73,7 +73,7 @@ def test_referenced_markets_unions_and_dedupes() -> None:
                     "family_id": "spx",
                     "question": "S&P bucket",
                     "platform": "kalshi",
-                    "series": "sp500",
+                    "series": "security:SPY",
                     "at_date": "2027-01-01",
                     "buckets": [
                         {"market_id": "K-LO", "label": "lo", "high": 6000},

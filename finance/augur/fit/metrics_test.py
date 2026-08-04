@@ -31,25 +31,25 @@ from finance.augur.fit.metrics import (
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from finance.augur.model.series import (
-    CryptoKey,
-    CryptoSymbol,
+    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     IssuerId,
     LevelSeriesKey,
     LocationId,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 
 # Distinct synthetic level-series keys for the metric fixtures. Identities are
 # arbitrary — these tests check numeric scoring, not series semantics — but they must be
 # real typed keys now that factor identity is a LevelSeriesKey rather than an "f0"/"f1" string.
 _SYNTHETIC_FACTOR_POOL: tuple[LevelSeriesKey, ...] = (
-    SP500Key(),
+    SecurityKey(symbol=SP500_SYMBOL),
     InflationKey(),
-    CryptoKey(symbol=CryptoSymbol("btc")),
-    CryptoKey(symbol=CryptoSymbol("eth")),
+    SecurityKey(symbol=SecuritySymbol("btc")),
+    SecurityKey(symbol=SecuritySymbol("eth")),
     HomeValueKey(location_id=LocationId("san_francisco_ca")),
     RentKey(location_id=LocationId("san_francisco_ca")),
 )
@@ -109,7 +109,7 @@ class _UnscoredModel:
     """Model that returns None from predictive() — like a bootstrap."""
 
     label = "unscored"
-    factor_names: tuple[LevelSeriesKey, ...] = (SP500Key(),)
+    factor_names: tuple[LevelSeriesKey, ...] = (SecurityKey(symbol=SP500_SYMBOL),)
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical

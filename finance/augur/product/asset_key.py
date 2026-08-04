@@ -2,7 +2,7 @@
 
 The `asset_id` column on sim event frames and the `asset_id` field on product
 wire events used to encode the asset's kind in a magic prefix
-(`"private_equity:..."`, `"crypto:..."`) that Python dispatch sites then matched
+(`"private_equity:..."`, `"security:..."`) that Python dispatch sites then matched
 with `.startswith(...)`. That dispatch is now typed: an `AssetKey` is a Pydantic
 discriminated union with a `StrEnum` `kind` discriminator. Scenario lots/sales
 carry the typed key directly (`InitialLot.asset`, `ScheduledAssetSale.asset`,
@@ -21,14 +21,14 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import AssetPriceKey, CryptoKey, CryptoSymbol, IssuerId, SP500Key
+from finance.augur.model.series import AssetPriceKey, IssuerId, SecurityKey, SecuritySymbol
 
 
 class AssetKind(StrEnum):
     """Discriminator value for the one asset kind that is NOT a level series.
 
-    The tradable kinds reuse `LevelSeriesKind` — an `AssetKey` for sp500 or a crypto symbol
-    IS the `AssetPriceKey` that prices it, so there is nothing to discriminate differently.
+    The tradable kind reuses `LevelSeriesKind` — an `AssetKey` for a security IS the
+    `AssetPriceKey` that prices it, so there is nothing to discriminate differently.
     """
 
     PRIVATE_EQUITY = "private_equity"
@@ -49,26 +49,24 @@ class PrivateEquityAssetKey(FrozenModel):
         return f"private_equity:{self.issuer_id}"
 
 
-type AssetKey = Annotated[SP500Key | CryptoKey | PrivateEquityAssetKey, Field(discriminator="kind")]
+type AssetKey = Annotated[SecurityKey | PrivateEquityAssetKey, Field(discriminator="kind")]
 """What a lot/sale identifies: a tradable asset-price series, or a private-equity holding.
 
 An INCLUSION, not a parallel hierarchy: `AssetKey` is `AssetPriceKey` plus private equity.
-The tradable members are literally the model's `SP500Key`/`CryptoKey`, so the conversion
-that used to sit between the two vocabularies is now just the PE narrowing.
+The tradable member is literally the model's `SecurityKey`, so the conversion that used to
+sit between the two vocabularies is now just the PE narrowing.
 """
 
 
 def parse_asset_key(wire_id: str) -> AssetKey:
     """Recover a typed `AssetKey` from its wire form. Raises `ValueError` if unrecognized."""
 
-    if wire_id == "sp500":
-        return SP500Key()
     prefix, sep, suffix = wire_id.partition(":")
     if not sep:
         raise ValueError(f"unrecognized asset wire id {wire_id!r}")
     match prefix:
-        case "crypto":
-            return CryptoKey(symbol=CryptoSymbol(suffix))
+        case "security":
+            return SecurityKey(symbol=SecuritySymbol(suffix))
         case "private_equity":
             return PrivateEquityAssetKey(issuer_id=IssuerId(suffix))
     raise ValueError(f"unrecognized asset wire id {wire_id!r}")

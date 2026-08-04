@@ -13,7 +13,7 @@ that issuer's `PrivateEquityBundle`, slices it into per-rollout
 prediction-market prices, scoring `D_KL(market ‖ model)` per market.
 
 The augur model is really a **single joint generative distribution** over many
-observables over time — `sp500`, `inflation`, `crypto:*`, `home_value:*`,
+observables over time — `security:*`, `inflation`, `home_value:*`,
 `rent:*` (the level roles) **plus** per-issuer PE event/valuation paths.
 Each prediction market is a **marginal**: a (usually Bernoulli, sometimes
 categorical) functional of one rollout's trajectory, with a market-implied
@@ -44,7 +44,7 @@ fitting against them.
    - `inflation_yoy` — `path[m]/path[m-12] - 1 {above,below} X%` (Kalshi `KXCPIYOY`).
    - (range/bucket handled by the categorical family below.)
 
-3. **Anchoring is mandatory for macro thresholds.** A sampled `sp500`/`inflation`
+3. **Anchoring is mandatory for macro thresholds.** A sampled `security:SPY`/`inflation`
    path is only comparable to a market about the real index once anchored to the
    **live spot level** at `as_of`. The catalog carries per-series `anchors`
    (spot value at `as_of`); the engine rescales via
@@ -60,9 +60,9 @@ fitting against them.
 
 ## Initial wired markets (already-integrated platforms only)
 
-- **S&P 500** → `sp500` level series:
+- **S&P 500** → the `security:SPY` level series:
   - Manifold `hISQySnLnu` "[ACX 2026] S&P 500 close above 7,500 at end of 2026"
-    → `level_at_date(sp500, above 7500, 2026-12-31)`.
+    → `level_at_date(security:SPY, above 7500, 2026-12-31)`.
   - Kalshi `KXINXY-26DEC31H1600-*` bucket family → categorical over S&P close
     buckets on 2026-12-31.
 - **CPI/inflation** → `inflation` level series:
@@ -75,7 +75,7 @@ fitting against them.
   the live spot at `as_of`. The anchor lives in the catalog (data), refreshed
   alongside prices.
 - **Price-index vs total-return**: Kalshi/Manifold reference the `^GSPC` price
-  index. Score against the **price-index** `sp500` series (FRED `SP500`), not a
+  index. Score against the **price-index** `security:SPY` series (FRED `SP500`), not a
   total-return SPY proxy, or the threshold is biased up over time.
 - **"by date" vs "on date"**: event markets are "ever by deadline"; Kalshi index
   buckets are point-in-time "on date". Different resolvers — don't conflate.
@@ -98,5 +98,5 @@ fitting against them.
   issuers/series.
 - Per-channel / volume-weighted aggregate metric once the weighting policy is
   chosen.
-- Macro level fans (sp500/inflation percentile bands) in the calibration view,
+- Macro level fans (security:SPY/inflation percentile bands) in the calibration view,
   via a generalized `level_fan` (today's `mark_fan` is PE-only).

@@ -25,12 +25,11 @@ from pydantic import Field
 
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import (
-    CryptoKey,
     HomeValueKey,
     InflationKey,
     IssuerId,
     RentKey,
-    SP500Key,
+    SecurityKey,
     try_parse_level_series_key,
 )
 
@@ -53,7 +52,8 @@ class PrivateEquityMarkKey(FrozenModel):
 
 
 type FactorKey = Annotated[
-    InflationKey | SP500Key | HomeValueKey | RentKey | CryptoKey | PrivateEquityMarkKey, Field(discriminator="kind")
+    InflationKey | SecurityKey | HomeValueKey | RentKey | SecurityKey | PrivateEquityMarkKey,
+    Field(discriminator="kind"),
 ]
 """A state-space covariance-basis factor: any non-PE level series, or a private-equity issuer's mark."""
 

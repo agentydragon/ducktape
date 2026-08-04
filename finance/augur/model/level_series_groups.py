@@ -1,7 +1,7 @@
 """Per-role grouping of level-series values, shared by the independent-provider family.
 
 The non-PE level series partition into disjoint roles by *what references them*
-(see `augur/model/series.py`): asset-price (`sp500`, `crypto`), property-value (`home_value`),
+(see `augur/model/series.py`): asset-price (`security`), property-value (`home_value`),
 and index (`inflation`, `rent`). Specs that map each level series to some value — the
 independent exogenous provider and its sim/bench twin map each to a scalar model spec — all
 range over that same role-structured set. The structure lives here once as generic
@@ -24,8 +24,6 @@ from pydantic import Field
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import (
     AssetPriceKey,
-    CryptoKey,
-    CryptoSymbol,
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
@@ -33,23 +31,18 @@ from finance.augur.model.series import (
     LocationId,
     PropertyValueKey,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 
 
 class AssetPriceGroups[ValueT](FrozenModel):
-    """Asset-price role values: the `sp500` singleton + `crypto` keyed by symbol."""
+    """Asset-price role values: `security` keyed by symbol."""
 
-    sp500: ValueT | None = None
-    crypto: dict[CryptoSymbol, ValueT] = Field(default_factory=dict)
+    security: dict[SecuritySymbol, ValueT] = Field(default_factory=dict)
 
     def by_asset_price_key(self) -> dict[AssetPriceKey, ValueT]:
-        result: dict[AssetPriceKey, ValueT] = {}
-        if self.sp500 is not None:
-            result[SP500Key()] = self.sp500
-        for symbol, value in self.crypto.items():
-            result[CryptoKey(symbol=symbol)] = value
-        return result
+        return {SecurityKey(symbol=symbol): value for symbol, value in self.security.items()}
 
 
 class PropertyValueGroups[ValueT](FrozenModel):
@@ -82,7 +75,7 @@ class LevelSeriesGroups[ValueT](FrozenModel):
     Each role is its own typed sub-group (asset-price / property-value / index) rather
     than one flat per-kind bucket, so a cross-role miswiring is unrepresentable.
     `extra="forbid"` (from `FrozenModel`) makes a stray top-level wire-id key such as
-    `"crypto:btc"`, or a kind field placed in the wrong role, fail at load instead of
+    `"security:btc"`, or a kind field placed in the wrong role, fail at load instead of
     silently parsing — the desired fail-loud on pre-migration configs.
 
     The nesting is the CONFIG shape — it is what a deployment writes and what makes a

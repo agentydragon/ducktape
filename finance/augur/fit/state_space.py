@@ -23,7 +23,7 @@ from finance.augur.fit.private_equity import (
 )
 from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.series import IssuerId
+from finance.augur.model.series import SP500_KEY, IssuerId
 from finance.augur.model.state_space import (
     StateSpaceAdditionalFactor,
     StateSpaceModel,
@@ -84,13 +84,13 @@ def _conditioning_from_evidence(
 
 
 def _latest_factor_observation(latest: Mapping[str, Any], factor: str) -> ExogenousObservedPoint:
-    if factor == "sp500":
+    if factor == SP500_KEY.wire_id:
         return _point_from_latest(latest["spy_adjusted_close_latest"], source_prefix="public")
     if factor == "inflation":
         return _point_from_latest(latest["cpi_latest"], source_prefix="public")
-    if factor == "crypto:btc":
+    if factor == "security:btc":
         return _point_from_latest(latest["btc_close_latest"], source_prefix="public")
-    if factor == "crypto:eth":
+    if factor == "security:eth":
         return _point_from_latest(latest["eth_close_latest"], source_prefix="public")
 
     home_by_factor = latest.get("zillow_home_value_latest_by_factor")
@@ -137,14 +137,14 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
     ]
     mark = max((obs for obs in price_observations if obs.kind == "ppu_mark"), key=lambda obs: obs.observed_at)
     coupling = _estimate_sp500_coupling(price_observations, historical)
-    sp500_sigma = _monthly_sigma(historical, "sp500")
+    sp500_sigma = _monthly_sigma(historical, SP500_KEY.wire_id)
     covariance_with_sp500 = coupling["rho_to_sp500"] * artifact.monthly_log_return_sigma * sp500_sigma
     factor = StateSpaceAdditionalFactor(
         factor_name=PrivateEquityAssetKey(issuer_id=IssuerId(config.issuer_id)).wire_id,
         latest_level=artifact.current_mark_usd,
         monthly_log_return_mu=artifact.monthly_log_return_mu,
         monthly_log_return_sigma=artifact.monthly_log_return_sigma,
-        covariance_with_factors={"sp500": covariance_with_sp500},
+        covariance_with_factors={SP500_KEY.wire_id: covariance_with_sp500},
         source_ids=tuple(sorted({obs.source_id for obs in issuer_observations})),
         private_equity_issuer_id=config.issuer_id,
         private_equity_event_prior=StateSpacePrivateEquityEventPrior(
@@ -173,7 +173,7 @@ def _estimate_sp500_coupling(
         duration = months_between(start.observed_at, end.observed_at)
         if duration <= 0:
             continue
-        sp500_return = _historical_cumulative_return(historical, "sp500", start.observed_at, end.observed_at)
+        sp500_return = _historical_cumulative_return(historical, SP500_KEY.wire_id, start.observed_at, end.observed_at)
         if sp500_return is None:
             continue
         pe_return = math.log(end.price_usd_per_share / start.price_usd_per_share)
@@ -259,7 +259,7 @@ def _prior_manifest(
         "covariance": {
             "crypto_cross_block_correlation": 0.0,
             "non_crypto_offdiag_shrinkage": 0.5,
-            "private_equity_couples_to": "sp500",
+            "private_equity_couples_to": SP500_KEY.wire_id,
         },
         "series_path_prior_calibration": evidence.latest_observations.get("series_path_prior_calibration", {}),
         "private_equity_sp500_correlation_prior": {

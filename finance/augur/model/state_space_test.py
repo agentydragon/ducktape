@@ -11,14 +11,14 @@ import pytest_bazel
 from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.series import (
-    CryptoKey,
-    CryptoSymbol,
+    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     IssuerId,
     LocationId,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 from finance.augur.model.state_space import (
     StateSpaceModelArtifact,
@@ -42,15 +42,16 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
     # Post-collapse, every level factor is its own key; there is no aliased extra location
     # (the artifact has a single home_value:san_francisco_ca factor, not a mare-island alias).
     assert level_keys >= {
-        SP500Key(),
+        SecurityKey(symbol=SP500_SYMBOL),
         InflationKey(),
-        CryptoKey(symbol=CryptoSymbol("btc")),
+        SecurityKey(symbol=SecuritySymbol("btc")),
         HomeValueKey(location_id=LocationId("san_francisco_ca")),
         RentKey(location_id=LocationId("san_francisco_ca")),
     }
     assert sampled.private_equity.issuer_ids() >= frozenset({"private_company_a"})
     np.testing.assert_allclose(
-        sampled.level_matrix(SP500Key(), rollout_count=2, horizon_months=3)[:, 0], np.array([123.0, 123.0])
+        sampled.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=2, horizon_months=3)[:, 0],
+        np.array([123.0, 123.0]),
     )
     assert sampled.private_equity.issuer_bool_matrix(
         "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=3
@@ -73,8 +74,8 @@ def test_state_space_conditioning_changes_sampled_paths(tmp_path: Path) -> None:
         .sample(ExogenousSamplingRequest(rollout_seeds=(11,), horizon_months=3))
     )
 
-    low_sp500 = low.level_matrix(SP500Key(), rollout_count=1, horizon_months=3)
-    high_sp500 = high.level_matrix(SP500Key(), rollout_count=1, horizon_months=3)
+    low_sp500 = low.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=1, horizon_months=3)
+    high_sp500 = high.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=1, horizon_months=3)
     np.testing.assert_allclose(high_sp500, low_sp500 * 2.0)
 
 
@@ -133,7 +134,7 @@ def _provider(
     conditioning = ExogenousConditioningContext(
         start_at=date(2026, 5, 1),
         observations={
-            SP500Key().wire_id: (
+            SecurityKey(symbol=SP500_SYMBOL).wire_id: (
                 ExogenousObservedPoint(
                     value=sp500_anchor,
                     observed_at=date(2026, 5, 1),
@@ -151,9 +152,9 @@ def _provider(
 def _artifact(
     *, pe_tender_interval_months_median: float = 2.0, pe_tender_interval_log_sigma: float = 0.1
 ) -> StateSpaceModelArtifact:
-    sp500 = SP500Key().wire_id
+    sp500 = SecurityKey(symbol=SP500_SYMBOL).wire_id
     inflation = InflationKey().wire_id
-    btc = CryptoKey(symbol=CryptoSymbol("btc")).wire_id
+    btc = SecurityKey(symbol=SecuritySymbol("btc")).wire_id
     hv_sf = HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id
     rent_sf = RentKey(location_id=LocationId("san_francisco_ca")).wire_id
     pe = PrivateEquityAssetKey(issuer_id=IssuerId("private_company_a")).wire_id

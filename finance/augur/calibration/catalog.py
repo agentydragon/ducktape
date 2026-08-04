@@ -108,7 +108,7 @@ class CatalogMetadata(BaseModel):
     as_of: date
     augur_model_as_of: date | None = None
     # OPTIONAL per-series override of the live spot each macro level series is anchored to at
-    # `model_anchor_date`, keyed by wire id ("sp500", "inflation"). Macro markets are scored
+    # `model_anchor_date`, keyed by wire id ("security:SPY", "inflation"). Macro markets are scored
     # against the sampled path ANCHORED to this spot — a threshold like "S&P >= 7500" is
     # meaningless unless month 0 of the path is today's real index level. When a referenced
     # series is absent here, `macro_anchors.resolve_anchors` derives the spot from the scraped
@@ -210,7 +210,7 @@ class LevelAtDateMapping(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["level_at_date"] = "level_at_date"
-    series: str  # level-series wire id ("sp500", "inflation")
+    series: str  # level-series wire id ("security:SPY", "inflation")
     threshold: float
     direction: Direction
     at_date: date
@@ -234,7 +234,7 @@ class LevelByDateMapping(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["level_by_date"] = "level_by_date"
-    series: str  # level-series wire id ("sp500", "crypto:btc")
+    series: str  # level-series wire id ("security:SPY", "security:btc")
     threshold: float
     direction: Direction
     by_date: date
@@ -322,7 +322,7 @@ class BucketFamily(BaseModel):
     family_id: str
     question: str
     platform: Platform
-    series: str  # level-series wire id ("sp500", "inflation")
+    series: str  # level-series wire id ("security:SPY", "inflation")
     at_date: date
     buckets: list[BucketMember] = Field(min_length=2)
 

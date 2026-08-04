@@ -13,7 +13,7 @@ import polars as pl
 import pytest_bazel
 
 from finance.augur.model.deterministic import Deterministic
-from finance.augur.model.series import CryptoKey, CryptoSymbol
+from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.bench_scenario import build_bench_scenario
 from finance.augur.sim.scenario import InitialLot
@@ -50,7 +50,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     """Spike-1 DRY proof: adding a 4th capital-gains-eligible
     position to the scenario takes one new InitialLot record and
     one new independent external-series entry, zero engine code. The simulator
-    accepts the new asset_id ("crypto:efv") through the same code paths
+    accepts the new asset_id ("security:efv") through the same code paths
     as VTI/QQQ/BTC. After running 10 rollouts at 24 months we see
     EFV as a tracked asset in lots and external-series frames."""
     base = build_bench_scenario(horizon_months=24)
@@ -58,7 +58,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     new_lot = InitialLot(
         lot_id="alice_efv",
         agent_id="alice",
-        asset=CryptoKey(symbol=CryptoSymbol("efv")),
+        asset=SecurityKey(symbol=SecuritySymbol("efv")),
         purchase_month_index=-12,
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
@@ -70,9 +70,9 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         update={
             "asset_prices": base_model.asset_prices.model_copy(
                 update={
-                    "crypto": {
-                        **base_model.asset_prices.crypto,
-                        CryptoSymbol("efv"): Deterministic(levels=[100.0] * 25),
+                    "security": {
+                        **base_model.asset_prices.security,
+                        SecuritySymbol("efv"): Deterministic(levels=[100.0] * 25),
                     }
                 }
             )
@@ -85,7 +85,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
             "liquidity_policies": [
                 p.model_copy(
                     update={
-                        "asset_preference_chain": [*p.asset_preference_chain, CryptoKey(symbol=CryptoSymbol("efv"))]
+                        "asset_preference_chain": [*p.asset_preference_chain, SecurityKey(symbol=SecuritySymbol("efv"))]
                     }
                 )
                 for p in base.liquidity_policies
@@ -96,10 +96,10 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     result = simulate(extended, rollout_count=10, locations={})
 
     # The new asset shows up in lots:
-    efv_lots = result.asset_lots.filter(pl.col("asset_id") == "crypto:efv")
+    efv_lots = result.asset_lots.filter(pl.col("asset_id") == "security:efv")
     assert efv_lots.height > 0
     # And in external series values:
-    efv_values = result.series_values.filter(pl.col("series_id") == "crypto:efv")
+    efv_values = result.series_values.filter(pl.col("series_id") == "security:efv")
     assert efv_values.height == 25 * 10  # months x rollouts
 
 

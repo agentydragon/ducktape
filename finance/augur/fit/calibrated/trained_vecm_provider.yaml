@@ -59,13 +59,13 @@ latest_observations:
     source: ../../data/fred_mortgage30.csv
     value: 6.23
   series_path_prior_calibration:
-    crypto:btc:
+    security:btc:
       monthly_log_mu: 0.03902884375748238
       monthly_log_mu_sigma: 0.016405309545132564
       monthly_log_vol_sigma: 0.19341574702374892
       observation_count: 139
       observed_months: 139.0
-    crypto:eth:
+    security:eth:
       monthly_log_mu: 0.01473879993989527
       monthly_log_mu_sigma: 0.026449994675222438
       monthly_log_vol_sigma: 0.2671318518420597
@@ -95,7 +95,7 @@ latest_observations:
       monthly_log_vol_sigma: 0.005470560597749138
       observation_count: 758
       observed_months: 1335.0
-    sp500:
+    security:SPY:
       monthly_log_mu: 0.008476573751313684
       monthly_log_mu_sigma: 0.002146197427330773
       monthly_log_vol_sigma: 0.04287026003461386

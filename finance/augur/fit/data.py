@@ -26,7 +26,7 @@ from finance.augur.fit.evidence_data import (
     load_exogenous_evidence,
 )
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.series import HomeValueKey, parse_level_series_key
+from finance.augur.model.series import SP500_KEY, HomeValueKey, parse_level_series_key
 from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series
 from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
 
@@ -73,7 +73,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     # Home-value factors are derived structurally from the configured locations (each one's
     # HomeValueKey wire id); the FRED-only path replicates one Case-Shiller SF series across them.
     home_factor_names = tuple(HomeValueKey(location_id=loc).wire_id for loc in ZILLOW_HOME_VALUE_REGIONS)
-    factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
+    factor_names = (SP500_KEY.wire_id, *home_factor_names, "rent:san_francisco_ca", "inflation")
     sp500 = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SP500))
     home = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SFXRSA))
     rent = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SF_RENT_CPI))
@@ -81,7 +81,12 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     mortgage = read_fred_series(evidence_dir_from_env(), FRED_MORTGAGE30)
 
     aligned = _align_inner(
-        {"sp500": sp500, **dict.fromkeys(home_factor_names, home), "rent:san_francisco_ca": rent, "inflation": cpi},
+        {
+            SP500_KEY.wire_id: sp500,
+            **dict.fromkeys(home_factor_names, home),
+            "rent:san_francisco_ca": rent,
+            "inflation": cpi,
+        },
         value_column="value",
     )
     if aligned.height < 36:

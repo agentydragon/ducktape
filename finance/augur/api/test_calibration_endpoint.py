@@ -22,7 +22,7 @@ from finance.augur.api.server import create_app_from_augur_config, static_price_
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.model.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
-from finance.augur.model.series import IssuerId, SP500Key
+from finance.augur.model.series import SP500_SYMBOL, IssuerId, SecurityKey
 from finance.evidence.markets import Platform
 
 
@@ -94,12 +94,12 @@ def test_run_calibration(client: TestClient) -> None:
     assert surfaced_row["url"].startswith("https://")
 
     # Macro markets score against the model's level channels: the S&P and Bitcoin bucket families
-    # (multinomial) plus the crypto:btc point-in-time / ever-by-date markets in the clean table.
-    assert {fam["channel"] for fam in result["categorical"]} == {"sp500", "crypto:btc"}
-    family = next(fam for fam in result["categorical"] if fam["channel"] == "sp500")
+    # (multinomial) plus the security:btc point-in-time / ever-by-date markets in the clean table.
+    assert {fam["channel"] for fam in result["categorical"]} == {"security:SPY", "security:btc"}
+    family = next(fam for fam in result["categorical"] if fam["channel"] == "security:SPY")
     assert {"family_id", "question", "platform", "channel", "at_date", "buckets"} <= set(family)
     assert len(family["buckets"]) == 27
-    assert any(row.get("channel") == "crypto:btc" for row in result["clean"])
+    assert any(row.get("channel") == "security:btc" for row in result["clean"])
 
     # One mark fan per scored issuer; the example catalog scores `openai`.
     assert [fan["issuer"] for fan in body["mark_fans"]] == ["openai"]
@@ -153,7 +153,7 @@ def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
     spec = SampleSanitySpec(
         horizon_months=24,
         rollout_count=16,
-        level_checks=(LevelSeriesSanityCheck(key=SP500Key(), initial_value=1.0),),
+        level_checks=(LevelSeriesSanityCheck(key=SecurityKey(symbol=SP500_SYMBOL), initial_value=1.0),),
         private_equity_mark_checks=(PrivateEquityMarkSanityCheck(issuer_id=IssuerId("openai"), initial_value=100.0),),
     )
     spec_path = tmp_path / "sample_sanity.yaml"
@@ -172,13 +172,13 @@ def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path, augur_conf
 
     # Both the level-series band (sp500) and the PE-mark band (openai) are evaluated.
     series_ids = {band["series_id"] for band in bands}
-    assert "sp500" in series_ids
+    assert "security:SPY" in series_ids
     assert any("openai" in series_id and "mark" in series_id for series_id in series_ids)
 
     # The deterministic anchor bands (sp500 -> 1.0, openai mark -> 100.0) pass; nothing fails.
     anchors = {band["series_id"]: band for band in bands if band["kind"] == "anchor"}
-    assert anchors["sp500"]["status"] == "pass"
-    assert anchors["sp500"]["month"] == 0
+    assert anchors["security:SPY"]["status"] == "pass"
+    assert anchors["security:SPY"]["month"] == 0
     openai_anchor = next(band for series_id, band in anchors.items() if "openai" in series_id)
     assert openai_anchor["status"] == "pass"
     assert openai_anchor["expected_lower"] == 100.0

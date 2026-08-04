@@ -16,8 +16,7 @@ from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExoge
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.series import (
-    CryptoKey,
-    CryptoSymbol,
+    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     IssuerId,
@@ -26,7 +25,8 @@ from finance.augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 from finance.augur.model.testing import (
     ConstantFrameModel,
@@ -193,7 +193,9 @@ def test_product_fails_when_sample_is_missing_required_series(
     model = MissingRequiredExogenousModel()
     product = make_product_service(model)
 
-    with pytest.raises(ValueError, match=f"missing required level series: .*{SP500Key().wire_id}"):
+    with pytest.raises(
+        ValueError, match=f"missing required level series: .*{SecurityKey(symbol=SP500_SYMBOL).wire_id}"
+    ):
         product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
     assert model.sample_requests[0].required_level_series
@@ -211,9 +213,9 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
                 update={
                     "asset_prices": provider.macro.asset_prices.model_copy(
                         update={
-                            "crypto": {
+                            "security": {
                                 symbol: spec
-                                for symbol, spec in provider.macro.asset_prices.crypto.items()
+                                for symbol, spec in provider.macro.asset_prices.security.items()
                                 if symbol != "btc"
                             }
                         }
@@ -224,7 +226,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
     ).realize_model()
     product = make_product_service(model, config=augur_config)
 
-    with pytest.raises(ValueError, match=r"missing required level series: .*crypto:btc"):
+    with pytest.raises(ValueError, match=r"missing required level series: .*security:btc"):
         product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
 
@@ -236,7 +238,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
             InitialLot(
                 lot_id="unpriced_lot",
                 agent_id="agent_a",
-                asset=CryptoKey(symbol=CryptoSymbol("missing")),
+                asset=SecurityKey(symbol=SecuritySymbol("missing")),
                 purchase_month_index=-1,
                 quantity=2.0,
                 cost_basis_per_unit_usd=1.0,
@@ -249,7 +251,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         scenario, rollout_count=1, external_series=ExternalSeriesContext(), locations={}
     )
 
-    with pytest.raises(ValueError, match=r"holding asset 'crypto:missing' has no modeled price series"):
+    with pytest.raises(ValueError, match=r"holding asset 'security:missing' has no modeled price series"):
         decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
 
 
@@ -264,7 +266,11 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
     assert counting_model.sample_requests[0].required_level_series == frozenset(
-        {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
+        {
+            SecurityKey(symbol=SP500_SYMBOL),
+            SecurityKey(symbol=SecuritySymbol("btc")),
+            SecurityKey(symbol=SecuritySymbol("eth")),
+        }
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
     assert fan.model_id == "composite"
@@ -960,6 +966,7 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario(
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
+        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 
@@ -998,6 +1005,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
+        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 
@@ -1061,6 +1069,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
+        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 
@@ -1133,6 +1142,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
+        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 

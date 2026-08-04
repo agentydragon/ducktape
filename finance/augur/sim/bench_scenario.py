@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
-from finance.augur.model.series import CryptoKey, CryptoSymbol
+from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.scenario import (
     Agent,
@@ -63,7 +63,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset=CryptoKey(symbol=CryptoSymbol("vti")),
+                asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-36,
                 quantity=300.0,
                 cost_basis_per_unit_usd=180.0,
@@ -71,7 +71,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_qqq",
                 agent_id="alice",
-                asset=CryptoKey(symbol=CryptoSymbol("qqq")),
+                asset=SecurityKey(symbol=SecuritySymbol("qqq")),
                 purchase_month_index=-24,
                 quantity=120.0,
                 cost_basis_per_unit_usd=300.0,
@@ -79,7 +79,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_btc",
                 agent_id="alice",
-                asset=CryptoKey(symbol=CryptoSymbol("btc")),
+                asset=SecurityKey(symbol=SecuritySymbol("btc")),
                 purchase_month_index=-18,
                 quantity=2.0,
                 cost_basis_per_unit_usd=25_000.0,
@@ -108,14 +108,14 @@ def build_bench_scenario(
         ],
         external_series=SeriesModelBundle.independent(
             asset_prices=AssetPriceGroups(
-                crypto={
-                    CryptoSymbol("vti"): GeometricBrownian(
+                security={
+                    SecuritySymbol("vti"): GeometricBrownian(
                         initial_value=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04
                     ),
-                    CryptoSymbol("qqq"): GeometricBrownian(
+                    SecuritySymbol("qqq"): GeometricBrownian(
                         initial_value=400.0, monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05
                     ),
-                    CryptoSymbol("btc"): GeometricBrownian(
+                    SecuritySymbol("btc"): GeometricBrownian(
                         initial_value=60_000.0, monthly_log_return_mu=0.012, monthly_log_return_sigma=0.15
                     ),
                 }
@@ -135,9 +135,9 @@ def build_bench_scenario(
                 agent_id="alice",
                 account_id="checking",
                 asset_preference_chain=[
-                    CryptoKey(symbol=CryptoSymbol("vti")),
-                    CryptoKey(symbol=CryptoSymbol("qqq")),
-                    CryptoKey(symbol=CryptoSymbol("btc")),
+                    SecurityKey(symbol=SecuritySymbol("vti")),
+                    SecurityKey(symbol=SecuritySymbol("qqq")),
+                    SecurityKey(symbol=SecuritySymbol("btc")),
                 ],
                 cash_buffer_trigger_below_usd=floor_usd,
                 cash_buffer_sale_usd=floor_usd,

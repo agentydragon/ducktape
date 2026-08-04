@@ -85,7 +85,7 @@ These are non-negotiable shapes. Every scenario below assumes them.
   thing. There is no "the engine has it as A, the wire has it as B,
   the summary derives it as C from the log".
 - **No hardcoded asset classes; generic templates instead.** The
-  engine does not mention `sp500`, `crypto`, `private_equity` by name
+  engine does not mention `security`, `private_equity` by name
   in its logic. It defines a small set of **asset templates** that
   capture _behavior_ (e.g. "capital-gains-eligible holding with a
   market price path and a cost basis", "depreciable real-property with

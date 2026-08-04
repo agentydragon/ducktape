@@ -38,7 +38,7 @@ class IndependentProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
     `LevelSeriesGroups` (`asset_prices` = `sp500`/`crypto`; `property_values` =
     `home_value`; `index_series` = `inflation`/`rent`). `private_equity_marks` carries
     per-issuer mark specs separately — PE marks are not level series. `extra="forbid"`
-    (from `FrozenModel`) rejects stray keys, including legacy `"crypto:btc"`-style wire ids.
+    (from `FrozenModel`) rejects stray keys, including legacy `"security:btc"`-style wire ids.
     """
 
     type: Literal["independent"] = "independent"

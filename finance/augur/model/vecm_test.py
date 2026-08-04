@@ -16,13 +16,13 @@ from numpyro import distributions as dist
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import (
-    CryptoKey,
-    CryptoSymbol,
+    SP500_SYMBOL,
     HomeValueKey,
     InflationKey,
     LocationId,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 from finance.augur.model.vecm import VecmConfig, VecmModel
 
@@ -32,7 +32,9 @@ def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
     # Synthetic 2-factor cointegration data: the factor identities are arbitrary (the test
     # exercises fit/predictive shapes, not series semantics) — two distinct level keys suffice.
-    return HistoricalSeries(factor_names=(SP500Key(), InflationKey()), levels=levels, months=months)
+    return HistoricalSeries(
+        factor_names=(SecurityKey(symbol=SP500_SYMBOL), InflationKey()), levels=levels, months=months
+    )
 
 
 def _historical_series_4factor(log_levels: np.ndarray) -> HistoricalSeries:
@@ -40,7 +42,7 @@ def _historical_series_4factor(log_levels: np.ndarray) -> HistoricalSeries:
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
     return HistoricalSeries(
         factor_names=(
-            SP500Key(),
+            SecurityKey(symbol=SP500_SYMBOL),
             HomeValueKey(location_id=LocationId("san_francisco_ca")),
             RentKey(location_id=LocationId("san_francisco_ca")),
             InflationKey(),
@@ -118,7 +120,7 @@ class TestVecmModel:
         model.fit(historical)
         # Attach deployment-layer state (normally done by realize_model).
         model.latest_observations = {
-            "sp500": 5500.0,
+            "security:SPY": 5500.0,
             "home_value:san_francisco_ca": 1_000_000.0,
             "rent:san_francisco_ca": 3000.0,
             "inflation": 320.0,
@@ -132,7 +134,7 @@ class TestVecmModel:
                 **level_series_request_channels(
                     frozenset(
                         {
-                            SP500Key(),
+                            SecurityKey(symbol=SP500_SYMBOL),
                             InflationKey(),
                             HomeValueKey(location_id=LocationId("san_francisco_ca")),
                             RentKey(location_id=LocationId("san_francisco_ca")),
@@ -143,7 +145,9 @@ class TestVecmModel:
         )
 
         # SP500 paths start at 5500 (the latest observation) and scale by month-0=1 multiplier.
-        assert sampled.level_matrix(SP500Key(), rollout_count=2, horizon_months=12)[:, 0].tolist() == [5500.0, 5500.0]
+        assert sampled.level_matrix(SecurityKey(symbol=SP500_SYMBOL), rollout_count=2, horizon_months=12)[
+            :, 0
+        ].tolist() == [5500.0, 5500.0]
         assert sampled.level_matrix(
             HomeValueKey(location_id=LocationId("san_francisco_ca")), rollout_count=2, horizon_months=12
         )[:, 0].tolist() == [1_000_000.0, 1_000_000.0]
@@ -156,7 +160,7 @@ class TestVecmModel:
 
     def test_offdiag_loadings_are_scaled_by_target_factor_volatility(self) -> None:
         model = VecmModel(
-            factor_names=(SP500Key(), InflationKey()),
+            factor_names=(SecurityKey(symbol=SP500_SYMBOL), InflationKey()),
             n_factors=2,
             train_log_levels=np.zeros((1, 2), dtype=np.float64),
             params={
@@ -167,7 +171,7 @@ class TestVecmModel:
                 "offdiag_flat_auto_loc": np.array([0.9], dtype=np.float64),
             },
         )
-        model.latest_observations = {"sp500": 5500.0, "inflation": 320.0}
+        model.latest_observations = {"security:SPY": 5500.0, "inflation": 320.0}
         model._compute_provenance(evidence_source_id="test")
 
         cov = model._cov_np()
@@ -199,7 +203,11 @@ class TestVecmModel:
         levels = np.exp(log_levels - log_levels[0])
         months = tuple(f"2010-{i:02d}" for i in range(levels.shape[0]))
         historical = HistoricalSeries(
-            factor_names=(SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))),
+            factor_names=(
+                SecurityKey(symbol=SP500_SYMBOL),
+                SecurityKey(symbol=SecuritySymbol("btc")),
+                SecurityKey(symbol=SecuritySymbol("eth")),
+            ),
             levels=levels,
             months=months,
         )
@@ -219,18 +227,22 @@ class TestVecmModel:
                 rollout_seeds=(11, 12),
                 **level_series_request_channels(
                     frozenset(
-                        {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
+                        {
+                            SecurityKey(symbol=SP500_SYMBOL),
+                            SecurityKey(symbol=SecuritySymbol("btc")),
+                            SecurityKey(symbol=SecuritySymbol("eth")),
+                        }
                     )
                 ),
             )
         )
 
         # Month-0 multiplier is 1.0, so the first sampled level equals latest_observations directly.
-        # This proves _latest_factor_value's crypto:* branch correctly maps to <symbol>_close_latest.
-        assert sampled.level_matrix(CryptoKey(symbol=CryptoSymbol("btc")), rollout_count=2, horizon_months=6)[
+        # This proves _latest_factor_value's security branch correctly maps to <symbol>_close_latest.
+        assert sampled.level_matrix(SecurityKey(symbol=SecuritySymbol("btc")), rollout_count=2, horizon_months=6)[
             :, 0
         ].tolist() == [65_000.0, 65_000.0]
-        assert sampled.level_matrix(CryptoKey(symbol=CryptoSymbol("eth")), rollout_count=2, horizon_months=6)[
+        assert sampled.level_matrix(SecurityKey(symbol=SecuritySymbol("eth")), rollout_count=2, horizon_months=6)[
             :, 0
         ].tolist() == [3_200.0, 3_200.0]
 

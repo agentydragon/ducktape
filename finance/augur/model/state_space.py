@@ -42,7 +42,7 @@ from finance.augur.model.private_equity_protocol import (
 )
 from finance.augur.model.provenance import stable_identity_digest
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
+from finance.augur.model.series import SP500_SYMBOL, IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import derive_stream_rollout_seeds
 from finance.augur.model.state_space_factor import FactorKey, PrivateEquityMarkKey, parse_factor_key
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
@@ -511,17 +511,29 @@ def _regularize_covariance(factor_names: tuple[str, ...], covariance: np.ndarray
     return _nearest_positive_semidefinite(out)
 
 
+# Fitting priors on the covariance block structure: crypto co-moves with crypto and with
+# nothing else, and a private-equity mark co-moves only with broad-market equity. Both are
+# claims about how these markets behave, not facts about how the series are typed, so they
+# are named data here — a symbol the fit holds no such view on is simply absent, and gets the
+# default coupling. Promote to fitted config once the model carries a per-symbol asset-class
+# catalog.
+_CRYPTO_SYMBOLS: frozenset[SecuritySymbol] = frozenset({SecuritySymbol("btc"), SecuritySymbol("eth")})
+_PRIVATE_EQUITY_COUPLES_WITH = SecurityKey(symbol=SP500_SYMBOL)
+
+
+def _is_crypto(key: FactorKey) -> bool:
+    return isinstance(key, SecurityKey) and key.symbol in _CRYPTO_SYMBOLS
+
+
 def _coupling_allowed(left: str, right: str) -> bool:
-    left_classification = parse_factor_key(left)
-    right_classification = parse_factor_key(right)
-    left_is_pe = isinstance(left_classification, PrivateEquityMarkKey)
-    right_is_pe = isinstance(right_classification, PrivateEquityMarkKey)
-    if isinstance(left_classification, CryptoKey) or isinstance(right_classification, CryptoKey):
-        return isinstance(left_classification, CryptoKey) and isinstance(right_classification, CryptoKey)
-    if left_is_pe:
-        return isinstance(right_classification, SP500Key)
-    if right_is_pe:
-        return isinstance(left_classification, SP500Key)
+    left_key = parse_factor_key(left)
+    right_key = parse_factor_key(right)
+    if _is_crypto(left_key) or _is_crypto(right_key):
+        return _is_crypto(left_key) and _is_crypto(right_key)
+    if isinstance(left_key, PrivateEquityMarkKey):
+        return right_key == _PRIVATE_EQUITY_COUPLES_WITH
+    if isinstance(right_key, PrivateEquityMarkKey):
+        return left_key == _PRIVATE_EQUITY_COUPLES_WITH
     return True
 
 

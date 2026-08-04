@@ -5,14 +5,14 @@ import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from finance.augur.model.series import (
+    SP500_SYMBOL,
     AssetPriceKey,
-    CryptoKey,
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
     PropertyValueKey,
     RentKey,
-    SP500Key,
+    SecurityKey,
     parse_level_series_key,
     try_parse_level_series_key,
 )
@@ -25,10 +25,10 @@ _PROPERTY_VALUE_ADAPTER: TypeAdapter[PropertyValueKey] = TypeAdapter(PropertyVal
 def test_level_series_key_round_trip_through_wire_id() -> None:
     for key in (
         InflationKey(),
-        SP500Key(),
+        SecurityKey(symbol=SP500_SYMBOL),
         HomeValueKey(location_id="san_francisco_ca"),
         RentKey(location_id="vallejo_ca"),
-        CryptoKey(symbol="btc"),
+        SecurityKey(symbol="btc"),
     ):
         assert parse_level_series_key(key.wire_id) == key
 
@@ -42,9 +42,9 @@ def test_level_series_key_kind_serializes_as_readable_string_and_round_trips() -
     assert isinstance(inflation_dump["kind"], str)
     assert InflationKey.model_validate(inflation_dump) == InflationKey()
 
-    crypto_dump = CryptoKey(symbol="btc").model_dump(mode="json")
-    assert isinstance(crypto_dump["kind"], str)
-    assert CryptoKey.model_validate(crypto_dump) == CryptoKey(symbol="btc")
+    security_dump = SecurityKey(symbol="btc").model_dump(mode="json")
+    assert isinstance(security_dump["kind"], str)
+    assert SecurityKey.model_validate(security_dump) == SecurityKey(symbol="btc")
 
 
 def test_parse_level_series_key_rejects_unknown_wire_ids() -> None:
@@ -65,20 +65,19 @@ def test_roles_unions_accept_their_members_and_reject_others() -> None:
     # only values a property if home-value.
     assert _INDEX_ADAPTER.validate_python(InflationKey().model_dump()) == InflationKey()
     assert _INDEX_ADAPTER.validate_python(RentKey(location_id="sf").model_dump()) == RentKey(location_id="sf")
-    assert _ASSET_PRICE_ADAPTER.validate_python(SP500Key().model_dump()) == SP500Key()
-    assert _ASSET_PRICE_ADAPTER.validate_python(CryptoKey(symbol="btc").model_dump()) == CryptoKey(symbol="btc")
+    assert _ASSET_PRICE_ADAPTER.validate_python(SecurityKey(symbol="btc").model_dump()) == SecurityKey(symbol="btc")
     assert _PROPERTY_VALUE_ADAPTER.validate_python(HomeValueKey(location_id="sf").model_dump()) == HomeValueKey(
         location_id="sf"
     )
 
-    # Cross-role values are rejected: sp500 (asset price) is not an index,
-    # rent (index) is not an asset price, crypto (asset price) is not a property value.
+    # Cross-role values are rejected: a security (asset price) is not an index,
+    # rent (index) is not an asset price, and a security is not a property value.
     with pytest.raises(ValidationError):
-        _INDEX_ADAPTER.validate_python(SP500Key().model_dump())
+        _INDEX_ADAPTER.validate_python(SecurityKey(symbol=SP500_SYMBOL).model_dump())
     with pytest.raises(ValidationError):
         _ASSET_PRICE_ADAPTER.validate_python(RentKey(location_id="sf").model_dump())
     with pytest.raises(ValidationError):
-        _PROPERTY_VALUE_ADAPTER.validate_python(CryptoKey(symbol="btc").model_dump())
+        _PROPERTY_VALUE_ADAPTER.validate_python(SecurityKey(symbol="btc").model_dump())
 
 
 if __name__ == "__main__":

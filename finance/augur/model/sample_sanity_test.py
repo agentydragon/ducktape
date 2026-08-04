@@ -15,7 +15,7 @@ from finance.augur.model.sample_sanity import (
     evaluate_sample_checks,
     partition_spec_coverage,
 )
-from finance.augur.model.series import HomeValueKey, IssuerId, LocationId, SP500Key
+from finance.augur.model.series import SP500_SYMBOL, HomeValueKey, IssuerId, LocationId, SecurityKey
 from finance.augur.model.testing import ConstantFrameModel
 
 _HORIZON_MONTHS = 12
@@ -31,16 +31,16 @@ def _spec_with_bands(*bands: PercentileRangeBound) -> SampleSanitySpec:
     return SampleSanitySpec(
         horizon_months=_HORIZON_MONTHS,
         rollout_count=_ROLLOUT_COUNT,
-        level_checks=(LevelSeriesSanityCheck(key=SP500Key(), value_percentile_ranges=bands),),
+        level_checks=(LevelSeriesSanityCheck(key=SecurityKey(symbol=SP500_SYMBOL), value_percentile_ranges=bands),),
     )
 
 
 def _sample_constant_sp500(*, horizon_months: int = _HORIZON_MONTHS) -> SampledExogenousBundle:
-    model = ConstantFrameModel(levels={SP500Key(): _SP500_LEVEL})
+    model = ConstantFrameModel(levels={SecurityKey(symbol=SP500_SYMBOL): _SP500_LEVEL})
     request = ExogenousSamplingRequest(
         horizon_months=horizon_months,
         rollout_seeds=tuple(range(_ROLLOUT_COUNT)),
-        **level_series_request_channels(frozenset({SP500Key()})),
+        **level_series_request_channels(frozenset({SecurityKey(symbol=SP500_SYMBOL)})),
     )
     return model.sample(request)
 
@@ -91,7 +91,7 @@ def test_evaluate_sample_checks_surfaces_unmodeled_level_check() -> None:
         horizon_months=_HORIZON_MONTHS,
         rollout_count=_ROLLOUT_COUNT,
         level_checks=(
-            LevelSeriesSanityCheck(key=SP500Key(), value_percentile_ranges=(_PASSING_BAND,)),
+            LevelSeriesSanityCheck(key=SecurityKey(symbol=SP500_SYMBOL), value_percentile_ranges=(_PASSING_BAND,)),
             LevelSeriesSanityCheck(
                 key=unmodeled_key,
                 value_percentile_ranges=(_PASSING_BAND, _FAILING_BAND),
@@ -99,9 +99,9 @@ def test_evaluate_sample_checks_surfaces_unmodeled_level_check() -> None:
             ),
         ),
     )
-    model = ConstantFrameModel(levels={SP500Key(): _SP500_LEVEL})
+    model = ConstantFrameModel(levels={SecurityKey(symbol=SP500_SYMBOL): _SP500_LEVEL})
     modeled_level, modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
-    assert modeled_level == frozenset({SP500Key()})
+    assert modeled_level == frozenset({SecurityKey(symbol=SP500_SYMBOL)})
     assert unmodeled_level == frozenset({unmodeled_key})
     assert modeled_pe == frozenset()
     assert unmodeled_pe == frozenset()
@@ -135,7 +135,7 @@ def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
             PrivateEquityMarkSanityCheck(issuer_id=IssuerId("unmodeled_co"), initial_value=100.0),
         ),
     )
-    model = ConstantFrameModel(levels={SP500Key(): _SP500_LEVEL})
+    model = ConstantFrameModel(levels={SecurityKey(symbol=SP500_SYMBOL): _SP500_LEVEL})
     _, _, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
     assert unmodeled_pe == frozenset({IssuerId("unmodeled_co")})
     sampled = _sample_constant_sp500()
