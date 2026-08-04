@@ -13,7 +13,6 @@ costs real effort to re-mint:
 | `openclaw-anthropic-api-key`  | `openclaw-gateway` | Anthropic workspace key, $300/mo limit           |
 | `openclaw-openai-api-key`     | `openclaw-gateway` | OpenAI project key with a $100/mo project budget |
 | `openclaw-telegram-bot-token` | `openclaw-gateway` | `@agentydragonopenclawbot` from @BotFather       |
-| `ibkr-flex-query-credentials` | `openclaw-sandbox` | IBKR Flex Query token + query ID                 |
 
 **`openclaw-gateway` is not yet clean.** The 2026-07-31 teardown left an
 `OpenClawInstance/openclaw` behind — Flux pruned its manifest, but its finalizer
@@ -25,15 +24,12 @@ on uninstall. Clearing that up is tracked in <../../TODO.md> § "Retire the
 `openclaw-*` namespaces"; until then, read the sections below as describing what
 _should_ be here, not everything that is.
 
-**`ibkr-flex-query-credentials` is frozen, not managed.** Its Flux Kustomization
-(`sandbox-secrets`) carries `suspend: true` in git and has since before this
-teardown — its Ready condition is still the `DependencyNotReady` it had on
-2026-05-10, because a suspended Kustomization is never reconciled again. The
-Secret survives only because suspension also stops pruning. So unlike the three
-`openclaw-gateway` secrets, this one is not being maintained by GitOps; treat it
-as a frozen object that happens to still exist. Re-homing it (below) would also
-un-freeze it, which is a change worth making deliberately rather than as a side
-effect.
+**`ibkr-flex-query-credentials` was deleted on 2026-08-04**, along with its
+`sandbox-secrets` Kustomization and the two `*.interactivebrokers.com` hosts in
+the `claude-sandbox` egress allowlist — nothing had referenced either since the
+teardown. **The Flex token itself must be revoked in IBKR Account Management if
+that has not already happened**: removing the Secret from git deletes the copy,
+not the credential.
 
 The two namespaces exist for one reason: **each SOPS document pins its namespace in
 `metadata`, and these files set no `mac_only_encrypted`, so the document MAC covers
@@ -57,9 +53,8 @@ Either of these makes it dead weight — delete the whole tree then:
 - The credentials get re-homed (a `sops` pass moving them into
   `agents/shared-secrets/`, which needs the age key), or
 - They are no longer wanted, in which case revoke them upstream too: the Anthropic
-  and OpenAI keys at their consoles, the Telegram token via @BotFather, the IBKR
-  Flex token in Account Management. Deleting the Secret alone leaves a live
-  credential in the wild.
+  and OpenAI keys at their consoles and the Telegram token via @BotFather.
+  Deleting the Secret alone leaves a live credential in the wild.
 
 Both `namespace.yaml` files carry a `CLEANUP(added 2026-07-31)` tombstone saying
 the same thing next to the resource itself. The sequenced version — what to move,

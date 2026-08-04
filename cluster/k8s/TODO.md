@@ -53,21 +53,17 @@ Then two steps, in order — the second is blocked on the first:
 - [ ] **Move the credentials** (needs the cluster age key). Re-author each under
       `agents/shared-secrets/` with the right namespace and `sops -e -i`:
       `openclaw-{anthropic-api-key,openai-api-key,telegram-bot-token}` from
-      `openclaw-gateway`, `ibkr-flex-query-credentials` from `openclaw-sandbox`.
-      Note the IBKR one's Kustomization is `suspend: true` in git, so that Secret
-      is frozen rather than reconciled — re-homing it un-freezes it, which is a
-      deliberate change, not a side effect.
+      `openclaw-gateway`. (`ibkr-flex-query-credentials` was deleted 2026-08-04
+      rather than moved.)
       Update the reflector annotations and `docs/bootstrap_dependencies.md` rows
       in the same change. Alternatively **revoke** any you no longer want — at the
-      Anthropic and OpenAI consoles, via @BotFather, and in IBKR Account
+      Anthropic and OpenAI consoles and via @BotFather, and in IBKR Account
       Management. Deleting only the Secret leaves a live credential in the wild.
 - [ ] **Then delete `agents/openclaw/` entirely** — all four flux kustomizations,
       their root `kustomization.yaml` entries, and the `CLEANUP(added 2026-07-31)`
       tombstones in both `namespace.yaml` files. The gate is
       `grep -rl 'namespace: openclaw-' cluster/k8s/ --include='*.sops.yaml'`
       returning nothing; it lists four files today.
-
-- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive); fold into the move above rather than making a separate `sops` trip
 
 ## `openclaw-sandbox` reflector targets in shared secrets
 

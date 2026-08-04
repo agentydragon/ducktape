@@ -399,6 +399,18 @@ py_test(
 )
 
 py_test(
+    name = "test_egress_allowlists",
+    srcs = ["test_egress_allowlists.py"],
+    data = ["//cluster/k8s:egress_allowlist_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_ntfy_manifest_contract",
     srcs = ["test_ntfy_manifest_contract.py"],
     data = ["//cluster/k8s:ntfy_manifest_contract_files"],

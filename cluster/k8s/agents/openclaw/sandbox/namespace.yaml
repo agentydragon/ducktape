@@ -1,7 +1,7 @@
 # CLEANUP(added 2026-07-31): delete this whole directory once
 #   `openclaw-anthropic-api-key`, `openclaw-openai-api-key`,
-#   `openclaw-telegram-bot-token` and `ibkr-flex-query-credentials` no longer
-#   live in an `openclaw-*` namespace — either re-homed under
+#   `openclaw-telegram-bot-token` no longer live in an `openclaw-*`
+#   namespace — either re-homed under
 #   `agents/shared-secrets/` or revoked upstream. Nothing else here survives the
 #   2026-07-31 teardown; this namespace exists only because the SOPS documents
 #   pin it. See ../README.md.
@@ -11,8 +11,10 @@ metadata:
   name: openclaw-sandbox
   annotations:
     description: >-
-      Retained only to hold ibkr-flex-query-credentials, whose SOPS document
-      pins this namespace. Nothing should run here since the OpenClaw/OpenShell teardown on
+      Empty since ibkr-flex-query-credentials was deleted on 2026-08-04. Retained
+      only because two shared Secrets still name it in their emberstack reflector
+      annotations (see ../../../TODO.md). Nothing should run here since the
+      OpenClaw/OpenShell teardown on
       2026-07-31 — the privileged Pod Security labels OpenShell's supervisor
       needed are gone with it.
   labels:

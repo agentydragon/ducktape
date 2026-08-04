@@ -45,7 +45,7 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   The `ghcr.io/agentydragon/openclaw` ImageRepository/ImagePolicy are deliberately
   **kept**: that image is what `public-coder-agent` runs. The `openclaw-gateway`
   and `openclaw-sandbox` namespaces also survive, holding only the unique
-  credentials (Anthropic/OpenAI keys, Telegram bot token, IBKR Flex) whose SOPS
+  credentials (Anthropic/OpenAI keys, Telegram bot token) whose SOPS
   documents pin those namespaces — see `agents/openclaw/README.md`. Rationale and
   the evaluated alternatives: `plans/personal_agents/verdicts.md`.
 - **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not

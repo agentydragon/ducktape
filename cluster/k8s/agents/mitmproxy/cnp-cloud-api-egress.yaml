@@ -29,8 +29,6 @@ spec:
         - matchName: api.telegram.org
         - matchPattern: "*.telegram.org"
         - matchName: github.com
-        - matchName: gdcdyn.interactivebrokers.com
-        - matchName: ndcdyn.interactivebrokers.com
       toPorts:
         - ports:
             - port: "443"
