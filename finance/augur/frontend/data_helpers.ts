@@ -485,25 +485,14 @@ export function eventTitle(event, currencyDisplay) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), currencyDisplay)}`;
 }
 
-export function portfolioHasBucket(portfolio, bucketName) {
-  const holdings = portfolio?.holdings ?? [];
-  if (bucketName === "crypto") {
-    return holdings.some((position) => position.securityKind === "cryptocurrency");
-  }
-  // Match the backend sell-order compiler: private equity is handled by tender policies, not the
-  // liquid "stocks" sale bucket.
-  if (bucketName === "stocks") {
-    return holdings.some((position) => isStockBucketPosition(position));
-  }
-  return false;
+// Holdings a sell order may name, in portfolio order. Matches the backend: private equity is
+// excluded because it has no symbol to name — it leaves only through a tender event.
+export function sellablePositions(portfolio) {
+  return (portfolio?.holdings ?? []).filter((position) => !isPrivateSecurityPosition(position));
 }
 
 export function isPrivateSecurityPosition(position) {
   return position?.securityKind === "private_equity";
-}
-
-export function isStockBucketPosition(position) {
-  return position != null && position.securityKind !== "cryptocurrency" && !isPrivateSecurityPosition(position);
 }
 
 export function firstSaleMonth(events) {

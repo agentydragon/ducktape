@@ -32,7 +32,6 @@ from finance.augur.product.scenarios import (
     build_scenario,
     initial_lots_from_portfolio,
     required_private_equity_issuers,
-    sell_bucket_by_asset,
 )
 from finance.augur.product.wire import (
     MetricFanRequest,
@@ -208,7 +207,6 @@ class ProductService:
             primary_agent_id=self._primary_agent_id,
             initial_cash_usd=self._initial_cash_usd,
             initial_lots=self._initial_lots,
-            sell_buckets=sell_bucket_by_asset(self._portfolio),
             properties_by_id=self._properties_by_id,
             harvest_policies=self._harvest_policies,
         )

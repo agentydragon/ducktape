@@ -36,9 +36,8 @@ class HoldingKind(StrEnum):
     MUTUAL_FUND = "mutual_fund"
     # Crypto holdings (BTC, ETH, …) flow through the same position/lot machinery as stocks —
     # FIFO cost basis, cap-gains treatment, a sampled `security:*` price series. Calling them
-    # "public securities" is a slight misnomer for crypto, but the sim doesn't distinguish —
-    # this enum value routes display AND the sell-order bucket, both of which are the owner's
-    # own tagging rather than a fact about the price series.
+    # "public securities" is a slight misnomer for crypto, but nothing downstream distinguishes
+    # them — this enum value routes display only. The sell order names symbols, not kinds.
     CRYPTOCURRENCY = "cryptocurrency"
     # Private equity (pre-IPO company shares). Like crypto, leans on the same lot machinery
     # for FIFO + cap gains. Diverges from stocks in two ways the sim cares about:

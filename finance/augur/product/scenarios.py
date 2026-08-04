@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import get_args
 
 from more_itertools import one
 
 from finance.augur.api.config import Config, LocationConfig
-from finance.augur.api.portfolio import HoldingKind, PortfolioConfig
+from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
@@ -23,7 +21,6 @@ from finance.augur.product.wire import (
     PropertySaleEventWire,
     RentalIncomePlan,
     ScenarioKey,
-    SellableBucket,
     SetPrimaryResidenceEventWire,
     SetRentedFractionEventWire,
 )
@@ -138,7 +135,6 @@ def build_scenario(
     primary_agent_id: str,
     initial_cash_usd: float,
     initial_lots: tuple[InitialLot, ...],
-    sell_buckets: Mapping[AssetKey, SellableBucket],
     properties_by_id: dict[str, Property],
     harvest_policies: tuple[HarvestPolicy, ...] = (),
 ) -> Scenario:
@@ -387,10 +383,7 @@ def build_scenario(
             )
         ],
         liquidity_policies=_liquidity_policies_from_funding_policy(
-            scenario_key.funding_policy,
-            primary_agent_id=primary_agent_id,
-            initial_lots=initial_lots,
-            sell_buckets=sell_buckets,
+            scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
         ),
         harvest_policies=list(harvest_policies),
         horizon_months=horizon_months,
@@ -733,15 +726,9 @@ def _monthly_spend_amount(scenario_key: ScenarioKey) -> float | SeriesIndexedAmo
 
 
 def _liquidity_policies_from_funding_policy(
-    funding_policy: FundingPolicy,
-    *,
-    primary_agent_id: str,
-    initial_lots: tuple[InitialLot, ...],
-    sell_buckets: Mapping[AssetKey, SellableBucket],
+    funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
 ) -> list[LiquidityPolicy]:
-    asset_preference_chain = _asset_preference_chain_from_sell_order(
-        funding_policy, initial_lots=initial_lots, sell_bucket_by_asset=sell_buckets
-    )
+    asset_preference_chain = _asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots)
     if not asset_preference_chain:
         return []
     trigger_amount = _cash_buffer_amount(
@@ -756,7 +743,7 @@ def _liquidity_policies_from_funding_policy(
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
             source_account_ids=_source_account_ids_from_sell_order(
-                funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots, sell_buckets=sell_buckets
+                funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
             ),
             asset_preference_chain=asset_preference_chain,
             cash_buffer_trigger_below_usd=trigger_amount,
@@ -777,57 +764,34 @@ def _cash_buffer_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount 
 
 
 def _asset_preference_chain_from_sell_order(
-    funding_policy: FundingPolicy,
-    *,
-    initial_lots: tuple[InitialLot, ...],
-    sell_bucket_by_asset: Mapping[AssetKey, SellableBucket],
+    funding_policy: FundingPolicy, *, initial_lots: tuple[InitialLot, ...]
 ) -> list[AssetKey]:
-    """Translate the wire's `sell_order` tuple to a deduplicated `AssetKey` list for the sim.
+    """Resolve the wire's `sell_order` symbols to a deduplicated `AssetKey` list for the sim.
 
-    A bucket is the owner's own tagging of their portfolio ("sell crypto before stocks"), so
-    it comes from each holding's declared `security_kind` via `sell_bucket_by_asset` — not
-    from the shape of its price series, which is identical for every tradable security.
-    Private equity is *never* in a bucket: it's only saleable at sparse tender events,
-    dispatched by `PrivateEquityTenderPolicy` outside the liquidity-policy path. A bucket
-    absent from `sell_order` means "don't auto-sell from this bucket"; an empty `sell_order`
-    yields an empty chain (hard-demand failures still fire).
+    The sell order names SYMBOLS, in priority order, because that is the granularity the
+    owner actually holds and reasons about — "sell VTI before BTC" is a statement about two
+    positions, not about two asset classes, and asset classes could not express "sell BTC but
+    not ETH" at all. `None` means "any sellable holding", in portfolio order; `()` means
+    "never auto-sell" (hard-demand failures still fire). A symbol naming nothing held is a
+    no-op, so a sell order can outlive the position it mentions.
+
+    Private equity cannot appear: `PrivateEquityAssetKey` has no symbol, so no sell order can
+    name it. That the tender path is its only exit is now structural rather than a filter
+    someone has to remember.
     """
 
-    unknown = set(funding_policy.sell_order) - set(get_args(SellableBucket))
-    if unknown:
-        raise ValueError(f"unsupported sell_order bucket(s): {sorted(unknown)}")
-    assets: list[AssetKey] = []
-    for bucket in funding_policy.sell_order:
-        assets.extend(lot.asset for lot in initial_lots if sell_bucket_by_asset.get(lot.asset) == bucket)
-    return list(dict.fromkeys(assets))
-
-
-def sell_bucket_by_asset(portfolio: PortfolioConfig) -> dict[AssetKey, SellableBucket]:
-    """Each holding's sell-order bucket, from the `security_kind` its owner declared.
-
-    Private-equity holdings are omitted: they have no bucket because they are never
-    auto-sold.
-    """
-
-    return {
-        position.value_series: ("crypto" if position.security_kind is HoldingKind.CRYPTOCURRENCY else "stocks")
-        for position in portfolio.holdings
-        if position.security_kind is not HoldingKind.PRIVATE_EQUITY
-    }
+    sellable = [lot.asset for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
+    if funding_policy.sell_order is None:
+        return list(dict.fromkeys(sellable))
+    return list(
+        dict.fromkeys(asset for symbol in funding_policy.sell_order for asset in sellable if asset.symbol == symbol)
+    )
 
 
 def _source_account_ids_from_sell_order(
-    funding_policy: FundingPolicy,
-    *,
-    primary_agent_id: str,
-    initial_lots: tuple[InitialLot, ...],
-    sell_buckets: Mapping[AssetKey, SellableBucket],
+    funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
 ) -> tuple[str, ...]:
-    selected_asset_ids = set(
-        _asset_preference_chain_from_sell_order(
-            funding_policy, initial_lots=initial_lots, sell_bucket_by_asset=sell_buckets
-        )
-    )
+    selected_asset_ids = set(_asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots))
     if not selected_asset_ids:
         return ()
     return tuple(

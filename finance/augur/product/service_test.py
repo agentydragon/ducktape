@@ -966,7 +966,6 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario(
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 
@@ -1005,7 +1004,6 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 
@@ -1069,7 +1067,6 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 
@@ -1142,7 +1139,6 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        sell_buckets={},
         properties_by_id=catalog.properties_by_id,
     )
 

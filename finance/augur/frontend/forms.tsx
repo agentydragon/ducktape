@@ -2,8 +2,8 @@ import React, { useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls";
 import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format";
-import { LIFECYCLE_KINDS, SELL_BUCKETS, SELL_BUCKET_BY_CODE, defaultLifecycleEvent } from "./input_helpers";
-import { portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers";
+import { LIFECYCLE_KINDS, SELL_ORDER_SEPARATOR, defaultLifecycleEvent, splitSellOrder } from "./input_helpers";
+import { sellablePositions, isPrivateSecurityPosition } from "./data_helpers";
 
 function firstSaleMonth(events) {
   let earliest = null;
@@ -238,60 +238,59 @@ export function SellOrderControl({
   label = "Sell preference (top first)",
   compact = false,
 }) {
-  // Render one row per bucket. Enabled rows appear in priority order at the top with up/down
-  // controls; disabled rows trail at the bottom, dimmed. Reorder mutates a string of bucket
-  // codes (e.g. "pc") so it slots into the URL encoder without an array-equality dance.
-  const codes = String(sellOrder ?? "");
-  const enabledCodes = [];
+  // One row per sellable holding. Enabled rows appear in priority order at the top with up/down
+  // controls; disabled rows trail at the bottom, dimmed. Reorder mutates the comma-joined symbol
+  // string so it slots into the URL encoder without an array-equality dance.
+  //
+  // `sellOrder == null` is the default and means "any sellable holding" — shown as every row
+  // enabled in portfolio order, so the control renders the same thing the backend would do.
+  const sellable = sellablePositions(portfolio);
+  const bySymbol = new Map(sellable.map((position) => [position.symbol, position]));
+  const enabledSymbols = [];
   const seen = new Set();
-  for (const code of codes) {
-    if (SELL_BUCKET_BY_CODE.has(code) && !seen.has(code)) {
-      enabledCodes.push(code);
-      seen.add(code);
+  for (const symbol of sellOrder == null ? sellable.map((position) => position.symbol) : splitSellOrder(sellOrder)) {
+    if (bySymbol.has(symbol) && !seen.has(symbol)) {
+      enabledSymbols.push(symbol);
+      seen.add(symbol);
     }
   }
-  const disabledBuckets = SELL_BUCKETS.filter((bucket) => !seen.has(bucket.code));
-  const enabledBuckets = enabledCodes.map((code) => SELL_BUCKET_BY_CODE.get(code));
-  const visibleBuckets = [...enabledBuckets, ...disabledBuckets].filter((bucket) =>
-    portfolioHasBucket(portfolio, bucket.name)
-  );
-  if (visibleBuckets.length === 0) return null;
+  const visible = [
+    ...enabledSymbols.map((symbol) => bySymbol.get(symbol)),
+    ...sellable.filter((position) => !seen.has(position.symbol)),
+  ];
+  if (visible.length === 0) return null;
 
-  const setEnabled = (bucketCode, enabled) => {
-    const next = enabledCodes.filter((code) => code !== bucketCode);
-    if (enabled) next.push(bucketCode);
-    onChange(next.join(""));
+  const emit = (symbols) => onChange(symbols.join(SELL_ORDER_SEPARATOR));
+  const setEnabled = (symbol, enabled) => {
+    const next = enabledSymbols.filter((candidate) => candidate !== symbol);
+    if (enabled) next.push(symbol);
+    emit(next);
   };
-  const moveUp = (bucketCode) => {
-    const idx = enabledCodes.indexOf(bucketCode);
-    if (idx <= 0) return;
-    const next = enabledCodes.slice();
-    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-    onChange(next.join(""));
-  };
-  const moveDown = (bucketCode) => {
-    const idx = enabledCodes.indexOf(bucketCode);
-    if (idx < 0 || idx >= enabledCodes.length - 1) return;
-    const next = enabledCodes.slice();
-    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-    onChange(next.join(""));
+  const swap = (symbol, delta) => {
+    const idx = enabledSymbols.indexOf(symbol);
+    const target = idx + delta;
+    if (idx < 0 || target < 0 || target >= enabledSymbols.length) return;
+    const next = enabledSymbols.slice();
+    [next[idx], next[target]] = [next[target], next[idx]];
+    emit(next);
   };
 
-  const firstDisabledCode = visibleBuckets.find((bucket) => enabledCodes.indexOf(bucket.code) < 0)?.code ?? null;
+  const firstDisabledSymbol = visible.find((position) => !seen.has(position.symbol))?.symbol ?? null;
   return (
     <div className={compact ? "" : "mt-3"}>
       {label && <div className="augur-field-label mb-2">{label}</div>}
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
-        {visibleBuckets.map((bucket) => {
-          const enabledIdx = enabledCodes.indexOf(bucket.code);
+        {visible.map((position) => {
+          const label = position.label || position.symbol;
+          const enabledIdx = enabledSymbols.indexOf(position.symbol);
           const isEnabled = enabledIdx >= 0;
           const canMoveUp = isEnabled && enabledIdx > 0;
-          const canMoveDown = isEnabled && enabledIdx < enabledCodes.length - 1;
+          const canMoveDown = isEnabled && enabledIdx < enabledSymbols.length - 1;
           // Visual separator between "in order" and "shelved" groups.
-          const shelfBoundary = bucket.code === firstDisabledCode && enabledCodes.length > 0;
+          const shelfBoundary = position.symbol === firstDisabledSymbol && enabledSymbols.length > 0;
           return (
             <li
-              key={bucket.code}
+              key={position.symbol}
               className={`flex items-center gap-2 px-2 py-1 ${isEnabled ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"} ${
                 shelfBoundary ? "border-t-2 border-t-slate-300 dark:border-t-slate-600" : ""
               }`}
@@ -299,31 +298,31 @@ export function SellOrderControl({
               <span className="w-6 text-right text-sm font-semibold augur-tabular augur-muted">
                 {isEnabled ? `${enabledIdx + 1}.` : ""}
               </span>
-              <span className="flex-1 text-sm font-semibold augur-strong">{bucket.label}</span>
+              <span className="flex-1 text-sm font-semibold augur-strong">{label}</span>
               {isEnabled ? (
                 <>
                   <button
                     type="button"
-                    aria-label={`Move ${bucket.label} up`}
+                    aria-label={`Move ${label} up`}
                     disabled={!canMoveUp}
-                    onClick={() => moveUp(bucket.code)}
+                    onClick={() => swap(position.symbol, -1)}
                     className="px-1 text-xs augur-muted disabled:opacity-30"
                   >
                     ▲
                   </button>
                   <button
                     type="button"
-                    aria-label={`Move ${bucket.label} down`}
+                    aria-label={`Move ${label} down`}
                     disabled={!canMoveDown}
-                    onClick={() => moveDown(bucket.code)}
+                    onClick={() => swap(position.symbol, 1)}
                     className="px-1 text-xs augur-muted disabled:opacity-30"
                   >
                     ▼
                   </button>
                   <button
                     type="button"
-                    aria-label={`Remove ${bucket.label} from sell order`}
-                    onClick={() => setEnabled(bucket.code, false)}
+                    aria-label={`Remove ${label} from sell order`}
+                    onClick={() => setEnabled(position.symbol, false)}
                     className="ml-1 rounded px-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/30"
                   >
                     ×
@@ -332,8 +331,8 @@ export function SellOrderControl({
               ) : (
                 <button
                   type="button"
-                  aria-label={`Add ${bucket.label} to sell order`}
-                  onClick={() => setEnabled(bucket.code, true)}
+                  aria-label={`Add ${label} to sell order`}
+                  onClick={() => setEnabled(position.symbol, true)}
                   className="rounded px-1.5 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
                 >
                   +

@@ -1,17 +1,11 @@
 import { clampInteger } from "./lib/format";
 
-// Sell-order is stored as a string of single-char bucket codes, in priority order. "pc" means
-// "sell public securities first, then crypto if needed"; "c" means crypto only; "" disables auto
-// liquidity sales entirely. The translation to the wire's `sell_order` tuple happens at scenario
-// emission time. Storing it as a string (rather than an array) keeps default-comparison and URL
-// encoding trivial.
-export const SELL_BUCKETS = [
-  { name: "stocks", code: "s", label: "Stocks" },
-  { name: "crypto", code: "c", label: "Crypto" },
-];
-export const SELL_BUCKET_BY_CODE = new Map(SELL_BUCKETS.map((bucket) => [bucket.code, bucket]));
-export const SELL_BUCKET_BY_NAME = new Map(SELL_BUCKETS.map((bucket) => [bucket.name, bucket]));
-export const DEFAULT_SELL_ORDER_CODES = SELL_BUCKETS.map((bucket) => bucket.code).join("");
+// Sell-order is stored as a comma-joined list of security symbols, in priority order.
+// "VOO,BTC" means "sell VOO first, then BTC if needed"; "" disables auto liquidity sales
+// entirely; `null` (the default) means "any sellable holding". Storing it as a string rather
+// than an array keeps default-comparison and URL encoding trivial. The wire takes the same
+// symbols — there is no bucket vocabulary in between.
+export const SELL_ORDER_SEPARATOR = ",";
 
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
@@ -23,7 +17,7 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
-  sellOrder: DEFAULT_SELL_ORDER_CODES,
+  sellOrder: null,
   cashBufferTriggerBelowUsd: 4000,
   cashBufferSaleUsd: 10000,
   cashBufferIndexToInflation: true,
@@ -276,19 +270,23 @@ export function buildLifecycleEvents(events) {
     });
 }
 
-export function sellOrderBuckets(sellOrderCodes) {
-  const codes = String(sellOrderCodes ?? "");
-  const buckets = [];
-  for (const code of codes) {
-    const bucket = SELL_BUCKET_BY_CODE.get(code);
-    if (bucket && !buckets.includes(bucket.name)) buckets.push(bucket.name);
-  }
-  return buckets;
+export function splitSellOrder(sellOrder) {
+  return String(sellOrder ?? "")
+    .split(SELL_ORDER_SEPARATOR)
+    .map((symbol) => symbol.trim())
+    .filter(Boolean);
+}
+
+// `null` stays `null` on the wire (meaning "any sellable holding"); anything else becomes the
+// deduplicated symbol list, with "" collapsing to [] (auto-sale off).
+export function sellOrderSymbols(sellOrder) {
+  if (sellOrder == null) return null;
+  return [...new Set(splitSellOrder(sellOrder))];
 }
 
 export function productScenario(input, bootstrap, modelId, horizonMonths) {
-  const sellOrder = sellOrderBuckets(input.sellOrder);
-  const autoSellEnabled = sellOrder.length > 0;
+  const sellOrder = sellOrderSymbols(input.sellOrder);
+  const autoSellEnabled = sellOrder == null || sellOrder.length > 0;
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {

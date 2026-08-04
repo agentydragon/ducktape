@@ -7,10 +7,10 @@ from typing import Annotated, Literal
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from finance.augur.api.schemas import ApiModel, Frame, Percentage
+from finance.augur.model.series import SecuritySymbol
 from finance.augur.product.asset_key import AssetKey
 
 SpendIndex = Literal["none", "inflation"]
-SellableBucket = Literal["stocks", "crypto"]
 PrivateEquityEventKind = Literal[
     "tender",
     "admin_mark_update",
@@ -36,7 +36,6 @@ MetricName = Literal[
     "shortfall_usd",
 ]
 MAX_HORIZON_MONTHS = 100 * 12
-DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("stocks", "crypto")
 
 
 class FundingPolicy(ApiModel):
@@ -46,7 +45,14 @@ class FundingPolicy(ApiModel):
     # when true, the trigger + sale amounts are interpreted as today-dollar real-terms targets and
     # inflated by CPI each month. When false, they stay nominal.
     cash_buffer_index_to_inflation: bool = True
-    sell_order: tuple[SellableBucket, ...] = DEFAULT_SELL_ORDER
+    sell_order: tuple[SecuritySymbol, ...] | None = Field(
+        default=None,
+        description=(
+            "Symbols to auto-sell from, highest priority first. `None` means every sellable "
+            "holding in portfolio order; `[]` disables auto-sale entirely. Private equity can "
+            "never appear here — it has no symbol, and is sold only at tender events."
+        ),
+    )
 
 
 class PrivateEquityTenderPolicyWire(ApiModel):
