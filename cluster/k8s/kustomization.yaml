@@ -120,7 +120,6 @@ resources:
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
   - agents/openclaw/gateway-secrets/flux-kustomization.yaml
   - agents/openclaw/sandbox/flux-kustomization.yaml
-  - agents/openclaw/sandbox-secrets/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml
   - agents/mitmproxy/flux-kustomization.yaml
   - agents/haku-egress-proxy-namespace/flux-kustomization.yaml

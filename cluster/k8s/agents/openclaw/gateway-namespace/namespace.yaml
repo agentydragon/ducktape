@@ -1,7 +1,7 @@
 # CLEANUP(added 2026-07-31): delete this whole directory once
 #   `openclaw-anthropic-api-key`, `openclaw-openai-api-key`,
-#   `openclaw-telegram-bot-token` and `ibkr-flex-query-credentials` no longer
-#   live in an `openclaw-*` namespace — either re-homed under
+#   `openclaw-telegram-bot-token` no longer live in an `openclaw-*`
+#   namespace — either re-homed under
 #   `agents/shared-secrets/` or revoked upstream. Nothing else here survives the
 #   2026-07-31 teardown; this namespace exists only because the SOPS documents
 #   pin it. See ../README.md.
