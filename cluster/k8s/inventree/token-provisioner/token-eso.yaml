@@ -10,6 +10,8 @@ kind: ClusterSecretStore
 metadata:
   name: kubernetes-inventree-secret-store
 spec:
+  conditions:
+    - namespaces: [claude-sandbox]
   provider:
     kubernetes:
       server:
