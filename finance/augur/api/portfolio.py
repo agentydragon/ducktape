@@ -15,7 +15,7 @@ from functools import cached_property
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, model_validator
 
-from finance.augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
+from finance.augur.model.series import IssuerId, LevelSeriesKey
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.sim.scenario import InitialLot
 
@@ -152,12 +152,13 @@ class PortfolioConfig(PortfolioConfigModel):
         for position in self.holdings:
             unit_value = float(position.unit_value_usd)
             asset_key = position.value_series
+            # `value_series` already IS the asset-price key for a tradable holding — the whole
+            # point of `AssetKey` being an inclusion. Rebuilding one would silently drop any
+            # field a key later grows.
             if isinstance(asset_key, PrivateEquityAssetKey):
                 private_equity_anchors[asset_key.issuer_id] = unit_value
-            elif isinstance(asset_key, SP500Key):
-                level_series_anchors[SP500Key()] = unit_value
-            elif isinstance(asset_key, CryptoKey):
-                level_series_anchors[CryptoKey(symbol=asset_key.symbol)] = unit_value
+            else:
+                level_series_anchors[asset_key] = unit_value
         return PortfolioLevelAnchors(
             level_series_anchors=level_series_anchors, private_equity_anchors=private_equity_anchors
         )
