@@ -199,6 +199,7 @@ class _TracedConfig(NamedTuple):
     field is a swept numeric value (not baked structure), so sweeping it reuses the compiled program."""
 
     link_standard_deduction: jnp.ndarray
+    link_income_mask: jnp.ndarray
     link_ordinary_upper: jnp.ndarray
     link_ordinary_rate: jnp.ndarray
     link_ltcg_upper: jnp.ndarray
@@ -241,6 +242,7 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     """Build the traced-config bundle of swept numeric values from the (concrete) plan."""
     return _TracedConfig(
         link_standard_deduction=jnp.asarray(plan.tax.link_standard_deduction),
+        link_income_mask=jnp.asarray(plan.tax.link_income_mask),
         link_ordinary_upper=jnp.asarray(plan.tax.link_ordinary_upper),
         link_ordinary_rate=jnp.asarray(plan.tax.link_ordinary_rate),
         link_ltcg_upper=jnp.asarray(plan.tax.link_ltcg_upper),
@@ -518,7 +520,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     r = p.rollout_count
     horizon = plan.horizon_months
     cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
-    ordinary0 = _zeros_i64((p.tax_profile_count, r))
+    # One row per (profile, income source) — see `TaxCompileOutput.income_bucket`.
+    ordinary0 = _zeros_i64((p.income_bucket_count, r))
     property_tax_ytd0 = _zeros_i64((p.tax_profile_count, r))
     lot0 = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
     cg_active0 = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
@@ -2930,7 +2933,10 @@ def _compute_tax_for_link(
     link = static.link
     profile = static.profile
     gain_profile = static.gain_profile
-    ordinary = ordinary_ytd[profile]
+    # Sum only the income buckets THIS jurisdiction includes. The mask is compiled from the
+    # jurisdiction's own exemption rules, so a Treasury coupon reaches the federal link and not
+    # the California one without either link knowing what a Treasury is.
+    ordinary = _round_int64(tcfg.link_income_mask[link] @ ordinary_ytd)
     ltcg = capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM]
     stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
     recapture = recapture_section_1250_ytd[profile]

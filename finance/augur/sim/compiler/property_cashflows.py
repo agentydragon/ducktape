@@ -18,11 +18,14 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
+    ORDINARY_INCOME_SOURCE,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
+    income_source_id,
     slot,
 )
+from finance.augur.sim.compiler.tax import TaxCompileOutput
 from finance.augur.sim.scenario import RecurringPropertyCashflow, Scenario, ScheduledPropertyCashflow
 
 type PropertyCashflowLike = ScheduledPropertyCashflow | RecurringPropertyCashflow
@@ -57,6 +60,7 @@ def compile_property_cashflows(
     profile_index_by_agent: dict[str, int],
     series_index_by_id: dict[LevelSeriesKey, int],
     property_slot_by_id: dict[str, int],
+    tax: TaxCompileOutput,
 ) -> PropertyCashflowCompileOutput:
     by_month: list[list[PropertyCashflowLike]] = []
     max_slots = 0
@@ -104,9 +108,20 @@ def compile_property_cashflows(
                     f"{cashflow.property_id!r}; known: {known or '<none>'}"
                 ) from exc
             if cashflow.income_category is not None:
-                income_profile[month, idx] = profile_index_by_agent.get(cashflow.to_agent_id, NO_CODE)
+                # See compile_transfers: the row is a (profile, source) bucket, not a profile.
+                profile_index = profile_index_by_agent.get(cashflow.to_agent_id, NO_CODE)
+                income_profile[month, idx] = (
+                    NO_CODE
+                    if profile_index == NO_CODE
+                    else tax.income_bucket(profile_index, income_source_id(cashflow.income_category))
+                )
             if cashflow.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
-                deduction_profile[month, idx] = profile_index_by_agent.get(cashflow.from_agent_id, NO_CODE)
+                deduction_index = profile_index_by_agent.get(cashflow.from_agent_id, NO_CODE)
+                deduction_profile[month, idx] = (
+                    NO_CODE
+                    if deduction_index == NO_CODE
+                    else tax.income_bucket(deduction_index, ORDINARY_INCOME_SOURCE)
+                )
             kind, fixed, base, series, base_month, period = amount_arrays_cents(cashflow.amount_usd, series_index_by_id)
             amount_kind[month, idx] = kind
             amount_fixed[month, idx] = fixed

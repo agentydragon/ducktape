@@ -72,6 +72,9 @@ class SlotPlan:
     cash_count: int
     lot_count: int
     tax_profile_count: int
+    # Rows of the YTD income tensor: one per (profile, income source), so a jurisdiction can
+    # include a wage dollar and exclude a muni coupon for the same agent.
+    income_bucket_count: int
     capital_gain_agent_count: int
     tax_link_count: int
     tax_liability_count: int
@@ -225,10 +228,10 @@ def compile_simulation(
         p.property_id: i for i, p in enumerate(scenario.scheduled_property_purchases)
     }
     transfers = compile_transfer_slots(
-        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id
+        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, tax
     )
     property_cashflows = compile_property_cashflows(
-        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, property_slot_by_id
+        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, property_slot_by_id, tax
     )
     property_rented_fraction = np.array(
         [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
@@ -358,6 +361,7 @@ def compile_simulation(
         cash_count=len(cash_initial_balance),
         lot_count=len(lot_id_codes),
         tax_profile_count=tax.profile_agent.shape[0],
+        income_bucket_count=tax.income_bucket_count,
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
         tax_link_count=max(1, tax.link_profile.shape[0]),
         tax_liability_count=tax_liabilities.profile_index.shape[0],
