@@ -145,6 +145,24 @@ py_test(
     ],
 )
 
+py_library(
+    name = "bonds",
+    srcs = ["bonds.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_test(
+    name = "bonds_test",
+    srcs = ["bonds_test.py"],
+    deps = [
+        ":bonds",
+        ":scenario",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "income_buckets_test",
     srcs = ["compiler/income_buckets_test.py"],
