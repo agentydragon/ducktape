@@ -15,6 +15,7 @@ def _bond(**overrides: object) -> BondHolding:
         {
             "bond_id": "t10",
             "agent_id": "alice",
+            "account_id": "checking",
             "issuer_jurisdiction_id": "federal_us",
             "face_value_usd": 100_000.0,
             "purchase_price_usd": 100_000.0,
@@ -25,6 +26,9 @@ def _bond(**overrides: object) -> BondHolding:
             **overrides,
         }
     )
+
+
+_FACE_CENTS = 10_000_000  # $100,000.00
 
 
 def test_coupons_run_from_first_period_to_maturity_inclusive() -> None:
@@ -41,11 +45,21 @@ def test_coupon_schedule_survives_a_purchase_before_the_horizon() -> None:
 
 
 def test_coupon_is_the_periodic_fraction_of_the_annual_rate() -> None:
-    semiannual = coupon_amount_cents(face_value_usd=100_000.0, annual_coupon_rate=0.04, coupon_period_months=6)
-    quarterly = coupon_amount_cents(face_value_usd=100_000.0, annual_coupon_rate=0.04, coupon_period_months=3)
+    semiannual = coupon_amount_cents(face_cents=_FACE_CENTS, annual_coupon_rate=0.04, coupon_period_months=6)
+    quarterly = coupon_amount_cents(face_cents=_FACE_CENTS, annual_coupon_rate=0.04, coupon_period_months=3)
 
     assert semiannual == 200_000  # $2,000.00
     assert quarterly == 100_000  # $1,000.00
+
+
+def test_coupon_arithmetic_is_exact_at_a_scale_that_breaks_float64() -> None:
+    """Above 2^53 cents a float64 cannot represent every cent, so a coupon routed through
+    one would land on a neighbouring value. Fractions are integer pairs, so this is exact.
+    """
+
+    face_cents = 1_000_000_000_000_000_001  # ~$10 quadrillion, and odd
+
+    assert coupon_amount_cents(face_cents=face_cents, annual_coupon_rate=1.0, coupon_period_months=12) == face_cents
 
 
 @pytest.mark.parametrize(("coupon_period_months", "periods_per_year"), [(1, 12), (3, 4), (6, 2), (12, 1)])
@@ -62,14 +76,14 @@ def test_a_years_coupons_land_within_rounding_of_the_annual_rate(
     """
 
     coupon = coupon_amount_cents(
-        face_value_usd=250_000.0, annual_coupon_rate=0.037, coupon_period_months=coupon_period_months
+        face_cents=25_000_000, annual_coupon_rate=0.037, coupon_period_months=coupon_period_months
     )
 
     assert abs(coupon * periods_per_year - 925_000) * 2 <= periods_per_year
 
 
 def test_zero_coupon_pays_nothing_until_maturity() -> None:
-    assert coupon_amount_cents(face_value_usd=100_000.0, annual_coupon_rate=0.0, coupon_period_months=6) == 0
+    assert coupon_amount_cents(face_cents=_FACE_CENTS, annual_coupon_rate=0.0, coupon_period_months=6) == 0
 
 
 def test_the_bond_is_off_the_books_by_the_end_of_its_maturity_month() -> None:

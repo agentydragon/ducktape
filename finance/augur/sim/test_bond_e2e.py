@@ -12,6 +12,7 @@ from __future__ import annotations
 from itertools import pairwise
 
 import polars as pl
+import pytest
 import pytest_bazel
 
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
@@ -35,6 +36,7 @@ def _scenario(*, issuer: str | None, maturity_month_index: int = 120, taxed: boo
             BondHolding(
                 bond_id="ladder_rung",
                 agent_id="alice",
+                account_id="checking",
                 issuer_jurisdiction_id=issuer,
                 face_value_usd=_FACE_USD,
                 purchase_price_usd=_FACE_USD,
@@ -130,6 +132,22 @@ def test_coupon_accrues_as_interest_not_ordinary_income() -> None:
 
     assert december.get_column("income_source").to_list() == ["interest:federal_us"]
     assert december.get_column("ordinary_income_usd").to_list() == [_COUPON_USD]
+
+
+def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
+    """The failure this replaces was silent: an unresolvable account scatters the coupon into
+    the engine's dump row, so the run completes cleanly and the money is simply gone."""
+
+    scenario = _scenario(issuer="federal_us").model_copy(
+        update={
+            "initial_bonds": [
+                _scenario(issuer="federal_us").initial_bonds[0].model_copy(update={"account_id": "brokerage"})
+            ]
+        }
+    )
+
+    with pytest.raises(ValueError, match="silently discarded"):
+        simulate(scenario, rollout_count=1, locations={})
 
 
 def test_redemption_returns_the_face_as_cash_without_being_income() -> None:

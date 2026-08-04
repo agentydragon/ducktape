@@ -72,6 +72,30 @@ def slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account
     return account_slot_by_key.get((agent_id, account_id), NO_CODE)
 
 
+def require_slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str, *, owner: str) -> int:
+    """`slot`, but for cashflows that MUST land somewhere real.
+
+    `slot` resolves an unknown (agent, account) to `NO_CODE`, which is right for transfers:
+    paying an unmodeled employer or tax authority legitimately leaves the modeled world, and
+    the engine's scatter sends those to a dump row on purpose.
+
+    A position held BY a modeled agent is not that case. `NO_CODE` there means the position's
+    own cashflows are scattered into the dump row and silently disappear — the simulation runs
+    clean and the money is simply gone. A typo'd account must be rejected at compile time
+    instead.
+    """
+
+    resolved = account_slot_by_key.get((agent_id, account_id))
+    if resolved is None:
+        known = ", ".join(sorted(f"{agent}/{account}" for agent, account in account_slot_by_key)) or "<none>"
+        raise ValueError(
+            f"{owner} pays into account {account_id!r} of agent {agent_id!r}, which has no cash "
+            f"account in this scenario, so its cashflows would be silently discarded. "
+            f"Known (agent/account) pairs: {known}"
+        )
+    return resolved
+
+
 def amount_arrays(
     amount: Any, series_index_by_id: dict[LevelSeriesKey, int]
 ) -> tuple[int, float, float, int, int, int]:

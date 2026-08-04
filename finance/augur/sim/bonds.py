@@ -27,9 +27,7 @@ rejects it. When phase 2 adds marking, it adds *discount factors*, which are pos
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal
-
-import numpy as np
+from fractions import Fraction
 
 MONTHS_PER_YEAR = 12
 
@@ -44,16 +42,26 @@ def coupon_months(*, purchase_month_index: int, maturity_month_index: int, coupo
     return list(range(purchase_month_index + coupon_period_months, maturity_month_index + 1, coupon_period_months))
 
 
-def coupon_amount_cents(*, face_value_usd: float, annual_coupon_rate: float, coupon_period_months: int) -> np.int64:
-    """One period's coupon, in cents.
+def coupon_amount_cents(*, face_cents: int, annual_coupon_rate: float, coupon_period_months: int) -> int:
+    """One period's coupon, in cents, from a face ALREADY in cents.
 
-    Rounded once, here, rather than accrued as a float and rounded at each payment: every
-    coupon on a given bond is the identical integer, so a 30-year ladder cannot drift.
+    Takes cents rather than dollars so the dollars→cents conversion happens once, at the
+    compile boundary, and the same integer face drives both the coupon and the redemption.
+    Taking dollars here meant converting the same face twice by two different routes, which
+    is exactly the kind of duplication that agrees until one side changes.
+
+    The arithmetic is exact: `Fraction` is a pair of integers, and a rate written as a
+    decimal literal converts to one without going through binary floating point. So the
+    only rounding is the single deliberate one at the end.
+
+    Rounded once, here, rather than accrued and rounded at each payment: every coupon on a
+    given bond is the identical integer, so a 30-year ladder cannot drift.
     """
 
-    annual = Decimal(str(face_value_usd)) * Decimal(str(annual_coupon_rate))
-    period = annual * Decimal(coupon_period_months) / Decimal(MONTHS_PER_YEAR)
-    return np.int64((period * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    exact = Fraction(face_cents) * Fraction(str(annual_coupon_rate)) * Fraction(coupon_period_months, MONTHS_PER_YEAR)
+    # Half-up on a non-negative rational, in integers: coupon rates and face are both
+    # non-negative, so there is no half-away-from-zero case to worry about.
+    return (2 * exact.numerator + exact.denominator) // (2 * exact.denominator)
 
 
 def is_on_books(*, month_index: int, purchase_month_index: int, maturity_month_index: int) -> bool:

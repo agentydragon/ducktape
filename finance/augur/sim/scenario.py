@@ -335,7 +335,10 @@ class BondHolding(BaseModel):
 
     bond_id: str
     agent_id: str
-    account_id: str = "checking"
+    # No default: which account the coupons land in is a real decision, and a bond pointing
+    # at an account that does not exist resolves to no slot at all — the coupon would be
+    # scattered into the dump row and vanish silently rather than raise.
+    account_id: str
     # The taxing authority that issued the debt — `federal_us` for a Treasury, `california`
     # for a CA muni, `None` for a corporate issuer. Whether any given holder owes tax on the
     # coupon is a relation between this issuer and that holder's jurisdictions, never a

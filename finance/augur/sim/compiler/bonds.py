@@ -21,7 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.bonds import coupon_amount_cents, coupon_months, is_on_books
-from finance.augur.sim.compiler.helpers import NO_CODE, StringTable, slot
+from finance.augur.sim.compiler.helpers import NO_CODE, StringTable, require_slot
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.scenario import BondHolding, InterestIncome, Scenario
@@ -66,9 +66,13 @@ def compile_bonds(
     redemption = np.zeros((horizon, len(bonds)), dtype=np.int64)
     on_books = np.zeros((horizon + 1, len(bonds)), dtype=np.int64)
 
+    # The one dollars→cents conversion for each bond. Everything downstream — coupon,
+    # redemption, the balance-sheet face — is integer cents derived from this.
+    face_cents = [int(usd_to_cents(bond.face_value_usd)) for bond in bonds]
+
     for index, bond in enumerate(bonds):
         amount = coupon_amount_cents(
-            face_value_usd=bond.face_value_usd,
+            face_cents=face_cents[index],
             annual_coupon_rate=bond.annual_coupon_rate,
             coupon_period_months=bond.coupon_period_months,
         )
@@ -82,7 +86,7 @@ def compile_bonds(
             if 0 <= month < horizon:
                 coupon[month, index] = amount
         if 0 <= bond.maturity_month_index < horizon:
-            redemption[bond.maturity_month_index, index] = usd_to_cents(bond.face_value_usd)
+            redemption[bond.maturity_month_index, index] = face_cents[index]
         for month in range(horizon + 1):
             on_books[month, index] = is_on_books(
                 month_index=month,
@@ -94,9 +98,13 @@ def compile_bonds(
         bond_id=np.asarray([strings.require(bond.bond_id) for bond in bonds], dtype=np.int64),
         agent=np.asarray([strings.require(bond.agent_id) for bond in bonds], dtype=np.int64),
         to_slot=np.asarray(
-            [slot(account_slot_by_key, bond.agent_id, bond.account_id) for bond in bonds], dtype=np.int64
+            [
+                require_slot(account_slot_by_key, bond.agent_id, bond.account_id, owner=f"bond {bond.bond_id!r}")
+                for bond in bonds
+            ],
+            dtype=np.int64,
         ),
-        face=np.asarray([usd_to_cents(bond.face_value_usd) for bond in bonds], dtype=np.int64),
+        face=np.asarray(face_cents, dtype=np.int64),
         income_row=np.asarray([_income_row(bond, profile_index_by_agent, buckets) for bond in bonds], dtype=np.int64),
         coupon=coupon,
         redemption=redemption,

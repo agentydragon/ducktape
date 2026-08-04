@@ -148,7 +148,6 @@ py_test(
 py_library(
     name = "bonds",
     srcs = ["bonds.py"],
-    deps = ["@pypi//numpy"],
 )
 
 py_test(
