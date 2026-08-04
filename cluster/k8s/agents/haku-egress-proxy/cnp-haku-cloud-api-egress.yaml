@@ -48,6 +48,16 @@ spec:
         # own host. (A 403 here is a token-scope gap, not this allowlist — but
         # the host must still be reachable once the scope is granted.)
         - matchName: tasks.googleapis.com
+        # NOTE: the two *.allegedly.works entries below record intent, not
+        # enforcement. Both names resolve to the hostNetwork Gateway node IPs,
+        # which carry reserved:remote-node / reserved:host, and toFQDNs cannot
+        # select those (see cluster/docs/cilium_network_policy.md). What actually
+        # admits them is the `toEntities: cluster` rule at the bottom of this
+        # file, which admits every in-cluster and node-IP service equally.
+        # Deleting these two lines would change nothing about what this proxy
+        # reaches; they are kept because the DNS rule above IS able to fence
+        # them, and that is where the pair becomes load-bearing.
+        #
         # Claude Agent SDK smoke/runtime telemetry. The sandbox CLI subprocess
         # removes *.allegedly.works from its inherited NO_PROXY so this public
         # Authentik-gated endpoint stays behind the forced proxy.
@@ -155,6 +165,14 @@ spec:
     # mitmproxy in-path even when targeting cluster endpoints; NO_PROXY in the
     # inject policy still permits explicit bypass for Service FQDNs that already
     # match (`*.svc.cluster.local` and `10.0.0.0/8`).
+    #
+    # This is the widest rule in the file and it is deliberate: `cluster` expands
+    # to include remote-node and host, so it admits not just pod-to-pod traffic
+    # but every service published on a node IP — i.e. all of *.allegedly.works,
+    # named or not. In-cluster services are expected to authenticate their own
+    # callers (bearer, mTLS, SSO), so reachability is not the boundary there.
+    # Consequence for reading this file: the toFQDNs blocks above bound what the
+    # proxy reaches on the public internet, and nothing more.
     - toEntities:
         - cluster
       toPorts:

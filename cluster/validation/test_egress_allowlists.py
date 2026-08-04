@@ -25,6 +25,27 @@ accounts (`OPERATOR_DATA`). Everything else is one or two named hosts.
 `toFQDNs` entries only. The `matchPattern: "*"` under `toPorts.rules.dns` is a
 DNS *query* filter, not an egress allowlist.
 
+What a pinned host set does and does not mean
+---------------------------------------------
+
+These sets bound each proxy's reach **on the public internet**, and nothing
+else. Two carve-outs are deliberate and neither is visible from the host lists
+alone:
+
+- *In-cluster traffic is not fenced.* The mitmproxy fences carry a
+  `toEntities: [cluster]` rule, and `cluster` expands to include `remote-node`
+  and `host` — so they admit every in-cluster Service and every service
+  published on a node IP, which is all of `*.allegedly.works`. That is the
+  intended posture: in-cluster services authenticate their own callers, so
+  reachability is not where that boundary is drawn.
+- *A `*.allegedly.works` entry in a `toFQDNs` block enforces nothing.* Those
+  names resolve to the hostNetwork Gateway node IPs, and `toFQDNs` cannot select
+  node identities (`cluster/docs/cilium_network_policy.md`). The three such
+  entries pinned below (`alloy-otlp`, `haku-mailbox`, `docker-ci`) record intent;
+  the first two are admitted by the `toEntities` rule instead, and the third
+  appears to be a dead rule. They stay pinned because the DNS layer *can* fence
+  them, so the recorded intent is what a DNS allowlist would be built from.
+
 Known gaps
 ----------
 

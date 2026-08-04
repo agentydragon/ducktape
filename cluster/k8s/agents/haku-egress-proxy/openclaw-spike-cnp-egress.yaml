@@ -22,6 +22,13 @@ spec:
     # Public HTTPS is still application-layer allowlisted by iron-proxy. Include
     # remote-node/host because allegedly.works is served from node ExternalIPs,
     # which Cilium does not classify as world.
+    #
+    # This is the whole L3/L4 story for this proxy: it may open 443 to anything.
+    # Confinement lives entirely in openclaw-spike-iron.yaml's `allowlist`
+    # transform, so this fence is single-layer. A toFQDNs list here would add a
+    # second layer for true-world hosts but could not express
+    # haku.allegedly.works (node identity, see cluster/docs/cilium_network_policy.md),
+    # which is why the rule is written this way rather than as an allowlist.
     - toEntities:
         - world
         - remote-node

@@ -120,6 +120,23 @@ cluster-wide, so CIDR-derived selectors do not match node IPs at all — a
 `toFQDNs: matchName: <something>.allegedly.works` rule looks correct, validates,
 and still drops.
 
+### Consequence: an FQDN allowlist cannot fence our own public services
+
+An egress allowlist built from `toFQDNs` is a fence over the real internet only.
+Every `*.allegedly.works` name is outside what it can express, so such a name
+appearing in a `toFQDNs` block **grants nothing** — either a `toEntities` rule
+elsewhere in the same policy is what actually permits it, or it does not work at
+all. Both cases are live today; see the annotations on
+<../k8s/agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml> and
+<../k8s/agents/mitmproxy/cnp-cloud-api-egress.yaml>.
+
+The layer that _can_ fence these names is the DNS rule under
+`toPorts.rules.dns`: the DNS proxy matches on the **query name** the pod sends,
+before any identity is involved, so `matchName: haku-mailbox.allegedly.works`
+there means exactly what it says. It bounds resolution rather than connection —
+a pod that already holds the IP is unaffected — but for a proxy that resolves
+what its clients ask for, that is the enforcement point.
+
 ### Debugging: check the destination's identity
 
 `cilium-dbg ip get <ip>/32` (note: CIDR form, a bare IP is rejected) prints the
