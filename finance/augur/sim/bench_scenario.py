@@ -3,7 +3,7 @@ exercises every layer the spike adds.
 
 Alice, a single-filer SF resident, has:
   - W-2 paychecks totaling $200k/year (recurring transfer with
-    `income_category="ordinary"`).
+    `income_category=ORDINARY_INCOME`).
   - Initial holdings in three positions: VTI, QQQ, BTC. Each is
     a pre-horizon lot at a configurable basis.
   - A liquidity policy: required obligations sell assets as needed;
@@ -29,6 +29,7 @@ from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     FilingStatus,
     InitialAccountBalance,
@@ -94,7 +95,7 @@ def build_bench_scenario(
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=annual_wages_usd / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             ),
             RecurringTransfer(
                 start_month=0,

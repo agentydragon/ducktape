@@ -8,6 +8,7 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.sim.locations import Location
 from finance.augur.sim.projections import project_simulation_run
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     FilingStatus,
     InitialAccountBalance,
@@ -169,7 +170,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=50_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         scheduled_asset_sales=[

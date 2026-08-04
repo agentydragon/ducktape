@@ -24,6 +24,7 @@ from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     CapitalImprovementEvent,
     FilingStatus,
@@ -177,7 +178,7 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=2_000.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         scheduled_property_purchases=[

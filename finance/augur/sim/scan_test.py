@@ -15,6 +15,7 @@ from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment_usd
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     FilingStatus,
     InitialAccountBalance,
@@ -398,7 +399,7 @@ def test_year_end_tax_scan() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=120_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         tax_profiles=[

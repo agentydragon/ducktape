@@ -12,7 +12,6 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
-    ORDINARY_INCOME_CATEGORY,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
@@ -88,7 +87,7 @@ def compile_transfer_slots(
             to_agent[month, idx] = strings.require(transfer.to_agent_id)
             to_account[month, idx] = strings.require(transfer.to_account_id)
             to_slot[month, idx] = slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
-            if transfer.income_category == ORDINARY_INCOME_CATEGORY:
+            if transfer.income_category is not None:
                 income_profile[month, idx] = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
             if transfer.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
                 deduction_profile[month, idx] = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)

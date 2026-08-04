@@ -27,6 +27,7 @@ from finance.augur.product.wire import (
 from finance.augur.sim.locations import Location
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     CapitalImprovementEvent,
     FilingStatus,
@@ -542,7 +543,7 @@ def _wire_landlord_rental(
                 ),
                 # Rental income is ordinary income (taxed at owner's marginal bracket).
                 # §469 passive-loss limitation is explicitly deferred per the plan.
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         )
 

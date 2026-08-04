@@ -34,6 +34,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import cents_to_usd, usd_to_cents
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
@@ -450,10 +451,12 @@ def test_transfer_income_category_allows_only_ordinary() -> None:
         "income_category": "gift",
     }
 
-    with pytest.raises(ValidationError, match=r"Input should be 'ordinary'"):
-        ScheduledTransfer.model_validate(scheduled_data)
-    with pytest.raises(ValidationError, match=r"Input should be 'ordinary'"):
-        RecurringTransfer.model_validate(recurring_data)
+    # Asserts the FIELD is rejected, not pydantic's prose for why: the message moved when
+    # `income_category` became a typed union, while the behaviour under test did not.
+    for model, data in ((ScheduledTransfer, scheduled_data), (RecurringTransfer, recurring_data)):
+        with pytest.raises(ValidationError) as rejected:
+            model.model_validate(data)
+        assert [error["loc"] for error in rejected.value.errors()] == [("income_category",)]
 
 
 def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
@@ -1763,7 +1766,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=200_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         tax_profiles=[
@@ -1856,7 +1859,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=50_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         scheduled_asset_sales=[
@@ -1940,7 +1943,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=50_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         scheduled_asset_sales=[
@@ -2049,7 +2052,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=50_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         scheduled_asset_sales=[
@@ -2140,7 +2143,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=50_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             ),
             RecurringTransfer(
                 start_month=0,
@@ -2232,7 +2235,7 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=5_000.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         tax_profiles=[],
@@ -2266,7 +2269,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=200_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         tax_profiles=[
@@ -2338,7 +2341,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=500_000.0 / 12.0,  # big tax bill
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             ),
             RecurringTransfer(
                 start_month=0,
@@ -3399,7 +3402,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=10_000.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
@@ -3462,7 +3465,7 @@ def _mid_scenario(
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=annual_w2_income_usd / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         scheduled_property_purchases=[

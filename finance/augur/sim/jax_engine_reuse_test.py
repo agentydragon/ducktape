@@ -26,6 +26,7 @@ from finance.augur.sim.external_series import materialize_external_series
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     FilingStatus,
     InitialAccountBalance,
@@ -65,7 +66,7 @@ def _tax_scenario() -> Scenario:
                 to_agent_id="alice",
                 to_account_id="checking",
                 amount_usd=120_000.0 / 12.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ],
         tax_profiles=[

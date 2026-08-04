@@ -21,6 +21,7 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment_usd
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     CapitalImprovementEvent,
     FederalSaltCapEntry,
@@ -284,7 +285,7 @@ class TestRentalLifecycleCashflows:
                         series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 ),
                 RecurringTransfer(
                     start_month=3,
@@ -299,7 +300,7 @@ class TestRentalLifecycleCashflows:
                         series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 ),
                 RecurringTransfer(
                     start_month=8,
@@ -314,7 +315,7 @@ class TestRentalLifecycleCashflows:
                         series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 ),
                 RecurringTransfer(
                     start_month=0,
@@ -477,7 +478,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             tax_profiles=[
@@ -539,7 +540,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 ),
                 RecurringTransfer(
                     start_month=0,
@@ -604,7 +605,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=6_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             recurring_obligations=[
@@ -670,7 +671,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -744,7 +745,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -845,7 +846,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=5_000.0,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -921,7 +922,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -992,7 +993,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=5_000.0,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -1066,7 +1067,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=5_000.0,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -1222,7 +1223,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=5_000.0,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -1371,7 +1372,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id="alice",
                     to_account_id="checking",
                     amount_usd=monthly_rent,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -1644,7 +1645,7 @@ class TestRentalIncomeTaxation:
                         to_agent_id=OWNER_AGENT_ID,
                         to_account_id="checking",
                         amount_usd=monthly_rent,
-                        income_category="ordinary",
+                        income_category=ORDINARY_INCOME,
                     ),
                     RecurringPropertyCashflow(
                         start_month=0,
@@ -2244,7 +2245,7 @@ class TestRentalIncomeTaxation:
                 to_agent_id=OWNER_AGENT_ID,
                 to_account_id="checking",
                 amount_usd=5_000.0,
-                income_category="ordinary",
+                income_category=ORDINARY_INCOME,
             )
         ]
         if year2_wage_usd > 0:
@@ -2260,7 +2261,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=year2_wage_usd / 12.0,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             )
         return Scenario(
@@ -2322,7 +2323,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=5_000.0,
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -2409,7 +2410,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=4_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -2494,7 +2495,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=4_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             scheduled_property_purchases=[
@@ -2596,7 +2597,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=2_500.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
-                    income_category="ordinary",
+                    income_category=ORDINARY_INCOME,
                 )
             ],
             recurring_obligations=[

@@ -18,7 +18,6 @@ from finance.augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
-    ORDINARY_INCOME_CATEGORY,
     StringTable,
     amount_arrays_cents,
     empty_month_matrix,
@@ -104,7 +103,7 @@ def compile_property_cashflows(
                     f"property cashflow {cashflow.cause_id!r} references unknown property_id "
                     f"{cashflow.property_id!r}; known: {known or '<none>'}"
                 ) from exc
-            if cashflow.income_category == ORDINARY_INCOME_CATEGORY:
+            if cashflow.income_category is not None:
                 income_profile[month, idx] = profile_index_by_agent.get(cashflow.to_agent_id, NO_CODE)
             if cashflow.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
                 deduction_profile[month, idx] = profile_index_by_agent.get(cashflow.from_agent_id, NO_CODE)

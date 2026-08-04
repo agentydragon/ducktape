@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_valida
 from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import AssetKey
+from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
@@ -85,7 +86,36 @@ class SeriesIndexedAmount(BaseModel):
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = float | AmountSchedule
-type TransferIncomeCategory = Literal["ordinary"]
+
+
+class OrdinaryIncome(BaseModel):
+    """Wages, rent, and everything else every jurisdiction taxes."""
+
+    category: Literal[IncomeCategory.ORDINARY] = IncomeCategory.ORDINARY
+
+
+class InterestIncome(BaseModel):
+    """Interest, tagged with WHO ISSUED the debt — never with whether it is "in-state".
+
+    Whether a jurisdiction taxes this dollar is a relation between the issuer and that
+    jurisdiction (`Jurisdiction.taxes_interest_from`), so the same California muni coupon is
+    exempt for a Californian and taxable for a New Yorker without the instrument changing.
+    """
+
+    category: Literal[IncomeCategory.INTEREST] = IncomeCategory.INTEREST
+    issuer_jurisdiction_id: str | None = Field(
+        default=None,
+        description=(
+            "The taxing authority that issued the debt — `federal_us` for a Treasury, "
+            "`california` for a CA muni. `None` means a non-governmental issuer (a corporate "
+            "bond), which no jurisdiction exempts."
+        ),
+    )
+
+
+type TransferIncomeCategory = Annotated[OrdinaryIncome | InterestIncome, Field(discriminator="category")]
+ORDINARY_INCOME = OrdinaryIncome()
+
 type TransferDeductionCategory = Literal["ordinary"]
 
 
