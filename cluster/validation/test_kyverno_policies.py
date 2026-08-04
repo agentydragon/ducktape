@@ -63,6 +63,31 @@ class TestRestrictAgentGatewayRoutes:
         assert result.failed == 0, f"HTTPRoute in forgejo must not be denied\n{result.stdout}"
 
 
+@pytest.fixture
+def secret_store_conditions_policy() -> Path:
+    return _policy_path("cluster/k8s/kyverno/policies/require-secret-store-conditions.yaml")
+
+
+class TestRequireSecretStoreConditions:
+    """An unfenced ClusterSecretStore is readable from every namespace.
+
+    Kind-scoped with no subject match, so `kyverno apply` exercises it directly.
+    """
+
+    def test_missing_conditions_denied(self, secret_store_conditions_policy: Path):
+        result = apply_policy(secret_store_conditions_policy, _testdata("cluster_secret_store_no_conditions.yaml"))
+        assert result.failed == 1, f"store without conditions must be denied\n{result.stdout}"
+
+    def test_empty_conditions_denied(self, secret_store_conditions_policy: Path):
+        """`conditions: []` is not a tightening — ESO treats it like an absent field."""
+        result = apply_policy(secret_store_conditions_policy, _testdata("cluster_secret_store_empty_conditions.yaml"))
+        assert result.failed == 1, f"store with empty conditions must be denied\n{result.stdout}"
+
+    def test_declared_conditions_allowed(self, secret_store_conditions_policy: Path):
+        result = apply_policy(secret_store_conditions_policy, _testdata("cluster_secret_store_with_conditions.yaml"))
+        assert result.failed == 0, f"store naming its namespaces must pass\n{result.stdout}"
+
+
 class TestInjectMitmproxyProxy:
     """Tests for the inject-mitmproxy-proxy ClusterPolicy."""
 
