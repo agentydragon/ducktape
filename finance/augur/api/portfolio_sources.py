@@ -16,6 +16,7 @@ from finance.augur.api.portfolio import (
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
+    SecurityHoldingConfig,
 )
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -226,13 +227,15 @@ def _sp500_proxy_holding(
             group.position_id,
             sorted(missing_basis),
         )
-    return HoldingPositionConfig(
+    # The sleeve IS the S&P series by definition (that is what a "SP500 proxy group" means), so
+    # its symbol is the index symbol, not whichever ticker the brokerage happens to hold. The
+    # configured ticker survives as the display label.
+    return SecurityHoldingConfig(
         position_id=group.position_id,
         account_id=group.portfolio_account_id,
-        label=group.label,
-        symbol=group.symbol,
+        label=group.label or group.symbol,
+        symbol=SP500_SYMBOL,
         security_kind=group.security_kind,
-        value_series=SecurityKey(symbol=SP500_SYMBOL),
         unit_value_usd=float(group.unit_value_usd),
         lots=_proxy_lots(group, total_value_usd=total_value_usd, total_cost_basis_usd=total_cost_basis_usd),
     )

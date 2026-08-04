@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import NonNegativeFloat, NonNegativeInt
 
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import HoldingPositionConfig, PortfolioConfig
+from finance.augur.api.portfolio import HoldingKind, HoldingPositionConfig, PortfolioConfig, SecurityHoldingConfig
 from finance.augur.api.schemas import ApiModel
 from finance.augur.product.asset_key import AssetKey
 
@@ -24,8 +24,10 @@ class ProductPublicSecurityPosition(ApiModel):
     account_label: str | None = None
     label: str | None = None
     symbol: str
-    security_kind: str
-    value_series: AssetKey
+    # Display routing for a tradable security (etf / stock / crypto); `None` for private equity,
+    # which is not a flavour of security. Consumers testing "is this PE?" read `asset.kind`.
+    security_kind: HoldingKind | None = None
+    asset: AssetKey
     unit_value_usd: NonNegativeFloat
     quantity: NonNegativeFloat
     current_value_usd: NonNegativeFloat
@@ -62,12 +64,9 @@ def _holding_position(position: HoldingPositionConfig, *, account_label: str | N
         account_id=position.account_id,
         account_label=account_label,
         label=position.label,
-        symbol=position.symbol,
-        security_kind=str(position.security_kind),
-        # Typed, not a wire string: the sell-order UI keys rows by the SERIES symbol, which can
-        # differ from the holding's display ticker (a VOO holding is priced by the SPY series).
-        # Shipping the string would put prefix-parsing back in the frontend to recover it.
-        value_series=position.value_series,
+        symbol=position.display_symbol,
+        security_kind=position.security_kind if isinstance(position, SecurityHoldingConfig) else None,
+        asset=position.asset,
         unit_value_usd=float(position.unit_value_usd),
         quantity=float(position.total_quantity),
         current_value_usd=float(position.current_value_usd),

@@ -23,10 +23,10 @@ from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio import (
-    HoldingPositionConfig,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
+    SecurityHoldingConfig,
 )
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -39,7 +39,7 @@ from finance.augur.api.wire import ActorRole
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
-from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 
@@ -102,12 +102,11 @@ def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: Minima
                 portfolio=PortfolioConfig(
                     accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
                     holdings=(
-                        HoldingPositionConfig(
+                        SecurityHoldingConfig(
                             position_id="voo_position",
                             account_id="taxable_brokerage",
-                            symbol="VOO",
+                            symbol=SP500_SYMBOL,
                             security_kind="etf",
-                            value_series=SecurityKey(symbol=SP500_SYMBOL),
                             unit_value_usd=500.0,
                             lots=(
                                 HoldingTaxLotConfig(

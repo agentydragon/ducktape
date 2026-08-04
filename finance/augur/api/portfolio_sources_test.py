@@ -9,10 +9,10 @@ from pydantic import ValidationError
 from finance.augur.api.conftest import MinimalConfig
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
-    HoldingPositionConfig,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
+    SecurityHoldingConfig,
 )
 from finance.augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -22,7 +22,7 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
-from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL
 from finance.plaid.db.read_model import CurrentCashBalance, CurrentHolding
 
 
@@ -114,13 +114,12 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
         ),
     )
     [holding] = resolved.portfolio.holdings
-    assert holding == HoldingPositionConfig(
+    assert holding == SecurityHoldingConfig(
         position_id="wealthfront_sp500",
         account_id="wealthfront_taxable",
         label="SP500 proxy",
-        symbol="SP500",
+        symbol=SP500_SYMBOL,
         security_kind="other",
-        value_series=SecurityKey(symbol=SP500_SYMBOL),
         unit_value_usd=1000.0,
         lots=(
             HoldingTaxLotConfig(

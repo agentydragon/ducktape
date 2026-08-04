@@ -4,12 +4,12 @@ import pytest_bazel
 
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
-    HoldingPositionConfig,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
+    SecurityHoldingConfig,
 )
-from finance.augur.model.series import SP500_SYMBOL, SecurityKey
+from finance.augur.model.series import SP500_SYMBOL
 from finance.augur.product.portfolio import product_portfolio_response
 
 
@@ -21,13 +21,12 @@ def test_product_portfolio_response_includes_holding_positions_and_lots() -> Non
                 PortfolioAccountConfig(account_id="taxable", owner_agent_id="agent_a", label="Taxable Brokerage"),
             ),
             holdings=(
-                HoldingPositionConfig(
+                SecurityHoldingConfig(
                     position_id="sp500_proxy",
                     account_id="taxable",
                     label="SP500 Proxy",
-                    symbol="VOO",
+                    symbol=SP500_SYMBOL,
                     security_kind="etf",
-                    value_series=SecurityKey(symbol=SP500_SYMBOL),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(

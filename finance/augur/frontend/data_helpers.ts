@@ -493,7 +493,7 @@ export function eventTitle(event, currencyDisplay) {
 export function sellableSecurities(portfolio) {
   const bySymbol = new Map();
   for (const position of portfolio?.holdings ?? []) {
-    const symbol = isPrivateSecurityPosition(position) ? null : position.valueSeries?.symbol;
+    const symbol = isPrivateSecurityPosition(position) ? null : position.asset?.symbol;
     if (!symbol) continue;
     const label = position.label || position.symbol || symbol;
     const row = bySymbol.get(symbol);
@@ -503,8 +503,10 @@ export function sellableSecurities(portfolio) {
   return [...bySymbol.values()].map(({ symbol, labels }) => ({ symbol, label: labels.join(" + ") }));
 }
 
+// Reads the typed asset key, not a display string: private equity is a different KIND of
+// holding, and `securityKind` now describes only how to present a tradable security.
 export function isPrivateSecurityPosition(position) {
-  return position?.securityKind === "private_equity";
+  return position?.asset?.kind === "private_equity";
 }
 
 export function firstSaleMonth(events) {

@@ -12,10 +12,11 @@ from collections import Counter
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cached_property
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, model_validator
 
-from finance.augur.model.series import IssuerId, LevelSeriesKey
+from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.sim.scenario import InitialLot
 
@@ -31,6 +32,10 @@ class PortfolioAccountType(StrEnum):
 
 
 class HoldingKind(StrEnum):
+    """How to present a security holding. Display routing only — nothing downstream branches
+    on it. Private equity is absent: it is a different `HoldingPositionConfig` variant, not a
+    flavour of security."""
+
     ETF = "etf"
     STOCK = "stock"
     MUTUAL_FUND = "mutual_fund"
@@ -39,14 +44,6 @@ class HoldingKind(StrEnum):
     # "public securities" is a slight misnomer for crypto, but nothing downstream distinguishes
     # them — this enum value routes display only. The sell order names symbols, not kinds.
     CRYPTOCURRENCY = "cryptocurrency"
-    # Private equity (pre-IPO company shares). Like crypto, leans on the same lot machinery
-    # for FIFO + cap gains. Diverges from stocks in two ways the sim cares about:
-    # (1) the asset_id sits under the `private_equity:` namespace so a sampled tender-event
-    # series can be matched per issuer, and (2) PE positions are never included in
-    # LiquidityPolicy.asset_preference_chain — they can only be sold when a sampled tender
-    # event fires, dispatched by PrivateEquityTenderPolicy. Display-only routing here; the
-    # constraint lives in the sim wiring.
-    PRIVATE_EQUITY = "private_equity"
     OTHER = "other"
 
 
@@ -68,21 +65,31 @@ class HoldingTaxLotConfig(PortfolioConfigModel):
         return float(self.cost_basis_usd / self.quantity)
 
 
-class HoldingPositionConfig(PortfolioConfigModel):
+class HoldingAssetKind(StrEnum):
+    """Discriminator for `HoldingPositionConfig` — what KIND OF THING the position is.
+
+    Distinct from `HoldingKind`, which is display routing (etf vs stock vs mutual fund).
+    This one decides how the holding is identified, and therefore which fields exist.
+    """
+
+    SECURITY = "security"
+    PRIVATE_EQUITY = "private_equity"
+
+
+class _HoldingPositionBase(PortfolioConfigModel):
     position_id: str = Field(pattern=_ID_PATTERN)
     account_id: str = Field(pattern=_ID_PATTERN)
     label: str | None = None
-    symbol: str
-    security_kind: HoldingKind
-    value_series: AssetKey = Field(
-        description=(
-            "Typed sim/model unit-value series used to value this security: an `AssetKey` "
-            "discriminated union (`{kind: security, symbol: SPY}`, `{kind: security, symbol: btc}`, "
-            "`{kind: private_equity, issuer_id: ...}`). Authored typed in YAML — no wire-string prefix."
-        )
-    )
     unit_value_usd: PositiveFloat
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
+
+    @property
+    def asset(self) -> AssetKey:
+        raise NotImplementedError
+
+    @property
+    def display_symbol(self) -> str:
+        raise NotImplementedError
 
     @property
     def total_quantity(self) -> float:
@@ -95,6 +102,52 @@ class HoldingPositionConfig(PortfolioConfigModel):
     @property
     def total_cost_basis_usd(self) -> float:
         return sum(float(lot.cost_basis_usd) for lot in self.lots)
+
+
+class SecurityHoldingConfig(_HoldingPositionBase):
+    """A tradable security. Its SYMBOL is its identity, all the way down.
+
+    There is deliberately no separate "which series prices this" field. A holding whose
+    price path should follow another security's says so in the MODEL, as a
+    `MirrorLevelSeries` — that is a claim about markets ("VOO is the same market as SPY"),
+    reviewable next to the fit, not an id buried in portfolio config. The old
+    `value_series` field let the two diverge silently, which is exactly how the sell-order
+    UI came to emit a symbol the compiler could not match.
+    """
+
+    kind: Literal[HoldingAssetKind.SECURITY] = HoldingAssetKind.SECURITY
+    symbol: SecuritySymbol
+    security_kind: HoldingKind = HoldingKind.OTHER
+
+    @property
+    def asset(self) -> AssetKey:
+        return SecurityKey(symbol=self.symbol)
+
+    @property
+    def display_symbol(self) -> str:
+        return str(self.symbol)
+
+
+class PrivateEquityHoldingConfig(_HoldingPositionBase):
+    """A private-equity holding, identified by issuer — it has no market symbol.
+
+    `ticker` is a label some issuers have and most don't; it never identifies anything.
+    """
+
+    kind: Literal[HoldingAssetKind.PRIVATE_EQUITY] = HoldingAssetKind.PRIVATE_EQUITY
+    issuer_id: IssuerId
+    ticker: str | None = None
+
+    @property
+    def asset(self) -> AssetKey:
+        return PrivateEquityAssetKey(issuer_id=self.issuer_id)
+
+    @property
+    def display_symbol(self) -> str:
+        return self.ticker or str(self.issuer_id)
+
+
+type HoldingPositionConfig = Annotated[SecurityHoldingConfig | PrivateEquityHoldingConfig, Field(discriminator="kind")]
 
 
 class PortfolioConfig(PortfolioConfigModel):
@@ -132,12 +185,10 @@ class PortfolioConfig(PortfolioConfigModel):
         series_unit_values: dict[AssetKey, float] = {}
         for position in self.holdings:
             unit_value = float(position.unit_value_usd)
-            if position.value_series in series_unit_values and series_unit_values[position.value_series] != unit_value:
-                raise ValueError(
-                    f"public security positions sharing value_series {position.value_series.wire_id!r} "
-                    "must share unit_value_usd"
-                )
-            series_unit_values[position.value_series] = unit_value
+            asset = position.asset
+            if asset in series_unit_values and series_unit_values[asset] != unit_value:
+                raise ValueError(f"portfolio positions in {asset.wire_id!r} must share unit_value_usd")
+            series_unit_values[asset] = unit_value
 
         return self
 
@@ -151,10 +202,7 @@ class PortfolioConfig(PortfolioConfigModel):
         private_equity_anchors: dict[IssuerId, float] = {}
         for position in self.holdings:
             unit_value = float(position.unit_value_usd)
-            asset_key = position.value_series
-            # `value_series` already IS the asset-price key for a tradable holding — the whole
-            # point of `AssetKey` being an inclusion. Rebuilding one would silently drop any
-            # field a key later grows.
+            asset_key = position.asset
             if isinstance(asset_key, PrivateEquityAssetKey):
                 private_equity_anchors[asset_key.issuer_id] = unit_value
             else:
@@ -170,7 +218,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 lot_id=lot.lot_id,
                 agent_id=account_by_id[position.account_id].owner_agent_id,
                 account_id=position.account_id,
-                asset=position.value_series,
+                asset=position.asset,
                 purchase_month_index=-int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
                 cost_basis_per_unit_usd=lot.cost_basis_per_unit_usd,
@@ -187,7 +235,7 @@ class PortfolioLevelAnchors:
     Non-PE level series anchors flow into the exogenous bundle's `levels` frame
     via `LevelSeriesKey`; PE issuer anchors flow into the `PrivateEquityBundle`
     keyed by `IssuerId`. The split lives at the API/runtime boundary, dispatching
-    on each holding's typed `value_series` `AssetKey`.
+    on each holding's typed `asset` `AssetKey`.
     """
 
     level_series_anchors: dict[LevelSeriesKey, float]

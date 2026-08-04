@@ -118,9 +118,9 @@ def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id:
 
 def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     # Keyed by the sim-frame wire id (matching the `asset_id` column on decoded sim event
-    # frames) so sim events can be labeled; the wire id is derived from the typed `value_series`.
+    # frames) so sim events can be labeled; the wire id is derived from the typed `asset`.
     return {
-        position.value_series.wire_id: f"{position.label or position.symbol} ({position.symbol})"
+        position.asset.wire_id: f"{position.label or position.display_symbol} ({position.display_symbol})"
         for position in portfolio.holdings
     }
 

@@ -56,55 +56,63 @@ models:
     # mirrors production's split without requiring trained fixture artifacts.
     type: composite
     macro: &fixture_macro
-      # GBM params are pre-computed from annual return / volatility:
-      #   monthly_log_return_sigma = annual_vol / sqrt(12)
-      #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
-      type: independent
-      # Typed role groups: asset_prices (security by symbol), property_values
-      # (home_value by location), index_series (inflation singleton + rent by
-      # location). No magic-prefix keys.
-      asset_prices:
-        security:
-          SPY: # annual return 7%, vol 16%
+      # VOO is held, SPY is fitted. Saying "VOO is the same market as SPY" is a MODELLING
+      # claim, so it lives here as a mirror rather than as an id in the portfolio pointing
+      # one symbol at another — which could silently disagree with the holding's own symbol.
+      type: mirroring
+      mirror_series:
+        - target: { kind: security, symbol: VOO }
+          source: { kind: security, symbol: SPY }
+      model:
+        # GBM params are pre-computed from annual return / volatility:
+        #   monthly_log_return_sigma = annual_vol / sqrt(12)
+        #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
+        type: independent
+        # Typed role groups: asset_prices (security by symbol), property_values
+        # (home_value by location), index_series (inflation singleton + rent by
+        # location). No magic-prefix keys.
+        asset_prices:
+          security:
+            SPY: # annual return 7%, vol 16%
+              kind: gbm
+              initial_value: 1.0
+              monthly_log_return_mu: 0.0047666667
+              monthly_log_return_sigma: 0.0461880215
+            btc:
+              kind: constant
+              value: 75000.0
+            eth:
+              kind: constant
+              value: 2100.0
+        property_values:
+          home_value:
+            location_a: # annual return 3.5%, vol 8%
+              kind: gbm
+              initial_value: 1.0
+              monthly_log_return_mu: 0.0026500000
+              monthly_log_return_sigma: 0.0230940108
+            location_b:
+              kind: gbm
+              initial_value: 1.0
+              monthly_log_return_mu: 0.0026500000
+              monthly_log_return_sigma: 0.0230940108
+        index_series:
+          inflation: # annual return 3%, vol 1.5%
             kind: gbm
             initial_value: 1.0
-            monthly_log_return_mu: 0.0047666667
-            monthly_log_return_sigma: 0.0461880215
-          btc:
-            kind: constant
-            value: 75000.0
-          eth:
-            kind: constant
-            value: 2100.0
-      property_values:
-        home_value:
-          location_a: # annual return 3.5%, vol 8%
-            kind: gbm
-            initial_value: 1.0
-            monthly_log_return_mu: 0.0026500000
-            monthly_log_return_sigma: 0.0230940108
-          location_b:
-            kind: gbm
-            initial_value: 1.0
-            monthly_log_return_mu: 0.0026500000
-            monthly_log_return_sigma: 0.0230940108
-      index_series:
-        inflation: # annual return 3%, vol 1.5%
-          kind: gbm
-          initial_value: 1.0
-          monthly_log_return_mu: 0.0024906250
-          monthly_log_return_sigma: 0.0043301270
-        rent:
-          location_a: # annual return 3%, vol 3%
-            kind: gbm
-            initial_value: 1.0
-            monthly_log_return_mu: 0.0024625000
-            monthly_log_return_sigma: 0.0086602540
-          location_b:
-            kind: gbm
-            initial_value: 1.0
-            monthly_log_return_mu: 0.0024625000
-            monthly_log_return_sigma: 0.0086602540
+            monthly_log_return_mu: 0.0024906250
+            monthly_log_return_sigma: 0.0043301270
+          rent:
+            location_a: # annual return 3%, vol 3%
+              kind: gbm
+              initial_value: 1.0
+              monthly_log_return_mu: 0.0024625000
+              monthly_log_return_sigma: 0.0086602540
+            location_b:
+              kind: gbm
+              initial_value: 1.0
+              monthly_log_return_mu: 0.0024625000
+              monthly_log_return_sigma: 0.0086602540
     private_equity:
       # Exercise the PE risk provider on the public devserver path while keeping
       # fixture marks deterministic: zero monthly drift/vol, semiannual tenders.
@@ -181,9 +189,10 @@ portfolio_sources:
               lot_id: sp500_proxy_2024_06
               quantity: 750.0
           security_kind: etf
+          # VOO is its own series. That it tracks SPY is a MODEL claim, declared as a
+          # mirror above — not an id pointed at a different symbol down here.
           symbol: VOO
           unit_value_usd: 500.0
-          value_series: { kind: security, symbol: SPY }
         - position_id: btc_holding
           account_id: taxable_brokerage
           label: Bitcoin
@@ -193,9 +202,8 @@ portfolio_sources:
               lot_id: btc_2023_05
               quantity: 1.0
           security_kind: cryptocurrency
-          symbol: BTC
+          symbol: btc
           unit_value_usd: 75000.0
-          value_series: { kind: security, symbol: btc }
         - position_id: eth_holding
           account_id: taxable_brokerage
           label: Ethereum
@@ -205,9 +213,8 @@ portfolio_sources:
               lot_id: eth_2023_11
               quantity: 5.0
           security_kind: cryptocurrency
-          symbol: ETH
+          symbol: eth
           unit_value_usd: 2100.0
-          value_series: { kind: security, symbol: eth }
         - position_id: private_holding_a
           account_id: taxable_brokerage
           label: Private Holding A
@@ -216,9 +223,9 @@ portfolio_sources:
               holding_period_months_at_start: 48
               lot_id: private_holding_a_2022_05
               quantity: 1000.0
-          security_kind: private_equity
-          symbol: PHA
+          kind: private_equity
+          issuer_id: private_holding_a
+          ticker: PHA
           unit_value_usd: 25.0
-          value_series: { kind: private_equity, issuer_id: private_holding_a }
 property_source:
   properties_path: properties.json
