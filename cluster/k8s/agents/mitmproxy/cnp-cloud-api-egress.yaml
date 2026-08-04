@@ -26,8 +26,6 @@ spec:
         - matchName: generativelanguage.googleapis.com
         - matchName: api.openai.com
         - matchName: api.anthropic.com
-        - matchName: api.telegram.org
-        - matchPattern: "*.telegram.org"
         - matchName: github.com
       toPorts:
         - ports:

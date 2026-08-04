@@ -75,10 +75,6 @@ OPERATOR_DATA = hosts(
     "*.ankiweb.net",
 )
 
-# Stranded by the 2026-07-31 OpenClaw gateway teardown: nothing outside this one
-# allowlist references them. The IBKR pair was removed; these two remain.
-OPENCLAW_LEGACY = hosts("api.telegram.org", "*.telegram.org")
-
 
 @dataclass(frozen=True)
 class Confined:
@@ -144,7 +140,6 @@ ALLOWLISTS: dict[str, Confined | Unconfined] = {
         allows=hosts("github.com")
         | LANGUAGE_REGISTRIES
         | ANTHROPIC
-        | OPENCLAW_LEGACY
         | hosts("api.openai.com", "generativelanguage.googleapis.com", "docker-ci.allegedly.works"),
     ),
     "zones": Confined(
