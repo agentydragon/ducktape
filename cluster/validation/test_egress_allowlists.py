@@ -123,9 +123,11 @@ ALLOWLISTS: dict[str, Confined | Unconfined] = {
         path="agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
         allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works"),
     ),
-    # The OpenClaw + Claude Code spike. Its two singleton hosts are in-cluster
-    # services it reaches through iron rather than directly.
-    "openclaw-spike": Confined(
+    # Haku's OpenClaw + Claude Code spike, through its own dedicated iron proxy
+    # (`haku-openclaw-spike-proxy`, which lives in haku-egress-proxy). Not to be
+    # confused with public-coder-agent, which runs the same OpenClaw image behind
+    # a different fence, or with the retired openclaw-gateway namespaces.
+    "haku-openclaw-spike": Confined(
         path="agents/haku-egress-proxy/openclaw-spike-iron.yaml",
         allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
         iron_transform=True,
