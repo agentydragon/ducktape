@@ -14,6 +14,7 @@ import polars as pl
 
 from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey, asset_price_key, parse_asset_key
+from finance.augur.product.metric_composition import DERIVED_METRIC_NAMES, compose_metric
 from finance.augur.product.wire import (
     CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
@@ -58,23 +59,22 @@ def monthly_metric_arrays_batch(dense: SimulationRun, *, primary_agent_id: str) 
     private_equity_value_usd = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
     property_value_usd = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
     mortgage_balance_usd = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
-    home_equity_usd = property_value_usd - mortgage_balance_usd
-    # liquid_net_worth excludes private equity by design: PE is only saleable at sparse
-    # tender events, so it doesn't satisfy "cash you could get tomorrow" semantics. The
-    # PrivateEquityTenderPolicy uses this same definition when deciding how much PE to
-    # liquidate at a tender (sell enough to lift liquid_net_worth to a configured floor).
-    liquid_net_worth_usd = cash_usd + holding_value_usd
-    return {
-        "month_index": np.arange(plan.horizon_months + 1, dtype=np.int64),
+    bond_value_usd = _bond_value_by_month(dense, primary_agent_code=primary_agent_code)
+    base = {
         "cash_usd": cash_usd,
         "holding_value_usd": holding_value_usd,
         "private_equity_value_usd": private_equity_value_usd,
         "property_value_usd": property_value_usd,
         "mortgage_balance_usd": mortgage_balance_usd,
-        "home_equity_usd": home_equity_usd,
-        "liquid_net_worth_usd": liquid_net_worth_usd,
-        "net_worth_usd": liquid_net_worth_usd + home_equity_usd + private_equity_value_usd,
+        "bond_value_usd": bond_value_usd,
         "shortfall_usd": _shortfall_by_month(dense, primary_agent_code=primary_agent_code),
+    }
+    # The derived sums come from `metric_composition` — the same definitions the engine's
+    # on-device path composes — so the two cannot disagree about what net worth is.
+    return {
+        "month_index": np.arange(plan.horizon_months + 1, dtype=np.int64),
+        **base,
+        **{name: compose_metric(name, base.__getitem__) for name in DERIVED_METRIC_NAMES},
     }
 
 
@@ -97,6 +97,7 @@ def terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_
         private_equity_value_usd=float(arrays["private_equity_value_usd"][-1]),
         property_value_usd=float(arrays["property_value_usd"][-1]),
         mortgage_balance_usd=float(arrays["mortgage_balance_usd"][-1]),
+        bond_value_usd=float(arrays["bond_value_usd"][-1]),
         home_equity_usd=float(arrays["home_equity_usd"][-1]),
         liquid_net_worth_usd=float(arrays["liquid_net_worth_usd"][-1]),
         net_worth_usd=float(arrays["net_worth_usd"][-1]),
@@ -492,6 +493,24 @@ def _property_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -
         market = np.where(base_level[None, :] == 0.0, 0.0, purchase_price * levels / safe_base[None, :])
         values += np.where(active, market, 0.0)
     return values
+
+
+def _bond_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
+    """Face still on the books each month, for the primary agent's bonds.
+
+    A par bond held to maturity is never marked, so its value is its face and the whole
+    series is a compile-time constant — identical across rollouts. Failed rollouts are
+    zeroed to match every other term, which the engine does via its own failure mask; this
+    has to reproduce it because bonds carry no state for the failure freeze to act on.
+    """
+
+    plan = dense.plan
+    face = np.where(plan.bonds.agent == primary_agent_code, plan.bonds.face, 0)
+    per_month = cents_array_to_usd(plan.bonds.on_books @ face)  # (H+1,)
+    value = np.broadcast_to(per_month[:, None], (plan.horizon_months + 1, plan.rollout_count)).copy()
+    failed_month = failed_month_index_batch(dense)
+    months = np.arange(plan.horizon_months + 1)[:, None]
+    return np.where((failed_month[None, :] >= 0) & (months >= failed_month[None, :]), 0.0, value)
 
 
 def _mortgage_balance_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:

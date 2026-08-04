@@ -52,6 +52,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from finance.augur.model.series import PrivateEquityRegimeCode
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import CompiledSimulation
@@ -223,6 +224,7 @@ class _ProductSummaryStatic:
     has_public_lots: bool
     has_pe_lots: bool
     has_properties: bool
+    has_bonds: bool
 
 
 class _ProductSummaryInputs(NamedTuple):
@@ -236,6 +238,11 @@ class _ProductSummaryInputs(NamedTuple):
     property_home_value_series: jnp.ndarray
     liability_mask: jnp.ndarray
     primary_obligation_mask: jnp.ndarray
+    # Face in cents, zeroed for bonds the primary agent does not hold, and the (H+1, bond)
+    # on-books mask. Both compile-time constants — a par bond held to maturity has no
+    # rollout-varying value.
+    bond_face: jnp.ndarray
+    bond_on_books: jnp.ndarray
 
 
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
@@ -346,49 +353,28 @@ class ProductSummary:
     monthly_bands: np.ndarray | None  # (n_percentiles, H+1) for the requested metric, or None
 
 
-# The six metrics the scan emits per month (see `product_metrics`); the wire's three remaining
-# metrics (home_equity, liquid_net_worth, net_worth) are linear combinations of these.
-_PRODUCT_BASE_METRICS = (
-    "cash_usd",
-    "holding_value_usd",
-    "private_equity_value_usd",
-    "property_value_usd",
-    "mortgage_balance_usd",
-    "shortfall_usd",
-)
+# The base metrics the scan emits per month, in the order `product_metrics` returns them.
+# The wire's derived metrics (home_equity, liquid_net_worth, net_worth) are composed from
+# these by `product.metric_composition`, which is also what the decode path uses — the sums
+# are defined once so a new asset class cannot reach one and miss the other.
+_PRODUCT_BASE_METRICS = BASE_METRIC_NAMES
 _PRODUCT_BASE_INDEX = {name: index for index, name in enumerate(_PRODUCT_BASE_METRICS)}
 
 
 def _product_metric_series(
     metric: str, initial_ys: tuple[jnp.ndarray, ...], monthly_ys: tuple[jnp.ndarray, ...]
 ) -> jnp.ndarray:
-    """Full (H+1, R) device series for one product metric, composing derived metrics from base series.
+    """Full (H+1, R) device series for one product metric.
 
-    Only the base series the requested metric needs are assembled, so a single-metric fan never
-    materializes all nine metrics' histories.
+    `base` is passed as a callable so only the series the requested metric needs are
+    assembled: a single-metric fan never materializes all of them.
     """
 
     def base(name: str) -> jnp.ndarray:
         index = _PRODUCT_BASE_INDEX[name]
         return jnp.concatenate([jnp.asarray(initial_ys[index])[None, :], jnp.asarray(monthly_ys[index])], axis=0)
 
-    match metric:
-        case "home_equity_usd":
-            return base("property_value_usd") - base("mortgage_balance_usd")
-        case "liquid_net_worth_usd":
-            # Excludes private equity by design (matches `monthly_metric_arrays_batch`): PE is only
-            # saleable at sparse tender events, so it isn't "cash you could get tomorrow".
-            return base("cash_usd") + base("holding_value_usd")
-        case "net_worth_usd":
-            return (
-                base("cash_usd")
-                + base("holding_value_usd")
-                + base("property_value_usd")
-                - base("mortgage_balance_usd")
-                + base("private_equity_value_usd")
-            )
-        case _:
-            return base(metric)
+    return compose_metric(metric, base)
 
 
 def run_jax_product_summary(
@@ -477,6 +463,7 @@ def _product_summary_inputs(
                 )
 
     property_mask = plan.properties.buyer_agent == primary_agent_code
+    bond_mask = plan.bonds.agent == primary_agent_code
     inputs = _ProductSummaryInputs(
         cash_mask=jnp.asarray(cash_mask),
         public_lot_mask=jnp.asarray(public_lot_mask),
@@ -488,12 +475,15 @@ def _product_summary_inputs(
         property_home_value_series=jnp.asarray(plan.property_home_value_series_index.astype(np.int32)),
         liability_mask=jnp.asarray(plan.liabilities.agent == primary_agent_code),
         primary_obligation_mask=jnp.asarray(plan.obligations.agent == primary_agent_code),
+        bond_face=jnp.asarray(np.where(bond_mask, plan.bonds.face, 0)),
+        bond_on_books=jnp.asarray(plan.bonds.on_books),
     )
     return (
         _ProductSummaryStatic(
             has_public_lots=bool(public_lot_mask.any()),
             has_pe_lots=bool(pe_lot_mask.any()),
             has_properties=bool(property_mask.any()),
+            has_bonds=bool(bond_mask.any()),
         ),
         inputs,
     )
@@ -1300,7 +1290,14 @@ def _program_impl(
         shortfall_usd = jnp.where(obligation_mask[:, None], obligation_shortfall, 0).sum(axis=0).astype(
             jnp.float64
         ) / float(USD_CENTS)
-        return cash_usd, holding_usd, pe_usd, property_usd, mortgage_usd, shortfall_usd
+        bond_usd = jnp.zeros((r,), dtype=jnp.float64)
+        if product_summary.has_bonds:
+            held_face = (product_inputs.bond_on_books[snapshot_month] * product_inputs.bond_face).sum()
+            # Identical across rollouts, but zeroed for failed ones so a failed rollout's net
+            # worth is zero like every other term rather than reporting the bonds alone.
+            bond_usd = jnp.where(s.failed, 0.0, held_face.astype(jnp.float64) / float(USD_CENTS))
+
+        return cash_usd, holding_usd, pe_usd, property_usd, mortgage_usd, shortfall_usd, bond_usd
 
     def december_tax(
         ordinary: jnp.ndarray,
@@ -2527,8 +2524,11 @@ def _bond_cashflows_jit(
     Both reach cash; only the coupon reaches income. Redeeming the face is a return of capital,
     and at par against a par basis it is not a capital gain either, so it touches no tax tensor.
 
-    There is no payer slot: the issuer is not a modeled agent, so a coupon is an inflow from
-    outside the simulation the way a paycheck is from an unmodeled employer.
+    CLEANUP(added 2026-08-04): give the coupon a `from_slot` on the external account once
+      double-entry lands, so this stops creating cash from nowhere. Today there is no payer
+      slot — the issuer is not a modeled agent — which matches how a paycheck from an
+      unmodeled employer already behaves, but both are unbalanced flows the external-account
+      change is meant to remove. Remove this note when `from_slot` is threaded through here.
     """
 
     coupons = jnp.where(active[None, :], coupon[:, None], 0)

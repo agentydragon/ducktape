@@ -34,6 +34,7 @@ MetricName = Literal[
     "liquid_net_worth_usd",
     "net_worth_usd",
     "shortfall_usd",
+    "bond_value_usd",
 ]
 MAX_HORIZON_MONTHS = 100 * 12
 
@@ -266,6 +267,9 @@ class TerminalMetrics(ApiModel):
     liquid_net_worth_usd: float
     net_worth_usd: float
     shortfall_usd: NonNegativeFloat
+    # Par face still on the books. In `net_worth_usd` but deliberately not in
+    # `liquid_net_worth_usd`: held to maturity, a bond is neither marked nor saleable.
+    bond_value_usd: NonNegativeFloat = 0.0
     failed_month_index: NonNegativeInt | None = None
 
 

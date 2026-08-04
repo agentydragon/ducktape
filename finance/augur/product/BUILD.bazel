@@ -31,10 +31,16 @@ py_library(
 )
 
 py_library(
+    name = "metric_composition",
+    srcs = ["metric_composition.py"],
+)
+
+py_library(
     name = "decode",
     srcs = ["decode.py"],
     deps = [
         ":asset_key",
+        ":metric_composition",
         ":wire",
         "//finance/augur/model:series",
         "//finance/augur/sim:codec",

@@ -373,6 +373,7 @@ py_library(
         ":scenario",
         ":tensor_fifo",
         "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
         "@pypi//jax",
         "@pypi//numpy",
     ],
