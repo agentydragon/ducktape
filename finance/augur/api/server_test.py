@@ -252,13 +252,13 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert [lot["cost_basis_usd"] for lot in sp500["lots"]] == [300_000.0, 250_000.0]
     assert [lot["cost_basis_per_unit_usd"] for lot in sp500["lots"]] == [400.0, 333.3333333333333]
     btc = positions_by_id["btc_holding"]
-    assert btc["symbol"] == "BTC"
+    assert btc["symbol"] == "btc"
     assert btc["security_kind"] == "cryptocurrency"
     assert btc["asset"] == {"kind": "security", "symbol": "btc"}
     assert btc["unit_value_usd"] == 75_000.0
     assert btc["current_value_usd"] == 75_000.0
     eth = positions_by_id["eth_holding"]
-    assert eth["symbol"] == "ETH"
+    assert eth["symbol"] == "eth"
     assert eth["security_kind"] == "cryptocurrency"
     assert eth["asset"] == {"kind": "security", "symbol": "eth"}
     assert eth["unit_value_usd"] == 2_100.0

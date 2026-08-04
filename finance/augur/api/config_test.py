@@ -39,7 +39,7 @@ from finance.augur.api.wire import ActorRole
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
-from finance.augur.model.series import SP500_SYMBOL
+from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 
@@ -105,7 +105,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: Minima
                         SecurityHoldingConfig(
                             position_id="voo_position",
                             account_id="taxable_brokerage",
-                            symbol=SP500_SYMBOL,
+                            symbol=SecuritySymbol("VOO"),
                             security_kind="etf",
                             unit_value_usd=500.0,
                             lots=(
