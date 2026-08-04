@@ -13,6 +13,10 @@ forbids: the value under test is not a literal copied back from the manifest, it
 is the claim *"this consumer reaches these groups and nothing else."* A host
 added without saying which group it joins is exactly the failure being caught.
 
+Entries are keyed by manifest path — the fence's only real identifier, so there
+is no second name that could disagree with it, and a failure names the file to
+open.
+
 There are four groups, and only four axes on which the fences differ: whether a
 fence builds code (`BUILD_REGISTRIES`), which model APIs it reaches, whether it
 can write to GitHub (`GITHUB_API`), and whether it touches the operator's own
@@ -101,7 +105,6 @@ OPERATOR_DATA = hosts(
 class Confined:
     """An allowlist pinned to exactly the hosts it declares."""
 
-    path: str
     allows: frozenset[str]
     # Iron-proxy application config rather than a Cilium policy.
     iron_transform: bool = False
@@ -111,44 +114,48 @@ class Confined:
 class Unconfined:
     """A proxy deliberately permitted to reach the whole internet."""
 
-    path: str
     reason: str
     allows: frozenset[str] = field(default=frozenset(), init=False)
 
 
+# The two fences the assertions below single out. They are the dict keys
+# themselves, so the assertion and the entry cannot drift apart.
+OPERATOR_DATA_FENCE = "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml"
+GITHUB_API_FENCE = "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml"
+
+# Keyed by manifest path: the file is the fence's only real identifier, so there
+# is no second name to keep in sync, and a failure names the file to open.
 ALLOWLISTS: dict[str, Confined | Unconfined] = {
-    # Haku's general sandbox — the only consumer holding OPERATOR_DATA, and the
-    # only one carrying every build group.
-    "haku-sandbox": Confined(
-        path="agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
-        allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works"),
+    # Haku's general sandbox — the only fence holding OPERATOR_DATA.
+    OPERATOR_DATA_FENCE: Confined(
+        allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works")
     ),
-    # Haku's OpenClaw + Claude Code spike, through its own dedicated iron proxy
-    # (`haku-openclaw-spike-proxy`, which lives in haku-egress-proxy). Not to be
-    # confused with public-coder-agent, which runs the same OpenClaw image behind
-    # a different fence, or with the retired openclaw-gateway namespaces.
-    "haku-openclaw-spike": Confined(
-        path="agents/haku-egress-proxy/openclaw-spike-iron.yaml",
-        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
-        iron_transform=True,
+    # Haku's OpenClaw + Claude Code spike (namespace `haku-openclaw-spike`),
+    # through its own iron proxy. Not public-coder-agent, which runs the same
+    # OpenClaw image behind a different fence.
+    "agents/haku-egress-proxy/openclaw-spike-iron.yaml": Confined(
+        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"), iron_transform=True
     ),
-    # Console-owned Claude runner: deliberately the tightest fence in the
-    # cluster — one host. Widening it is a security change.
-    "claude-runner": Confined(path="agents/haku-egress-proxy/cnp-haku-claude-egress.yaml", allows=ANTHROPIC),
-    "claude-sandbox": Confined(
-        path="agents/mitmproxy/cnp-cloud-api-egress.yaml",
+    # The console-owned Claude runner pool (`haku-claude-sandbox`). Deliberately
+    # the tightest fence in the cluster — one host, no registries, because it
+    # builds nothing. Widening it is a security change.
+    "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml": Confined(allows=ANTHROPIC),
+    # The `claude-sandbox` namespace, via the shared agents-mitmproxy.
+    "agents/mitmproxy/cnp-cloud-api-egress.yaml": Confined(
         allows=BUILD_REGISTRIES
         | ANTHROPIC
-        | hosts("api.openai.com", "generativelanguage.googleapis.com", "docker-ci.allegedly.works"),
+        | hosts("api.openai.com", "generativelanguage.googleapis.com", "docker-ci.allegedly.works")
     ),
-    "zones": Confined(path="agents/haku-zones-mitmproxy/cnp-zones-egress.yaml", allows=BUILD_REGISTRIES | GITHUB_API),
-    "public-coder": Unconfined(
-        path="agents/public-coder-agent/proxy/cnp-egress.yaml",
+    # `haku-sandbox-zai`, the one "zone" namespace today —
+    # ccnp-zones-force-proxy-egress.yaml selects a list, so a second zone would
+    # share this fence rather than get its own.
+    GITHUB_API_FENCE: Confined(allows=BUILD_REGISTRIES | GITHUB_API),
+    "agents/public-coder-agent/proxy/cnp-egress.yaml": Unconfined(
         reason=(
             "Scoped waiver for this agent only: both its Cilium toFQDNs rules and its "
             "iron allowlist are commented out and kept verbatim for restoration. It "
             "handles no operator data; the confined config is one uncomment away."
-        ),
+        )
     ),
 }
 
@@ -172,10 +179,10 @@ def _iron_hosts(document: dict) -> set[str]:
     return set(allowlists[0]["config"]["domains"]) if allowlists else set()
 
 
-@pytest.mark.parametrize("name", sorted(ALLOWLISTS))
-def test_allowlist_matches_its_declared_host_set(name: str, k8s_dir: Path) -> None:
-    allowlist = ALLOWLISTS[name]
-    document: dict = yaml.safe_load((k8s_dir / allowlist.path).read_text())
+@pytest.mark.parametrize("path", sorted(ALLOWLISTS))
+def test_allowlist_matches_its_declared_host_set(path: str, k8s_dir: Path) -> None:
+    allowlist = ALLOWLISTS[path]
+    document: dict = yaml.safe_load((k8s_dir / path).read_text())
     if isinstance(allowlist, Unconfined):
         # The waiver itself is pinned: it must reach `world` and must name no
         # hosts, so restoring confinement is a visible change either way.
@@ -193,9 +200,9 @@ def test_build_registries_are_all_or_none() -> None:
     subset is drift rather than a decision — which is exactly how the fences
     diverged before they were pinned.
     """
-    for name, allowlist in ALLOWLISTS.items():
+    for path, allowlist in ALLOWLISTS.items():
         held = allowlist.allows & BUILD_REGISTRIES
-        assert held in (frozenset(), BUILD_REGISTRIES), name
+        assert held in (frozenset(), BUILD_REGISTRIES), path
 
 
 def test_operator_data_reaches_only_haku_sandbox() -> None:
@@ -204,16 +211,16 @@ def test_operator_data_reaches_only_haku_sandbox() -> None:
     A coding agent that gained these would turn each of its injection surfaces
     into a path to the operator's mail and finances.
     """
-    for name, allowlist in ALLOWLISTS.items():
-        if name == "haku-sandbox":
+    for path, allowlist in ALLOWLISTS.items():
+        if path == OPERATOR_DATA_FENCE:
             continue
-        assert not (allowlist.allows & OPERATOR_DATA), name
+        assert not (allowlist.allows & OPERATOR_DATA), path
 
 
 def test_github_api_reaches_only_declared_holders() -> None:
     """`api.github.com` is a write surface, so it is granted one fence at a time."""
-    holders = {name for name, entry in ALLOWLISTS.items() if entry.allows & GITHUB_API}
-    assert holders == {"zones"}
+    holders = {path for path, entry in ALLOWLISTS.items() if entry.allows & GITHUB_API}
+    assert holders == {GITHUB_API_FENCE}
 
 
 if __name__ == "__main__":
