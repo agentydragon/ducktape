@@ -26,8 +26,15 @@ spec:
     # It is not redundant with toFQDNs. The DNS proxy matches the *query name* the
     # pod sends, before any destination identity exists, so it is the only layer
     # that can fence a *.allegedly.works name (see
-    # cluster/docs/cilium_network_policy.md) and the only one that closes DNS
-    # itself as an egress channel.
+    # cluster/docs/cilium_network_policy.md).
+    #
+    # Scope, verified in-cluster 2026-08-04: this bounds what THIS PROXY POD may
+    # resolve. It does not close DNS as an exfil channel for the workloads behind
+    # it — ccnp-haku-sandbox-force-proxy-egress.yaml admits haku-sandbox pods to
+    # kube-dns as a plain L4 rule with no `rules.dns` at all, so Cilium does not
+    # even proxy their queries and they resolve anything (confirmed: a probe pod
+    # in haku-sandbox resolved example.com while the same name 502'd through this
+    # proxy). Closing that channel means adding a DNS rule there, not here.
     #
     # `**.` is Cilium's subdomain wildcard: one or more whole labels, unlike a
     # single `*`, which stops at the label boundary. `**.cluster.local` therefore

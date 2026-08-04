@@ -27,9 +27,12 @@ Each fence is pinned twice, against the same declared set: once on where it may
 *look up* (`toPorts.rules.dns`). The two are separate enforcement points, not one
 restated — the DNS proxy matches the query name before any destination identity
 exists, which is what lets it fence a `*.allegedly.works` name that `toFQDNs`
-cannot, and what closes DNS itself as an egress channel. Cilium has no way to
-share one list between the rule kinds, so the equality assertion is what keeps
-the copies from drifting.
+cannot. Cilium has no way to share one list between the rule kinds, so the
+equality assertion is what keeps the copies from drifting.
+
+Both halves bound **the proxy pod**, not the workloads behind it. See the DNS
+gap under Known gaps: the sandboxes reach kube-dns through a rule with no
+`rules.dns` at all, so their own resolution is not fenced by anything here.
 
 What a pinned host set does and does not mean
 ---------------------------------------------
@@ -90,13 +93,20 @@ operator-facing version is in `haku/docs/security.md`.
   network is reached with no proxy in the path and no allowlist applied. It is
   also why the same service is referenced by its public name in one manifest and
   its cluster name in another.
-- Allowlist DNS: **done** for every confined fence, pinned by
-  `test_dns_rule_matches_the_allowlist`. What remains open is the
-  `public-coder-agent` waiver, which keeps `matchPattern: "*"` because narrowing
-  DNS alone fences nothing while its `toEntities: [world]` rule stands. The
-  in-cluster namespace stays open by design (`**.cluster.local`), so DNS to a
-  name under `cluster.local` is still unbounded — that is the same deliberate
-  in-cluster posture as the `toEntities` rule, not an oversight.
+- Allowlist DNS on the **proxies**: done, pinned by
+  `test_dns_rule_matches_the_allowlist`. `public-coder-agent` stays on
+  `matchPattern: "*"` because narrowing DNS alone fences nothing while its
+  `toEntities: [world]` rule stands, and `**.cluster.local` stays open by design
+  — the same in-cluster posture as the `toEntities` rule.
+- TODO: allowlist DNS for the **sandboxes**, which is where the exfil channel
+  actually is. Verified in-cluster 2026-08-04: the force-proxy CCNPs admit
+  sandbox pods to kube-dns with a plain L4 rule and no `rules.dns`, so Cilium
+  does not proxy their queries at all and they resolve anything. A probe pod in
+  `haku-sandbox` resolved `example.com` while the same name 502'd through the
+  proxy — the fence stops the connection, not the lookup, and a lookup under an
+  attacker-controlled zone still reaches that zone's nameserver. Recorded as
+  accepted rather than fixed in `haku/docs/security.md`; the fix belongs in the
+  force-proxy CCNPs, not in the allowlists pinned here.
 - TODO: record traffic, including rejections. The proxies filter and substitute
   credentials but keep no request log, so there is no record of what an agent
   actually reached and a blocked request is invisible after the fact. Rejections
@@ -328,7 +338,8 @@ def test_dns_rule_matches_the_allowlist(path: str, k8s_dir: Path) -> None:
     The DNS rule is a second enforcement layer, not a restatement: it matches the
     query name before any destination identity exists, so it is the only thing
     that bounds a `*.allegedly.works` name (`toFQDNs` cannot select node
-    identities) and the only thing that closes DNS itself as an egress channel.
+    identities). It bounds the proxy pod's own resolution — not the sandboxes',
+    which nothing fences (Known gaps).
     Cilium cannot share one list between the two rule kinds, so this assertion is
     what keeps the copies equal.
     """
