@@ -27,26 +27,30 @@ unique secrets pin those namespaces in `metadata`, and since the files set no
 `mac_only_encrypted` the document MAC covers that field, so re-homing them is a
 `sops` operation and not a text edit. Background: `agents/openclaw/README.md`.
 
-Before either step, there is teardown debris to clear in `openclaw-gateway`.
-`OpenClawInstance/openclaw` outlived its manifest because its finalizer has no
-controller left to run it — the same trap that hung the `openshell-system`
-deletion — and while it lingers, Kubernetes will not garbage-collect the
-scaled-to-zero `StatefulSet/openclaw` it owns, nor release 21Gi of PVCs.
+The OpenClaw teardown debris was cleared on 2026-08-04: the stuck
+`OpenClawInstance/openclaw`, the `StatefulSet` and 21Gi of PVCs it held, the
+objects GC took with it (Service, NetworkPolicy, PDB, Role/RoleBinding,
+ServiceAccount, ConfigMap, gateway token), and the three `openclaw.rocks` CRDs
+Helm left behind. One gotcha worth keeping: clearing the dangling finalizer needs
+a **merge patch** (`finalizers: null`) and cluster-admin. A server-side apply
+cannot do it — `metadata.finalizers` is a set-type list, and SSA will not remove
+an entry owned by a different field manager, so the apply reports success and
+changes nothing.
 
-- [ ] Clear the stuck instance and let GC follow, then drop the CRDs Helm left:
+What is left in `openclaw-gateway` is a second layer, from the OpenShell stack
+deleted the same day. None of it carries a Flux label, a Helm release annotation
+or a reflector annotation, so nothing in git manages it and nothing recreates it:
 
-      ```bash
-      kubectl -n openclaw-gateway patch openclawinstance openclaw \
-        --type=merge -p '{"metadata":{"finalizers":[]}}'
-      kubectl -n openclaw-gateway delete pvc openclaw-data \
-        openshell-data-openshell-gateway-0
-      kubectl delete crd openclawinstances.openclaw.rocks \
-        openclawselfconfigs.openclaw.rocks openclawclusterdefaults.openclaw.rocks
-      ```
+- [ ] Delete the unmanaged OpenShell remnants (needs cluster-admin):
+      `ConfigMap/openshell-openshell-operator-oidc-jwks`,
+      `ServiceAccount`+`Role`+`RoleBinding/openshell-gateway-certgen`, and the
+      Secrets `openshell-{client-tls,server-tls,gateway-jwt-keys,openshell-operator-token}`.
+      These are TLS/JWT material for a stack that no longer exists; `certgen`
+      would re-mint them if OpenShell ever returned.
 
-      `openclaw-data` is 20Gi on `local-path-proxmox` — Proxmox-pinned storage
-      held for a deleted service, so this is resilience debt as well as tidiness.
-      Needs cluster-admin.
+      Leave `github-token` and `litellm-key-openclaw` alone — both are reflector
+      mirrors (`claude-sandbox/github-token`, `litellm/litellm-key-openclaw`), so
+      deleting them only makes the reflector recreate them.
 
 Then two steps, in order — the second is blocked on the first:
 
