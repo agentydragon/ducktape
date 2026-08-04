@@ -82,6 +82,18 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
+# Every policy that injects proxy configuration into a sandbox namespace, pinned
+# to one shared variable set by //cluster/validation:test_proxy_injection.
+filegroup(
+    name = "proxy_injection_policy_files",
+    srcs = [
+        "haku/zones/policies/inject-haku-zones-mitmproxy.yaml",
+        "kyverno/policies/inject-haku-egress-proxy.yaml",
+        "kyverno/policies/inject-mitmproxy.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 filegroup(
     name = "ntfy_manifest_contract_files",
     srcs = ["flux-webhook/ntfy-webhook.sops.yaml"],

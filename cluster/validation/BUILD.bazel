@@ -303,6 +303,21 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_proxy_injection",
+    srcs = ["test_proxy_injection.py"],
+    data = [
+        "//cluster/k8s:proxy_injection_policy_files",
+        "@multitool//tools/kyverno",
+    ],
+    deps = [
+        ":kyverno",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "terraform_hcl",
     srcs = ["terraform_hcl.py"],
