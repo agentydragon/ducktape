@@ -8,6 +8,22 @@ spec:
     matchLabels:
       app.kubernetes.io/name: haku-openclaw-spike-proxy
   egress:
+    # DNS is this fence's second layer. The toEntities rule below cannot be an
+    # allowlist (see there), so the query-name filter here is the only Cilium-side
+    # bound on where this proxy goes -- and unlike toFQDNs it can express
+    # haku.allegedly.works, because it matches before any destination identity
+    # exists.
+    #
+    # The list mirrors openclaw-spike-iron.yaml's `allowlist` transform exactly,
+    # pinned against it by //cluster/validation:test_egress_allowlists. Cilium has
+    # no way to share one list across files, so the test is what keeps them equal.
+    #
+    # `**.` is Cilium's subdomain wildcard (one or more whole labels; a single `*`
+    # stops at the label boundary), so `**.cluster.local` covers in-cluster names
+    # and the ndots:5 search-path probes emitted before every external lookup.
+    # forgejo-http.forgejo is listed for parity with the iron allowlist; it is
+    # never queried in that form, since the search path resolves it as
+    # forgejo-http.forgejo.svc.cluster.local first.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -18,17 +34,40 @@ spec:
               protocol: ANY
           rules:
             dns:
-              - matchPattern: "*"
+              - matchPattern: "**.cluster.local"
+              - matchName: api.anthropic.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: forgejo-http.forgejo
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: haku.allegedly.works
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
     # Public HTTPS is still application-layer allowlisted by iron-proxy. Include
     # remote-node/host because allegedly.works is served from node ExternalIPs,
     # which Cilium does not classify as world.
     #
-    # This is the whole L3/L4 story for this proxy: it may open 443 to anything.
-    # Confinement lives entirely in openclaw-spike-iron.yaml's `allowlist`
-    # transform, so this fence is single-layer. A toFQDNs list here would add a
-    # second layer for true-world hosts but could not express
-    # haku.allegedly.works (node identity, see cluster/docs/cilium_network_policy.md),
-    # which is why the rule is written this way rather than as an allowlist.
+    # This rule may open 443 to anything, and cannot be narrowed into an
+    # allowlist: a toFQDNs list would fence true-world hosts but could not express
+    # haku.allegedly.works (node identity, see
+    # cluster/docs/cilium_network_policy.md). What bounds this proxy is
+    # openclaw-spike-iron.yaml's `allowlist` transform at L7 and the DNS rule
+    # above -- neither of which stops a destination reached by literal IP.
     - toEntities:
         - world
         - remote-node

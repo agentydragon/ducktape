@@ -22,8 +22,14 @@ fence builds code (`BUILD_REGISTRIES`), which model APIs it reaches, whether it
 can write to GitHub (`GITHUB_API`), and whether it touches the operator's own
 accounts (`OPERATOR_DATA`). Everything else is one or two named hosts.
 
-`toFQDNs` entries only. The `matchPattern: "*"` under `toPorts.rules.dns` is a
-DNS *query* filter, not an egress allowlist.
+Each fence is pinned twice, against the same declared set: once on where it may
+*connect* (`toFQDNs`, or the iron `allowlist` transform) and once on what it may
+*look up* (`toPorts.rules.dns`). The two are separate enforcement points, not one
+restated — the DNS proxy matches the query name before any destination identity
+exists, which is what lets it fence a `*.allegedly.works` name that `toFQDNs`
+cannot, and what closes DNS itself as an egress channel. Cilium has no way to
+share one list between the rule kinds, so the equality assertion is what keeps
+the copies from drifting.
 
 What a pinned host set does and does not mean
 ---------------------------------------------
@@ -41,10 +47,10 @@ alone:
 - *A `*.allegedly.works` entry in a `toFQDNs` block enforces nothing.* Those
   names resolve to the hostNetwork Gateway node IPs, and `toFQDNs` cannot select
   node identities (`cluster/docs/cilium_network_policy.md`). The three such
-  entries pinned below (`alloy-otlp`, `haku-mailbox`, `docker-ci`) record intent;
-  the first two are admitted by the `toEntities` rule instead, and the third
-  appears to be a dead rule. They stay pinned because the DNS layer *can* fence
-  them, so the recorded intent is what a DNS allowlist would be built from.
+  entries pinned below (`alloy-otlp`, `haku-mailbox`, `docker-ci`) record intent
+  at that layer; the first two are admitted by the `toEntities` rule instead, and
+  the third appears to be a dead rule. What makes them load-bearing anyway is the
+  DNS half of the pin, which does fence them.
 
 Known gaps
 ----------
@@ -84,10 +90,13 @@ operator-facing version is in `haku/docs/security.md`.
   network is reached with no proxy in the path and no allowlist applied. It is
   also why the same service is referenced by its public name in one manifest and
   its cluster name in another.
-- TODO: allowlist DNS. Five of the six fences carry `matchPattern: "*"` under
-  `toPorts.rules.dns`, so a resolvable name is an egress channel regardless of
-  what `toFQDNs` permits. Only `cnp-haku-claude-egress.yaml` pins its DNS rule
-  (`matchName: api.anthropic.com`) — that is the shape the others should take.
+- Allowlist DNS: **done** for every confined fence, pinned by
+  `test_dns_rule_matches_the_allowlist`. What remains open is the
+  `public-coder-agent` waiver, which keeps `matchPattern: "*"` because narrowing
+  DNS alone fences nothing while its `toEntities: [world]` rule stands. The
+  in-cluster namespace stays open by design (`**.cluster.local`), so DNS to a
+  name under `cluster.local` is still unbounded — that is the same deliberate
+  in-cluster posture as the `toEntities` rule, not an oversight.
 - TODO: record traffic, including rejections. The proxies filter and substitute
   credentials but keep no request log, so there is no record of what an agent
   actually reached and a blocked request is invisible after the fact. Rejections
@@ -178,13 +187,37 @@ OPERATOR_DATA = hosts(
 )
 
 
+# In-cluster names, deliberately unfenced: services there authenticate their own
+# callers, so reachability is not the boundary. `**.` is Cilium's subdomain
+# wildcard (one or more whole labels), which a single `*` cannot express — and
+# the depth matters, because with ndots:5 every external lookup first probes
+# `github.com.<ns>.svc.cluster.local`. Those probes must reach CoreDNS and come
+# back NXDOMAIN; a policy REFUSED is not the same answer to a resolver.
+CLUSTER_DNS = hosts("**.cluster.local")
+
+
 @dataclass(frozen=True)
 class Confined:
-    """An allowlist pinned to exactly the hosts it declares."""
+    """A Cilium fence: `toFQDNs` and the DNS rule both live in the keyed manifest."""
 
     allows: frozenset[str]
-    # Iron-proxy application config rather than a Cilium policy.
-    iron_transform: bool = False
+    # Names the fence may resolve beyond `allows`. Empty where the pod has no
+    # in-cluster egress at all, so it has no business resolving cluster names.
+    resolves_also: frozenset[str] = CLUSTER_DNS
+
+
+@dataclass(frozen=True)
+class IronConfined:
+    """An iron-proxy fence: the host list is app config, the DNS rule is Cilium's.
+
+    Two files, because the two layers are enforced by different components. The
+    DNS rule is the only Cilium-side bound on these proxies, so it is pinned to
+    the same set rather than left open.
+    """
+
+    allows: frozenset[str]
+    dns_manifest: str
+    resolves_also: frozenset[str] = CLUSTER_DNS
 
 
 @dataclass(frozen=True)
@@ -202,7 +235,7 @@ GITHUB_API_FENCE = "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml"
 
 # Keyed by manifest path: the file is the fence's only real identifier, so there
 # is no second name to keep in sync, and a failure names the file to open.
-ALLOWLISTS: dict[str, Confined | Unconfined] = {
+ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
     # Haku's general sandbox — the only fence holding OPERATOR_DATA.
     OPERATOR_DATA_FENCE: Confined(
         allows=BUILD_REGISTRIES | ANTHROPIC | OPERATOR_DATA | hosts("alloy-otlp.allegedly.works")
@@ -210,13 +243,15 @@ ALLOWLISTS: dict[str, Confined | Unconfined] = {
     # Haku's OpenClaw + Claude Code spike (namespace `haku-openclaw-spike`),
     # through its own iron proxy. Not public-coder-agent, which runs the same
     # OpenClaw image behind a different fence.
-    "agents/haku-egress-proxy/openclaw-spike-iron.yaml": Confined(
-        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"), iron_transform=True
+    "agents/haku-egress-proxy/openclaw-spike-iron.yaml": IronConfined(
+        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
+        dns_manifest="agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
     ),
     # The console-owned Claude runner pool (`haku-claude-sandbox`). Deliberately
     # the tightest fence in the cluster — one host, no registries, because it
-    # builds nothing. Widening it is a security change.
-    "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml": Confined(allows=ANTHROPIC),
+    # builds nothing. Widening it is a security change. It reaches nothing
+    # in-cluster either, hence no cluster DNS.
+    "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml": Confined(allows=ANTHROPIC, resolves_also=frozenset()),
     # The `claude-sandbox` namespace, via the shared agents-mitmproxy.
     "agents/mitmproxy/cnp-cloud-api-egress.yaml": Confined(
         allows=BUILD_REGISTRIES
@@ -251,23 +286,60 @@ def _cilium_entities(document: dict) -> set[str]:
     return {entity for rule in document["spec"]["egress"] for entity in rule.get("toEntities", ())}
 
 
+def _cilium_dns_names(document: dict) -> set[str]:
+    """Every name a `toPorts.rules.dns` rule permits the pod to look up."""
+    return {
+        name
+        for rule in document["spec"]["egress"]
+        for port_rule in rule.get("toPorts", ())
+        for entry in port_rule.get("rules", {}).get("dns", ())
+        for name in entry.values()
+    }
+
+
 def _iron_hosts(document: dict) -> set[str]:
     allowlists = [t for t in document["transforms"] if t["name"] == "allowlist"]
     return set(allowlists[0]["config"]["domains"]) if allowlists else set()
 
 
+def _load(k8s_dir: Path, path: str) -> dict:
+    document: dict = yaml.safe_load((k8s_dir / path).read_text())
+    return document
+
+
 @pytest.mark.parametrize("path", sorted(ALLOWLISTS))
 def test_allowlist_matches_its_declared_host_set(path: str, k8s_dir: Path) -> None:
     allowlist = ALLOWLISTS[path]
-    document: dict = yaml.safe_load((k8s_dir / path).read_text())
+    document = _load(k8s_dir, path)
     if isinstance(allowlist, Unconfined):
         # The waiver itself is pinned: it must reach `world` and must name no
         # hosts, so restoring confinement is a visible change either way.
         assert _cilium_hosts(document) == set()
         assert "world" in _cilium_entities(document)
         return
-    actual = _iron_hosts(document) if allowlist.iron_transform else _cilium_hosts(document)
+    actual = _iron_hosts(document) if isinstance(allowlist, IronConfined) else _cilium_hosts(document)
     assert actual == set(allowlist.allows)
+
+
+@pytest.mark.parametrize("path", sorted(ALLOWLISTS))
+def test_dns_rule_matches_the_allowlist(path: str, k8s_dir: Path) -> None:
+    """A fence may look up exactly what it may connect to, and cluster names.
+
+    The DNS rule is a second enforcement layer, not a restatement: it matches the
+    query name before any destination identity exists, so it is the only thing
+    that bounds a `*.allegedly.works` name (`toFQDNs` cannot select node
+    identities) and the only thing that closes DNS itself as an egress channel.
+    Cilium cannot share one list between the two rule kinds, so this assertion is
+    what keeps the copies equal.
+    """
+    allowlist = ALLOWLISTS[path]
+    if isinstance(allowlist, Unconfined):
+        # An unconfined proxy resolves anything; narrowing DNS alone would fence
+        # nothing while breaking the waiver.
+        assert _cilium_dns_names(_load(k8s_dir, path)) == {"*"}
+        return
+    manifest = allowlist.dns_manifest if isinstance(allowlist, IronConfined) else path
+    assert _cilium_dns_names(_load(k8s_dir, manifest)) == set(allowlist.allows | allowlist.resolves_also)
 
 
 def test_build_registries_are_all_or_none() -> None:

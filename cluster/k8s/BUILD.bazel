@@ -73,6 +73,9 @@ filegroup(
     srcs = [
         "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml",
         "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
+        # The spike's two layers live in two files: the iron allowlist and the
+        # Cilium DNS rule pinned against it.
+        "agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
         "agents/haku-egress-proxy/openclaw-spike-iron.yaml",
         "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml",
         "agents/mitmproxy/cnp-cloud-api-egress.yaml",

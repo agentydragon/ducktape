@@ -11,6 +11,12 @@ spec:
       app.kubernetes.io/name: mitmproxy
   egress:
     # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    #
+    # Mirrors every toFQDNs entry below, pinned against them by
+    # //cluster/validation:test_egress_allowlists. Rationale for the duplication,
+    # for `**.cluster.local`, and for why this layer is not redundant with
+    # toFQDNs: see the same rule in
+    # agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -21,7 +27,31 @@ spec:
               protocol: ANY
           rules:
             dns:
-              - matchPattern: "*"
+              - matchPattern: "**.cluster.local"
+              - matchName: api.anthropic.com
+              - matchName: api.openai.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: docker-ci.allegedly.works
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: generativelanguage.googleapis.com
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
     # The shared build-registry bucket: public package, source and toolchain
     # registries, granted all-or-none. Pinned as one set by
     # //cluster/validation:test_egress_allowlists (BUILD_REGISTRIES) -- add a host

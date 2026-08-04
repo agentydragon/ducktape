@@ -17,6 +17,24 @@ spec:
       app.kubernetes.io/name: haku-egress-proxy
   egress:
     # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    #
+    # This list mirrors every toFQDNs entry below, and is pinned against them by
+    # //cluster/validation:test_egress_allowlists -- the duplication is real (Cilium
+    # has no way to share one list between the two rule kinds), so the test is what
+    # keeps the halves equal.
+    #
+    # It is not redundant with toFQDNs. The DNS proxy matches the *query name* the
+    # pod sends, before any destination identity exists, so it is the only layer
+    # that can fence a *.allegedly.works name (see
+    # cluster/docs/cilium_network_policy.md) and the only one that closes DNS
+    # itself as an egress channel.
+    #
+    # `**.` is Cilium's subdomain wildcard: one or more whole labels, unlike a
+    # single `*`, which stops at the label boundary. `**.cluster.local` therefore
+    # covers both in-cluster names and the search-path probes glibc emits before
+    # every external lookup (ndots:5 tries `github.com.<ns>.svc.cluster.local`
+    # first). Those must resolve to a real NXDOMAIN; a policy REFUSED is not the
+    # same thing to a resolver.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -27,7 +45,35 @@ spec:
               protocol: ANY
           rules:
             dns:
-              - matchPattern: "*"
+              - matchPattern: "**.cluster.local"
+              - matchPattern: "*.ankiweb.net"
+              - matchName: alloy-otlp.allegedly.works
+              - matchName: api.anthropic.com
+              - matchName: api.coinbase.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: gmail.googleapis.com
+              - matchName: haku-mailbox.allegedly.works
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+              - matchName: tasks.googleapis.com
+              - matchName: www.googleapis.com
     - toFQDNs:
         # Container image registries (base-image + tooling pulls: dind base images,
         # ghcr tools).
