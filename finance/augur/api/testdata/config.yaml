@@ -177,6 +177,7 @@ portfolio_sources:
           owner_agent_id: agent_a
       holdings:
         - position_id: sp500_proxy
+          kind: security
           account_id: taxable_brokerage
           label: SP500 Proxy
           lots:
@@ -194,6 +195,7 @@ portfolio_sources:
           symbol: VOO
           unit_value_usd: 500.0
         - position_id: btc_holding
+          kind: security
           account_id: taxable_brokerage
           label: Bitcoin
           lots:
@@ -205,6 +207,7 @@ portfolio_sources:
           symbol: btc
           unit_value_usd: 75000.0
         - position_id: eth_holding
+          kind: security
           account_id: taxable_brokerage
           label: Ethereum
           lots:
