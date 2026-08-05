@@ -1,11 +1,5 @@
 import { clampInteger } from "./lib/format";
 
-// Sell-order is stored as a comma-joined list of security symbols, in priority order.
-// "VOO,BTC" means "sell VOO first, then BTC if needed"; "" disables auto liquidity sales
-// entirely; `null` (the default) means "any sellable holding". Storing it as a string rather
-// than an array keeps default-comparison and URL encoding trivial. The wire takes the same
-// symbols — there is no bucket vocabulary in between.
-
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
 // run this many rollouts, so it lives in the app shell rather than in either tab's input.
@@ -274,30 +268,31 @@ export function buildLifecycleEvents(events) {
 // means "hold what you have" — the target matches today's portfolio, so the first sale does not
 // silently rebalance a 90/10 split to 50/50.
 //
-// The seed lives here rather than in the backend lowering because the current VALUE of each
-// holding is on the wire the frontend already has; the lowering sees only cost basis, and cost
-// is not value.
-export function seedSleeveWeights(holdings) {
-  const sellable = (holdings ?? []).filter((h) => h.symbol != null && Number(h.holdingValueUsd) > 0);
-  const total = sellable.reduce((sum, h) => sum + Number(h.holdingValueUsd), 0);
+// `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
+// outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
+export function seedSleeveWeights(sellable) {
+  const held = (sellable ?? []).filter((row) => row.symbol && Number(row.valueUsd) > 0);
+  const total = held.reduce((sum, row) => sum + Number(row.valueUsd), 0);
   if (!total) return [];
-  return sellable.map((h) => ({
-    symbol: h.symbol,
-    weight: Math.max(1, Math.round((100 * Number(h.holdingValueUsd)) / total)),
+  return held.map((row) => ({
+    symbol: row.symbol,
+    weight: Math.max(1, Math.round((100 * Number(row.valueUsd)) / total)),
   }));
 }
 
-// `null` means "not edited yet" and seeds from the portfolio; an explicit list is taken as-is,
-// including the empty list, which is how auto-sale is turned off.
-export function resolveSleeveWeights(sleeveWeights, holdings) {
-  if (sleeveWeights == null) return seedSleeveWeights(holdings);
+// `null` is UI state meaning "not edited yet", and never reaches the wire: it resolves to the
+// hold-what-you-have seed here, so `FundingPolicy.sleeve_weights` is always an explicit list.
+// An explicit list is taken as-is, including the empty one — that is how auto-sale is turned off,
+// and it has to stay distinguishable from "not edited".
+export function resolveSleeveWeights(sleeveWeights, sellable) {
+  if (sleeveWeights == null) return seedSleeveWeights(sellable);
   return sleeveWeights
     .filter((sleeve) => sleeve.symbol)
     .map((sleeve) => ({ symbol: sleeve.symbol, weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
 }
 
-export function productScenario(input, bootstrap, modelId, horizonMonths, holdings) {
-  const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, holdings);
+export function productScenario(input, bootstrap, modelId, horizonMonths, sellable) {
+  const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
@@ -328,11 +323,12 @@ export function productScenario(input, bootstrap, modelId, horizonMonths, holdin
 
 // The tab-shared controls (rollout count, exogenous model, horizon — plus the fixed first seed) are
 // passed in `shared` rather than read from `input`, since the app shell owns them
-// (see `?n=`/`?x=`/`?h=`).
+// (see `?n=`/`?x=`/`?h=`). `sellable` rides along for the same reason: it comes from the fetched
+// portfolio the shell owns, and an unedited target allocation is seeded from it.
 export function productMetricFanRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, firstSeed, model, horizonMonths } = shared;
+  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
-    scenario: productScenario(input, bootstrap, model, horizonMonths),
+    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
     firstSeed: clampFirstSeed(firstSeed),
     rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
@@ -341,9 +337,9 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
 }
 
 export function productTerminalDistributionRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, firstSeed, model, horizonMonths } = shared;
+  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
-    scenario: productScenario(input, bootstrap, model, horizonMonths),
+    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
     firstSeed: clampFirstSeed(firstSeed),
     rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,

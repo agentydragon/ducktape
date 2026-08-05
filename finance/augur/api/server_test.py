@@ -297,7 +297,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
         "horizon_months": 3,
         "monthly_spend_usd": 300_000.0,
         "spend_index": "none",
-        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
+        "funding_policy": {"sleeve_weights": []},
     }
     fan = _post_json(
         server_url,
@@ -344,8 +344,23 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     }
 
 
-def test_backend_server_product_default_funding_sells_holding_for_required_spend(server_url: str) -> None:
-    scenario = {"model_id": "current_model", "horizon_months": 1, "monthly_spend_usd": 300_000.0, "spend_index": "none"}
+def test_backend_server_product_zero_width_band_sells_exactly_the_required_spend(server_url: str) -> None:
+    scenario = {
+        "model_id": "current_model",
+        "horizon_months": 1,
+        "monthly_spend_usd": 300_000.0,
+        "spend_index": "none",
+        # Floor and ceiling both at zero: the month is projected to end at 250k - 300k = -50k,
+        # so the band raises exactly the $50k shortfall and nothing more. Every sellable holding
+        # sits in the target, and water-filling takes it all from the overweight VOO sleeve.
+        "funding_policy": {
+            "sleeve_weights": [
+                {"symbol": "VOO", "weight": 1},
+                {"symbol": "btc", "weight": 1},
+                {"symbol": "eth", "weight": 1},
+            ]
+        },
+    }
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -392,7 +407,7 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
                 "horizon_months": 2,
                 "monthly_spend_usd": 1_000.0,
                 "spend_index": "none",
-                "funding_policy": {"sell_order": []},
+                "funding_policy": {"sleeve_weights": []},
             },
             "seed": 7,
         },
@@ -429,7 +444,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
         "horizon_months": 2,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
-        "funding_policy": {"sell_order": []},
+        "funding_policy": {"sleeve_weights": []},
         "pe_tender_policy": {"liquid_net_worth_floor_usd": 1_200_000.0, "index_floor_to_inflation": False},
     }
 
@@ -460,16 +475,22 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
     assert opportunity["proceeds_usd"] == pytest.approx(6_250.0)
 
 
-def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(server_url: str) -> None:
+def test_backend_server_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(server_url: str) -> None:
     scenario = {
         "model_id": "current_model",
         "horizon_months": 1,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
+        # The month is projected to end at 250k - 1k = 249k, under the 260k floor, so the band
+        # raises 280k - 249k = 31k. VOO ($750k) and btc ($75k) carry the same target weight, so
+        # VOO is the overweight sleeve and funds the whole raise on its own.
         "funding_policy": {
-            "cash_buffer_trigger_below_usd": 260_000.0,
-            "cash_buffer_sale_usd": 20_000.0,
-            "sell_order": ["VOO"],
+            "cash_floor_usd": 260_000.0,
+            "cash_ceiling_usd": 280_000.0,
+            # Nominal bounds: an inflation-indexed band would move with the sampled CPI path and
+            # the refill would no longer be an exact number.
+            "cash_band_index_to_inflation": False,
+            "sleeve_weights": [{"symbol": "VOO", "weight": 1}, {"symbol": "btc", "weight": 1}],
         },
     }
 
@@ -477,12 +498,24 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
 
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]
-    assert columns["cash_usd"] == [250_000.0, 269_000.0]
-    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 269_000.0
+    # Landing on the ceiling, not back on the floor: refilling to the floor would put the owner
+    # right back at the trigger next month.
+    assert columns["cash_usd"] == [250_000.0, 280_000.0]
+    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 280_000.0
     assert detail["rollout"]["terminal_metrics"]["shortfall_usd"] == 0.0
+    # Exactly two events: btc is inside the target but underweight, so it is not touched.
     sale, expense = detail["rollout"]["events"]
-    assert sale["kind"] == "holding_sale"
-    assert sale["proceeds_usd"] == pytest.approx(20_000.0)
+    assert sale == {
+        "month_index": 0,
+        "amount_usd": 31_000.0,
+        "kind": "holding_sale",
+        "asset": {"kind": "security", "symbol": "VOO"},
+        "asset_label": "SP500 Proxy (VOO)",
+        # 62 units at the $500 anchor, FIFO out of the $400/unit 2020 lot.
+        "units": pytest.approx(62.0),
+        "proceeds_usd": 31_000.0,
+        "cost_basis_usd": pytest.approx(24_800.0),
+    }
     assert expense["kind"] == "monthly_expense"
     assert expense["amount_paid_usd"] == 1_000.0
 
@@ -495,7 +528,7 @@ def test_backend_server_product_rollout_includes_zero_tax_accrual_events_without
         "horizon_months": 12,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
-        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
+        "funding_policy": {"sleeve_weights": []},
     }
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
@@ -515,10 +548,13 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
         "horizon_months": 13,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
+        # A band wide enough that the month-0 refill (760k - 249k = 511k) sells past the whole
+        # 2020 VOO lot, realizing a long-term gain big enough for both jurisdictions to charge.
         "funding_policy": {
-            "cash_buffer_trigger_below_usd": 260_000.0,
-            "cash_buffer_sale_usd": 500_000.0,
-            "sell_order": ["VOO"],
+            "cash_floor_usd": 260_000.0,
+            "cash_ceiling_usd": 760_000.0,
+            "cash_band_index_to_inflation": False,
+            "sleeve_weights": [{"symbol": "VOO", "weight": 1}],
         },
     }
 
@@ -555,7 +591,7 @@ def test_backend_server_product_outside_rent_re_pegs_yearly(server_url: str) -> 
         "spend_index": "none",
         "monthly_rent_usd": 3000.0,
         "rental_location_id": "location_a",
-        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
+        "funding_policy": {"sleeve_weights": []},
     }
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
@@ -576,7 +612,7 @@ def test_backend_server_product_rent_rejects_unknown_location(server_url: str) -
         "spend_index": "none",
         "monthly_rent_usd": 3000.0,
         "rental_location_id": "not_a_real_location",
-        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
+        "funding_policy": {"sleeve_weights": []},
     }
 
     request = urllib.request.Request(

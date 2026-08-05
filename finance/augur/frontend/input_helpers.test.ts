@@ -1,5 +1,5 @@
-// Unit tests for the scenario-set URL codec (Base + per-variant overrides). Runs under vitest;
-// see //augur/frontend:input_helpers_test.
+// Unit tests for the scenario-set URL codec (Base + per-variant overrides) and for the target
+// allocation the funding policy carries. Runs under vitest; see //augur/frontend:input_helpers_test.
 
 import { test, expect } from "vitest";
 
@@ -9,6 +9,8 @@ import {
   makeVariant,
   resolveVariant,
   productInputDefaults,
+  productScenario,
+  resolveSleeveWeights,
   MAX_VARIANTS,
 } from "./input_helpers";
 
@@ -103,4 +105,67 @@ test("an unrecognized ?scenarios= version falls back to a base with no variants"
   params.set("scenarios", JSON.stringify({ v: 999, base: { label: "x", input: {} }, variants: [] }));
   const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
   expect(decoded.variants).toHaveLength(0);
+});
+
+// -- Target allocation: seeding, and what reaches the wire ---------------------
+
+const SELLABLE = [
+  { symbol: "spy", label: "S&P 500", valueUsd: 900_000 },
+  { symbol: "btc", label: "Bitcoin", valueUsd: 100_000 },
+];
+
+test("an unedited target allocation seeds from what is held, not equal weights", () => {
+  // The whole reason the seed exists: equal weights would make the first refill a rebalance the
+  // owner never asked for, dumping a 90/10 split to 50/50 the first time cash crosses the floor.
+  expect(resolveSleeveWeights(null, SELLABLE)).toEqual([
+    { symbol: "spy", weight: 90 },
+    { symbol: "btc", weight: 10 },
+  ]);
+});
+
+test("a holding too small to round to one percent stays inside the target", () => {
+  // Weight 0 means "never sell this", which is not what "you own a little of it" says.
+  const weights = resolveSleeveWeights(null, [...SELLABLE, { symbol: "doge", label: "Doge", valueUsd: 100 }]);
+  expect(weights.find((sleeve) => sleeve.symbol === "doge").weight).toBe(1);
+});
+
+test("an explicit empty target stays empty, and is not re-seeded", () => {
+  // `[]` is the user saying "never auto-sell" — an unaffordable month is then ruin. If it were
+  // re-seeded like `null`, that choice would be silently un-made every time a request was built.
+  expect(resolveSleeveWeights([], SELLABLE)).toEqual([]);
+});
+
+test("an explicit zero weight survives to the wire", () => {
+  // Zero puts a holding OUTSIDE the target: never sold, and not counted when measuring what is
+  // overweight. Dropping it here would put it back in the denominator.
+  expect(resolveSleeveWeights([{ symbol: "btc", weight: 0 }], SELLABLE)).toEqual([{ symbol: "btc", weight: 0 }]);
+});
+
+test("the scenario always carries an explicit sleeve list, never the unedited null", () => {
+  // `FundingPolicy.sleeve_weights` has no "derive it for me" sentinel, and the wire model forbids
+  // unknown/extra shapes — so a null leaking out of the editor state is a rejected request.
+  const scenario = productScenario(
+    { ...productInputDefaults(bootstrap), sleeveWeights: null },
+    bootstrap,
+    "m",
+    12,
+    SELLABLE
+  );
+  expect(scenario.fundingPolicy.sleeveWeights).toEqual([
+    { symbol: "spy", weight: 90 },
+    { symbol: "btc", weight: 10 },
+  ]);
+});
+
+test("the cash ceiling is never below the floor", () => {
+  // The wire validator rejects an inverted band outright (it has no interior), so the editor must
+  // not be able to submit one while the user is mid-edit on the floor.
+  const scenario = productScenario(
+    { ...productInputDefaults(bootstrap), cashFloorUsd: 50_000, cashCeilingUsd: 10_000 },
+    bootstrap,
+    "m",
+    12,
+    SELLABLE
+  );
+  expect(scenario.fundingPolicy.cashCeilingUsd).toBe(50_000);
 });

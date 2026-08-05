@@ -249,7 +249,10 @@ export function SleeveWeightsControl({
   const sellable = sellableSecurities(portfolio);
   if (sellable.length === 0) return null;
   const resolved = resolveSleeveWeights(sleeveWeights, sellable);
-  const weightBySymbol = new Map(resolved.map((sleeve) => [sleeve.symbol, sleeve.weight]));
+  // The type argument is load-bearing. `resolveSleeveWeights` is untyped, so `resolved` is `any`
+  // and the callback's return type is discarded — leaving `Map<unknown, unknown>`, which makes
+  // every arithmetic use of a weight below a compile error.
+  const weightBySymbol = new Map<string, number>(resolved.map((sleeve) => [sleeve.symbol, sleeve.weight]));
   const total = sellable.reduce((sum, row) => sum + (weightBySymbol.get(row.symbol) ?? 0), 0);
 
   const emit = (symbol, weight) =>

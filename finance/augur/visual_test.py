@@ -318,11 +318,13 @@ _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_S
 # fixture portfolio so weaker-market paths exhaust cash and holdings before the 10y horizon, while
 # stronger-market paths survive. This is the only fixture with a non-zero failure rate, so it
 # exercises the distribution chart's failed-rollout markers (red dots, pinned at the frozen-to-0
-# terminal value). `cashBufferSaleUsd` is raised so funding keeps pace with spend month-to-month —
-# a bust then means holdings genuinely ran out, which is market-path-dependent (hence partial).
+# terminal value). `cashCeilingUsd` is raised so each crossing of the floor refills a chunk large
+# enough to keep funding ahead of spend — a bust then means holdings genuinely ran out, which is
+# market-path-dependent (hence partial). The target allocation is left unset, so it seeds from the
+# fixture holdings and every sellable position can fund the band.
 _FAILURE_SCENARIOS = {
     "v": 2,
-    "base": {"label": "Aggressive drawdown", "input": {"monthlySpendUsd": 9000, "cashBufferSaleUsd": 40000}},
+    "base": {"label": "Aggressive drawdown", "input": {"monthlySpendUsd": 9000, "cashCeilingUsd": 40000}},
     "variants": [],
 }
 _FAILURE_URL = "/product?" + urlencode({"scenarios": json.dumps(_FAILURE_SCENARIOS), "h": "120"})

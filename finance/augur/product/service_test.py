@@ -67,6 +67,7 @@ from finance.augur.product.wire import (
     SetPrimaryResidenceEventWire,
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
+    SleeveWeight,
     TerminalDistributionRequest,
 )
 from finance.augur.sim.engine.jax_engine import ProductSummary
@@ -461,7 +462,7 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
     distribution = product.terminal_distribution(
@@ -527,7 +528,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
         horizon_months=3,
         monthly_spend_usd=300_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
     fan = product.metric_fan(
@@ -561,8 +562,52 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     assert failure.shortfall_usd == 300_000.0
 
 
-def test_default_funding_policy_sells_holdings_for_required_spend(product: service.ProductService) -> None:
+def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(product: service.ProductService) -> None:
+    """Omitting the funding policy means no target, and no target means no sales.
+
+    The wire has no "derive it for me" sentinel, so a caller that forgets to send weights is
+    NOT quietly granted permission to liquidate the portfolio: the month it cannot cover is
+    ruin, loudly. Worth pinning, because the previous shape defaulted the other way — an absent
+    sell order meant "sell any holding" — and that difference is invisible until a request that
+    used to work starts failing.
+    """
+
     scenario = ScenarioKey(model_id="current_model", horizon_months=1, monthly_spend_usd=300_000.0, spend_index="none")
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert detail.rollout.failed is True
+    assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
+    expense, _failure = detail.rollout.events
+    assert isinstance(expense, MonthlyExpenseEvent)
+    assert expense.amount_paid_usd == 0.0
+    assert expense.shortfall_usd == 300_000.0
+
+
+def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.ProductService) -> None:
+    """Floor = ceiling = 0 is hand-to-mouth funding: raise exactly the shortfall, no buffer.
+
+    It is the degenerate band, and worth its own case because `raise = ceiling - projected` has
+    to stay exact when the ceiling is zero — an off-by-one that padded the raise would leave
+    cash behind and go unnoticed under any band with a positive ceiling.
+    """
+
+    scenario = ScenarioKey(
+        model_id="current_model",
+        horizon_months=1,
+        monthly_spend_usd=300_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(
+            cash_floor_usd=0.0,
+            cash_ceiling_usd=0.0,
+            cash_band_index_to_inflation=False,
+            sleeve_weights=(
+                SleeveWeight(symbol="VOO", weight=1),
+                SleeveWeight(symbol="btc", weight=1),
+                SleeveWeight(symbol="eth", weight=1),
+            ),
+        ),
+    )
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
@@ -603,7 +648,7 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
                 horizon_months=2,
                 monthly_spend_usd=1_000.0,
                 spend_index="none",
-                funding_policy=FundingPolicy(sell_order=()),
+                funding_policy=FundingPolicy(sleeve_weights=()),
             ),
             seed=7,
         )
@@ -662,7 +707,7 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
                 horizon_months=2,
                 monthly_spend_usd=1_000.0,
                 spend_index="none",
-                funding_policy=FundingPolicy(sell_order=()),
+                funding_policy=FundingPolicy(sleeve_weights=()),
             ),
             seed=7,
         )
@@ -712,7 +757,7 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
                 horizon_months=2,
                 monthly_spend_usd=1_000.0,
                 spend_index="none",
-                funding_policy=FundingPolicy(sell_order=()),
+                funding_policy=FundingPolicy(sleeve_weights=()),
             ),
             seed=7,
         )
@@ -729,27 +774,70 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     assert opportunity.proceeds_usd == pytest.approx(0.0)
 
 
-def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(product: service.ProductService) -> None:
+def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(product: service.ProductService) -> None:
+    """The band, end to end through the product surface.
+
+    The fixture holds $750k of VOO against $75k of BTC. Against equal weights VOO is the
+    overweight sleeve by an order of magnitude, so every dollar raised must come out of it —
+    "don't sell the underweight sleeve" is the whole point of a target, not a slogan.
+
+    Cash starts at $250k with a $1k spend, so the month's PROJECTED close is $249k, under the
+    $260k floor. The refill target is the CEILING: $280k - $249k = $31k raised, leaving exactly
+    the ceiling once the spend settles. Asserted exactly rather than as "sold something": a
+    policy that refilled to the FLOOR would also sell here, and would leave the owner back at
+    its trigger next month — a forced seller into every dip, which is the defect this guards.
+    """
+
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(cash_buffer_trigger_below_usd=260_000.0, cash_buffer_sale_usd=20_000.0),
+        funding_policy=FundingPolicy(
+            cash_floor_usd=260_000.0,
+            cash_ceiling_usd=280_000.0,
+            cash_band_index_to_inflation=False,
+            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+        ),
     )
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert detail.rollout.failed is False
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 269_000.0]
-    assert detail.rollout.terminal_metrics.cash_usd == 269_000.0
+    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 280_000.0]
+    assert detail.rollout.terminal_metrics.cash_usd == 280_000.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
     assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
     assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
-    assert sale.proceeds_usd == pytest.approx(20_000.0)
+    assert sale.proceeds_usd == pytest.approx(31_000.0)
+    assert sale.asset == SecurityKey(symbol=SecuritySymbol("VOO"))
     assert expense.amount_paid_usd == 1_000.0
+
+
+def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: service.ProductService) -> None:
+    """Drift alone never trades. The fixture is ~90/10 VOO/BTC against a 1:1 target — as far from
+    target as this portfolio gets — and nothing is sold while cash stays above the floor.
+    Rebalancing rides cashflow, so a target allocation is not a rebalancing schedule."""
+
+    scenario = ScenarioKey(
+        model_id="current_model",
+        horizon_months=1,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(
+            cash_floor_usd=100_000.0,
+            cash_ceiling_usd=300_000.0,
+            cash_band_index_to_inflation=False,
+            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert [event.kind for event in detail.rollout.events] == ["monthly_expense"]
+    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0]
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
@@ -760,7 +848,7 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
         horizon_months=12,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -780,7 +868,14 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(cash_buffer_trigger_below_usd=260_000.0, cash_buffer_sale_usd=500_000.0),
+        funding_policy=FundingPolicy(
+            cash_floor_usd=260_000.0,
+            # A ceiling far above the floor so the single refill is large enough to realize a
+            # gain worth taxing; the fixture's VOO lots carry ~$100/unit of appreciation.
+            cash_ceiling_usd=760_000.0,
+            cash_band_index_to_inflation=False,
+            sleeve_weights=(SleeveWeight(symbol="VOO", weight=1), SleeveWeight(symbol="btc", weight=1)),
+        ),
     )
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -818,7 +913,7 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
         spend_index="none",
         monthly_rent_usd=3_000.0,
         rental_location_id="location_a",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -903,7 +998,7 @@ def mortgage_purchase_scenario() -> ScenarioKey:
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -958,7 +1053,7 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario(
         horizon_months=36,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=CashFinancing(),
@@ -996,7 +1091,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         horizon_months=12,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=CashFinancing(),
@@ -1054,7 +1149,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         horizon_months=12,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=CashFinancing(),
@@ -1134,7 +1229,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
         horizon_months=6,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=CashFinancing(),
@@ -1173,7 +1268,7 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
         horizon_months=6,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=CashFinancing(),
@@ -1198,7 +1293,7 @@ def test_primary_residence_event_emits_rollout_marker(
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=CashFinancing(),
@@ -1254,7 +1349,7 @@ def test_cash_property_purchase_omits_mortgage_payments(
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
         ),
@@ -1282,7 +1377,7 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_b_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -1311,7 +1406,7 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: s
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -1331,7 +1426,7 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: se
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -1357,7 +1452,7 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(product: serv
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
         ),
@@ -1376,7 +1471,7 @@ def test_property_purchase_emits_maintenance_at_default_pct(product: service.Pro
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -1402,7 +1497,7 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(product: 
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
         ),
@@ -1441,7 +1536,7 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -1470,7 +1565,7 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
@@ -1501,7 +1596,7 @@ def test_cash_property_purchase_omits_mortgage_interest_deduction(
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        funding_policy=FundingPolicy(sell_order=()),
+        funding_policy=FundingPolicy(sleeve_weights=()),
         property_purchase=PropertyPurchase(
             property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
         ),

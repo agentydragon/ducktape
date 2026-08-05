@@ -40,6 +40,7 @@ import {
   selectedRolloutMetricRows,
   selectedRolloutEvents,
   visibleMetricOptions,
+  sellableSecurities,
 } from "./data_helpers";
 
 function RolloutResultsPanel({
@@ -300,6 +301,11 @@ export function ProductProjectionWorkspace({
     eventSelection.clear();
   };
 
+  // `null` until the portfolio fetch lands — distinct from "loaded, and nothing is sellable".
+  // An unedited target allocation is seeded from these rows, so a request built before the
+  // portfolio arrives would ask for a no-target scenario (never auto-sells, so ruin) and get a
+  // fan the user never asked for. The fetch effects below wait for it rather than showing that.
+  const sellable = useMemo(() => (portfolio ? sellableSecurities(portfolio) : null), [portfolio]);
   const requestEntries = useMemo(
     () =>
       chartScenarios.map((entry) => ({
@@ -310,9 +316,10 @@ export function ProductProjectionWorkspace({
           firstSeed,
           model,
           horizonMonths,
+          sellable: sellable ?? [],
         }),
       })),
-    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
+    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
   );
   const terminalRequestEntries = useMemo(
     () =>
@@ -324,9 +331,10 @@ export function ProductProjectionWorkspace({
           firstSeed,
           model,
           horizonMonths,
+          sellable: sellable ?? [],
         }),
       })),
-    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
+    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
   );
   const terminalRequestKeyById = useMemo(
     () => new Map(terminalRequestEntries.map(({ id, request }) => [id, JSON.stringify(request)])),
@@ -526,6 +534,7 @@ export function ProductProjectionWorkspace({
   }, [chartScenarios]);
 
   useEffect(() => {
+    if (sellable == null) return;
     const controller = new AbortController();
     // Fan out one request per scenario over the shared seed set. Results land in place (no clear)
     // so the comparison fans stay put while the active scenario is being edited.
@@ -552,9 +561,10 @@ export function ProductProjectionWorkspace({
       clearTimeout(handle);
       controller.abort();
     };
-  }, [requestEntries]);
+  }, [requestEntries, sellable]);
 
   useEffect(() => {
+    if (sellable == null) return;
     const controller = new AbortController();
     const handle = setTimeout(() => {
       for (const { id, label, request } of terminalRequestEntries) {
@@ -581,7 +591,7 @@ export function ProductProjectionWorkspace({
       clearTimeout(handle);
       controller.abort();
     };
-  }, [terminalRequestEntries]);
+  }, [terminalRequestEntries, sellable]);
 
   useEffect(() => {
     eventSelection.clear();
