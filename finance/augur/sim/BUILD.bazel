@@ -262,6 +262,24 @@ py_library(
 )
 
 py_library(
+    name = "allocation",
+    srcs = ["allocation.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_test(
+    name = "allocation_test",
+    size = "small",
+    srcs = ["allocation_test.py"],
+    deps = [
+        ":allocation",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "pricing",
     srcs = ["pricing.py"],
 )
