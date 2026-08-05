@@ -57,7 +57,7 @@ from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
-from finance.augur.sim.compiler.plan import SlotPlan
+from finance.augur.sim.compiler.plan import SlotPlan, lot_order_for_pool
 from finance.augur.sim.engine.jax_scatter import scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
     _CapitalGainTarget,
@@ -81,7 +81,6 @@ from finance.augur.sim.enums import (
     PrivateEquityOpportunityOutcome,
 )
 from finance.augur.sim.fixed_point import USD_CENTS
-from finance.augur.sim.tensor_fifo import lot_order_for_pool
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
 # survive across processes so the ~6400-instruction scan program need not recompile each run. A no-op

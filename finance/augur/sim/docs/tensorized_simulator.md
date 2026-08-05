@@ -327,7 +327,8 @@ for policy in policies:
     for asset_order_slot in range(A):
         available = available_value_for_asset_slot(policy, asset_order_slot)  # [R]
         sale_target = np.minimum(np.clip(deficit, 0.0, None), available)
-        sold = fifo_sell_dollars(policy, asset_order_slot, sale_target)  # [R]
+        # the dollar-target FIFO block above, applied to this slot's pool
+        sold = fifo_sell(policy, asset_order_slot, sale_target)  # [R]
         deficit -= sold
     liquidity_shortfall = deficit > epsilon
     failed |= liquidity_shortfall

@@ -187,6 +187,30 @@ class CompiledSimulation:
     liquidity_policies: LiquidityPolicyCompileOutput
 
 
+def lot_order_for_pool(
+    *,
+    lot_agent_codes: NDArray[np.int64],
+    lot_account_codes: NDArray[np.int64],
+    lot_asset_codes: NDArray[np.int64],
+    lot_purchase_month: NDArray[np.int64],
+    lot_id_codes: NDArray[np.int64],
+    agent_code: int,
+    account_code: int,
+    asset_code: int,
+) -> NDArray[np.int64]:
+    """Return FIFO-ordered lot indices for one `(agent, account, asset)` pool.
+
+    Lot identity and purchase month are plan columns, so the order is static: the engine
+    resolves it once host-side and the traced step gathers by the resulting indices. Lots in
+    different accounts are not fungible, which is why the account code is part of the key."""
+
+    eligible = np.flatnonzero(
+        (lot_agent_codes == agent_code) & (lot_account_codes == account_code) & (lot_asset_codes == asset_code)
+    )
+    order = np.lexsort((lot_id_codes[eligible], lot_purchase_month[eligible]))
+    return eligible[order]
+
+
 def compile_simulation(
     scenario: Scenario,
     *,

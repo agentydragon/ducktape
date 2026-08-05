@@ -232,6 +232,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "plan_test",
+    srcs = ["compiler/plan_test.py"],
+    deps = [
+        ":compiler",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "scenario",
     srcs = ["scenario.py"],
@@ -256,12 +266,6 @@ py_library(
 )
 
 py_library(
-    name = "tensor_fifo",
-    srcs = ["tensor_fifo.py"],
-    deps = ["@pypi//numpy"],
-)
-
-py_library(
     name = "pricing",
     srcs = ["pricing.py"],
 )
@@ -271,17 +275,6 @@ py_test(
     srcs = ["pricing_test.py"],
     deps = [
         ":pricing",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tensor_fifo_test",
-    srcs = ["tensor_fifo_test.py"],
-    deps = [
-        ":tensor_fifo",
-        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -417,7 +410,6 @@ py_library(
         ":fixed_point",
         ":runtime",
         ":scenario",
-        ":tensor_fifo",
         "//finance/augur/model:series",
         "//finance/augur/product:metric_composition",
         "@pypi//jax",
