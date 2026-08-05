@@ -27,6 +27,7 @@ from pydantic import (
 from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
+from finance.augur.sim.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
@@ -513,6 +514,89 @@ class LiquidityPolicy(BaseModel):
     cash_buffer_trigger_below_usd: AmountSpec = 0.0
     cash_buffer_sale_usd: AmountSpec = 0.0
     cause_id_prefix: str = "liquidity_sale"
+
+
+class SleeveTarget(BaseModel):
+    """One sleeve of a target allocation: an asset and its relative weight.
+
+    Weights are integers and only their RATIOS matter — `(3, 1)` and `(30, 10)` are the same
+    policy. A fraction would be derivable from the weights, so storing fractions would store
+    a computed quantity and need a float sum-to-one validator to defend it.
+    """
+
+    asset: AssetKey
+    weight: PositiveInt
+
+
+class TargetAllocationPolicy(BaseModel):
+    """Funding policy for one agent cash account: hold cash in a band, sell toward a target.
+
+    Replaces `LiquidityPolicy`'s ordered sell-list with a target the sales move TOWARD. When
+    the account's projected end-of-month balance falls below `cash_floor_usd`, the policy
+    raises enough to reach `cash_ceiling_usd`, taking from the most overweight sleeve first
+    so what remains is as close to the target ratios as the raise allows.
+
+    The band is (s,S): crossing the floor refills to the ceiling, not back to the floor.
+    Refilling to the floor would put the agent back at its trigger next month, making it a
+    forced seller into every dip — which is the risk this whole model exists to price.
+
+    **The ceiling is the refill TARGET, not an invest-above-this rule.** Surplus cash above
+    it accumulates; nothing buys with it. Investing surplus has never existed in augur and
+    this policy does not add it — that arrives with policy-driven purchases, and only then
+    does the ceiling gain a second meaning.
+
+    Sleeves the policy does not name are outside the target denominator entirely: never sold
+    to fund the band, and not counted when measuring what is overweight. That is what makes
+    a target alongside an untradeable holding — private equity before liquidity, a bond that
+    will be held to maturity — expressible at all.
+    """
+
+    agent_id: str
+    # Cash account the band governs: it receives sale proceeds and pays the matching obligations.
+    account_id: str
+    # Holding accounts the policy may sell from. Empty means the funding account only.
+    source_account_ids: tuple[str, ...] = ()
+    sleeves: list[SleeveTarget]
+    # `AmountSpec = float | AmountSchedule` — a raw float for a constant band, or a
+    # `SeriesIndexedAmount` (e.g. `series=InflationKey()`) to hold the band in real terms.
+    cash_floor_usd: AmountSpec = 0.0
+    cash_ceiling_usd: AmountSpec
+    cause_id_prefix: str = "allocation_sale"
+
+    @model_validator(mode="after")
+    def _reject_duplicate_and_inverted(self) -> TargetAllocationPolicy:
+        if not self.sleeves:
+            raise ValueError(
+                f"target-allocation policy for {self.agent_id}/{self.account_id} names no sleeves; "
+                "a policy with an empty target can never raise cash and would fail every obligation "
+                "the account cannot already cover"
+            )
+        assets = [sleeve.asset for sleeve in self.sleeves]
+        if len(set(assets)) != len(assets):
+            duplicated = sorted({str(asset) for asset in assets if assets.count(asset) > 1})
+            raise ValueError(
+                f"target-allocation policy for {self.agent_id}/{self.account_id} names {duplicated} "
+                "more than once; an asset weighted twice is counted twice and skews every target"
+            )
+        # Band ordering is checked on the CONFIGURED amounts because per-month values may be
+        # CPI-indexed, hence traced, and a traced value cannot drive a raise. Indexing scales
+        # both bounds by the same series, so an ordering that holds here holds on every path.
+        validate_band_bounds(
+            floor_usd=_base_amount_usd(self.cash_floor_usd), ceiling_usd=_base_amount_usd(self.cash_ceiling_usd)
+        )
+        return self
+
+
+def _base_amount_usd(spec: AmountSpec) -> float:
+    """The configured base of an amount spec, for compile-time checks that compare two specs."""
+
+    match spec:
+        case float() | int():
+            return float(spec)
+        case FixedAmount():
+            return spec.amount_usd
+        case SeriesIndexedAmount():
+            return spec.base_amount_usd
 
 
 class TaxProfile(BaseModel):

@@ -324,12 +324,27 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
+        ":cash_band",
         ":enums",
         ":fixed_point",
         ":tlh_harvest",
         "//finance/augur/model:series_model",
         "//finance/augur/product:asset_key",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "target_allocation_config_test",
+    size = "small",
+    srcs = ["target_allocation_config_test.py"],
+    deps = [
+        ":scenario",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
