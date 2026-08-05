@@ -39,6 +39,9 @@ internals.
 | Buy         | instrument, account, amount in **dollars** or in **units** |
 | Sell        | instrument, account, amount in **dollars** or in **units** |
 
+Every instruction also carries whether it is **required** — see "what a shortfall means"
+below, which is the one thing the broker metaphor cannot supply.
+
 Consequences that fall out of the test rather than being chosen:
 
 - **Per-instrument, never per-sleeve.** The broker has no idea what a sleeve is.
@@ -60,6 +63,36 @@ Consequences that fall out of the test rather than being chosen:
   choosing to emit `Pay`; a lifestyle tier changes how much and to whom, not which
   instruction.
 
+## Where the metaphor stops: what a shortfall means
+
+The broker test guides what fields an instruction **has**. It is no guide to what happens
+when one **cannot execute**, because in a broker UI a rejection is free — the order bounces
+and you shrug. Read the metaphor that far and "instruction" quietly acquires
+silently-skip-on-failure semantics, which is wrong: trying to spend $1,000 without $1,000
+must not be a no-op.
+
+Combined with affordability being the policy's job, that splits "cannot execute" into two
+genuinely different things, and both are loud:
+
+| Case                          | Outcome           | Because                                                                                    |
+| ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------ |
+| **Required**, unfundable      | the ROLLOUT fails | This is ruin, a modelled outcome.                                                          |
+| **Discretionary**, unfundable | the RUN aborts    | The policy promised affordability and broke it. That is a bug, not a fact about the world. |
+
+The first has to be emittable on purpose. A policy saying "I must pay this and I cannot" is
+precisely what ruin _is_ — if an unfundable required payment were unrepresentable, so
+would ruin be.
+
+So **requiredness is a field on the instruction**. Execution cannot otherwise tell which of
+the two it is looking at, and the distinction is not derivable from the instruction's other
+fields — the same `Pay`, to the same landlord, for the same amount, is required under a
+lease and discretionary as a gift.
+
+This is also what keeps lifestyle tiers expressible: rent under a tier is a **required**
+payment whose **amount the policy chooses**. Obligations-as-a-separate-mechanism cannot say
+that — it fixes the amount at config time — which is why requiredness belongs on the
+instruction rather than on a parallel commitment channel.
+
 ## Everything that acts is a policy
 
 A policy is a box in the RL sense: observations in, instructions out.
@@ -76,9 +109,22 @@ shortcut was not wrong as an implementation; it was wrong as a concept, because 
 schedules a separate _execution path_ rather than a degenerate policy. Unifying lets one
 executor serve both.
 
-**The one case needing care**: obligations. A bill arriving is not something you clicked,
-and failing to pay one is ruin rather than simply not acting. Whatever they reduce to, the
-must-pay property has to survive — it is what makes `failed_month` mean anything.
+**Obligations reduce too**, once requiredness is a field. A recurring obligation is a clock
+policy emitting a **required** `Pay` — the must-pay property that makes `failed_month` mean
+anything is carried by the instruction rather than by a parallel commitment channel.
+
+That is a better answer than keeping obligations separate, and not only for tidiness:
+a separate channel fixes the amount at config time, so it cannot express a required payment
+whose amount a policy chooses. Rent under a lifestyle tier is exactly that, so the parallel
+channel would have had to grow a policy hook anyway — at which point it is the instruction
+path with extra steps.
+
+What still needs care is not the reduction but the **ordering**: required payments must
+settle before discretionary ones, or an actor could spend money it needed for rent and
+manufacture a ruin that a real person would not have. Today that ordering is implicit in
+the phase order; under one instruction stream it becomes explicit, and should be, since it
+is a real claim about behaviour rather than an artifact of how the engine happens to be
+sequenced.
 
 ## Invariants
 
