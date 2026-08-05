@@ -349,8 +349,8 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
 
     baked, structure, p, meta = _build_program(plan)
     external, pe, cfg = _program_inputs(plan)
-    ys, sale_disp = _program_impl(external, pe, cfg, baked, p, structure)
-    scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
+    ys, final_state = _program_impl(external, pe, cfg, baked, p, structure)
+    scatter_ys_to_buffers(plan, buffers, meta, ys, final_state)
 
 
 @dataclass(frozen=True)
@@ -2283,7 +2283,6 @@ def _program_impl(
             cash,
             ordinary,
             lot_remaining,
-            cost_basis_per_unit,
             cg_active,
             cg_ytd,
             property_active,
@@ -2421,8 +2420,11 @@ def _program_impl(
         final_carry, ys = jax.lax.scan(step, init, months)
         return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month)
     final_carry, ys = jax.lax.scan(step, init, months)
-    # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
+    # Horizon-collapsed outputs, read off the final carry rather than emitted per month: the
+    # scheduled-sale dispositions (accumulated at each sale's firing month) and the per-lot cost
+    # basis (written once at purchase and never revised — a lot slot is never reused).
     return ys, (
+        final_carry.cost_basis_per_unit,
         final_carry.sale_disp_units,
         final_carry.sale_disp_basis,
         final_carry.sale_disp_proceeds,
