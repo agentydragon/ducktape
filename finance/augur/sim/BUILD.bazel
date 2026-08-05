@@ -285,6 +285,32 @@ py_library(
     ],
 )
 
+py_library(
+    name = "actor_policy",
+    srcs = ["actor_policy.py"],
+    deps = [
+        ":actor_view",
+        ":allocation",
+        ":cash_band",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "actor_policy_test",
+    size = "small",
+    srcs = ["actor_policy_test.py"],
+    deps = [
+        ":actor_policy",
+        ":actor_view",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "actor_view_test",
     size = "small",

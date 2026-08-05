@@ -21,7 +21,7 @@ _PURCHASE_MONTH = np.asarray([0, 3, 3], dtype=np.int64)
 def _view(*, month: int = 6, cash_slots: tuple[int, ...] = (0, 1), lot_slots: tuple[int, ...] = (0, 1)):
     return build_actor_view(
         month=jnp.asarray(month, dtype=jnp.int64),
-        slots=ActorSlots(cash_slots=cash_slots, lot_slots=lot_slots),
+        slots=ActorSlots(cash_slots=cash_slots, lot_slots=lot_slots, external_cash_slot=3, cash_count=4, lot_count=3),
         # Row 2 is another agent; row 3 is `rest_of_world`.
         cash_cents=jnp.asarray([[100, 200], [10, 20], [7_000, 8_000], [-9_999, -9_999]], dtype=jnp.int64),
         lot_quantity=jnp.asarray([[500, 1_000], [200, 400], [9_999, 9_999]], dtype=jnp.int64),
@@ -100,18 +100,19 @@ def test_sleeves_aggregate_over_view_rows() -> None:
 
 
 def test_the_external_contra_row_cannot_be_granted() -> None:
-    """The load-bearing check. `rest_of_world` holds money that LEFT the modeled world, so
-    an actor able to see it would read its own past spending as an asset."""
+    """The load-bearing check, and it fires at CONSTRUCTION — there is no separate validate
+    call to forget. `rest_of_world` holds money that LEFT the modeled world, so an actor able
+    to see it would read its own past spending as an asset."""
 
     with pytest.raises(ValueError, match="external contra row"):
-        ActorSlots(cash_slots=(0, 3), lot_slots=(0,)).validated_against(external_cash_slot=3, cash_count=4, lot_count=3)
+        ActorSlots(cash_slots=(0, 3), lot_slots=(0,), external_cash_slot=3, cash_count=4, lot_count=3)
 
 
 def test_out_of_range_slots_are_rejected() -> None:
     with pytest.raises(ValueError, match="cash slot out of range"):
-        ActorSlots(cash_slots=(0, 9), lot_slots=(0,)).validated_against(external_cash_slot=3, cash_count=4, lot_count=3)
+        ActorSlots(cash_slots=(0, 9), lot_slots=(0,), external_cash_slot=3, cash_count=4, lot_count=3)
     with pytest.raises(ValueError, match="lot slot out of range"):
-        ActorSlots(cash_slots=(0,), lot_slots=(9,)).validated_against(external_cash_slot=3, cash_count=4, lot_count=3)
+        ActorSlots(cash_slots=(0,), lot_slots=(9,), external_cash_slot=3, cash_count=4, lot_count=3)
 
 
 def test_duplicate_slots_are_rejected() -> None:
@@ -120,9 +121,9 @@ def test_duplicate_slots_are_rejected() -> None:
     silent one afterwards."""
 
     with pytest.raises(ValueError, match="duplicate cash slot"):
-        ActorSlots(cash_slots=(0, 0), lot_slots=(0,))
+        ActorSlots(cash_slots=(0, 0), lot_slots=(0,), external_cash_slot=3, cash_count=4, lot_count=3)
     with pytest.raises(ValueError, match="duplicate lot slot"):
-        ActorSlots(cash_slots=(0,), lot_slots=(1, 1))
+        ActorSlots(cash_slots=(0,), lot_slots=(1, 1), external_cash_slot=3, cash_count=4, lot_count=3)
 
 
 def test_an_agent_with_no_lots_still_produces_a_well_shaped_view() -> None:

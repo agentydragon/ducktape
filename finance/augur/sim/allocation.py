@@ -164,13 +164,22 @@ def _settle_residual(*, taken: jnp.ndarray, value_cents: jnp.ndarray, wanted: jn
     """
 
     residual = wanted - taken.sum(axis=0)
+    # Room each sleeve has to move in the needed direction: toward its cap when the residual
+    # is positive, toward zero when negative.
     headroom = jnp.where(residual >= 0, value_cents - taken, taken)
-    # Largest contributor with room to absorb the correction, falling back to the largest sleeve.
-    candidate = jnp.where(headroom >= jnp.abs(residual)[None, :], taken, -1)
-    target = jnp.argmax(candidate, axis=0)
+    # The sleeve with the MOST room, so the correction is absorbed whenever any single sleeve
+    # can absorb it. Selecting by size of contribution instead would pick a fully-drained
+    # sleeve over a roomy one.
+    target = jnp.argmax(headroom, axis=0)
     # One-hot rather than a scatter: jnp is functional, and this traces without an index update.
     sleeve_rows = jnp.arange(taken.shape[0])[:, None]
-    return taken + jnp.where(sleeve_rows == target[None, :], residual[None, :], 0)
+    adjusted = taken + jnp.where(sleeve_rows == target[None, :], residual[None, :], 0)
+    # Bounds are inviolable; exactness is not. Clipping cannot bite in practice — the residual
+    # is a rounding artifact of a few cents and `wanted` is capped at what the sleeves hold, so
+    # some sleeve always has room — but if those ever stopped holding, a total off by a cent is
+    # a far better failure than a negative holding or an oversold sleeve, which would create
+    # money. This is the guarantee the fuzz tests assert.
+    return jnp.clip(adjusted, 0, value_cents)
 
 
 def _round_half_up(values: jnp.ndarray) -> jnp.ndarray:

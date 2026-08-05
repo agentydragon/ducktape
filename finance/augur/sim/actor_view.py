@@ -12,8 +12,8 @@ Two restrictions, and both are structural rather than conventional:
 
 - **Own rows only.** The view is built by slicing with compile-time index sets naming one
   agent's accounts and lots. Other agents' balances and the `rest_of_world` contra row are
-  not merely absent from the type — `ActorSlots` refuses to be constructed with them, so
-  no caller can pass them in by accident.
+  not merely absent from the type — `ActorSlots.__post_init__` rejects them, so an invalid
+  set cannot be constructed and no caller can pass one in by accident.
 - **Nothing from the future.** Every field is a function of state as of `month` and of
   prices at `month`. The exogenous cube is indexed at `month` and never beyond it, which
   is what stops a policy from quietly becoming clairvoyant and making every backtest look
@@ -46,38 +46,35 @@ from numpy.typing import NDArray
 class ActorSlots:
     """Compile-time index sets naming the rows one agent may look at.
 
-    Built once per policy at compile time. Construction is where the visibility rule is
-    enforced, so an engine phase cannot hand a policy the contra row or another agent's
-    account by passing the wrong array.
+    Every visibility rule is checked in `__post_init__`, so an invalid set cannot be
+    constructed at all — there is no separate validate step a caller can forget, which is
+    the failure mode a "remember to call this" API eventually has.
+
+    That is why the plan's shape travels with the slots. `external_cash_slot` in particular
+    is load-bearing: `rest_of_world` holds money that LEFT the modeled world, so an actor
+    able to see it would read its own past spending as an asset.
     """
 
     cash_slots: tuple[int, ...]
     lot_slots: tuple[int, ...]
+    external_cash_slot: int
+    cash_count: int
+    lot_count: int
 
     def __post_init__(self) -> None:
         if len(set(self.cash_slots)) != len(self.cash_slots):
             raise ValueError(f"duplicate cash slot in actor view: {self.cash_slots}")
         if len(set(self.lot_slots)) != len(self.lot_slots):
             raise ValueError(f"duplicate lot slot in actor view: {self.lot_slots}")
-
-    def validated_against(self, *, external_cash_slot: int, cash_count: int, lot_count: int) -> ActorSlots:
-        """Reject anything outside the agent's own rows. Call this at compile time.
-
-        The external slot check is the load-bearing one: `rest_of_world` is where money
-        that left the modeled world is parked, so an actor that could see it would read
-        its own past spending as an asset.
-        """
-
-        if external_cash_slot in self.cash_slots:
+        if self.external_cash_slot in self.cash_slots:
             raise ValueError(
-                f"actor view would expose the external contra row ({external_cash_slot=}); "
+                f"actor view would expose the external contra row ({self.external_cash_slot=}); "
                 "an actor may only see its own accounts"
             )
-        if any(not 0 <= slot < cash_count for slot in self.cash_slots):
-            raise ValueError(f"actor view cash slot out of range for {cash_count=}: {self.cash_slots}")
-        if any(not 0 <= slot < lot_count for slot in self.lot_slots):
-            raise ValueError(f"actor view lot slot out of range for {lot_count=}: {self.lot_slots}")
-        return self
+        if any(not 0 <= slot < self.cash_count for slot in self.cash_slots):
+            raise ValueError(f"actor view cash slot out of range for cash_count={self.cash_count}: {self.cash_slots}")
+        if any(not 0 <= slot < self.lot_count for slot in self.lot_slots):
+            raise ValueError(f"actor view lot slot out of range for lot_count={self.lot_count}: {self.lot_slots}")
 
 
 class ActorView(NamedTuple):
