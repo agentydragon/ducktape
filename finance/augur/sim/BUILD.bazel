@@ -125,6 +125,47 @@ py_test(
 )
 
 py_library(
+    name = "allocation",
+    srcs = ["allocation.py"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "allocation_test",
+    size = "small",
+    srcs = ["allocation_test.py"],
+    deps = [
+        ":allocation",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cash_band",
+    srcs = ["cash_band.py"],
+    deps = ["@pypi//jax"],
+)
+
+py_test(
+    name = "cash_band_test",
+    size = "small",
+    srcs = ["cash_band_test.py"],
+    deps = [
+        ":cash_band",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "bonds",
     srcs = ["bonds.py"],
 )
