@@ -737,8 +737,9 @@ def _target_allocation_policies_from_funding_policy(
     there would be a divisor in the water level. A weight naming nothing held is dropped too, so
     a saved target can outlive the position it mentions.
 
-    No sleeves left means no policy at all, which preserves the old `sell_order=[]` behaviour:
-    the owner never auto-sells and an unaffordable obligation is ruin.
+    No sleeves left means no policy at all: the owner never auto-sells, and an unaffordable
+    obligation is ruin. That is the honest reading of an empty target — there is no holding it
+    is willing to give up — and it is why the wire has no "derive it for me" sentinel.
     """
 
     sellable = [lot.asset for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
@@ -757,10 +758,10 @@ def _target_allocation_policies_from_funding_policy(
             account_id=PRIMARY_ACCOUNT_ID,
             source_account_ids=tuple(dict.fromkeys(lot.account_id for lot in initial_lots if lot.asset in targeted)),
             sleeves=sleeves,
-            cash_floor_usd=_cash_buffer_amount(
+            cash_floor_usd=_band_bound_amount(
                 float(funding_policy.cash_floor_usd), index_to_inflation=funding_policy.cash_band_index_to_inflation
             ),
-            cash_ceiling_usd=_cash_buffer_amount(
+            cash_ceiling_usd=_band_bound_amount(
                 float(funding_policy.cash_ceiling_usd), index_to_inflation=funding_policy.cash_band_index_to_inflation
             ),
             cause_id_prefix="product_funding_sale",
@@ -768,9 +769,9 @@ def _target_allocation_policies_from_funding_policy(
     ]
 
 
-def _cash_buffer_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount | SeriesIndexedAmount | float:
-    """Translate a UI scalar + index flag into the sim `AmountSpec`. Indexed buffers track CPI
-    monthly (period=1) so the real-terms target stays constant; nominal buffers stay as the raw
+def _band_bound_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount | SeriesIndexedAmount | float:
+    """Translate a UI scalar + index flag into the sim `AmountSpec`. An indexed bound tracks CPI
+    monthly (period=1) so the real-terms band stays constant; a nominal bound stays the raw
     float."""
 
     if not index_to_inflation or usd <= 0:
