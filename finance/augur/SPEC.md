@@ -139,11 +139,16 @@ delinquency balances, recovery/cure, or underpayment penalties.
 
 ### Asset Acquisition
 
-A scenario can buy a dollar amount of a priced asset at a scheduled month, creating a
-tax lot mid-horizon. The lot's cost basis is **per-rollout** — it is the price that
-rollout paid — so gains on a purchased lot are measured against what was actually spent
-rather than against any configured constant. Purchases take whole quantity quanta and
-leave the sub-quantum remainder as cash.
+An agent can buy a dollar amount of a priced asset, creating a tax lot mid-horizon. The
+promises below are about the acquisition itself and hold however the order is raised.
+Today the only way to raise one is a scheduled purchase at a fixed month; that is a
+stepping stone, and the durable channel is the actor policy — a scheduled buy is a policy
+that ignores state, and two channels for one action would drift.
+
+The lot's cost basis is **per-rollout** — it is the price that rollout paid — so gains on
+a purchased lot are measured against what was actually spent rather than against any
+configured constant. Purchases take whole quantity quanta and leave the sub-quantum
+remainder as cash.
 
 Two ordering promises: a purchase settles **after** the month's obligations, so buying
 can never starve an obligation into a failure; and a purchase whose account holds less

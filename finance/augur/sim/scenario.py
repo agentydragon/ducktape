@@ -448,6 +448,16 @@ class ScheduledAssetSale(BaseModel):
 class ScheduledAssetPurchase(BaseModel):
     """Buy a dollar amount of an asset at a fixed month, funded from a cash account.
 
+    CLEANUP(added 2026-08-05): Fold into the actor policy and delete this type once that
+      policy emits buy actions (#3739). A scheduled buy is just a policy that ignores
+      state, so keeping both leaves two channels through which an agent transacts — and
+      they will drift on ordering against obligations, on the underfunding clamp, on basis,
+      and on what lands in the event log. Only this config type goes: the execution layer
+      below it (pre-allocated lot slots, per-rollout basis, whole-quanta rounding, the
+      external contra credit) is what the policy emits INTO, and is the point of it.
+      It survives here in the meantime because the mechanism needs a trigger to be testable
+      at all, and an untested substrate would be the worse trade.
+
     The mirror of `ScheduledAssetSale`, and the only way a tax lot comes into existence
     mid-horizon. Two things make it more than a sale with the sign flipped, and both are
     why it needs its own machinery: the quantity is not known at compile time (it is
