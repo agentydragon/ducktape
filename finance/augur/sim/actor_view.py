@@ -112,6 +112,17 @@ class ActorView(NamedTuple):
             [self.lot_value_cents[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows]
         )
 
+    def sleeve_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
+        """Aggregate lot quantities into `(sleeve, R)`, same row groups as `sleeve_value_cents`.
+
+        Paired with the value aggregate, this is what lets a policy price a sleeve without
+        being handed a price: every lot in a sleeve holds the same asset, so value/quanta is
+        one number for the whole sleeve. A policy ordering in units needs that ratio and
+        nothing else — no separate price field, and no second place for a price to be stale.
+        """
+
+        return jnp.stack([self.lot_quantity[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows])
+
 
 def build_actor_view(
     *,

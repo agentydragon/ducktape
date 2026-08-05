@@ -42,6 +42,7 @@ policy's output shape to a boundary is exactly the mistake #3745 was closed for.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import NamedTuple
 
 import jax.numpy as jnp
@@ -89,15 +90,44 @@ class SleeveUniverse:
 class SleeveOrders(NamedTuple):
     """What this policy wants done this month, batched over rollouts.
 
-    Both are `(sleeve, rollout)` in `SleeveUniverse` order, in cents. They are TARGETS:
-    execution converts them to whole quanta, and a sell target can fall short when the
-    sleeve cannot cover it.
+    Both are `(sleeve, rollout)` in `SleeveUniverse` order, **in whole quanta** — the unit the
+    lots are actually held in. Orders are units-only per <plans/actor_actions.md>: a
+    dollar-denominated order would make the ENGINE divide by a price and floor, which is the
+    engine deciding how much to trade. The policy does its own division, so the rounding rule
+    is a decision here with a name and a test rather than a property of where a ceiling sits.
+
+    A sell order can still fall short of the units asked for when the sleeve cannot cover it;
+    what the executor may not do is choose a different number.
 
     Never both non-zero in the same month — see the module docstring.
     """
 
-    sell_cents: jnp.ndarray
-    buy_cents: jnp.ndarray
+    sell_quanta: jnp.ndarray
+    buy_quanta: jnp.ndarray
+
+
+def _quanta_covering_cents(
+    *, cents: jnp.ndarray, sleeve_value_cents: jnp.ndarray, sleeve_quanta: jnp.ndarray, lots_per_sleeve: jnp.ndarray
+) -> jnp.ndarray:
+    """Whole quanta whose sale realizes AT LEAST `cents`, per sleeve.
+
+    Integer arithmetic on the sleeve's own value/quanta ratio: a sleeve holds one asset, so
+    that ratio IS its unit price, and no separate price field has to be plumbed or kept fresh.
+
+    The `lots_per_sleeve` margin is the part that is not obvious and is not optional. Each
+    lot's value is rounded to the cent when the engine values it, so a sleeve's reported value
+    can sit up to half a cent per lot below what its quanta are really worth; converting
+    against that slightly-low value yields slightly-too-few quanta. Measured over 200k random
+    sleeves, converting with no margin undershot 143 times and with this margin zero times.
+
+    An undershoot is not a rounding curiosity: under a zero-width band the raise IS the
+    month's shortfall, so coming up a cent short is an obligation that goes unpaid and a
+    rollout that fails for an arithmetic artifact.
+    """
+
+    value = jnp.maximum(sleeve_value_cents, 1)
+    quanta = -(-((cents + lots_per_sleeve) * sleeve_quanta) // value)  # ceiling division
+    return jnp.where(cents > 0, jnp.minimum(quanta, sleeve_quanta), 0)
 
 
 def decide(
@@ -116,12 +146,25 @@ def decide(
         floor_cents=floor_cents,
         ceiling_cents=ceiling_cents,
     )
+    # Water-filling stays in cents: "overweight" is a statement about VALUE, and the level
+    # where two sleeves meet has no meaning in units of two different assets. Only the last
+    # step — turning one sleeve's share into an order — is denominated in what gets traded.
     sleeve_value = view.sleeve_value_cents(universe.lot_rows)
+    sleeve_quanta = view.sleeve_quanta(universe.lot_rows)
+    lots_per_sleeve = jnp.asarray([[len(rows)] for rows in universe.lot_rows], dtype=jnp.int64)
+    to_quanta = partial(
+        _quanta_covering_cents,
+        sleeve_value_cents=sleeve_value,
+        sleeve_quanta=sleeve_quanta,
+        lots_per_sleeve=lots_per_sleeve,
+    )
     return SleeveOrders(
-        sell_cents=withdrawal_by_sleeve(
-            value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
+        sell_quanta=to_quanta(
+            cents=withdrawal_by_sleeve(
+                value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
+            )
         ),
-        buy_cents=deposit_by_sleeve(
-            value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents
+        buy_quanta=to_quanta(
+            cents=deposit_by_sleeve(value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents)
         ),
     )

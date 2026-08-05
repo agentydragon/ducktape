@@ -49,7 +49,7 @@ def _act(*, funding_cash: int, other_cash: int = 50_000, outflow: int = 0, floor
 
 
 def _flat(orders: SleeveOrders) -> tuple[list[int], list[int]]:
-    return ([int(x) for x in orders.sell_cents[:, 0]], [int(x) for x in orders.buy_cents[:, 0]])
+    return ([int(x) for x in orders.sell_quanta[:, 0]], [int(x) for x in orders.buy_quanta[:, 0]])
 
 
 def test_a_quiet_month_inside_the_band_emits_nothing() -> None:
@@ -146,8 +146,8 @@ def test_rollouts_are_decided_independently() -> None:
         ceiling_cents=jnp.asarray([1_000, 1_000], dtype=jnp.int64),
     )
 
-    assert [int(x) for x in actions.sell_cents.sum(axis=0)] == [950, 0]
-    assert [int(x) for x in actions.buy_cents.sum(axis=0)] == [0, 4_900]
+    assert [int(x) for x in actions.sell_quanta.sum(axis=0)] == [950, 0]
+    assert [int(x) for x in actions.buy_quanta.sum(axis=0)] == [0, 4_900]
 
 
 def test_the_policy_traces_under_jit() -> None:
@@ -158,7 +158,7 @@ def test_the_policy_traces_under_jit() -> None:
         lambda view, floor, ceiling: decide(view=view, universe=_UNIVERSE, floor_cents=floor, ceiling_cents=ceiling)
     )(_view(funding_cash=50), jnp.asarray([100], dtype=jnp.int64), jnp.asarray([1_000], dtype=jnp.int64))
 
-    assert [int(x) for x in decided.sell_cents[:, 0]] == [875, 75]
+    assert [int(x) for x in decided.sell_quanta[:, 0]] == [875, 75]
 
 
 def test_a_lot_cannot_belong_to_two_sleeves() -> None:
