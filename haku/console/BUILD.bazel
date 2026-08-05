@@ -404,6 +404,7 @@ py_test(
         ":operator_identity_store",
         ":provider_connection_registry",
         "//:conftest",
+        "@pypi//prometheus_client",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

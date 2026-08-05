@@ -7,14 +7,11 @@ import uuid
 
 import pytest
 import pytest_bazel
+from prometheus_client import REGISTRY
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.connection_metrics import (
-    CONNECTION_REFRESH_FAILURE_AGE,
-    CONNECTION_REFRESH_FAILURE_ATTEMPTS,
-    refresh_connection_metrics,
-)
+from haku.console.connection_metrics import refresh_connection_metrics
 from haku.console.database_schema import OAuthTokenState, ProviderConnection
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -63,12 +60,19 @@ async def _connection(
         await session.commit()
 
 
-def _age(name: str) -> float:
-    return CONNECTION_REFRESH_FAILURE_AGE.labels(name, "google")._value.get()
+# Read through the registry rather than the Gauge object: it is the public API, and it is what a
+# scrape actually sees. `None` therefore means "no such sample", which is the distinction
+# test_a_healthy_connection_reports_zero_rather_than_being_omitted exists to pin down.
+def _sample(metric: str, name: str) -> float | None:
+    return REGISTRY.get_sample_value(metric, {"connection": name, "provider": "google"})
 
 
-def _attempts(name: str) -> float:
-    return CONNECTION_REFRESH_FAILURE_ATTEMPTS.labels(name, "google")._value.get()
+def _age(name: str) -> float | None:
+    return _sample("haku_console_connection_refresh_failure_age_seconds", name)
+
+
+def _attempts(name: str) -> float | None:
+    return _sample("haku_console_connection_refresh_failure_attempts", name)
 
 
 async def test_a_failing_connection_reports_how_long_it_has_been_failing(
@@ -103,7 +107,7 @@ async def test_recovery_clears_a_previously_failing_gauge(
         migrated_sessions, operator_id, name="google_drive", failing_for=datetime.timedelta(hours=3), count=9
     )
     await refresh_connection_metrics(migrated_sessions, now=NOW)
-    assert _age("google_drive") > 0
+    assert _age("google_drive") == pytest.approx(3 * 3600)
 
     async with migrated_sessions() as session:
         state = (await session.execute(select(OAuthTokenState))).scalars().one()
