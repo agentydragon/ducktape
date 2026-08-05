@@ -41,3 +41,4 @@ spec:
     - name: haku-console-namespace
     # TF also writes public-coder-agent's proxy-held Haku Console bearer into this namespace.
     - name: public-coder-agent-namespace
+      namespace: ducktape-flux

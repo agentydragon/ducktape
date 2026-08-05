@@ -15,6 +15,7 @@ spec:
     - name: haku-egress-proxy-namespace
     - name: haku-claude-namespace
     - name: haku-openclaw-spike-namespace
+      namespace: ducktape-flux
     - name: haku-state # proxy-held Forgejo and Haku Console credentials
     - name: cert-manager-environment
     - name: cert-manager-trust
