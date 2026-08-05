@@ -559,6 +559,19 @@ py_test(
 )
 
 py_test(
+    name = "jax_fifo_test",
+    srcs = ["engine/jax_fifo_test.py"],
+    main = "engine/jax_fifo_test.py",
+    deps = [
+        ":engine",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "jax_tax_test",
     srcs = ["engine/jax_tax_test.py"],
     main = "engine/jax_tax_test.py",

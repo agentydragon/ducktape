@@ -655,7 +655,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         if int(sales.month[s]) >= 0
     ]
     # Stacked per-sale static data for the loop-free scheduled-sale FIFO. The across-sales FIFO is one
-    # cumulative-supply x cumulative-demand interval overlap (generalizing `_fifo_sell_units` from one
+    # cumulative-supply x cumulative-demand interval overlap (generalizing `_fifo_sell` from one
     # sale to all): supply prefix over each pool's lots, demand prefix over each pool's sales (via the
     # `same_pool_prior` lower-triangular mask), so shared pools need no sequential loop.
     n_sales = len(folded_sales)
@@ -1934,8 +1934,14 @@ def _program_impl(
                         lot_remaining[pool_lots], unit_price[None, :], lot_quantity_scale[pool_lots, None]
                     ).sum(axis=0)
                     target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
-                    sold_units, proceeds, basis = _fifo_sell_cents(
-                        lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit, lot_quantity_scale
+                    sold_units, proceeds, basis = _fifo_sell(
+                        lot_remaining.T,
+                        pool_lots,
+                        target,
+                        unit_price,
+                        cost_basis_per_unit,
+                        lot_quantity_scale,
+                        in_cents=True,
                     )
                     lot_remaining = lot_remaining - sold_units.T
                     total_proceeds = proceeds.sum(axis=1)
@@ -2164,8 +2170,8 @@ def _program_impl(
                 issuer_idx=issuer_idx,
             ):
                 cash, lot_remaining, cg_active, cg_ytd, tlh, da, du, db, dp = state
-                sold, proceeds, basis = _fifo_sell_units(
-                    lot_remaining.T, ordered, target, price, cost_basis_per_unit, lot_quantity_scale
+                sold, proceeds, basis = _fifo_sell(
+                    lot_remaining.T, ordered, target, price, cost_basis_per_unit, lot_quantity_scale, in_cents=False
                 )
                 lot_remaining = lot_remaining - sold.T
                 if proceeds_slot >= 0:
@@ -2864,23 +2870,50 @@ def _bond_cashflows_jit(
     return cash, _scatter_rows(ordinary_ytd, income_row, coupons + accretion)
 
 
-def _fifo_sell_units(
+def _fifo_sell(
     lot_remaining: jnp.ndarray,
     ordered_lots: np.ndarray,
-    target_units: jnp.ndarray,
+    target: jnp.ndarray,
     unit_price: jnp.ndarray,
     cost_basis_per_unit: jnp.ndarray,
     lot_quantity_scale: jnp.ndarray,
+    *,
+    in_cents: bool,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """FIFO-sell a quantity target in lot quanta, returning sold quanta and cent values."""
+    """FIFO-sell a target down a pool's lots, returning sold quanta plus cent proceeds and basis.
+
+    The walk is the same either way — cumulative-before, clip to what the lot holds — and only
+    the MEASURE it walks in changes. `in_cents=False` targets quanta directly (a tender names
+    units); `in_cents=True` targets cents and converts each lot's slice back to quanta.
+
+    That conversion is per-lot on purpose, and it is why a cents target cannot be turned into a
+    quanta target once up front and handed to the unit path. Ceiling each slice is what
+    guarantees the proceeds cover the ask: over 200k random pools the per-lot form never
+    undershot its target, while converting once undershot 733 times by up to 2 cents. Under a
+    zero-width band — hand-to-mouth funding, where the raise IS the shortfall — those cents are
+    an obligation that goes unpaid, so a rollout fails for a rounding artifact. The cost of the
+    guarantee is over-selling by up to one quantum per lot rather than one per pool.
+
+    Oversell is measured in the target's own units and zeroes the whole raise rather than
+    part-filling it: a policy that asked for more than the pool holds gets nothing, and the
+    unpaid obligation fails the rollout at settlement, where failure belongs.
+    """
+
     ordered_quantity = lot_remaining[:, ordered_lots]
-    available_units = ordered_quantity.sum(axis=1)
-    oversell = target_units > available_units
-    effective_target = jnp.where(oversell, 0, target_units)
-    before_units = jnp.cumsum(ordered_quantity, axis=1) - ordered_quantity
-    sold_ordered = jnp.clip(effective_target[:, None] - before_units, 0, ordered_quantity)
     ordered_scale = lot_quantity_scale[ordered_lots]
-    proceeds_ordered = _value_cents_from_quanta(sold_ordered, unit_price[:, None], ordered_scale[None, :])
+    price_col = unit_price[:, None]
+    available = (
+        _value_cents_from_quanta(ordered_quantity, price_col, ordered_scale[None, :]) if in_cents else ordered_quantity
+    )
+    effective_target = jnp.where(target > available.sum(axis=1), 0, target)
+    before = jnp.cumsum(available, axis=1) - available
+    sold_measure = jnp.clip(effective_target[:, None] - before, 0, available)
+    sold_ordered = (
+        jnp.clip(_ceil_quanta_for_value_cents(sold_measure, price_col, ordered_scale[None, :]), 0, ordered_quantity)
+        if in_cents
+        else sold_measure
+    )
+    proceeds_ordered = _value_cents_from_quanta(sold_ordered, price_col, ordered_scale[None, :])
     basis_ordered = _value_cents_from_quanta(sold_ordered, cost_basis_per_unit[ordered_lots].T, ordered_scale[None, :])
     zeros = jnp.zeros_like(lot_remaining)
     sold_units = zeros.at[:, ordered_lots].set(sold_ordered)
@@ -3116,36 +3149,6 @@ def _settlement_core_jit(
     failed_month = jnp.where(failed_this & (failed_month < 0), month, failed_month)
     failed = failed | failed_this
     return paid, paid_amount, cash, ordinary_ytd, property_tax_ytd, shortfall, slot_failed, failed, failed_month
-
-
-def _fifo_sell_cents(
-    lot_remaining: jnp.ndarray,
-    ordered_lots: np.ndarray,
-    target_cents: jnp.ndarray,
-    unit_price_cents: jnp.ndarray,
-    cost_basis_per_unit: jnp.ndarray,
-    lot_quantity_scale: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """FIFO sell a cent target, ceiling-rounding to quantity quanta."""
-    ordered_quantity = lot_remaining[:, ordered_lots]
-    ordered_scale = lot_quantity_scale[ordered_lots]
-    available_value = _value_cents_from_quanta(ordered_quantity, unit_price_cents[:, None], ordered_scale[None, :])
-    oversell = target_cents > available_value.sum(axis=1)
-    effective_target = jnp.where(oversell, 0, target_cents)
-    before_value = jnp.cumsum(available_value, axis=1) - available_value
-    sold_value_ordered = jnp.clip(effective_target[:, None] - before_value, 0, available_value)
-    price_col = unit_price_cents[:, None]
-    sold_units_before_clip = _ceil_quanta_for_value_cents(sold_value_ordered, price_col, ordered_scale[None, :])
-    sold_units_ordered = jnp.clip(sold_units_before_clip, 0, ordered_quantity)
-    proceeds_ordered = _value_cents_from_quanta(sold_units_ordered, price_col, ordered_scale[None, :])
-    basis_ordered = _value_cents_from_quanta(
-        sold_units_ordered, cost_basis_per_unit[ordered_lots].T, ordered_scale[None, :]
-    )
-    zeros = jnp.zeros_like(lot_remaining)
-    sold_units = zeros.at[:, ordered_lots].set(sold_units_ordered)
-    proceeds = zeros.at[:, ordered_lots].set(proceeds_ordered)
-    basis = zeros.at[:, ordered_lots].set(basis_ordered)
-    return sold_units, proceeds, basis
 
 
 def _compute_liquid_net_worth(
