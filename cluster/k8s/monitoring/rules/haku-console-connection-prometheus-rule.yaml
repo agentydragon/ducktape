@@ -23,8 +23,21 @@ spec:
         #
         # 2h, not minutes: refreshes run on a schedule and transient Google 5xx are routine, so the
         # signal is persistence rather than any single failure. Every real instance ran 24h+.
+        #
+        # The `max by (...)` drops the per-pod labels deliberately. Every console replica exports
+        # the gauge for every connection, all reading the same Postgres row, so the raw series fan
+        # out one-per-replica and an unaggregated expr pages once per pod for a single broken
+        # connection. `max` rather than `avg`/`min` so that if replicas ever do disagree, the alert
+        # takes the pessimistic reading. `namespace` stays in the `by` list because the inhibit
+        # rule below matches on it — aggregating it away silently breaks that suppression.
+        #
+        # Both tiers share the alertname on purpose, and severity alone separates them: the
+        # cluster's stock inhibit rule is `source severity=critical, target severity=~warning|info,
+        # equal: [namespace, alertname]`. Distinct names (…Stale/…StaleCritical) never match that
+        # `equal`, so critical could not suppress warning and both fired together. Keep these two
+        # `alert:` values identical or the suppression silently stops working.
         - alert: HakuConsoleConnectionRefreshStale
-          expr: haku_console_connection_refresh_failure_age_seconds > 7200
+          expr: max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 7200
           for: 15m
           labels:
             severity: warning
@@ -39,8 +52,8 @@ spec:
               Settings → Connections. If it re-breaks immediately, the grant was
               revoked upstream rather than expired.
         # By this point at least one scheduled run has certainly gone blind on it.
-        - alert: HakuConsoleConnectionRefreshStaleCritical
-          expr: haku_console_connection_refresh_failure_age_seconds > 86400
+        - alert: HakuConsoleConnectionRefreshStale
+          expr: max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 86400
           for: 15m
           labels:
             severity: critical
