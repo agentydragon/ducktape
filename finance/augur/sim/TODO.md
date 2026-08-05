@@ -366,30 +366,36 @@ tree at merge time.
   matters. Defer until landlord-rental scenarios are common enough
   that the smoothed model bites.
 
-## Funding policy: asset-balance targeting
+## Funding policy: asset-balance targeting — superseded by #3739
 
-Today `FundingPolicy` is a cash-buffer + ordered sell list — it only
-fires when cash dips below `cash_buffer_trigger_below_usd`. Extend
-with a target-balance mode: the user specifies a desired allocation
-across liquid asset classes (e.g. 50% stocks / 30% crypto / 20%
-cash), the engine periodically rebalances by selling overweight
-buckets and buying underweight ones. Needs:
+Tracked in #3739 (actor policy), which replaces `LiquidityPolicy`
+outright rather than extending it. Three details of the design
+sketched here were decided the other way, so do not follow them:
 
-- Wire: `FundingPolicy.target_allocation: dict[bucket, fraction] | None`
-  alongside the existing trigger/sell knobs.
-- Sim: an `AssetBalanceRebalancingPolicy` (or extend `LiquidityPolicy`)
-  that runs on a configurable cadence and emits buy/sell orders to
-  reduce drift past a tolerance threshold.
-- Tax routing: rebalancing sells realize gains/losses through the
-  same FIFO + capital-gain plumbing the cash-buffer path uses.
-- Frontend: alongside the existing "Sell preference" list, a
-  target-allocation editor (one row per bucket, percentage, must
-  sum to 100).
+- **Integer relative weights, not fractions.** A fraction is
+  derivable from weights, so storing fractions stores a computed
+  quantity and needs a float sum-to-one validator to defend it.
+- **No periodic rebalance cadence and no tolerance threshold.**
+  Drift is corrected only through cashflow that was going to happen
+  anyway; turnover and its tax drag would otherwise swamp the effect
+  the allocation study is trying to measure. Zero drift plus zero
+  cashflow must emit zero actions.
+- **Weights need a declared universe.** A target over an asset that
+  cannot be traded (PE before liquidity, a ladder rung you will not
+  break) leaves the policy permanently overweight something it cannot
+  sell, and it thrashes. Unnamed sleeves are out of the denominator.
 
-Defer until a scenario actually needs it — single-bucket portfolios
-or pure cash-buffer behavior cover the common cases today.
+The arithmetic already exists: `allocation.py` (water-filling
+withdrawal split) and `cash_band.py` ((s,S) sizing).
 
 ## Funding policy: "reserve for N months" threshold
+
+This is the cash band's floor expressed in months of spending rather
+than dollars, and it is the better long-run form: it self-indexes, and
+it interacts correctly with the tier state (dropping a tier should lower
+the required reserve). Deferred behind #3738 because it is circular with
+that state — the break is to read LAST month's obligation, not this
+month's. Until then the floor is an `AmountSpec` and can be CPI-indexed.
 
 The old `Config.reserve_forward_months` knob (paired with
 `minimum_reserve_mode: projected_deficits`) used to drive a forward-
@@ -415,6 +421,25 @@ scheduled obligations) - expected income`, evaluated per rollout per
 
 Defer until a scenario actually needs the dynamic threshold; the
 absolute trigger covers today's product surface.
+
+## Lifestyle tiers are bundles, not spending dials — deferred
+
+A tier ("SF" vs "Prague") is not one number. Moving changes the rent
+commitment, the `Location`, and — the expensive one — **tax residency**:
+which `jurisdiction_ids` apply to the agent from that month on. Augur
+already models per-jurisdiction tax, so the machinery exists; what does
+not exist is a mid-horizon transition that rewrites a `TaxProfile`.
+
+Deliberately handwaved for now (2026-08-05, with #3738): tier state
+changes the SPENDING LEVEL only, and every tier keeps the agent's
+starting jurisdictions. Read any result about a cheaper-location tier as
+optimistic until this lands — it spends Czech amounts while paying
+California tax, and the error runs in the flattering direction.
+
+Also unmodelled and part of the same bundle: one-off transition costs
+(moving, breaking a lease, disposing of things), which make tier
+switching non-free and therefore make hysteresis a real constraint
+rather than only an anti-chatter device.
 
 ## Explicitly deferred
 
