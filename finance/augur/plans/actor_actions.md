@@ -1,4 +1,4 @@
-# Actors, instructions, and the seam between them
+# Actors, actions, and the seam between them
 
 Design for how agents act in augur. Written after a first attempt cut the boundary in the
 wrong place; this records both the target shape and the reasoning, so the wrong cut does
@@ -24,23 +24,33 @@ Every policy emits the same type. Aggregates are internal.
 
 ## The vocabulary: what you could click
 
-The word is **instruction**, not "action". It is worth being strict about, because "action"
-invites the vaguer reading the first attempt fell into — an abstract thing an agent wants —
-whereas an instruction is a concrete, executable order with a named subject and an amount.
-A policy emits instructions.
+The word is **action**, and the variants are `Pay`, `Buy`, `Sell`.
 
-An instruction is a thing you could click in a broker web UI or a bank app. That test
-decides most of the open questions, so prefer it over reasoning from the simulator's
-internals.
+An intermediate draft of this document called them "instructions", reasoning that "action"
+had invited the vagueness of the first attempt. That was a misdiagnosis. The first attempt
+was wrong about SHAPE — it carried sleeve aggregates — and no noun would have prevented
+that. Meanwhile "instruction" actively imports the wrong connotation: an instruction is
+something submitted, which may be declined. These are not. Affordability is the policy's
+job, so non-execution is either ruin or a bug, never a routine decline.
 
-| Instruction | Fields                                                     |
-| ----------- | ---------------------------------------------------------- |
-| Pay         | recipient agent + account, source account, amount          |
-| Buy         | instrument, account, amount in **dollars** or in **units** |
-| Sell        | instrument, account, amount in **dollars** or in **units** |
+"Action" carries the right meaning natively — in the RL sense an action is APPLIED to the
+environment, not requested of it — and the box emitting them is already called a policy.
 
-Every instruction also carries whether it is **required** — see "what a shortfall means"
-below, which is the one thing the broker metaphor cannot supply.
+Concreteness lives in the variants, which is where it belongs and where the first attempt
+lost it:
+
+| Action | Fields                                                     |
+| ------ | ---------------------------------------------------------- |
+| Pay    | recipient agent + account, source account, amount          |
+| Buy    | instrument, account, amount in **dollars** or in **units** |
+| Sell   | instrument, account, amount in **dollars** or in **units** |
+
+Every action also carries whether it is **required** — see "what a shortfall means" below,
+which is the one thing the broker metaphor cannot supply.
+
+**Executing an action produces ledger entries** — the statement lines. That is where the
+word "happened" belongs, and keeping the two named separately is what stops the emitted
+type from having to mean both.
 
 Consequences that fall out of the test rather than being chosen:
 
@@ -54,20 +64,19 @@ Consequences that fall out of the test rather than being chosen:
   the rounding rules differ (whole quanta vs. exact units) and so does what "insufficient"
   means.
 - **Lot selection is an optional field, added later.** Brokers do let you pick tax lots, so
-  specific-ID and HIFO are future variants of an existing instruction rather than a new
+  specific-ID and HIFO are future variants of an existing action rather than a new
   boundary. The default stays the account's cost-basis method, which is FIFO here.
-- **There is no "spend" instruction.** Spending is `Pay`, to whoever is being paid. Nothing
+- **There is no "spend" action.** Spending is `Pay`, to whoever is being paid. Nothing
   in a bank app is labelled "spend" — you pay a landlord, a shop, a person. Keeping a
   separate spend variant would smuggle the anonymous-sink modelling back in, and with it
   the assumption that consumption has no counterparty. Discretionary spending is a policy
-  choosing to emit `Pay`; a lifestyle tier changes how much and to whom, not which
-  instruction.
+  choosing to emit `Pay`; a lifestyle tier changes how much and to whom, not which action.
 
 ## Where the metaphor stops: what a shortfall means
 
-The broker test guides what fields an instruction **has**. It is no guide to what happens
+The broker test guides what fields an action **has**. It is no guide to what happens
 when one **cannot execute**, because in a broker UI a rejection is free — the order bounces
-and you shrug. Read the metaphor that far and "instruction" quietly acquires
+and you shrug. Read the metaphor that far and the emitted type quietly acquires
 silently-skip-on-failure semantics, which is wrong: trying to spend $1,000 without $1,000
 must not be a no-op.
 
@@ -83,46 +92,45 @@ The first has to be emittable on purpose. A policy saying "I must pay this and I
 precisely what ruin _is_ — if an unfundable required payment were unrepresentable, so
 would ruin be.
 
-So **requiredness is a field on the instruction**. Execution cannot otherwise tell which of
-the two it is looking at, and the distinction is not derivable from the instruction's other
-fields — the same `Pay`, to the same landlord, for the same amount, is required under a
+So **requiredness is a field on the action**. Execution cannot otherwise tell which of the
+two it is looking at, and the distinction is not derivable from the action's other fields — the same `Pay`, to the same landlord, for the same amount, is required under a
 lease and discretionary as a gift.
 
 This is also what keeps lifestyle tiers expressible: rent under a tier is a **required**
 payment whose **amount the policy chooses**. Obligations-as-a-separate-mechanism cannot say
 that — it fixes the amount at config time — which is why requiredness belongs on the
-instruction rather than on a parallel commitment channel.
+action rather than on a parallel commitment channel.
 
 ## Everything that acts is a policy
 
-A policy is a box in the RL sense: observations in, instructions out.
+A policy is a box in the RL sense: observations in, actions out.
 
 The `Scheduled*` and `Recurring*` config types are a **shortcut taken before agents had
 policies**. The right model is that a scheduled buy is executed by a policy that watches
 the clock and emits "buy this" when the month arrives. There are not two producers of
-instructions — a compiler and a policy — there is one, and a schedule is the simplest
-possible policy.
+actions — a compiler and a policy — there is one, and a schedule is the simplest possible
+policy.
 
 This is a conceptual unification, not necessarily an expensive one: the dense form of a
-clock policy is precisely the per-month instruction table the compiler already builds. The
+clock policy is precisely the per-month action table the compiler already builds. The
 shortcut was not wrong as an implementation; it was wrong as a concept, because it made
 schedules a separate _execution path_ rather than a degenerate policy. Unifying lets one
 executor serve both.
 
 **Obligations reduce too**, once requiredness is a field. A recurring obligation is a clock
 policy emitting a **required** `Pay` — the must-pay property that makes `failed_month` mean
-anything is carried by the instruction rather than by a parallel commitment channel.
+anything is carried by the action rather than by a parallel commitment channel.
 
 That is a better answer than keeping obligations separate, and not only for tidiness:
 a separate channel fixes the amount at config time, so it cannot express a required payment
 whose amount a policy chooses. Rent under a lifestyle tier is exactly that, so the parallel
-channel would have had to grow a policy hook anyway — at which point it is the instruction
-path with extra steps.
+channel would have had to grow a policy hook anyway — at which point it is the action path
+with extra steps.
 
 What still needs care is not the reduction but the **ordering**: required payments must
 settle before discretionary ones, or an actor could spend money it needed for rent and
 manufacture a ruin that a real person would not have. Today that ordering is implicit in
-the phase order; under one instruction stream it becomes explicit, and should be, since it
+the phase order; under one action stream it becomes explicit, and should be, since it
 is a real claim about behaviour rather than an artifact of how the engine happens to be
 sequenced.
 
@@ -141,7 +149,7 @@ without its reason gets "simplified" away.
   `rest_of_world` contra row — an actor able to see it would read its own past spending as
   an asset.
 - **Nothing from the future.** Two scenarios identical through month _m_ and diverging by a
-  shock at _m+1_ must produce identical instructions at _m_.
+  shock at _m+1_ must produce identical actions at _m_.
 - **Lot-level, not sleeve-level.** A statement shows lots, and lot identity is what
   tax-aware selection needs. Sleeve aggregation is a policy's own step.
 
@@ -180,7 +188,7 @@ without its reason gets "simplified" away.
   and the two must be exact inverses.
 - **Rebalancing rides cashflow only.** No periodic rebalance, no drift tolerance: turnover
   and its tax drag would swamp the effect the study measures. Zero drift plus zero cashflow
-  must emit zero instructions.
+  must emit zero actions.
 - **Cash band is (s,S), refilling to the far edge.** Not mainly for turnover — refilling
   only to the floor puts the agent back at its trigger next month, making it a **forced
   seller into every dip**, which is the risk the whole exercise exists to price. Recorded
@@ -213,8 +221,8 @@ Stated with direction because a deferral whose bias is unknown is a trap.
   economic constraint rather than an anti-chatter device.
 - **Bonds are not tradeable by a policy** until a discount curve exists. Selling one before
   maturity needs a price the simulator can _calculate_; book value would be an
-  approximation, and sim calculates rather than approximates. Until then, an instruction to
-  sell one must be rejected loudly.
+  approximation, and sim calculates rather than approximates. Until then, an action selling
+  one must be rejected loudly.
 - **Private equity is not purchasable.** It is marked, not priced, so an order has no
   defined quantity.
 - **Basis and purchase month are carried as history but never change.** Slots are never
@@ -227,12 +235,12 @@ Stated with direction because a deferral whose bias is unknown is a trap.
 Each step is independently landable and independently verifiable.
 
 1. **This document.**
-2. **The instruction vocabulary and its executors.** One type with a config form and a dense
+2. **The action vocabulary and its executors.** One type with a config form and a dense
    runtime form; the engine phases become executors of it. Verified by every existing
    scenario producing identical output — the strongest available signal, and only available
    while behaviour is unchanged.
 3. **Schedules become clock policies.** `Scheduled*` / `Recurring*` config lowers to a
-   clock policy emitting instructions, deleting the parallel execution paths. Still
+   clock policy emitting actions, deleting the parallel execution paths. Still
    behaviour-preserving.
 4. **Purchase slots with a runtime cursor**, per-rollout purchase month, and the
    exhaustion abort.
