@@ -349,6 +349,8 @@ class _Operands(NamedTuple):
     ta_ceiling_series: jnp.ndarray  # (n_folded_target_allocation,)
     # Per-policy, per-sleeve, per-pool price rows. Ragged twice over, so a list of lists.
     ta_pool_series: list[list[jnp.ndarray]]
+    # Per policy, a `(sleeve,)` series row — a sleeve with no lots still has a price.
+    ta_sleeve_series: list[jnp.ndarray]
 
 
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -893,6 +895,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     sleeve_idx=sleeve_idx,
                     view_lot_rows=tuple(view_rows),
                     pools=tuple(sleeve_pools),
+                    quantity_scale=int(ta_policies.sleeve_quantity_scale[policy, sleeve_idx]),
                 )
             )
         folded_target_allocation.append(
@@ -1069,6 +1072,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         ]
         for tp in folded_target_allocation
     ]
+    ta_sleeve_series = [
+        _series_ops([int(ta_policies.sleeve_series[tp.policy_index, sleeve.sleeve_idx]) for sleeve in tp.sleeves])
+        for tp in folded_target_allocation
+    ]
 
     baked = _Operands(
         cash0=cash0,
@@ -1117,6 +1124,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         ta_floor_series=ta_floor_series,
         ta_ceiling_series=ta_ceiling_series,
         ta_pool_series=ta_pool_series,
+        ta_sleeve_series=ta_sleeve_series,
     )
 
     # Capital-gain accrual targets: each agent code that sells (funding policies / PE owners) maps to the
@@ -1319,6 +1327,7 @@ def _program_impl(
     ta_floor_series = baked.ta_floor_series
     ta_ceiling_series = baked.ta_ceiling_series
     ta_pool_series = baked.ta_pool_series
+    ta_sleeve_series = baked.ta_sleeve_series
     folded_target_allocation = structure.folded_target_allocation
     # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
     tcfg = cfg
@@ -1915,9 +1924,13 @@ def _program_impl(
                     weights=np.asarray([sleeve.weight for sleeve in tp.sleeves], dtype=np.int64),
                     lot_rows=tuple(sleeve.view_lot_rows for sleeve in tp.sleeves),
                     funding_cash_row=0,
+                    quantity_scale=np.asarray([sleeve.quantity_scale for sleeve in tp.sleeves], dtype=np.int64),
                 ),
                 floor_cents=_amount_values_tuple(tp.floor, ta_floor_series[ti], external_values, month, r),
                 ceiling_cents=_amount_values_tuple(tp.ceiling, ta_ceiling_series[ti], external_values, month, r),
+                # Market data straight from the exogenous path, priced for every sleeve rather
+                # than only the held ones — the buy side has to price what it does not own yet.
+                sleeve_unit_price_cents=_sleeve_prices_cents(ta_sleeve_series[ti], external_values, month),
             )
             for si, sleeve in enumerate(tp.sleeves):
                 # `buy_quanta` is deliberately unread: investing surplus needs purchase slots the
@@ -2864,6 +2877,23 @@ def _bond_cashflows_jit(
     # Accretion reaches income and NOT cash — if it ever reached the cash tensor, the
     # conservation invariant would break immediately, which is the guard on this wiring.
     return cash, _scatter_rows(ordinary_ytd, income_row, coupons + accretion)
+
+
+def _sleeve_prices_cents(
+    sleeve_series: jnp.ndarray, external_values: jnp.ndarray, month: int | jnp.ndarray
+) -> jnp.ndarray:
+    """This month's market price per sleeve, `(sleeve, R)`, in cents per unit.
+
+    A sleeve whose asset has no modeled price series reads NO_CODE and comes back zero, which
+    the policy treats as unpriceable — it orders nothing there rather than treating it as free.
+    """
+
+    if external_values.shape[0] == 0:
+        return jnp.zeros((sleeve_series.shape[0], 1), dtype=jnp.int64)
+    valid = sleeve_series >= 0
+    raw = external_values[jnp.where(valid, sleeve_series, 0), :, month]
+    finite = jnp.isfinite(raw) & (raw > 0.0)
+    return jnp.where(valid[:, None] & finite, _price_usd_to_cents(jnp.nan_to_num(raw, nan=0.0)), 0)
 
 
 def _fifo_sell(

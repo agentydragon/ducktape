@@ -51,6 +51,9 @@ class _FoldedSleeve:
     sleeve_idx: int
     view_lot_rows: tuple[int, ...]
     pools: tuple[_SalePool, ...]
+    # Quanta per unit for this sleeve's asset, from the compiler rather than from the sleeve's
+    # lots: a sleeve holding nothing still has to be priceable for the buy side.
+    quantity_scale: int
 
 
 @dataclass(frozen=True)

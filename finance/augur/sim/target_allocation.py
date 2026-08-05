@@ -71,6 +71,10 @@ class SleeveUniverse:
     weights: NDArray[np.int64]
     lot_rows: tuple[tuple[int, ...], ...]
     funding_cash_row: int
+    # Quanta per unit, per sleeve. Compile-time because it is a property of the ASSET, not of
+    # the position — which is also why it is here rather than derived from the sleeve's lots:
+    # a sleeve the agent holds none of still has to be priceable and buyable.
+    quantity_scale: NDArray[np.int64]
 
     def __post_init__(self) -> None:
         if not self.lot_rows:
@@ -106,38 +110,43 @@ class SleeveOrders(NamedTuple):
     buy_quanta: jnp.ndarray
 
 
-def _quanta_covering_cents(
-    *, cents: jnp.ndarray, sleeve_value_cents: jnp.ndarray, sleeve_quanta: jnp.ndarray, lots_per_sleeve: jnp.ndarray
-) -> jnp.ndarray:
-    """Whole quanta whose sale realizes AT LEAST `cents`, per sleeve.
+def _quanta_for_cents(*, cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray) -> jnp.ndarray:
+    """Whole quanta worth at least `cents`, at the market price.
 
-    Integer arithmetic on the sleeve's own value/quanta ratio: a sleeve holds one asset, so
-    that ratio IS its unit price, and no separate price field has to be plumbed or kept fresh.
+    The price is an OBSERVATION, not something inferred from the position: what an instrument
+    trades at is a fact about the market, so an agent holding none of a sleeve can still price
+    it — and buying into exactly that sleeve is what a target allocation is for. Inferring the
+    price from `value / quanta` of what is held works for a sale and is incoherent for a
+    purchase, which is how the earlier attempt at this collapsed.
 
-    The `lots_per_sleeve` margin is the part that is not obvious and is not optional. Each
-    lot's value is rounded to the cent when the engine values it, so a sleeve's reported value
-    can sit up to half a cent per lot below what its quanta are really worth; converting
-    against that slightly-low value yields slightly-too-few quanta. Measured over 200k random
-    sleeves, converting with no margin undershot 143 times and with this margin zero times.
-
-    An undershoot is not a rounding curiosity: under a zero-width band the raise IS the
-    month's shortfall, so coming up a cent short is an obligation that goes unpaid and a
-    rollout that fails for an arithmetic artifact.
+    Ceiling division, in integers, so the result is never a quantum short of the ask. A price
+    of zero means the sleeve has no modeled price series; it is unpriceable rather than free,
+    so it orders nothing.
     """
 
-    value = jnp.maximum(sleeve_value_cents, 1)
-    quanta = -(-((cents + lots_per_sleeve) * sleeve_quanta) // value)  # ceiling division
-    return jnp.where(cents > 0, jnp.minimum(quanta, sleeve_quanta), 0)
+    priced = unit_price_cents > 0
+    quanta = -(-(cents * quantity_scale) // jnp.where(priced, unit_price_cents, 1))  # ceiling division
+    return jnp.where(priced & (cents > 0), quanta, 0)
 
 
 def decide(
-    *, view: ActorView, universe: SleeveUniverse, floor_cents: jnp.ndarray, ceiling_cents: jnp.ndarray
+    *,
+    view: ActorView,
+    universe: SleeveUniverse,
+    floor_cents: jnp.ndarray,
+    ceiling_cents: jnp.ndarray,
+    sleeve_unit_price_cents: jnp.ndarray,
 ) -> SleeveOrders:
     """Choose this month's orders from this month's observation.
 
     `floor_cents` and `ceiling_cents` are `(rollout,)` because the band may be CPI-indexed
     and inflation differs by path. Their ordering is validated at config time by
     `cash_band.validate_band_bounds`; it cannot be checked here, where they are traced.
+
+    `sleeve_unit_price_cents` is `(sleeve, rollout)` market data from the exogenous model —
+    the same path the engine marks lots against. It is passed in rather than reconstructed
+    from holdings so that a sleeve the agent holds none of is still priced, which is what the
+    buy side needs and the sell side has no reason to do differently.
     """
 
     order = cash_order(
@@ -150,19 +159,19 @@ def decide(
     # where two sleeves meet has no meaning in units of two different assets. Only the last
     # step — turning one sleeve's share into an order — is denominated in what gets traded.
     sleeve_value = view.sleeve_value_cents(universe.lot_rows)
-    sleeve_quanta = view.sleeve_quanta(universe.lot_rows)
-    lots_per_sleeve = jnp.asarray([[len(rows)] for rows in universe.lot_rows], dtype=jnp.int64)
     to_quanta = partial(
-        _quanta_covering_cents,
-        sleeve_value_cents=sleeve_value,
-        sleeve_quanta=sleeve_quanta,
-        lots_per_sleeve=lots_per_sleeve,
+        _quanta_for_cents, unit_price_cents=sleeve_unit_price_cents, quantity_scale=universe.quantity_scale[:, None]
     )
     return SleeveOrders(
-        sell_quanta=to_quanta(
-            cents=withdrawal_by_sleeve(
-                value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
-            )
+        sell_quanta=jnp.minimum(
+            to_quanta(
+                cents=withdrawal_by_sleeve(
+                    value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
+                )
+            ),
+            # You cannot sell what you do not hold. The buy side has no such cap, and that
+            # asymmetry is why the clamp sits here rather than inside the conversion.
+            view.sleeve_quanta(universe.lot_rows),
         ),
         buy_quanta=to_quanta(
             cents=deposit_by_sleeve(value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents)
