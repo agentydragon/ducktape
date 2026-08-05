@@ -50,6 +50,40 @@ class _FoldedLiquidity:
 
 
 @dataclass(frozen=True)
+class _FoldedSleeve:
+    """One sleeve of a target allocation, resolved host-side.
+
+    `view_lot_rows` indexes the POLICY'S view lot axis rather than the plan's, because that is
+    what `SleeveUniverse` is defined against — the view has already narrowed to this agent, so
+    plan indices would read the wrong lots. `pools` keeps the plan indices, since execution
+    sells against the engine's own lot tensor.
+    """
+
+    weight: int
+    sleeve_idx: int
+    view_lot_rows: tuple[int, ...]
+    pools: tuple[_LiquidityPool, ...]
+
+
+@dataclass(frozen=True)
+class _FoldedTargetAllocation:
+    """One target-allocation policy, static data resolved host-side.
+
+    `lot_slots` is every plan lot this policy can see, in view-axis order; a sleeve's
+    `view_lot_rows` are positions within it. Two structures rather than one because the
+    observation is built once per policy and then sliced per sleeve.
+    """
+
+    policy_index: int
+    agent: int
+    cash_slot: int
+    floor: tuple[int, int, int, int, int]
+    ceiling: tuple[int, int, int, int, int]
+    lot_slots: tuple[int, ...]
+    sleeves: tuple[_FoldedSleeve, ...]
+
+
+@dataclass(frozen=True)
 class _FoldedHarvest:
     """One reduced-form TLH harvest policy, static data resolved host-side."""
 
@@ -151,6 +185,7 @@ class _Static:
     folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]
     folded_pr: tuple[tuple[int, int], ...]
     folded_liquidity: tuple[_FoldedLiquidity, ...]
+    folded_target_allocation: tuple[_FoldedTargetAllocation, ...]
     folded_pe: tuple[_FoldedPE, ...]
     folded_harvest: tuple[_FoldedHarvest, ...]
     salt_link_active: tuple[bool, ...]
@@ -195,6 +230,7 @@ class _ScanMeta:
     folded_pr: list[tuple[int, int]]
     folded_sale_events: list[tuple[int, int]]
     folded_liquidity: list[_FoldedLiquidity]
+    folded_target_allocation: list[_FoldedTargetAllocation]
     folded_pe: list[_FoldedPE]
     link_count: int
     liability_count: int

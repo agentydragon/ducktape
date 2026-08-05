@@ -72,6 +72,8 @@ from finance.augur.sim.engine.jax_types import (
     _FoldedHarvest,
     _FoldedLifecycleEvent,
     _FoldedLiquidity,
+    _FoldedSleeve,
+    _FoldedTargetAllocation,
     _FoldedPE,
     _FoldedPurchase,
     _FoldedSale,
@@ -345,6 +347,10 @@ class _Operands(NamedTuple):
     liq_trigger_series: jnp.ndarray  # (n_folded_liquidity,)
     liq_sale_series: jnp.ndarray  # (n_folded_liquidity,)
     liq_pool_series: list[jnp.ndarray]  # per-policy (n_pools_i,) arrays (ragged)
+    ta_floor_series: jnp.ndarray  # (n_folded_target_allocation,)
+    ta_ceiling_series: jnp.ndarray  # (n_folded_target_allocation,)
+    # Per-policy, per-sleeve, per-pool price rows. Ragged twice over, so a list of lists.
+    ta_pool_series: list[list[jnp.ndarray]]
 
 
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -845,6 +851,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # raise cash to cover the month's obligation demand (+ an optional buffer) before the funding check.
     liq_policies = plan.liquidity_policies
     liq_policy_count = int(liq_policies.cash_slot.shape[0])
+    ta_policies = plan.target_allocation_policies
     liq_max_assets = int(liq_policies.assets.shape[1]) if liq_policies.assets.ndim == 2 else 1
     folded_liquidity: list[_FoldedLiquidity] = []
     for policy in range(liq_policy_count):
@@ -898,6 +905,79 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
             )
         )
     lot_axis = max(1, p.lot_count)
+
+    folded_target_allocation: list[_FoldedTargetAllocation] = []
+    for policy in range(int(ta_policies.cash_slot.shape[0])):
+        if int(ta_policies.cash_slot[policy]) < 0:
+            continue  # padded sentinel policy
+        agent_code = int(ta_policies.agent[policy])
+        sleeves: list[_FoldedSleeve] = []
+        lot_slots: list[int] = []
+        for sleeve_idx in range(int(ta_policies.sleeve_assets.shape[1])):
+            asset_code = int(ta_policies.sleeve_assets[policy, sleeve_idx])
+            series_index = int(ta_policies.sleeve_series[policy, sleeve_idx])
+            if asset_code < 0:
+                continue  # padded sleeve column
+            sleeve_pools: list[_LiquidityPool] = []
+            view_rows: list[int] = []
+            # A sleeve with no price series stays in the universe with no pools: it holds value
+            # the policy cannot mark, so it must not be sold — and it must still occupy its
+            # weight, or the sellable sleeves would inherit its share of the target.
+            if series_index >= 0:
+                for account in ta_policies.source_accounts[policy]:
+                    account_code = int(account)
+                    if account_code < 0:
+                        continue
+                    ordered = lot_order_for_pool(
+                        lot_agent_codes=plan.lot_agent_codes,
+                        lot_account_codes=plan.lot_account_codes,
+                        lot_asset_codes=plan.lot_asset_codes,
+                        lot_purchase_month=plan.lot_purchase_month,
+                        lot_id_codes=plan.lot_id_codes,
+                        agent_code=agent_code,
+                        account_code=account_code,
+                        asset_code=asset_code,
+                    )
+                    if not ordered.size:
+                        continue
+                    sleeve_pools.append(
+                        _LiquidityPool(asset_idx=sleeve_idx, ordered_lots=tuple(int(x) for x in ordered))
+                    )
+                    # Pools are disjoint by construction — a sleeve is one asset and its pools are
+                    # distinct accounts — so appending never repeats a plan lot on the view axis.
+                    view_rows.extend(range(len(lot_slots), len(lot_slots) + int(ordered.size)))
+                    lot_slots.extend(int(x) for x in ordered)
+            sleeves.append(
+                _FoldedSleeve(
+                    weight=int(ta_policies.weights[policy, sleeve_idx]),
+                    sleeve_idx=sleeve_idx,
+                    view_lot_rows=tuple(view_rows),
+                    pools=tuple(sleeve_pools),
+                )
+            )
+        folded_target_allocation.append(
+            _FoldedTargetAllocation(
+                policy_index=policy,
+                agent=agent_code,
+                cash_slot=int(ta_policies.cash_slot[policy]),
+                floor=(
+                    int(ta_policies.floor_kind[policy]),
+                    int(ta_policies.floor_fixed[policy]),
+                    int(ta_policies.floor_base[policy]),
+                    int(ta_policies.floor_base_month[policy]),
+                    int(ta_policies.floor_period[policy]),
+                ),
+                ceiling=(
+                    int(ta_policies.ceiling_kind[policy]),
+                    int(ta_policies.ceiling_fixed[policy]),
+                    int(ta_policies.ceiling_base[policy]),
+                    int(ta_policies.ceiling_base_month[policy]),
+                    int(ta_policies.ceiling_period[policy]),
+                ),
+                lot_slots=tuple(lot_slots),
+                sleeves=tuple(sleeves),
+            )
+        )
 
     # Private-equity tenders: per-issuer static FIFO data. The channel device tables (marks, regimes,
     # capacities, ...) are seed-varying, so they arrive as the traced `pe_ch` dict (see `_program_impl`)
@@ -1044,6 +1124,17 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         _series_ops([int(liq_policies.asset_series[lp.policy_index, pool.asset_idx]) for pool in lp.pools])
         for lp in folded_liquidity
     ]
+    ta_floor_series = _series_ops([int(ta_policies.floor_series[tp.policy_index]) for tp in folded_target_allocation])
+    ta_ceiling_series = _series_ops(
+        [int(ta_policies.ceiling_series[tp.policy_index]) for tp in folded_target_allocation]
+    )
+    ta_pool_series = [
+        [
+            _series_ops([int(ta_policies.sleeve_series[tp.policy_index, sleeve.sleeve_idx]) for _ in sleeve.pools])
+            for sleeve in tp.sleeves
+        ]
+        for tp in folded_target_allocation
+    ]
 
     baked = _Operands(
         cash0=cash0,
@@ -1092,6 +1183,9 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         liq_trigger_series=liq_trigger_series,
         liq_sale_series=liq_sale_series,
         liq_pool_series=liq_pool_series,
+        ta_floor_series=ta_floor_series,
+        ta_ceiling_series=ta_ceiling_series,
+        ta_pool_series=ta_pool_series,
     )
 
     # Capital-gain accrual targets: each agent code that sells (liquidity / PE owners) maps to the
@@ -1145,6 +1239,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         folded_lifecycle=tuple(folded_lifecycle),
         folded_pr=tuple(folded_pr),
         folded_liquidity=tuple(folded_liquidity),
+        folded_target_allocation=tuple(folded_target_allocation),
         folded_pe=tuple(folded_pe),
         folded_harvest=tuple(folded_harvest),
         salt_link_active=tuple(bool(salt_link_active[link]) for link in range(link_count)),
@@ -1181,6 +1276,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         folded_pr=folded_pr,
         folded_sale_events=folded_sale_events,
         folded_liquidity=folded_liquidity,
+        folded_target_allocation=folded_target_allocation,
         folded_pe=folded_pe,
         link_count=link_count,
         liability_count=p.liability_count,
