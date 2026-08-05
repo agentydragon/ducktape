@@ -39,7 +39,18 @@ spec:
           annotations:
             summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to control-plane /dev/sda"
             description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is writing {{ $value | humanize1024 }}B/s to /dev/sda for more than 10 minutes, which can contend with etcd."
-        - alert: ControlPlaneLeasePutLatencyHigh
+        # Both tiers share one alertname and are separated by severity alone. The cluster's stock
+        # inhibit rule is `source severity=critical, target severity=~warning|info, equal:
+        # [namespace, alertname]` -- distinct names (…High/…Critical) never satisfy that `equal`,
+        # so critical could not suppress warning and a single slow apiserver notified twice.
+        # Keep these two `alert:` values identical or the suppression silently stops working.
+        #
+        # These series carry no `namespace` (the expr aggregates `by (instance, le)`), so the
+        # `equal` matches on absent-equals-absent. That also means the suppression is cluster-wide
+        # rather than per-instance: while any apiserver is critical, the warning is suppressed for
+        # all of them. Accepted — a critical here already means you're looking at the whole control
+        # plane, and `instance` cannot be added to `equal` without diverging from the stock rule.
+        - alert: ControlPlaneLeasePutLatency
           expr: |
             histogram_quantile(
               0.99,
@@ -53,7 +64,7 @@ spec:
           annotations:
             summary: "Apiserver lease PUT latency is high on {{ $labels.instance }}"
             description: "p99 apiserver lease PUT latency on {{ $labels.instance }} has exceeded 500ms for 10 minutes. This is an early signal for leader-election and node-lease write path contention."
-        - alert: ControlPlaneLeasePutLatencyCritical
+        - alert: ControlPlaneLeasePutLatency
           expr: |
             histogram_quantile(
               0.99,
