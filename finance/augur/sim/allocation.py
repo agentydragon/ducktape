@@ -98,6 +98,53 @@ def withdrawal_by_sleeve(
     return _settle_residual(taken=taken, value_cents=value_cents, wanted=wanted)
 
 
+def deposit_by_sleeve(
+    *, value_cents: NDArray[np.int64], weights: NDArray[np.int64], invest_cents: NDArray[np.int64]
+) -> NDArray[np.int64]:
+    """Split cash to invest across sleeves so the result is as close to target as possible.
+
+    The mirror of `withdrawal_by_sleeve`: fill the most UNDERWEIGHT sleeve first, which is
+    a water level `L` with `sum_i max(0, L * weight_i - value_i) = S`, each sleeve
+    receiving `max(0, L * weight_i - value_i)`.
+
+    Simpler than the withdrawal in one respect — there is no availability cap, since you
+    can always buy more of a sleeve but cannot sell more than you hold. So the result
+    always sums to exactly `invest_cents`.
+
+    Shapes and exactness match `withdrawal_by_sleeve`. Investing zero deposits nothing.
+    """
+
+    _validate_weights(weights)
+    if value_cents.ndim != 2:
+        raise ValueError(f"value_cents must be (sleeve, rollout), got {value_cents.shape}")
+    if value_cents.shape[0] != weights.shape[0]:
+        raise ValueError(f"value_cents has {value_cents.shape[0]} sleeves but weights has {weights.shape[0]}")
+    if invest_cents.shape != (value_cents.shape[1],):
+        raise ValueError(f"invest_cents must be (rollout,), got {invest_cents.shape}")
+
+    wanted = np.maximum(invest_cents, 0)
+
+    # Same construction as the withdrawal with the inequality flipped: walk the ratios
+    # ASCENDING, so the set of receiving sleeves grows from the most underweight up.
+    ratio = value_cents / weights[:, None]
+    order = np.argsort(ratio, axis=0, kind="stable")
+    value_sorted = np.take_along_axis(value_cents, order, axis=0)
+    weight_sorted = np.take_along_axis(np.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
+    ratio_sorted = np.take_along_axis(ratio, order, axis=0)
+
+    value_prefix = np.cumsum(value_sorted, axis=0)
+    weight_prefix = np.cumsum(weight_sorted, axis=0)
+    level = (value_prefix + wanted[None, :]) / weight_prefix
+    # Valid when the level does not reach the next sleeve's ratio; if it did, that sleeve is
+    # underweight too and should be receiving as well.
+    next_ratio = np.concatenate([ratio_sorted[1:], np.full((1, ratio.shape[1]), np.inf)], axis=0)
+    chosen = np.argmax(level <= next_ratio, axis=0)
+    water = np.take_along_axis(level, chosen[None, :], axis=0)
+
+    given = np.maximum(_round_half_up(water * weights[:, None]) - value_cents, 0)
+    return _settle_residual(taken=given, value_cents=given + wanted[None, :], wanted=wanted)
+
+
 def _settle_residual(
     *, taken: NDArray[np.int64], value_cents: NDArray[np.int64], wanted: NDArray[np.int64]
 ) -> NDArray[np.int64]:
