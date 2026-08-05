@@ -264,13 +264,16 @@ py_library(
 py_library(
     name = "allocation",
     srcs = ["allocation.py"],
-    deps = ["@pypi//numpy"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
 )
 
 py_library(
     name = "cash_band",
     srcs = ["cash_band.py"],
-    deps = ["@pypi//numpy"],
+    deps = ["@pypi//jax"],
 )
 
 py_library(
@@ -301,6 +304,7 @@ py_test(
     srcs = ["cash_band_test.py"],
     deps = [
         ":cash_band",
+        "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -313,6 +317,7 @@ py_test(
     srcs = ["allocation_test.py"],
     deps = [
         ":allocation",
+        "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

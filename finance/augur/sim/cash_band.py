@@ -36,36 +36,59 @@ sell, rather than that the sale had not been attempted yet.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import NamedTuple
 
-import numpy as np
-from numpy.typing import NDArray
+import jax.numpy as jnp
 
 
-@dataclass(frozen=True)
-class CashOrder:
+class CashOrder(NamedTuple):
     """What the band asks for this month, in cents, per rollout.
 
     At most one side is non-zero: a band with `floor <= ceiling` cannot be crossed in both
     directions at once.
+
+    A NamedTuple rather than a dataclass so it is a native JAX pytree — the engine returns
+    this from traced code, and a plain dataclass is not a valid jit output.
     """
 
-    raise_cents: NDArray[np.int64]
-    invest_cents: NDArray[np.int64]
+    raise_cents: jnp.ndarray
+    invest_cents: jnp.ndarray
+
+
+def validate_band_bounds(*, floor_usd: float, ceiling_usd: float) -> None:
+    """Check the band's shape at COMPILE time, on the configured amounts.
+
+    It cannot be checked per-month: the bounds may be CPI-indexed, so their monthly values
+    are traced arrays, and a traced value cannot drive a Python raise. Validating the base
+    amounts is sufficient rather than a compromise — indexing scales both bounds by the
+    same series, so an ordering that holds at configuration holds on every path.
+    """
+
+    if floor_usd < 0:
+        raise ValueError(f"cash band floor must not be negative; got {floor_usd=}")
+    if floor_usd > ceiling_usd:
+        raise ValueError(
+            f"cash band floor must not exceed its ceiling; got {floor_usd=}, {ceiling_usd=}. "
+            "An inverted band has no interior, so every balance crosses both bounds and the "
+            "policy would sell and buy in the same month, forever."
+        )
 
 
 def cash_order(
     *,
-    cash_cents: NDArray[np.int64],
-    scheduled_outflow_cents: NDArray[np.int64],
-    floor_cents: NDArray[np.int64],
-    ceiling_cents: NDArray[np.int64],
+    cash_cents: jnp.ndarray,
+    scheduled_outflow_cents: jnp.ndarray,
+    floor_cents: jnp.ndarray,
+    ceiling_cents: jnp.ndarray,
 ) -> CashOrder:
     """Size this month's raise or investment from the projected end-of-month balance.
 
     All arguments are `(rollout,)`. `scheduled_outflow_cents` is what the month is already
     committed to paying, so the decision is made against where cash will actually land
     rather than where it happens to sit before the bills.
+
+    Runs inside the jitted scan, so it validates shapes (static, therefore checkable) but
+    never values — `validate_band_bounds` owns that, at config time.
     """
 
     if not (cash_cents.shape == scheduled_outflow_cents.shape == floor_cents.shape == ceiling_cents.shape):
@@ -73,13 +96,9 @@ def cash_order(
             "cash_order arguments must share one (rollout,) shape; got "
             f"{cash_cents.shape=}, {scheduled_outflow_cents.shape=}, {floor_cents.shape=}, {ceiling_cents.shape=}"
         )
-    if np.any(floor_cents > ceiling_cents):
-        raise ValueError("cash band floor must not exceed its ceiling")
-    if np.any(floor_cents < 0):
-        raise ValueError("cash band floor must not be negative")
 
     projected = cash_cents - scheduled_outflow_cents
     return CashOrder(
-        raise_cents=np.where(projected < floor_cents, ceiling_cents - projected, 0).astype(np.int64),
-        invest_cents=np.where(projected > ceiling_cents, projected - floor_cents, 0).astype(np.int64),
+        raise_cents=jnp.where(projected < floor_cents, ceiling_cents - projected, 0).astype(jnp.int64),
+        invest_cents=jnp.where(projected > ceiling_cents, projected - floor_cents, 0).astype(jnp.int64),
     )

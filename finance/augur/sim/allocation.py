@@ -4,6 +4,13 @@ Pure math, no engine state — the counterpart to `bonds.py`. Everything is inte
 and everything carries a trailing rollout axis, because the policy that calls this is a
 batched function `(observations, R) -> (actions, R)`.
 
+Written in `jnp`, not numpy, because this runs INSIDE the jitted scan. A numpy version
+would force a second implementation in the engine, and the two would drift — the mistake
+`tensor_fifo.py` and the engine's `_fifo_sell_*` already illustrate. `weights` stays a
+plain numpy array on purpose: it is compile-time config, never traced, so it can be
+validated with ordinary raises. Traced VALUES cannot be, which is why nothing here raises
+on an amount.
+
 ## The rule
 
 Sleeves carry integer relative weights. A fraction is derivable from weights, so storing
@@ -33,23 +40,26 @@ Two consequences worth naming:
 
 from __future__ import annotations
 
+import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
 
 
-def target_value_cents(*, weights: NDArray[np.int64], total_cents: NDArray[np.int64]) -> NDArray[np.int64]:
+def target_value_cents(*, weights: NDArray[np.int64], total_cents: jnp.ndarray) -> jnp.ndarray:
     """Each sleeve's on-target value: `total * weight_i / sum(weight)`, floored.
 
     `weights` is `(sleeve,)`, `total_cents` is `(rollout,)`, result is `(sleeve, rollout)`.
     """
 
     _validate_weights(weights)
-    return (weights[:, None] * total_cents[None, :]) // weights.sum()
+    # `weights` is static numpy; lift it explicitly so the product is a typed jax Array
+    # rather than `Any`, and take the divisor as a Python int since it is compile-time known.
+    return (jnp.asarray(weights)[:, None] * total_cents[None, :]) // int(weights.sum())
 
 
 def withdrawal_by_sleeve(
-    *, value_cents: NDArray[np.int64], weights: NDArray[np.int64], raise_cents: NDArray[np.int64]
-) -> NDArray[np.int64]:
+    *, value_cents: jnp.ndarray, weights: NDArray[np.int64], raise_cents: jnp.ndarray
+) -> jnp.ndarray:
     """Split a cash-raise across sleeves so what remains is as close to target as possible.
 
     `value_cents` is `(sleeve, rollout)`, `weights` is `(sleeve,)`, `raise_cents` is
@@ -69,38 +79,38 @@ def withdrawal_by_sleeve(
         raise ValueError(f"raise_cents must be (rollout,), got {raise_cents.shape}")
 
     available = value_cents.sum(axis=0)
-    wanted = np.minimum(np.maximum(raise_cents, 0), available)
+    wanted = jnp.minimum(jnp.maximum(raise_cents, 0), available)
 
     # Water level per rollout. Candidate levels are the sleeve value-per-weight ratios: between
     # two adjacent ratios the set of contributing sleeves is fixed, so the level solves a linear
     # equation there. Walking the ratios in descending order grows that set one sleeve at a time.
     # Ratios are compared as float only to ORDER them; every amount below stays in integer cents.
     ratio = value_cents / weights[:, None]
-    order = np.argsort(-ratio, axis=0, kind="stable")
-    value_sorted = np.take_along_axis(value_cents, order, axis=0)
-    weight_sorted = np.take_along_axis(np.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
-    ratio_sorted = np.take_along_axis(ratio, order, axis=0)
+    order = jnp.argsort(-ratio, axis=0, stable=True)
+    value_sorted = jnp.take_along_axis(value_cents, order, axis=0)
+    weight_sorted = jnp.take_along_axis(jnp.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
+    ratio_sorted = jnp.take_along_axis(ratio, order, axis=0)
 
-    value_prefix = np.cumsum(value_sorted, axis=0)
-    weight_prefix = np.cumsum(weight_sorted, axis=0)
+    value_prefix = jnp.cumsum(value_sorted, axis=0)
+    weight_prefix = jnp.cumsum(weight_sorted, axis=0)
     # Level implied by taking the top k sleeves, for each k. Valid when it does not fall below
     # the next sleeve's ratio (which would mean that sleeve should be contributing too).
     level = (value_prefix - wanted[None, :]) / weight_prefix
-    next_ratio = np.concatenate([ratio_sorted[1:], np.full((1, ratio.shape[1]), -np.inf)], axis=0)
+    next_ratio = jnp.concatenate([ratio_sorted[1:], jnp.full((1, ratio.shape[1]), -jnp.inf)], axis=0)
     feasible = level >= next_ratio
     # The smallest feasible k is the answer; later k give a level below some included sleeve's
     # share and would over-take from it.
-    chosen = np.argmax(feasible, axis=0)
-    water = np.take_along_axis(level, chosen[None, :], axis=0)
+    chosen = jnp.argmax(feasible, axis=0)
+    water = jnp.take_along_axis(level, chosen[None, :], axis=0)
 
-    taken = np.maximum(value_cents - _round_half_up(water * weights[:, None]), 0)
-    taken = np.minimum(taken, value_cents)
+    taken = jnp.maximum(value_cents - _round_half_up(water * weights[:, None]), 0)
+    taken = jnp.minimum(taken, value_cents)
     return _settle_residual(taken=taken, value_cents=value_cents, wanted=wanted)
 
 
 def deposit_by_sleeve(
-    *, value_cents: NDArray[np.int64], weights: NDArray[np.int64], invest_cents: NDArray[np.int64]
-) -> NDArray[np.int64]:
+    *, value_cents: jnp.ndarray, weights: NDArray[np.int64], invest_cents: jnp.ndarray
+) -> jnp.ndarray:
     """Split cash to invest across sleeves so the result is as close to target as possible.
 
     The mirror of `withdrawal_by_sleeve`: fill the most UNDERWEIGHT sleeve first, which is
@@ -122,32 +132,30 @@ def deposit_by_sleeve(
     if invest_cents.shape != (value_cents.shape[1],):
         raise ValueError(f"invest_cents must be (rollout,), got {invest_cents.shape}")
 
-    wanted = np.maximum(invest_cents, 0)
+    wanted = jnp.maximum(invest_cents, 0)
 
     # Same construction as the withdrawal with the inequality flipped: walk the ratios
     # ASCENDING, so the set of receiving sleeves grows from the most underweight up.
     ratio = value_cents / weights[:, None]
-    order = np.argsort(ratio, axis=0, kind="stable")
-    value_sorted = np.take_along_axis(value_cents, order, axis=0)
-    weight_sorted = np.take_along_axis(np.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
-    ratio_sorted = np.take_along_axis(ratio, order, axis=0)
+    order = jnp.argsort(ratio, axis=0, stable=True)
+    value_sorted = jnp.take_along_axis(value_cents, order, axis=0)
+    weight_sorted = jnp.take_along_axis(jnp.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
+    ratio_sorted = jnp.take_along_axis(ratio, order, axis=0)
 
-    value_prefix = np.cumsum(value_sorted, axis=0)
-    weight_prefix = np.cumsum(weight_sorted, axis=0)
+    value_prefix = jnp.cumsum(value_sorted, axis=0)
+    weight_prefix = jnp.cumsum(weight_sorted, axis=0)
     level = (value_prefix + wanted[None, :]) / weight_prefix
     # Valid when the level does not reach the next sleeve's ratio; if it did, that sleeve is
     # underweight too and should be receiving as well.
-    next_ratio = np.concatenate([ratio_sorted[1:], np.full((1, ratio.shape[1]), np.inf)], axis=0)
-    chosen = np.argmax(level <= next_ratio, axis=0)
-    water = np.take_along_axis(level, chosen[None, :], axis=0)
+    next_ratio = jnp.concatenate([ratio_sorted[1:], jnp.full((1, ratio.shape[1]), jnp.inf)], axis=0)
+    chosen = jnp.argmax(level <= next_ratio, axis=0)
+    water = jnp.take_along_axis(level, chosen[None, :], axis=0)
 
-    given = np.maximum(_round_half_up(water * weights[:, None]) - value_cents, 0)
+    given = jnp.maximum(_round_half_up(water * weights[:, None]) - value_cents, 0)
     return _settle_residual(taken=given, value_cents=given + wanted[None, :], wanted=wanted)
 
 
-def _settle_residual(
-    *, taken: NDArray[np.int64], value_cents: NDArray[np.int64], wanted: NDArray[np.int64]
-) -> NDArray[np.int64]:
+def _settle_residual(*, taken: jnp.ndarray, value_cents: jnp.ndarray, wanted: jnp.ndarray) -> jnp.ndarray:
     """Absorb the cent that rounding the water level costs, so the split is exact.
 
     The level is fractional, so per-sleeve amounts round and the total drifts from `wanted`
@@ -156,17 +164,17 @@ def _settle_residual(
     """
 
     residual = wanted - taken.sum(axis=0)
-    headroom = np.where(residual >= 0, value_cents - taken, taken)
+    headroom = jnp.where(residual >= 0, value_cents - taken, taken)
     # Largest contributor with room to absorb the correction, falling back to the largest sleeve.
-    candidate = np.where(headroom >= np.abs(residual)[None, :], taken, -1)
-    target = np.argmax(candidate, axis=0)
-    adjustment = np.zeros_like(taken)
-    np.put_along_axis(adjustment, target[None, :], residual[None, :], axis=0)
-    return taken + adjustment
+    candidate = jnp.where(headroom >= jnp.abs(residual)[None, :], taken, -1)
+    target = jnp.argmax(candidate, axis=0)
+    # One-hot rather than a scatter: jnp is functional, and this traces without an index update.
+    sleeve_rows = jnp.arange(taken.shape[0])[:, None]
+    return taken + jnp.where(sleeve_rows == target[None, :], residual[None, :], 0)
 
 
-def _round_half_up(values: NDArray[np.float64]) -> NDArray[np.int64]:
-    return np.floor(values + 0.5).astype(np.int64)
+def _round_half_up(values: jnp.ndarray) -> jnp.ndarray:
+    return jnp.floor(values + 0.5).astype(jnp.int64)
 
 
 def _validate_weights(weights: NDArray[np.int64]) -> None:

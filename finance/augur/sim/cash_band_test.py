@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.cash_band import cash_order
+from finance.augur.sim.cash_band import cash_order, validate_band_bounds
 
 
 def _order(cash: list[int], outflow: list[int], floor: int, ceiling: int) -> tuple[list[int], list[int]]:
     result = cash_order(
-        cash_cents=np.asarray(cash, dtype=np.int64),
-        scheduled_outflow_cents=np.asarray(outflow, dtype=np.int64),
-        floor_cents=np.full(len(cash), floor, dtype=np.int64),
-        ceiling_cents=np.full(len(cash), ceiling, dtype=np.int64),
+        cash_cents=jnp.asarray(cash, dtype=jnp.int64),
+        scheduled_outflow_cents=jnp.asarray(outflow, dtype=jnp.int64),
+        floor_cents=jnp.full(len(cash), floor, dtype=jnp.int64),
+        ceiling_cents=jnp.full(len(cash), ceiling, dtype=jnp.int64),
     )
     return [int(x) for x in result.raise_cents], [int(x) for x in result.invest_cents]
 
@@ -91,10 +93,10 @@ def test_the_two_sides_are_mutually_exclusive() -> None:
     outflow = rng.integers(0, 200_000, size=256, dtype=np.int64)
 
     order = cash_order(
-        cash_cents=cash,
-        scheduled_outflow_cents=outflow,
-        floor_cents=np.full(256, 25_000, dtype=np.int64),
-        ceiling_cents=np.full(256, 90_000, dtype=np.int64),
+        cash_cents=jnp.asarray(cash),
+        scheduled_outflow_cents=jnp.asarray(outflow),
+        floor_cents=jnp.full(256, 25_000, dtype=jnp.int64),
+        ceiling_cents=jnp.full(256, 90_000, dtype=jnp.int64),
     )
 
     assert np.all((order.raise_cents == 0) | (order.invest_cents == 0))
@@ -109,10 +111,15 @@ def test_acting_on_the_order_lands_inside_the_band() -> None:
     rng = np.random.default_rng(1)
     cash = rng.integers(-50_000, 500_000, size=256, dtype=np.int64)
     outflow = rng.integers(0, 200_000, size=256, dtype=np.int64)
-    floor = np.full(256, 25_000, dtype=np.int64)
-    ceiling = np.full(256, 90_000, dtype=np.int64)
+    floor = jnp.full(256, 25_000, dtype=jnp.int64)
+    ceiling = jnp.full(256, 90_000, dtype=jnp.int64)
 
-    order = cash_order(cash_cents=cash, scheduled_outflow_cents=outflow, floor_cents=floor, ceiling_cents=ceiling)
+    order = cash_order(
+        cash_cents=jnp.asarray(cash),
+        scheduled_outflow_cents=jnp.asarray(outflow),
+        floor_cents=floor,
+        ceiling_cents=ceiling,
+    )
     settled = cash - outflow + order.raise_cents - order.invest_cents
 
     assert np.all(settled >= floor)
@@ -125,26 +132,49 @@ def test_per_rollout_bands_are_independent() -> None:
     purchasing power to every other."""
 
     order = cash_order(
-        cash_cents=np.asarray([500, 500], dtype=np.int64),
-        scheduled_outflow_cents=np.asarray([0, 0], dtype=np.int64),
-        floor_cents=np.asarray([100, 600], dtype=np.int64),
-        ceiling_cents=np.asarray([1_000, 2_000], dtype=np.int64),
+        cash_cents=jnp.asarray([500, 500], dtype=jnp.int64),
+        scheduled_outflow_cents=jnp.asarray([0, 0], dtype=jnp.int64),
+        floor_cents=jnp.asarray([100, 600], dtype=jnp.int64),
+        ceiling_cents=jnp.asarray([1_000, 2_000], dtype=jnp.int64),
     )
 
     assert [int(x) for x in order.raise_cents] == [0, 1_500]
 
 
-def test_an_inverted_band_is_rejected() -> None:
+def test_the_band_traces_under_jit() -> None:
+    """Sizing runs inside the jitted scan, so it must trace. This is also why the
+    floor-vs-ceiling check lives in `validate_band_bounds` instead of here: under trace the
+    bounds are arrays, and an array cannot drive a Python raise."""
+
+    sized = jax.jit(
+        lambda cash, outflow, floor, ceiling: cash_order(
+            cash_cents=cash, scheduled_outflow_cents=outflow, floor_cents=floor, ceiling_cents=ceiling
+        )
+    )(
+        jnp.asarray([50], dtype=jnp.int64),
+        jnp.asarray([0], dtype=jnp.int64),
+        jnp.asarray([100], dtype=jnp.int64),
+        jnp.asarray([1_000], dtype=jnp.int64),
+    )
+
+    assert [int(x) for x in sized.raise_cents] == [950]
+
+
+def test_an_inverted_band_is_rejected_at_config_time() -> None:
     """A ceiling below its floor has no interior, so every balance crosses both bounds and
-    the policy would sell and buy forever. Better to reject the config than to run it."""
+    the policy would sell and buy forever.
+
+    Checked on the CONFIGURED amounts, not the monthly values: the bounds may be
+    CPI-indexed, so per-month they are traced arrays and cannot drive a raise. Validating
+    the base amounts is enough rather than a compromise — indexing scales both by the same
+    series, so an ordering that holds at configuration holds on every path.
+    """
 
     with pytest.raises(ValueError, match="floor must not exceed"):
-        cash_order(
-            cash_cents=np.asarray([0], dtype=np.int64),
-            scheduled_outflow_cents=np.asarray([0], dtype=np.int64),
-            floor_cents=np.asarray([1_000], dtype=np.int64),
-            ceiling_cents=np.asarray([100], dtype=np.int64),
-        )
+        validate_band_bounds(floor_usd=1_000.0, ceiling_usd=100.0)
+    with pytest.raises(ValueError, match="must not be negative"):
+        validate_band_bounds(floor_usd=-1.0, ceiling_usd=100.0)
+    validate_band_bounds(floor_usd=100.0, ceiling_usd=1_000.0)
 
 
 if __name__ == "__main__":
