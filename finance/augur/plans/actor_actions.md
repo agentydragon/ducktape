@@ -189,8 +189,10 @@ without its reason gets "simplified" away.
 - **Integer cents throughout**, and a quantity is whole quanta. Valuing an order's quanta
   with the same helper the basis math uses is what makes an immediate full-lot resale net
   exactly zero. The companion property — that a budgeted purchase satisfies
-  `spent <= budget` — moves to the POLICY along with the division, and follows from the same
-  helper: flooring the quanta first gives `round(x) <= N` for `x <=` integer `N`.
+  `spent <= budget` — moves to the POLICY along with the division. Two steps, and they round
+  differently: the quanta are FLOORED, so the value they represent is at most the budget; that
+  value is then ROUNDED to cents, and rounding cannot cross an integer bound it is already
+  under (`round(x) <= N` whenever `x <= N` for integer `N`).
 - **Cost basis is per-rollout.** A lot bought in month 3 carries the price _its_ rollout
   paid. Reading a compile-time column instead reports zero basis and books the entire
   proceeds as gain.
