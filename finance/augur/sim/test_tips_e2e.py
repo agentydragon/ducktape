@@ -17,6 +17,7 @@ import pytest_bazel
 from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.level_series_groups import IndexSeriesGroups
 from finance.augur.model.series_model import SeriesModelBundle
+from finance.augur.product.decode import monthly_metric_arrays
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
 
@@ -184,6 +185,22 @@ def test_cash_is_still_conserved_with_an_indexed_bond() -> None:
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
     assert np.all(totals == totals[0])
+
+
+def test_net_worth_carries_a_tips_at_indexed_principal() -> None:
+    """Carrying a TIPS at par would understate net worth by the whole accretion — in exactly
+    the inflationary scenarios the ladder is held for, which is the worst place to be wrong.
+
+    CPI doubles at month 6, so after that the $1M bond is worth $2M on the balance sheet.
+    Asserted against the nominal control on the same CPI path, which stays at $1M.
+    """
+
+    def bond_value(indexed: bool) -> list[float]:
+        run = simulate(_scenario(indexed=indexed, cpi=_CPI_DOUBLING, maturity=120), rollout_count=1, locations={})
+        return [float(v) for v in monthly_metric_arrays(run, primary_agent_id="alice")["bond_value_usd"]]
+
+    assert bond_value(indexed=True)[-1] == 2 * _FACE
+    assert bond_value(indexed=False)[-1] == _FACE
 
 
 if __name__ == "__main__":

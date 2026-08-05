@@ -243,6 +243,12 @@ class _ProductSummaryInputs(NamedTuple):
     # rollout-varying value.
     bond_face: jnp.ndarray
     bond_on_books: jnp.ndarray
+    # Indexation inputs, so a TIPS is carried at its CPI-scaled principal rather than at par.
+    # Valuing an indexed bond at face would understate it in exactly the inflationary
+    # scenarios the ladder is held for.
+    bond_indexed: jnp.ndarray
+    bond_cpi_series: jnp.ndarray
+    bond_index_base_month: jnp.ndarray
 
 
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
@@ -477,6 +483,9 @@ def _product_summary_inputs(
         primary_obligation_mask=jnp.asarray(plan.obligations.agent == primary_agent_code),
         bond_face=jnp.asarray(np.where(bond_mask, plan.bonds.face, 0)),
         bond_on_books=jnp.asarray(plan.bonds.on_books),
+        bond_indexed=jnp.asarray(plan.bonds.indexed),
+        bond_cpi_series=jnp.asarray(plan.bonds.cpi_series),
+        bond_index_base_month=jnp.asarray(plan.bonds.index_base_month),
     )
     return (
         _ProductSummaryStatic(
@@ -1303,7 +1312,17 @@ def _program_impl(
         ) / float(USD_CENTS)
         bond_usd = jnp.zeros((r,), dtype=jnp.float64)
         if product_summary.has_bonds:
-            held_face = (product_inputs.bond_on_books[snapshot_month] * product_inputs.bond_face).sum()
+            carried = product_inputs.bond_face[:, None] * jnp.ones((1, r), dtype=jnp.int64)
+            if structure.has_indexed_bonds:
+                safe = jnp.maximum(product_inputs.bond_cpi_series, 0)
+                base_cpi = external_values[safe, :, product_inputs.bond_index_base_month]
+                indexed_principal = jnp.round(
+                    product_inputs.bond_face[:, None]
+                    * external_values[safe, :, snapshot_month]
+                    / jnp.where(base_cpi > 0, base_cpi, 1.0)
+                ).astype(jnp.int64)
+                carried = jnp.where((product_inputs.bond_indexed > 0)[:, None], indexed_principal, carried)
+            held_face = (product_inputs.bond_on_books[snapshot_month][:, None] * carried).sum(axis=0)
             # Identical across rollouts, but zeroed for failed ones so a failed rollout's net
             # worth is zero like every other term rather than reporting the bonds alone.
             bond_usd = jnp.where(s.failed, 0.0, held_face.astype(jnp.float64) / float(USD_CENTS))

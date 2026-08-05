@@ -506,8 +506,18 @@ def _bond_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np
 
     plan = dense.plan
     face = np.where(plan.bonds.agent == primary_agent_code, plan.bonds.face, 0)
-    per_month = cents_array_to_usd(plan.bonds.on_books @ face)  # (H+1,)
-    value = np.broadcast_to(per_month[:, None], (plan.horizon_months + 1, plan.rollout_count)).copy()
+    if plan.bonds.indexed.any():
+        # A TIPS is carried at CPI-scaled principal, not par — otherwise net worth understates
+        # it in exactly the inflationary scenarios the ladder is held for. Rollout-varying, so
+        # this branch cannot use the constant broadcast below.
+        levels = plan.external_values[np.maximum(plan.bonds.cpi_series, 0)]  # (bond, R, month)
+        base = np.take_along_axis(levels, plan.bonds.index_base_month[:, None, None], axis=2)
+        principal = np.round(face[:, None, None] * levels / np.where(base > 0, base, 1.0))
+        carried = np.where((plan.bonds.indexed > 0)[:, None, None], principal, face[:, None, None])
+        value = cents_array_to_usd(np.einsum("mb,brm->mr", plan.bonds.on_books, carried))
+    else:
+        per_month = cents_array_to_usd(plan.bonds.on_books @ face)  # (H+1,)
+        value = np.broadcast_to(per_month[:, None], (plan.horizon_months + 1, plan.rollout_count)).copy()
     failed_month = failed_month_index_batch(dense)
     months = np.arange(plan.horizon_months + 1)[:, None]
     return np.where((failed_month[None, :] >= 0) & (months >= failed_month[None, :]), 0.0, value)
