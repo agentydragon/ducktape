@@ -366,28 +366,28 @@ tree at merge time.
   matters. Defer until landlord-rental scenarios are common enough
   that the smoothed model bites.
 
-## Funding policy: asset-balance targeting
+## Funding policy: rebalancing on drift alone
 
-Today `FundingPolicy` is a cash-buffer + ordered sell list — it only
-fires when cash dips below `cash_buffer_trigger_below_usd`. Extend
-with a target-balance mode: the user specifies a desired allocation
-across liquid asset classes (e.g. 50% stocks / 30% crypto / 20%
-cash), the engine periodically rebalances by selling overweight
-buckets and buying underweight ones. Needs:
+`TargetAllocationPolicy` targets an allocation, but only cashflow moves
+toward it: crossing the cash floor sells the most overweight sleeve, and
+nothing happens in a month that stays inside the band. Drift alone never
+trades, which is deliberate — a rebalancing schedule is a different policy
+with different turnover and tax consequences.
 
-- Wire: `FundingPolicy.target_allocation: dict[bucket, fraction] | None`
-  alongside the existing trigger/sell knobs.
-- Sim: an `AssetBalanceRebalancingPolicy` (or extend `LiquidityPolicy`)
-  that runs on a configurable cadence and emits buy/sell orders to
-  reduce drift past a tolerance threshold.
-- Tax routing: rebalancing sells realize gains/losses through the
-  same FIFO + capital-gain plumbing the cash-buffer path uses.
-- Frontend: alongside the existing "Sell preference" list, a
-  target-allocation editor (one row per bucket, percentage, must
-  sum to 100).
+What a drift-triggered mode would need on top of what exists:
 
-Defer until a scenario actually needs it — single-bucket portfolios
-or pure cash-buffer behavior cover the common cases today.
+- Wire: a tolerance and a cadence on `FundingPolicy` (sell once a sleeve is
+  more than X% off target, checked every N months). The weights themselves
+  are already there.
+- Sim: a purchase executor. `deposit_by_sleeve` already computes the buy
+  side and is unit-tested, but nothing calls it — rebalancing without buying
+  is just a drawdown.
+- Tax routing: already handled; a rebalancing sell is the same FIFO +
+  capital-gain path the band's sales take.
+
+Defer until a scenario needs it. Note the tax argument cuts against it: a
+sale to fund spending is unavoidable, whereas a sale to correct drift is
+elective realization, and augur exists partly to price that difference.
 
 ## Funding policy: "reserve for N months" threshold
 
@@ -400,21 +400,21 @@ is still desirable on the product surface as a `FundingPolicy` knob.
 
 Sketch:
 
-- `FundingPolicy.reserve_months: PositiveInt | None = None` — when set,
-  the cash-buffer trigger becomes `sum(next reserve_months months of
-scheduled obligations) - expected income`, evaluated per rollout per
-  month.
-- Engine: in `_apply_liquidity_policy_sales`, compute the forward
-  projected deficit from `plan.obligation_due[month .. month+N, ...]`
-  (or a precomputed cumulative sum) and use that as the trigger
-  threshold instead of the static `cash_buffer_trigger_below_usd`.
-- Wire/frontend: dual-mode picker — "absolute $ trigger" vs "N months
-  of runway"; defaults to absolute.
-- Tax routing: rebalancing sells realize gains/losses through the same
-  FIFO + capital-gain plumbing the cash-buffer path uses.
+- `FundingPolicy.reserve_months: PositiveInt | None = None` — when set, the
+  cash FLOOR becomes the next `reserve_months` months of scheduled obligations
+  less expected income, evaluated per rollout per month. The ceiling has to
+  follow it, since an inverted band has no interior.
+- Engine: the band bounds are already per-month series operands
+  (`ta_floor_series` / `ta_ceiling_series`), so a dynamic floor is a
+  different way of filling those rows rather than a new branch in the scan.
+  Compute the forward projected deficit from
+  `plan.obligation_due[month .. month+N, ...]` (or a precomputed cumulative
+  sum).
+- Wire/frontend: dual-mode picker — "absolute $ floor" vs "N months of
+  runway"; defaults to absolute.
 
 Defer until a scenario actually needs the dynamic threshold; the
-absolute trigger covers today's product surface.
+absolute band covers today's product surface.
 
 ## Explicitly deferred
 

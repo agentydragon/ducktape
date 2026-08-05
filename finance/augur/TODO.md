@@ -253,36 +253,28 @@ Remaining:
 
 ## Liquidity Policy
 
-- [ ] **Replace the disjoint buffer policies with a rebalance-to-target
-      model.** Today's product surfaces two policies that look
-      superficially similar but live in different shapes and don't
-      compose: - `FundingPolicy` (in `augur/product/wire.py`) — cash buffer: when
-      post-obligation cash drops below a dollar trigger, sell a fixed
-      dollar amount from `public_securities`. Trigger + sell-amount
-      come from the frontend per scenario. - `PrivateEquityTenderPolicy` — liquid-net-worth floor: only sell PE
-      through a tender if liquid_net_worth ≥ floor. Floor comes from
-      the frontend per scenario.
+The cash side of this is **done**: `FundingPolicy` is an (s,S) cash band plus
+per-holding target weights, lowering to `TargetAllocationPolicy`, and sales are
+water-filled against the target rather than taken from an ordered sell list.
+What remains is composing that target with the PE tender floor, and buying.
 
-      A cleaner unifying frame is **rebalance toward a multi-tier target
-      allocation**: each tier (cash, liquid public stock, PE, possibly
-      property) has a target dollar amount (or fraction of net worth), and
-      the policy nudges holdings toward those targets each month by
-      buying/selling between tiers. A deadband around each target avoids
-      churn. This shape captures everything the existing floor-based
-      policies do (a "floor" is a one-sided target with infinite upper
-      deadband) plus three things the existing policies can't:
-      - the missing middle tier (a stock-value target that triggers PE
-        sales when stock holdings fall below it);
-      - reinvestment of PE sale proceeds (proceeds from a tender flow
-        toward whichever tier is below its target, not flat to cash);
-      - upside rebalancing (if PE grows to dominate net worth, sell into
-        tenders even without a cash need, to refill the stock tier).
+- [ ] **Bring private equity into the same target.** `PrivateEquityTenderPolicy`
+      is still a separate shape: a liquid-net-worth floor gating tender sales,
+      with its own frontend knob. It does not compose with `sleeve_weights` —
+      a floor is a one-sided target with an infinite upper deadband, so it
+      should BE a sleeve, with the tender's sale capacity as the constraint on
+      how fast that sleeve can be drained. Blocked on nothing in particular;
+      wants the PE lot axis to be reachable from `ActorView`.
 
-      Frontend exposes target amounts and deadbands per tier; the
-      simulator runs the rebalance rule each month against available
-      sale capacity (PE tender opportunities, public-stock liquidity).
-      The existing `FundingPolicy` + `PrivateEquityTenderPolicy` shapes
-      become special cases of this surface and can be deprecated.
+- [ ] **Reinvest, don't just raise.** Everything the current shape still cannot
+      express is on the buy side: tender proceeds land flat in cash rather than
+      flowing toward whichever sleeve is furthest below target; a sleeve that
+      grows to dominate is never trimmed without a cash need; and the cash
+      ceiling is only a refill target, never an invest-above-this rule.
+      `deposit_by_sleeve` already computes the buy side and is unit-tested, but
+      nothing calls it — there is no purchase executor. All of this arrives
+      together with policy-driven purchases; until then the ceiling
+      deliberately carries one meaning, not two.
 
 ## API / Runtime Design Debt
 
