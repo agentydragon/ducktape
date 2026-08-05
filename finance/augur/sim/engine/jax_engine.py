@@ -31,6 +31,14 @@ across processes.
 
 Integer accounting note: engine monetary state is migrating to int64 cents / explicit quantity
 quanta. JAX x64 is required so those int64 arrays do not silently truncate to int32.
+
+Double-entry note: every write to `cash` moves money between two rows of the same tensor, never
+into or out of it. A counterparty the scenario does not model is not a hole — it is
+`structure.external_cash_slot`, the `rest_of_world` row. So a phase that pays an unmodeled
+contractor debits the owner and credits that row, and one that books sale proceeds credits the
+owner and debits it. The sum over all cash rows is therefore invariant, which is what
+`test_cash_conservation_e2e` asserts and the only thing that catches a one-sided write: a sale
+that credits proceeds with no debit leaves net worth correct while it mints money.
 """
 
 from __future__ import annotations
@@ -1545,7 +1553,10 @@ def _program_impl(
                 amount = ev.amount_cents
                 owner_cash_slot = ev.owner_cash_slot
                 if owner_cash_slot >= 0:
-                    cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0))
+                    capex_flow = jnp.where(active_property, amount, 0)
+                    cash = cash.at[owner_cash_slot].add(-capex_flow)
+                    # Double entry: the contractor doing the work is outside the model.
+                    cash = cash.at[structure.external_cash_slot].add(capex_flow)
                 property_building_basis = property_building_basis.at[ev_prop].add(jnp.where(active_property, amount, 0))
             elif ev_kind == LifecycleKind.SALE:
                 (
@@ -1577,6 +1588,7 @@ def _program_impl(
                     month=month,
                     active_property=active_property,
                     rollout_count=r,
+                    external_cash_slot=structure.external_cash_slot,
                 )
                 sale_traces.append(sale_trace)
             le_fired.append(active_property)
@@ -1743,9 +1755,10 @@ def _program_impl(
             total_sold = _zeros_i64((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
             lot_remaining = lot_remaining - total_sold[:ld]
             tlh = tlh - _round_int64((sale_policy_mask_t @ total_sold[:ld]) * gb_rate)
-            cash = cash.at[np.maximum(sale_pslot, 0)].add(
-                jnp.where(jnp.asarray(sale_pslot >= 0)[:, None], proceeds.sum(axis=1), 0)
-            )
+            sale_proceeds = jnp.where(jnp.asarray(sale_pslot >= 0)[:, None], proceeds.sum(axis=1), 0)  # (N, R)
+            cash = cash.at[np.maximum(sale_pslot, 0)].add(sale_proceeds)
+            # Double entry: the cash comes from whoever bought the lot, which is `rest_of_world`.
+            cash = cash.at[structure.external_cash_slot].add(-sale_proceeds.sum(axis=0))
 
             # Capital gains: classify each pool lot long/short, accrue per sale's cg agents via cg_map.
             long_m = (month - lpm_pad[sale_olots]) >= 12  # (N, P)
@@ -1843,6 +1856,8 @@ def _program_impl(
                 lot_remaining = lot_remaining - sold_units.T
                 total_proceeds = proceeds.sum(axis=1)
                 cash = cash.at[lp.cash_slot].add(total_proceeds)
+                # Double entry: the cash comes from whoever bought the lot, which is `rest_of_world`.
+                cash = cash.at[structure.external_cash_slot].add(-total_proceeds)
                 cg_active, cg_ytd, tlh = _record_capital_gains(
                     folded_harvest,
                     lot_purchase_month,
@@ -2059,7 +2074,10 @@ def _program_impl(
                 )
                 lot_remaining = lot_remaining - sold.T
                 if proceeds_slot >= 0:
-                    cash = cash.at[proceeds_slot].add(proceeds.sum(axis=1))
+                    tender_proceeds = proceeds.sum(axis=1)
+                    cash = cash.at[proceeds_slot].add(tender_proceeds)
+                    # Double entry: the tender offer / public market is outside the model.
+                    cash = cash.at[structure.external_cash_slot].add(-tender_proceeds)
                 cg_active, cg_ytd, tlh = _record_capital_gains(
                     folded_harvest,
                     lot_purchase_month,
@@ -3226,6 +3244,7 @@ def _scan_property_sale(
     month: jnp.ndarray,
     active_property: jnp.ndarray,
     rollout_count: int,
+    external_cash_slot: int,
 ) -> tuple[
     jnp.ndarray,
     jnp.ndarray,
@@ -3268,7 +3287,11 @@ def _scan_property_sale(
     net_cash = gross_proceeds - mortgage_payoff
     owner_cash_slot = ev.owner_cash_slot
     if owner_cash_slot >= 0:
-        cash = cash.at[owner_cash_slot].add(jnp.where(active_property, net_cash, 0))
+        owner_flow = jnp.where(active_property, net_cash, 0)
+        cash = cash.at[owner_cash_slot].add(owner_flow)
+        # Double entry: the buyer of the house is `rest_of_world`. Only the NET crosses that
+        # boundary — the payoff extinguishes a liability rather than moving cash of its own.
+        cash = cash.at[external_cash_slot].add(-owner_flow)
     if owner_profile >= 0:
         recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0))
         gain_profile = ev.gain_profile

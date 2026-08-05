@@ -145,12 +145,14 @@ def test_the_purchase_debits_exactly_what_the_units_cost() -> None:
     assert balances[-1] == _OPENING_CASH - _SPEND
 
 
-def test_cash_is_conserved_across_a_purchase() -> None:
-    """Double entry. The cash a purchase spends leaves for the market, which is outside the
-    modeled world — so it lands on the `rest_of_world` contra row rather than evaporating.
-    Without that credit the ledger would shed $500,000 in month 1."""
+def test_cash_is_conserved_across_a_round_trip() -> None:
+    """Double entry, in both directions. The cash a purchase spends leaves for the market,
+    which is outside the modeled world, and the cash a sale raises comes back from it — so
+    both land on the `rest_of_world` contra row rather than evaporating or being conjured.
+    Without those entries the ledger sheds $500,000 in month 1 and mints $750,000 in month 4.
+    """
 
-    run = simulate(_scenario(), rollout_count=1, locations={})
+    run = simulate(_scenario(sale_price=150.0), rollout_count=1, locations={})
     state = np.asarray(run.buffers.state.cash_state, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
