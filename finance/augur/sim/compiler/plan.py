@@ -349,7 +349,10 @@ def compile_simulation(
         ],
         dtype=np.int64,
     )
-    cash_agent_codes_arr = np.asarray([strings.require(b.agent_id) for b in scenario.initial_cash], dtype=np.int64)
+    # Built from the slot list, not from `scenario.initial_cash`: the external account is a
+    # real row with no scenario entry, and rebuilding from the config would drop it and leave
+    # this array one shorter than the cash tensor.
+    cash_agent_codes_arr = np.asarray(cash_agent_codes, dtype=np.int64)
     pe_issuers, pe_policies = compile_private_equity_tenders(
         scenario,
         strings,

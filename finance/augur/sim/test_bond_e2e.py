@@ -135,8 +135,11 @@ def test_coupon_accrues_as_interest_not_ordinary_income() -> None:
 
 
 def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
-    """The failure this replaces was silent: an unresolvable account scatters the coupon into
-    the engine's dump row, so the run completes cleanly and the money is simply gone."""
+    """An unresolvable account on a POSITION is a typo, not a counterparty. Unmodeled
+    counterparties legitimately settle against the external account now, so without this guard
+    a mistyped account would quietly hand alice's own coupons to the rest of the world — the
+    books would still balance, which is precisely why the conservation invariant cannot catch
+    it and an explicit rejection has to."""
 
     scenario = _scenario(issuer="federal_us").model_copy(
         update={
@@ -146,7 +149,7 @@ def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
         }
     )
 
-    with pytest.raises(ValueError, match="silently discarded"):
+    with pytest.raises(ValueError, match="has no cash account in this scenario"):
         simulate(scenario, rollout_count=1, locations={})
 
 
