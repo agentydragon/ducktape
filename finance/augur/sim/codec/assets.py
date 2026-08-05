@@ -142,6 +142,41 @@ def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationB
     )
 
 
+def decode_target_allocation_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    """Lot dispositions from the target-allocation policy. Same shape as the liquidity decoder,
+    with sleeves where that one has an asset-preference chain."""
+
+    active = buffers.lot_dispositions.target_allocation.active  # (M, policy, sleeve, lot, R)
+    # A padded sleeve column carries asset_code < 0 and can never have sold anything; masking it
+    # here keeps the argwhere from having to be trusted to agree.
+    sleeve_valid = plan.target_allocation_policies.sleeve_assets >= 0  # (policy, sleeve)
+    active = active & sleeve_valid[None, :, :, None, None]
+    if active.any():
+        months, policies, sleeve_idxs, lots, rollouts = np.argwhere(active).T
+    else:
+        months = policies = sleeve_idxs = lots = rollouts = np.array([], dtype=np.int64)
+    asset_codes = plan.target_allocation_policies.sleeve_assets[policies, sleeve_idxs]
+    asset_names = codes_to_asset_wire_ids(plan, plan.target_allocation_policies.sleeve_assets)[policies, sleeve_idxs]
+    prefixes_per_event = np.array(plan.target_allocation_policies.cause_id_prefixes, dtype=object)[policies]
+    cause_ids = np.array(
+        [f"{p}_m{m}_{a}" for p, m, a in zip(prefixes_per_event, months, asset_names, strict=True)], dtype=object
+    )
+    return _lot_disposition_frame(
+        plan=plan,
+        rollouts=rollouts,
+        months=months,
+        cause_ids=cause_ids,
+        agent_codes=plan.target_allocation_policies.agent[policies],
+        source_account_codes=plan.lot_account_codes[lots],
+        asset_codes=asset_codes,
+        lots=lots,
+        units=buffers.lot_dispositions.target_allocation.units[months, policies, sleeve_idxs, lots, rollouts],
+        basis=buffers.lot_dispositions.target_allocation.basis[months, policies, sleeve_idxs, lots, rollouts],
+        proceeds=buffers.lot_dispositions.target_allocation.proceeds[months, policies, sleeve_idxs, lots, rollouts],
+        proceeds_account_codes=plan.target_allocation_policies.account[policies],
+    )
+
+
 def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     active = buffers.lot_dispositions.pe.active  # (M, issuer, kind, lot, R)
     if active.any():

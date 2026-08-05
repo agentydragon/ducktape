@@ -135,6 +135,23 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
                     (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.int64
                 ),
             ),
+            # target-allocation disposition buffers[H, T, S, max(1, L), R]. A separate group from
+            # `liquidity` rather than a shared one: the two policy kinds index their own dense rows,
+            # so one buffer would have them writing over each other's policies.
+            target_allocation=DispositionGroup(
+                active=np.zeros(
+                    (h, p.target_allocation_policy_count, p.max_target_allocation_sleeves, lot_axis, r), dtype=np.bool_
+                ),
+                units=np.zeros(
+                    (h, p.target_allocation_policy_count, p.max_target_allocation_sleeves, lot_axis, r), dtype=np.int64
+                ),
+                basis=np.zeros(
+                    (h, p.target_allocation_policy_count, p.max_target_allocation_sleeves, lot_axis, r), dtype=np.int64
+                ),
+                proceeds=np.zeros(
+                    (h, p.target_allocation_policy_count, p.max_target_allocation_sleeves, lot_axis, r), dtype=np.int64
+                ),
+            ),
             # PE disposition buffers[H, PE_issuer, PE_disposition_kind, max(1, L), R]
             pe=DispositionGroup(
                 active=np.zeros((h, p.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r), dtype=np.bool_),

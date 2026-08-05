@@ -1241,6 +1241,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         lot_axis=lot_axis,
         liq_policy_count=liq_policy_count,
         liq_max_assets=liq_max_assets,
+        ta_policy_count=int(ta_policies.sleeve_assets.shape[0]),
+        ta_max_sleeves=int(ta_policies.sleeve_assets.shape[1]),
         pe_issuer_count=pe_issuer_count,
         n_pe_kinds=n_pe_kinds,
         folded_lifecycle=tuple(folded_lifecycle),
@@ -1318,6 +1320,8 @@ def _program_impl(
     sale_max_pool = structure.sale_max_pool
     lot_axis = structure.lot_axis
     liq_policy_count = structure.liq_policy_count
+    ta_policy_count = structure.ta_policy_count
+    ta_max_sleeves = structure.ta_max_sleeves
     liq_max_assets = structure.liq_max_assets
     pe_issuer_count = structure.pe_issuer_count
     n_pe_kinds = structure.n_pe_kinds
@@ -2010,6 +2014,10 @@ def _program_impl(
         # is a pure function of an `ActorView`, so what the engine does is build the observation,
         # call the policy, and execute what comes back. A learned policy replaces that one call
         # and nothing around it.
+        ta_disp_active = jnp.zeros((ta_policy_count, ta_max_sleeves, lot_axis, r), dtype=bool)
+        ta_disp_units = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
+        ta_disp_basis = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
+        ta_disp_proceeds = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         if folded_target_allocation:
             # Marks for every lot, once for the month rather than once per pool: the observation
             # needs a value for each of the policy's lots, and `_value_cents_from_quanta` is the
@@ -2097,6 +2105,12 @@ def _program_impl(
                         sold_units,
                         proceeds - basis,
                     )
+                    ta_disp_active = ta_disp_active.at[tp.policy_index, sleeve.sleeve_idx].set(
+                        ta_disp_active[tp.policy_index, sleeve.sleeve_idx] | (sold_units > 0).T
+                    )
+                    ta_disp_units = ta_disp_units.at[tp.policy_index, sleeve.sleeve_idx].add(sold_units.T)
+                    ta_disp_basis = ta_disp_basis.at[tp.policy_index, sleeve.sleeve_idx].add(basis.T)
+                    ta_disp_proceeds = ta_disp_proceeds.at[tp.policy_index, sleeve.sleeve_idx].add(proceeds.T)
                     remaining = jnp.maximum(remaining - total_proceeds, 0)
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
@@ -2584,6 +2598,12 @@ def _program_impl(
             if folded_liquidity
             else ()
         )
+        # Target-allocation slabs: per-(policy, sleeve) disposition. Its own group rather than the
+        # liquidity one — the two policy kinds index their own dense rows, so sharing a buffer would
+        # have them overwriting each other's policies.
+        target_allocation_ys = (
+            (ta_disp_active, ta_disp_units, ta_disp_basis, ta_disp_proceeds) if folded_target_allocation else ()
+        )
         # PE slabs: 4 per-(issuer, kind) disposition arrays + 9 per-issuer opportunity-trace fields.
         pe_ys = (
             (
@@ -2611,7 +2631,17 @@ def _program_impl(
             *([jnp.stack(pr_fired)] if folded_pr else []),
             *([jnp.stack([st[f] for st in sale_traces]) for f in range(7)] if folded_sale_events else []),
         )
-        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys, *liquidity_ys, *pe_ys, *lifecycle_ys)
+        return carry, (
+            *base_ys,
+            *sale_ys,
+            *purchase_ys,
+            *mortgage_ys,
+            *tax_ys,
+            *liquidity_ys,
+            *target_allocation_ys,
+            *pe_ys,
+            *lifecycle_ys,
+        )
 
     init = _ScanState(
         cash=cash0,

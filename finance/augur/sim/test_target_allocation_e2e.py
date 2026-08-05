@@ -207,5 +207,28 @@ def test_a_sale_the_sleeves_cannot_cover_does_not_mint_money() -> None:
     assert _lots(scenario, month=1) == {"stock": 0.0, "bond": 0.0}
 
 
+def test_a_sale_shows_up_as_a_lot_disposition() -> None:
+    """A sale the ledger records but the disposition frame does not is a sale nobody can audit:
+    cash and lots move, and the row explaining WHY is missing.
+
+    The target-allocation policy needs its own disposition group rather than the liquidity one —
+    the two policy kinds index their own dense rows, so a shared buffer would have them writing
+    over each other's policies. This asserts the row exists, is attributed to the selling agent
+    and the sleeve's asset, and reconciles against the lots the run actually gave up.
+    """
+
+    scenario = _scenario(opening_cash=5_000.0, floor=10_000.0, ceiling=40_000.0)
+    run = _run(scenario)
+    rows = run.events_log.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
+
+    assert [str(row["lot_id"]) for row in rows] == ["stock"]
+    assert str(rows[0]["asset_id"]) == "security:vti"
+    assert float(rows[0]["units_sold"]) == 350.0
+    assert float(rows[0]["proceeds_usd"]) == 35_000.0
+    assert float(rows[0]["cost_basis_consumed_usd"]) == 35_000.0
+    # The bond sleeve was never touched, so it must not appear at all — an over-broad decode
+    # would emit a zero-unit row for it and the equality above is what refuses that.
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

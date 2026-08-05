@@ -262,6 +262,7 @@ class DispositionGroup:
 class LotDispositionEventBuffers:
     scheduled: DispositionGroup
     liquidity: DispositionGroup
+    target_allocation: DispositionGroup
     pe: DispositionGroup
 
     def validate(self, plan: SlotPlan) -> None:
@@ -271,6 +272,10 @@ class LotDispositionEventBuffers:
         self.scheduled.validate("scheduled", (plan.scheduled_sale_count, lot_axis, r))
         self.liquidity.validate(
             "liquidity", (h, plan.liquidity_policy_count, plan.max_liquidity_policy_assets, lot_axis, r)
+        )
+        self.target_allocation.validate(
+            "target_allocation",
+            (h, plan.target_allocation_policy_count, plan.max_target_allocation_sleeves, lot_axis, r),
         )
         self.pe.validate("pe", (h, plan.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r))
 

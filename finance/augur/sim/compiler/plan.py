@@ -99,6 +99,8 @@ class SlotPlan:
     scheduled_sale_count: int
     liquidity_policy_count: int
     max_liquidity_policy_assets: int
+    target_allocation_policy_count: int
+    max_target_allocation_sleeves: int
     pe_issuer_count: int
     # Count of reduced-form TLH harvest policies (`max(1, len(scenario.harvest_policies))`); the
     # sentinel row when there are none carries an empty lot mask the engine skips.
@@ -456,6 +458,8 @@ def compile_simulation(
         scheduled_sale_count=sales.month.shape[0],
         liquidity_policy_count=liquidity_policies.assets.shape[0],
         max_liquidity_policy_assets=liquidity_policies.assets.shape[1],
+        target_allocation_policy_count=target_allocation_policies.sleeve_assets.shape[0],
+        max_target_allocation_sleeves=target_allocation_policies.sleeve_assets.shape[1],
         pe_issuer_count=pe_issuers.codes.shape[0],
         harvest_policy_count=harvest_policies.gain_profile_index.shape[0],
         max_tax_settlement_slots=max(1, len(scenario.tax_profiles)),

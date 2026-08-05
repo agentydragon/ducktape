@@ -180,6 +180,8 @@ class _Static:
     lot_axis: int
     liq_policy_count: int
     liq_max_assets: int
+    ta_policy_count: int
+    ta_max_sleeves: int
     pe_issuer_count: int
     n_pe_kinds: int
     folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]

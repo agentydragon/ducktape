@@ -26,6 +26,7 @@ def scatter_ys_to_buffers(
     link_count = meta.link_count
     folded_purchases = meta.folded_purchases
     folded_liquidity = meta.folded_liquidity
+    folded_target_allocation = meta.folded_target_allocation
     folded_pe = meta.folded_pe
     folded_lifecycle = meta.folded_lifecycle
     folded_pr = meta.folded_pr
@@ -72,6 +73,7 @@ def scatter_ys_to_buffers(
     n_mortgage = 5 if p.liability_count > 0 else 0
     n_tax = 18 if link_count > 0 else 0
     n_liquidity = 5 if folded_liquidity else 0
+    n_target_allocation = 4 if folded_target_allocation else 0
     n_pe = 13 if folded_pe else 0
     n_le_fired = 1 if folded_lifecycle else 0
     n_pr_fired = 1 if folded_pr else 0
@@ -80,14 +82,16 @@ def scatter_ys_to_buffers(
     o3 = o2 + n_mortgage
     o4 = o3 + n_tax
     o5 = o4 + n_liquidity
-    o6 = o5 + n_pe
+    o5b = o5 + n_target_allocation
+    o6 = o5b + n_pe
     o7 = o6 + n_le_fired
     o8 = o7 + n_pr_fired
     purchase_h = rest[o1:o2]  # o1 == 0 (scheduled-sale dispositions are carried, not in `ys`)
     mortgage_h = rest[o2:o3]
     tax_h = rest[o3:o4]
     liquidity_h = rest[o4:o5]
-    pe_h = rest[o5:o6]
+    target_allocation_h = rest[o5:o5b]
+    pe_h = rest[o5b:o6]
     le_fired_h = rest[o6:o7]
     pr_fired_h = rest[o7:o8]
     sale_trace_h = rest[o8:]
@@ -205,6 +209,14 @@ def scatter_ys_to_buffers(
         liq.basis[:] = liq_basis_h
         liq.proceeds[:] = liq_proceeds_h
         buffers.obligations.attempt_policy[:] = attempt_h
+    if target_allocation_h:
+        # Per-(month, policy, sleeve) target-allocation disposition stacks.
+        ta_active_h, ta_units_h, ta_basis_h, ta_proceeds_h = (np.asarray(a) for a in target_allocation_h)
+        ta = buffers.lot_dispositions.target_allocation
+        ta.active[:] = ta_active_h
+        ta.units[:] = ta_units_h
+        ta.basis[:] = ta_basis_h
+        ta.proceeds[:] = ta_proceeds_h
     if pe_h:
         # 4 per-(month, issuer, kind) disposition stacks + 9 per-(month, issuer) opportunity stacks.
         pe_active_h, pe_units_h, pe_basis_h, pe_proceeds_h = (np.asarray(a) for a in pe_h[:4])
