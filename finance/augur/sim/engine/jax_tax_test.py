@@ -94,10 +94,16 @@ def test_apply_brackets_california_single_100k() -> None:
 
 
 def test_apply_brackets_rounds_a_split_cent_away_from_zero() -> None:
-    """A walk landing on half a cent rounds up: the engine's tax figure is always a whole
-    cent. The float64 walk this replaced had no such rule — it handed back a fraction of a
-    dollar and left rounding to whoever spent it."""
-    tax = _apply_brackets(_cents(0.05), **_brackets([TaxBracket(upper_usd=math.inf, rate=0.125)]))
+    """A walk landing on EXACTLY half a cent rounds up, not to even.
+
+    $0.04 at 12.5% is 0.5 cents on the nose, which is the only input that separates the two
+    plausible rules: half-away-from-zero gives 1, banker's rounding gives 0. Anything landing
+    off the midpoint — 0.625 cents, say — rounds to 1 under every rule and would pin nothing.
+
+    The float64 walk this replaced had no rounding rule at all; it handed back a fraction of
+    a dollar and left rounding to whoever spent it.
+    """
+    tax = _apply_brackets(_cents(0.04), **_brackets([TaxBracket(upper_usd=math.inf, rate=0.125)]))
     assert tax.tolist() == [1]
 
 
