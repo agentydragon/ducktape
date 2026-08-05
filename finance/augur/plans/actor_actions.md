@@ -310,12 +310,33 @@ invariant currently has to reach into raw buffers to get.
 
 ### Phase C — unify execution, without changing behaviour
 
-**C7. One action type and its executors.** Engine phases become executors of a single
-vocabulary. Verified by every existing scenario producing identical output — the strongest
-signal available, and available only while behaviour is unchanged.
+**C7a. One primitive moves money** (#3760). `_move_cash` takes both sides or moves nothing;
+eleven phases call it and `cash.at[` appears once in the file. The one-sided write #3753 fixed
+in five places is no longer expressible. It also gave the three settlement-style helpers a
+rest-of-world row they did not have, so an unresolved counterparty settles there instead of
+being dropped by `_scatter_rows`' sentinel — a guarantee rather than a fix, since
+`AccountSlots.resolve` already makes a live `-1` unreachable.
+
+**C7b. One disposal executor — BLOCKED, and the blocker is not stylistic.** Three sale paths
+exist: scheduled sales (units, open-coded across N sales), private equity (units,
+`_fifo_sell_units`), and the liquidity policy (CENTS, `_fifo_sell_cents`). A single executor
+takes a quantity, so the cents path would have to convert its target up front — and that is a
+different number. `_fifo_sell_cents` allocates a cent target across lots and ceilings EACH
+lot's slice to quanta; converting once and walking units ceilings ONCE. Measured over 400k
+random trades: whole-unit assets never disagree, but fractional quanta do — 0.3% at scale 100,
+47% at scale 100,000 (crypto), by a quantum each time.
+
+So C7b cannot be behaviour-preserving while `LiquidityPolicy` exists. **D10 deletes it**, after
+which every target is a quantity and the executor is unblocked. Until then the two
+unit-denominated paths could share one executor, which is worth doing only if C7b's remainder
+is not simply deferred behind D10.
 
 **C8. Schedules become clock policies.** `Scheduled*` / `Recurring*` lower to a clock policy
 emitting actions; the parallel execution paths are deleted. Still behaviour-preserving.
+
+Note the shape of the action type is NOT settled by C. Fixing it before a policy emits through
+it is the mistake #3745 and #3746 were closed for; the dense form is the per-month table the
+compiler already builds, and what a policy needs from it is learned in D.
 
 ### Phase D — new capability
 
@@ -325,7 +346,8 @@ abort.
 **D10. The target-allocation policy**, with `allocation.py` and `cash_band.py` as internals
 and the observation type from the closed PR. Deletes `LiquidityPolicy` outright, including
 the full-stack wire/product/frontend change: ordered sell-list to per-holding integer
-weights, trigger/amount to floor/ceiling.
+weights, trigger/amount to floor/ceiling. **Unblocks C7b** by removing the last
+cents-denominated disposal target.
 
 **D11. Policy-chosen payment amounts.** `AmountSpec` is structurally closed to simulated
 state, which is what makes spending config rather than a decision today.
