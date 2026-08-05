@@ -273,6 +273,28 @@ py_library(
     deps = ["@pypi//numpy"],
 )
 
+py_library(
+    name = "actor_view",
+    srcs = ["actor_view.py"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "actor_view_test",
+    size = "small",
+    srcs = ["actor_view_test.py"],
+    deps = [
+        ":actor_view",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "cash_band_test",
     size = "small",
