@@ -1,15 +1,23 @@
 """Sim-layer e2e tests for landlord rental income + lifecycle events.
 
-Phase 1: static rental from month 0, no lifecycle transitions, no taxes.
-Phase 2+ tests will land alongside their implementation phases.
-
 Each test builds a `Scenario` directly, calls
 `simulate_with_external_series`, decodes the result, and asserts against
 event frames + state history. Exogenous series are constants so the
 expected cashflow is exact-math predictable.
+
+Scope: the sim layer takes rent, management fees, and leasing fees as already-lowered
+dollar amounts on already-windowed transfers. It has no notion of `vacancy_pct`,
+`management_fee_pct`, `fraction_rented`, or a leasing-fee cadence — the product layer
+folds those into the amounts and month windows before the scenario reaches here. Tests
+for that lowering belong in `finance/augur/product/service_test.py`
+(`test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denominated_fees`,
+`test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees`); a test here
+that fed a percentage in and asserted the same product back could not fail for any bug.
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
 
 import numpy as np
 import polars as pl
@@ -100,18 +108,19 @@ def _mortgage_balance_and_interest_after_payments(
 def _rental_scenario(
     *,
     horizon_months: int = 12,
-    monthly_rent: float = 5_000.0,
-    fraction_rented: float = 1.0,
-    vacancy_pct: float = 0.0,
+    monthly_rent_usd: float = 5_000.0,
     initial_cash_usd: float = 100_000.0,
-    management_fee_pct: float = 0.0,
-    leasing_fee_months: float = 0.0,
-    avg_tenancy_months: int = 24,
+    monthly_management_fee_usd: float | None = None,
+    leasing_fees_by_month: Mapping[int, float] | None = None,
 ) -> Scenario:
-    """Build a minimal static-rental scenario. No taxes (empty tax_profiles)."""
+    """Build a minimal static-rental scenario. No taxes (empty tax_profiles).
+
+    Every dollar amount is passed through to the scenario verbatim — the helper derives no
+    amount of its own, so a test asserting one of these numbers back out is checking the
+    engine, not this function.
+    """
 
     end_month = horizon_months - 1
-    base_collected = monthly_rent * fraction_rented * (1.0 - vacancy_pct)
     agents = [Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id=TENANT_AGENT_ID)]
     initial_cash = [
         InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=initial_cash_usd),
@@ -127,15 +136,15 @@ def _rental_scenario(
             to_agent_id=OWNER_AGENT_ID,
             to_account_id="checking",
             amount_usd=SeriesIndexedAmount(
-                base_amount_usd=base_collected, series=RENT_SERIES_KEY, adjustment_period_months=12
+                base_amount_usd=monthly_rent_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
             ),
         )
     ]
     scheduled_transfers: list[ScheduledTransfer] = []
-    if management_fee_pct > 0 or leasing_fee_months > 0:
+    if monthly_management_fee_usd is not None or leasing_fees_by_month is not None:
         agents.append(Agent(agent_id=MGMT_AGENT_ID))
         initial_cash.append(InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0))
-    if management_fee_pct > 0:
+    if monthly_management_fee_usd is not None:
         recurring_transfers.append(
             RecurringTransfer(
                 start_month=0,
@@ -146,14 +155,11 @@ def _rental_scenario(
                 to_agent_id=MGMT_AGENT_ID,
                 to_account_id="checking",
                 amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=base_collected * management_fee_pct / 100.0,
-                    series=RENT_SERIES_KEY,
-                    adjustment_period_months=12,
+                    base_amount_usd=monthly_management_fee_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
                 ),
             )
         )
-    if leasing_fee_months > 0:
-        leasing_base = monthly_rent * leasing_fee_months
+    if leasing_fees_by_month is not None:
         scheduled_transfers.extend(
             ScheduledTransfer(
                 month=fire_month,
@@ -163,10 +169,10 @@ def _rental_scenario(
                 to_agent_id=MGMT_AGENT_ID,
                 to_account_id="checking",
                 amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=leasing_base, series=RENT_SERIES_KEY, adjustment_period_months=12
+                    base_amount_usd=amount_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
                 ),
             )
-            for fire_month in range(0, horizon_months, avg_tenancy_months)
+            for fire_month, amount_usd in leasing_fees_by_month.items()
         )
     return Scenario(
         agents=agents,
@@ -187,41 +193,36 @@ def _run(scenario: Scenario, rollouts: int = 1, rent_level: float = 1.0):
 
 class TestRentalIncome:
     def test_rental_income_flows_monthly_at_constant_rent(self):
-        scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000.0)
+        """A recurring transfer fires once per month across its whole window and moves its
+        configured amount into the recipient's account."""
+
+        scenario = _rental_scenario(horizon_months=12, monthly_rent_usd=5_000.0)
         run = _run(scenario)
         transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
-        assert transfers.height == 12
-        # Each transfer = 5000 × 1.0 (full rented) × 1.0 (no vacancy) × (rent_level / base_level = 1.0)
+        assert transfers["month_index"].sort().to_list() == list(range(12))
         assert transfers["amount_usd"].to_list() == pytest.approx([5_000.0] * 12)
+        terminal_owner_cash = run.cash_balances.filter(
+            (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == 12)
+        )
+        assert terminal_owner_cash["balance_usd"][0] == pytest.approx(100_000.0 + 60_000.0)
 
-    def test_vacancy_pct_zero_collects_full_rent(self):
-        scenario = _rental_scenario(monthly_rent=4_000.0, vacancy_pct=0.0)
+    def test_zero_amount_recurring_transfer_still_fires_but_moves_no_cash(self):
+        """A transfer scheduled with a zero amount is a scheduled event, not an absent one:
+        it logs a row every month of its window and leaves both balances untouched."""
+
+        scenario = _rental_scenario(horizon_months=12, monthly_rent_usd=0.0)
         run = _run(scenario)
         transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
-        assert all(amount == pytest.approx(4_000.0) for amount in transfers["amount_usd"].to_list())
-
-    def test_vacancy_pct_reduces_rent_proportionally(self):
-        scenario = _rental_scenario(monthly_rent=4_000.0, vacancy_pct=0.10)
-        run = _run(scenario)
-        transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
-        # 10% vacancy → 90% rent collected = 3600
-        assert all(amount == pytest.approx(3_600.0) for amount in transfers["amount_usd"].to_list())
-
-    def test_vacancy_pct_one_collects_no_rent(self):
-        scenario = _rental_scenario(monthly_rent=4_000.0, vacancy_pct=1.0)
-        run = _run(scenario)
-        transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
-        assert all(amount == pytest.approx(0.0) for amount in transfers["amount_usd"].to_list())
-
-    def test_fraction_rented_half_collects_half_rent(self):
-        scenario = _rental_scenario(monthly_rent=6_000.0, fraction_rented=0.5)
-        run = _run(scenario)
-        transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
-        assert all(amount == pytest.approx(3_000.0) for amount in transfers["amount_usd"].to_list())
+        assert transfers["month_index"].sort().to_list() == list(range(12))
+        assert transfers["amount_usd"].to_list() == pytest.approx([0.0] * 12)
+        terminal = run.cash_balances.filter(pl.col("month_index") == 12)
+        balances = dict(zip(terminal["agent_id"].to_list(), terminal["balance_usd"].to_list(), strict=True))
+        assert balances[OWNER_AGENT_ID] == pytest.approx(100_000.0)
+        assert balances[TENANT_AGENT_ID] == pytest.approx(0.0)
 
     def test_rental_income_indexed_by_rent_series(self):
         # Rent series doubles at month 12 (annual adjustment period).
-        scenario = _rental_scenario(horizon_months=24, monthly_rent=5_000.0)
+        scenario = _rental_scenario(horizon_months=24, monthly_rent_usd=5_000.0)
         # Build a per-month rent series: 1.0 for months 0..11, 2.0 for months 12..24.
         levels = [1.0] * 12 + [2.0] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: levels}})
@@ -238,151 +239,74 @@ class TestRentalIncome:
 
 
 class TestManagementFee:
-    def test_management_fee_paid_monthly_against_collected_rent(self):
-        scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000.0, vacancy_pct=0.05, management_fee_pct=8.0)
-        run = _run(scenario)
-        mgmt = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1")
-        assert mgmt.height == 12
-        # 5000 × 0.95 (post-vacancy) × 0.08 (mgmt fee) = $380/mo
-        assert all(amount == pytest.approx(380.0) for amount in mgmt["amount_usd"].to_list())
+    def test_owner_paid_recurring_transfer_debits_payer_and_credits_payee(self):
+        """A recurring transfer running out of the owner's account alongside the incoming rent
+        settles against the right two ledgers: the agency's balance is built entirely from the
+        fee, and the owner keeps rent minus fee."""
 
-    def test_no_management_fee_when_zero_pct(self):
-        scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000.0, management_fee_pct=0.0)
+        scenario = _rental_scenario(horizon_months=12, monthly_rent_usd=5_000.0, monthly_management_fee_usd=380.0)
         run = _run(scenario)
         mgmt = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1")
-        assert mgmt.height == 0
+        assert mgmt["month_index"].sort().to_list() == list(range(12))
+        assert mgmt["amount_usd"].to_list() == pytest.approx([380.0] * 12)
+        assert mgmt["from_agent_id"].unique().to_list() == [OWNER_AGENT_ID]
+        assert mgmt["to_agent_id"].unique().to_list() == [MGMT_AGENT_ID]
+
+        terminal = run.cash_balances.filter(pl.col("month_index") == 12)
+        balances = dict(zip(terminal["agent_id"].to_list(), terminal["balance_usd"].to_list(), strict=True))
+        assert balances[MGMT_AGENT_ID] == pytest.approx(4_560.0)
+        assert balances[OWNER_AGENT_ID] == pytest.approx(100_000.0 + 60_000.0 - 4_560.0)
 
 
 class TestRentalLifecycleCashflows:
-    def test_lifecycle_rented_fraction_timeline_resizes_rent_and_management_fees(self):
-        end_month = 11
-        monthly_rent = 6_000.0
-        vacancy_multiplier = 0.90
+    def test_windowed_recurring_transfers_fire_only_within_their_own_month_ranges(self):
+        """The product layer lowers a changing rented fraction into several non-overlapping
+        `RecurringTransfer` windows, each with its own already-scaled amount (that lowering is
+        tested in `product/service_test.py`). What the engine owes: each window fires in exactly
+        its own months, at exactly its own amount, and a month covered by no window is silent —
+        here months 6 and 7, the gap between the second and third window.
+        """
+
         scenario = Scenario(
-            agents=[
-                Agent(agent_id=OWNER_AGENT_ID),
-                Agent(agent_id=TENANT_AGENT_ID),
-                Agent(agent_id=MGMT_AGENT_ID),
-                Agent(agent_id="property_seller"),
-            ],
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id=TENANT_AGENT_ID), Agent(agent_id=MGMT_AGENT_ID)],
             initial_cash=[
                 InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
                 InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
                 InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
             ],
             recurring_transfers=[
-                RecurringTransfer(
-                    start_month=0,
-                    end_month=2,
-                    cause_id="rental_income:p1",
-                    from_agent_id=TENANT_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=OWNER_AGENT_ID,
-                    to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent * 0.25 * vacancy_multiplier,
-                        series=RENT_SERIES_KEY,
-                        adjustment_period_months=12,
-                    ),
-                    income_category=ORDINARY_INCOME,
+                *(
+                    RecurringTransfer(
+                        start_month=start_month,
+                        end_month=end_month,
+                        cause_id="rental_income:p1",
+                        from_agent_id=TENANT_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id=OWNER_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=SeriesIndexedAmount(
+                            base_amount_usd=amount_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
+                        ),
+                        income_category=ORDINARY_INCOME,
+                    )
+                    for start_month, end_month, amount_usd in [(0, 2, 1_500.0), (3, 5, 4_500.0), (8, 11, 3_000.0)]
                 ),
-                RecurringTransfer(
-                    start_month=3,
-                    end_month=5,
-                    cause_id="rental_income:p1",
-                    from_agent_id=TENANT_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=OWNER_AGENT_ID,
-                    to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent * 0.75 * vacancy_multiplier,
-                        series=RENT_SERIES_KEY,
-                        adjustment_period_months=12,
-                    ),
-                    income_category=ORDINARY_INCOME,
+                *(
+                    RecurringTransfer(
+                        start_month=start_month,
+                        end_month=end_month,
+                        cause_id="management_fee:p1",
+                        from_agent_id=OWNER_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id=MGMT_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=SeriesIndexedAmount(
+                            base_amount_usd=amount_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
+                        ),
+                        deduction_category="ordinary",
+                    )
+                    for start_month, end_month, amount_usd in [(0, 2, 120.0), (3, 5, 360.0), (8, 11, 240.0)]
                 ),
-                RecurringTransfer(
-                    start_month=8,
-                    end_month=end_month,
-                    cause_id="rental_income:p1",
-                    from_agent_id=TENANT_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=OWNER_AGENT_ID,
-                    to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent * 0.5 * vacancy_multiplier,
-                        series=RENT_SERIES_KEY,
-                        adjustment_period_months=12,
-                    ),
-                    income_category=ORDINARY_INCOME,
-                ),
-                RecurringTransfer(
-                    start_month=0,
-                    end_month=2,
-                    cause_id="management_fee:p1",
-                    from_agent_id=OWNER_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=MGMT_AGENT_ID,
-                    to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent * 0.25 * vacancy_multiplier * 0.08,
-                        series=RENT_SERIES_KEY,
-                        adjustment_period_months=12,
-                    ),
-                    deduction_category="ordinary",
-                ),
-                RecurringTransfer(
-                    start_month=3,
-                    end_month=5,
-                    cause_id="management_fee:p1",
-                    from_agent_id=OWNER_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=MGMT_AGENT_ID,
-                    to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent * 0.75 * vacancy_multiplier * 0.08,
-                        series=RENT_SERIES_KEY,
-                        adjustment_period_months=12,
-                    ),
-                    deduction_category="ordinary",
-                ),
-                RecurringTransfer(
-                    start_month=8,
-                    end_month=end_month,
-                    cause_id="management_fee:p1",
-                    from_agent_id=OWNER_AGENT_ID,
-                    from_account_id="checking",
-                    to_agent_id=MGMT_AGENT_ID,
-                    to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent * 0.5 * vacancy_multiplier * 0.08,
-                        series=RENT_SERIES_KEY,
-                        adjustment_period_months=12,
-                    ),
-                    deduction_category="ordinary",
-                ),
-            ],
-            scheduled_property_purchases=[
-                ScheduledPropertyPurchase(
-                    month=0,
-                    cause_id="p1_purchase",
-                    property_id="p1",
-                    location_id="test_location",
-                    buyer_agent_id=OWNER_AGENT_ID,
-                    buyer_account_id="checking",
-                    seller_agent_id="property_seller",
-                    seller_account_id="checking",
-                    purchase_price_usd=500_000.0,
-                    down_payment_usd=500_000.0,
-                    buyer_closing_cost_usd=0.0,
-                    rented_fraction=0.25,
-                )
-            ],
-            property_lifecycle_events=[
-                SetRentedFractionEvent(month=3, property_id="p1", rented_fraction=0.75),
-                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=0.0),
-                SetRentedFractionEvent(month=8, property_id="p1", rented_fraction=0.5),
             ],
             tax_profiles=[],
             horizon_months=12,
@@ -391,46 +315,25 @@ class TestRentalLifecycleCashflows:
             scenario,
             external_series=_flat_series(key=RENT_SERIES_KEY, value=1.0, months=13, rollouts=1),
             rollout_count=1,
-            locations={
-                "test_location": Location(
-                    location_id="test_location",
-                    display_name="Test Location",
-                    jurisdiction_ids=[],
-                    annual_property_tax_rate=0.0,
-                    annual_special_assessment_usd=0.0,
-                )
-            },
+            locations={},
         )
 
-        rent = (
-            run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
-            .sort("month_index")
-            .select("month_index", "amount_usd")
-        )
+        rent = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1").sort("month_index")
         assert rent["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
-        assert rent["amount_usd"].to_list() == pytest.approx(
-            [monthly_rent * 0.25 * vacancy_multiplier] * 3
-            + [monthly_rent * 0.75 * vacancy_multiplier] * 3
-            + [monthly_rent * 0.5 * vacancy_multiplier] * 4
-        )
+        assert rent["amount_usd"].to_list() == pytest.approx([1_500.0] * 3 + [4_500.0] * 3 + [3_000.0] * 4)
 
-        management_fee = (
-            run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1")
-            .sort("month_index")
-            .select("month_index", "amount_usd")
-        )
+        management_fee = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1").sort("month_index")
         assert management_fee["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
-        assert management_fee["amount_usd"].to_list() == pytest.approx(
-            [monthly_rent * 0.25 * vacancy_multiplier * 0.08] * 3
-            + [monthly_rent * 0.75 * vacancy_multiplier * 0.08] * 3
-            + [monthly_rent * 0.5 * vacancy_multiplier * 0.08] * 4
-        )
+        assert management_fee["amount_usd"].to_list() == pytest.approx([120.0] * 3 + [360.0] * 3 + [240.0] * 4)
 
 
 class TestLeasingFee:
-    def test_leasing_fee_fires_at_rent_start_and_every_avg_tenancy_months(self):
+    def test_scheduled_transfers_fire_once_in_their_own_month_at_their_own_amount(self):
+        """Distinct amounts per month so a mis-indexed schedule cannot pass: a scheduled
+        transfer fires in the single month it names, and no other month sees one."""
+
         scenario = _rental_scenario(
-            horizon_months=60, monthly_rent=5_000.0, leasing_fee_months=1.0, avg_tenancy_months=24
+            horizon_months=60, monthly_rent_usd=5_000.0, leasing_fees_by_month={0: 5_000.0, 24: 6_000.0, 48: 7_000.0}
         )
         run = _run(scenario)
         leasing = (
@@ -438,16 +341,8 @@ class TestLeasingFee:
             .sort("month_index")
             .select("month_index", "amount_usd")
         )
-        # 60 months / 24mo cadence → fires at months 0, 24, 48 → 3 entries.
         assert leasing["month_index"].to_list() == [0, 24, 48]
-        # Each fee = 1mo × $5000 = $5000.
-        assert leasing["amount_usd"].to_list() == pytest.approx([5_000.0] * 3)
-
-    def test_no_leasing_fee_when_zero_months(self):
-        scenario = _rental_scenario(horizon_months=60, monthly_rent=5_000.0, leasing_fee_months=0.0)
-        run = _run(scenario)
-        leasing = run.events_log.transfers.filter(pl.col("cause_id").str.starts_with("leasing_fee:p1"))
-        assert leasing.height == 0
+        assert leasing["amount_usd"].to_list() == pytest.approx([5_000.0, 6_000.0, 7_000.0])
 
 
 class TestRentalIncomeTaxation:
@@ -2633,32 +2528,36 @@ class TestRentalIncomeTaxation:
 
 
 class TestRentalCashflowReconciliation:
-    def test_owner_cash_balance_after_one_year_matches_expected_net(self):
-        """Headline accounting test: 12mo of rental + management - leasing matches owner's
-        terminal cash change (within rounding tolerance)."""
+    def test_owner_terminal_cash_reconciles_with_the_transfers_the_engine_logged(self):
+        """Two independent engine outputs must agree: netting every logged transfer row that
+        touches the owner has to reproduce the change in the owner's cash ledger. A flow that is
+        logged but never settled — or settled but never logged — breaks this even though each
+        output on its own still looks plausible.
+
+        The literal is the hand check layered on top: 12 × $4,750 in, 12 × $380 out, one $5,000
+        leasing fee out → $47,440 net.
+        """
 
         initial_cash = 100_000.0
         scenario = _rental_scenario(
             horizon_months=12,
             initial_cash_usd=initial_cash,
-            monthly_rent=5_000.0,
-            vacancy_pct=0.05,
-            management_fee_pct=8.0,
-            leasing_fee_months=1.0,
-            avg_tenancy_months=24,
+            monthly_rent_usd=4_750.0,
+            monthly_management_fee_usd=380.0,
+            leasing_fees_by_month={0: 5_000.0},
         )
         run = _run(scenario)
-        # Expected: rental income = 12 × 5000 × 0.95 = $57,000.
-        # Management fee = 12 × 5000 × 0.95 × 0.08 = $4,560.
-        # Leasing fee = 1 × 5000 = $5,000 (month 0 only; next would be month 24, outside horizon).
-        # Net to owner = 57,000 - 4,560 - 5,000 = $47,440.
-        expected_owner_terminal = initial_cash + 47_440.0
+        transfers = run.events_log.transfers
+        logged_net = float(transfers.filter(pl.col("to_agent_id") == OWNER_AGENT_ID)["amount_usd"].sum()) - float(
+            transfers.filter(pl.col("from_agent_id") == OWNER_AGENT_ID)["amount_usd"].sum()
+        )
         # cash_balances has snapshot_months = horizon + 1, so terminal state is at month_index == horizon.
         cash = run.cash_balances.filter(
             (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == scenario.horizon_months)
         )
         assert cash.height == 1
-        assert cash["balance_usd"][0] == pytest.approx(expected_owner_terminal, rel=1e-6)
+        assert cash["balance_usd"][0] - initial_cash == pytest.approx(logged_net, abs=0.01)
+        assert cash["balance_usd"][0] == pytest.approx(initial_cash + 47_440.0, rel=1e-6)
 
 
 if __name__ == "__main__":
