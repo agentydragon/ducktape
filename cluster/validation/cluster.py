@@ -8,7 +8,7 @@ from pathlib import Path
 import networkx as nx
 import pygit2
 
-from cluster.validation.flux import FluxKustomizationSpec, parse_flux_kustomizations
+from cluster.validation.flux import FLUX_SOURCE_KINDS, FluxKustomizationSpec, parse_flux_kustomizations
 from cluster.validation.k8s import K8sResource, parse_k8s_resource_file
 from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
 
@@ -54,6 +54,10 @@ class ParsedCluster:
     flux_kustomizations: dict[str, FluxKustomizationSpec] = field(default_factory=dict)
     all_yaml_files: set[Path] = field(default_factory=set)
     source_resources: dict[Path, list[K8sResource]] = field(default_factory=dict)
+    # {(namespace, name)} of Flux source CRs (GitRepository/OCIRepository/...),
+    # including the bootstrap source under flux-system/. Used by cross-namespace
+    # sourceRef validation — see dependencies.check_cross_namespace_references.
+    flux_sources: set[tuple[str, str]] = field(default_factory=set)
     build_results: list[KustomizeBuildResult] = field(default_factory=list)
 
     # Directed graph of Flux kustomization dependencies.
@@ -91,11 +95,18 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
     flux_kustomizations: dict[str, FluxKustomizationSpec] = {}
     all_yaml_files: set[Path] = set()
     source_resources: dict[Path, list[K8sResource]] = {}
+    flux_sources: set[tuple[str, str]] = set()
     repo = _open_repo(k8s_dir)
 
     for yaml_file in k8s_dir.rglob("*.yaml"):
-        # Skip flux-system (auto-generated)
+        # flux-system is auto-generated controllers plus the bootstrap source.
+        # Skip it for app-manifest processing (orphan detection, resource graph)
+        # but still index its source CRs — the bootstrap GitRepository/flux-system
+        # lives here and is a valid sourceRef target for Kustomizations elsewhere.
         if "flux-system" in yaml_file.parts:
+            for r in parse_k8s_resource_file(yaml_file):
+                if r.kind in FLUX_SOURCE_KINDS:
+                    flux_sources.add((r.namespace, r.name))
             continue
 
         # Skip blueprints directory (Authentik-specific YAML with !Env tags, not K8s resources)
@@ -118,10 +129,14 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
             resources = parse_k8s_resource_file(yaml_file)
             if resources:
                 source_resources[yaml_file] = resources
+                for r in resources:
+                    if r.kind in FLUX_SOURCE_KINDS:
+                        flux_sources.add((r.namespace, r.name))
 
     return ParsedCluster(
         kustomize_files=kustomize_files,
         flux_kustomizations=flux_kustomizations,
         all_yaml_files=all_yaml_files,
         source_resources=source_resources,
+        flux_sources=flux_sources,
     )

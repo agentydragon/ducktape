@@ -11,10 +11,11 @@ from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import (
     CyclicDependencyError,
     assert_no_cycles,
+    check_cross_namespace_references,
     check_required_dependencies,
     validate_operator_dependencies,
 )
-from cluster.validation.flux import DependsOn, FluxKustomizationSpec
+from cluster.validation.flux import DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
@@ -28,9 +29,13 @@ def _build_result(k8s_dir: Path, subdir: str, resources: list[tuple[str, str]]) 
 
 
 def _cluster(
-    flux_kustomizations: dict[str, FluxKustomizationSpec], build_results: list[KustomizeBuildResult] | None = None
+    flux_kustomizations: dict[str, FluxKustomizationSpec],
+    build_results: list[KustomizeBuildResult] | None = None,
+    flux_sources: set[tuple[str, str]] | None = None,
 ) -> ParsedCluster:
-    return ParsedCluster(flux_kustomizations=flux_kustomizations, build_results=build_results or [])
+    return ParsedCluster(
+        flux_kustomizations=flux_kustomizations, build_results=build_results or [], flux_sources=flux_sources or set()
+    )
 
 
 class TestDependencyGraph:
@@ -154,6 +159,84 @@ class TestValidateOperatorDependencies:
         )
         errors = validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"})
         assert any("my-app" in e and "some-operator" in e for e in errors)
+
+
+class TestCrossNamespaceReferences:
+    """Tests for check_cross_namespace_references — the guardrail for the PR #3759 outage class.
+
+    Flux resolves a bare dependsOn/sourceRef (no explicit namespace) in the
+    consumer's own namespace; if the target lives elsewhere the reference misses
+    and the Kustomization stalls with DependencyNotReady.
+    """
+
+    def test_bare_cross_namespace_depends_on_fails(self) -> None:
+        """flux-system consumer bare-depending on a CR that only exists in ducktape-flux."""
+        cluster = _cluster(
+            {
+                "agent-machine-access-tf": FluxKustomizationSpec(
+                    namespace="flux-system", depends_on=[DependsOn(name="public-coder-agent-namespace")]
+                ),
+                "public-coder-agent-namespace": FluxKustomizationSpec(namespace="ducktape-flux"),
+            }
+        )
+        errors = check_cross_namespace_references(cluster)
+        assert len(errors) == 1
+        e = errors[0]
+        assert "agent-machine-access-tf" in e
+        assert "flux-system" in e
+        assert "public-coder-agent-namespace" in e
+        assert "ducktape-flux" in e
+
+    def test_qualified_cross_namespace_depends_on_passes(self) -> None:
+        """Explicit namespace on the entry resolves correctly across namespaces."""
+        cluster = _cluster(
+            {
+                "agent-machine-access-tf": FluxKustomizationSpec(
+                    namespace="flux-system",
+                    depends_on=[DependsOn(name="public-coder-agent-namespace", namespace="ducktape-flux")],
+                ),
+                "public-coder-agent-namespace": FluxKustomizationSpec(namespace="ducktape-flux"),
+            }
+        )
+        assert check_cross_namespace_references(cluster) == []
+
+    def test_same_namespace_bare_depends_on_passes(self) -> None:
+        """Bare ref within the same namespace resolves there (the allowed default-namespace case)."""
+        cluster = _cluster(
+            {
+                "public-coder-agent-proxy": FluxKustomizationSpec(
+                    namespace="ducktape-flux", depends_on=[DependsOn(name="public-coder-agent-namespace")]
+                ),
+                "public-coder-agent-namespace": FluxKustomizationSpec(namespace="ducktape-flux"),
+            }
+        )
+        assert check_cross_namespace_references(cluster) == []
+
+    def test_external_depends_on_skipped(self) -> None:
+        """A ref to a name absent from this repo (cross-repo, e.g. gaffer-private/augur) is not flagged."""
+        cluster = _cluster(
+            {"app": FluxKustomizationSpec(namespace="flux-system", depends_on=[DependsOn(name="augur")])}
+        )
+        assert check_cross_namespace_references(cluster) == []
+
+    def test_source_ref_cross_namespace_fails(self) -> None:
+        """Bare sourceRef to a source that exists only in another namespace is flagged."""
+        cluster = _cluster(
+            {"app": FluxKustomizationSpec(namespace="ducktape-flux", source_ref=SourceRef(name="flux-system"))},
+            flux_sources={("flux-system", "flux-system")},
+        )
+        errors = check_cross_namespace_references(cluster)
+        assert len(errors) == 1
+        assert "sourceRef" in errors[0]
+        assert "flux-system" in errors[0]
+
+    def test_source_ref_same_namespace_bare_passes(self) -> None:
+        """Bare sourceRef within the source's own namespace resolves there."""
+        cluster = _cluster(
+            {"app": FluxKustomizationSpec(namespace="flux-system", source_ref=SourceRef(name="flux-system"))},
+            flux_sources={("flux-system", "flux-system")},
+        )
+        assert check_cross_namespace_references(cluster) == []
 
 
 if __name__ == "__main__":

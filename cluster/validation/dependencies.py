@@ -97,6 +97,52 @@ def validate_operator_dependencies(
     return errors
 
 
+def check_cross_namespace_references(cluster: ParsedCluster) -> list[str]:
+    """Fail dependsOn/sourceRef entries that cross namespaces without an explicit namespace.
+
+    Flux resolves a bare entry (no ``namespace:``) in the Kustomization's own
+    namespace; if the target lives in a different namespace the reference silently
+    misses and the Kustomization stalls with ``DependencyNotReady`` — the
+    PR #3759 outage class. Same-namespace bare refs are allowed (the intra-graph
+    default-namespace case). References to names absent from this repo
+    (cross-repo, e.g. gaffer-private/augur) are skipped — the validator can't see them.
+    """
+    ks_by_ns: set[tuple[str, str]] = {
+        (spec.namespace, name) for name, spec in cluster.flux_kustomizations.items() if spec.namespace
+    }
+    ks_names = set(cluster.flux_kustomizations)
+    sources = cluster.flux_sources
+    source_names = {name for _, name in sources}
+
+    errors: list[str] = []
+    for name, spec in cluster.flux_kustomizations.items():
+        consumer_ns = spec.namespace
+        if not consumer_ns:
+            continue
+        for dep in spec.depends_on:
+            target_ns = dep.namespace or consumer_ns
+            if (target_ns, dep.name) in ks_by_ns:
+                continue
+            if dep.name not in ks_names:
+                continue  # cross-repo / external — can't validate
+            where = sorted({ns for ns, n in ks_by_ns if n == dep.name})
+            errors.append(
+                f"{name} (ns={consumer_ns}) dependsOn '{dep.name}' resolves to "
+                f"ns={target_ns} but no Kustomization exists there; '{dep.name}' "
+                f"is in {where}. Add 'namespace:' to the dependsOn entry."
+            )
+        sr = spec.source_ref
+        if sr and sr.name:
+            target_ns = sr.namespace or consumer_ns
+            if (target_ns, sr.name) not in sources and sr.name in source_names:
+                errors.append(
+                    f"{name} (ns={consumer_ns}) sourceRef '{sr.name}' resolves to "
+                    f"ns={target_ns} but no source exists there; add 'namespace:' "
+                    f"to the sourceRef."
+                )
+    return errors
+
+
 def validate_dependencies(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     """Validate GitOps dependency graph.
 
@@ -110,4 +156,5 @@ def validate_dependencies(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     errors = []
     errors.extend(check_required_dependencies(cluster))
     errors.extend(validate_operator_dependencies(cluster, k8s_dir))
+    errors.extend(check_cross_namespace_references(cluster))
     return errors

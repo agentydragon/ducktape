@@ -25,6 +25,15 @@ class DependsOn(BaseModel):
     namespace: str | None = None
 
 
+class SourceRef(BaseModel):
+    """Flux Kustomization spec.sourceRef — the GitRepository/OCIRepository it reconciles from."""
+
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
+
+    name: str = ""
+    namespace: str | None = None
+
+
 class HealthCheck(BaseModel):
     """Flux Kustomization health check reference."""
 
@@ -54,8 +63,14 @@ class FluxKustomizationSpec(BaseModel):
     model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     path: str = ""
+    # Namespace of this Kustomization CR (from metadata.namespace), populated by
+    # parse_flux_kustomizations. Flux resolves a bare dependsOn/sourceRef entry
+    # (no explicit namespace) in this namespace, so cross-namespace validation
+    # needs it. Default "" means "unknown" — cross-namespace checks skip it.
+    namespace: str = ""
     depends_on: list[DependsOn] = []
     health_checks: list[HealthCheck] = []
+    source_ref: SourceRef | None = None
     retry_interval: str | None = None
     wait: bool = False
     suspend: bool = False
@@ -197,6 +212,7 @@ class _ObjectMeta(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str
+    namespace: str = ""
 
 
 class _FluxKustomizationDoc(BaseModel):
@@ -222,9 +238,17 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
             if not (doc.get("apiVersion") or "").startswith("kustomize.toolkit.fluxcd.io"):
                 continue
             parsed = _FluxKustomizationDoc.model_validate(doc)
+            parsed.spec.namespace = parsed.metadata.namespace
             results[parsed.metadata.name] = parsed.spec
 
     return results
+
+
+# Flux source CR kinds that a Kustomization.spec.sourceRef can reference.
+# Consumed by parse_cluster to build ParsedCluster.flux_sources — including the
+# bootstrap GitRepository under flux-system/, which the app-manifest skip there
+# would otherwise miss as a sourceRef resolution target.
+FLUX_SOURCE_KINDS = {"GitRepository", "OCIRepository", "HelmRepository", "HelmChart"}
 
 
 async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
