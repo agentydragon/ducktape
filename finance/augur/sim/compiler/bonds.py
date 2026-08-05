@@ -20,7 +20,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from finance.augur.sim.bonds import coupon_amount_cents, coupon_months, is_on_books
+from finance.augur.model.series import InflationKey, LevelSeriesKey
+from finance.augur.sim.bonds import MONTHS_PER_YEAR, coupon_amount_cents, coupon_months, is_on_books
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import usd_to_cents
@@ -37,8 +38,17 @@ class BondCompileOutput:
     face: NDArray[np.int64]
     # Income-tensor row this bond's coupon accrues to, or NO_CODE when the holder is untaxed.
     income_row: NDArray[np.int64]
-    coupon: NDArray[np.int64]  # (H, bond)
-    redemption: NDArray[np.int64]  # (H, bond)
+    coupon: NDArray[np.int64]  # (H, bond); 0 for indexed bonds, whose amounts are not fixed
+    redemption: NDArray[np.int64]  # (H, bond); likewise
+    # Inflation-indexed (TIPS) support. The SCHEDULE is still compile-time — a TIPS pays on
+    # the same months a nominal bond would — but the AMOUNTS are not, so `pays`/`matures`
+    # carry the schedule and the engine computes the amounts from the CPI path per rollout.
+    indexed: NDArray[np.int64]  # (bond,) 0/1
+    cpi_series: NDArray[np.int64]  # (bond,) row into external_values; NO_CODE when nominal
+    index_base_month: NDArray[np.int64]  # (bond,) CPI denominator: purchase month, clamped >= 0
+    period_rate: NDArray[np.float64]  # (bond,) annual_rate * period/12, applied to indexed principal
+    pays: NDArray[np.int64]  # (H, bond) 0/1
+    matures: NDArray[np.int64]  # (H, bond) 0/1
     on_books: NDArray[np.int64]  # (H+1, bond); face is cash by the end of the maturity month
 
 
@@ -59,12 +69,15 @@ def compile_bonds(
     account_slot_by_key: AccountSlots,
     profile_index_by_agent: dict[str, int],
     buckets: IncomeBuckets,
+    series_index_by_id: dict[LevelSeriesKey, int],
 ) -> BondCompileOutput:
     horizon = int(scenario.horizon_months)
     bonds = scenario.initial_bonds
     coupon = np.zeros((horizon, len(bonds)), dtype=np.int64)
     redemption = np.zeros((horizon, len(bonds)), dtype=np.int64)
     on_books = np.zeros((horizon + 1, len(bonds)), dtype=np.int64)
+    pays = np.zeros((horizon, len(bonds)), dtype=np.int64)
+    matures = np.zeros((horizon, len(bonds)), dtype=np.int64)
 
     # The one dollars→cents conversion for each bond. Everything downstream — coupon,
     # redemption, the balance-sheet face — is integer cents derived from this.
@@ -84,9 +97,13 @@ def compile_bonds(
             # Coupons before month 0 belong to a bond bought before the horizon; they were
             # paid before the simulation starts and are not this scenario's cash.
             if 0 <= month < horizon:
-                coupon[month, index] = amount
+                pays[month, index] = 1
+                # An indexed bond's coupon rides its CPI-scaled principal, so there is no
+                # constant to bake here; the engine computes it from `period_rate`.
+                coupon[month, index] = 0 if bond.inflation_indexed else amount
         if 0 <= bond.maturity_month_index < horizon:
-            redemption[bond.maturity_month_index, index] = face_cents[index]
+            matures[bond.maturity_month_index, index] = 1
+            redemption[bond.maturity_month_index, index] = 0 if bond.inflation_indexed else face_cents[index]
         for month in range(horizon + 1):
             on_books[month, index] = is_on_books(
                 month_index=month,
@@ -109,7 +126,35 @@ def compile_bonds(
         coupon=coupon,
         redemption=redemption,
         on_books=on_books,
+        indexed=np.asarray([int(bond.inflation_indexed) for bond in bonds], dtype=np.int64),
+        cpi_series=np.asarray([_cpi_series_row(bond, series_index_by_id) for bond in bonds], dtype=np.int64),
+        index_base_month=np.asarray([max(0, bond.purchase_month_index) for bond in bonds], dtype=np.int64),
+        period_rate=np.asarray(
+            [bond.annual_coupon_rate * bond.coupon_period_months / MONTHS_PER_YEAR for bond in bonds], dtype=np.float64
+        ),
+        pays=pays,
+        matures=matures,
     )
+
+
+def _cpi_series_row(bond: BondHolding, series_index_by_id: dict[LevelSeriesKey, int]) -> int:
+    """The CPI row an indexed bond reads, or `NO_CODE` for a nominal one.
+
+    A TIPS in a scenario whose bundle never sampled inflation cannot be priced at all, so
+    that is rejected here by name rather than resolving to a missing row and failing later
+    as a non-finite principal.
+    """
+
+    if not bond.inflation_indexed:
+        return NO_CODE
+    row = series_index_by_id.get(InflationKey())
+    if row is None:
+        raise ValueError(
+            f"bond {bond.bond_id!r} is inflation-indexed but the scenario's external series "
+            "carry no inflation path, so its principal cannot be indexed. Add inflation to the "
+            "sampled bundle."
+        )
+    return row
 
 
 def _income_row(bond: BondHolding, profile_index_by_agent: dict[str, int], buckets: IncomeBuckets) -> int:

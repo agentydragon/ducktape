@@ -173,6 +173,9 @@ class _Static:
     # Row of the YTD income tensor holding each profile's ORDINARY income. Not the profile
     # index: tensor rows are (profile, income source) pairs.
     profile_ordinary_bucket: tuple[int, ...]
+    # Static: a scenario with no TIPS has a possibly zero-row series cube, so the indexed
+    # branch must be skipped at trace time rather than masked at runtime.
+    has_indexed_bonds: bool
 
 
 @dataclass(frozen=True)

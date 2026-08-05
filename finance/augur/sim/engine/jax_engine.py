@@ -730,6 +730,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "redemption": jnp.asarray(bd.redemption),
         "to_slot": jnp.asarray(bd.to_slot),
         "income_row": jnp.asarray(bd.income_row),
+        "indexed": jnp.asarray(bd.indexed),
+        "cpi_series": jnp.asarray(bd.cpi_series),
+        "index_base_month": jnp.asarray(bd.index_base_month),
+        "period_rate": jnp.asarray(bd.period_rate),
+        "face": jnp.asarray(bd.face),
+        "pays": jnp.asarray(bd.pays),
+        "matures": jnp.asarray(bd.matures),
+        "on_books": jnp.asarray(bd.on_books),
         # The rest of the world funds every coupon and redemption: the issuer is not modeled.
         "from_slot": jnp.full(bd.to_slot.shape, plan.external_cash_slot, dtype=jnp.int64),
     }
@@ -1122,6 +1130,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         link_tax_static=link_tax_static,
         link_profile=tuple(int(taxc.link_profile[link]) for link in range(link_count)),
         profile_gain_index=tuple(int(x) for x in plan.tax_profile_capital_gain_index),
+        has_indexed_bonds=bool(plan.bonds.indexed.any()),
         profile_ordinary_bucket=tuple(
             plan.tax.buckets.ordinary_bucket(profile) for profile in range(p.tax_profile_count)
         ),
@@ -1549,9 +1558,21 @@ def _program_impl(
             bond["to_slot"],
             bond["income_row"],
             bond["from_slot"],
+            bond["indexed"],
+            bond["cpi_series"],
+            bond["index_base_month"],
+            bond["period_rate"],
+            bond["face"],
+            bond["pays"][month],
+            bond["matures"][month],
+            bond["on_books"][month],
             cash,
             ordinary,
             active,
+            external_values,
+            month,
+            structure.has_indexed_bonds,
+            bool(plan.bonds.indexed.any()),
         )
 
         # Property purchases (after transfers, before sales — eager order). Vectorized over all real
@@ -2510,16 +2531,27 @@ def _property_cashflows_jit(
     return cash, ordinary_ytd, fire, amounts
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("has_indexed",))
 def _bond_cashflows_jit(
     coupon: jnp.ndarray,
     redemption: jnp.ndarray,
     to_slot: jnp.ndarray,
     income_row: jnp.ndarray,
     from_slot: jnp.ndarray,
+    indexed: jnp.ndarray,
+    cpi_series: jnp.ndarray,
+    index_base_month: jnp.ndarray,
+    period_rate: jnp.ndarray,
+    face: jnp.ndarray,
+    pays: jnp.ndarray,
+    matures: jnp.ndarray,
+    on_books: jnp.ndarray,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
     active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: jnp.ndarray,
+    has_indexed: bool,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """This month's bond cashflows. `coupon`/`redemption` are `(bond,)` slices of compile-time
     tables — at par and held to maturity nothing about a bond depends on a rollout, so there is
@@ -2533,12 +2565,52 @@ def _bond_cashflows_jit(
     nothing, which is exactly what the conservation test caught the moment it existed.
     """
 
-    coupons = jnp.where(active[None, :], coupon[:, None], 0)
-    redemptions = jnp.where(active[None, :], redemption[:, None], 0)
+    # Inflation-indexed (TIPS) branch. A nominal bond's amounts came from the compile-time
+    # tables above; an indexed bond's ride its CPI-scaled principal, so they are computed per
+    # rollout here. `principal_prev` comes from CPI at month-1 rather than a carried value,
+    # which is what keeps bonds out of the scan carry even though they stopped being constant.
+    if not has_indexed:
+        # No TIPS in this scenario. Skipped statically rather than masked, because a scenario
+        # with no sampled series has a ZERO-row `external_values` cube — gathering from it is
+        # an error, not a value to discard.
+        coupons = jnp.where(active[None, :], coupon[:, None], 0)
+        redemptions = jnp.where(active[None, :], redemption[:, None], 0)
+        paid = coupons + redemptions
+        cash = _scatter_rows(cash, to_slot, paid)
+        cash = _scatter_rows(cash, from_slot, -paid)
+        return cash, _scatter_rows(ordinary_ytd, income_row, coupons)
+
+    is_indexed = (indexed > 0)[:, None]
+    safe_series = jnp.maximum(cpi_series, 0)
+    cpi_base = external_values[safe_series, :, index_base_month]
+    safe_base = jnp.where(cpi_base > 0, cpi_base, 1.0)
+    principal = jnp.round(face[:, None] * external_values[safe_series, :, month] / safe_base).astype(jnp.int64)
+    principal_prev = jnp.round(
+        face[:, None] * external_values[safe_series, :, jnp.maximum(month - 1, 0)] / safe_base
+    ).astype(jnp.int64)
+
+    indexed_coupon = jnp.round(period_rate[:, None] * principal).astype(jnp.int64) * pays[:, None]
+    # Deflation floor: a TIPS redeems at the greater of its indexed principal and par, which
+    # is what makes it a floor in exactly the scenarios the floor exists for.
+    indexed_redemption = jnp.maximum(principal, face[:, None]) * matures[:, None]
+
+    coupons = jnp.where(is_indexed, indexed_coupon, coupon[:, None])
+    redemptions = jnp.where(is_indexed, indexed_redemption, redemption[:, None])
+
+    # Phantom income: the month's rise in indexed principal is taxable interest with no cash
+    # behind it. Gated on `on_books` so it stops at maturity, and on month > 0 so the opening
+    # month does not accrete against itself.
+    accretion = jnp.where(is_indexed & (on_books > 0)[:, None] & (month > 0), principal - principal_prev, jnp.int64(0))
+    accretion = jnp.where(active[None, :], accretion, 0)
+
+    coupons = jnp.where(active[None, :], coupons, 0)
+    redemptions = jnp.where(active[None, :], redemptions, 0)
     paid = coupons + redemptions
     cash = _scatter_rows(cash, to_slot, paid)
     cash = _scatter_rows(cash, from_slot, -paid)
-    return cash, _scatter_rows(ordinary_ytd, income_row, coupons)
+    # Accretion reaches income and NOT cash — if it ever reached the cash tensor, the
+    # conservation invariant would break immediately, which is the guard on this wiring.
+    return cash, _scatter_rows(ordinary_ytd, income_row, coupons + accretion)
 
 
 def _fifo_sell_units(

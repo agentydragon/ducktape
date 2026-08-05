@@ -256,7 +256,7 @@ def compile_simulation(
     property_cashflows = compile_property_cashflows(
         scenario, strings, account_slots, profile_index_by_agent, series_index_by_id, property_slot_by_id, tax.buckets
     )
-    bonds = compile_bonds(scenario, strings, account_slots, profile_index_by_agent, tax.buckets)
+    bonds = compile_bonds(scenario, strings, account_slots, profile_index_by_agent, tax.buckets, series_index_by_id)
     property_rented_fraction = np.array(
         [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
     )
