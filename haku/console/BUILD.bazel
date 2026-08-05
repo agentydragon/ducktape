@@ -405,6 +405,8 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
     ],
 )
 
