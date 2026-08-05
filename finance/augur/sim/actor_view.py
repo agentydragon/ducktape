@@ -121,7 +121,7 @@ def build_actor_view(
     lot_quantity: jnp.ndarray,
     lot_cost_basis_per_unit_cents: jnp.ndarray,
     lot_value_cents: jnp.ndarray,
-    lot_purchase_month: NDArray[np.int64],
+    lot_purchase_month: jnp.ndarray | NDArray[np.int64],
     scheduled_outflow_cents: jnp.ndarray,
 ) -> ActorView:
     """Narrow full engine state to one agent's observation.

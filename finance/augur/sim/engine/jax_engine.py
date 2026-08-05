@@ -62,6 +62,7 @@ import numpy as np
 from finance.augur.model.series import PrivateEquityRegimeCode
 from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric
 from finance.augur.product.asset_key import PrivateEquityAssetKey
+from finance.augur.sim.actor_view import ActorSlots, build_actor_view
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
@@ -91,6 +92,7 @@ from finance.augur.sim.enums import (
     PrivateEquityOpportunityOutcome,
 )
 from finance.augur.sim.fixed_point import USD_CENTS
+from finance.augur.sim.target_allocation import SleeveUniverse, decide
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
 # survive across processes so the ~6400-instruction scan program need not recompile each run. A no-op
@@ -1190,9 +1192,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
 
     # Capital-gain accrual targets: each agent code that sells (liquidity / PE owners) maps to the
     # capital-gain profile rows whose agent code matches (the de-`plan`-ed `_record_capital_gains`).
-    cg_agent_codes = {fl.agent for fl in folded_liquidity} | {
-        fpe.owner_agent for fpe in folded_pe if fpe.owner_agent >= 0
-    }
+    # Every agent that can DISPOSE of a lot needs a capital-gain target row, or the phase
+    # that sells for it has no bucket to book the gain into. Target-allocation policies sell
+    # exactly like liquidity policies do, so they belong in the same set.
+    cg_agent_codes = (
+        {fl.agent for fl in folded_liquidity}
+        | {tp.agent for tp in folded_target_allocation}
+        | {fpe.owner_agent for fpe in folded_pe if fpe.owner_agent >= 0}
+    )
     cg_targets = tuple(
         _CapitalGainTarget(
             agent_code=agent_code,
@@ -1389,6 +1396,10 @@ def _program_impl(
     liq_trigger_series = baked.liq_trigger_series
     liq_sale_series = baked.liq_sale_series
     liq_pool_series = baked.liq_pool_series
+    ta_floor_series = baked.ta_floor_series
+    ta_ceiling_series = baked.ta_ceiling_series
+    ta_pool_series = baked.ta_pool_series
+    folded_target_allocation = structure.folded_target_allocation
     # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
     tcfg = cfg
     tr["fixed"] = cfg.transfer_amount_fixed
@@ -1991,6 +2002,102 @@ def _program_impl(
                 liq_disp_basis = liq_disp_basis.at[lp.policy_index, pool.asset_idx].add(basis.T)
                 liq_disp_proceeds = liq_disp_proceeds.at[lp.policy_index, pool.asset_idx].add(proceeds.T)
                 remaining = jnp.maximum(remaining - total_proceeds, 0)
+
+        # Target-allocation policies: observe, decide, execute. Same slot in the month as the
+        # liquidity phase — before the funding check, so a raise can cover this month's demand.
+        #
+        # Unlike the liquidity phase, the decision is NOT taken here: `target_allocation.decide`
+        # is a pure function of an `ActorView`, so what the engine does is build the observation,
+        # call the policy, and execute what comes back. A learned policy replaces that one call
+        # and nothing around it.
+        if folded_target_allocation:
+            # Marks for every lot, once for the month rather than once per pool: the observation
+            # needs a value for each of the policy's lots, and `_value_cents_from_quanta` is the
+            # same helper the sale itself values with — a second implementation here would report
+            # a sleeve worth a cent less than selling it yields.
+            ta_valid_series = lot_asset_series_index >= 0
+            if external_values.shape[0] > 0:
+                ta_raw_price = external_values[jnp.where(ta_valid_series, lot_asset_series_index, 0), :, month]
+                ta_lot_price = _price_usd_to_cents(
+                    jnp.nan_to_num(jnp.where(ta_valid_series[:, None], ta_raw_price, 0.0), nan=0.0)
+                )
+            else:
+                ta_lot_price = _zeros_i64((lot_remaining.shape[0], r))
+            lot_value_all = _value_cents_from_quanta(lot_remaining, ta_lot_price, lot_quantity_scale[:, None])
+
+        for ti, tp in enumerate(folded_target_allocation):
+            matching = (og["agent"][month] == tp.agent) & (og["from_slot"][month] == tp.cash_slot)  # (slots,)
+            # What the month is already committed to paying from this account. The band decides
+            # against the balance the month will END at, which is what lets funding happen once.
+            hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0).sum(axis=0)  # (R,)
+            attempt_policy = jnp.where(matching[:, None] & slot_active, tp.policy_index, attempt_policy)
+            view = build_actor_view(
+                month=month,
+                slots=ActorSlots(
+                    cash_slots=(tp.cash_slot,),
+                    lot_slots=tp.lot_slots,
+                    external_cash_slot=structure.external_cash_slot,
+                    cash_count=structure.cash_count,
+                    lot_count=structure.lot_count,
+                ),
+                cash_cents=cash,
+                lot_quantity=lot_remaining,
+                lot_cost_basis_per_unit_cents=cost_basis_per_unit,
+                lot_value_cents=lot_value_all,
+                lot_purchase_month=lot_purchase_month,
+                scheduled_outflow_cents=hard_demand,
+            )
+            orders = decide(
+                view=view,
+                universe=SleeveUniverse(
+                    weights=np.asarray([sleeve.weight for sleeve in tp.sleeves], dtype=np.int64),
+                    lot_rows=tuple(sleeve.view_lot_rows for sleeve in tp.sleeves),
+                    funding_cash_row=0,
+                ),
+                floor_cents=_amount_values_tuple(tp.floor, ta_floor_series[ti], external_values, month, r),
+                ceiling_cents=_amount_values_tuple(tp.ceiling, ta_ceiling_series[ti], external_values, month, r),
+            )
+            for si, sleeve in enumerate(tp.sleeves):
+                # `buy_cents` is deliberately unread: investing surplus needs purchase slots the
+                # engine does not have yet. Surplus above the ceiling accumulates, which is what
+                # the config docstring promises — the ceiling is a refill target, not a buy rule.
+                remaining = jnp.where(active, orders.sell_cents[si], 0)
+                sleeve_series_ops = ta_pool_series[ti][si]
+                for pj, pool in enumerate(sleeve.pools):
+                    raw_price = external_values[sleeve_series_ops[pj], :, month]
+                    valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
+                    unit_price = jnp.where(valid_price, _price_usd_to_cents(raw_price), 0)
+                    pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
+                    available = _value_cents_from_quanta(
+                        lot_remaining[pool_lots], unit_price[None, :], lot_quantity_scale[pool_lots, None]
+                    ).sum(axis=0)
+                    target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
+                    sold_units, proceeds, basis = _fifo_sell_cents(
+                        lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit, lot_quantity_scale
+                    )
+                    lot_remaining = lot_remaining - sold_units.T
+                    total_proceeds = proceeds.sum(axis=1)
+                    # The cash comes from whoever bought the lot, which is `rest_of_world`.
+                    cash = _move_cash(
+                        cash,
+                        debit=structure.external_cash_slot,
+                        credit=tp.cash_slot,
+                        amount=total_proceeds,
+                        row_of_world=structure.external_cash_slot,
+                    )
+                    cg_active, cg_ytd, tlh = _record_capital_gains(
+                        folded_harvest,
+                        lot_purchase_month,
+                        cg_profiles_by_agent[tp.agent],
+                        cg_active,
+                        cg_ytd,
+                        tlh,
+                        lot_remaining,
+                        month,
+                        sold_units,
+                        proceeds - basis,
+                    )
+                    remaining = jnp.maximum(remaining - total_proceeds, 0)
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])

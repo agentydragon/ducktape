@@ -349,18 +349,6 @@ def compile_simulation(
     target_allocation_policies = compile_target_allocation_policies(
         scenario, strings, assets, account_slots, series_index_by_id
     )
-    # CLEANUP(added 2026-08-05): Delete this gate when the engine grows the target-allocation
-    #   phase that reads `plan.target_allocation_policies` (D10 step 4c in
-    #   <finance/augur/plans/actor_actions.md>). Until then a configured policy would compile
-    #   and then do nothing at all — a knob that silently ignores you is worse than a missing
-    #   feature, so it fails loudly instead.
-    if scenario.target_allocation_policies:
-        raise NotImplementedError(
-            "target-allocation policies compile but no engine phase executes them yet, so this "
-            "scenario would run as if the policy were absent — every obligation the account "
-            "cannot already cover would fail while sellable assets sat untouched. Use "
-            "`liquidity_policies` until the target-allocation phase lands."
-        )
 
     lot_id_codes: list[int] = []
     lot_agent_codes: list[int] = []

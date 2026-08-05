@@ -287,6 +287,23 @@ py_test(
 )
 
 py_test(
+    name = "test_target_allocation_e2e",
+    srcs = ["test_target_allocation_e2e.py"],
+    deps = [
+        ":scenario",
+        ":simulate",
+        "//finance/augur/model:deterministic",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "//finance/augur/product:asset_key",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_bond_e2e",
     srcs = ["test_bond_e2e.py"],
     deps = [
@@ -513,6 +530,7 @@ py_library(
         "engine/jax_validation.py",
     ],
     deps = [
+        ":actor_view",
         ":buffers",
         ":codec",
         ":compiler",
@@ -521,6 +539,7 @@ py_library(
         ":fixed_point",
         ":runtime",
         ":scenario",
+        ":target_allocation",
         "//finance/augur/model:series",
         "//finance/augur/product:metric_composition",
         "@pypi//jax",

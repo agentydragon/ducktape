@@ -23,7 +23,6 @@ from finance.augur.sim.scenario import (
     SleeveTarget,
     TargetAllocationPolicy,
 )
-from finance.augur.sim.simulate import simulate
 
 _VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 _BND = SecurityKey(symbol=SecuritySymbol("bnd"))
@@ -110,19 +109,6 @@ def test_an_unknown_funding_account_is_a_typo_not_a_counterparty() -> None:
 
     with pytest.raises(ValueError, match="has no cash account"):
         _compile([_policy(account_id="savings")], slots=AccountSlots(by_key={("alice", "checking"): 0}, external=1))
-
-
-def test_a_configured_policy_fails_loudly_until_the_engine_phase_lands() -> None:
-    """The gate that stops this being a knob that does nothing.
-
-    The compiler produces the policy's dense rows, but no engine phase reads them yet. A
-    scenario configured this way would run as though the policy were absent — obligations
-    failing while sellable assets sat untouched — and would report that as the model's
-    answer rather than as a missing feature.
-    """
-
-    with pytest.raises(NotImplementedError, match="no engine phase executes them yet"):
-        simulate(_scenario([_policy()]), rollout_count=1, locations={})
 
 
 if __name__ == "__main__":
