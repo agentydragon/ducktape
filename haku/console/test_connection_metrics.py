@@ -16,6 +16,7 @@ from haku.console.connection_metrics import (
     refresh_connection_metrics,
 )
 from haku.console.database_schema import OAuthTokenState, ProviderConnection
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 NOW = datetime.datetime(2026, 8, 5, 21, 0, tzinfo=datetime.UTC)
 
@@ -72,8 +73,9 @@ def _attempts(name: str) -> float:
 
 
 async def test_a_failing_connection_reports_how_long_it_has_been_failing(
-    migrated_sessions: async_sessionmaker[AsyncSession], operator_id: uuid.UUID
+    migrated_sessions: async_sessionmaker[AsyncSession], migrated_identity_store: PostgresOperatorIdentityStore
 ) -> None:
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("connection-metrics-operator")
     await _connection(
         migrated_sessions, operator_id, name="google_mail", failing_for=datetime.timedelta(hours=40), count=160
     )
@@ -83,10 +85,11 @@ async def test_a_failing_connection_reports_how_long_it_has_been_failing(
 
 
 async def test_a_healthy_connection_reports_zero_rather_than_being_omitted(
-    migrated_sessions: async_sessionmaker[AsyncSession], operator_id: uuid.UUID
+    migrated_sessions: async_sessionmaker[AsyncSession], migrated_identity_store: PostgresOperatorIdentityStore
 ) -> None:
     """A gauge that vanishes on recovery leaves the alert firing on its last scraped value, and
     makes "this connection is healthy" indistinguishable from "no such connection"."""
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("connection-metrics-operator")
     await _connection(migrated_sessions, operator_id, name="google_calendar", failing_for=None, count=0)
     await refresh_connection_metrics(migrated_sessions, now=NOW)
     assert _age("google_calendar") == 0
@@ -94,8 +97,9 @@ async def test_a_healthy_connection_reports_zero_rather_than_being_omitted(
 
 
 async def test_recovery_clears_a_previously_failing_gauge(
-    migrated_sessions: async_sessionmaker[AsyncSession], operator_id: uuid.UUID
+    migrated_sessions: async_sessionmaker[AsyncSession], migrated_identity_store: PostgresOperatorIdentityStore
 ) -> None:
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("connection-metrics-operator")
     await _connection(
         migrated_sessions, operator_id, name="google_drive", failing_for=datetime.timedelta(hours=3), count=9
     )

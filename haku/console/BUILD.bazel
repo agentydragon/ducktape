@@ -401,6 +401,7 @@ py_test(
         ":conftest",
         ":connection_metrics",
         ":database_schema",
+        ":operator_identity_store",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
