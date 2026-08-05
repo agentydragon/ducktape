@@ -163,6 +163,18 @@ py_test(
 )
 
 py_test(
+    name = "test_cash_conservation_e2e",
+    srcs = ["test_cash_conservation_e2e.py"],
+    deps = [
+        ":codec",
+        ":scenario",
+        ":simulate",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_bond_e2e",
     srcs = ["test_bond_e2e.py"],
     deps = [

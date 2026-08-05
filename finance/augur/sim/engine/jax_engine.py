@@ -730,6 +730,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "redemption": jnp.asarray(bd.redemption),
         "to_slot": jnp.asarray(bd.to_slot),
         "income_row": jnp.asarray(bd.income_row),
+        # The rest of the world funds every coupon and redemption: the issuer is not modeled.
+        "from_slot": jnp.full(bd.to_slot.shape, plan.external_cash_slot, dtype=jnp.int64),
     }
     ob = plan.obligations
     og = {
@@ -1546,6 +1548,7 @@ def _program_impl(
             bond["redemption"][month],
             bond["to_slot"],
             bond["income_row"],
+            bond["from_slot"],
             cash,
             ordinary,
             active,
@@ -2513,6 +2516,7 @@ def _bond_cashflows_jit(
     redemption: jnp.ndarray,
     to_slot: jnp.ndarray,
     income_row: jnp.ndarray,
+    from_slot: jnp.ndarray,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
     active: jnp.ndarray,
@@ -2524,16 +2528,16 @@ def _bond_cashflows_jit(
     Both reach cash; only the coupon reaches income. Redeeming the face is a return of capital,
     and at par against a par basis it is not a capital gain either, so it touches no tax tensor.
 
-    CLEANUP(added 2026-08-04): give the coupon a `from_slot` on the external account once
-      double-entry lands, so this stops creating cash from nowhere. Today there is no payer
-      slot — the issuer is not a modeled agent — which matches how a paycheck from an
-      unmodeled employer already behaves, but both are unbalanced flows the external-account
-      change is meant to remove. Remove this note when `from_slot` is threaded through here.
+    The issuer is not a modeled agent, so both flows are funded by `from_slot` — the external
+    account the rest of the world settles on. Without that debit these would create cash from
+    nothing, which is exactly what the conservation test caught the moment it existed.
     """
 
     coupons = jnp.where(active[None, :], coupon[:, None], 0)
     redemptions = jnp.where(active[None, :], redemption[:, None], 0)
-    cash = _scatter_rows(cash, to_slot, coupons + redemptions)
+    paid = coupons + redemptions
+    cash = _scatter_rows(cash, to_slot, paid)
+    cash = _scatter_rows(cash, from_slot, -paid)
     return cash, _scatter_rows(ordinary_ytd, income_row, coupons)
 
 

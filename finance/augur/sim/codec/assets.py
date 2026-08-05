@@ -30,7 +30,17 @@ from finance.augur.sim.state import ASSET_LOT_FRAME, CASH_BALANCES_FRAME
 
 
 def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = r_first_view(buffers.state.cash_state)  # (H+1, r, s)
+    """Cash held by the scenario's AGENTS, month by month.
+
+    The engine's cash array has one more row than this frame: the external account every
+    unmodeled counterparty settles against. It is an accounting device, not somebody's bank
+    account, and surfacing it here would put a fictitious agent in every consumer of this
+    frame — including the UI. Callers that want it (a conservation check, "where did the
+    money go") read `buffers.state.cash_state` directly, where it is row
+    `plan.external_cash_slot`.
+    """
+
+    state = r_first_view(buffers.state.cash_state)[:, :, : plan.external_cash_slot]  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(

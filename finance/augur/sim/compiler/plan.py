@@ -137,6 +137,9 @@ class CompiledSimulation:
     mid: MIDCompileOutput
     salt: SaltCompileOutput
     tax_liabilities: TaxLiabilityCompileOutput
+    # Row of the cash array the rest of the world settles on. It is the LAST row, so slicing
+    # `[:external_cash_slot]` gives exactly the agents' own accounts.
+    external_cash_slot: int
     transfers: TransferCompileOutput
     property_cashflows: PropertyCashflowCompileOutput
     bonds: BondCompileOutput
@@ -427,6 +430,7 @@ def compile_simulation(
         mid=mid,
         salt=salt,
         tax_liabilities=tax_liabilities,
+        external_cash_slot=external_slot,
         transfers=transfers,
         property_cashflows=property_cashflows,
         bonds=bonds,
