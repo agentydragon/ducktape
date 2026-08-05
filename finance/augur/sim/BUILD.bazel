@@ -407,6 +407,18 @@ py_library(
 )
 
 py_test(
+    name = "jax_cash_test",
+    srcs = ["engine/jax_cash_test.py"],
+    main = "engine/jax_cash_test.py",
+    deps = [
+        ":engine",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "jax_tax_test",
     srcs = ["engine/jax_tax_test.py"],
     main = "engine/jax_tax_test.py",

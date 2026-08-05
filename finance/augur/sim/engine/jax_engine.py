@@ -769,8 +769,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "pays": jnp.asarray(bd.pays),
         "matures": jnp.asarray(bd.matures),
         "on_books": jnp.asarray(bd.on_books),
-        # The rest of the world funds every coupon and redemption: the issuer is not modeled.
-        "from_slot": jnp.full(bd.to_slot.shape, plan.external_cash_slot, dtype=jnp.int64),
     }
     ob = plan.obligations
     og = {
@@ -1553,10 +1551,14 @@ def _program_impl(
                 amount = ev.amount_cents
                 owner_cash_slot = ev.owner_cash_slot
                 if owner_cash_slot >= 0:
-                    capex_flow = jnp.where(active_property, amount, 0)
-                    cash = cash.at[owner_cash_slot].add(-capex_flow)
-                    # Double entry: the contractor doing the work is outside the model.
-                    cash = cash.at[structure.external_cash_slot].add(capex_flow)
+                    # The contractor doing the work is outside the model.
+                    cash = _move_cash(
+                        cash,
+                        debit=owner_cash_slot,
+                        credit=structure.external_cash_slot,
+                        amount=jnp.where(active_property, amount, 0),
+                        row_of_world=structure.external_cash_slot,
+                    )
                 property_building_basis = property_building_basis.at[ev_prop].add(jnp.where(active_property, amount, 0))
             elif ev_kind == LifecycleKind.SALE:
                 (
@@ -1610,6 +1612,7 @@ def _program_impl(
             active,
             external_values,
             month,
+            structure.external_cash_slot,
         )
 
         # Bond coupons and redemptions, after transfers and before obligations settle: a coupon
@@ -1620,7 +1623,6 @@ def _program_impl(
             bond["redemption"][month],
             bond["to_slot"],
             bond["income_row"],
-            bond["from_slot"],
             bond["indexed"],
             bond["cpi_series"],
             bond["index_base_month"],
@@ -1634,6 +1636,7 @@ def _program_impl(
             active,
             external_values,
             month,
+            structure.external_cash_slot,
             structure.has_indexed_bonds,
         )
 
@@ -1661,8 +1664,13 @@ def _program_impl(
                 jnp.where(fires, tcfg.property_equity_ledger[pur_buf][:, None], property_equity[pur_buf])
             )
             stake_flow = jnp.where(fires & stake_pos, pur_stake[:, None], 0)  # (P, R)
-            cash = _scatter_rows(cash, jnp.asarray(pur_buyer), -stake_flow)
-            cash = _scatter_rows(cash, jnp.asarray(pur_seller), stake_flow)
+            cash = _move_cash(
+                cash,
+                debit=jnp.asarray(pur_buyer),
+                credit=jnp.asarray(pur_seller),
+                amount=stake_flow,
+                row_of_world=structure.external_cash_slot,
+            )
             # Mortgage origination: financed subset only (distinct liability slots -> plain scatter-set).
             mfires = fires[pur_mort_rows]  # (M, R)
             liab_active = liab_active.at[pur_mort_idx].set(jnp.where(mfires, True, liab_active[pur_mort_idx]))
@@ -1702,6 +1710,7 @@ def _program_impl(
             active,
             external_values,
             month,
+            structure.external_cash_slot,
         )
 
         # Scheduled asset sales (before obligations: proceeds can fund the month's obligations).
@@ -1755,10 +1764,14 @@ def _program_impl(
             total_sold = _zeros_i64((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
             lot_remaining = lot_remaining - total_sold[:ld]
             tlh = tlh - _round_int64((sale_policy_mask_t @ total_sold[:ld]) * gb_rate)
-            sale_proceeds = jnp.where(jnp.asarray(sale_pslot >= 0)[:, None], proceeds.sum(axis=1), 0)  # (N, R)
-            cash = cash.at[np.maximum(sale_pslot, 0)].add(sale_proceeds)
-            # Double entry: the cash comes from whoever bought the lot, which is `rest_of_world`.
-            cash = cash.at[structure.external_cash_slot].add(-sale_proceeds.sum(axis=0))
+            # The cash comes from whoever bought the lot, which is `rest_of_world`.
+            cash = _move_cash(
+                cash,
+                debit=structure.external_cash_slot,
+                credit=sale_pslot,
+                amount=proceeds.sum(axis=1),  # (N, R)
+                row_of_world=structure.external_cash_slot,
+            )
 
             # Capital gains: classify each pool lot long/short, accrue per sale's cg agents via cg_map.
             long_m = (month - lpm_pad[sale_olots]) >= 12  # (N, P)
@@ -1855,9 +1868,14 @@ def _program_impl(
                 )
                 lot_remaining = lot_remaining - sold_units.T
                 total_proceeds = proceeds.sum(axis=1)
-                cash = cash.at[lp.cash_slot].add(total_proceeds)
-                # Double entry: the cash comes from whoever bought the lot, which is `rest_of_world`.
-                cash = cash.at[structure.external_cash_slot].add(-total_proceeds)
+                # The cash comes from whoever bought the lot, which is `rest_of_world`.
+                cash = _move_cash(
+                    cash,
+                    debit=structure.external_cash_slot,
+                    credit=lp.cash_slot,
+                    amount=total_proceeds,
+                    row_of_world=structure.external_cash_slot,
+                )
                 cg_active, cg_ytd, tlh = _record_capital_gains(
                     folded_harvest,
                     lot_purchase_month,
@@ -1904,6 +1922,7 @@ def _program_impl(
                 failed,
                 failed_month,
                 month,
+                structure.external_cash_slot,
             )
         )
 
@@ -1932,9 +1951,14 @@ def _program_impl(
             # x <= integer N) and makes an immediate full-lot resale net exactly zero gain.
             buy_quanta = jnp.where(buy_price > 0, (budget * buy_scale_t[:, None]) // safe_price, 0)
             buy_spent = _value_cents_from_quanta(buy_quanta, buy_price, buy_scale_t[:, None])
-            # Double entry: the cash leaves for the market, which is `rest_of_world`.
-            cash = cash.at[buy_cash_slot].add(-buy_spent)
-            cash = cash.at[structure.external_cash_slot].add(buy_spent.sum(axis=0))
+            # The cash leaves for the market, which is `rest_of_world`.
+            cash = _move_cash(
+                cash,
+                debit=buy_cash_slot,
+                credit=structure.external_cash_slot,
+                amount=buy_spent,
+                row_of_world=structure.external_cash_slot,
+            )
             lot_remaining = lot_remaining.at[buy_lot_slot].add(buy_quanta)
             bought = buy_quanta > 0
             cost_basis_per_unit = cost_basis_per_unit.at[buy_lot_slot].set(
@@ -2074,10 +2098,14 @@ def _program_impl(
                 )
                 lot_remaining = lot_remaining - sold.T
                 if proceeds_slot >= 0:
-                    tender_proceeds = proceeds.sum(axis=1)
-                    cash = cash.at[proceeds_slot].add(tender_proceeds)
-                    # Double entry: the tender offer / public market is outside the model.
-                    cash = cash.at[structure.external_cash_slot].add(-tender_proceeds)
+                    # The tender offer / public market is outside the model.
+                    cash = _move_cash(
+                        cash,
+                        debit=structure.external_cash_slot,
+                        credit=proceeds_slot,
+                        amount=proceeds.sum(axis=1),
+                        row_of_world=structure.external_cash_slot,
+                    )
                 cg_active, cg_ytd, tlh = _record_capital_gains(
                     folded_harvest,
                     lot_purchase_month,
@@ -2497,6 +2525,41 @@ def _amount_values_tuple(
     )
 
 
+def _move_cash(
+    cash: jnp.ndarray,
+    *,
+    debit: jnp.ndarray | np.ndarray | int,
+    credit: jnp.ndarray | np.ndarray | int,
+    amount: jnp.ndarray,
+    row_of_world: int,
+) -> jnp.ndarray:
+    """Move `amount` from the `debit` rows to the `credit` rows. The only way cash moves.
+
+    Every phase that used to write `cash.at[...]` twice and hope the two lines stayed adjacent
+    calls this instead, so double entry is a property of the primitive rather than a convention
+    each phase re-implements. The reason is #3753: five phases had drifted to one-sided writes,
+    each minting or destroying money, and each had to be found by hand. There is nothing to find
+    here — a caller names both sides or does not move money.
+
+    `debit`/`credit` are row indices, either a scalar or one per row of `amount`; a scalar side
+    against a multi-row `amount` accumulates (that is one counterparty facing many flows, which
+    is what `rest_of_world` usually is). `amount` is `(rollouts,)` or `(n, rollouts)`.
+
+    A NEGATIVE row index means "outside the model" and settles against `row_of_world`, so an
+    unresolved counterparty conserves cash instead of vanishing into `_scatter_rows`'s dump row.
+    Both sides are resolved before the scatter, which is why this uses `.at[]` directly: with no
+    sentinel left there is no padding row to slice off.
+    """
+
+    flow = jnp.asarray(amount).reshape(-1, cash.shape[-1])
+
+    def rows(side: jnp.ndarray | np.ndarray | int) -> jnp.ndarray:
+        resolved = jnp.where(jnp.asarray(side).reshape(-1) < 0, row_of_world, jnp.asarray(side).reshape(-1))
+        return jnp.broadcast_to(resolved, (flow.shape[0],))
+
+    return cash.at[rows(debit)].add(-flow).at[rows(credit)].add(flow)
+
+
 def _scatter_rows(target: jnp.ndarray, indices: jnp.ndarray, values: jnp.ndarray) -> jnp.ndarray:
     """Sentinel-aware segment scatter-add: add `values[s]` into `target[indices[s]]`, ignoring
     rows where `indices[s] < 0`. Duplicate indices accumulate. Branch-free (no per-row Python
@@ -2555,7 +2618,7 @@ def _amount_values_vec(
     return jnp.where((amount_kind == AMOUNT_FIXED)[:, None], amount_fixed[:, None], series_amount)
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("row_of_world",))
 def _transfers_jit(
     cause: jnp.ndarray,
     amount_kind: jnp.ndarray,
@@ -2573,6 +2636,7 @@ def _transfers_jit(
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: jnp.ndarray,
+    row_of_world: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Branch-free, jit-compiled scheduled-transfer step (all slots vectorized; `month` traced)."""
     rollout_count = cash.shape[1]
@@ -2589,14 +2653,13 @@ def _transfers_jit(
         rollout_count,
     )
     amounts = jnp.where(fire, raw, 0)
-    cash = _scatter_rows(cash, from_slot, -amounts)
-    cash = _scatter_rows(cash, to_slot, amounts)
+    cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=amounts, row_of_world=row_of_world)
     ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
     ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
     return cash, ordinary_ytd, fire, amounts
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("row_of_world",))
 def _property_cashflows_jit(
     cause: jnp.ndarray,
     amount_kind: jnp.ndarray,
@@ -2616,6 +2679,7 @@ def _property_cashflows_jit(
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: jnp.ndarray,
+    row_of_world: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     rollout_count = cash.shape[1]
     property_gate = _gather_rows(property_active, property_slot)
@@ -2632,20 +2696,18 @@ def _property_cashflows_jit(
         rollout_count,
     )
     amounts = jnp.where(fire, raw, 0)
-    cash = _scatter_rows(cash, from_slot, -amounts)
-    cash = _scatter_rows(cash, to_slot, amounts)
+    cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=amounts, row_of_world=row_of_world)
     ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
     ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
     return cash, ordinary_ytd, fire, amounts
 
 
-@partial(jax.jit, static_argnames=("has_indexed",))
+@partial(jax.jit, static_argnames=("row_of_world", "has_indexed"))
 def _bond_cashflows_jit(
     coupon: jnp.ndarray,
     redemption: jnp.ndarray,
     to_slot: jnp.ndarray,
     income_row: jnp.ndarray,
-    from_slot: jnp.ndarray,
     indexed: jnp.ndarray,
     cpi_series: jnp.ndarray,
     index_base_month: jnp.ndarray,
@@ -2659,6 +2721,7 @@ def _bond_cashflows_jit(
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: jnp.ndarray,
+    row_of_world: int,
     has_indexed: bool,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """This month's bond cashflows. `coupon`/`redemption` are `(bond,)` slices of compile-time
@@ -2684,8 +2747,8 @@ def _bond_cashflows_jit(
         coupons = jnp.where(active[None, :], coupon[:, None], 0)
         redemptions = jnp.where(active[None, :], redemption[:, None], 0)
         paid = coupons + redemptions
-        cash = _scatter_rows(cash, to_slot, paid)
-        cash = _scatter_rows(cash, from_slot, -paid)
+        # The rest of the world funds every coupon and redemption: the issuer is not modeled.
+        cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
         return cash, _scatter_rows(ordinary_ytd, income_row, coupons)
 
     is_indexed = (indexed > 0)[:, None]
@@ -2714,8 +2777,7 @@ def _bond_cashflows_jit(
     coupons = jnp.where(active[None, :], coupons, 0)
     redemptions = jnp.where(active[None, :], redemptions, 0)
     paid = coupons + redemptions
-    cash = _scatter_rows(cash, to_slot, paid)
-    cash = _scatter_rows(cash, from_slot, -paid)
+    cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
     # Accretion reaches income and NOT cash — if it ever reached the cash tensor, the
     # conservation invariant would break immediately, which is the guard on this wiring.
     return cash, _scatter_rows(ordinary_ytd, income_row, coupons + accretion)
@@ -2921,7 +2983,7 @@ def _obligation_group_funded_jit(
 _ESTIMATED_TAX_KINDS = (ObligationSource.ESTIMATED_TAX, ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP)
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("row_of_world",))
 def _settlement_core_jit(
     from_slot: jnp.ndarray,
     to_slot: jnp.ndarray,
@@ -2942,6 +3004,7 @@ def _settlement_core_jit(
     failed: jnp.ndarray,
     failed_month: jnp.ndarray,
     month: jnp.ndarray,
+    row_of_world: int,
 ) -> tuple[
     jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
 ]:
@@ -2956,8 +3019,7 @@ def _settlement_core_jit(
     paid = accrual_active & funded
     slot_failed = accrual_active & ~funded
     paid_amount = jnp.where(paid, accrual_due, 0)
-    cash = _scatter_rows(cash, from_slot, -paid_amount)
-    cash = _scatter_rows(cash, to_slot, paid_amount)
+    cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=paid_amount, row_of_world=row_of_world)
     rented = _gather_rows(property_rented_fraction, property_slot_idx)  # (slots, rollouts)
     property_tax_ytd = _scatter_rows(
         property_tax_ytd,
@@ -3287,11 +3349,15 @@ def _scan_property_sale(
     net_cash = gross_proceeds - mortgage_payoff
     owner_cash_slot = ev.owner_cash_slot
     if owner_cash_slot >= 0:
-        owner_flow = jnp.where(active_property, net_cash, 0)
-        cash = cash.at[owner_cash_slot].add(owner_flow)
-        # Double entry: the buyer of the house is `rest_of_world`. Only the NET crosses that
-        # boundary — the payoff extinguishes a liability rather than moving cash of its own.
-        cash = cash.at[external_cash_slot].add(-owner_flow)
+        # The buyer of the house is `rest_of_world`. Only the NET crosses that boundary — the
+        # payoff extinguishes a liability rather than moving cash of its own.
+        cash = _move_cash(
+            cash,
+            debit=external_cash_slot,
+            credit=owner_cash_slot,
+            amount=jnp.where(active_property, net_cash, 0),
+            row_of_world=external_cash_slot,
+        )
     if owner_profile >= 0:
         recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0))
         gain_profile = ev.gain_profile
