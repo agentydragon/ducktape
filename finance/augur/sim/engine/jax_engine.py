@@ -7,7 +7,7 @@ outputs in one device→host transfer. The scan covers:
 - scheduled / recurring transfers;
 - property purchases (cash + mortgage origination);
 - scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
-- liquidity-policy sales;
+- target-allocation sales;
 - obligation accruals + settlement with failure tracking and `_zero_failed_state`, for every source
   kind (CONFIGURED_OBLIGATION, PROPERTY_TAX with the SALT/Schedule-E split, MORTGAGE_PAYMENT with the
   interest/principal split, and ESTIMATED_TAX / ESTIMATED_TAX_Q4 / TAX_TRUE_UP);
@@ -72,14 +72,13 @@ from finance.augur.sim.engine.jax_types import (
     _CapitalGainTarget,
     _FoldedHarvest,
     _FoldedLifecycleEvent,
-    _FoldedLiquidity,
     _FoldedSleeve,
     _FoldedTargetAllocation,
     _FoldedPE,
     _FoldedPurchase,
     _FoldedSale,
     _LinkTaxStatic,
-    _LiquidityPool,
+    _SalePool,
     _ScanMeta,
     _Static,
 )
@@ -346,9 +345,6 @@ class _Operands(NamedTuple):
     pe_floor_series: jnp.ndarray  # (n_folded_pe,)
     harvest_series: jnp.ndarray  # (n_folded_harvest,)
     lifecycle_sale_series: jnp.ndarray  # (n_folded_lifecycle,)
-    liq_trigger_series: jnp.ndarray  # (n_folded_liquidity,)
-    liq_sale_series: jnp.ndarray  # (n_folded_liquidity,)
-    liq_pool_series: list[jnp.ndarray]  # per-policy (n_pools_i,) arrays (ragged)
     ta_floor_series: jnp.ndarray  # (n_folded_target_allocation,)
     ta_ceiling_series: jnp.ndarray  # (n_folded_target_allocation,)
     # Per-policy, per-sleeve, per-pool price rows. Ragged twice over, so a list of lists.
@@ -849,63 +845,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     acc["prof_idx"] = jnp.asarray(np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, -1))
     acc["tax_year_end"] = jnp.asarray(tax_year_end)
 
-    # Liquidity policies: resolve each policy's (asset, source-account) FIFO pools host-side. Sells
-    # raise cash to cover the month's obligation demand (+ an optional buffer) before the funding check.
-    liq_policies = plan.liquidity_policies
-    liq_policy_count = int(liq_policies.cash_slot.shape[0])
     ta_policies = plan.target_allocation_policies
-    liq_max_assets = int(liq_policies.assets.shape[1]) if liq_policies.assets.ndim == 2 else 1
-    folded_liquidity: list[_FoldedLiquidity] = []
-    for policy in range(liq_policy_count):
-        if int(liq_policies.cash_slot[policy]) < 0:
-            continue  # padded sentinel policy
-        agent_code = int(liq_policies.agent[policy])
-        pools: list[_LiquidityPool] = []
-        for asset_idx in range(liq_max_assets):
-            asset_code = int(liq_policies.assets[policy, asset_idx])
-            series_index = int(liq_policies.asset_series[policy, asset_idx])
-            if asset_code < 0 or series_index < 0:
-                continue
-            for account in liq_policies.source_accounts[policy]:
-                account_code = int(account)
-                if account_code < 0:
-                    continue
-                ordered = lot_order_for_pool(
-                    lot_agent_codes=plan.lot_agent_codes,
-                    lot_account_codes=plan.lot_account_codes,
-                    lot_asset_codes=plan.lot_asset_codes,
-                    lot_purchase_month=plan.lot_purchase_month,
-                    lot_id_codes=plan.lot_id_codes,
-                    agent_code=agent_code,
-                    account_code=account_code,
-                    asset_code=asset_code,
-                )
-                if ordered.size:
-                    pools.append(_LiquidityPool(asset_idx=asset_idx, ordered_lots=tuple(int(lot) for lot in ordered)))
-        folded_liquidity.append(
-            _FoldedLiquidity(
-                policy_index=policy,
-                agent=agent_code,
-                cash_slot=int(liq_policies.cash_slot[policy]),
-                # amount-spec tuples drop the series row index (it's a traced operand,
-                # `_Operands.liq_{trigger,sale}_series`): (kind, fixed, base, base_month, period).
-                trigger=(
-                    int(liq_policies.trigger_kind[policy]),
-                    int(liq_policies.trigger_fixed[policy]),
-                    int(liq_policies.trigger_base[policy]),
-                    int(liq_policies.trigger_base_month[policy]),
-                    int(liq_policies.trigger_period[policy]),
-                ),
-                sale=(
-                    int(liq_policies.sale_kind[policy]),
-                    int(liq_policies.sale_fixed[policy]),
-                    int(liq_policies.sale_base[policy]),
-                    int(liq_policies.sale_base_month[policy]),
-                    int(liq_policies.sale_period[policy]),
-                ),
-                pools=tuple(pools),
-            )
-        )
     lot_axis = max(1, p.lot_count)
 
     folded_target_allocation: list[_FoldedTargetAllocation] = []
@@ -920,7 +860,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
             series_index = int(ta_policies.sleeve_series[policy, sleeve_idx])
             if asset_code < 0:
                 continue  # padded sleeve column
-            sleeve_pools: list[_LiquidityPool] = []
+            sleeve_pools: list[_SalePool] = []
             view_rows: list[int] = []
             # A sleeve with no price series stays in the universe with no pools: it holds value
             # the policy cannot mark, so it must not be sold — and it must still occupy its
@@ -942,9 +882,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     )
                     if not ordered.size:
                         continue
-                    sleeve_pools.append(
-                        _LiquidityPool(asset_idx=sleeve_idx, ordered_lots=tuple(int(x) for x in ordered))
-                    )
+                    sleeve_pools.append(_SalePool(asset_idx=sleeve_idx, ordered_lots=tuple(int(x) for x in ordered)))
                     # Pools are disjoint by construction — a sleeve is one asset and its pools are
                     # distinct accounts — so appending never repeats a plan lot on the view axis.
                     view_rows.extend(range(len(lot_slots), len(lot_slots) + int(ordered.size)))
@@ -1106,7 +1044,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # dynamically at the use site) keeps the compiled program independent of WHICH row, so a
     # non-deterministic series order can't trigger a recompile (see the determinism note in
     # `collect_level_series_keys`). Each array is in the SAME order its phase loop iterates the
-    # matching folded tuple; `liq_pool_series` is a per-policy list (ragged pools).
+    # matching folded tuple; `ta_pool_series` is a per-policy list of per-sleeve arrays (ragged).
     def _series_ops(values: list[int]) -> jnp.ndarray:
         return jnp.asarray(np.asarray(values, dtype=np.int64))
 
@@ -1120,12 +1058,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
             for ev in folded_lifecycle
         ]
     )
-    liq_trigger_series = _series_ops([int(liq_policies.trigger_series[lp.policy_index]) for lp in folded_liquidity])
-    liq_sale_series = _series_ops([int(liq_policies.sale_series[lp.policy_index]) for lp in folded_liquidity])
-    liq_pool_series = [
-        _series_ops([int(liq_policies.asset_series[lp.policy_index, pool.asset_idx]) for pool in lp.pools])
-        for lp in folded_liquidity
-    ]
     ta_floor_series = _series_ops([int(ta_policies.floor_series[tp.policy_index]) for tp in folded_target_allocation])
     ta_ceiling_series = _series_ops(
         [int(ta_policies.ceiling_series[tp.policy_index]) for tp in folded_target_allocation]
@@ -1182,24 +1114,18 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         pe_floor_series=pe_floor_series,
         harvest_series=harvest_series,
         lifecycle_sale_series=lifecycle_sale_series,
-        liq_trigger_series=liq_trigger_series,
-        liq_sale_series=liq_sale_series,
-        liq_pool_series=liq_pool_series,
         ta_floor_series=ta_floor_series,
         ta_ceiling_series=ta_ceiling_series,
         ta_pool_series=ta_pool_series,
     )
 
-    # Capital-gain accrual targets: each agent code that sells (liquidity / PE owners) maps to the
+    # Capital-gain accrual targets: each agent code that sells (funding policies / PE owners) maps to the
     # capital-gain profile rows whose agent code matches (the de-`plan`-ed `_record_capital_gains`).
     # Every agent that can DISPOSE of a lot needs a capital-gain target row, or the phase
-    # that sells for it has no bucket to book the gain into. Target-allocation policies sell
-    # exactly like liquidity policies do, so they belong in the same set.
-    cg_agent_codes = (
-        {fl.agent for fl in folded_liquidity}
-        | {tp.agent for tp in folded_target_allocation}
-        | {fpe.owner_agent for fpe in folded_pe if fpe.owner_agent >= 0}
-    )
+    # that sells for it has no bucket to book the gain into.
+    cg_agent_codes = {tp.agent for tp in folded_target_allocation} | {
+        fpe.owner_agent for fpe in folded_pe if fpe.owner_agent >= 0
+    }
     cg_targets = tuple(
         _CapitalGainTarget(
             agent_code=agent_code,
@@ -1239,15 +1165,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         n_sales=n_sales,
         sale_max_pool=sale_max_pool,
         lot_axis=lot_axis,
-        liq_policy_count=liq_policy_count,
-        liq_max_assets=liq_max_assets,
         ta_policy_count=int(ta_policies.sleeve_assets.shape[0]),
         ta_max_sleeves=int(ta_policies.sleeve_assets.shape[1]),
         pe_issuer_count=pe_issuer_count,
         n_pe_kinds=n_pe_kinds,
         folded_lifecycle=tuple(folded_lifecycle),
         folded_pr=tuple(folded_pr),
-        folded_liquidity=tuple(folded_liquidity),
         folded_target_allocation=tuple(folded_target_allocation),
         folded_pe=tuple(folded_pe),
         folded_harvest=tuple(folded_harvest),
@@ -1284,7 +1207,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         folded_lifecycle=folded_lifecycle,
         folded_pr=folded_pr,
         folded_sale_events=folded_sale_events,
-        folded_liquidity=folded_liquidity,
         folded_target_allocation=folded_target_allocation,
         folded_pe=folded_pe,
         link_count=link_count,
@@ -1319,15 +1241,12 @@ def _program_impl(
     n_sales = structure.n_sales
     sale_max_pool = structure.sale_max_pool
     lot_axis = structure.lot_axis
-    liq_policy_count = structure.liq_policy_count
     ta_policy_count = structure.ta_policy_count
     ta_max_sleeves = structure.ta_max_sleeves
-    liq_max_assets = structure.liq_max_assets
     pe_issuer_count = structure.pe_issuer_count
     n_pe_kinds = structure.n_pe_kinds
     folded_lifecycle = structure.folded_lifecycle
     folded_pr = structure.folded_pr
-    folded_liquidity = structure.folded_liquidity
     folded_pe = structure.folded_pe
     folded_harvest = structure.folded_harvest
     folded_sale_events = [ev for ev in folded_lifecycle if ev.kind == LifecycleKind.SALE]
@@ -1397,9 +1316,6 @@ def _program_impl(
     pe_floor_series = baked.pe_floor_series
     harvest_series = baked.harvest_series
     lifecycle_sale_series = baked.lifecycle_sale_series
-    liq_trigger_series = baked.liq_trigger_series
-    liq_sale_series = baked.liq_sale_series
-    liq_pool_series = baked.liq_pool_series
     ta_floor_series = baked.ta_floor_series
     ta_ceiling_series = baked.ta_ceiling_series
     ta_pool_series = baked.ta_pool_series
@@ -1944,76 +1860,14 @@ def _program_impl(
             month,
         )
 
-        # Liquidity-policy sales (before the funding check, eager order): raise cash to cover this
-        # month's obligation demand for the policy's account (+ an optional buffer top-up), selling
-        # FIFO across the policy's (asset, account) pools sequentially. Branch-free: a pool whose
-        # target is 0 sells nothing (the dollar target is capped at the pool's available value).
-        liq_disp_active = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r), dtype=bool)
-        liq_disp_units = _zeros_i64((liq_policy_count, liq_max_assets, lot_axis, r))
-        liq_disp_basis = _zeros_i64((liq_policy_count, liq_max_assets, lot_axis, r))
-        liq_disp_proceeds = _zeros_i64((liq_policy_count, liq_max_assets, lot_axis, r))
         attempt_policy = jnp.full((slot_active.shape[0], r), NO_CODE, dtype=jnp.int64)
-        for li, lp in enumerate(folded_liquidity):
-            matching = (og["agent"][month] == lp.agent) & (og["from_slot"][month] == lp.cash_slot)  # (slots,)
-            hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0).sum(axis=0)  # (R,)
-            attempt_policy = jnp.where(matching[:, None] & slot_active, lp.policy_index, attempt_policy)
-            cash_balance = cash[lp.cash_slot]
-            required_sale = jnp.maximum(hard_demand - cash_balance, 0)
-            post_required_cash = cash_balance + required_sale - hard_demand
-            trigger_val = _amount_values_tuple(lp.trigger, liq_trigger_series[li], external_values, month, r)
-            sale_val = _amount_values_tuple(lp.sale, liq_sale_series[li], external_values, month, r)
-            buffer_sale = jnp.where((sale_val > 0) & (post_required_cash < trigger_val), sale_val, 0)
-            remaining = jnp.where(active, required_sale + buffer_sale, 0)
-            pool_series = liq_pool_series[li]
-            for pj, pool in enumerate(lp.pools):
-                raw_price = external_values[pool_series[pj], :, month]
-                valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
-                unit_price = jnp.where(valid_price, _price_usd_to_cents(raw_price), 0)
-                pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
-                available = _value_cents_from_quanta(
-                    lot_remaining[pool_lots], unit_price[None, :], lot_quantity_scale[pool_lots, None]
-                ).sum(axis=0)
-                target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
-                sold_units, proceeds, basis = _fifo_sell_cents(
-                    lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit, lot_quantity_scale
-                )
-                lot_remaining = lot_remaining - sold_units.T
-                total_proceeds = proceeds.sum(axis=1)
-                # The cash comes from whoever bought the lot, which is `rest_of_world`.
-                cash = _move_cash(
-                    cash,
-                    debit=structure.external_cash_slot,
-                    credit=lp.cash_slot,
-                    amount=total_proceeds,
-                    row_of_world=structure.external_cash_slot,
-                )
-                cg_active, cg_ytd, tlh = _record_capital_gains(
-                    folded_harvest,
-                    lot_purchase_month,
-                    cg_profiles_by_agent[lp.agent],
-                    cg_active,
-                    cg_ytd,
-                    tlh,
-                    lot_remaining,
-                    month,
-                    sold_units,
-                    proceeds - basis,
-                )
-                liq_disp_active = liq_disp_active.at[lp.policy_index, pool.asset_idx].set(
-                    liq_disp_active[lp.policy_index, pool.asset_idx] | (sold_units > 0).T
-                )
-                liq_disp_units = liq_disp_units.at[lp.policy_index, pool.asset_idx].add(sold_units.T)
-                liq_disp_basis = liq_disp_basis.at[lp.policy_index, pool.asset_idx].add(basis.T)
-                liq_disp_proceeds = liq_disp_proceeds.at[lp.policy_index, pool.asset_idx].add(proceeds.T)
-                remaining = jnp.maximum(remaining - total_proceeds, 0)
 
-        # Target-allocation policies: observe, decide, execute. Same slot in the month as the
-        # liquidity phase — before the funding check, so a raise can cover this month's demand.
+        # Target-allocation policies: observe, decide, execute. Runs before the funding check,
+        # so a raise can cover this month's demand.
         #
-        # Unlike the liquidity phase, the decision is NOT taken here: `target_allocation.decide`
-        # is a pure function of an `ActorView`, so what the engine does is build the observation,
-        # call the policy, and execute what comes back. A learned policy replaces that one call
-        # and nothing around it.
+        # The decision is NOT taken here: `target_allocation.decide` is a pure function of an
+        # `ActorView`, so what the engine does is build the observation, call the policy, and
+        # execute what comes back. A learned policy replaces that one call and nothing around it.
         ta_disp_active = jnp.zeros((ta_policy_count, ta_max_sleeves, lot_axis, r), dtype=bool)
         ta_disp_units = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         ta_disp_basis = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
@@ -2591,18 +2445,13 @@ def _program_impl(
             if link_count > 0
             else ()
         )
-        # Liquidity slabs: per-(policy, asset) disposition (active/units/basis/proceeds) + the
-        # per-obligation attempt-policy assignment. Only when the plan has liquidity policies.
-        liquidity_ys = (
-            (liq_disp_active, liq_disp_units, liq_disp_basis, liq_disp_proceeds, attempt_policy)
-            if folded_liquidity
-            else ()
-        )
-        # Target-allocation slabs: per-(policy, sleeve) disposition. Its own group rather than the
-        # liquidity one — the two policy kinds index their own dense rows, so sharing a buffer would
-        # have them overwriting each other's policies.
+        # Target-allocation slabs: per-(policy, sleeve) disposition (active/units/basis/proceeds)
+        # + the per-obligation attempt-policy assignment, which records WHICH policy tried to fund
+        # a slot so a failure row can name the assets it tried to sell.
         target_allocation_ys = (
-            (ta_disp_active, ta_disp_units, ta_disp_basis, ta_disp_proceeds) if folded_target_allocation else ()
+            (ta_disp_active, ta_disp_units, ta_disp_basis, ta_disp_proceeds, attempt_policy)
+            if folded_target_allocation
+            else ()
         )
         # PE slabs: 4 per-(issuer, kind) disposition arrays + 9 per-issuer opportunity-trace fields.
         pe_ys = (
@@ -2637,7 +2486,6 @@ def _program_impl(
             *purchase_ys,
             *mortgage_ys,
             *tax_ys,
-            *liquidity_ys,
             *target_allocation_ys,
             *pe_ys,
             *lifecycle_ys,

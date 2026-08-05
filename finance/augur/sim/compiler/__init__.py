@@ -14,7 +14,6 @@ from finance.augur.sim.compiler.assets import SaleCompileOutput
 from finance.augur.sim.compiler.deductions import MIDCompileOutput, SaltCompileOutput
 from finance.augur.sim.compiler.helpers import NO_CODE, StringTable
 from finance.augur.sim.compiler.lifecycle import LifecycleEventCompileOutput
-from finance.augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput
 from finance.augur.sim.compiler.obligations import ObligationCompileOutput
 from finance.augur.sim.compiler.plan import CompiledSimulation, SlotPlan, compile_simulation
 from finance.augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOutput
@@ -31,7 +30,6 @@ __all__ = [
     "LiabilityCompileOutput",
     "LifecycleEventCompileOutput",
     "LifecycleKind",
-    "LiquidityPolicyCompileOutput",
     "MIDCompileOutput",
     "ObligationCompileOutput",
     "PEIssuerCompileOutput",

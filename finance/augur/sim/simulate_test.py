@@ -42,7 +42,6 @@ from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
-    LiquidityPolicy,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
@@ -59,6 +58,8 @@ from finance.augur.sim.scenario import (
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
@@ -266,16 +267,18 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
         Scenario(
             agents=[Agent(agent_id="alice")],
             initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],
-            liquidity_policies=[
-                LiquidityPolicy(
+            target_allocation_policies=[
+                TargetAllocationPolicy(
                     agent_id="alice",
                     account_id="checking",
-                    asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                    sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                    cash_ceiling_usd=0.0,
                 ),
-                LiquidityPolicy(
+                TargetAllocationPolicy(
                     agent_id="alice",
                     account_id="checking",
-                    asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("qqq"))],
+                    sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("qqq")), weight=1)],
+                    cash_ceiling_usd=0.0,
                 ),
             ],
             tax_profiles=[],
@@ -2166,11 +2169,12 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 prior_year_tax_usd=2_000.0,
             )
         ],
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         horizon_months=13,
@@ -2190,7 +2194,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     ]
     assert result.events_log.tax_settlements.get_column("amount_usd").sum() == pytest.approx(4_016.0, abs=0.01)
 
-    policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("liquidity_sale"))
+    policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("allocation_sale"))
     # Fixed-point FIFO sells fractional quanta for whole-unit-scale assets too: month-12 needs exactly
     # $2,516 at $100/unit, so it sells 25.16 units with no excess cash.
     assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_usd").to_dicts() == [
@@ -2362,13 +2366,6 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 tax_authority_agent_id="irs",
             )
         ],
-        liquidity_policies=[
-            LiquidityPolicy(
-                agent_id="alice",
-                account_id="checking",
-                asset_preference_chain=[],  # no assets to sell
-            )
-        ],
         horizon_months=13,
     )
 
@@ -2413,11 +2410,12 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -2436,7 +2434,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
     assert settlement["attempted_funding_sources"] == "security:vti"
 
     funding_sale = result.events_log.lot_dispositions.row(0, named=True)
-    assert funding_sale["cause_id"] == "liquidity_sale_m0_security:vti"
+    assert funding_sale["cause_id"] == "allocation_sale_m0_security:vti"
     assert funding_sale["units_sold"] == pytest.approx(4.0)
     assert funding_sale["proceeds_usd"] == pytest.approx(400.0)
 
@@ -2478,11 +2476,12 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -2543,11 +2542,12 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="taxable",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -2600,12 +2600,13 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
                 source_account_ids=("taxable",),
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -2730,7 +2731,6 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         tax_profiles=[],
         horizon_months=1,
     )
@@ -2783,7 +2783,6 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         tax_profiles=[],
         horizon_months=1,
     )
@@ -2797,7 +2796,11 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
     assert result.events_log.rollout_failures.height == 1
 
 
-def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bundle) -> None:
+def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series_bundle) -> None:
+    """The band decides against the balance the month will END at, not the one sitting there
+    before the bills. $2,500 with $1,000 of rent projects to $1,500 — under the $2,000 floor —
+    so the raise is to the $6,500 ceiling: $5,000, or 50 units at $100."""
+
     """Buffer policy sees post-demand cash: cash 2500 minus a 1000
     hard demand leaves 1500, below the 2000 trigger, so the policy
     sells a fixed 5000 before settlement pays the demand."""
@@ -2830,13 +2833,13 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
-                cash_buffer_trigger_below_usd=2000.0,
-                cash_buffer_sale_usd=5000.0,
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_floor_usd=2000.0,
+                cash_ceiling_usd=6500.0,
             )
         ],
         tax_profiles=[],
@@ -2857,7 +2860,10 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
     assert result.events_log.rollout_failures.is_empty()
 
 
-def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic_series_bundle) -> None:
+def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(deterministic_series_bundle) -> None:
+    """The mirror of the test above, and the reason it has to assert an exact balance: $3,500
+    less the same $1,000 projects to $2,500, above the floor, so nothing is sold at all."""
+
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -2887,13 +2893,13 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
-                cash_buffer_trigger_below_usd=2000.0,
-                cash_buffer_sale_usd=5000.0,
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_floor_usd=2000.0,
+                cash_ceiling_usd=6500.0,
             )
         ],
         tax_profiles=[],
@@ -2912,17 +2918,22 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
     assert result.events_log.rollout_failures.is_empty()
 
 
-def test_unfilled_cash_buffer_sale_does_not_fail_without_hard_demand() -> None:
+def test_a_band_it_cannot_refill_does_not_fail_the_rollout() -> None:
+    """Falling short of the ceiling is not ruin. The agent holds nothing in the sleeve it
+    targets, so the raise comes back empty — but no obligation went unpaid, and only an unpaid
+    obligation fails a rollout. A band that failed on its own would make the ceiling a hard
+    demand, which would turn every optimistic refill target into a ruin condition."""
+
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0)],
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[],
-                cash_buffer_trigger_below_usd=2000.0,
-                cash_buffer_sale_usd=5000.0,
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_floor_usd=2000.0,
+                cash_ceiling_usd=6500.0,
             )
         ],
         tax_profiles=[],
@@ -3272,11 +3283,12 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
             )
         ],
         external_series=deterministic_series_bundle([100.0] * 4),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -3332,11 +3344,12 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -3406,11 +3419,12 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],

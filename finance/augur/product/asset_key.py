@@ -6,7 +6,7 @@ wire events used to encode the asset's kind in a magic prefix
 with `.startswith(...)`. That dispatch is now typed: an `AssetKey` is a Pydantic
 discriminated union with a `StrEnum` `kind` discriminator. Scenario lots/sales
 carry the typed key directly (`InitialLot.asset`, `ScheduledAssetSale.asset`,
-`LiquidityPolicy.asset_preference_chain`); the wire string is recovered by
+`SleeveTarget.asset`); the wire string is recovered by
 `parse_asset_key` only at the frame/wire boundaries that still serialize it.
 
 The wire string format is preserved for serialization (JSON, polars

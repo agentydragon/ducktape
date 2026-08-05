@@ -25,7 +25,6 @@ def scatter_ys_to_buffers(
     horizon = meta.horizon
     link_count = meta.link_count
     folded_purchases = meta.folded_purchases
-    folded_liquidity = meta.folded_liquidity
     folded_target_allocation = meta.folded_target_allocation
     folded_pe = meta.folded_pe
     folded_lifecycle = meta.folded_lifecycle
@@ -64,16 +63,14 @@ def scatter_ys_to_buffers(
         ob_fail,
         *rest,
     ) = ys
-    # Five variable-length tail groups, sliced by compile-time presence: sale slabs (5 if any sales),
+    # Variable-length tail groups, sliced by compile-time presence: sale slabs (5 if any sales),
     # property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities), tax slabs
     # (18 = 13 breakdowns + 2 tax-liability snapshots + 3 settlement events, if any tax links), and
-    # liquidity slabs (5 if any liquidity policies).
     n_sale = 0  # scheduled-sale dispositions are carried out-of-band (`final_state`), not in `ys`
     n_purchase = 2 if folded_purchases else 0
     n_mortgage = 5 if p.liability_count > 0 else 0
     n_tax = 18 if link_count > 0 else 0
-    n_liquidity = 5 if folded_liquidity else 0
-    n_target_allocation = 4 if folded_target_allocation else 0
+    n_target_allocation = 5 if folded_target_allocation else 0
     n_pe = 13 if folded_pe else 0
     n_le_fired = 1 if folded_lifecycle else 0
     n_pr_fired = 1 if folded_pr else 0
@@ -81,17 +78,15 @@ def scatter_ys_to_buffers(
     o2 = o1 + n_purchase
     o3 = o2 + n_mortgage
     o4 = o3 + n_tax
-    o5 = o4 + n_liquidity
-    o5b = o5 + n_target_allocation
-    o6 = o5b + n_pe
+    o5 = o4 + n_target_allocation
+    o6 = o5 + n_pe
     o7 = o6 + n_le_fired
     o8 = o7 + n_pr_fired
     purchase_h = rest[o1:o2]  # o1 == 0 (scheduled-sale dispositions are carried, not in `ys`)
     mortgage_h = rest[o2:o3]
     tax_h = rest[o3:o4]
-    liquidity_h = rest[o4:o5]
-    target_allocation_h = rest[o5:o5b]
-    pe_h = rest[o5b:o6]
+    target_allocation_h = rest[o4:o5]
+    pe_h = rest[o5:o6]
     le_fired_h = rest[o6:o7]
     pr_fired_h = rest[o7:o8]
     sale_trace_h = rest[o8:]
@@ -200,23 +195,15 @@ def scatter_ys_to_buffers(
                     snapshot_month=m + 1, slots=changed, amount=taxliab_amount_h[m], active=taxliab_active_h[m]
                 )
             prev_amount, prev_active = taxliab_amount_h[m], taxliab_active_h[m]
-    if liquidity_h:
-        # Per-(month, policy, asset) liquidity disposition stacks + the per-obligation attempt-policy.
-        liq_active_h, liq_units_h, liq_basis_h, liq_proceeds_h, attempt_h = (np.asarray(a) for a in liquidity_h)
-        liq = buffers.lot_dispositions.liquidity
-        liq.active[:] = liq_active_h
-        liq.units[:] = liq_units_h
-        liq.basis[:] = liq_basis_h
-        liq.proceeds[:] = liq_proceeds_h
-        buffers.obligations.attempt_policy[:] = attempt_h
     if target_allocation_h:
-        # Per-(month, policy, sleeve) target-allocation disposition stacks.
-        ta_active_h, ta_units_h, ta_basis_h, ta_proceeds_h = (np.asarray(a) for a in target_allocation_h)
+        # Per-(month, policy, sleeve) disposition stacks + the per-obligation attempt-policy.
+        ta_active_h, ta_units_h, ta_basis_h, ta_proceeds_h, attempt_h = (np.asarray(a) for a in target_allocation_h)
         ta = buffers.lot_dispositions.target_allocation
         ta.active[:] = ta_active_h
         ta.units[:] = ta_units_h
         ta.basis[:] = ta_basis_h
         ta.proceeds[:] = ta_proceeds_h
+        buffers.obligations.attempt_policy[:] = attempt_h
     if pe_h:
         # 4 per-(month, issuer, kind) disposition stacks + 9 per-(month, issuer) opportunity stacks.
         pe_active_h, pe_units_h, pe_basis_h, pe_proceeds_h = (np.asarray(a) for a in pe_h[:4])

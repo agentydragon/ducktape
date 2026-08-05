@@ -491,31 +491,6 @@ class ScheduledAssetPurchase(BaseModel):
     price_per_unit_usd: float | None = None
 
 
-class LiquidityPolicy(BaseModel):
-    """Asset-sale policy for one agent cash account.
-
-    Required obligations create cash demands, but the policy decides
-    whether and how to sell assets to fund them. If a policy emits no
-    sale orders, the settlement phase will fail any hard demand that
-    cash cannot already cover, even when the agent owns sellable
-    assets. Optional cash-buffer rules run after hard demands are
-    accounted for and never cause failure by themselves.
-    """
-
-    agent_id: str
-    # Cash account that receives sale proceeds and pays matching obligations.
-    account_id: str
-    # Holding accounts the policy may liquidate. Empty preserves the original behavior:
-    # sell only lots already in `account_id`.
-    source_account_ids: tuple[str, ...] = ()
-    asset_preference_chain: list[AssetKey]
-    # `AmountSpec = float | AmountSchedule` — pass a raw float for a constant buffer, or a
-    # `SeriesIndexedAmount` (e.g. `series=InflationKey()`) to keep the buffer in real terms.
-    cash_buffer_trigger_below_usd: AmountSpec = 0.0
-    cash_buffer_sale_usd: AmountSpec = 0.0
-    cause_id_prefix: str = "liquidity_sale"
-
-
 class SleeveTarget(BaseModel):
     """One sleeve of a target allocation: an asset and its relative weight.
 
@@ -531,7 +506,7 @@ class SleeveTarget(BaseModel):
 class TargetAllocationPolicy(BaseModel):
     """Funding policy for one agent cash account: hold cash in a band, sell toward a target.
 
-    Replaces `LiquidityPolicy`'s ordered sell-list with a target the sales move TOWARD. When
+    Sales move TOWARD a target rather than down an ordered sell list. When
     the account's projected end-of-month balance falls below `cash_floor_usd`, the policy
     raises enough to reach `cash_ceiling_usd`, taking from the most overweight sleeve first
     so what remains is as close to the target ratios as the raise allows.
@@ -989,7 +964,6 @@ class Scenario(BaseModel):
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]
-    liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
     target_allocation_policies: list[TargetAllocationPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt
 
@@ -1317,19 +1291,14 @@ class Scenario(BaseModel):
 
     @model_validator(mode="after")
     def _reject_duplicate_funding_policy_accounts(self) -> Scenario:
-        """One funding policy per cash account, counting both kinds together.
+        """One funding policy per cash account.
 
         Two policies on one account would each size their raise from the same projected
         balance, unaware of the other's sale, and between them sell roughly twice what the
-        month needed. Mixing the two KINDS on one account is the same bug wearing a disguise,
-        which is why they share a namespace rather than being checked separately.
+        month needed.
         """
 
-        # Keyed separately rather than over a merged sequence: the two policy types share no
-        # base class narrower than BaseModel, so a merged iteration loses the attributes.
-        keys = [(policy.agent_id, policy.account_id) for policy in self.liquidity_policies] + [
-            (policy.agent_id, policy.account_id) for policy in self.target_allocation_policies
-        ]
+        keys = [(policy.agent_id, policy.account_id) for policy in self.target_allocation_policies]
         seen: set[tuple[str, str]] = set()
         duplicates: set[tuple[str, str]] = set()
         for key in keys:

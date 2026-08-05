@@ -31,7 +31,6 @@ from finance.augur.sim.compiler.helpers import (
     StringTable,
 )
 from finance.augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
-from finance.augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_liquidity_policies
 from finance.augur.sim.compiler.obligations import ObligationCompileOutput, compile_obligation_slots
 from finance.augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOutput, compile_primary_residences
 from finance.augur.sim.compiler.private_equity import (
@@ -97,8 +96,6 @@ class SlotPlan:
     max_property_cashflow_slots: int
     max_obligation_slots: int
     scheduled_sale_count: int
-    liquidity_policy_count: int
-    max_liquidity_policy_assets: int
     target_allocation_policy_count: int
     max_target_allocation_sleeves: int
     pe_issuer_count: int
@@ -115,7 +112,8 @@ class CompiledSimulation:
     slot_plan: SlotPlan
     strings: tuple[str, ...]
     # Typed asset identity for each lot/sale/chain asset code (`lot_asset_codes`,
-    # `sales.asset`, `liquidity_policies.assets`). Decode lifts those codes back to `AssetKey`.
+    # `sales.asset`, `target_allocation_policies.sleeve_assets`). Decode lifts those codes back
+    # to `AssetKey`.
     assets: tuple[AssetKey, ...]
     # Typed level-series identity for each row of `external_values` (the dense price cube);
     # the row index is `series_index_by_id[key]`. PE marks live in `pe_channels`, not here.
@@ -190,7 +188,6 @@ class CompiledSimulation:
     # owner's capital-gain agent index + the index series index driving the period return.
     # Consumed by the engine's `_apply_tlh_harvest` phase and the sale-time basis give-back.
     harvest_policies: HarvestPolicyCompileOutput
-    liquidity_policies: LiquidityPolicyCompileOutput
     target_allocation_policies: TargetAllocationCompileOutput
 
 
@@ -347,7 +344,6 @@ def compile_simulation(
         scenario, strings, account_slots, series_index_by_id, properties, property_slot_by_id, liabilities, tax
     )
 
-    liquidity_policies = compile_liquidity_policies(scenario, strings, assets, account_slots, series_index_by_id)
     target_allocation_policies = compile_target_allocation_policies(
         scenario, strings, assets, account_slots, series_index_by_id
     )
@@ -456,8 +452,6 @@ def compile_simulation(
         max_property_cashflow_slots=property_cashflows.cause.shape[1],
         max_obligation_slots=obligations.cause.shape[1],
         scheduled_sale_count=sales.month.shape[0],
-        liquidity_policy_count=liquidity_policies.assets.shape[0],
-        max_liquidity_policy_assets=liquidity_policies.assets.shape[1],
         target_allocation_policy_count=target_allocation_policies.sleeve_assets.shape[0],
         max_target_allocation_sleeves=target_allocation_policies.sleeve_assets.shape[1],
         pe_issuer_count=pe_issuers.codes.shape[0],
@@ -516,7 +510,6 @@ def compile_simulation(
         pe_policies=pe_policies,
         pe_channels=pe_channels,
         harvest_policies=harvest_policies,
-        liquidity_policies=liquidity_policies,
         target_allocation_policies=target_allocation_policies,
     )
 

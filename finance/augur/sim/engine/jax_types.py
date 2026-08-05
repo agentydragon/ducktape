@@ -30,23 +30,11 @@ class _FoldedPurchase:
 
 
 @dataclass(frozen=True)
-class _LiquidityPool:
-    """One (asset, source-account) FIFO pool a liquidity policy can sell from."""
+class _SalePool:
+    """One (asset, source-account) FIFO pool a sleeve can sell from."""
 
     asset_idx: int
     ordered_lots: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class _FoldedLiquidity:
-    """One liquidity policy, static data resolved host-side."""
-
-    policy_index: int
-    agent: int
-    cash_slot: int
-    trigger: tuple[int, int, int, int, int]
-    sale: tuple[int, int, int, int, int]
-    pools: tuple[_LiquidityPool, ...]
 
 
 @dataclass(frozen=True)
@@ -62,7 +50,7 @@ class _FoldedSleeve:
     weight: int
     sleeve_idx: int
     view_lot_rows: tuple[int, ...]
-    pools: tuple[_LiquidityPool, ...]
+    pools: tuple[_SalePool, ...]
 
 
 @dataclass(frozen=True)
@@ -178,15 +166,12 @@ class _Static:
     n_sales: int
     sale_max_pool: int
     lot_axis: int
-    liq_policy_count: int
-    liq_max_assets: int
     ta_policy_count: int
     ta_max_sleeves: int
     pe_issuer_count: int
     n_pe_kinds: int
     folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]
     folded_pr: tuple[tuple[int, int], ...]
-    folded_liquidity: tuple[_FoldedLiquidity, ...]
     folded_target_allocation: tuple[_FoldedTargetAllocation, ...]
     folded_pe: tuple[_FoldedPE, ...]
     folded_harvest: tuple[_FoldedHarvest, ...]
@@ -231,7 +216,6 @@ class _ScanMeta:
     folded_lifecycle: list[_FoldedLifecycleEvent]
     folded_pr: list[tuple[int, int]]
     folded_sale_events: list[tuple[int, int]]
-    folded_liquidity: list[_FoldedLiquidity]
     folded_target_allocation: list[_FoldedTargetAllocation]
     folded_pe: list[_FoldedPE]
     link_count: int

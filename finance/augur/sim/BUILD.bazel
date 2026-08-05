@@ -445,7 +445,6 @@ py_library(
         "compiler/helpers.py",
         "compiler/income_buckets.py",
         "compiler/lifecycle.py",
-        "compiler/liquidity.py",
         "compiler/obligations.py",
         "compiler/plan.py",
         "compiler/primary_residence.py",

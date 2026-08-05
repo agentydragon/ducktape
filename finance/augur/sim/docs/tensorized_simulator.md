@@ -89,8 +89,8 @@ Use the same notation as the engine code, plus:
 - `K`: tax bracket slots.
 - `T`: transfer slots per month.
 - `O`: obligation slots per month.
-- `Q`: liquidity policies.
-- `A`: asset order slots per liquidity policy.
+- `Q`: target-allocation policies.
+- `A`: sleeve slots per target-allocation policy.
 
 State arrays put rollout first unless there's a strong reason not to:
 
@@ -167,7 +167,7 @@ filter by an active mask, and materialize the polars frame in one
 `_codes_to_strings` (O(slot) Python work) and indexed.
 
 Event decoders (`_decode_transfers`, `_decode_property_purchases`,
-`_decode_sched_dispositions`, `_decode_liquidity_dispositions`,
+`_decode_sched_dispositions`, `decode_target_allocation_dispositions`,
 `_decode_tax_accruals`, `_decode_obligations`,
 `_decode_mortgage_originations`, `_decode_mortgage_payments`,
 `_decode_tax_settlements`) gather sparse events via `np.argwhere(active)`,
@@ -316,34 +316,31 @@ Capital gain profile updates start as explicit sums per compiled gain
 profile / holding-period class. If a vectorized form has repeated group
 targets, use `np.add.at` into `capital_gain_ytd[R, G, 2]`.
 
-### Liquidity Policy Sell Order
+### Target-Allocation Sales
 
-Ordered control flow over policy and asset-order axes; vectorize inside
-each step over `R`:
+Ordered control flow over policy and sleeve axes; vectorize inside each
+step over `R`. The per-sleeve amounts are not a deficit walked down a
+preference list — they come back from `target_allocation.decide`, which
+water-fills the raise across sleeves by how overweight each one is:
 
 ```python
 for policy in policies:
-    deficit = compute_deficit_for_policy(policy)  # [R]
-    for asset_order_slot in range(A):
-        available = available_value_for_asset_slot(policy, asset_order_slot)  # [R]
-        sale_target = np.minimum(np.clip(deficit, 0.0, None), available)
-        # the dollar-target FIFO block above, applied to this slot's pool
-        sold = fifo_sell(policy, asset_order_slot, sale_target)  # [R]
-        deficit -= sold
-    liquidity_shortfall = deficit > epsilon
-    failed |= liquidity_shortfall
-    failure_reason = set_failure_reason(
-        failure_reason,
-        liquidity_shortfall,
-        FAILURE_LIQUIDITY_INSUFFICIENT_ASSETS,
-    )
+    orders = decide(view, universe, floor_cents, ceiling_cents)  # per-sleeve [R]
+    for sleeve in range(S):
+        remaining = orders.sell_cents[sleeve]
+        for pool in sleeve_pools(policy, sleeve):
+            available = available_value_for_pool(pool)  # [R]
+            sale_target = np.minimum(np.clip(remaining, 0, None), available)
+            # the cents-target FIFO block above, applied to this pool
+            sold = fifo_sell(pool, sale_target)  # [R]
+            remaining -= sold
 ```
 
-This matches "sell assets in configured order" while avoiding a rollout
-loop. The liquidity policy doesn't ask the FIFO helper for more than the
-current asset slot can provide. If the whole configured sell order cannot
-restore the buffer, the rollout is marked failed with a declared liquidity
-failure reason.
+No branch on whether a policy fires: a month inside the band orders zero,
+and a pool with a zero target sells nothing. Falling short does NOT fail
+the rollout on its own — only an unpaid obligation does, at settlement.
+Making the ceiling a hard demand would turn every optimistic refill target
+into a ruin condition.
 
 ### Obligation Settlement
 
@@ -373,11 +370,6 @@ event buffers unconditionally (cheap), but API/product layers decode events
 only for selected rollout detail.
 
 ## Open work
-
-- **Liquidity-policy oversell failure reason.** Add a test asserting that
-  when the configured sell order cannot restore the cash buffer, the
-  rollout is failed with a declared liquidity failure reason (not a silent
-  partial fill). The engine path exists; the test gap is the open item.
 
 ## Validation Gates
 

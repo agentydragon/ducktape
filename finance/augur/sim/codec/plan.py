@@ -16,7 +16,6 @@ from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.assets import (
     decode_asset_lots,
     decode_cash,
-    decode_liquidity_dispositions,
     decode_pe_dispositions,
     decode_pe_opportunity_events,
     decode_pe_protocol_events,
@@ -118,7 +117,6 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
     property_purchases_frame, property_transfer_frame = decode_property_purchases(plan, buffers)
     transfer_frames.append(property_transfer_frame)
     lot_frames.append(decode_sched_dispositions(plan, buffers))
-    lot_frames.append(decode_liquidity_dispositions(plan, buffers))
     lot_frames.append(decode_target_allocation_dispositions(plan, buffers))
     lot_frames.append(decode_pe_dispositions(plan, buffers))
     tax_accruals_frame, tax_breakdowns_frame = decode_tax_accruals(plan, buffers)

@@ -16,7 +16,7 @@ from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.bench_scenario import build_bench_scenario
-from finance.augur.sim.scenario import InitialLot
+from finance.augur.sim.scenario import InitialLot, SleeveTarget
 from finance.augur.sim.simulate import simulate
 
 
@@ -82,13 +82,13 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         update={
             "initial_lots": [*base.initial_lots, new_lot],
             "external_series": SeriesModelBundle(model=extended_model),
-            "liquidity_policies": [
+            "target_allocation_policies": [
                 p.model_copy(
                     update={
-                        "asset_preference_chain": [*p.asset_preference_chain, SecurityKey(symbol=SecuritySymbol("efv"))]
+                        "sleeves": [*p.sleeves, SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("efv")), weight=1)]
                     }
                 )
-                for p in base.liquidity_policies
+                for p in base.target_allocation_policies
             ],
         }
     )

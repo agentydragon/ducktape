@@ -119,7 +119,7 @@ def attempted_sources_for_policy_indices(plan: CompiledSimulation, attempt_polic
     shape matching the input.
     """
 
-    policy_count = plan.liquidity_policies.assets.shape[0]
+    policy_count = plan.target_allocation_policies.sleeve_assets.shape[0]
     lookup = np.empty(policy_count + 1, dtype=object)
     lookup[0] = ""
     for policy in range(policy_count):
@@ -136,9 +136,10 @@ def _attempted_sources(plan: CompiledSimulation, policy: int) -> str:
 
     if policy < 0:
         return ""
-    # `liquidity_policies.assets` are AssetTable codes; lift to wire ids for the joined string.
+    # `sleeve_assets` are AssetTable codes; lift to wire ids for the joined string. Padded
+    # sleeves carry a negative code and name nothing, so they drop out.
     return ",".join(
         plan.assets[asset_code].wire_id
-        for asset_code in plan.liquidity_policies.assets[policy].tolist()
+        for asset_code in plan.target_allocation_policies.sleeve_assets[policy].tolist()
         if asset_code >= 0
     )

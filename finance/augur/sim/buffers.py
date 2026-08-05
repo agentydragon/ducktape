@@ -261,7 +261,6 @@ class DispositionGroup:
 @dataclass
 class LotDispositionEventBuffers:
     scheduled: DispositionGroup
-    liquidity: DispositionGroup
     target_allocation: DispositionGroup
     pe: DispositionGroup
 
@@ -270,9 +269,6 @@ class LotDispositionEventBuffers:
         r = plan.rollout_count
         lot_axis = max(1, plan.lot_count)
         self.scheduled.validate("scheduled", (plan.scheduled_sale_count, lot_axis, r))
-        self.liquidity.validate(
-            "liquidity", (h, plan.liquidity_policy_count, plan.max_liquidity_policy_assets, lot_axis, r)
-        )
         self.target_allocation.validate(
             "target_allocation",
             (h, plan.target_allocation_policy_count, plan.max_target_allocation_sleeves, lot_axis, r),

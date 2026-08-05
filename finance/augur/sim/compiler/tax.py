@@ -265,7 +265,7 @@ def compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tup
         add(lot.agent_id)
     for sale in scenario.scheduled_asset_sales:
         add(sale.agent_id)
-    for policy in scenario.liquidity_policies:
+    for policy in scenario.target_allocation_policies:
         add(policy.agent_id)
 
     index_by_agent = {agent_id: idx for idx, agent_id in enumerate(agent_ids)}

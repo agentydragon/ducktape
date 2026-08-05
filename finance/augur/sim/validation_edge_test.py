@@ -25,10 +25,11 @@ from finance.augur.sim.scenario import (
     HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
-    LiquidityPolicy,
     Scenario,
     ScheduledAssetSale,
     ScheduledObligation,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
@@ -222,7 +223,7 @@ def test_scheduled_sale_oversell_validation() -> None:
 
 
 @pytest.mark.parametrize("bad_price", [0.0, -100.0, float("nan")], ids=["zero", "negative", "nonfinite"])
-def test_liquidity_invalid_asset_price_leaves_obligation_unfunded(bad_price: float) -> None:
+def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -252,11 +253,12 @@ def test_liquidity_invalid_asset_price_leaves_obligation_unfunded(bad_price: flo
                 amount_due_usd=500.0,
             )
         ],
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],

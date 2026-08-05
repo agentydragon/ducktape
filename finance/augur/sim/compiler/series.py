@@ -64,11 +64,13 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     # when it needs one to price the sale itself.
     for asset_purchase in scenario.scheduled_asset_purchases:
         add(asset_price_key(asset_purchase.asset))
-    for policy in scenario.liquidity_policies:
-        for asset in policy.asset_preference_chain:
-            add(asset_price_key_or_none(asset))
-        _add_amount_series_key(policy.cash_buffer_trigger_below_usd, add)
-        _add_amount_series_key(policy.cash_buffer_sale_usd, add)
+    for policy in scenario.target_allocation_policies:
+        for sleeve in policy.sleeves:
+            add(asset_price_key_or_none(sleeve.asset))
+        # Both band bounds, not just the floor: the ceiling is the refill TARGET, so a raise
+        # cannot be sized without it, and an indexed ceiling needs its series sampled.
+        _add_amount_series_key(policy.cash_floor_usd, add)
+        _add_amount_series_key(policy.cash_ceiling_usd, add)
     for pe_policy in scenario.private_equity_tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
     # A property is valued at sale off its location's home-value series.
@@ -126,9 +128,9 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     for asset_purchase in scenario.scheduled_asset_purchases:
         if asset_purchase.price_per_unit_usd is None:
             add(asset_price_key(asset_purchase.asset))
-    for policy in scenario.liquidity_policies:
-        for asset in policy.asset_preference_chain:
-            add(asset_price_key_or_none(asset))
+    for policy in scenario.target_allocation_policies:
+        for sleeve in policy.sleeves:
+            add(asset_price_key_or_none(sleeve.asset))
     return tuple(keys)
 
 

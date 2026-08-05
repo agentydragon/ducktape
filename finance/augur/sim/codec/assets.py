@@ -1,6 +1,6 @@
 """Asset domain decoders: cash balances, lot inventory, and lot dispositions.
 The compile-side twins live in `_compile_lots`, `_compile_cash`, `_compile_sales`,
-and `_compile_liquidity_policies` in `augur.sim.compiler`."""
+and `compile_target_allocation_policies` in `augur.sim.compiler`."""
 
 from __future__ import annotations
 
@@ -106,45 +106,9 @@ def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffe
     )
 
 
-def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.lot_dispositions.liquidity.active  # (M, policy, asset_idx, lot, R)
-    # Pre-filter inactive asset slots (asset_code < 0). The plan's liquidity_policy_asset_codes
-    # is (policy, asset_idx); a negative entry means that asset slot isn't used by the policy.
-    asset_valid = plan.liquidity_policies.assets >= 0  # (policy, asset_idx)
-    # Broadcast valid mask to active's shape and AND it in.
-    valid_full = asset_valid[None, :, :, None, None]  # (1, policy, asset_idx, 1, 1)
-    active = active & valid_full
-    if active.any():
-        months, policies, asset_idxs, lots, rollouts = np.argwhere(active).T
-    else:
-        months = policies = asset_idxs = lots = rollouts = np.array([], dtype=np.int64)
-    asset_codes = plan.liquidity_policies.assets[policies, asset_idxs]
-    # Per-event cause_id is "{policy_prefix}_m{month}_{asset_name}". O(N) Python comp over
-    # the gathered events, not the dense iteration space.
-    asset_names = codes_to_asset_wire_ids(plan, plan.liquidity_policies.assets)[policies, asset_idxs]
-    prefixes_per_event = np.array(plan.liquidity_policies.cause_id_prefixes, dtype=object)[policies]
-    cause_ids = np.array(
-        [f"{p}_m{m}_{a}" for p, m, a in zip(prefixes_per_event, months, asset_names, strict=True)], dtype=object
-    )
-    return _lot_disposition_frame(
-        plan=plan,
-        rollouts=rollouts,
-        months=months,
-        cause_ids=cause_ids,
-        agent_codes=plan.liquidity_policies.agent[policies],
-        source_account_codes=plan.lot_account_codes[lots],
-        asset_codes=asset_codes,
-        lots=lots,
-        units=buffers.lot_dispositions.liquidity.units[months, policies, asset_idxs, lots, rollouts],
-        basis=buffers.lot_dispositions.liquidity.basis[months, policies, asset_idxs, lots, rollouts],
-        proceeds=buffers.lot_dispositions.liquidity.proceeds[months, policies, asset_idxs, lots, rollouts],
-        proceeds_account_codes=plan.liquidity_policies.account[policies],
-    )
-
-
 def decode_target_allocation_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    """Lot dispositions from the target-allocation policy. Same shape as the liquidity decoder,
-    with sleeves where that one has an asset-preference chain."""
+    """Lot dispositions from the target-allocation policy: one row per (month, policy, sleeve,
+    lot, rollout) the engine actually sold from."""
 
     active = buffers.lot_dispositions.target_allocation.active  # (M, policy, sleeve, lot, R)
     # A padded sleeve column carries asset_code < 0 and can never have sold anything; masking it

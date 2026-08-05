@@ -13,7 +13,6 @@ from finance.augur.sim.scenario import (
     FilingStatus,
     InitialAccountBalance,
     InitialLot,
-    LiquidityPolicy,
     MortgageFinancing,
     PropertyTaxPolicy,
     RecurringTransfer,
@@ -21,6 +20,8 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledObligation,
     ScheduledPropertyPurchase,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate
@@ -56,11 +57,12 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[SecurityKey(symbol=SecuritySymbol("vti"))],
+                sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
+                cash_ceiling_usd=0.0,
             )
         ],
         tax_profiles=[],
@@ -87,7 +89,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
     transaction_types = set(projection.transactions.get_column("transaction_type").to_list())
     assert {"asset_sale", "cash_transfer", "obligation_settlement"} <= transaction_types
     sale = projection.transactions.filter(pl.col("transaction_type") == "asset_sale").row(0, named=True)
-    assert sale["transaction_id"] == "liquidity_sale_m0_security:vti:alice_vti"
+    assert sale["transaction_id"] == "allocation_sale_m0_security:vti:alice_vti"
     assert sale["amount_usd"] == pytest.approx(400.0)
     assert sale["quantity"] == pytest.approx(4.0)
 
@@ -115,7 +117,6 @@ def test_projection_due_now_obligation_failure_is_explicit() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         tax_profiles=[],
         horizon_months=1,
     )

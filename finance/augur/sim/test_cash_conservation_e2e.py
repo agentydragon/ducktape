@@ -14,7 +14,7 @@ Disposals are the half that needs saying out loud, because the invariant is the 
 that sees them go wrong. When a sale credits proceeds with no matching debit, net worth stays
 correct — the lot leaves as the cash arrives — so every agent-facing number looks right while
 the ledger mints money. So each way of turning something into cash gets its own scenario
-below: a scheduled asset sale, a liquidity-policy sale, a private-equity tender, and a
+below: a scheduled asset sale, a target-allocation sale, a private-equity tender, and a
 property sale. Each also asserts the disposal actually fired, since a sale that never happens
 conserves cash trivially and proves nothing.
 """
@@ -53,7 +53,6 @@ from finance.augur.sim.scenario import (
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
-    LiquidityPolicy,
     MortgageFinancing,
     PrivateEquityTenderPolicy,
     PropertySaleEvent,
@@ -64,6 +63,8 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
@@ -216,7 +217,7 @@ def _scheduled_sale_scenario() -> Scenario:
     )
 
 
-def _liquidity_policy_scenario() -> Scenario:
+def _target_allocation_scenario() -> Scenario:
     """Alice cannot cover the rent from cash, so the policy raises it by selling VTI."""
 
     return Scenario(
@@ -250,7 +251,14 @@ def _liquidity_policy_scenario() -> Scenario:
         external_series=SeriesModelBundle.independent(
             asset_prices=AssetPriceGroups(security={SecuritySymbol("vti"): Deterministic(levels=[100.0] * 4)})
         ),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[_VTI])],
+        target_allocation_policies=[
+            TargetAllocationPolicy(
+                agent_id="alice",
+                account_id="checking",
+                sleeves=[SleeveTarget(asset=_VTI, weight=1)],
+                cash_ceiling_usd=0.0,
+            )
+        ],
         tax_profiles=[],
         horizon_months=3,
     )
@@ -423,8 +431,8 @@ def test_a_scheduled_sale_does_not_mint_cash() -> None:
     assert np.all(totals == totals[0])
 
 
-def test_a_liquidity_policy_sale_does_not_mint_cash() -> None:
-    run = simulate(_liquidity_policy_scenario(), rollout_count=1, locations={})
+def test_a_target_allocation_sale_does_not_mint_cash() -> None:
+    run = simulate(_target_allocation_scenario(), rollout_count=1, locations={})
     totals = _total_cash_by_month(run)
 
     assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() > 0.0

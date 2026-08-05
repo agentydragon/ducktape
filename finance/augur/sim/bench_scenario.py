@@ -6,7 +6,7 @@ Alice, a single-filer SF resident, has:
     `income_category=ORDINARY_INCOME`).
   - Initial holdings in three positions: VTI, QQQ, BTC. Each is
     a pre-horizon lot at a configurable basis.
-  - A liquidity policy: required obligations sell assets as needed;
+  - A target-allocation policy: the cash band sells toward the target as needed;
     if checking is still below $5k afterward, sell another $5k by
     liquidating VTI -> QQQ -> BTC in order at sampled prices.
   - A $5k/month recurring spend obligation (rent).
@@ -34,9 +34,10 @@ from finance.augur.sim.scenario import (
     FilingStatus,
     InitialAccountBalance,
     InitialLot,
-    LiquidityPolicy,
     RecurringTransfer,
     Scenario,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
 )
 
@@ -131,17 +132,17 @@ def build_bench_scenario(
                 prior_year_tax_usd=prior_year_tax_usd,
             )
         ],
-        liquidity_policies=[
-            LiquidityPolicy(
+        target_allocation_policies=[
+            TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=[
-                    SecurityKey(symbol=SecuritySymbol("vti")),
-                    SecurityKey(symbol=SecuritySymbol("qqq")),
-                    SecurityKey(symbol=SecuritySymbol("btc")),
+                sleeves=[
+                    SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1),
+                    SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("qqq")), weight=1),
+                    SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("btc")), weight=1),
                 ],
-                cash_buffer_trigger_below_usd=floor_usd,
-                cash_buffer_sale_usd=floor_usd,
+                cash_floor_usd=floor_usd,
+                cash_ceiling_usd=floor_usd,
                 cause_id_prefix="alice_floor_sale",
             )
         ],
