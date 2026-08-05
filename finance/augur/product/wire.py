@@ -39,21 +39,66 @@ MetricName = Literal[
 MAX_HORIZON_MONTHS = 100 * 12
 
 
+class SleeveWeight(ApiModel):
+    """One holding's share of the target allocation, as an integer relative weight.
+
+    Only RATIOS matter, so `(3, 1)` and `(30, 10)` are the same target. Weight 0 means the
+    holding is OUTSIDE the target: never sold to fund the band, and not counted when measuring
+    what is overweight. That is how a position you intend to keep — private equity before
+    liquidity, a bond held to maturity — is expressed, and it is why zero is allowed here while
+    the sim's `SleeveTarget` requires a positive weight: this is the UI's way of saying "not in
+    the target", and the lowering drops it rather than passing a meaningless zero down.
+    """
+
+    symbol: SecuritySymbol
+    weight: NonNegativeInt
+
+
 class FundingPolicy(ApiModel):
-    cash_buffer_trigger_below_usd: NonNegativeFloat = 0.0
-    cash_buffer_sale_usd: NonNegativeFloat = 0.0
-    # `cash_buffer_index_to_inflation` matches PrivateEquityTenderPolicyWire.index_floor_to_inflation:
-    # when true, the trigger + sale amounts are interpreted as today-dollar real-terms targets and
-    # inflated by CPI each month. When false, they stay nominal.
-    cash_buffer_index_to_inflation: bool = True
-    sell_order: tuple[SecuritySymbol, ...] | None = Field(
-        default=None,
+    """How the owner funds spending: hold cash in a band, sell toward a target when it runs low.
+
+    Replaces the old trigger/sale-amount buffer with an (s,S) band, and the ordered sell list
+    with a target the sales move TOWARD. Crossing the floor refills to the CEILING, not back to
+    the floor — refilling to the floor would put the owner back at the trigger next month,
+    making them a forced seller into every dip.
+
+    The ceiling is the refill TARGET, not an invest-above-this rule: surplus cash above it
+    accumulates and nothing buys with it.
+    """
+
+    cash_floor_usd: NonNegativeFloat = 0.0
+    cash_ceiling_usd: NonNegativeFloat = 0.0
+    # Matches PrivateEquityTenderPolicyWire.index_floor_to_inflation: when true, both bounds are
+    # today-dollar real-terms targets inflated by CPI each month. When false they stay nominal.
+    # Both bounds share the flag because indexing them differently would let a band that starts
+    # valid invert partway through the horizon, and an inverted band has no interior.
+    cash_band_index_to_inflation: bool = True
+    sleeve_weights: tuple[SleeveWeight, ...] = Field(
+        default=(),
         description=(
-            "Symbols to auto-sell from, highest priority first. `None` means every sellable "
-            "holding in portfolio order; `[]` disables auto-sale entirely. Private equity can "
-            "never appear here — it has no symbol, and is sold only at tender events."
+            "Target weight per holding symbol. Empty disables auto-sale entirely — the owner "
+            "never sells to fund the band, and an unaffordable obligation is ruin. There is no "
+            "'derive it for me' sentinel: the caller has each holding's current value and seeds "
+            "the weights from it, which is what makes the default 'hold what you have'. Private "
+            "equity can never appear — it has no symbol, and is sold only at tender events."
         ),
     )
+
+    @model_validator(mode="after")
+    def _reject_inverted_band_and_duplicate_symbols(self) -> FundingPolicy:
+        if self.cash_floor_usd > self.cash_ceiling_usd:
+            raise ValueError(
+                f"cash floor must not exceed its ceiling; got floor={self.cash_floor_usd}, "
+                f"ceiling={self.cash_ceiling_usd}. An inverted band has no interior, so every "
+                "balance crosses both bounds at once."
+            )
+        symbols = [sleeve.symbol for sleeve in self.sleeve_weights]
+        if len(set(symbols)) != len(symbols):
+            duplicated = sorted({s for s in symbols if symbols.count(s) > 1})
+            raise ValueError(
+                f"sleeve weights name {duplicated} more than once; a holding weighted twice is double-counted"
+            )
+        return self
 
 
 class PrivateEquityTenderPolicyWire(ApiModel):

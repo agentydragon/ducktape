@@ -5,7 +5,7 @@ import { fmtUsd, fmtNumber } from "./lib/format";
 import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers";
 import {
   DisclosureArrow,
-  SellOrderControl,
+  SleeveWeightsControl,
   ProductPortfolioPanel,
   LifecycleEventsEditor,
   propertyLabel,
@@ -131,10 +131,10 @@ const KNOBS = [
   { key: "spendIndex", label: "Spend index", kind: "index", group: "Spending" },
   { key: "monthlyRentUsd", label: "Monthly rent", kind: "usd", step: 100, group: "Outside rent" },
   { key: "rentalLocationId", label: "Rent location", kind: "location", group: "Outside rent" },
-  { key: "sellOrder", label: "Sell preference", kind: "sellOrder", group: "Cash buffer" },
-  { key: "cashBufferTriggerBelowUsd", label: "Trigger below", kind: "usd", step: 1000, group: "Cash buffer" },
-  { key: "cashBufferSaleUsd", label: "Sell amount", kind: "usd", step: 1000, group: "Cash buffer" },
-  { key: "cashBufferIndexToInflation", label: "Buffer index", kind: "boolIndex", group: "Cash buffer" },
+  { key: "sleeveWeights", label: "Target allocation", kind: "sleeveWeights", group: "Cash band" },
+  { key: "cashFloorUsd", label: "Floor", kind: "usd", step: 1000, group: "Cash band" },
+  { key: "cashCeilingUsd", label: "Refill to", kind: "usd", step: 1000, group: "Cash band" },
+  { key: "cashBandIndexToInflation", label: "Band index", kind: "boolIndex", group: "Cash band" },
   { key: "peLnwFloorUsd", label: "PE LNW floor", kind: "usd", step: 10000, group: "Private equity" },
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
 ];
@@ -285,9 +285,9 @@ function KnobCell({
       return wrap(select(TERM_DATA, String(value), (next) => (Number(next) === 180 ? 180 : 360)));
     case "property":
       return wrap(select(propertyOptions(bootstrap), value ?? "", (next) => next || null));
-    case "sellOrder":
+    case "sleeveWeights":
       return wrap(
-        <SellOrderControl sellOrder={value} portfolio={portfolio} compact label={null} onChange={onChange} />
+        <SleeveWeightsControl sleeveWeights={value} portfolio={portfolio} compact label={null} onChange={onChange} />
       );
     default: // location
       return wrap(select(locationOptions(bootstrap), value ?? "", (next) => next || null));

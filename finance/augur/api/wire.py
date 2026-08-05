@@ -77,10 +77,9 @@ class ProductInputDefaults(ApiModel):
     first_seed: int | None = None
     monthly_spend_usd: float | None = None
     spend_index: Literal["inflation", "none"] | None = None
-    sell_order: str | None = None
-    cash_buffer_trigger_below_usd: float | None = None
-    cash_buffer_sale_usd: float | None = None
-    cash_buffer_index_to_inflation: bool | None = None
+    cash_floor_usd: float | None = None
+    cash_ceiling_usd: float | None = None
+    cash_band_index_to_inflation: bool | None = None
     pe_lnw_floor_usd: float | None = None
     pe_index_floor_to_inflation: bool | None = None
     monthly_rent_usd: float | None = None

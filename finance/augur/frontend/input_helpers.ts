@@ -5,7 +5,6 @@ import { clampInteger } from "./lib/format";
 // entirely; `null` (the default) means "any sellable holding". Storing it as a string rather
 // than an array keeps default-comparison and URL encoding trivial. The wire takes the same
 // symbols — there is no bucket vocabulary in between.
-export const SELL_ORDER_SEPARATOR = ",";
 
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
@@ -17,10 +16,10 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
-  sellOrder: null,
-  cashBufferTriggerBelowUsd: 4000,
-  cashBufferSaleUsd: 10000,
-  cashBufferIndexToInflation: true,
+  sleeveWeights: null,
+  cashFloorUsd: 4000,
+  cashCeilingUsd: 10000,
+  cashBandIndexToInflation: true,
   peLnwFloorUsd: 0,
   peIndexFloorToInflation: true,
   monthlyRentUsd: 0,
@@ -82,7 +81,7 @@ export function productInputDefaults(bootstrap) {
   // Server-provided overrides (from the deployment's augur YAML's `product_input_defaults`).
   // Each field is `null` when the deployment didn't set it; we drop those entries so the
   // frontend's hard-coded base value stays. The decamelize layer in `client.js` already
-  // converted snake_case keys, so `cash_buffer_index_to_inflation` arrives as `cashBufferIndexToInflation`.
+  // converted snake_case keys, so `cash_band_index_to_inflation` arrives as `cashBandIndexToInflation`.
   const overrides = bootstrap.productInputDefaults ?? {};
   const overridesNotNull = Object.fromEntries(Object.entries(overrides).filter(([, value]) => value != null));
   const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull };
@@ -270,23 +269,35 @@ export function buildLifecycleEvents(events) {
     });
 }
 
-export function splitSellOrder(sellOrder) {
-  return String(sellOrder ?? "")
-    .split(SELL_ORDER_SEPARATOR)
-    .map((symbol) => symbol.trim())
-    .filter(Boolean);
+// Weights are seeded from what the owner currently HOLDS: each sellable position's share of
+// total holding value, as an integer out of 100. Opening the editor and changing nothing then
+// means "hold what you have" — the target matches today's portfolio, so the first sale does not
+// silently rebalance a 90/10 split to 50/50.
+//
+// The seed lives here rather than in the backend lowering because the current VALUE of each
+// holding is on the wire the frontend already has; the lowering sees only cost basis, and cost
+// is not value.
+export function seedSleeveWeights(holdings) {
+  const sellable = (holdings ?? []).filter((h) => h.symbol != null && Number(h.holdingValueUsd) > 0);
+  const total = sellable.reduce((sum, h) => sum + Number(h.holdingValueUsd), 0);
+  if (!total) return [];
+  return sellable.map((h) => ({
+    symbol: h.symbol,
+    weight: Math.max(1, Math.round((100 * Number(h.holdingValueUsd)) / total)),
+  }));
 }
 
-// `null` stays `null` on the wire (meaning "any sellable holding"); anything else becomes the
-// deduplicated symbol list, with "" collapsing to [] (auto-sale off).
-export function sellOrderSymbols(sellOrder) {
-  if (sellOrder == null) return null;
-  return [...new Set(splitSellOrder(sellOrder))];
+// `null` means "not edited yet" and seeds from the portfolio; an explicit list is taken as-is,
+// including the empty list, which is how auto-sale is turned off.
+export function resolveSleeveWeights(sleeveWeights, holdings) {
+  if (sleeveWeights == null) return seedSleeveWeights(holdings);
+  return sleeveWeights
+    .filter((sleeve) => sleeve.symbol)
+    .map((sleeve) => ({ symbol: sleeve.symbol, weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
 }
 
-export function productScenario(input, bootstrap, modelId, horizonMonths) {
-  const sellOrder = sellOrderSymbols(input.sellOrder);
-  const autoSellEnabled = sellOrder == null || sellOrder.length > 0;
+export function productScenario(input, bootstrap, modelId, horizonMonths, holdings) {
+  const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, holdings);
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
@@ -295,10 +306,13 @@ export function productScenario(input, bootstrap, modelId, horizonMonths) {
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
     fundingPolicy: {
-      cashBufferTriggerBelowUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
-      cashBufferSaleUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
-      cashBufferIndexToInflation: Boolean(input.cashBufferIndexToInflation),
-      sellOrder,
+      cashFloorUsd: Math.max(0, Number(input.cashFloorUsd) || 0),
+      cashCeilingUsd: Math.max(
+        Math.max(0, Number(input.cashFloorUsd) || 0),
+        Math.max(0, Number(input.cashCeilingUsd) || 0)
+      ),
+      cashBandIndexToInflation: Boolean(input.cashBandIndexToInflation),
+      sleeveWeights,
     },
     peTenderPolicy: {
       liquidNetWorthFloorUsd: Math.max(0, Number(input.peLnwFloorUsd) || 0),

@@ -10,7 +10,7 @@ from finance.augur.api.config import Config, LocationConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
-from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
+from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -35,7 +35,6 @@ from finance.augur.sim.scenario import (
     HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
-    LiquidityPolicy,
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
     ObligationType,
@@ -54,6 +53,8 @@ from finance.augur.sim.scenario import (
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
     TransferDeductionCategory,
 )
@@ -383,7 +384,7 @@ def build_scenario(
                 tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
             )
         ],
-        liquidity_policies=_liquidity_policies_from_funding_policy(
+        target_allocation_policies=_target_allocation_policies_from_funding_policy(
             scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
         ),
         harvest_policies=list(harvest_policies),
@@ -726,29 +727,42 @@ def _monthly_spend_amount(scenario_key: ScenarioKey) -> float | SeriesIndexedAmo
     raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
 
-def _liquidity_policies_from_funding_policy(
+def _target_allocation_policies_from_funding_policy(
     funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
-) -> list[LiquidityPolicy]:
-    asset_preference_chain = _asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots)
-    if not asset_preference_chain:
+) -> list[TargetAllocationPolicy]:
+    """Lower the wire's cash band + weights to the sim's target-allocation policy.
+
+    Zero-weight sleeves are DROPPED rather than passed down: zero is the UI's way of saying
+    "outside the target", and the sim's `SleeveTarget` requires a positive weight because a zero
+    there would be a divisor in the water level. A weight naming nothing held is dropped too, so
+    a saved target can outlive the position it mentions.
+
+    No sleeves left means no policy at all, which preserves the old `sell_order=[]` behaviour:
+    the owner never auto-sells and an unaffordable obligation is ruin.
+    """
+
+    sellable = [lot.asset for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
+    held_by_symbol = {asset.symbol: asset for asset in sellable}
+    sleeves = [
+        SleeveTarget(asset=held_by_symbol[sleeve.symbol], weight=sleeve.weight)
+        for sleeve in funding_policy.sleeve_weights
+        if sleeve.weight > 0 and sleeve.symbol in held_by_symbol
+    ]
+    if not sleeves:
         return []
-    trigger_amount = _cash_buffer_amount(
-        float(funding_policy.cash_buffer_trigger_below_usd),
-        index_to_inflation=funding_policy.cash_buffer_index_to_inflation,
-    )
-    sale_amount = _cash_buffer_amount(
-        float(funding_policy.cash_buffer_sale_usd), index_to_inflation=funding_policy.cash_buffer_index_to_inflation
-    )
+    targeted = {sleeve.asset for sleeve in sleeves}
     return [
-        LiquidityPolicy(
+        TargetAllocationPolicy(
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
-            source_account_ids=_source_account_ids_from_sell_order(
-                funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
+            source_account_ids=tuple(dict.fromkeys(lot.account_id for lot in initial_lots if lot.asset in targeted)),
+            sleeves=sleeves,
+            cash_floor_usd=_cash_buffer_amount(
+                float(funding_policy.cash_floor_usd), index_to_inflation=funding_policy.cash_band_index_to_inflation
             ),
-            asset_preference_chain=asset_preference_chain,
-            cash_buffer_trigger_below_usd=trigger_amount,
-            cash_buffer_sale_usd=sale_amount,
+            cash_ceiling_usd=_cash_buffer_amount(
+                float(funding_policy.cash_ceiling_usd), index_to_inflation=funding_policy.cash_band_index_to_inflation
+            ),
             cause_id_prefix="product_funding_sale",
         )
     ]
@@ -762,46 +776,6 @@ def _cash_buffer_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount 
     if not index_to_inflation or usd <= 0:
         return usd
     return SeriesIndexedAmount(base_amount_usd=usd, series=InflationKey(), adjustment_period_months=1)
-
-
-def _asset_preference_chain_from_sell_order(
-    funding_policy: FundingPolicy, *, initial_lots: tuple[InitialLot, ...]
-) -> list[AssetKey]:
-    """Resolve the wire's `sell_order` symbols to a deduplicated `AssetKey` list for the sim.
-
-    The sell order names SYMBOLS, in priority order, because that is the granularity the
-    owner actually holds and reasons about — "sell VTI before BTC" is a statement about two
-    positions, not about two asset classes, and asset classes could not express "sell BTC but
-    not ETH" at all. `None` means "any sellable holding", in portfolio order; `()` means
-    "never auto-sell" (hard-demand failures still fire). A symbol naming nothing held is a
-    no-op, so a sell order can outlive the position it mentions.
-
-    Private equity cannot appear: `PrivateEquityAssetKey` has no symbol, so no sell order can
-    name it. That the tender path is its only exit is now structural rather than a filter
-    someone has to remember.
-    """
-
-    sellable = [lot.asset for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
-    if funding_policy.sell_order is None:
-        return list(dict.fromkeys(sellable))
-    return list(
-        dict.fromkeys(asset for symbol in funding_policy.sell_order for asset in sellable if asset.symbol == symbol)
-    )
-
-
-def _source_account_ids_from_sell_order(
-    funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
-) -> tuple[str, ...]:
-    selected_asset_ids = set(_asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots))
-    if not selected_asset_ids:
-        return ()
-    return tuple(
-        dict.fromkeys(
-            lot.account_id
-            for lot in initial_lots
-            if lot.agent_id == primary_agent_id and lot.asset in selected_asset_ids
-        )
-    )
 
 
 def _build_private_equity_tender_policies(

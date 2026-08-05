@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls";
 import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format";
-import { LIFECYCLE_KINDS, SELL_ORDER_SEPARATOR, defaultLifecycleEvent, splitSellOrder } from "./input_helpers";
+import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights } from "./input_helpers";
 import { sellableSecurities, isPrivateSecurityPosition } from "./data_helpers";
 
 function firstSaleMonth(events) {
@@ -231,117 +231,69 @@ function LifecycleEventValueField({ event, onChange }) {
   return null;
 }
 
-export function SellOrderControl({
-  sellOrder,
+export function SleeveWeightsControl({
+  sleeveWeights,
   portfolio,
   onChange,
-  label = "Sell preference (top first)",
+  label = "Target allocation (relative weights)",
   compact = false,
 }) {
-  // One row per sellable holding. Enabled rows appear in priority order at the top with up/down
-  // controls; disabled rows trail at the bottom, dimmed. Reorder mutates the comma-joined symbol
-  // string so it slots into the URL encoder without an array-equality dance.
+  // One row per sellable holding with an integer weight. Only RATIOS matter, so the row also
+  // shows each weight as a percentage of their sum — that is the number a person actually reasons
+  // about, while the stored value stays an integer and needs no sum-to-one validator to defend it.
   //
-  // `sellOrder == null` is the default and means "any sellable holding" — shown as every row
-  // enabled in portfolio order, so the control renders the same thing the backend would do.
+  // `sleeveWeights == null` means "not edited yet" and seeds from what the owner currently holds,
+  // so opening this and changing nothing leaves the target matching today's portfolio. Weight 0 is
+  // meaningful rather than empty: it puts the holding OUTSIDE the target, never sold to fund the
+  // band and not counted when measuring what is overweight.
   const sellable = sellableSecurities(portfolio);
-  const bySymbol = new Map(sellable.map((row) => [row.symbol, row]));
-  const enabledSymbols = [];
-  const seen = new Set();
-  for (const symbol of sellOrder == null ? sellable.map((row) => row.symbol) : splitSellOrder(sellOrder)) {
-    if (bySymbol.has(symbol) && !seen.has(symbol)) {
-      enabledSymbols.push(symbol);
-      seen.add(symbol);
-    }
-  }
-  const visible = [
-    ...enabledSymbols.map((symbol) => bySymbol.get(symbol)),
-    ...sellable.filter((row) => !seen.has(row.symbol)),
-  ];
-  if (visible.length === 0) return null;
+  if (sellable.length === 0) return null;
+  const resolved = resolveSleeveWeights(sleeveWeights, sellable);
+  const weightBySymbol = new Map(resolved.map((sleeve) => [sleeve.symbol, sleeve.weight]));
+  const total = sellable.reduce((sum, row) => sum + (weightBySymbol.get(row.symbol) ?? 0), 0);
 
-  const emit = (symbols) => onChange(symbols.join(SELL_ORDER_SEPARATOR));
-  const setEnabled = (symbol, enabled) => {
-    const next = enabledSymbols.filter((candidate) => candidate !== symbol);
-    if (enabled) next.push(symbol);
-    emit(next);
-  };
-  const swap = (symbol, delta) => {
-    const idx = enabledSymbols.indexOf(symbol);
-    const target = idx + delta;
-    if (idx < 0 || target < 0 || target >= enabledSymbols.length) return;
-    const next = enabledSymbols.slice();
-    [next[idx], next[target]] = [next[target], next[idx]];
-    emit(next);
-  };
+  const emit = (symbol, weight) =>
+    onChange(
+      sellable.map((row) => ({
+        symbol: row.symbol,
+        weight: row.symbol === symbol ? weight : (weightBySymbol.get(row.symbol) ?? 0),
+      }))
+    );
 
-  const firstDisabledSymbol = visible.find((row) => !seen.has(row.symbol))?.symbol ?? null;
   return (
     <div className={compact ? "" : "mt-3"}>
       {label && <div className="augur-field-label mb-2">{label}</div>}
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
-        {visible.map((row) => {
-          const label = row.label;
-          const enabledIdx = enabledSymbols.indexOf(row.symbol);
-          const isEnabled = enabledIdx >= 0;
-          const canMoveUp = isEnabled && enabledIdx > 0;
-          const canMoveDown = isEnabled && enabledIdx < enabledSymbols.length - 1;
-          // Visual separator between "in order" and "shelved" groups.
-          const shelfBoundary = row.symbol === firstDisabledSymbol && enabledSymbols.length > 0;
+        {sellable.map((row) => {
+          const weight = weightBySymbol.get(row.symbol) ?? 0;
+          const share = total > 0 ? Math.round((100 * weight) / total) : 0;
           return (
             <li
               key={row.symbol}
-              className={`flex items-center gap-2 px-2 py-1 ${isEnabled ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"} ${
-                shelfBoundary ? "border-t-2 border-t-slate-300 dark:border-t-slate-600" : ""
-              }`}
+              className={`flex items-center gap-2 px-2 py-1 ${weight > 0 ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"}`}
             >
-              <span className="w-6 text-right text-sm font-semibold augur-tabular augur-muted">
-                {isEnabled ? `${enabledIdx + 1}.` : ""}
+              <span className="flex-1 text-sm font-semibold augur-strong">{row.label}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={weight}
+                aria-label={`Target weight for ${row.label}`}
+                onChange={(event) => emit(row.symbol, Math.max(0, Math.trunc(Number(event.target.value) || 0)))}
+                className="augur-input w-20 text-right augur-tabular"
+              />
+              <span className="w-12 text-right text-xs augur-muted augur-tabular">
+                {weight > 0 ? `${share}%` : "—"}
               </span>
-              <span className="flex-1 text-sm font-semibold augur-strong">{label}</span>
-              {isEnabled ? (
-                <>
-                  <button
-                    type="button"
-                    aria-label={`Move ${label} up`}
-                    disabled={!canMoveUp}
-                    onClick={() => swap(row.symbol, -1)}
-                    className="px-1 text-xs augur-muted disabled:opacity-30"
-                  >
-                    ▲
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Move ${label} down`}
-                    disabled={!canMoveDown}
-                    onClick={() => swap(row.symbol, 1)}
-                    className="px-1 text-xs augur-muted disabled:opacity-30"
-                  >
-                    ▼
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${label} from sell order`}
-                    onClick={() => setEnabled(row.symbol, false)}
-                    className="ml-1 rounded px-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                  >
-                    ×
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  aria-label={`Add ${label} to sell order`}
-                  onClick={() => setEnabled(row.symbol, true)}
-                  className="rounded px-1.5 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
-                >
-                  +
-                </button>
-              )}
             </li>
           );
         })}
       </ul>
+      {total === 0 && (
+        <div className="mt-1 text-xs augur-muted">
+          Every weight is zero, so nothing is ever sold to refill cash — an unaffordable month is ruin.
+        </div>
+      )}
     </div>
   );
 }
