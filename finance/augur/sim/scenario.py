@@ -348,6 +348,18 @@ class BondHolding(BaseModel):
     purchase_price_usd: PositiveFloat
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: PositiveInt = 6
+    # TIPS. A flag rather than a separate model because the terms are identical — face,
+    # coupon rate, period, maturity — and only the PRINCIPAL those terms apply to differs:
+    # a TIPS' principal is the face scaled by CPI since purchase, so its coupon and its
+    # redemption both ride that index. A second model would duplicate every field to change
+    # one derivation.
+    #
+    # Consequences worth knowing before setting it: an indexed bond is the one bond whose
+    # cashflows are NOT fixed by its terms, so it is priced per rollout off the CPI path
+    # rather than from a compile-time table. And its accretion is phantom income — federally
+    # taxable in the year it accrues with no cash to pay it — which is exactly the effect
+    # that decides TIPS against a tax-free municipal coupon.
+    inflation_indexed: bool = False
     purchase_month_index: int
     maturity_month_index: int
 
