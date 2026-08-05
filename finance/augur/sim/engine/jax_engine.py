@@ -1830,39 +1830,43 @@ def _program_impl(
             remaining = jnp.where(active, required_sale + buffer_sale, 0)
             pool_series = liq_pool_series[li]
             for pj, pool in enumerate(lp.pools):
-                raw_price = external_values[pool_series[pj], :, month]
-                valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
-                unit_price = jnp.where(valid_price, _price_usd_to_cents(raw_price), 0)
+                # DECIDE. This policy's rule is an ordered preference chain, so each pool's
+                # target is whatever is still unraised, capped at what the pool holds — which
+                # is why the loop is sequential. A target-allocation policy computes every
+                # sleeve's target at once instead, and needs nothing below this line to change.
+                unit_price, usable_price = _pool_unit_price_cents(external_values, pool_series[pj], month)
                 pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
-                available = _value_cents_from_quanta(
-                    lot_remaining[pool_lots], unit_price[None, :], lot_quantity_scale[pool_lots, None]
-                ).sum(axis=0)
-                target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
-                sold_units, proceeds, basis = _fifo_sell_cents(
-                    lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit, lot_quantity_scale
+                available = _pool_value_cents(lot_remaining, pool_lots, unit_price, lot_quantity_scale)
+                target = jnp.where(usable_price & active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
+
+                # EXECUTE. Nothing here depends on how the target was chosen.
+                sale = _execute_sell_order(
+                    target_cents=target,
+                    pool_lots=pool_lots,
+                    unit_price_cents=unit_price,
+                    proceeds_cash_slot=lp.cash_slot,
+                    gain_profiles=cg_profiles_by_agent[lp.agent],
+                    lot_remaining=lot_remaining,
+                    cash=cash,
+                    capital_gain_active=cg_active,
+                    capital_gain_ytd=cg_ytd,
+                    tlh=tlh,
+                    folded_harvest=folded_harvest,
+                    lot_purchase_month=lot_purchase_month,
+                    lot_quantity_scale=lot_quantity_scale,
+                    cost_basis_per_unit=cost_basis_per_unit,
+                    month=month,
                 )
-                lot_remaining = lot_remaining - sold_units.T
-                total_proceeds = proceeds.sum(axis=1)
-                cash = cash.at[lp.cash_slot].add(total_proceeds)
-                cg_active, cg_ytd, tlh = _record_capital_gains(
-                    folded_harvest,
-                    lot_purchase_month,
-                    cg_profiles_by_agent[lp.agent],
-                    cg_active,
-                    cg_ytd,
-                    tlh,
-                    lot_remaining,
-                    month,
-                    sold_units,
-                    proceeds - basis,
-                )
+                lot_remaining, cash = sale.lot_remaining, sale.cash
+                cg_active, cg_ytd, tlh = sale.capital_gain_active, sale.capital_gain_ytd, sale.tlh
+
                 liq_disp_active = liq_disp_active.at[lp.policy_index, pool.asset_idx].set(
-                    liq_disp_active[lp.policy_index, pool.asset_idx] | (sold_units > 0).T
+                    liq_disp_active[lp.policy_index, pool.asset_idx] | (sale.sold_units > 0).T
                 )
-                liq_disp_units = liq_disp_units.at[lp.policy_index, pool.asset_idx].add(sold_units.T)
-                liq_disp_basis = liq_disp_basis.at[lp.policy_index, pool.asset_idx].add(basis.T)
-                liq_disp_proceeds = liq_disp_proceeds.at[lp.policy_index, pool.asset_idx].add(proceeds.T)
-                remaining = jnp.maximum(remaining - total_proceeds, 0)
+                liq_disp_units = liq_disp_units.at[lp.policy_index, pool.asset_idx].add(sale.sold_units.T)
+                liq_disp_basis = liq_disp_basis.at[lp.policy_index, pool.asset_idx].add(sale.basis.T)
+                liq_disp_proceeds = liq_disp_proceeds.at[lp.policy_index, pool.asset_idx].add(sale.proceeds.T)
+                remaining = jnp.maximum(remaining - sale.total_proceeds, 0)
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
@@ -2954,6 +2958,111 @@ def _settlement_core_jit(
     failed_month = jnp.where(failed_this & (failed_month < 0), month, failed_month)
     failed = failed | failed_this
     return paid, paid_amount, cash, ordinary_ytd, property_tax_ytd, shortfall, slot_failed, failed, failed_month
+
+
+class _SellExecution(NamedTuple):
+    """State after executing one sell order, plus what it realized.
+
+    `sold_units`, `proceeds` and `basis` are `(R, lot)` — the orientation `_fifo_sell_cents`
+    returns and the disposition buffers accumulate.
+    """
+
+    lot_remaining: jnp.ndarray
+    cash: jnp.ndarray
+    capital_gain_active: jnp.ndarray
+    capital_gain_ytd: jnp.ndarray
+    tlh: jnp.ndarray
+    sold_units: jnp.ndarray
+    proceeds: jnp.ndarray
+    basis: jnp.ndarray
+    total_proceeds: jnp.ndarray
+
+
+def _pool_unit_price_cents(
+    external_values: jnp.ndarray, series_row: jnp.ndarray, month: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """This month's mark for one pool, as `(price_cents, usable)`, both `(R,)`.
+
+    A non-finite or non-positive level is not a price. It resolves to zero rather than
+    propagating a NaN, and `usable` says so explicitly instead of leaving callers to infer
+    it from a magic zero.
+    """
+
+    raw = external_values[series_row, :, month]
+    usable = jnp.isfinite(raw) & (raw > 0.0)
+    return jnp.where(usable, _price_usd_to_cents(raw), 0), usable
+
+
+def _pool_value_cents(
+    lot_remaining: jnp.ndarray, pool_lots: np.ndarray, unit_price_cents: jnp.ndarray, lot_quantity_scale: jnp.ndarray
+) -> jnp.ndarray:
+    """What a pool is worth at this month's mark, `(R,)`."""
+
+    return _value_cents_from_quanta(
+        lot_remaining[pool_lots], unit_price_cents[None, :], lot_quantity_scale[pool_lots, None]
+    ).sum(axis=0)
+
+
+def _execute_sell_order(
+    *,
+    target_cents: jnp.ndarray,
+    pool_lots: np.ndarray,
+    unit_price_cents: jnp.ndarray,
+    proceeds_cash_slot: int,
+    gain_profiles: tuple[int, ...],
+    lot_remaining: jnp.ndarray,
+    cash: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    tlh: jnp.ndarray,
+    folded_harvest: tuple[_FoldedHarvest, ...],
+    lot_purchase_month: jnp.ndarray,
+    lot_quantity_scale: jnp.ndarray,
+    cost_basis_per_unit: jnp.ndarray,
+    month: jnp.ndarray,
+) -> _SellExecution:
+    """Raise `target_cents` from one FIFO pool: consume lots, credit cash, accrue gains.
+
+    Everything a sale DOES, with nothing about how much to sell. Splitting the phase here
+    is what lets a different policy decide the target — the ordered preference chain today,
+    a target-allocation policy next — without either of them re-deriving FIFO consumption,
+    the cash credit, the long/short split, or the TLH give-back. Those four staying in one
+    place is the point: they are what a sale means, and duplicating them is how two sale
+    paths drift apart.
+
+    The caller owns the target and the disposition bookkeeping, because those are what
+    differ between policies.
+    """
+
+    sold_units, proceeds, basis = _fifo_sell_cents(
+        lot_remaining.T, pool_lots, target_cents, unit_price_cents, cost_basis_per_unit, lot_quantity_scale
+    )
+    lot_remaining = lot_remaining - sold_units.T
+    total_proceeds = proceeds.sum(axis=1)
+    cash = cash.at[proceeds_cash_slot].add(total_proceeds)
+    capital_gain_active, capital_gain_ytd, tlh = _record_capital_gains(
+        folded_harvest,
+        lot_purchase_month,
+        gain_profiles,
+        capital_gain_active,
+        capital_gain_ytd,
+        tlh,
+        lot_remaining,
+        month,
+        sold_units,
+        proceeds - basis,
+    )
+    return _SellExecution(
+        lot_remaining=lot_remaining,
+        cash=cash,
+        capital_gain_active=capital_gain_active,
+        capital_gain_ytd=capital_gain_ytd,
+        tlh=tlh,
+        sold_units=sold_units,
+        proceeds=proceeds,
+        basis=basis,
+        total_proceeds=total_proceeds,
+    )
 
 
 def _fifo_sell_cents(
