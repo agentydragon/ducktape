@@ -1,0 +1,20 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_test(
+    name = "ladder_comparison_test",
+    size = "medium",
+    srcs = ["ladder_comparison_test.py"],
+    deps = [
+        "//finance/augur/model:gbm",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series_model",
+        "//finance/augur/product:decode",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:simulate",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
