@@ -188,6 +188,32 @@ py_test(
 )
 
 py_library(
+    name = "target_allocation",
+    srcs = ["target_allocation.py"],
+    deps = [
+        ":actor_view",
+        ":allocation",
+        ":cash_band",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "target_allocation_test",
+    size = "small",
+    srcs = ["target_allocation_test.py"],
+    deps = [
+        ":actor_view",
+        ":target_allocation",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "bonds",
     srcs = ["bonds.py"],
 )
