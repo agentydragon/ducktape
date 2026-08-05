@@ -238,32 +238,101 @@ Stated with direction because a deferral whose bias is unknown is a trap.
 
 ## Build order
 
-Each step is independently landable and independently verifiable.
+Fixes and cleanups first, features last. Everything in phases A and B makes the engine more
+correct, more symmetrical, or less duplicated without adding capability, so each is cheap to
+review and none of them can be blamed for a later behaviour change.
 
-1. **This document.**
-2. **The action vocabulary and its executors.** One type with a config form and a dense
-   runtime form; the engine phases become executors of it. Verified by every existing
-   scenario producing identical output — the strongest available signal, and only available
-   while behaviour is unchanged.
-3. **Schedules become clock policies.** `Scheduled*` / `Recurring*` config lowers to a
-   clock policy emitting actions, deleting the parallel execution paths. Still
-   behaviour-preserving.
-4. **Purchase slots with a runtime cursor**, per-rollout purchase month, and the
-   exhaustion abort.
-5. **The target-allocation policy**, with `allocation.py` and `cash_band.py` as its
-   internals and the observation type from the closed PR. Deletes `LiquidityPolicy`
-   outright, including the full-stack wire/product/frontend change: ordered sell-list to
-   per-holding integer weights, trigger/amount to floor/ceiling.
-6. **Discretionary spending as policy-emitted `Pay`.** Needs an obligation's amount to
-   become policy-emitted; `AmountSpec` is structurally closed to simulated state today, which
-   is what currently makes spending config rather than a decision.
-7. **Tier state**: policy-internal mode, hysteresis, an explicit one-month lag, and a
-   declared precedence against rebalancing so the substitution between cutting spending and
-   selling assets is configured rather than decided by evaluation order.
+### Phase A — things that are wrong
 
-Independent of the above, and needed before a bond can be a sleeve at all: the jointly
-sampled par-yield path, and bond mark-to-market. The float boundary (#3741) is independent
-and arguably belongs before more money-handling code.
+**A1. Sales must credit `rest_of_world`.** A sale credits proceeds with no matching debit,
+so it mints exactly its proceeds: a $750,000 sale takes total cash from $1,000,000 to
+$1,750,000. Net worth is unaffected (the lot leaves as the cash arrives), so what is broken
+is the LEDGER, and with it the conservation invariant advertised as "one assertion that
+catches every leak, anywhere" — unusable today in any scenario containing a sale. Purchases
+are already double-entry, so the two halves of one operation disagree. Covers scheduled
+sales, liquidity sales, PE tenders and property sales, and extends the conservation test to
+a scenario exercising each; the bug survived precisely because no test had a lot in it.
+
+**A2. Delete the dead numpy FIFO.** `fifo_sell_units`, `fifo_sell_dollars` and
+`FifoSaleResult` in `tensor_fifo.py` are used by nothing but `tensor_fifo_test.py` — around
+130 lines shadowing the engine's real jnp implementation, with a test suite that guards no
+shipping code. Only `lot_order_for_pool` is live; it belongs in the compiler, being
+plan-building rather than a runtime helper. Removes a duplicate that does not even run.
+
+### Phase B — things that are inconsistent
+
+**B3. State the numpy/jnp rule and enforce it.** numpy is for compile-time STRUCTURE — plan
+arrays, static gather indices, decode output. jnp is for traced VALUES. The rule is not
+written down anywhere, which is how a whole numpy sale path came to sit beside a jnp one,
+and how policy arithmetic got drafted in numpy for code destined for the scan.
+
+**B4. Lot attributes that never change stop being history.** Cost basis and purchase month
+are written once — slots are never reused — so every snapshot after the purchase repeats the
+one before. `(lot, rollout)` rather than `(snapshot, lot, rollout)` costs a factor of
+`snapshot_months` less: 361x at a 30-year horizon. Also removes an asymmetry, since basis is
+per-rollout state while purchase month is still a static plan column despite being the same
+kind of thing. Changes the decoded per-month frame, so it is a deliberate change rather than
+a silent one — and it is what makes a generous purchase-slot budget affordable later.
+
+**B5. Missing tests, and test theater.** Two different failure modes that produce the same
+illusion — green meaning safe — and they need different detection.
+
+_Missing_: a real path with no test at all. A1 exists because no conservation scenario ever
+held a lot.
+
+_Theater_: tests that exist, pass, and guard nothing. `tensor_fifo_test.py` is the pure case,
+exercising functions no shipping code calls. Three kinds, each with a way to find it:
+
+- **Tests of dead code** — find by checking whether the module under test has any non-test
+  importer. That is exactly how the numpy FIFO surfaced.
+- **Tests that survive mutation of what they claim to test.** Break the function
+  deliberately and see which tests still pass. This already caught one in this codebase:
+  `test_agents_are_independent_taxpayers` passed under a mutated income-bucket function,
+  because its scenario was symmetric enough that the bug did not change the answer.
+- **Docstrings claiming more coverage than the scenario can deliver.** The conservation
+  test says it "catches every leak, anywhere"; it catches leaks in the phases its scenario
+  happens to exercise, which did not include selling anything. Not fake, but overstated —
+  and the overstatement is what stopped anyone looking closer.
+
+The last kind is the most corrosive, because the claim is what future readers trust instead
+of re-deriving the coverage. Fixing it is usually one honest sentence rather than a new
+test — but it has to be done at the same time as the test, since a docstring is the only
+place that assumption is recorded.
+
+**B6. Money in cents at the boundaries** (#3741). Independent of the rest and large, but it
+belongs before more money-handling code rather than after.
+
+### Phase C — unify execution, without changing behaviour
+
+**C7. One action type and its executors.** Engine phases become executors of a single
+vocabulary. Verified by every existing scenario producing identical output — the strongest
+signal available, and available only while behaviour is unchanged.
+
+**C8. Schedules become clock policies.** `Scheduled*` / `Recurring*` lower to a clock policy
+emitting actions; the parallel execution paths are deleted. Still behaviour-preserving.
+
+### Phase D — new capability
+
+**D9. Purchase slots** with a runtime cursor, per-rollout purchase month, and the exhaustion
+abort.
+
+**D10. The target-allocation policy**, with `allocation.py` and `cash_band.py` as internals
+and the observation type from the closed PR. Deletes `LiquidityPolicy` outright, including
+the full-stack wire/product/frontend change: ordered sell-list to per-holding integer
+weights, trigger/amount to floor/ceiling.
+
+**D11. Policy-chosen payment amounts.** `AmountSpec` is structurally closed to simulated
+state, which is what makes spending config rather than a decision today.
+
+**D12. Tier state**: policy-internal mode, hysteresis, an explicit one-month lag, and a
+declared precedence against rebalancing so the substitution between cutting spending and
+selling assets is configured rather than decided by evaluation order.
+
+### Independent
+
+The jointly sampled par-yield path and bond mark-to-market, both needed before a bond can be
+a sleeve at all — until a discount curve exists, a pre-maturity bond sale has no price the
+simulator can calculate.
 
 ## Superseded
 
