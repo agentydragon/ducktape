@@ -402,6 +402,7 @@ py_test(
         ":connection_metrics",
         ":database_schema",
         ":operator_identity_store",
+        ":provider_connection_registry",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

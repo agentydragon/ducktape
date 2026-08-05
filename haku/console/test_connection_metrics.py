@@ -17,6 +17,7 @@ from haku.console.connection_metrics import (
 )
 from haku.console.database_schema import OAuthTokenState, ProviderConnection
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.provider_connection_registry import ProviderConnectionKind
 
 NOW = datetime.datetime(2026, 8, 5, 21, 0, tzinfo=datetime.UTC)
 
@@ -29,36 +30,34 @@ async def _connection(
     failing_for: datetime.timedelta | None,
     count: int,
 ) -> None:
-    token_state_id = uuid.uuid4()
     started_at = NOW - failing_for if failing_for is not None else None
     async with sessions() as session:
-        session.add(
-            OAuthTokenState(
-                token_state_id=token_state_id,
-                operator_id=operator_id,
-                created_at=NOW,
-                updated_at=NOW,
-                access_token="access",
-                token_type="Bearer",
-                refresh_failure_started_at=started_at,
-                refresh_failure_initial_kind="internal" if started_at else None,
-                refresh_failure_initial_message="OAuthTokenResponseError" if started_at else None,
-                refresh_failure_latest_at=NOW if started_at else None,
-                refresh_failure_latest_kind="internal" if started_at else None,
-                refresh_failure_latest_message="OAuthTokenResponseError" if started_at else None,
-                refresh_failure_count=count,
-                refresh_failure_action="reconnect" if started_at else None,
-            )
-        )
+        # Built through the `token_state` relationship rather than a raw token_state_id, mirroring
+        # provider_connection.py's own construction — it is what orders the two inserts against the
+        # composite FK.
         session.add(
             ProviderConnection(
                 operator_id=operator_id,
                 connection_name=name,
                 provider_name="google",
-                provider="google",
-                token_state_id=token_state_id,
+                provider=ProviderConnectionKind.GOOGLE,
                 created_at=NOW,
-                updated_at=NOW,
+                token_state=OAuthTokenState(
+                    token_state_id=uuid.uuid4(),
+                    operator_id=operator_id,
+                    created_at=NOW,
+                    updated_at=NOW,
+                    access_token="access",
+                    token_type="Bearer",
+                    refresh_failure_started_at=started_at,
+                    refresh_failure_initial_kind="internal" if started_at else None,
+                    refresh_failure_initial_message="OAuthTokenResponseError" if started_at else None,
+                    refresh_failure_latest_at=NOW if started_at else None,
+                    refresh_failure_latest_kind="internal" if started_at else None,
+                    refresh_failure_latest_message="OAuthTokenResponseError" if started_at else None,
+                    refresh_failure_count=count,
+                    refresh_failure_action="reconnect" if started_at else None,
+                ),
             )
         )
         await session.commit()
