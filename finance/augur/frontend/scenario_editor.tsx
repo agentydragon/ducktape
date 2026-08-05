@@ -44,7 +44,7 @@ const GROUPS = [
   "Management",
   "Spending",
   "Outside rent",
-  "Cash buffer",
+  "Cash band",
   "Private equity",
 ];
 
@@ -138,6 +138,14 @@ const KNOBS = [
   { key: "peLnwFloorUsd", label: "PE LNW floor", kind: "usd", step: 10000, group: "Private equity" },
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
 ];
+
+// `GROUPS` drives the render order and `KNOBS` names its group by string, so a group renamed in one
+// and not the other drops every row in it — silently, since the renderer just finds no knobs for the
+// stale name and skips the section. That is how the whole cash band vanished from the editor once.
+const UNKNOWN_KNOB_GROUPS = [...new Set(KNOBS.map((knob) => knob.group))].filter((group) => !GROUPS.includes(group));
+if (UNKNOWN_KNOB_GROUPS.length > 0) {
+  throw new Error(`knob groups missing from GROUPS, so their rows would never render: ${UNKNOWN_KNOB_GROUPS}`);
+}
 
 // The chosen house's read-only facts, surfaced as comparison rows (one cell per scenario, "—" when a
 // scenario buys nothing). They describe the property and aren't edited here, so they live in their
