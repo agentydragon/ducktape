@@ -39,11 +39,14 @@ environment, not requested of it — and the box emitting them is already called
 Concreteness lives in the variants, which is where it belongs and where the first attempt
 lost it:
 
-| Action | Fields                                                     |
-| ------ | ---------------------------------------------------------- |
-| Pay    | recipient agent + account, source account, amount          |
-| Buy    | instrument, account, amount in **dollars** or in **units** |
-| Sell   | instrument, account, amount in **dollars** or in **units** |
+| Action | Fields                                               |
+| ------ | ---------------------------------------------------- |
+| Pay    | recipient agent + account, source account, an amount |
+| Buy    | instrument, account, a **quantity**                  |
+| Sell   | instrument, account, a **quantity**                  |
+
+`Pay` moves money, so its amount is money. `Buy` and `Sell` move units, so their amount is
+units — **never dollars**. See below.
 
 There is no "best effort" flag and no optional variant — see "what a shortfall means"
 below. An action means **do this**, and that is the only thing it can mean.
@@ -60,9 +63,15 @@ Consequences that fall out of the test rather than being chosen:
   **policy's** job, and what it emits must already be affordable. (This reverses the
   clamp-to-available behaviour in `ScheduledAssetPurchase`, which is really an _intent_
   — "invest my surplus" is not a thing you can click.)
-- **Dollar- and unit-denominated orders are separate variants**, not one with a mode flag:
-  the rounding rules differ (whole quanta vs. exact units) and so does what "insufficient"
-  means.
+- **Orders are denominated in units only.** A policy wanting to spend a dollar amount
+  computes the quantity itself. This is the one place the broker test is OVERRULED rather
+  than followed: real brokers do accept "buy $500 of VTI", so the metaphor would license a
+  dollar-denominated variant — but the engine would then have to divide by a price and floor
+  the result, which is the engine deciding how much to trade. That is precisely the
+  clamp-to-available behaviour the rule above forbids, wearing a different hat. Supporting
+  both would also mean two rounding rules, two meanings of "insufficient", and two ways for
+  a policy to express the same order, so a test asserting on one says nothing about the
+  other.
 - **Lot selection is an optional field, added later.** Brokers do let you pick tax lots, so
   specific-ID and HIFO are future variants of an existing action rather than a new
   boundary. The default stays the account's cost-basis method, which is FIFO here.
@@ -71,6 +80,19 @@ Consequences that fall out of the test rather than being chosen:
   separate spend variant would smuggle the anonymous-sink modelling back in, and with it
   the assumption that consumption has no counterparty. Discretionary spending is a policy
   choosing to emit `Pay`; a lifestyle tier changes how much and to whom, not which action.
+
+Units-only has two consequences worth naming before they surprise someone:
+
+- **The observation must carry prices for instruments the agent does not yet hold.** A
+  policy cannot turn "$500 of VTI" into a quantity without this month's VTI price. Today the
+  observation is specified as the agent's own lots marked at this month's price, which is
+  enough to size a sale and not enough to size a purchase. Prices are public, so this widens
+  what an actor sees without breaching visibility.
+- **Turning `ScheduledAssetPurchase` into a clock policy is where the division moves.** Its
+  `amount_usd` does not disappear; it becomes config read by a clock policy that divides by
+  the month's price and emits units. The engine stops dividing, which is the point — and
+  that this works for the one dollar-denominated case that exists today is the evidence the
+  rule is not merely tidier.
 
 ## Where the metaphor stops: what a shortfall means
 
@@ -151,9 +173,10 @@ without its reason gets "simplified" away.
   decides for all rollouts. No per-rollout Python. A learned policy drops into the same
   signature.
 - **Observations carry only what is visible.** The agent's own accounts and lots, marked at
-  this month's price, with per-lot basis and holding period. Not other agents. Not the
-  `rest_of_world` contra row — an actor able to see it would read its own past spending as
-  an asset.
+  this month's price, with per-lot basis and holding period, plus this month's price for
+  every instrument it may trade — held or not, because orders are in units and sizing a
+  purchase needs a price. Not other agents. Not the `rest_of_world` contra row — an actor
+  able to see it would read its own past spending as an asset.
 - **Nothing from the future.** Two scenarios identical through month _m_ and diverging by a
   shock at _m+1_ must produce identical actions at _m_.
 - **Lot-level, not sleeve-level.** A statement shows lots, and lot identity is what
@@ -163,10 +186,11 @@ without its reason gets "simplified" away.
 
 - **Double entry.** Money leaving the modeled world is credited to `rest_of_world`, so the
   cash tensor conserves across every transaction.
-- **Integer cents throughout**, whole quanta only, sub-quantum remainder left in cash.
-  Flooring the quanta and valuing them with the same helper the basis math uses keeps
-  `spent <= budget` (`round(x) <= N` for `x <= ` integer `N`) and makes an immediate
-  full-lot resale net exactly zero.
+- **Integer cents throughout**, and a quantity is whole quanta. Valuing an order's quanta
+  with the same helper the basis math uses is what makes an immediate full-lot resale net
+  exactly zero. The companion property — that a budgeted purchase satisfies
+  `spent <= budget` — moves to the POLICY along with the division, and follows from the same
+  helper: flooring the quanta first gives `round(x) <= N` for `x <=` integer `N`.
 - **Cost basis is per-rollout.** A lot bought in month 3 carries the price _its_ rollout
   paid. Reading a compile-time column instead reports zero basis and books the entire
   proceeds as gain.
@@ -229,8 +253,10 @@ Stated with direction because a deferral whose bias is unknown is a trap.
   maturity needs a price the simulator can _calculate_; book value would be an
   approximation, and sim calculates rather than approximates. Until then, an action selling
   one must be rejected loudly.
-- **Private equity is not purchasable.** It is marked, not priced, so an order has no
-  defined quantity.
+- **Private equity is not purchasable.** It is marked, not priced. A unit-denominated order
+  is perfectly well formed against it — the missing piece is the cash leg, since there is no
+  price at which those units convert. So the rejection is at execution, not a malformed
+  action.
 - **Basis and purchase month are carried as history but never change.** Slots are never
   reused, so `(lot, rollout)` final state would cost a factor of `snapshot_months` less —
   361x at a 30-year horizon. Separable from the behavioural work; changes the decoded
