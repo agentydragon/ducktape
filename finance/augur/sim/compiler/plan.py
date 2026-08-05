@@ -48,6 +48,10 @@ from finance.augur.sim.compiler.properties import (
 )
 from finance.augur.sim.compiler.property_cashflows import PropertyCashflowCompileOutput, compile_property_cashflows
 from finance.augur.sim.compiler.series import collect_level_series_keys, external_values_cube
+from finance.augur.sim.compiler.target_allocation import (
+    TargetAllocationCompileOutput,
+    compile_target_allocation_policies,
+)
 from finance.augur.sim.compiler.tax import (
     TaxCompileOutput,
     TaxLiabilityCompileOutput,
@@ -185,6 +189,7 @@ class CompiledSimulation:
     # Consumed by the engine's `_apply_tlh_harvest` phase and the sale-time basis give-back.
     harvest_policies: HarvestPolicyCompileOutput
     liquidity_policies: LiquidityPolicyCompileOutput
+    target_allocation_policies: TargetAllocationCompileOutput
 
 
 def lot_order_for_pool(
@@ -341,6 +346,21 @@ def compile_simulation(
     )
 
     liquidity_policies = compile_liquidity_policies(scenario, strings, assets, account_slots, series_index_by_id)
+    target_allocation_policies = compile_target_allocation_policies(
+        scenario, strings, assets, account_slots, series_index_by_id
+    )
+    # CLEANUP(added 2026-08-05): Delete this gate when the engine grows the target-allocation
+    #   phase that reads `plan.target_allocation_policies` (D10 step 4c in
+    #   <finance/augur/plans/actor_actions.md>). Until then a configured policy would compile
+    #   and then do nothing at all — a knob that silently ignores you is worse than a missing
+    #   feature, so it fails loudly instead.
+    if scenario.target_allocation_policies:
+        raise NotImplementedError(
+            "target-allocation policies compile but no engine phase executes them yet, so this "
+            "scenario would run as if the policy were absent — every obligation the account "
+            "cannot already cover would fail while sellable assets sat untouched. Use "
+            "`liquidity_policies` until the target-allocation phase lands."
+        )
 
     lot_id_codes: list[int] = []
     lot_agent_codes: list[int] = []
@@ -505,6 +525,7 @@ def compile_simulation(
         pe_channels=pe_channels,
         harvest_policies=harvest_policies,
         liquidity_policies=liquidity_policies,
+        target_allocation_policies=target_allocation_policies,
     )
 
 

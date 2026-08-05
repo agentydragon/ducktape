@@ -311,6 +311,23 @@ py_test(
 )
 
 py_test(
+    name = "compiler_target_allocation_test",
+    size = "small",
+    srcs = ["compiler/target_allocation_test.py"],
+    main = "compiler/target_allocation_test.py",
+    deps = [
+        ":compiler",
+        ":scenario",
+        ":simulate",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "plan_test",
     srcs = ["compiler/plan_test.py"],
     deps = [
@@ -419,6 +436,7 @@ py_library(
         "compiler/properties.py",
         "compiler/property_cashflows.py",
         "compiler/series.py",
+        "compiler/target_allocation.py",
         "compiler/tax.py",
         "compiler/tlh_harvest.py",
         "compiler/transfers.py",

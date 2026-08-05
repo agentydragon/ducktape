@@ -262,7 +262,7 @@ def test_scenario_requires_explicit_tax_profiles() -> None:
 
 
 def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
-    with pytest.raises(ValidationError, match=r"duplicate liquidity policies.*alice/checking"):
+    with pytest.raises(ValidationError, match=r"duplicate funding policies.*alice/checking"):
         Scenario(
             agents=[Agent(agent_id="alice")],
             initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],

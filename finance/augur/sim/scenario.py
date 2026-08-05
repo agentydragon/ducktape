@@ -990,6 +990,7 @@ class Scenario(BaseModel):
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]
     liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
+    target_allocation_policies: list[TargetAllocationPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt
 
     @model_validator(mode="after")
@@ -1315,17 +1316,29 @@ class Scenario(BaseModel):
             )
 
     @model_validator(mode="after")
-    def _reject_duplicate_liquidity_policy_accounts(self) -> Scenario:
+    def _reject_duplicate_funding_policy_accounts(self) -> Scenario:
+        """One funding policy per cash account, counting both kinds together.
+
+        Two policies on one account would each size their raise from the same projected
+        balance, unaware of the other's sale, and between them sell roughly twice what the
+        month needed. Mixing the two KINDS on one account is the same bug wearing a disguise,
+        which is why they share a namespace rather than being checked separately.
+        """
+
+        # Keyed separately rather than over a merged sequence: the two policy types share no
+        # base class narrower than BaseModel, so a merged iteration loses the attributes.
+        keys = [(policy.agent_id, policy.account_id) for policy in self.liquidity_policies] + [
+            (policy.agent_id, policy.account_id) for policy in self.target_allocation_policies
+        ]
         seen: set[tuple[str, str]] = set()
         duplicates: set[tuple[str, str]] = set()
-        for policy in self.liquidity_policies:
-            key = (policy.agent_id, policy.account_id)
+        for key in keys:
             if key in seen:
                 duplicates.add(key)
             seen.add(key)
         if duplicates:
             duplicate_list = ", ".join(f"{agent_id}/{account_id}" for agent_id, account_id in sorted(duplicates))
-            raise ValueError(f"duplicate liquidity policies for account(s): {duplicate_list}")
+            raise ValueError(f"duplicate funding policies for account(s): {duplicate_list}")
         return self
 
     @model_validator(mode="after")
