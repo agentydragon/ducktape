@@ -242,103 +242,45 @@ Fixes and cleanups first, features last. Everything in phases A and B makes the 
 correct, more symmetrical, or less duplicated without adding capability, so each is cheap to
 review and none of them can be blamed for a later behaviour change.
 
-### Phase A — things that are wrong (DONE)
+### Phases A and B — done
 
-**A1. Every cash write needs a counterparty.** Landed in #3753.
+Engine fixes and cleanups, landed. Detail lives in the PRs; what follows is only what still
+bears on the work ahead.
 
-The plan said "sales must credit `rest_of_world`" and listed the sale paths. That framing
-was too narrow, and the way it was too narrow is the lesson: an audit of EVERY `cash.at[...]`
-write found **five** one-sided phases, and the fifth runs the other direction.
+|     |                                                                 |                     |
+| --- | --------------------------------------------------------------- | ------------------- |
+| A1  | Every cash write has a counterparty                             | #3753               |
+| A2  | Delete the dead numpy FIFO                                      | #3750               |
+| A3  | `sim/tax.py` shadow deleted, JAX is the only tax implementation | #3754, #3756        |
+| B3  | The numpy/jnp rule, written down                                | #3752               |
+| B4  | Lot basis as final state, not history                           | #3751               |
+| B5  | Missing-test and test-theater sweep                             | produced A1, A3, B7 |
+| B7  | Rental tests that can actually fail                             | #3755               |
 
-| Phase                    | Was                               | Direction    |
-| ------------------------ | --------------------------------- | ------------ |
-| Scheduled asset sales    | credited proceeds, debited nobody | mints        |
-| Liquidity-policy sales   | same, per pool                    | mints        |
-| Private-equity tenders   | same                              | mints        |
-| Property sales           | same                              | mints        |
-| **Capital improvements** | debits the owner, credits nobody  | **destroys** |
+**What carries forward:**
 
-Searching for "places cash is credited from a disposal" walks straight past the last one.
-Pairing off every write finds it. `external_cash_slot` went from 3 occurrences to 10 in a
-3321-line engine.
+- **Three ways a test lies, and how to catch each.** The sweep's method, reusable on every
+  phase below. Tests of DEAD CODE — check for a non-test importer. Tests that SURVIVE
+  MUTATION of what they claim to test — break the function and see what still passes. And
+  docstrings CLAIMING MORE than the scenario delivers — the most corrosive, because the
+  claim is what readers trust instead of re-deriving coverage, and the only one that needs a
+  human to check the arithmetic. Every one of A1, A3 and B7 was a member of the third kind.
+- **A rewritten test is worth nothing until it has been seen to fail.** Break the behaviour
+  deliberately and confirm. This is how B7 was validated and how A1 was proven — 6 of 8 new
+  conservation tests fail with the fix reverted.
+- **Purchase month is still a static plan column** while cost basis is per-rollout state.
+  B4 fixed half of that asymmetry deliberately; the rest lands in phase D, when policies
+  decide WHEN to buy.
+- **The mortgage payoff has no cash leg.** It extinguishes a liability without crediting
+  anyone, even a modelled lender, which is why a property sale's contra entry is the NET.
+  Pinned by a test so a later edit must choose rather than drift.
 
-Verified negatively, which is the only verification worth anything here: with the fix
-reverted and the new tests in place, 6 of 8 fail with the expected mints. The conservation
-scenario now holds lots, properties, policies and PE, and each sub-scenario asserts its
-disposal actually fired so conservation cannot pass vacuously.
-
-Left deliberately, and pinned by a test so a later edit must choose: on a property sale the
-contra entry is the NET, because the mortgage payoff extinguishes a liability with no cash
-leg at all — the lender is never credited, even when modelled. Booking the gross would break
-conservation by exactly the payoff. Paying the lender is a modelling change, not ledger
-symmetry.
-
-**A2. Delete the dead numpy FIFO.** Landed in #3750, −233 lines. `lot_order_for_pool` was the
-one live symbol and moved to `compiler/plan.py`; its coverage went from 1 case to 3.
-
-**A3. `sim/tax.py` is a second dead shadow, and worse.** Found by the B5 sweep, not by this
-plan. 190 LOC whose only consumer is its own test, carrying 17 hand-computed federal/CA
-bracket cases — while the SHIPPED bracket math (`_apply_brackets`, `_apply_ltcg_brackets`,
-`_net_capital_gains_jnp`) has none. Its docstrings cite `phases.` and `step.py`/`apply.py`,
-none of which still exist.
-
-Decided: JAX is the only implementation. The cases port onto the shipped functions and the
-shadow goes. Not a pure move — the two differ in arithmetic (integer cents vs float64), so
-each ported case is a decision about which value is right, with JAX winning by virtue of
-being what runs.
-
-### Phase B — things that are inconsistent
-
-**B3. State the numpy/jnp rule and enforce it.** Landed in #3752. numpy for compile-time
-STRUCTURE and for DECODE; jnp for traced VALUES. It also records the two consequences that
-bit: a numpy twin of something the engine does in jnp cannot be called from the scan, so it
-is dead or drifting; and a traced value cannot drive a Python `raise`, so anything that must
-fail loudly belongs at config time.
-
-**B4. Lot attributes that never change stop being history.** Landed in #3751. Cost basis is
-`(lot, rollout)` rather than `(snapshot, lot, rollout)` — 361x less at a 30-year horizon for
-identical information, and the buffer the purchase-slot budget is priced against.
-
-Purchase month is still a static plan column, which is the remaining half of the same
-asymmetry. It becomes per-rollout when policies decide WHEN to buy (phase D).
-
-**B5. Missing tests, and test theater.** The sweep ran; these are its results.
-
-Two failure modes producing the same illusion — green meaning safe — needing different
-detection.
-
-_Missing_: a real path with no test. A1 existed because no conservation scenario ever held a
-lot.
-
-_Theater_: tests that exist, pass, and guard nothing. Three kinds, each with a way to find it:
-
-- **Tests of dead code** — check whether the module under test has a non-test importer. Found
-  the numpy FIFO (A2) and `sim/tax.py` (A3).
-- **Tests that survive mutation of what they claim to test.** Break the function deliberately
-  and see what still passes. `test_agents_are_independent_taxpayers` passed under a mutated
-  income-bucket function because its scenario was too symmetric to notice.
-- **Docstrings claiming more coverage than the scenario delivers.** The conservation test
-  said it catches "every leak, anywhere" while its scenario had no lots. Not fake, but
-  overstated — and the overstatement is what stopped anyone looking.
-
-The last is the most corrosive, because the claim is what future readers trust instead of
-re-deriving the coverage. It is also the direct cause of A1.
-
-**B7. Rental-lifecycle tests recompute the answer they assert.** Also from the sweep. The
-helper computes `rent x fraction x (1 - vacancy)`, feeds it in as the transfer amount, then
-asserts the engine paid it — and `vacancy` / `management_fee` do not exist under `sim/` at
-all. The real lowering is covered at `product/service_test.py`, so this is theater rather
-than a coverage hole, but four test names and a "headline accounting test" claim coverage
-that cannot fail.
-
-**B6. Money in cents at the boundaries** (#3741). **Sized and deferred out of this batch**:
-25 `*_usd` config fields, 77 `pl.Float64()` decoded columns, 141 wire/frontend references,
-and ~1168 `_usd=` construction sites, overwhelmingly in tests. That is a program of work, not
-a PR, and bundling it would stall everything behind it. The natural split is that the DECODE
-side (cents as source of truth, float as derived rendering) is separable from the config
-side, where nearly all the call sites are — and the decode half alone buys exact
-reconciliation of decoded frames, which conservation currently has to reach into raw buffers
-to get.
+**B6. Money in cents at the boundaries** (#3741) — the one phase-B item NOT done. Sized and
+deferred: 25 `*_usd` config fields, 77 `pl.Float64()` decoded columns, 141 wire/frontend
+references, ~1168 `_usd=` construction sites, overwhelmingly tests. A program, not a PR. The
+DECODE side is separable from the config side, where nearly all the call sites are — and the
+decode half alone buys exact reconciliation of decoded frames, which the conservation
+invariant currently has to reach into raw buffers to get.
 
 ### Phase C — unify execution, without changing behaviour
 
