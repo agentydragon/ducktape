@@ -3,7 +3,9 @@
 This module owns every dataclass that holds simulation arrays:
 
 - `StateHistoryBuffers`: snapshots at month boundaries (read by the codec
-  decoders to produce state-history frames).
+  decoders to produce state-history frames). The one exception is
+  `lot_cost_basis_state`, which carries no month axis because a lot's basis is
+  written once and never revised.
 - The per-domain `*EventBuffers` (Transfer, Property, LotDisposition, Tax, Obligation,
   Lifecycle): per-event-month sparse arrays of what actually fired.
 - `SimulationBuffers`: bundles all of the above so the JAX scan can scatter outputs back
@@ -35,7 +37,9 @@ def _expect_array(name: str, array: np.ndarray, *, shape: tuple[int, ...], dtype
 class StateHistoryBuffers:
     cash_state: NDArray[np.int64]
     lot_state: NDArray[np.int64]
-    # Per-rollout: a purchased lot's basis is the price its rollout paid.
+    # `(lot, rollout)` — final state, not history. Per-rollout because a purchased lot's basis is
+    # the price its rollout paid; not per-month because a lot slot is never reused, so the basis is
+    # written once at purchase and never revised. Every month of a lot's life shares this one value.
     lot_cost_basis_state: NDArray[np.int64]
     ordinary_state: NDArray[np.int64]
     capital_gain_active_state: NDArray[np.bool_]
@@ -67,7 +71,7 @@ class StateHistoryBuffers:
         r = plan.rollout_count
         _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.int64)
         _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.int64)
-        _expect_array("lot_cost_basis_state", self.lot_cost_basis_state, shape=(s, plan.lot_count, r), dtype=np.int64)
+        _expect_array("lot_cost_basis_state", self.lot_cost_basis_state, shape=(plan.lot_count, r), dtype=np.int64)
         _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.income_bucket_count, r), dtype=np.int64)
         _expect_array(
             "capital_gain_active_state",

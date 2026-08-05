@@ -57,10 +57,13 @@ def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Data
 
 def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     state = r_first_view(buffers.state.lot_state)  # (H+1, r, s)
+    h1, r, s = state.shape
     # Basis is per-rollout, not a plan column: a lot bought mid-horizon carries the price its
     # rollout paid, and reading the compile-time column would report 0 for every purchased lot.
-    basis = r_first_view(buffers.state.lot_cost_basis_state)  # (H+1, r, s)
-    h1, r, s = state.shape
+    # It is also write-once, so the buffer is `(lot, rollout)` and every month of the frame repeats
+    # it — including the months before the lot's purchase, where `remaining_quantity` is 0 and the
+    # basis column is meaningless either way.
+    basis = np.broadcast_to(buffers.state.lot_cost_basis_state.T[None, :, :], (h1, r, s))  # (H+1, r, s)
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(
         {

@@ -11,13 +11,13 @@ from finance.augur.sim.engine.jax_types import _ScanMeta
 
 
 def scatter_ys_to_buffers(
-    plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple, sale_disp: tuple
+    plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple, final_state: tuple
 ) -> None:
     """Scatter compiled-program outputs back into NumPy buffers.
 
     This is pure host code. It performs one batched device-to-host transfer for the stacked monthly
-    `ys` pytree and horizon-collapsed scheduled-sale disposition carry, then writes the decoded leaves
-    into the preallocated NumPy buffers using the structural targets carried by `meta`.
+    `ys` pytree and the horizon-collapsed final carry, then writes the decoded leaves into the
+    preallocated NumPy buffers using the structural targets carried by `meta`.
     """
 
     p = plan.slot_plan
@@ -32,12 +32,11 @@ def scatter_ys_to_buffers(
     folded_sale_events = meta.folded_sale_events
     cash0 = np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r))
     lot0 = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))
-    ys, sale_disp = jax.device_get((ys, sale_disp))
+    ys, final_state = jax.device_get((ys, final_state))
     (
         cash_h,
         ordinary_h,
         lot_h,
-        lot_basis_h,
         cg_active_h,
         cg_ytd_h,
         prop_active_h,
@@ -68,7 +67,7 @@ def scatter_ys_to_buffers(
     # property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities), tax slabs
     # (18 = 13 breakdowns + 2 tax-liability snapshots + 3 settlement events, if any tax links), and
     # liquidity slabs (5 if any liquidity policies).
-    n_sale = 0  # scheduled-sale dispositions are carried out-of-band (`sale_disp`), not in `ys`
+    n_sale = 0  # scheduled-sale dispositions are carried out-of-band (`final_state`), not in `ys`
     n_purchase = 2 if folded_purchases else 0
     n_mortgage = 5 if p.liability_count > 0 else 0
     n_tax = 18 if link_count > 0 else 0
@@ -98,8 +97,6 @@ def scatter_ys_to_buffers(
     buffers.state.ordinary_state[1:] = np.asarray(ordinary_h)
     buffers.state.lot_state[0] = np.asarray(lot0)
     buffers.state.lot_state[1:] = np.asarray(lot_h)
-    buffers.state.lot_cost_basis_state[0] = np.broadcast_to(plan.lot_cost_basis_per_unit[:, None], (p.lot_count, r))
-    buffers.state.lot_cost_basis_state[1:] = np.asarray(lot_basis_h)
     buffers.state.capital_gain_active_state[1:] = np.asarray(cg_active_h)
     buffers.state.capital_gain_state[1:] = np.asarray(cg_ytd_h)
     buffers.state.property_active_state[1:] = np.asarray(prop_active_h)
@@ -125,9 +122,12 @@ def scatter_ys_to_buffers(
     buffers.obligations.shortfall[:] = np.asarray(ob_short)
     buffers.obligations.failure_active[:] = np.asarray(ob_fail)
 
-    # Scheduled-sale dispositions: the carry holds `(scheduled_sale, lot, R)` already indexed by each
-    # sale's slot (the firing month is static, so the decoder re-derives it).
-    disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = sale_disp
+    # Horizon-collapsed final carry. Lot cost basis is write-once (a lot slot is never reused), so
+    # the final `(lot, R)` value is the whole story. The scheduled-sale dispositions hold
+    # `(scheduled_sale, lot, R)` already indexed by each sale's slot (the firing month is static, so
+    # the decoder re-derives it).
+    lot_basis_final, disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = final_state
+    buffers.state.lot_cost_basis_state[:] = np.asarray(lot_basis_final)
     if bool(np.asarray(oversell_h)):  # match the eager engine's hard error on the first oversell
         raise ValueError("scheduled asset sale exceeds available lots")
     disp = buffers.lot_dispositions.scheduled
