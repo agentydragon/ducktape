@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
-from finance.augur.sim.compiler.assets import SaleCompileOutput, compile_sales
+from finance.augur.sim.compiler.assets import PurchaseCompileOutput, SaleCompileOutput, compile_purchases, compile_sales
 from finance.augur.sim.compiler.bonds import BondCompileOutput, compile_bonds
 from finance.augur.sim.compiler.deductions import (
     MIDCompileOutput,
@@ -167,6 +167,7 @@ class CompiledSimulation:
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
     liability_owner_profile_index: NDArray[np.int64]
     sales: SaleCompileOutput
+    purchases: PurchaseCompileOutput
     obligations: ObligationCompileOutput
     # Per-PE-issuer arrays. Issuers are the distinct `private_equity:<issuer>` asset_ids
     # appearing in `initial_lots`. For each issuer:
@@ -336,6 +337,25 @@ def compile_simulation(
         lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
         lot_quantity_scale.append(scale)
 
+    # One empty lot slot per scheduled purchase, appended after the initial lots. The slot
+    # carries its real purchase month, so the compile-time FIFO order is already right: the
+    # slot holds zero units until that month, and a zero-quantity lot contributes nothing to
+    # a FIFO walk that reaches it early.
+    purchases = compile_purchases(
+        scenario, strings, assets, account_slots, series_index_by_id, first_lot_slot=len(scenario.initial_lots)
+    )
+    for purchase in scenario.scheduled_asset_purchases:
+        lot_id_codes.append(strings.require(purchase.lot_id))
+        lot_agent_codes.append(strings.require(purchase.agent_id))
+        lot_account_codes.append(strings.require(purchase.to_account_id))
+        lot_asset_codes.append(assets.require(purchase.asset))
+        lot_purchase_month.append(int(purchase.month))
+        # Basis is per-rollout from here on: the engine promotes this column to `(lot, rollout)`
+        # carry state and the purchase writes the realized price into its slot.
+        lot_cost_basis_per_unit.append(np.int64(0))
+        lot_initial_quantity.append(np.int64(0))
+        lot_quantity_scale.append(quantity_scale_for_asset(purchase.asset))
+
     lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
     lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
     # PE-guard: PE lots are priced by `pe_channels` marks, not the price cube, so they have no
@@ -343,9 +363,12 @@ def compile_simulation(
     lot_asset_series_index = np.asarray(
         [
             NO_CODE
-            if (price_key := asset_price_key_or_none(lot.asset)) is None
+            if (price_key := asset_price_key_or_none(asset)) is None
             else series_index_by_id.get(price_key, NO_CODE)
-            for lot in scenario.initial_lots
+            for asset in (
+                *(lot.asset for lot in scenario.initial_lots),
+                *(purchase.asset for purchase in scenario.scheduled_asset_purchases),
+            )
         ],
         dtype=np.int64,
     )
@@ -451,6 +474,7 @@ def compile_simulation(
         primary_residence_events=primary_residence_events,
         lifecycle_events=lifecycle_events,
         sales=sales,
+        purchases=purchases,
         obligations=obligations,
         pe_issuers=pe_issuers,
         pe_policies=pe_policies,

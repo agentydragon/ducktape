@@ -166,6 +166,13 @@ class _Static:
     pur_mort_idx: tuple[int, ...]
     folded_purchases_present: bool
     folded_sales_present: bool
+    # Scheduled ASSET purchases (`pur_*` above is real property). One dedicated lot slot each,
+    # so unlike sales there is no shared-pool ordering to fold.
+    buy_lot_slot: tuple[int, ...]
+    buy_cash_slot: tuple[int, ...]
+    asset_buys_present: bool
+    # Contra row every asset purchase pays into — the market is outside the modeled world.
+    external_cash_slot: int
     cg_targets: tuple[_CapitalGainTarget, ...]
     link_tax_static: tuple[_LinkTaxStatic, ...]
     link_profile: tuple[int, ...]

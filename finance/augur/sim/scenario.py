@@ -26,7 +26,7 @@ from pydantic import (
 
 from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.product.asset_key import AssetKey
+from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
 from finance.augur.sim.enums import IncomeCategory
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
@@ -445,6 +445,41 @@ class ScheduledAssetSale(BaseModel):
     price_per_unit_usd: float | None = None
 
 
+class ScheduledAssetPurchase(BaseModel):
+    """Buy a dollar amount of an asset at a fixed month, funded from a cash account.
+
+    The mirror of `ScheduledAssetSale`, and the only way a tax lot comes into existence
+    mid-horizon. Two things make it more than a sale with the sign flipped, and both are
+    why it needs its own machinery: the quantity is not known at compile time (it is
+    `amount / price`, and the price is a sampled path), and neither is the resulting
+    lot's cost basis. The compiler allocates the lot slot; what fills it is decided per
+    rollout.
+
+    Whole quanta only. The purchase takes `floor(amount * scale / price)` quanta and
+    debits exactly what those cost, leaving the sub-quantum remainder in the funding
+    account. Rounding units up instead would debit cash that bought nothing.
+
+    Underfunding CLAMPS rather than fails: a month where the account holds less than
+    `amount_usd` buys what the cash covers. That is not a silent loss — the executed
+    amount is on the purchase event, so a caller comparing it against `amount_usd` sees
+    the shortfall — and it is the same semantics a buying policy needs in step 2, where
+    "invest the surplus" is inherently sized by what is there.
+    """
+
+    month: int
+    cause_id: str
+    lot_id: str = Field(description="Identity of the lot this creates; must not collide with an initial lot.")
+    agent_id: str
+    from_account_id: str = Field(default="checking", description="Cash account debited.")
+    to_account_id: str = Field(
+        default="checking", description="Holding account the lot lands in; lots in different accounts are not fungible."
+    )
+    asset: AssetKey
+    amount_usd: PositiveFloat
+    # As on `ScheduledAssetSale`: fixed price for deterministic tests, sampled series when None.
+    price_per_unit_usd: float | None = None
+
+
 class LiquidityPolicy(BaseModel):
     """Asset-sale policy for one agent cash account.
 
@@ -842,6 +877,7 @@ class Scenario(BaseModel):
     scheduled_obligations: list[ScheduledObligation] = Field(default_factory=list)
     recurring_obligations: list[RecurringObligation] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
+    scheduled_asset_purchases: list[ScheduledAssetPurchase] = Field(default_factory=list)
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
     initial_primary_residences: list[PrimaryResidenceAssignment] = Field(default_factory=list)
     primary_residence_events: list[SetPrimaryResidenceEvent] = Field(default_factory=list)
@@ -897,6 +933,32 @@ class Scenario(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _reject_unusable_scheduled_asset_purchases(self) -> Scenario:
+        """Lot ids must stay unique, and the asset must have a price the engine can read.
+
+        Private equity is marked by `pe_channels`, not by the price cube, so there is no
+        per-month price to divide an amount by — a PE purchase would have no defined
+        quantity. Rejecting it here beats a NO_CODE series index surfacing as a zero
+        price and a silently free infinite position.
+        """
+
+        lot_ids = {lot.lot_id for lot in self.initial_lots}
+        for purchase in self.scheduled_asset_purchases:
+            if purchase.lot_id in lot_ids:
+                raise ValueError(
+                    f"scheduled asset purchase {purchase.cause_id!r} reuses {purchase.lot_id=}, "
+                    "which already names another lot"
+                )
+            lot_ids.add(purchase.lot_id)
+            if asset_price_key_or_none(purchase.asset) is None:
+                raise ValueError(
+                    f"scheduled asset purchase {purchase.cause_id!r} buys {purchase.asset.wire_id!r}, "
+                    "which has no price series (private equity is marked, not priced); "
+                    "model an acquisition of it as an initial lot instead"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
         horizon = int(self.horizon_months)
         for scheduled_transfer in self.scheduled_transfers:
@@ -910,6 +972,12 @@ class Scenario(BaseModel):
             if not 0 <= sale.month < horizon:
                 raise ValueError(
                     f"scheduled asset sale {sale.cause_id!r} has month {sale.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+        for asset_purchase in self.scheduled_asset_purchases:
+            if not 0 <= asset_purchase.month < horizon:
+                raise ValueError(
+                    f"scheduled asset purchase {asset_purchase.cause_id!r} has month {asset_purchase.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
         for scheduled_obligation in self.scheduled_obligations:

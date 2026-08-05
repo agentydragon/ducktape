@@ -1,4 +1,4 @@
-"""Asset-sale (scheduled disposition) compile output. Pairs with `codec/assets.py`."""
+"""Asset acquisition/disposition compile output. Pairs with `codec/assets.py`."""
 
 from __future__ import annotations
 
@@ -31,6 +31,81 @@ class SaleCompileOutput:
     proceeds_slot: NDArray[np.int64]
     price_fixed: NDArray[np.int64]
     price_series: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class PurchaseCompileOutput:
+    """Scheduled asset-purchase plumbing. One row per scheduled purchase, plus the lot slot
+    each one fills.
+
+    `lot_slot[i]` indexes the lot axis. The slot is allocated here, at compile time, but
+    stays empty (`lot_remaining == 0`) until `month[i]`, so FIFO passes over it for free —
+    which is why the slot can carry its real `purchase_month` and holding-period
+    classification needs no runtime month.
+
+    `amount_cents` is what the purchase asks for; what it actually spends is per-rollout,
+    because whole-quantum rounding and available cash are both path-dependent."""
+
+    cause: NDArray[np.int64]
+    month: NDArray[np.int64]
+    agent: NDArray[np.int64]
+    from_slot: NDArray[np.int64]
+    asset: NDArray[np.int64]
+    amount_cents: NDArray[np.int64]
+    quantity_scale: NDArray[np.int64]
+    price_fixed: NDArray[np.int64]
+    price_series: NDArray[np.int64]
+    lot_slot: NDArray[np.int64]
+
+
+def compile_purchases(
+    scenario: Scenario,
+    strings: StringTable,
+    assets: AssetTable,
+    account_slot_by_key: AccountSlots,
+    series_index_by_id: dict[LevelSeriesKey, int],
+    *,
+    first_lot_slot: int,
+) -> PurchaseCompileOutput:
+    count = len(scenario.scheduled_asset_purchases)
+    slots = max(1, count)
+    cause = np.full((int(scenario.horizon_months), slots), NO_CODE, dtype=np.int64)
+    month = np.full(slots, NO_CODE, dtype=np.int64)
+    agent = np.zeros(slots, dtype=np.int64)
+    from_slot = np.full(slots, NO_CODE, dtype=np.int64)
+    asset = np.zeros(slots, dtype=np.int64)
+    amount_cents = np.zeros(slots, dtype=np.int64)
+    quantity_scale = np.ones(slots, dtype=np.int64)
+    price_fixed = np.zeros(slots, dtype=np.int64)
+    price_series = np.full(slots, NO_CODE, dtype=np.int64)
+    lot_slot = np.full(slots, NO_CODE, dtype=np.int64)
+    for idx, purchase in enumerate(scenario.scheduled_asset_purchases):
+        cause[purchase.month, idx] = strings.require(purchase.cause_id)
+        month[idx] = int(purchase.month)
+        agent[idx] = strings.require(purchase.agent_id)
+        from_slot[idx] = account_slot_by_key.require(
+            purchase.agent_id, purchase.from_account_id, owner=f"scheduled asset purchase {purchase.cause_id!r}"
+        )
+        asset[idx] = assets.require(purchase.asset)
+        amount_cents[idx] = usd_to_cents(purchase.amount_usd)
+        quantity_scale[idx] = quantity_scale_for_asset(purchase.asset)
+        if purchase.price_per_unit_usd is not None:
+            price_fixed[idx] = usd_to_cents(purchase.price_per_unit_usd)
+        else:
+            price_series[idx] = series_index_by_id[asset_price_key(purchase.asset)]
+        lot_slot[idx] = first_lot_slot + idx
+    return PurchaseCompileOutput(
+        cause=cause,
+        month=month,
+        agent=agent,
+        from_slot=from_slot,
+        asset=asset,
+        amount_cents=amount_cents,
+        quantity_scale=quantity_scale,
+        price_fixed=price_fixed,
+        price_series=price_series,
+        lot_slot=lot_slot,
+    )
 
 
 def compile_sales(

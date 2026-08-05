@@ -57,6 +57,9 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     for sale in scenario.scheduled_asset_sales:
         if sale.price_per_unit_usd is None:
             add(asset_price_key(sale.asset))
+    for asset_purchase in scenario.scheduled_asset_purchases:
+        if asset_purchase.price_per_unit_usd is None:
+            add(asset_price_key(asset_purchase.asset))
     for policy in scenario.liquidity_policies:
         for asset in policy.asset_preference_chain:
             add(asset_price_key_or_none(asset))
@@ -111,6 +114,9 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     for sale in scenario.scheduled_asset_sales:
         if sale.price_per_unit_usd is None:
             add(asset_price_key(sale.asset))
+    for asset_purchase in scenario.scheduled_asset_purchases:
+        if asset_purchase.price_per_unit_usd is None:
+            add(asset_price_key(asset_purchase.asset))
     for policy in scenario.liquidity_policies:
         for asset in policy.asset_preference_chain:
             add(asset_price_key_or_none(asset))

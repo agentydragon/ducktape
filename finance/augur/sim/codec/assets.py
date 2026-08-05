@@ -57,6 +57,9 @@ def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Data
 
 def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     state = r_first_view(buffers.state.lot_state)  # (H+1, r, s)
+    # Basis is per-rollout, not a plan column: a lot bought mid-horizon carries the price its
+    # rollout paid, and reading the compile-time column would report 0 for every purchased lot.
+    basis = r_first_view(buffers.state.lot_cost_basis_state)  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(
@@ -68,7 +71,7 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
             "account_id": code_column(plan, plan.lot_account_codes[slots]),
             "asset_id": asset_code_column(plan, plan.lot_asset_codes[slots]),
             "purchase_month_index": plan.lot_purchase_month.astype(np.int64)[slots],
-            "cost_basis_per_unit_usd": usd_column(plan.lot_cost_basis_per_unit[slots]),
+            "cost_basis_per_unit_usd": usd_column(basis.reshape(-1)),
             "remaining_quantity": lot_quantity_column(plan, slots, state.reshape(-1)),
         },
         ASSET_LOT_FRAME,

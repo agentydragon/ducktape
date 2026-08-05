@@ -35,6 +35,8 @@ def _expect_array(name: str, array: np.ndarray, *, shape: tuple[int, ...], dtype
 class StateHistoryBuffers:
     cash_state: NDArray[np.int64]
     lot_state: NDArray[np.int64]
+    # Per-rollout: a purchased lot's basis is the price its rollout paid.
+    lot_cost_basis_state: NDArray[np.int64]
     ordinary_state: NDArray[np.int64]
     capital_gain_active_state: NDArray[np.bool_]
     capital_gain_state: NDArray[np.int64]
@@ -65,6 +67,7 @@ class StateHistoryBuffers:
         r = plan.rollout_count
         _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.int64)
         _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.int64)
+        _expect_array("lot_cost_basis_state", self.lot_cost_basis_state, shape=(s, plan.lot_count, r), dtype=np.int64)
         _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.income_bucket_count, r), dtype=np.int64)
         _expect_array(
             "capital_gain_active_state",

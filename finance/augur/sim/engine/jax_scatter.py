@@ -37,6 +37,7 @@ def scatter_ys_to_buffers(
         cash_h,
         ordinary_h,
         lot_h,
+        lot_basis_h,
         cg_active_h,
         cg_ytd_h,
         prop_active_h,
@@ -97,6 +98,8 @@ def scatter_ys_to_buffers(
     buffers.state.ordinary_state[1:] = np.asarray(ordinary_h)
     buffers.state.lot_state[0] = np.asarray(lot0)
     buffers.state.lot_state[1:] = np.asarray(lot_h)
+    buffers.state.lot_cost_basis_state[0] = np.broadcast_to(plan.lot_cost_basis_per_unit[:, None], (p.lot_count, r))
+    buffers.state.lot_cost_basis_state[1:] = np.asarray(lot_basis_h)
     buffers.state.capital_gain_active_state[1:] = np.asarray(cg_active_h)
     buffers.state.capital_gain_state[1:] = np.asarray(cg_ytd_h)
     buffers.state.property_active_state[1:] = np.asarray(prop_active_h)

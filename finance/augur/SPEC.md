@@ -137,6 +137,24 @@ for the rest of the simulation; the failed status and first failure month remain
 machine-readable. It does not model partial payments, grace periods,
 delinquency balances, recovery/cure, or underpayment penalties.
 
+### Asset Acquisition
+
+A scenario can buy a dollar amount of a priced asset at a scheduled month, creating a
+tax lot mid-horizon. The lot's cost basis is **per-rollout** — it is the price that
+rollout paid — so gains on a purchased lot are measured against what was actually spent
+rather than against any configured constant. Purchases take whole quantity quanta and
+leave the sub-quantum remainder as cash.
+
+Two ordering promises: a purchase settles **after** the month's obligations, so buying
+can never starve an obligation into a failure; and a purchase whose account holds less
+than the ordered amount **buys what the cash covers** rather than failing the rollout,
+with the executed quantity and basis visible on the lot. Cash spent on a purchase is
+credited to the external `rest_of_world` account, so the ledger stays balanced.
+
+Private equity cannot be purchased this way: it is marked rather than priced, so there
+is no per-month price to size an order against. Scenarios model PE acquisition as an
+initial lot.
+
 ### Effect types
 
 `Effect` rows are the user-visible trace surface for realized sales. System-emitted accounting moves (mortgage settlement, monthly spend, property-cost obligations) are derivable from ledger postings, balance snapshots, and accounting details — the canonical detail surface — and are not separate effect rows.

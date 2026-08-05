@@ -144,6 +144,9 @@ class _ScanState(NamedTuple):
     ordinary_ytd: jnp.ndarray
     property_tax_ytd: jnp.ndarray
     lot_remaining: jnp.ndarray
+    # `(lot, R)`: per-rollout because a purchased lot's basis is the price its rollout paid.
+    # Initial lots broadcast their configured basis and never change it.
+    cost_basis_per_unit: jnp.ndarray
     capital_gain_active: jnp.ndarray
     capital_gain_ytd: jnp.ndarray
     tlh: jnp.ndarray
@@ -308,6 +311,12 @@ class _Operands(NamedTuple):
     sale_policy_mask_t: jnp.ndarray
     sale_price_fixed_t: jnp.ndarray
     sale_price_series: jnp.ndarray  # scheduled-sale price-series row indices (traced, dynamic gather)
+    # Scheduled asset-purchase stacked static data (all `(n_buys,)`).
+    buy_month_t: jnp.ndarray
+    buy_amount_t: jnp.ndarray
+    buy_price_fixed_t: jnp.ndarray
+    buy_price_series: jnp.ndarray
+    buy_scale_t: jnp.ndarray
     # Year-end / property tables.
     property_is_primary_table: jnp.ndarray
     tax_slot_table: jnp.ndarray
@@ -651,6 +660,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     sale_price_series = np.array(
         [int(sales.price_series[fs.buffer_index]) for fs in folded_sales], dtype=np.int64
     ).reshape(n_sales)
+    # Scheduled asset purchases. Nothing to fold: each fills its own dedicated lot slot, so there
+    # is no shared pool to sequence and the compiled rows are already the loop-free form. Real rows
+    # only — the compile output pads to one slot so the arrays are never zero-length, and a padded
+    # row is NO_CODE-monthed.
+    buys = plan.purchases
+    n_buys = int((buys.month >= 0).sum())
     # Same-pool ((agent, account, asset)) earlier-sale mask -> cumulative prior demand on each pool.
     _pool_key = [
         (
@@ -1049,6 +1064,11 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         sale_policy_mask_t=sale_policy_mask_t,
         sale_price_fixed_t=sale_price_fixed_t,
         sale_price_series=jnp.asarray(sale_price_series),
+        buy_month_t=jnp.asarray(buys.month[:n_buys], dtype=jnp.int32),
+        buy_amount_t=jnp.asarray(buys.amount_cents[:n_buys], dtype=jnp.int64),
+        buy_price_fixed_t=jnp.asarray(buys.price_fixed[:n_buys], dtype=jnp.int64),
+        buy_price_series=jnp.asarray(buys.price_series[:n_buys], dtype=jnp.int64),
+        buy_scale_t=jnp.asarray(buys.quantity_scale[:n_buys], dtype=jnp.int64),
         property_is_primary_table=property_is_primary_table,
         tax_slot_table=tax_slot_table,
         salt_cap_table=salt_cap_table,
@@ -1135,6 +1155,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         pur_mort_idx=tuple(int(x) for x in pur_mort_idx),
         folded_purchases_present=bool(folded_purchases),
         folded_sales_present=bool(folded_sales),
+        buy_lot_slot=tuple(int(x) for x in buys.lot_slot[:n_buys]),
+        buy_cash_slot=tuple(int(x) for x in buys.from_slot[:n_buys]),
+        asset_buys_present=bool(n_buys),
+        external_cash_slot=int(plan.external_cash_slot),
         cg_targets=cg_targets,
         link_tax_static=link_tax_static,
         link_profile=tuple(int(taxc.link_profile[link]) for link in range(link_count)),
@@ -1202,6 +1226,15 @@ def _program_impl(
     profile_ordinary_bucket = structure.profile_ordinary_bucket
     cg_profiles_by_agent = {ct.agent_code: ct.profiles for ct in structure.cg_targets}
     # Static index/selection arrays (rebuilt from the hashable tuples carried in `structure`).
+    asset_buys = structure.asset_buys_present
+    n_buys = len(structure.buy_lot_slot)
+    buy_lot_slot = np.asarray(structure.buy_lot_slot, dtype=np.int64).reshape(n_buys)
+    buy_cash_slot = np.asarray(structure.buy_cash_slot, dtype=np.int64).reshape(n_buys)
+    buy_month_t = baked.buy_month_t
+    buy_amount_t = baked.buy_amount_t
+    buy_price_fixed_t = baked.buy_price_fixed_t
+    buy_price_series = baked.buy_price_series
+    buy_scale_t = baked.buy_scale_t
     sale_pslot = np.asarray(structure.sale_pslot, dtype=np.int64).reshape(n_sales)
     sale_bufidx = np.asarray(structure.sale_bufidx, dtype=np.int64).reshape(n_sales)
     sale_olots = np.asarray(structure.sale_olots, dtype=np.int64).reshape(n_sales, sale_max_pool)
@@ -1257,7 +1290,6 @@ def _program_impl(
     liq_pool_series = baked.liq_pool_series
     # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
     tcfg = cfg
-    cost_basis_per_unit = cfg.cost_basis_per_unit
     tr["fixed"] = cfg.transfer_amount_fixed
     tr["base"] = cfg.transfer_amount_base
     pc["fixed"] = cfg.property_cashflow_amount_fixed
@@ -1474,6 +1506,7 @@ def _program_impl(
 
     def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
+        cost_basis_per_unit = s.cost_basis_per_unit
         cg_active, cg_ytd, tlh = s.capital_gain_active, s.capital_gain_ytd, s.tlh
         property_active, property_basis = s.property_active, s.property_basis
         property_contribution, property_equity = s.property_contribution, s.property_equity
@@ -1669,7 +1702,7 @@ def _program_impl(
         if folded_sales:
             ld = lot_count
             lot_rem_pad = jnp.concatenate([lot_remaining, _zeros_i64((1, r))], axis=0)  # (L+1, R)
-            cost_pad = jnp.concatenate([cost_basis_per_unit, _zeros_i64((1,))])  # (L+1,)
+            cost_pad = jnp.concatenate([cost_basis_per_unit, _zeros_i64((1, r))], axis=0)  # (L+1, R)
             scale_pad = jnp.concatenate([lot_quantity_scale, jnp.ones(1, dtype=jnp.int64)])  # (L+1,)
             lpm_pad = jnp.concatenate([lot_purchase_month.astype(jnp.int32), jnp.zeros(1, jnp.int32)])
             pool_qty = lot_rem_pad[sale_olots]  # (N, P, R) supply per pool lot
@@ -1705,7 +1738,7 @@ def _program_impl(
             proceeds = _value_cents_from_quanta(
                 sold, unit_price[:, None, :], scale_pad[sale_olots][:, :, None]
             )  # (N, P, R)
-            basis = _value_cents_from_quanta(sold, cost_pad[sale_olots][:, :, None], scale_pad[sale_olots][:, :, None])
+            basis = _value_cents_from_quanta(sold, cost_pad[sale_olots], scale_pad[sale_olots][:, :, None])
             gains = proceeds - basis + _round_int64(sold * lot_gb_rate_pad[sale_olots])  # incl. give-back
 
             total_sold = _zeros_i64((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
@@ -1859,6 +1892,40 @@ def _program_impl(
                 month,
             )
         )
+
+        # Scheduled asset purchases. AFTER settlement on purpose: buying is discretionary and must
+        # never be able to starve an obligation into a false ruin. Fully vectorized `(n_buys, R)` —
+        # every rollout buys at its own price with its own cash.
+        if asset_buys:
+            if external_values.shape[0] > 0:
+                buy_safe_series = jnp.where(buy_price_series >= 0, buy_price_series, 0)
+                buy_price = jnp.where(
+                    (buy_price_series >= 0)[:, None],
+                    _price_usd_to_cents(external_values[buy_safe_series, :, month]),
+                    buy_price_fixed_t[:, None],
+                )  # (n_buys, R)
+            else:
+                buy_price = jnp.broadcast_to(buy_price_fixed_t[:, None], (n_buys, r))
+            # `~failed`, not the month-opening `active`: settlement runs just above and can fail
+            # the rollout, and a failed rollout must stop transacting immediately.
+            buy_fires = (~failed)[None, :] & (month == buy_month_t)[:, None]  # (n_buys, R)
+            # Clamp to what the funding account actually holds. Recorded on the event, so a caller
+            # comparing executed against requested sees the shortfall.
+            budget = jnp.where(buy_fires, jnp.minimum(buy_amount_t[:, None], jnp.maximum(cash[buy_cash_slot], 0)), 0)
+            safe_price = jnp.where(buy_price > 0, buy_price, 1)
+            # Whole quanta only; the sub-quantum remainder stays in cash. Flooring here and valuing
+            # with the same helper the basis math uses keeps `spent` <= `budget` (round(x) <= N for
+            # x <= integer N) and makes an immediate full-lot resale net exactly zero gain.
+            buy_quanta = jnp.where(buy_price > 0, (budget * buy_scale_t[:, None]) // safe_price, 0)
+            buy_spent = _value_cents_from_quanta(buy_quanta, buy_price, buy_scale_t[:, None])
+            # Double entry: the cash leaves for the market, which is `rest_of_world`.
+            cash = cash.at[buy_cash_slot].add(-buy_spent)
+            cash = cash.at[structure.external_cash_slot].add(buy_spent.sum(axis=0))
+            lot_remaining = lot_remaining.at[buy_lot_slot].add(buy_quanta)
+            bought = buy_quanta > 0
+            cost_basis_per_unit = cost_basis_per_unit.at[buy_lot_slot].set(
+                jnp.where(bought, buy_price, cost_basis_per_unit[buy_lot_slot])
+            )
 
         # Mortgage payments: split each paid mortgage bill into interest (rate/12 on the outstanding
         # principal, capped at the payment) and principal (the remainder, capped at the balance), then
@@ -2172,6 +2239,7 @@ def _program_impl(
             ordinary_ytd=ordinary,
             property_tax_ytd=property_tax_ytd,
             lot_remaining=lot_remaining,
+            cost_basis_per_unit=cost_basis_per_unit,
             capital_gain_active=cg_active,
             capital_gain_ytd=cg_ytd,
             tlh=tlh,
@@ -2215,6 +2283,7 @@ def _program_impl(
             cash,
             ordinary,
             lot_remaining,
+            cost_basis_per_unit,
             cg_active,
             cg_ytd,
             property_active,
@@ -2302,6 +2371,7 @@ def _program_impl(
         ordinary_ytd=ordinary0,
         property_tax_ytd=property_tax_ytd0,
         lot_remaining=lot0,
+        cost_basis_per_unit=_zeros_i64((p.lot_count, r)),
         capital_gain_active=cg_active0,
         capital_gain_ytd=cg_ytd0,
         tlh=tlh0,
@@ -2337,6 +2407,7 @@ def _program_impl(
     init = init._replace(
         cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
         lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
+        cost_basis_per_unit=jnp.broadcast_to(cfg.cost_basis_per_unit[:, None], (p.lot_count, r)),
     )
     if product_summary is not None:
         product_inputs_local = product_inputs
@@ -2648,9 +2719,7 @@ def _fifo_sell_units(
     sold_ordered = jnp.clip(effective_target[:, None] - before_units, 0, ordered_quantity)
     ordered_scale = lot_quantity_scale[ordered_lots]
     proceeds_ordered = _value_cents_from_quanta(sold_ordered, unit_price[:, None], ordered_scale[None, :])
-    basis_ordered = _value_cents_from_quanta(
-        sold_ordered, cost_basis_per_unit[ordered_lots][None, :], ordered_scale[None, :]
-    )
+    basis_ordered = _value_cents_from_quanta(sold_ordered, cost_basis_per_unit[ordered_lots].T, ordered_scale[None, :])
     zeros = jnp.zeros_like(lot_remaining)
     sold_units = zeros.at[:, ordered_lots].set(sold_ordered)
     proceeds = zeros.at[:, ordered_lots].set(proceeds_ordered)
@@ -2908,7 +2977,7 @@ def _fifo_sell_cents(
     sold_units_ordered = jnp.clip(sold_units_before_clip, 0, ordered_quantity)
     proceeds_ordered = _value_cents_from_quanta(sold_units_ordered, price_col, ordered_scale[None, :])
     basis_ordered = _value_cents_from_quanta(
-        sold_units_ordered, cost_basis_per_unit[ordered_lots][None, :], ordered_scale[None, :]
+        sold_units_ordered, cost_basis_per_unit[ordered_lots].T, ordered_scale[None, :]
     )
     zeros = jnp.zeros_like(lot_remaining)
     sold_units = zeros.at[:, ordered_lots].set(sold_units_ordered)
@@ -2983,9 +3052,7 @@ def _tlh_harvest_policy_jit(
     market_value = _value_cents_from_quanta(remaining_lots, price_cents[None, :], quantity_scale_lots[:, None]).sum(
         axis=0
     )
-    original_basis = _value_cents_from_quanta(
-        remaining_lots, cost_basis_lots[:, None], quantity_scale_lots[:, None]
-    ).sum(axis=0)
+    original_basis = _value_cents_from_quanta(remaining_lots, cost_basis_lots, quantity_scale_lots[:, None]).sum(axis=0)
     adjusted_basis = jnp.maximum(0, original_basis - cumulative)
     safe_mv = jnp.where(market_value > 0, market_value, 1)
     embedded_gain = jnp.clip(jnp.where(market_value > 0, (market_value - adjusted_basis) / safe_mv, 0.0), 0.0, 1.0)
