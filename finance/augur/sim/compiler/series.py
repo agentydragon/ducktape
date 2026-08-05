@@ -57,9 +57,13 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     for sale in scenario.scheduled_asset_sales:
         if sale.price_per_unit_usd is None:
             add(asset_price_key(sale.asset))
+    # Unconditional, unlike a sale: a purchase leaves a LOT BEHIND, and that lot has to be
+    # markable for the rest of the horizon. A fixed `price_per_unit_usd` sets the execution
+    # price only — without the series the lot's `lot_asset_series_index` is NO_CODE and it
+    # cannot be valued afterwards. A sale leaves nothing behind, so it demands a series only
+    # when it needs one to price the sale itself.
     for asset_purchase in scenario.scheduled_asset_purchases:
-        if asset_purchase.price_per_unit_usd is None:
-            add(asset_price_key(asset_purchase.asset))
+        add(asset_price_key(asset_purchase.asset))
     for policy in scenario.liquidity_policies:
         for asset in policy.asset_preference_chain:
             add(asset_price_key_or_none(asset))
@@ -114,6 +118,11 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     for sale in scenario.scheduled_asset_sales:
         if sale.price_per_unit_usd is None:
             add(asset_price_key(sale.asset))
+    # Conditional HERE even though the demand list above is unconditional, and the asymmetry is
+    # the point of this function: this guards `compile_purchases`' `[]` lookup, which only runs
+    # for a series-priced purchase. Adding a key nobody sampled would manufacture an all-NaN
+    # cube row; leaving it absent resolves to NO_CODE and reports "no modeled price series",
+    # which is the real problem.
     for asset_purchase in scenario.scheduled_asset_purchases:
         if asset_purchase.price_per_unit_usd is None:
             add(asset_price_key(asset_purchase.asset))

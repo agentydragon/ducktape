@@ -17,8 +17,12 @@ import numpy as np
 import polars as pl
 import pytest_bazel
 
+from finance.augur.model.deterministic import Deterministic
+from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecuritySymbol
+from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import SecurityKey
+from finance.augur.product.decode import monthly_metric_arrays
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,
@@ -38,6 +42,9 @@ _PRICE = 100.0
 _SPEND = 500_000.0
 _UNITS = 5_000.0
 _OPENING_CASH = 1_000_000.0
+# Flat through the month-1 purchase, then doubled — so a lot carried at cost is distinguishable
+# from a lot carried at the mark.
+_PRICE_PATH = [_PRICE] * 3 + [2 * _PRICE] * (_HORIZON + 1 - 3)
 
 
 def _scenario(
@@ -179,6 +186,38 @@ def test_an_underfunded_purchase_buys_what_the_cash_covers() -> None:
     assert lot["remaining_quantity"] == 1_000.0
     assert lot["cost_basis_per_unit_usd"] == _PRICE
     assert _cash(_scenario(opening_cash=100_000.0))[2] == 0.0
+
+
+def test_a_purchased_lot_is_markable_even_when_its_execution_price_was_fixed() -> None:
+    """A purchase leaves a LOT BEHIND, and that lot must be valuable for the rest of the
+    horizon.
+
+    `price_per_unit_usd` fixes the EXECUTION price only. If the scenario's demand for the
+    asset's price series were gated on that field — as it is for a sale, which leaves nothing
+    behind — the lot's `lot_asset_series_index` would be NO_CODE and it would be unmarkable:
+    product summary rejects a holding with no modeled price series, and valuations elsewhere
+    read zero. So the demand is unconditional, and this is the test that says so.
+
+    The price doubles after the purchase, so a lot carried at cost rather than at the mark
+    fails here too.
+    """
+
+    scenario = _scenario().model_copy(
+        update={
+            "external_series": SeriesModelBundle.independent(
+                asset_prices=AssetPriceGroups(security={SecuritySymbol("vti"): Deterministic(levels=_PRICE_PATH)})
+            )
+        }
+    )
+    net_worth = [
+        float(v)
+        for v in monthly_metric_arrays(simulate(scenario, rollout_count=1, locations={}), primary_agent_id="alice")[
+            "net_worth_usd"
+        ]
+    ]
+
+    # Cash is opening minus the spend; the lot is 5,000 units marked at the doubled price.
+    assert net_worth[-1] == _OPENING_CASH - _SPEND + _UNITS * 2 * _PRICE
 
 
 def test_a_purchase_never_starves_an_obligation() -> None:
