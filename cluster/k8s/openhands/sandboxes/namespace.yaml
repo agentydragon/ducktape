@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: openhands-sandboxes
-  labels:
-    # Sandbox pods run agent code as root; privileged PSA required.
-    pod-security.kubernetes.io/enforce: privileged
