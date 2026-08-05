@@ -379,6 +379,36 @@ py_library(
 )
 
 py_library(
+    name = "connection_metrics",
+    srcs = ["connection_metrics.py"],
+    deps = [
+        ":database_schema",
+        "@pypi//prometheus_client",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_connection_metrics",
+    size = "medium",
+    srcs = ["test_connection_metrics.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":connection_metrics",
+        ":database_schema",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "oauth_association_maintenance",
     srcs = ["oauth_association_maintenance.py"],
     deps = [
@@ -856,6 +886,7 @@ py_library(
         ":capabilities",
         ":claude_chat",
         ":config",
+        ":connection_metrics",
         ":console_events",
         ":database_migrate",
         ":deployment",

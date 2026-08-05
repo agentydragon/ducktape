@@ -1,0 +1,52 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: haku-console-connection-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: haku-console-connections
+      rules:
+        # A linked provider connection (Google Mail/Calendar/Drive today) whose OAuth refresh has
+        # been failing continuously. Distinct from McpUpstreamTokenRefreshFailed, which watches
+        # OIDCProxy-fronted MCP servers refreshing against *Authentik* — this is haku-console
+        # refreshing the operator's *Google* grant, a different credential against a different
+        # issuer on a different code path. That rule existing is why this gap went unnoticed.
+        #
+        # Why it needs alerting at all: the failure is silent by construction. The console keeps
+        # serving, the connector still appears in Settings, and scheduled Haku runs record the
+        # affected watches as "skipped" and complete normally. Three outages (Jun, Jul, Aug 2026)
+        # were each found by an agent happening to call get_mcp_server_status mid-run; the
+        # 2026-08-04 one ran ~40h and 160 failed refreshes before anyone looked.
+        #
+        # 2h, not minutes: refreshes run on a schedule and transient Google 5xx are routine, so the
+        # signal is persistence rather than any single failure. Every real instance ran 24h+.
+        - alert: HakuConsoleConnectionRefreshStale
+          expr: haku_console_connection_refresh_failure_age_seconds > 7200
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "haku-console connection {{ $labels.connection }} has been failing to refresh for {{ $value | humanizeDuration }}"
+            description: >
+              The OAuth refresh for provider connection {{ $labels.connection }}
+              ({{ $labels.provider }}) has been failing continuously for
+              {{ $value | humanizeDuration }}. Agents reading this connection are
+              blind and scheduled runs will report their watches as skipped rather
+              than failing. Fix: re-authorize the connection in the console's
+              Settings → Connections. If it re-breaks immediately, the grant was
+              revoked upstream rather than expired.
+        # By this point at least one scheduled run has certainly gone blind on it.
+        - alert: HakuConsoleConnectionRefreshStaleCritical
+          expr: haku_console_connection_refresh_failure_age_seconds > 86400
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "haku-console connection {{ $labels.connection }} dead for over a day"
+            description: >
+              {{ $labels.connection }} has not refreshed successfully in over 24
+              hours ({{ $value | humanizeDuration }}). Re-authorize it in the
+              console's Settings → Connections.

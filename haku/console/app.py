@@ -29,6 +29,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import (
     capabilities,
     claude_chat,
+    connection_metrics,
     console_events,
     mcp_agent_auth,
     mcp_approval,
@@ -448,6 +449,9 @@ def create_app(
     # would fall through to the SPA catch-all and return the app shell.
     @app.get("/metrics")
     async def metrics() -> Response:
+        # Re-sampled per scrape rather than pushed on failure: correct after a restart, and it keeps
+        # reporting "still broken" without waiting for the next retry to fail again.
+        await connection_metrics.refresh_connection_metrics(db_sessions)
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # The browser API is operator-only. Agents use /mcp; static bearer support there does not grant
