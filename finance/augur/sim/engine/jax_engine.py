@@ -1572,7 +1572,6 @@ def _program_impl(
             external_values,
             month,
             structure.has_indexed_bonds,
-            bool(plan.bonds.indexed.any()),
         )
 
         # Property purchases (after transfers, before sales — eager order). Vectorized over all real
