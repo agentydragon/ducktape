@@ -2443,7 +2443,7 @@ def _amount_values(
     month: int | jnp.ndarray,
     rollout_count: int,
 ) -> jnp.ndarray:
-    """Port of `phases._amount_values`: a fixed or series-indexed per-rollout amount. `amount_series` is
+    """A fixed or series-indexed per-rollout amount. `amount_series` is
     a TRACED scalar row index (gathered dynamically), so its value never changes the compiled program —
     see the series-index determinism note in `collect_level_series_keys`. `amount_kind` stays static (a
     genuine FIXED-vs-series code branch)."""
@@ -2735,7 +2735,7 @@ def _apply_tlh_give_back(
     sold_units: jnp.ndarray,
     gains: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._apply_tlh_give_back`: repay deferred harvested loss as extra gain on sold
+    """Repay deferred harvested loss as extra gain on sold
     harvest-policy lots. The fraction of the policy's pre-sale units sold here realizes that share
     of `tlh_cumulative_harvest`, distributed across the sold policy-lots by sold units (preserving
     each lot's ST/LT character) and drained from the ledger. Branch-free over rollouts; the per-policy
@@ -2771,7 +2771,7 @@ def _record_capital_gains(
     sold_units: jnp.ndarray,
     gains: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._record_capital_gains`: TLH give-back, then classify each lot's gain
+    """TLH give-back, then classify each lot's gain
     long/short and accrue.
 
     Branch-free: the per-lot long/short split is a static `(L,)` boolean mask (holding period vs
@@ -2997,7 +2997,7 @@ def _compute_liquid_net_worth(
     external_values: jnp.ndarray,
     month: int | jnp.ndarray,
 ) -> jnp.ndarray:
-    """Port of `phases._compute_liquid_net_worth`: owner cash + non-PE lot value at current marks.
+    """Owner cash + non-PE lot value at current marks.
     `owner_cash_mask` (this policy's row, device) and `lot_asset_series_index` (device) come from
     `_Operands`; `owner_non_pe_lot_indices` is the resolved (host) non-PE lot list (no `plan` reference)."""
     cash_total = (cash * owner_cash_mask[:, None]).sum(axis=0)
@@ -3083,7 +3083,7 @@ def _tlh_harvest_policy_jit(
 
 
 def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarray, count: int) -> jnp.ndarray:
-    """Port of `phases._apply_brackets`: progressive bracket tax on `amount`."""
+    """Progressive bracket tax on `amount`, in int64 cents rounded to the whole cent."""
     if count <= 0:
         return jnp.zeros_like(amount)
     upper_edges = jnp.asarray(upper[:count])
@@ -3097,7 +3097,8 @@ def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarra
 def _apply_ltcg_brackets(
     ltcg_amount: jnp.ndarray, ordinary_taxable: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarray, count: int
 ) -> jnp.ndarray:
-    """Port of `phases._apply_ltcg_brackets`: LTCG stacked on top of ordinary taxable income."""
+    """LTCG bracket walk with the gain stacked on top of ordinary taxable income (§1(h)): each
+    bracket taxes the slice of the combined stack that lies above the ordinary income."""
     if count <= 0:
         return jnp.zeros_like(ltcg_amount)
     upper_edges = jnp.asarray(upper[:count])
@@ -3117,7 +3118,9 @@ def _net_capital_gains_jnp(
     *,
     max_ordinary_offset_cents: int = 300_000,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Branch-free `jnp` port of `tax.net_capital_gains_with_carryforward` (§1211/§1212 netting)."""
+    """Branch-free §1211/§1212 capital-loss netting for one tax year: cross-net ST against LT, consume
+    the prior-year carryforward (short-term first, taxpayer-favorable), then split any residual loss
+    into this year's ordinary-income offset and the balance carried forward."""
     st, lt = short_term, long_term
     st_loss_vs_lt_gain = jnp.minimum(jnp.maximum(-st, 0), jnp.maximum(lt, 0))
     st, lt = st + st_loss_vs_lt_gain, lt - st_loss_vs_lt_gain
@@ -3145,7 +3148,7 @@ def _compute_tax_for_link(
     salt_deduction: jnp.ndarray,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._compute_tax_for_link`: one link's bracket math (MID + SALT + §1250 + LTCG).
+    """One link's bracket math (MID + SALT + §1250 + LTCG).
     Bracket values / rates / deduction / MID ratio come from the traced `tcfg`; feature flags, counts
     and the §1250 style rate are read from the hashable `_LinkTaxStatic` (no `plan` reference)."""
     link = static.link
@@ -3312,7 +3315,7 @@ def _apply_depreciation_accrual(
     property_depreciation_ytd: jnp.ndarray,
     failed: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._apply_depreciation_accrual`: §168 straight-line monthly depreciation,
+    """§168 straight-line monthly depreciation,
     branch-free over all properties (one masked elementwise accrual)."""
     monthly_dep = jnp.where(
         (~failed)[None, :] & property_active,

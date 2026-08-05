@@ -340,8 +340,8 @@ log.
 
 Near term:
 
-- Keep `augur/sim/tax.py` and jurisdiction YAML as the canonical runtime for
-  the spike.
+- Keep the engine's own bracket math (`engine/jax_engine.py`) and jurisdiction
+  YAML as the canonical runtime for the spike.
 - Add focused federal golden tests from hand calculations and, later,
   Tax-Calculator for sampled annual aggregate rows.
 - Keep quarterly estimated tax and safe-harbor logic in Augur.

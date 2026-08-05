@@ -84,15 +84,6 @@ py_test(
 )
 
 py_library(
-    name = "tax",
-    srcs = ["tax.py"],
-    deps = [
-        ":jurisdictions",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "tlh_harvest",
     srcs = ["tlh_harvest.py"],
     deps = [
@@ -127,18 +118,6 @@ py_test(
     srcs = ["tlh_harvest_test.py"],
     deps = [
         ":tlh_harvest",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tax_test",
-    srcs = ["tax_test.py"],
-    deps = [
-        ":jurisdictions",
-        ":tax",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -414,6 +393,20 @@ py_library(
         "//finance/augur/product:metric_composition",
         "@pypi//jax",
         "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "jax_tax_test",
+    srcs = ["engine/jax_tax_test.py"],
+    main = "engine/jax_tax_test.py",
+    deps = [
+        ":compiler",
+        ":engine",
+        ":fixed_point",
+        ":jurisdictions",
+        "@pypi//jax",
+        "@pypi//pytest_bazel",
     ],
 )
 

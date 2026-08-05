@@ -46,7 +46,7 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> float:
     return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
 
 
-def _bracket_upper_to_cents(upper_usd: float) -> np.int64:
+def bracket_upper_to_cents(upper_usd: float) -> np.int64:
     if math.isinf(upper_usd):
         return np.int64(_OPEN_ENDED_BRACKET_UPPER_CENTS)
     return usd_to_cents(upper_usd)
@@ -163,12 +163,12 @@ def compile_tax(
         for jurisdiction_id in profile.jurisdiction_ids:
             jurisdiction = jurisdictions[jurisdiction_id]
             ordinary = [
-                (_bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                (bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
                 for bracket in jurisdiction.ordinary_income_brackets[profile.filing_status]
             ]
             ltcg = (
                 [
-                    (_bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                    (bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
                     for bracket in jurisdiction.ltcg_brackets[profile.filing_status]
                 ]
                 if jurisdiction.ltcg_brackets is not None
