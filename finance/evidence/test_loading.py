@@ -14,7 +14,7 @@ from finance.evidence.loading import (
     source_bytes,
     yahoo_adjusted_close_frame,
 )
-from finance.evidence.sources import FRED_CPI, YAHOO_BTC, ZILLOW_ZHVI
+from finance.evidence.sources import EVIDENCE_SOURCES, FRED_CPI, YAHOO_BTC, ZILLOW_ZHVI, EvidenceKind
 
 FRED_TEXT = (
     "observation_date,CPIAUCSL\n"
@@ -41,12 +41,13 @@ def test_monthly_last_takes_last_observation_per_month() -> None:
     assert monthly["value"].to_list() == [5881.63]
 
 
-def _yahoo_payload(points: list[tuple[datetime, float | None]]) -> bytes:
+def _yahoo_payload(points: list[tuple[datetime, float | None]], *, granularity: str = "1d") -> bytes:
     return json.dumps(
         {
             "chart": {
                 "result": [
                     {
+                        "meta": {"dataGranularity": granularity},
                         "timestamp": [int(moment.timestamp()) for moment, _ in points],
                         "indicators": {"adjclose": [{"adjclose": [value for _, value in points]}]},
                     }
@@ -67,6 +68,42 @@ def test_yahoo_frame_skips_missing_closes_and_enforces_minimum_samples() -> None
     assert frame["value"].to_list() == [95000.0, 93429.0, 94000.0]
     with pytest.raises(ValueError, match="credible adjusted-close history"):
         yahoo_adjusted_close_frame(_yahoo_payload(points), YAHOO_BTC, minimum_samples=10)
+
+
+def test_yahoo_frame_rejects_a_silently_downgraded_granularity() -> None:
+    """A coarser payload is a Yahoo downgrade, not a shorter history, and must fail loudly.
+
+    Monthly bars parse cleanly, collapse to the same months, and clear `minimum_samples` — so
+    without this check the only evidence of the downgrade is `meta.dataGranularity`, and the
+    series silently anchors and fits on coarse data. This is exactly what `range=max` started
+    doing: 404 monthly rows for SPY where the same window with explicit periods gives 8437.
+    """
+
+    points: list[tuple[datetime, float | None]] = [
+        (datetime(2024, 12, 2, tzinfo=UTC), 95000.0),
+        (datetime(2025, 1, 2, tzinfo=UTC), 94000.0),
+    ]
+    # Identical points, so the ONLY difference between the two arms is the granularity field.
+    assert yahoo_adjusted_close_frame(_yahoo_payload(points), YAHOO_BTC, minimum_samples=2)["value"].to_list() == [
+        95000.0,
+        94000.0,
+    ]
+    with pytest.raises(ValueError, match="was served at '1mo' granularity"):
+        yahoo_adjusted_close_frame(_yahoo_payload(points, granularity="1mo"), YAHOO_BTC, minimum_samples=2)
+
+
+def test_yahoo_sources_request_an_explicit_window_not_range_max() -> None:
+    """`range=max` is what Yahoo downgrades; explicit periods mean the same thing and are honoured.
+
+    Pinned because the two spellings look interchangeable and the difference is invisible until
+    a fit fails months later.
+    """
+
+    for source in EVIDENCE_SOURCES:
+        if source.kind is EvidenceKind.YAHOO:
+            assert "range=max" not in source.upstream_url
+            assert "period1=0" in source.upstream_url
+            assert "interval=1d" in source.upstream_url
 
 
 def test_read_monthly_levels_from_checkout_dir(tmp_path: Path) -> None:

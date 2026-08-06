@@ -88,18 +88,35 @@ def zillow_city_series_frame(data: bytes, source: EvidenceSource, *, region_name
     return monthly
 
 
+DAILY_GRANULARITY = "1d"
+
+
 def yahoo_adjusted_close_frame(data: bytes, source: EvidenceSource, *, minimum_samples: int = 36) -> pl.DataFrame:
     """Parse a Yahoo-Finance v8 chart JSON down to a sorted `(date, value)` adjusted-close frame.
 
-    SPY's daily history has ~8k rows. Crypto histories may be monthly or weekly depending on what
-    Yahoo serves under `range=max`; `minimum_samples` defaults to 36 so the loader accepts the coarser
-    series as long as there are at least three years of data to fit on. Multiple ticks on one calendar
-    day collapse to the last (by timestamp).
+    Every Yahoo source is requested at `interval=1d`, so a payload that came back coarser was
+    silently downgraded by the API and is rejected here. That check is the point: monthly bars
+    still parse, still collapse to the same months, and still clear `minimum_samples`, so the
+    only place the downgrade shows is `meta.dataGranularity` — which nothing read until a
+    `range=max` request started answering with 404 monthly rows for SPY instead of 8437 daily.
+    `minimum_samples` cannot cover this: `read_monthly_levels` uses the 36 default and a coarse
+    file passes it comfortably.
+
+    SPY's daily history has ~8k rows. Multiple ticks on one calendar day collapse to the last
+    (by timestamp), so a daily payload still yields one row per trading day.
     """
     payload = json.loads(data)
     result = ((payload.get("chart") or {}).get("result") or [None])[0]
     if not isinstance(result, dict):
         raise ValueError(f"{source.provenance_label} does not contain a Yahoo chart result")
+    granularity = (result.get("meta") or {}).get("dataGranularity")
+    if granularity != DAILY_GRANULARITY:
+        raise ValueError(
+            f"{source.provenance_label} was served at {granularity!r} granularity, not "
+            f"{DAILY_GRANULARITY!r}. Yahoo downgrades some window requests silently; the series "
+            "would parse and fit on coarser data instead of failing. Re-fetch with explicit "
+            "period1/period2 (see `sources._yahoo`)."
+        )
     timestamps = result.get("timestamp") or []
     adjusted = (((result.get("indicators") or {}).get("adjclose") or [{}])[0]).get("adjclose") or []
     if len(timestamps) != len(adjusted):

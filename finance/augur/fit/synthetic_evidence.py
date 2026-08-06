@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from finance.evidence import sources as es
+from finance.evidence import loading, sources as es
 
 # Monthly grid long enough that every inner-joined factor clears MINIMUM_ALIGNED_MONTHS (36)
 # and the macro-anchor tests find observations on/before their 2026-05 anchor.
@@ -71,7 +71,20 @@ def _write_yahoo(
 ) -> None:
     timestamps = [int(datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp()) for d in days]
     closes = [round(value, 4) for value in _values(base, len(days), step_drift=step_drift, amp=amp, phase=phase)]
-    payload = {"chart": {"result": [{"timestamp": timestamps, "indicators": {"adjclose": [{"adjclose": closes}]}}]}}
+    # Daily granularity, matching what every Yahoo source requests: the loader rejects a
+    # coarser payload, because a silent Yahoo downgrade is otherwise indistinguishable from a
+    # short history.
+    payload = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {"dataGranularity": loading.DAILY_GRANULARITY},
+                    "timestamp": timestamps,
+                    "indicators": {"adjclose": [{"adjclose": closes}]},
+                }
+            ]
+        }
+    }
     (dest / source.output_filename).write_text(json.dumps(payload))
 
 

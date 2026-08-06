@@ -19,6 +19,7 @@ py_library(
     testonly = True,
     srcs = ["synthetic_evidence.py"],
     deps = [
+        "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//pytest",
     ],

@@ -63,14 +63,27 @@ def _fred(series_id: str, output_filename: str) -> EvidenceSource:
     )
 
 
+# Far-future `period2`, so the window is "everything" without the URL depending on the clock —
+# this spec is a static table and must stay one. Yahoo clamps it to the last close.
+_YAHOO_PERIOD2_FOREVER = 9_999_999_999
+
+
 def _yahoo(symbol: str, output_filename: str) -> EvidenceSource:
-    # range=max&interval=1d matches the daily snapshots the loader expects (the SPY
-    # variant requires >=1000 daily samples); the full response carries the same
-    # chart.result[0].{timestamp,indicators.adjclose} arrays the loader reads.
+    # Explicit periods rather than `range=max`. Both mean "all of it" and both take
+    # `interval=1d`, but `range=max` is silently DOWNGRADED: Yahoo now answers it with monthly
+    # bars (404 rows for SPY, against 8437 for the same request with explicit periods) and says
+    # so only in `meta.dataGranularity`, which nothing was reading. `read_monthly_levels`
+    # collapses to months anyway and its default floor is 36 samples, so a downgraded file
+    # sails through the calibration path and quietly anchors on coarse data; the fit's
+    # 1000-sample floor would then fail the next training run instead. The loader now rejects
+    # a non-daily payload outright, and this URL is what keeps it from seeing one.
     return EvidenceSource(
         kind=EvidenceKind.YAHOO,
         series_id=symbol,
-        upstream_url=f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?range=max&interval=1d",
+        upstream_url=(
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
+            f"?period1=0&period2={_YAHOO_PERIOD2_FOREVER}&interval=1d"
+        ),
         output_filename=output_filename,
     )
 
