@@ -72,9 +72,15 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   credential works, which is the only property that decides whether the pod starts.
   CLIProxyAPI replaces that whole ritual with one command against the running pod
   (`-codex-device-login`), writing straight to its PVC, picked up by a file watcher
-  without a restart and kept alive by a 15m refresh worker. It also serves
-  `/v1/responses` directly, so it can front Codex CLI as well as Claude Code and this
-  instance buys nothing.
+  without a restart and kept alive by a 15m refresh worker. Note it has SOPS secrets too
+  (`config.sops.yaml`, `client-key.sops.yaml`) — but those hold the **inbound** client
+  key, i.e. how LiteLLM authenticates _to_ it, which is static and rotates by editing two
+  files. The **upstream** ChatGPT OAuth session is never in git there; its init container
+  only does `mkdir -p /data/auth`. That is the whole difference: a credential that
+  rotates on use and can only be minted interactively is a bad fit for a checked-in
+  secret, which is why the copy-if-absent guard kept being wrong.
+  CLIProxyAPI also serves `/v1/responses` directly, so it can front Codex CLI as well as
+  Claude Code and this instance buys nothing.
 
   [#3198]: https://github.com/agentydragon/ducktape/pull/3198
 
