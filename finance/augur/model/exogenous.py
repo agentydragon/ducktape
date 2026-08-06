@@ -41,6 +41,8 @@ from finance.augur.model.series import (
     LocationId,
     PropertyValueKey,
     RentKey,
+    SecurityDistributionKey,
+    SecurityDistributionSeriesKey,
     SecurityKey,
     SecuritySymbol,
 )
@@ -65,6 +67,7 @@ class SeriesRole(StrEnum):
     """
 
     ASSET_PRICES = "asset_prices"
+    SECURITY_DISTRIBUTIONS = "security_distributions"
     PROPERTY_VALUES = "property_values"
     INDEX_SERIES = "index_series"
 
@@ -87,6 +90,12 @@ class LevelKindSpec:
 LEVEL_KIND_SPECS: Mapping[LevelSeriesKind, LevelKindSpec] = {
     LevelSeriesKind.SECURITY: LevelKindSpec(
         SeriesRole.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: SecurityKey(symbol=SecuritySymbol(s))
+    ),
+    LevelSeriesKind.SECURITY_DISTRIBUTION: LevelKindSpec(
+        SeriesRole.SECURITY_DISTRIBUTIONS,
+        SYMBOL_LEVELS_SCHEMA,
+        "symbol",
+        lambda s: SecurityDistributionKey(symbol=SecuritySymbol(s)),
     ),
     LevelSeriesKind.HOME_VALUE: LevelKindSpec(
         SeriesRole.PROPERTY_VALUES,
@@ -180,7 +189,8 @@ class ExogenousSamplingRequest:
 
     Required non-PE level series are split by role so a consumer states
     exactly which kind of series it needs: `required_asset_prices` (price a
-    lot), `required_property_values` (value a property), `required_index_series`
+    lot), `required_security_distributions` (pay out per unit held),
+    `required_property_values` (value a property), `required_index_series`
     (escalate an amount). PE issuers (carrying the whole `PrivateEquityBundle`
     per issuer) are required by `required_private_equity_issuers`; PE tender
     events and protocol channels are part of the PE bundle, not separate
@@ -191,6 +201,7 @@ class ExogenousSamplingRequest:
     horizon_months: int
     rollout_seeds: tuple[int, ...]
     required_asset_prices: frozenset[AssetPriceKey] = frozenset()
+    required_security_distributions: frozenset[SecurityDistributionSeriesKey] = frozenset()
     required_property_values: frozenset[PropertyValueKey] = frozenset()
     required_index_series: frozenset[IndexSeriesKey] = frozenset()
     required_private_equity_issuers: frozenset[IssuerId] = frozenset()
@@ -216,7 +227,12 @@ class ExogenousSamplingRequest:
     def required_level_series(self) -> frozenset[LevelSeriesKey]:
         """All required non-PE level series, unioned across the roles."""
 
-        return frozenset(self.required_asset_prices | self.required_property_values | self.required_index_series)
+        return frozenset(
+            self.required_asset_prices
+            | self.required_security_distributions
+            | self.required_property_values
+            | self.required_index_series
+        )
 
 
 @dataclass(frozen=True)
@@ -259,6 +275,7 @@ class LevelRequestChannels(TypedDict):
     """
 
     required_asset_prices: frozenset[AssetPriceKey]
+    required_security_distributions: frozenset[SecurityDistributionSeriesKey]
     required_property_values: frozenset[PropertyValueKey]
     required_index_series: frozenset[IndexSeriesKey]
 
@@ -278,6 +295,9 @@ def level_series_request_channels(keys: Iterable[LevelSeriesKey]) -> LevelReques
     # routed here came from `LEVEL_KIND_SPECS`, so membership is exactly the union.
     return {
         "required_asset_prices": cast("frozenset[AssetPriceKey]", frozenset(by_role[SeriesRole.ASSET_PRICES])),
+        "required_security_distributions": cast(
+            "frozenset[SecurityDistributionSeriesKey]", frozenset(by_role[SeriesRole.SECURITY_DISTRIBUTIONS])
+        ),
         "required_property_values": cast("frozenset[PropertyValueKey]", frozenset(by_role[SeriesRole.PROPERTY_VALUES])),
         "required_index_series": cast("frozenset[IndexSeriesKey]", frozenset(by_role[SeriesRole.INDEX_SERIES])),
     }

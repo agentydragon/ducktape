@@ -49,6 +49,7 @@ class IndependentProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
         # the config-only `type` sibling; PE marks travel separately as `pe_marks`.
         return IndependentModel(
             asset_prices=self.asset_prices,
+            security_distributions=self.security_distributions,
             property_values=self.property_values,
             index_series=self.index_series,
             pe_marks=dict(self.private_equity_marks),

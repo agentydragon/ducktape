@@ -32,6 +32,7 @@ from finance.augur.model.level_series_groups import (
     IndexSeriesGroups,
     LevelSeriesGroups,
     PropertyValueGroups,
+    SecurityDistributionGroups,
 )
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 
@@ -98,6 +99,7 @@ class SeriesModelBundle(BaseModel):
         cls,
         *,
         asset_prices: AssetPriceGroups[ScalarSeriesSpec] | None = None,
+        security_distributions: SecurityDistributionGroups[ScalarSeriesSpec] | None = None,
         property_values: PropertyValueGroups[ScalarSeriesSpec] | None = None,
         index_series: IndexSeriesGroups[ScalarSeriesSpec] | None = None,
     ) -> SeriesModelBundle:
@@ -111,6 +113,9 @@ class SeriesModelBundle(BaseModel):
         return cls(
             model=IndependentSeriesModels(
                 asset_prices=asset_prices if asset_prices is not None else AssetPriceGroups(),
+                security_distributions=(
+                    security_distributions if security_distributions is not None else SecurityDistributionGroups()
+                ),
                 property_values=property_values if property_values is not None else PropertyValueGroups(),
                 index_series=index_series if index_series is not None else IndexSeriesGroups(),
             )

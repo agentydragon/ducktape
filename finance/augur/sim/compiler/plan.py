@@ -22,6 +22,7 @@ from finance.augur.sim.compiler.deductions import (
     compile_federal_salt_deductions,
     compile_mortgage_interest_deductions,
 )
+from finance.augur.sim.compiler.distributions import DistributionCompileOutput, compile_distributions
 from finance.augur.sim.compiler.helpers import (
     EXTERNAL_ACCOUNT_ID,
     EXTERNAL_AGENT_ID,
@@ -156,6 +157,7 @@ class CompiledSimulation:
     transfers: TransferCompileOutput
     property_cashflows: PropertyCashflowCompileOutput
     bonds: BondCompileOutput
+    distributions: DistributionCompileOutput
     properties: PropertyCompileOutput
     # Per-property rented_fraction (0..1). Primary-residence use is tracked separately per agent.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
@@ -448,7 +450,24 @@ def compile_simulation(
                 lot_quantity_scale.append(quantity_scale_for_asset(sleeve.asset))
 
     lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
+    lot_account_codes_arr = np.asarray(lot_account_codes, dtype=np.int64)
     lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
+    lot_quantity_scale_arr = np.asarray(lot_quantity_scale, dtype=np.int64)
+    # After every lot list is complete, deliberately: a distribution pays on the pool's units
+    # including the purchase slots a policy has not filled yet, so its mask has to see them.
+    distributions = compile_distributions(
+        scenario,
+        strings,
+        assets,
+        account_slots,
+        profile_index_by_agent,
+        tax.buckets,
+        series_index_by_id,
+        lot_agent_codes=lot_agent_codes_arr,
+        lot_account_codes=lot_account_codes_arr,
+        lot_asset_codes=lot_asset_codes_arr,
+        lot_quantity_scale=lot_quantity_scale_arr,
+    )
     # PE-guard: PE lots are priced by `pe_channels` marks, not the price cube, so they have no
     # asset-price series (`asset_price_key_or_none` → None → NO_CODE).
     lot_asset_series_index = np.asarray(
@@ -530,16 +549,16 @@ def compile_simulation(
         cash_account_codes=np.asarray(cash_account_codes, dtype=np.int64),
         cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.int64),
         lot_id_codes=np.asarray(lot_id_codes, dtype=np.int64),
-        lot_agent_codes=np.asarray(lot_agent_codes, dtype=np.int64),
-        lot_account_codes=np.asarray(lot_account_codes, dtype=np.int64),
-        lot_asset_codes=np.asarray(lot_asset_codes, dtype=np.int64),
+        lot_agent_codes=lot_agent_codes_arr,
+        lot_account_codes=lot_account_codes_arr,
+        lot_asset_codes=lot_asset_codes_arr,
         lot_asset_series_index=lot_asset_series_index,
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
         lot_fifo_rank=np.asarray(lot_fifo_rank, dtype=np.int64),
         target_allocation_purchase_slots=ta_purchase_slots,
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.int64),
         lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.int64),
-        lot_quantity_scale=np.asarray(lot_quantity_scale, dtype=np.int64),
+        lot_quantity_scale=lot_quantity_scale_arr,
         tax=tax,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,
@@ -550,6 +569,7 @@ def compile_simulation(
         transfers=transfers,
         property_cashflows=property_cashflows,
         bonds=bonds,
+        distributions=distributions,
         properties=properties,
         liabilities=liabilities,
         # Ordinary-bucket ROWS, not profile indices: these scatter deductions into the YTD

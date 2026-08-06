@@ -35,7 +35,7 @@ falling back to flat marks.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -139,15 +139,10 @@ class PreSampledPrivateEquitySampler:
         return frozenset(IssuerId(issuer) for issuer in self.trajectories_by_issuer)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # Forward the non-PE level-series channels straight to the underlying
-        # provider; this overlay only adds PE trajectories on top.
-        underlying_request = ExogenousSamplingRequest(
-            horizon_months=request.horizon_months,
-            rollout_seeds=request.rollout_seeds,
-            required_asset_prices=request.required_asset_prices,
-            required_property_values=request.required_property_values,
-            required_index_series=request.required_index_series,
-        )
+        # Forward the non-PE level-series channels straight to the underlying provider; this
+        # overlay only adds PE trajectories on top. `replace` rather than a field-by-field
+        # rebuild, so a level role added later is forwarded instead of silently dropped.
+        underlying_request = replace(request, required_private_equity_issuers=frozenset())
         bundle = self.underlying.sample(underlying_request)
         if not self.trajectories_by_issuer:
             validate_sample_satisfies_request(request, bundle)

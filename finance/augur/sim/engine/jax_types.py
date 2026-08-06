@@ -214,6 +214,9 @@ class _Static:
     # Static: a scenario with no TIPS has a possibly zero-row series cube, so the indexed
     # branch must be skipped at trace time rather than masked at runtime.
     has_indexed_bonds: bool
+    # Same reason: a scenario with no distributing holding has nothing to gather a
+    # dollars-per-unit row from, and the payout phase is skipped at trace time.
+    has_distributions: bool
 
 
 @dataclass(frozen=True)

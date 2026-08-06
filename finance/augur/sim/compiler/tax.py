@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.bonds import bond_income_categories
+from finance.augur.sim.compiler.distributions import distribution_income_categories
 from finance.augur.sim.compiler.helpers import AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import usd_to_cents
@@ -113,11 +114,13 @@ def collect_income_sources(scenario: Scenario) -> set[TransferIncomeCategory]:
         *scenario.scheduled_property_cashflows,
         *scenario.recurring_property_cashflows,
     )
-    # Bonds are not `IncomeTagged` — a bond carries terms, and its coupon's category is
-    # derived from the issuer rather than stored on the instrument. The axis still has to
-    # carry a row for that issuer before the bond table can name one.
-    return {item.income_category for item in tagged if item.income_category is not None} | bond_income_categories(
-        scenario
+    # Bonds and fund distributions are not `IncomeTagged` — each carries terms, and the
+    # category is derived from the issuer rather than stored on the instrument. The axis still
+    # has to carry a row for that issuer before their tables can name one.
+    return (
+        {item.income_category for item in tagged if item.income_category is not None}
+        | bond_income_categories(scenario)
+        | distribution_income_categories(scenario)
     )
 
 

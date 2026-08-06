@@ -319,6 +319,22 @@ py_test(
 )
 
 py_test(
+    name = "test_security_distribution_e2e",
+    srcs = ["test_security_distribution_e2e.py"],
+    deps = [
+        ":scenario",
+        ":simulate",
+        "//finance/augur/model:deterministic",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "income_buckets_test",
     srcs = ["compiler/income_buckets_test.py"],
     deps = [
@@ -445,6 +461,7 @@ py_library(
         "compiler/assets.py",
         "compiler/bonds.py",
         "compiler/deductions.py",
+        "compiler/distributions.py",
         "compiler/helpers.py",
         "compiler/income_buckets.py",
         "compiler/lifecycle.py",

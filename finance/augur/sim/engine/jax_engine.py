@@ -326,6 +326,7 @@ class _Operands(NamedTuple):
     tr: dict[str, jnp.ndarray]
     pc: dict[str, jnp.ndarray]
     bond: dict[str, jnp.ndarray]
+    distribution: dict[str, jnp.ndarray]
     og: dict[str, jnp.ndarray]
     acc: dict[str, jnp.ndarray]
     # Scheduled-sale stacked static data.
@@ -791,6 +792,16 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "matures": jnp.asarray(bd.matures),
         "on_books": jnp.asarray(bd.on_books),
     }
+    dist = plan.distributions
+    distribution = {
+        # Float, so `mask @ lot_remaining` is one matmul rather than an int64 gather-and-sum.
+        "lot_mask": jnp.asarray(dist.lot_mask, dtype=jnp.float64),
+        "series": jnp.asarray(dist.series),
+        "quantity_scale": jnp.asarray(dist.quantity_scale),
+        "fraction": jnp.asarray(dist.fraction),
+        "to_slot": jnp.asarray(dist.to_slot),
+        "income_row": jnp.asarray(dist.income_row),
+    }
     ob = plan.obligations
     og = {
         "cause": jnp.asarray(ob.cause),
@@ -1107,6 +1118,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         tr=tr,
         pc=pc,
         bond=bond,
+        distribution=distribution,
         og=og,
         acc=acc,
         sale_months_t=sale_months_t,
@@ -1217,6 +1229,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         link_profile=tuple(int(taxc.link_profile[link]) for link in range(link_count)),
         profile_gain_index=tuple(int(x) for x in plan.tax_profile_capital_gain_index),
         has_indexed_bonds=bool(plan.bonds.indexed.any()),
+        has_distributions=bool(plan.distributions.series.size),
         profile_ordinary_bucket=tuple(
             plan.tax.buckets.ordinary_bucket(profile) for profile in range(p.tax_profile_count)
         ),
@@ -1315,6 +1328,7 @@ def _program_impl(
     tr = dict(baked.tr)  # copy: `fixed`/`base` are overwritten with the traced cfg values below
     pc = dict(baked.pc)
     bond = baked.bond
+    distribution = baked.distribution
     og = baked.og
     acc = baked.acc
     sale_months_t = baked.sale_months_t
@@ -1688,6 +1702,27 @@ def _program_impl(
             structure.external_cash_slot,
             structure.has_indexed_bonds,
         )
+
+        # Fund distributions, immediately after coupons and for the same reason: a payout is
+        # income arriving this month that must be able to fund this month's outflows. Reading
+        # `lot_remaining` here means the units are the ones held BEFORE this month's trading,
+        # which is what a record date means — a fund bought this month pays next month.
+        if structure.has_distributions:
+            cash, ordinary = _distribution_payouts_jit(
+                distribution["lot_mask"],
+                distribution["series"],
+                distribution["quantity_scale"],
+                distribution["fraction"],
+                distribution["to_slot"],
+                distribution["income_row"],
+                lot_remaining,
+                cash,
+                ordinary,
+                active,
+                external_values,
+                month,
+                structure.external_cash_slot,
+            )
 
         # Property purchases (after transfers, before sales — eager order). Vectorized over all real
         # purchases at once (no Python loop): each fires when its static month equals the traced month
@@ -2947,6 +2982,48 @@ def _bond_cashflows_jit(
     # Accretion reaches income and NOT cash — if it ever reached the cash tensor, the
     # conservation invariant would break immediately, which is the guard on this wiring.
     return cash, _scatter_rows(ordinary_ytd, income_row, coupons + accretion)
+
+
+def _distribution_payouts_jit(
+    lot_mask: jnp.ndarray,
+    series: jnp.ndarray,
+    quantity_scale: jnp.ndarray,
+    fraction: jnp.ndarray,
+    to_slot: jnp.ndarray,
+    income_row: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    cash: jnp.ndarray,
+    ordinary_ytd: jnp.ndarray,
+    active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: jnp.ndarray,
+    row_of_world: int,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """This month's fund distributions, one row per (pool, tax slice).
+
+    `units * dollars_per_unit` — the same multiplication the engine performs to mark a
+    holding, which is the whole point of the model emitting a per-unit primitive instead of a
+    yield. No rate appears here and nothing is divided by a price.
+
+    The slices of one pool round independently, and the payout IS their sum, so there is no
+    unrounded total for them to fail to add up to. Like a coupon, every payout is funded by
+    `row_of_world`: the fund is not a modeled agent, so without that debit the cash would come
+    from nowhere.
+    """
+
+    # `(slice, R)` units held, from the pool masks against the current lot quantities. A pool's
+    # lots share one quantum size, so one divide per slice recovers whole units.
+    quanta_held = lot_mask @ lot_remaining.astype(jnp.float64)
+    units_held = quanta_held / quantity_scale[:, None].astype(jnp.float64)
+    per_unit_usd = external_values[series, :, month]
+    # A non-finite or non-positive per-unit value is a hole in the sampled path, not a zero
+    # payout; it pays nothing rather than propagating a NaN into the cash tensor, and the
+    # scenario-level demand check is what makes a missing series loud instead.
+    per_unit_usd = jnp.where(jnp.isfinite(per_unit_usd) & (per_unit_usd > 0.0), per_unit_usd, 0.0)
+    paid = _round_int64(units_held * per_unit_usd * fraction[:, None] * float(USD_CENTS))
+    paid = jnp.where(active[None, :], paid, 0)
+    cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
+    return cash, _scatter_rows(ordinary_ytd, income_row, paid)
 
 
 def _sleeve_prices_cents(

@@ -24,14 +24,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from finance.augur.model.schemas import FrozenModel
-from finance.augur.model.series import (
-    HomeValueKey,
-    InflationKey,
-    IssuerId,
-    RentKey,
-    SecurityKey,
-    try_parse_level_series_key,
-)
+from finance.augur.model.series import IssuerId, LevelSeriesKeyUnion, try_parse_level_series_key
 
 
 class PrivateEquityMarkKey(FrozenModel):
@@ -51,10 +44,13 @@ class PrivateEquityMarkKey(FrozenModel):
         return f"private_equity:{self.issuer_id}"
 
 
-type FactorKey = Annotated[
-    InflationKey | SecurityKey | HomeValueKey | RentKey | PrivateEquityMarkKey, Field(discriminator="kind")
-]
-"""A state-space covariance-basis factor: any non-PE level series, or a private-equity issuer's mark."""
+type FactorKey = Annotated[LevelSeriesKeyUnion | PrivateEquityMarkKey, Field(discriminator="kind")]
+"""A state-space covariance-basis factor: any non-PE level series, or a private-equity issuer's mark.
+
+Extends `LevelSeriesKeyUnion` rather than re-listing its members. The re-listing this replaces
+was a live trap: adding a `LevelSeriesKind` without also adding it here silently dropped the new
+kind from the covariance basis, and because a shorter union is still a valid union, nothing
+typechecked it."""
 
 
 def parse_factor_key(wire_id: str) -> FactorKey:

@@ -41,6 +41,7 @@ class LevelSeriesKind(StrEnum):
 
     INFLATION = "inflation"
     SECURITY = "security"
+    SECURITY_DISTRIBUTION = "security_distribution"
     HOME_VALUE = "home_value"
     RENT = "rent"
 
@@ -109,6 +110,35 @@ SP500_KEY = SecurityKey(symbol=SP500_SYMBOL)
 portfolio's index-proxy holdings all have to agree on which symbol means "the market"."""
 
 
+class SecurityDistributionKey(_LevelKeyBase):
+    """What one unit of a distributing security pays out in a month, in DOLLARS PER UNIT.
+
+    A primitive, deliberately not a yield. A yield is `distribution / price`, and emitting a
+    ratio would make the sim reconstruct the operand the model already has — the sim would
+    have to multiply by market value to get back to dollars. Per unit, the sim multiplies by
+    units held, which is the operation it already performs for price, and no rate exists
+    anywhere downstream. Whatever the model knows internally about the fed rate, credit
+    spreads and duration stays internal, exactly like curve shape.
+
+    Strictly positive, like a price, which is what lets it be a level series at all — a yield
+    can reach zero or go negative and could not ride the multiplicative level stack. The
+    series is therefore only defined for securities that distribute EVERY month (the bond
+    funds this exists for do); a security that does not distribute simply has no such series
+    rather than one padded with zeroes.
+    """
+
+    kind: Literal[LevelSeriesKind.SECURITY_DISTRIBUTION] = LevelSeriesKind.SECURITY_DISTRIBUTION
+    symbol: SecuritySymbol
+
+    @property
+    def wire_id(self) -> str:
+        return f"security_distribution:{self.symbol}"
+
+    @property
+    def subid(self) -> str | None:
+        return str(self.symbol)
+
+
 class HomeValueKey(_LevelKeyBase):
     kind: Literal[LevelSeriesKind.HOME_VALUE] = LevelSeriesKind.HOME_VALUE
     location_id: LocationId
@@ -143,13 +173,27 @@ class RentKey(_LevelKeyBase):
 type AssetPriceKey = Annotated[SecurityKey, Field(discriminator="kind")]
 """Prices a holding/lot: the security's own symbol (PE marks are off in their own bundle)."""
 
+type SecurityDistributionSeriesKey = Annotated[SecurityDistributionKey, Field(discriminator="kind")]
+"""Pays out per unit held. Its own role rather than an asset price, even though both are
+per-unit dollars keyed by symbol: a lot priced by its distribution series would be valued at
+one month's payout, and the role split is what makes that a mypy error instead of a plausible
+number."""
+
 type PropertyValueKey = Annotated[HomeValueKey, Field(discriminator="kind")]
 """Values a property at sale: the location's home-value series."""
 
 type IndexSeriesKey = Annotated[InflationKey | RentKey, Field(discriminator="kind")]
 """Escalates a recurring amount: CPI inflation or a location's rent series."""
 
-type LevelSeriesKey = Annotated[InflationKey | SecurityKey | HomeValueKey | RentKey, Field(discriminator="kind")]
+type LevelSeriesKeyUnion = InflationKey | SecurityKey | SecurityDistributionKey | HomeValueKey | RentKey
+"""The level-key classes as a bare union, without the discriminator annotation.
+
+Exists so a consumer that needs to EXTEND the union — the state-space covariance basis, which
+spans level series and private-equity marks together — can name the members once instead of
+re-listing them. That re-listing is a silent trap: a new kind missing from the copy is dropped
+from the basis with no type error, because both spellings are valid unions."""
+
+type LevelSeriesKey = Annotated[LevelSeriesKeyUnion, Field(discriminator="kind")]
 
 
 class PrivateEquityRegimeCode(IntEnum):
@@ -198,6 +242,8 @@ def parse_level_series_key(wire_id: str) -> LevelSeriesKey:
             return RentKey(location_id=LocationId(suffix))
         case "security":
             return SecurityKey(symbol=SecuritySymbol(suffix))
+        case "security_distribution":
+            return SecurityDistributionKey(symbol=SecuritySymbol(suffix))
     raise ValueError(f"unrecognized level-series wire id {wire_id!r}")
 
 

@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, LocationId
+from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, LocationId, SecurityDistributionKey
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
@@ -52,6 +52,10 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     # the TIPS an all-NaN price row instead of the loud raise, which is strictly worse.
     if any(bond.inflation_indexed for bond in scenario.initial_bonds):
         add(InflationKey())
+    # A distributing security demands TWO series: its price (already demanded by the lots that
+    # hold it) and its dollars-per-unit payout, which nothing else references.
+    for distribution in scenario.security_distributions:
+        add(SecurityDistributionKey(symbol=asset_price_key(distribution.asset).symbol))
     for scheduled_transfer in scenario.scheduled_transfers:
         _add_amount_series_key(scheduled_transfer.amount_usd, add)
     for recurring_transfer in scenario.recurring_transfers:

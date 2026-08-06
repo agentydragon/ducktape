@@ -1,18 +1,19 @@
 """Per-role grouping of level-series values, shared by the independent-provider family.
 
 The non-PE level series partition into disjoint roles by *what references them*
-(see `augur/model/series.py`): asset-price (`security`), property-value (`home_value`),
-and index (`inflation`, `rent`). Specs that map each level series to some value — the
-independent exogenous provider and its sim/bench twin map each to a scalar model spec — all
-range over that same role-structured set. The structure lives here once as generic
+(see `augur/model/series.py`): asset-price (`security`), security-distribution
+(`security_distribution`), property-value (`home_value`), and index (`inflation`, `rent`).
+Specs that map each level series to some value — the independent exogenous provider and its
+sim/bench twin map each to a scalar model spec — all range over that same
+role-structured set. The structure lives here once as generic
 groups so each consumer holds typed, role-separated fields (mirroring the runtime
 `SampledExogenousBundle`) rather than one flat per-kind bucket or a prefix-parsed
 `dict[str, ValueT]`.
 
 Field names are exactly the `LevelSeriesKind` values. Each role projects to its *own*
-typed-key view (`by_asset_price_key` / `by_property_value_key` / `by_index_series_key`) so a
-consumer that wants exactly one role gets it typed; `by_level_key` flattens all of them
-for consumers that genuinely range over every spec.
+typed-key view (`by_asset_price_key`, `by_property_value_key`, …) so a consumer that wants
+exactly one role gets it typed; `by_level_key` flattens all of them for consumers that
+genuinely range over every spec.
 """
 
 from __future__ import annotations
@@ -31,6 +32,8 @@ from finance.augur.model.series import (
     LocationId,
     PropertyValueKey,
     RentKey,
+    SecurityDistributionKey,
+    SecurityDistributionSeriesKey,
     SecurityKey,
     SecuritySymbol,
 )
@@ -43,6 +46,15 @@ class AssetPriceGroups[ValueT](FrozenModel):
 
     def by_asset_price_key(self) -> dict[AssetPriceKey, ValueT]:
         return {SecurityKey(symbol=symbol): value for symbol, value in self.security.items()}
+
+
+class SecurityDistributionGroups[ValueT](FrozenModel):
+    """Security-distribution role values: `security_distribution` keyed by symbol."""
+
+    security_distribution: dict[SecuritySymbol, ValueT] = Field(default_factory=dict)
+
+    def by_security_distribution_key(self) -> dict[SecurityDistributionSeriesKey, ValueT]:
+        return {SecurityDistributionKey(symbol=symbol): value for symbol, value in self.security_distribution.items()}
 
 
 class PropertyValueGroups[ValueT](FrozenModel):
@@ -87,6 +99,7 @@ class LevelSeriesGroups[ValueT](FrozenModel):
     """
 
     asset_prices: AssetPriceGroups[ValueT] = Field(default_factory=AssetPriceGroups)
+    security_distributions: SecurityDistributionGroups[ValueT] = Field(default_factory=SecurityDistributionGroups)
     property_values: PropertyValueGroups[ValueT] = Field(default_factory=PropertyValueGroups)
     index_series: IndexSeriesGroups[ValueT] = Field(default_factory=IndexSeriesGroups)
 
@@ -99,6 +112,7 @@ class LevelSeriesGroups[ValueT](FrozenModel):
         return dict(
             itertools.chain(
                 self.asset_prices.by_asset_price_key().items(),
+                self.security_distributions.by_security_distribution_key().items(),
                 self.property_values.by_property_value_key().items(),
                 self.index_series.by_index_series_key().items(),
             )

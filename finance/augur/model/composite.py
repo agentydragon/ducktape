@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
@@ -32,15 +32,10 @@ class CompositeModel:
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         # Non-PE level series (every role) route to the macro provider;
-        # PE routes via `required_private_equity_issuers` to the PE provider.
-        macro_request = ExogenousSamplingRequest(
-            horizon_months=request.horizon_months,
-            rollout_seeds=request.rollout_seeds,
-            required_asset_prices=request.required_asset_prices,
-            required_property_values=request.required_property_values,
-            required_index_series=request.required_index_series,
-            required_private_equity_issuers=frozenset(),
-        )
+        # PE routes via `required_private_equity_issuers` to the PE provider. `replace` rather
+        # than a field-by-field rebuild: "every role" has to stay true when a role is added,
+        # and a rebuild that forgot one would silently ask the macro provider for less.
+        macro_request = replace(request, required_private_equity_issuers=frozenset())
         pe_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,

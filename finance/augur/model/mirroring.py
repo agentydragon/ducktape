@@ -11,8 +11,7 @@ swapping in a real fitted `source` later needs zero downstream change.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import cast
+from dataclasses import dataclass, replace
 
 from pydantic import Field
 
@@ -22,6 +21,7 @@ from finance.augur.model.exogenous import (
     Sampler,
     anchor_sampled_series_levels,
     assemble_level_frames,
+    level_series_request_channels,
     merge_level_frames,
     validate_sample_satisfies_request,
 )
@@ -97,20 +97,14 @@ class MirroringSampler:
 
     def _inner_request(self, request: ExogenousSamplingRequest) -> ExogenousSamplingRequest:
         # A consumer may require a mirror target, but the inner model only knows the source.
-        # Rewrite each required target to its source; source and target share a kind, so each
-        # key stays in its own role request channel.
+        # Rewrite each required target to its source, then re-partition into role channels
+        # rather than mapping each channel by hand: source and target share a kind, so a
+        # rewritten key lands back in the channel it came from, and routing it through
+        # `level_series_request_channels` means a level role added later needs no edit here.
         source_by_target: dict[LevelSeriesKey, LevelSeriesKey] = {
             mirror.target: mirror.source for mirror in self.mirror_series
         }
-
-        def to_sources[KeyT: LevelSeriesKey](keys: frozenset[KeyT]) -> frozenset[KeyT]:
-            return frozenset(cast("KeyT", source_by_target.get(key, key)) for key in keys)
-
-        return ExogenousSamplingRequest(
-            horizon_months=request.horizon_months,
-            rollout_seeds=request.rollout_seeds,
-            required_asset_prices=to_sources(request.required_asset_prices),
-            required_property_values=to_sources(request.required_property_values),
-            required_index_series=to_sources(request.required_index_series),
-            required_private_equity_issuers=request.required_private_equity_issuers,
+        return replace(
+            request,
+            **level_series_request_channels(source_by_target.get(key, key) for key in request.required_level_series),
         )

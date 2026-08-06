@@ -397,6 +397,73 @@ class BondHolding(BaseModel):
         return self
 
 
+class DistributionTaxSlice(BaseModel):
+    """What fraction of a distribution carries one issuer's tax character.
+
+    Real funds are mixed and publish the split, so a single tag would be a lie: an aggregate
+    bond fund is part Treasury (state-exempt) and part corporate (exempt nowhere), and a
+    national muni fund is federally exempt throughout while only its in-state slice is exempt
+    at the state level. Splitting the payout into slices reuses the existing per-issuer
+    exemption machinery unchanged — this is the muni-bond path applied several times with
+    weights, not new tax machinery.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    fraction: PositiveFloat
+    # Same holder-relative meaning as `BondHolding.issuer_jurisdiction_id`: whether this slice
+    # is taxable is a relation between the issuer and the holder's jurisdictions.
+    issuer_jurisdiction_id: str | None = None
+
+
+class SecurityDistribution(BaseModel):
+    """A security whose units pay out cash each month, and how that payout is taxed.
+
+    The AMOUNT is exogenous and arrives as `SecurityDistributionKey(symbol=…)` in dollars per
+    unit — never a rate. A bond fund's payout tracks the fed rate and credit spreads, which is
+    the black-box half of augur's job, and the engine's arithmetic is
+    `units_held * distribution_per_unit`, the same multiplication it already does for price.
+
+    The tax CHARACTER is not exogenous, which is why it sits here rather than coming out of the
+    model: a fund's jurisdiction breakdown follows its mandate, is published annually, and does
+    not move with the economy.
+
+    Scoped to one (agent, holding account, asset) pool because that is what determines both the
+    units paid on and where the cash lands. Two positions in the same fund in the same account
+    are one pool, not two payouts.
+
+    Every slice is `InterestIncome` today, which is right for the bond funds this exists for and
+    wrong for an equity fund: `IncomeCategory` has no qualified-dividend rate, so an equity
+    distribution routed through here would be overtaxed as ordinary income. Distributions on an
+    equity fund need that third category first.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    asset: AssetKey
+    agent_id: str
+    # The account whose units this pays on — lots elsewhere are a different pool.
+    holding_account_id: str
+    # No default, for the same reason `BondHolding.account_id` has none: cash paid to an account
+    # that does not exist is scattered into the dump row and vanishes silently.
+    to_account_id: str
+    tax_character: tuple[DistributionTaxSlice, ...]
+
+    @model_validator(mode="after")
+    def _require_fully_allocated_tax_character(self) -> SecurityDistribution:
+        if not self.tax_character:
+            raise ValueError(f"security distribution on {self.asset.wire_id!r} declares no tax character")
+        total = sum(slice_.fraction for slice_ in self.tax_character)
+        # Exactly 1, not "at most 1": a short split would silently pay out less than the fund
+        # distributes, which reads as a lower yield rather than as the misconfiguration it is.
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(
+                f"security distribution on {self.asset.wire_id!r} allocates {total} of its payout; "
+                "the tax-character fractions must sum to 1"
+            )
+        return self
+
+
 class InitialLot(BaseModel):
     """A tax lot that exists at scenario start. Models pre-existing
     holdings: Alice already owns 100 units of VTI bought 24 months
@@ -970,6 +1037,7 @@ class Scenario(BaseModel):
     initial_cash: list[InitialAccountBalance]
     initial_lots: list[InitialLot] = Field(default_factory=list)
     initial_bonds: list[BondHolding] = Field(default_factory=list)
+    security_distributions: list[SecurityDistribution] = Field(default_factory=list)
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
     scheduled_property_cashflows: list[ScheduledPropertyCashflow] = Field(default_factory=list)
@@ -1030,6 +1098,30 @@ class Scenario(BaseModel):
                 for agent_id, account_id, asset_id, purchase_month, first_lot_id, second_lot_id in sorted(duplicates)
             )
             raise ValueError(f"duplicate initial lot purchase months for FIFO pool(s): {duplicate_list}")
+        return self
+
+    @model_validator(mode="after")
+    def _reject_unusable_security_distributions(self) -> Scenario:
+        """One payout per (agent, holding account, asset) pool, and only on a traded security.
+
+        Two specs over the same pool would each pay on the pool's whole unit count, so the
+        holding would distribute twice — a doubled yield that looks like a modelling result.
+        """
+
+        seen: set[tuple[str, str, str]] = set()
+        for distribution in self.security_distributions:
+            key = (distribution.agent_id, distribution.holding_account_id, distribution.asset.wire_id)
+            if key in seen:
+                raise ValueError(
+                    f"duplicate security distribution for {key[0]}/{key[1]}/{key[2]}: "
+                    "a pool pays out once, so two specs over it would double the payout"
+                )
+            seen.add(key)
+            if asset_price_key_or_none(distribution.asset) is None:
+                raise ValueError(
+                    f"security distribution names {distribution.asset.wire_id!r}, which is not a "
+                    "traded security (private equity is marked, not distributed)"
+                )
         return self
 
     @model_validator(mode="after")
