@@ -56,8 +56,8 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
     assert sampled.private_equity.issuer_bool_matrix(
         "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=3
     ).shape == (2, 4)
-    source_manifest = cast(dict[str, Any], sampled.metadata["source_manifest"])
-    prior_manifest = cast(dict[str, Any], sampled.metadata["prior_manifest"])
+    source_manifest = cast(dict[str, Any], sampled.provenance["source_manifest"])
+    prior_manifest = cast(dict[str, Any], sampled.provenance["prior_manifest"])
     assert source_manifest["source_ids"] == ["fixture:public"]
     assert prior_manifest["kind"] == "fixture"
 

@@ -236,7 +236,7 @@ class ProductService:
             level_series_anchors=anchors.level_series_anchors,
             private_equity_anchors=anchors.private_equity_anchors,
         )
-        model_id = str(sampled.metadata.get("model_id") or scenario_key.model_id)
+        model_id = sampled.model_id or scenario_key.model_id
         return scenario, sampled, model_id
 
 

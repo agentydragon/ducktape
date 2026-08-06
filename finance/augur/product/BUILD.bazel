@@ -144,6 +144,7 @@ py_test(
         "//finance/augur/calibration:testing",
         "//finance/augur/model:private_equity_risk",
         "//finance/augur/model:provider_config",
+        "//finance/augur/model:series",
         "//finance/evidence:markets",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

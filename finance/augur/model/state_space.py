@@ -317,9 +317,10 @@ class StateSpaceModel:
         sampled = SampledExogenousBundle(
             levels=frames,
             private_equity=private_equity,
-            metadata={
+            model_id=self.label,
+            private_equity_prices_usd=self._private_equity_prices_usd(),
+            provenance={
                 "model_version_id": self.model_version_id,
-                "model_id": self.label,
                 "scenario_generator_id": "state_space_numpy",
                 "scenario_generator_version_id": "state_space_numpy:v1",
                 "evidence_set_id": self.evidence_set_id,
@@ -328,7 +329,6 @@ class StateSpaceModel:
                 "conditioning_start_at": self.conditioning.start_at.isoformat(),
                 "source_manifest": self.artifact.source_manifest,
                 "prior_manifest": self.artifact.prior_manifest,
-                "private_equity_prices_usd": self._private_equity_prices_usd(),
                 "exogenous_provider_label": self.label,
             },
         )
@@ -445,10 +445,10 @@ class StateSpaceModel:
                     events[rollout_idx, month_index] = True
         return events
 
-    def _private_equity_prices_usd(self) -> dict[str, float]:
+    def _private_equity_prices_usd(self) -> dict[IssuerId, float]:
         levels = self._conditioned_start_levels()
         return {
-            str(issuer_id): levels[PrivateEquityAssetKey(issuer_id=issuer_id).wire_id]
+            issuer_id: levels[PrivateEquityAssetKey(issuer_id=issuer_id).wire_id]
             for issuer_id in self.artifact.private_equity_factor_issuers
         }
 

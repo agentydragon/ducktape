@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from finance.augur.model.exogenous import (
@@ -47,29 +46,15 @@ class CompositeModel:
         sampled = SampledExogenousBundle(
             levels=merge_level_frames(macro_bundle.levels, pe_bundle.levels),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
-            metadata={
-                "model_id": self.label,
-                "private_equity_prices_usd": _private_equity_prices_usd(pe_bundle.metadata),
-                "macro_metadata": dict(macro_bundle.metadata),
-                "private_equity_metadata": dict(pe_bundle.metadata),
+            # The PE half's month-0 marks pass straight through: it is the only component that
+            # has any, and the field is already `Mapping[IssuerId, float]` on both sides. This
+            # used to be fifteen lines of isinstance checks rebuilding a type the writer had.
+            private_equity_prices_usd=pe_bundle.private_equity_prices_usd,
+            model_id=self.label,
+            provenance={
+                "macro_provenance": dict(macro_bundle.provenance),
+                "private_equity_provenance": dict(pe_bundle.provenance),
             },
         )
         validate_sample_satisfies_request(request, sampled)
         return sampled
-
-
-def _private_equity_prices_usd(metadata: Mapping[str, object]) -> dict[str, float]:
-    raw = metadata.get("private_equity_prices_usd")
-    if raw is None:
-        return {}
-    if not isinstance(raw, Mapping):
-        raise TypeError("private_equity metadata key private_equity_prices_usd must be a mapping")
-
-    prices: dict[str, float] = {}
-    for key, value in raw.items():
-        if not isinstance(key, str):
-            raise TypeError("private_equity_prices_usd keys must be strings")
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise TypeError(f"private_equity_prices_usd[{key!r}] must be numeric")
-        prices[key] = float(value)
-    return prices

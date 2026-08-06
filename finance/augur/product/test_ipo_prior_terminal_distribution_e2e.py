@@ -23,6 +23,7 @@ from finance.augur.calibration.ipo_prior import derive_public_market_anchors
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
+from finance.augur.model.series import IssuerId
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import FundingPolicy, ScenarioKey, SleeveWeight, TerminalDistributionRequest
@@ -31,7 +32,7 @@ from finance.evidence.markets import Platform
 # One market, deadline six months after the catalog's model anchor. Its YES price is the whole
 # input this test varies: everything else is held identical between arms.
 _MARKET_ID = "ipo_by_2026_11"
-_ISSUER = "private_holding_a"
+_ISSUER = IssuerId("private_holding_a")
 
 # Enough spend to make the portfolio work without ruining it — every rollout survives in both
 # arms, so a difference in the distribution is the IPO prior and not a difference in who died.

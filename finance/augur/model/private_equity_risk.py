@@ -343,7 +343,7 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
 
 class PrivateEquityRiskProviderConfig(FrozenModel):
     type: Literal["private_equity_risk"] = "private_equity_risk"
-    issuers: dict[str, PrivateEquityRiskIssuerConfig] = Field(min_length=1)
+    issuers: dict[IssuerId, PrivateEquityRiskIssuerConfig] = Field(min_length=1)
 
     def realize_model(self) -> PrivateEquityRiskModel:
         return PrivateEquityRiskModel(issuers=self.issuers)
@@ -351,20 +351,20 @@ class PrivateEquityRiskProviderConfig(FrozenModel):
 
 @dataclass(frozen=True)
 class PrivateEquityRiskModel:
-    issuers: dict[str, PrivateEquityRiskIssuerConfig]
+    issuers: dict[IssuerId, PrivateEquityRiskIssuerConfig]
     label: str = "private_equity_risk"
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return frozenset()
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        return frozenset(IssuerId(issuer_id) for issuer_id in self.issuers)
+        return frozenset(self.issuers)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         rollout_count = request.rollout_count
         horizon_months = request.horizon_months
         pe_bundle_parts: list[PrivateEquityBundle] = []
-        prices: dict[str, float] = {}
+        prices: dict[IssuerId, float] = {}
         for issuer_id, issuer in sorted(self.issuers.items()):
             paths = _sample_issuer(issuer_id, issuer, request)
             prices[issuer_id] = issuer.current_mark_usd
@@ -388,11 +388,9 @@ class PrivateEquityRiskModel:
 
         sampled = SampledExogenousBundle(
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
-            metadata={
-                "model_id": self.label,
-                "private_equity_issuers": tuple(sorted(self.issuers)),
-                "private_equity_prices_usd": prices,
-            },
+            model_id=self.label,
+            private_equity_prices_usd=prices,
+            provenance={"private_equity_issuers": tuple(sorted(self.issuers))},
         )
         validate_sample_satisfies_request(request, sampled)
         return sampled

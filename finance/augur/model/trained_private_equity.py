@@ -44,7 +44,7 @@ class TrainedPrivateEquityModelArtifact(FrozenModel):
     """
 
     schema_version: Literal[1] = 1
-    issuer_id: str = Field(min_length=1)
+    issuer_id: IssuerId = Field(min_length=1)
     as_of_date: date
     current_mark_usd: float = Field(gt=0)
     monthly_log_return_mu: float
@@ -85,7 +85,7 @@ class TrainedPrivateEquityModel(FrozenModel):
         return frozenset()
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
-        return frozenset({IssuerId(self.artifact.issuer_id)})
+        return frozenset({self.artifact.issuer_id})
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         issuer = self.artifact.issuer_id
@@ -111,11 +111,11 @@ class TrainedPrivateEquityModel(FrozenModel):
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             ),
-            metadata={
-                "model_id": self.label,
+            model_id=self.label,
+            private_equity_prices_usd={issuer: self.artifact.current_mark_usd},
+            provenance={
                 "private_equity_model_schema_version": self.artifact.schema_version,
                 "private_equity_issuers": (issuer,),
-                "private_equity_prices_usd": {issuer: self.artifact.current_mark_usd},
             },
         )
 

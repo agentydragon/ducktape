@@ -41,7 +41,7 @@ from finance.augur.api.wire import ActorRole
 from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.provider_config import CompositeProviderConfig
-from finance.augur.model.series import SecuritySymbol
+from finance.augur.model.series import IssuerId, SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 
@@ -266,7 +266,7 @@ def test_config_accepts_composite_provider_with_private_equity_risk(minimal_conf
     provider = config.models[config.default_model_id]
     assert isinstance(provider, CompositeProviderConfig)
     assert isinstance(provider.private_equity, PrivateEquityRiskProviderConfig)
-    assert provider.private_equity.issuers["private_holding_a"].current_mark_usd == 25.0
+    assert provider.private_equity.issuers[IssuerId("private_holding_a")].current_mark_usd == 25.0
 
 
 def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(

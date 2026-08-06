@@ -334,9 +334,9 @@ class VecmModel:
         )
         return SampledExogenousBundle(
             levels=frames,
-            metadata={
+            model_id=self.label,
+            provenance={
                 "model_version_id": self.model_version_id,
-                "model_id": self.label,
                 "scenario_generator_id": "vecm_numpyro",
                 "scenario_generator_version_id": "vecm_numpyro:v1",
                 "evidence_set_id": self.evidence_set_id,

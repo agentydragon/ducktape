@@ -90,7 +90,9 @@ class MirroringSampler:
         merged = SampledExogenousBundle(
             levels=merge_level_frames(bundle.levels, mirror_levels),
             private_equity=bundle.private_equity,
-            metadata=bundle.metadata,
+            private_equity_prices_usd=bundle.private_equity_prices_usd,
+            model_id=bundle.model_id,
+            provenance=bundle.provenance,
         )
         anchors = {
             mirror.target: mirror.initial_level for mirror in self.mirror_series if mirror.initial_level is not None

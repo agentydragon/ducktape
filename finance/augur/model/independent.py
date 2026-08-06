@@ -86,8 +86,7 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         # — the inherited role groups carry only level series.
         frames = sample_independent_levels(self, request)
         return SampledExogenousBundle(
-            levels=frames,
-            metadata={"model_id": self.label, "private_equity_prices_usd": self._private_equity_prices_usd()},
+            levels=frames, model_id=self.label, private_equity_prices_usd=self._private_equity_prices_usd()
         )
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
@@ -130,8 +129,8 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
 
         return self.by_level_key()
 
-    def _private_equity_prices_usd(self) -> dict[str, float]:
-        return {str(issuer_id): _month_zero_level(spec) for issuer_id, spec in self.pe_marks.items()}
+    def _private_equity_prices_usd(self) -> dict[IssuerId, float]:
+        return {issuer_id: _month_zero_level(spec) for issuer_id, spec in self.pe_marks.items()}
 
 
 def _month_zero_level(spec: ScalarSeriesSpec) -> float:

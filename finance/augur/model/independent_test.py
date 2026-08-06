@@ -95,9 +95,9 @@ def test_independent_model_samples_levels_and_events(example_config: Independent
     }
     # IndependentModel doesn't sample PE channels — the typed PE bundle stays empty.
     assert sampled.private_equity.is_empty()
-    assert sampled.metadata["model_id"] == "independent"
-    # The PE mark's month-0 initial_value is surfaced via metadata, keyed by issuer.
-    assert sampled.metadata["private_equity_prices_usd"] == {"private_equity_x": 50.0}
+    assert sampled.model_id == "independent"
+    # The PE mark's month-0 initial_value is surfaced as a typed field, keyed by issuer.
+    assert sampled.private_equity_prices_usd == {"private_equity_x": 50.0}
 
 
 def test_independent_provider_config_roundtrips_through_discriminated_union(
@@ -106,9 +106,8 @@ def test_independent_provider_config_roundtrips_through_discriminated_union(
     adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
     config = adapter.validate_python(example_config.model_dump())
     assert isinstance(config, IndependentProviderConfig)
-    assert config.realize_model().sample(ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(9,))).metadata[
-        "private_equity_prices_usd"
-    ] == {"private_equity_x": 50.0}
+    sampled = config.realize_model().sample(ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(9,)))
+    assert sampled.private_equity_prices_usd == {"private_equity_x": 50.0}
 
 
 def test_realized_model_keeps_role_structure(example_config: IndependentProviderConfig) -> None:

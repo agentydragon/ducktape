@@ -56,7 +56,7 @@ def forced_private_equity_event_model() -> ConstantFrameModel:
                 forced_sale_fraction=level_matrix_with_month_override(default=0.0, override=0.25, month=1),
             )
         },
-        metadata={"model_id": "forced_pe_fixture"},
+        model_id="forced_pe_fixture",
     )
 
 
@@ -77,5 +77,5 @@ def capacity_limited_private_equity_model() -> ConstantFrameModel:
                 ),
             )
         },
-        metadata={"model_id": "capacity_limited_pe_fixture"},
+        model_id="capacity_limited_pe_fixture",
     )

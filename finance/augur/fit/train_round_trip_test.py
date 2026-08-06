@@ -57,7 +57,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
         )
     )
 
-    assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
+    assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
     assert sampled.levels.series_keys() == set(required_level_series)
     for home_loc in home_locations:
         assert sampled.level_matrix(HomeValueKey(location_id=home_loc), rollout_count=2, horizon_months=12).shape == (
@@ -95,8 +95,8 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
         )
     )
 
-    assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
-    assert sampled.metadata["source_manifest"]
+    assert str(sampled.provenance["model_version_id"]).startswith("model_version:")
+    assert sampled.provenance["source_manifest"]
     assert sampled.levels.series_keys() >= set(required_level_series)
 
 

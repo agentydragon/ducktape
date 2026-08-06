@@ -31,7 +31,7 @@ class _MinimalSampler(Sampler):
     no PE, no other channels — so tests can isolate the overlay's behavior."""
 
     bundle: SampledExogenousBundle = field(
-        default_factory=lambda: SampledExogenousBundle(metadata={"underlying_id": "minimal"})
+        default_factory=lambda: SampledExogenousBundle(provenance={"underlying_id": "minimal"})
     )
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:

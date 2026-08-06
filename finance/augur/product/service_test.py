@@ -462,7 +462,7 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     model = ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={issuer_id: PrivateEquityChannels(mark_usd_per_unit=mark_by_rollout)},
-        metadata={"model_id": "pe_mark_by_rollout_fixture"},
+        model_id="pe_mark_by_rollout_fixture",
     )
     product = make_product_service(model)
     scenario = ScenarioKey(
@@ -709,7 +709,7 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
                     liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
-            metadata={"model_id": "collapsed_pe_fixture"},
+            model_id="collapsed_pe_fixture",
         )
     )
 
@@ -759,7 +759,7 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
                     ),
                 )
             },
-            metadata={"model_id": "tender_opportunity_fixture"},
+            model_id="tender_opportunity_fixture",
         )
     )
 

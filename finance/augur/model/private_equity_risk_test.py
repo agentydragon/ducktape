@@ -73,9 +73,9 @@ def test_private_equity_risk_provider_config_roundtrips_through_union() -> None:
     config = adapter.validate_python({"type": "private_equity_risk", "issuers": {"acme": {"current_mark_usd": 100.0}}})
 
     assert isinstance(config, PrivateEquityRiskProviderConfig)
-    assert config.realize_model().sample(ExogenousSamplingRequest(horizon_months=1, rollout_seeds=(1,))).metadata[
-        "private_equity_prices_usd"
-    ] == {"acme": 100.0}
+    assert config.realize_model().sample(
+        ExogenousSamplingRequest(horizon_months=1, rollout_seeds=(1,))
+    ).private_equity_prices_usd == {"acme": 100.0}
 
 
 def test_private_equity_risk_samples_complete_protocol_bundle() -> None:

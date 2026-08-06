@@ -241,11 +241,28 @@ class SampledExogenousBundle:
 
     `levels` holds one frame per kind (see `LevelFrames`); `private_equity` carries the
     typed PE protocol bundle per issuer.
+
+    Everything a consumer READS is a typed field. What used to be one
+    `metadata: Mapping[str, object]` carried two unrelated things under one type: load-bearing
+    data that consumers reached for by string key, and free-form provenance nobody parses. The
+    first is now `private_equity_prices_usd` and `model_id`; `provenance` keeps the second and
+    is named for what it is, so a future field cannot quietly hide in it again.
     """
 
     levels: LevelFrames = field(default_factory=LevelFrames.empty)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
-    metadata: Mapping[str, object] = field(default_factory=dict)
+    # Month-0 per-unit mark for each PE issuer the bundle covers. A provider that emits no PE
+    # leaves it empty; the empty mapping is "no issuers", not "unknown".
+    private_equity_prices_usd: Mapping[IssuerId, float] = field(default_factory=dict)
+    # The provider's own label for what produced this sample, which can differ from the preset
+    # id the caller asked for (a composite reports itself, not its macro half). `None` is a
+    # real state: a sampler is not obliged to name itself, and the caller falls back to the id
+    # it requested.
+    model_id: str | None = None
+    # Descriptive only — version ids, generator names, training window, anchors, notes. Nothing
+    # branches on it; it exists to be logged and read by humans. Anything that acquires a
+    # programmatic consumer stops belonging here and becomes a field.
+    provenance: Mapping[str, object] = field(default_factory=dict)
 
     def level_matrix(self, key: LevelSeriesKey, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
@@ -445,11 +462,12 @@ def anchor_sampled_series_levels(
 
     level_anchors_typed = dict(level_series_anchors)
     pe_anchors_typed = {IssuerId(str(issuer)): float(value) for issuer, value in dict(private_equity_anchors).items()}
-    metadata_extras: dict[str, object] = {}
+    # Provenance, not data: what was anchored and to what, recorded for a human reading a run.
+    provenance_extras: dict[str, object] = {}
     if level_anchors_typed:
-        metadata_extras["level_anchors"] = {key.wire_id: float(value) for key, value in level_anchors_typed.items()}
+        provenance_extras["level_anchors"] = {key.wire_id: float(value) for key, value in level_anchors_typed.items()}
     if pe_anchors_typed:
-        metadata_extras["private_equity_anchors"] = pe_anchors_typed
+        provenance_extras["private_equity_anchors"] = pe_anchors_typed
 
     private_equity = _anchor_private_equity_marks(sampled.private_equity, pe_anchors_typed)
 
@@ -466,7 +484,11 @@ def anchor_sampled_series_levels(
             }
         ),
         private_equity=private_equity,
-        metadata={**sampled.metadata, **metadata_extras},
+        # Anchoring rescales paths; it does not re-mark issuers, so the month-0 prices and the
+        # producer's identity carry through untouched.
+        private_equity_prices_usd=sampled.private_equity_prices_usd,
+        model_id=sampled.model_id,
+        provenance={**sampled.provenance, **provenance_extras},
     )
 
 

@@ -151,7 +151,7 @@ class TestVecmModel:
         assert sampled.level_matrix(
             HomeValueKey(location_id=LocationId("san_francisco_ca")), rollout_count=2, horizon_months=12
         )[:, 0].tolist() == [1_000_000.0, 1_000_000.0]
-        assert sampled.metadata["scenario_generator_id"] == "vecm_numpyro"
+        assert sampled.provenance["scenario_generator_id"] == "vecm_numpyro"
         # Note: VECM-rejects-PE was previously asserted by calling
         # `model.sample(required_level_series={"private_equity:..."})`. With the
         # typed boundary, PE has no `LevelSeriesKey` variant — the rejection now
