@@ -135,7 +135,7 @@
 <g id="node4" class="node">
 <title>wyrm2</title>
 <path fill="none" stroke="black" d="M313.12,-309.4C313.12,-309.4 495.62,-309.4 495.62,-309.4 501.62,-309.4 507.62,-315.4 507.62,-321.4 507.62,-321.4 507.62,-359.65 507.62,-359.65 507.62,-365.65 501.62,-371.65 495.62,-371.65 495.62,-371.65 313.12,-371.65 313.12,-371.65 307.12,-371.65 301.12,-365.65 301.12,-359.65 301.12,-359.65 301.12,-321.4 301.12,-321.4 301.12,-315.4 307.12,-309.4 313.12,-309.4"/>
-<text text-anchor="middle" x="404.37" y="-358.15" font-family="Helvetica,sans-Serif" font-size="10.00">wyrm2 VM — seat&#45;game</text>
+<text text-anchor="middle" x="404.37" y="-358.15" font-family="Helvetica,sans-Serif" font-size="10.00">wyrm2 VM — local seat0</text>
 <polyline fill="none" stroke="black" points="301.12,-350.9 507.62,-350.9"/>
 <text text-anchor="middle" x="404.37" y="-337.4" font-family="Helvetica,sans-Serif" font-size="10.00">RTX 5090 01:00.0 DP&#45;OUT [card0&#45;DP&#45;1]</text>
 <polyline fill="none" stroke="black" points="301.12,-330.15 507.62,-330.15"/>
