@@ -57,13 +57,11 @@ locals {
     for m in ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1", "glm-5.2"] :
     "${m}-anthropic"
   ]
-  # DANGLING as of 2026-08-06: the `*-chatgpt` entries these name were deleted from
-  # proxy-config.yaml with the litellm-chatgpt sub-instance. The three keys scoped to
-  # this list (haku oai zone, codex-pod, agent-workspaces-codex) therefore allow models
-  # that no longer exist. Left in place deliberately: an empty `models` list means *all*
-  # models in LiteLLM, so this must be repointed, not emptied, once Codex CLI is moved
-  # onto CLIProxyAPI-backed entries. See cluster/docs/plan.md, LiteLLM ChatGPT
-  # sub-instance.
+  # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
+  # (haku oai zone, codex-pod, agent-workspaces-codex). Same names as before 2026-08-06,
+  # now served by CLIProxyAPI rather than the retired litellm-chatgpt sub-instance --
+  # see _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
+  # which is what these must stay in sync with.
   oai_lane_models = [
     for m in ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"] :
     "${m}-chatgpt"
@@ -253,7 +251,7 @@ resource "kubernetes_secret" "dispatcher_classifier" {
 # ============================================================================
 # codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod
 # ============================================================================
-# Routes the codex-pod agent's Codex CLI at LiteLLM's chatgpt/ (Codex-account)
+# Routes the codex-pod agent's Codex CLI at LiteLLM's `*-chatgpt` (Codex-account)
 # models instead of an interactive ChatGPT sign-in. Scoped to the same oai lane
 # models as the haku oai lane (gpt-5.4/5.5/codex-spark-chatgpt); deleting this is
 # the kill switch. Reflected into codex-pod, consumed as LITELLM_API_KEY.
@@ -273,7 +271,7 @@ resource "kubernetes_secret" "codex_pod" {
     name      = "litellm-key-codex-pod"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex-pod agent (chatgpt/ oai models only); reflected into codex-pod as LITELLM_API_KEY"
+      description                                                     = "LiteLLM virtual key for the codex-pod agent (*-chatgpt oai models only); reflected into codex-pod as LITELLM_API_KEY"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -292,8 +290,9 @@ resource "kubernetes_secret" "codex_pod" {
 # OpenClaw owns the agent loop and talks Anthropic Messages to the main LiteLLM
 # proxy's `codex-*` models. LiteLLM forwards those requests to CLIProxyAPI,
 # which owns the ChatGPT/Codex OAuth session and translates tool calls. This
-# avoids OpenClaw selecting its Codex app-server runtime and avoids the separate
-# litellm-chatgpt Responses provider's independently managed OAuth state.
+# avoids OpenClaw selecting its Codex app-server runtime. (It also avoided the
+# separate litellm-chatgpt Responses provider's independently managed OAuth state,
+# retired 2026-08-06.)
 
 resource "litellm_key" "openclaw" {
   key_alias = "openclaw"
@@ -582,7 +581,7 @@ resource "kubernetes_secret" "agent_workspaces_key" {
 
 # codex workspace lane: the codex CLI's baked LiteLLM provider
 # (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses
-# the chatgpt/ Codex-account models, same allowlist as codex-pod.
+# the `*-chatgpt` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
   models    = local.oai_lane_models
@@ -598,7 +597,7 @@ resource "kubernetes_secret" "agent_workspaces_codex_key" {
     name      = "litellm-key-agent-workspaces-codex"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex workspace lane (chatgpt/ oai models only); reflected into agent-workspaces for the codex SandboxTemplate"
+      description                                                     = "LiteLLM virtual key for the codex workspace lane (*-chatgpt oai models only); reflected into agent-workspaces for the codex SandboxTemplate"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-workspaces"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

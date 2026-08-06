@@ -88,21 +88,14 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   Deleted: the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret, Gatus check,
   and the 6 `*-chatgpt` entries in `k8s/litellm/app/proxy-config.yaml`.
 
-  **Still to do — Codex CLI has no working model.** Deleting the `*-chatgpt` entries
-  removed the last thing the baked Codex configs could resolve
-  (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml> and
-  <../../x/codex_pod_image/home.nix>, both pinning `gpt-5.6-sol-chatgpt`); they had been
-  failing since the scale-to-0 anyway. The existing `codex-*` models are **not** a
-  drop-in: they are `model: anthropic/<slug>` with `model_info.mode: chat`, while both
-  configs set `wire_api = "responses"`. Fix either by adding `mode: responses` LiteLLM
-  entries pointed at CLIProxyAPI's `/v1/responses` surface (it exists — a `POST` returns
-  401, not 404), or by moving the Codex configs to `wire_api = "chat"` and the `codex-*`
-  names.
-
-  `tf/gitops/litellm-keys/main.tf`'s `oai_lane_models` still scopes three virtual keys
-  (haku oai zone, `codex-pod`, `agent-workspaces-codex`) to the now-absent `*-chatgpt`
-  names; repoint it in the same change. Do not empty it — an empty `models` list means
-  every model in LiteLLM.
+  The `*-chatgpt` model names came back the same day on a working backend: LiteLLM now
+  serves them over CLIProxyAPI's native `/v1/responses` via the `openai/` provider, which
+  is a passthrough rather than a bridge. The baked Codex configs
+  (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
+  <../../x/codex_pod_image/home.nix>) and `oai_lane_models` in
+  <../../tf/gitops/litellm-keys/main.tf> pin those names, so nothing downstream needed a
+  rebuild. The `codex-*` entries stay on `anthropic/` → `/v1/messages` for Claude Code;
+  the two lanes are the same pod reached through the wire each client speaks natively.
 
 - **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
   parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
