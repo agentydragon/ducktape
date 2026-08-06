@@ -9,7 +9,16 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from finance.augur.model.series import SP500_KEY, HomeValueKey, LocationId, RentKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import (
+    SP500_KEY,
+    HomeValueKey,
+    InflationKey,
+    LevelSeriesKey,
+    LocationId,
+    RentKey,
+    SecurityKey,
+    SecuritySymbol,
+)
 from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel
 
@@ -80,34 +89,45 @@ class FactorSeriesCalibration:
 
 @dataclass(frozen=True)
 class ExogenousEvidence:
-    series_names: tuple[str, ...]
+    """Observed monthly evidence, keyed by the typed series it describes.
+
+    `LevelSeriesKey`, not wire-id strings: this layer BUILDS the typed keys
+    (`HomeValueKey(location_id=…)`), and its consumer used to flatten them to strings here
+    and parse them straight back at `fit/data.py`. The typed value existed at both ends and
+    only the middle was stringly typed, which bought nothing and cost the `parse` round trip.
+
+    `calibrated_series_path_priors` stays string-keyed on purpose — those are synthesized
+    numpyro site names (`"security:SPY_monthly_log_mu"`), not series identities.
+    """
+
+    series_names: tuple[LevelSeriesKey, ...]
     monthly_log_returns: np.ndarray
     monthly_return_months: tuple[str, ...]
-    marginal_returns: dict[str, PeriodReturns]
-    series_path_calibration: dict[str, FactorSeriesCalibration]
+    marginal_returns: dict[LevelSeriesKey, PeriodReturns]
+    series_path_calibration: dict[LevelSeriesKey, FactorSeriesCalibration]
     calibrated_series_path_priors: dict[str, float]
     current_mortgage30_rate_pct: float
     latest_observations: dict[str, Any]
 
 
 def calibrate_series_path_priors(
-    series_names: tuple[str, ...], marginal_returns: dict[str, PeriodReturns]
-) -> tuple[dict[str, FactorSeriesCalibration], dict[str, float]]:
-    calibration: dict[str, FactorSeriesCalibration] = {}
+    series_names: tuple[LevelSeriesKey, ...], marginal_returns: dict[LevelSeriesKey, PeriodReturns]
+) -> tuple[dict[LevelSeriesKey, FactorSeriesCalibration], dict[str, float]]:
+    calibration: dict[LevelSeriesKey, FactorSeriesCalibration] = {}
     priors: dict[str, float] = {}
     for series_name in series_names:
         if series_name not in marginal_returns:
-            raise ValueError(f"missing marginal returns for exogenous series {series_name!r}")
+            raise ValueError(f"missing marginal returns for exogenous series {series_name.wire_id!r}")
         returns = marginal_returns[series_name]
         log_returns = np.asarray(returns.log_returns, dtype="float64")
         duration_months = np.asarray(returns.duration_months, dtype="float64")
         if log_returns.shape != duration_months.shape:
-            raise ValueError(f"{series_name} marginal returns and durations have different shapes")
+            raise ValueError(f"{series_name.wire_id} marginal returns and durations have different shapes")
         keep = np.isfinite(log_returns) & np.isfinite(duration_months) & (duration_months > 0)
         log_returns = log_returns[keep]
         duration_months = duration_months[keep]
         if len(log_returns) == 0:
-            raise ValueError(f"{series_name} has no finite marginal returns")
+            raise ValueError(f"{series_name.wire_id} has no finite marginal returns")
 
         observed_months = float(np.sum(duration_months))
         monthly_log_mu = float(np.sum(log_returns)) / observed_months
@@ -128,9 +148,10 @@ def calibrate_series_path_priors(
             observed_months=observed_months,
             observation_count=len(log_returns),
         )
-        priors[f"{series_name}_monthly_log_mu"] = monthly_log_mu
-        priors[f"{series_name}_monthly_log_mu_sigma"] = monthly_log_mu_sigma
-        priors[f"{series_name}_monthly_log_vol_sigma"] = monthly_log_vol_sigma
+        # Numpyro site names, built from the wire id: strings by nature, not keys.
+        priors[f"{series_name.wire_id}_monthly_log_mu"] = monthly_log_mu
+        priors[f"{series_name.wire_id}_monthly_log_mu_sigma"] = monthly_log_mu_sigma
+        priors[f"{series_name.wire_id}_monthly_log_vol_sigma"] = monthly_log_vol_sigma
     return calibration, priors
 
 
@@ -184,9 +205,12 @@ def _return_frame_summary(frame: pl.DataFrame, *, source: str, used_as_marginal_
     }
 
 
-def _align_inner(frames: dict[str, pl.DataFrame], value_column: str) -> pl.DataFrame:
-    """Inner-join `{name: (month, <value_column>)}` frames on month, one renamed column per name."""
-    renamed = [frame.rename({value_column: name}) for name, frame in frames.items()]
+def _align_inner(frames: dict[LevelSeriesKey, pl.DataFrame], value_column: str) -> pl.DataFrame:
+    """Inner-join `{key: (month, <value_column>)}` frames on month, one column per series.
+
+    The polars column name is the wire id — a frame column is a string by construction; the
+    KEY is what carries identity, and it stays typed on both sides of this call."""
+    renamed = [frame.rename({value_column: key.wire_id}) for key, frame in frames.items()]
     return reduce(lambda left, right: left.join(right, on="month", how="inner"), renamed).drop_nulls().sort("month")
 
 
@@ -219,26 +243,24 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         location_id: _zillow_frame(sources.ZILLOW_ZORI, region_name=region_name, state=state)
         for location_id, (region_name, state) in ZILLOW_RENT_REGIONS.items()
     }
-    home_series_wire_id = {location_id: HomeValueKey(location_id=location_id).wire_id for location_id in home_values}
-    rent_series_wire_id = {location_id: RentKey(location_id=location_id).wire_id for location_id in rents}
-    home_series_names = tuple(home_series_wire_id.values())
-    rent_series_names = tuple(rent_series_wire_id.values())
-    series_names = (
-        SP500_KEY.wire_id,
-        BTC_KEY.wire_id,
-        ETH_KEY.wire_id,
-        *home_series_names,
-        *rent_series_names,
-        "inflation",
+    home_series_key = {location_id: HomeValueKey(location_id=location_id) for location_id in home_values}
+    rent_series_key = {location_id: RentKey(location_id=location_id) for location_id in rents}
+    series_names: tuple[LevelSeriesKey, ...] = (
+        SP500_KEY,
+        BTC_KEY,
+        ETH_KEY,
+        *home_series_key.values(),
+        *rent_series_key.values(),
+        InflationKey(),
     )
     aligned = _align_inner(
         {
-            SP500_KEY.wire_id: _monthly_unit_returns(sp500_total_return),
-            BTC_KEY.wire_id: _monthly_unit_returns(btc_price),
-            ETH_KEY.wire_id: _monthly_unit_returns(eth_price),
-            **{home_series_wire_id[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
-            **{rent_series_wire_id[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
-            "inflation": _monthly_unit_returns(cpi),
+            SP500_KEY: _monthly_unit_returns(sp500_total_return),
+            BTC_KEY: _monthly_unit_returns(btc_price),
+            ETH_KEY: _monthly_unit_returns(eth_price),
+            **{home_series_key[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
+            **{rent_series_key[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
+            InflationKey(): _monthly_unit_returns(cpi),
         },
         value_column="log_return",
     )
@@ -253,13 +275,13 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     case_shiller_returns = _period_return_frame(case_shiller)
     fhfa_returns = _period_return_frame(fhfa)
     cpi_returns = _period_return_frame(cpi)
-    marginal = {
-        SP500_KEY.wire_id: _returns(sp500_returns),
-        BTC_KEY.wire_id: _returns(btc_returns),
-        ETH_KEY.wire_id: _returns(eth_returns),
-        **{home_series_wire_id[loc]: _returns(returns) for loc, returns in home_value_returns.items()},
-        **{rent_series_wire_id[loc]: _returns(returns) for loc, returns in rent_returns.items()},
-        "inflation": _returns(cpi_returns),
+    marginal: dict[LevelSeriesKey, PeriodReturns] = {
+        SP500_KEY: _returns(sp500_returns),
+        BTC_KEY: _returns(btc_returns),
+        ETH_KEY: _returns(eth_returns),
+        **{home_series_key[loc]: _returns(returns) for loc, returns in home_value_returns.items()},
+        **{rent_series_key[loc]: _returns(returns) for loc, returns in rent_returns.items()},
+        InflationKey(): _returns(cpi_returns),
     }
     series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
 
@@ -269,7 +291,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         "btc_close_latest": _monthly_latest(btc_price, sources.YAHOO_BTC),
         "eth_close_latest": _monthly_latest(eth_price, sources.YAHOO_ETH),
         "zillow_home_value_latest_by_factor": {
-            home_series_wire_id[loc]: {
+            home_series_key[loc].wire_id: {
                 **_monthly_latest(series, sources.ZILLOW_ZHVI),
                 "region_name": ZILLOW_HOME_VALUE_REGIONS[loc][0],
                 "state": ZILLOW_HOME_VALUE_REGIONS[loc][1],
@@ -277,7 +299,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             for loc, series in home_values.items()
         },
         "zillow_rent_latest_by_factor": {
-            rent_series_wire_id[loc]: {
+            rent_series_key[loc].wire_id: {
                 **_monthly_latest(series, sources.ZILLOW_ZORI),
                 "region_name": ZILLOW_RENT_REGIONS[loc][0],
                 "state": ZILLOW_RENT_REGIONS[loc][1],
@@ -291,10 +313,10 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             "value": float(mortgage30["value"].to_list()[-1]),
             "source": sources.FRED_MORTGAGE30.provenance_label,
         },
-        "spy_adjusted_close_monthly_return_count": len(marginal[SP500_KEY.wire_id].log_returns),
+        "spy_adjusted_close_monthly_return_count": len(marginal[SP500_KEY].log_returns),
         "housing_return_sources": {
             "zillow_city_zhvi_by_factor": {
-                home_series_wire_id[loc]: {
+                home_series_key[loc].wire_id: {
                     **_return_frame_summary(
                         returns, source=sources.ZILLOW_ZHVI.provenance_label, used_as_marginal_evidence=True
                     ),
@@ -312,7 +334,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         },
         "rent_return_sources": {
             "zillow_city_zori_by_factor": {
-                rent_series_wire_id[loc]: {
+                rent_series_key[loc].wire_id: {
                     **_return_frame_summary(
                         returns, source=sources.ZILLOW_ZORI.provenance_label, used_as_marginal_evidence=True
                     ),
@@ -323,7 +345,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             }
         },
         "series_path_prior_calibration": {
-            name: {
+            name.wire_id: {
                 "monthly_log_mu": point.monthly_log_mu,
                 "monthly_log_mu_sigma": point.monthly_log_mu_sigma,
                 "monthly_log_vol_sigma": point.monthly_log_vol_sigma,
@@ -336,7 +358,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
 
     return ExogenousEvidence(
         series_names=series_names,
-        monthly_log_returns=aligned.select(list(series_names)).to_numpy().astype("float64"),
+        monthly_log_returns=aligned.select([key.wire_id for key in series_names]).to_numpy().astype("float64"),
         monthly_return_months=tuple(aligned["month"].dt.strftime("%Y-%m").to_list()),
         marginal_returns=marginal,
         series_path_calibration=series_path_calibration,
@@ -346,28 +368,28 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     )
 
 
-# Macro level wire id -> the absolute series anchored against it. Home-value series are absent:
+# Macro level series -> the absolute evidence source anchored against it. Home-value series are absent:
 # they are not anchored against today.
-_ABSOLUTE_LEVEL_SOURCES: dict[str, sources.EvidenceSource] = {
-    SP500_KEY.wire_id: sources.FRED_SP500,
-    "inflation": sources.FRED_CPI,
-    BTC_KEY.wire_id: sources.YAHOO_BTC,
-    ETH_KEY.wire_id: sources.YAHOO_ETH,
-    "rent:san_francisco_ca": sources.FRED_SF_RENT_CPI,
+_ABSOLUTE_LEVEL_SOURCES: dict[LevelSeriesKey, sources.EvidenceSource] = {
+    SP500_KEY: sources.FRED_SP500,
+    InflationKey(): sources.FRED_CPI,
+    BTC_KEY: sources.YAHOO_BTC,
+    ETH_KEY: sources.YAHOO_ETH,
+    RentKey(location_id=LocationId("san_francisco_ca")): sources.FRED_SF_RENT_CPI,
 }
 
 
-def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[MonthlyLevel]]:
+def load_absolute_monthly_levels(keys: Collection[LevelSeriesKey]) -> dict[LevelSeriesKey, list[MonthlyLevel]]:
     """Absolute monthly level series (last observation per calendar month, oldest first) for
-    each requested macro level wire id, on its real published scale.
+    each requested macro level series, on its real published scale.
 
     These read the same source files the exogenous evidence fits against, but at their
     absolute level rather than as log-returns, so calibration can anchor a sampled path's
-    month 0 to the real spot. Raises `KeyError` for a wire id with no absolute source
+    month 0 to the real spot. Raises `KeyError` for a series with no absolute source
     (e.g. home-value series, which are not anchored against today)."""
-    out: dict[str, list[MonthlyLevel]] = {}
-    for wire in wire_ids:
-        if wire not in _ABSOLUTE_LEVEL_SOURCES:
-            raise KeyError(f"no absolute level series for level wire id {wire!r}")
-        out[wire] = loading.read_monthly_levels(loading.evidence_dir_from_env(), _ABSOLUTE_LEVEL_SOURCES[wire])
+    out: dict[LevelSeriesKey, list[MonthlyLevel]] = {}
+    for key in keys:
+        if key not in _ABSOLUTE_LEVEL_SOURCES:
+            raise KeyError(f"no absolute level series for {key.wire_id!r}")
+        out[key] = loading.read_monthly_levels(loading.evidence_dir_from_env(), _ABSOLUTE_LEVEL_SOURCES[key])
     return out

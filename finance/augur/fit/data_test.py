@@ -32,8 +32,10 @@ def test_configured_evidence_source_errors_raise_by_default(
 def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_evidence_dir: Path) -> None:
     historical, evidence = load_fred_only_evidence()
 
-    # `historical` carries typed LevelSeriesKeys; the evidence layer keeps the wire-id strings.
-    assert tuple(factor.wire_id for factor in historical.series_names) == evidence.series_names
+    # Both sides carry the SAME typed keys — no wire-id round trip between them. This used to
+    # assert `tuple(f.wire_id for f in historical.series_names) == evidence.series_names`, which
+    # is exactly the flatten-and-reparse the typing removed.
+    assert historical.series_names == evidence.series_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)
     assert evidence.latest_observations["evidence_mode"] == {
         "mode": "fred_only_synthesized",

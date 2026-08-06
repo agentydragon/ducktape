@@ -17,6 +17,7 @@ from finance.augur.calibration.catalog import (
 from finance.augur.calibration.macro_anchors import resolve_anchors
 from finance.augur.calibration.platform import Direction
 from finance.augur.fit.evidence_data import load_absolute_monthly_levels
+from finance.augur.model.series import SP500_KEY, InflationKey
 
 ANCHOR_DATE = date(2026, 5, 27)
 
@@ -54,11 +55,11 @@ def test_derives_anchor_and_history_from_evidence(synthetic_evidence_dir: Path) 
     # observation on or before the anchor month, and the history is the 12 months immediately
     # preceding that same observation (oldest first) — not hardcoded index values.
     anchor_month = ANCHOR_DATE.replace(day=1)
-    levels = load_absolute_monthly_levels({"security:SPY", "inflation"})
-    for wire in ("security:SPY", "inflation"):
-        on_or_before = [obs for obs in levels[wire] if obs.month <= anchor_month]
-        assert resolved.anchors[wire] == on_or_before[-1].value
-    cpi = [obs for obs in levels["inflation"] if obs.month <= anchor_month]
+    levels = load_absolute_monthly_levels({SP500_KEY, InflationKey()})
+    for key in (SP500_KEY, InflationKey()):
+        on_or_before = [obs for obs in levels[key] if obs.month <= anchor_month]
+        assert resolved.anchors[key.wire_id] == on_or_before[-1].value
+    cpi = [obs for obs in levels[InflationKey()] if obs.month <= anchor_month]
     assert resolved.inflation_history == [obs.value for obs in cpi[-13:-1]]
     assert len(resolved.inflation_history) == 12
 
@@ -68,7 +69,7 @@ def test_explicit_anchor_overrides_derived_value(synthetic_evidence_dir: Path) -
     resolved = resolve_anchors(_catalog(anchors={"security:SPY": 1234.5}))
     assert resolved.anchors["security:SPY"] == 1234.5
     anchor_month = ANCHOR_DATE.replace(day=1)
-    cpi = [obs for obs in load_absolute_monthly_levels({"inflation"})["inflation"] if obs.month <= anchor_month]
+    cpi = [obs for obs in load_absolute_monthly_levels({InflationKey()})[InflationKey()] if obs.month <= anchor_month]
     assert resolved.anchors["inflation"] == cpi[-1].value
 
 

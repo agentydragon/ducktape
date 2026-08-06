@@ -20,6 +20,7 @@ from datetime import date
 
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.fit.evidence_data import load_absolute_monthly_levels
+from finance.augur.model.series import parse_level_series_key
 from finance.evidence.loading import MonthlyLevel
 
 DEFAULT_INFLATION_HISTORY_MONTHS = 12
@@ -43,7 +44,10 @@ def resolve_anchors(
     to_derive = {wire for wire in wanted if wire not in explicit}
     if need_history:
         to_derive.add("inflation")
-    series_by_wire = load_absolute_monthly_levels(to_derive) if to_derive else {}
+    # The catalog is a config file, so it names series by wire id; `load_absolute_monthly_levels`
+    # is typed. `parse_level_series_key` is the documented decode point between the two.
+    series_by_key = load_absolute_monthly_levels({parse_level_series_key(wire) for wire in to_derive})
+    series_by_wire = {key.wire_id: levels for key, levels in series_by_key.items()}
 
     anchors = dict(explicit)
     for wire in wanted:

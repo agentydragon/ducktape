@@ -23,7 +23,7 @@ from finance.augur.fit.private_equity import (
 )
 from finance.augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.series import SP500_KEY, IssuerId
+from finance.augur.model.series import SP500_KEY, InflationKey, IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.model.state_space import (
     StateSpaceAdditionalFactor,
     StateSpaceModel,
@@ -65,9 +65,10 @@ def fit_state_space_artifact(
 
 
 def _latest_level_by_factor(evidence: ExogenousEvidence) -> dict[str, float]:
+    # The artifact is an on-disk format keyed by wire id; the evidence is typed. This is the
+    # one place they meet, so `.wire_id` appears here and nowhere downstream of it.
     return {
-        factor: _latest_factor_observation(evidence.latest_observations, factor).value
-        for factor in evidence.series_names
+        key.wire_id: _latest_observation_for(evidence.latest_observations, key).value for key in evidence.series_names
     }
 
 
@@ -75,7 +76,7 @@ def _conditioning_from_evidence(
     evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
 ) -> ExogenousConditioningContext:
     observations: dict[str, tuple[ExogenousObservedPoint, ...]] = {
-        factor: (_latest_factor_observation(evidence.latest_observations, factor),) for factor in evidence.series_names
+        key.wire_id: (_latest_observation_for(evidence.latest_observations, key),) for key in evidence.series_names
     }
     for fitted in private_factors:
         observations[fitted.factor.factor_name] = (fitted.conditioning_point,)
@@ -83,26 +84,38 @@ def _conditioning_from_evidence(
     return ExogenousConditioningContext(start_at=start_at, observations=observations)
 
 
-def _latest_factor_observation(latest: Mapping[str, Any], factor: str) -> ExogenousObservedPoint:
-    if factor == SP500_KEY.wire_id:
-        return _point_from_latest(latest["spy_adjusted_close_latest"], source_prefix="public")
-    if factor == "inflation":
-        return _point_from_latest(latest["cpi_latest"], source_prefix="public")
-    if factor == "security:btc":
-        return _point_from_latest(latest["btc_close_latest"], source_prefix="public")
-    if factor == "security:eth":
-        return _point_from_latest(latest["eth_close_latest"], source_prefix="public")
+# Per-series blob key in `latest_observations` for the singleton and per-symbol series. The
+# per-location ones are nested maps and are handled below.
+_SCALAR_LATEST_KEYS: Mapping[LevelSeriesKey, str] = {
+    SP500_KEY: "spy_adjusted_close_latest",
+    InflationKey(): "cpi_latest",
+    SecurityKey(symbol=SecuritySymbol("btc")): "btc_close_latest",
+    SecurityKey(symbol=SecuritySymbol("eth")): "eth_close_latest",
+}
+# Nested `{wire_id: observation}` blobs, tried in order for a location-keyed series.
+_NESTED_LATEST_BLOBS = (
+    "zillow_home_value_latest_by_factor",
+    "zillow_rent_latest_by_factor",
+    "case_shiller_home_value_latest_by_factor",
+)
 
-    home_by_factor = latest.get("zillow_home_value_latest_by_factor")
-    if isinstance(home_by_factor, Mapping) and factor in home_by_factor:
-        return _point_from_latest(home_by_factor[factor], source_prefix="public")
-    rent_by_factor = latest.get("zillow_rent_latest_by_factor")
-    if isinstance(rent_by_factor, Mapping) and factor in rent_by_factor:
-        return _point_from_latest(rent_by_factor[factor], source_prefix="public")
-    case_shiller_by_factor = latest.get("case_shiller_home_value_latest_by_factor")
-    if isinstance(case_shiller_by_factor, Mapping) and factor in case_shiller_by_factor:
-        return _point_from_latest(case_shiller_by_factor[factor], source_prefix="public")
-    raise ValueError(f"no latest observation can anchor state-space factor {factor!r}")
+
+def _latest_observation_for(latest: Mapping[str, Any], key: LevelSeriesKey) -> ExogenousObservedPoint:
+    """The month-0 anchor for one series, from the evidence's `latest_observations` blob.
+
+    Dispatches on the TYPED key. This used to be a chain of `factor == "security:btc"` wire-id
+    comparisons — string equality standing in for identity, which is the thing
+    `parse_level_series_key` exists to stop. The blob itself stays string-keyed: it is
+    serialized provenance, and `.wire_id` is how a typed key indexes into it.
+    """
+
+    if (blob_key := _SCALAR_LATEST_KEYS.get(key)) is not None:
+        return _point_from_latest(latest[blob_key], source_prefix="public")
+    for blob_name in _NESTED_LATEST_BLOBS:
+        blob = latest.get(blob_name)
+        if isinstance(blob, Mapping) and key.wire_id in blob:
+            return _point_from_latest(blob[key.wire_id], source_prefix="public")
+    raise ValueError(f"no latest observation can anchor state-space factor {key.wire_id!r}")
 
 
 def _point_from_latest(raw: Any, *, source_prefix: str) -> ExogenousObservedPoint:
@@ -233,7 +246,7 @@ def _source_manifest(
     evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
 ) -> dict[str, Any]:
     return {
-        "public_factor_names": evidence.series_names,
+        "public_factor_names": tuple(key.wire_id for key in evidence.series_names),
         "monthly_return_months": {
             "first": evidence.monthly_return_months[0],
             "last": evidence.monthly_return_months[-1],
