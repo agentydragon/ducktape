@@ -54,22 +54,36 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   session on a PVC, serving the `*-chatgpt` models over the Responses API so Codex CLI
   could use the Codex subscription. CLIProxyAPI arrived later for a different client —
   Claude Code, which needs Anthropic-shaped tool calls that LiteLLM's Responses bridge
-  mistranslates — and the two ran side by side, each refreshing a separate OAuth token
-  against the same account.
-  Two sessions is what made this annoying. This one died on 2026-08-06 with a dead
-  refresh token and could not recover unattended: its seed init container tests
-  `grep -q '"refresh_token"'` — presence, not validity — so a revoked token blocks its
-  own re-seed, and the pod crashlooped for ~3h presenting only as a failed startup
-  probe. CLIProxyAPI's README already names the shared-token refresh race as the reason
-  it holds a dedicated session; running two of them re-created that hazard one level up.
-  CLIProxyAPI also serves `/v1/responses` directly, so it can front Codex CLI too and
-  the second instance buys nothing. **Not yet deleted**: the 6 `*-chatgpt` entries in
+  mistranslates.
+  **What made it annoying was bootstrapping the OAuth token, not running it.** LiteLLM
+  builds the ChatGPT provider's authenticator during ASGI startup, and on an expired
+  token that call synchronously enters the device-code flow — so the pod never binds its
+  port and dies to its own startup probe. While those models lived in the main proxy that
+  took Ollama, z.ai, Anthropic, Groq and Gemini down with ChatGPT, which is why [#3198]
+  carved out this single-replica `Recreate` deployment with its own PVC: to contain the
+  blast radius. Since the token can only be minted interactively, the initial one has to
+  be injected by an init container copying from a SOPS seed, and **that guard has now
+  been wrong three times**: `[ -f auth.json ]` could not replace a half-written file
+  holding only `device_code_requested_at` ([#3199]), so it became
+  `grep -q '"refresh_token"'`, which could not replace a present-but-revoked token —
+  2026-08-06, ~3h of crashlooping. Every version tested the file's shape; none tested
+  whether the credential works, which is the only thing that decides whether the pod
+  starts.
+  CLIProxyAPI does not have this shape: one device login onto a PVC, a file watcher, a
+  15m refresh worker, and no auth work on the startup path. It also serves
+  `/v1/responses` directly, so it can front Codex CLI as well as Claude Code and the
+  second instance buys nothing.
+
+  [#3198]: https://github.com/agentydragon/ducktape/pull/3198
+
+  [#3199]: <https://github.com/agentydragon/ducktape/pull/3199> **Not yet deleted**: the 6 `*-chatgpt` entries in
   `k8s/litellm/app/proxy-config.yaml` still point here, and through them the baked Codex
   configs in `k8s/agents/agent-sandbox/workspace-image/codex-config.toml` and
   `x/codex_pod_image/home.nix`. Repoint those entries at CLIProxyAPI's `/v1/responses`
   (the model _names_ can stay, so no image rebuild), confirm Codex CLI works, then
   delete the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret and the Gatus
   check.
+
 - **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
   parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
   registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /

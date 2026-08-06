@@ -348,7 +348,11 @@ def test_chatgpt_auth_state_is_absent_from_main_deployment() -> None:
     chatgpt_pod = chatgpt["spec"]["template"]["spec"]
 
     assert main["spec"]["strategy"] == {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}}
-    assert chatgpt["spec"]["replicas"] == 1
+    # Suspended 2026-08-06 (superseded by CLIProxyAPI); 1 while it ran, because the
+    # rotating auth.json tolerates exactly one writer. The rest of this test still
+    # holds: the point is that auth state lives here and NOT in the main deployment,
+    # which stays true at rest and must keep holding until the whole thing is deleted.
+    assert chatgpt["spec"]["replicas"] == 0
     assert chatgpt["spec"]["strategy"] == {"type": "Recreate"}
     assert "initContainers" not in main_pod
     assert [container["name"] for container in chatgpt_pod["initContainers"]] == ["seed-chatgpt-auth"]

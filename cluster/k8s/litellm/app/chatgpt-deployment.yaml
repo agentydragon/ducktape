@@ -15,11 +15,19 @@ spec:
   # <cluster/k8s/litellm/README.md> for why this existed and what replaced it.
   #
   # It was already down when it was suspended: crashlooping ~3h (31 restarts) on
-  # 2026-08-06, startup probe never seeing :4000, almost certainly a dead OAuth
-  # refresh token on the PVC that the seed init container would not replace --
-  # its check is `grep -q '"refresh_token"'`, presence not validity, so a revoked
-  # token blocks its own re-seed. That failure mode is exactly what CLIProxyAPI's
-  # dedicated session was introduced to avoid.
+  # 2026-08-06, startup probe never seeing :4000 -- the failure this whole
+  # deployment exists to contain. LiteLLM builds the ChatGPT provider's
+  # authenticator during ASGI startup, and on an expired token that call
+  # synchronously enters the device-code flow, so the pod never binds its port
+  # and the startup probe kills it (#3198).
+  #
+  # The seed init container is meant to repair that unattended and cannot, for
+  # the third time in a row. Its guard was `[ -f auth.json ]`, which could not
+  # replace a half-written file holding only `device_code_requested_at` (#3199);
+  # it became `grep -q '"refresh_token"'`, which cannot replace a token that is
+  # present but revoked -- today. Each fix tested one notch deeper without ever
+  # testing whether the credential actually WORKS, which is the only property
+  # that matters.
   #
   # Still pointed at by 6 model entries in proxy-config.yaml (gpt-5.4-chatgpt,
   # gpt-5.5-chatgpt, gpt-5.6-{sol,terra,luna}-chatgpt, gpt-5.3-codex-spark-chatgpt)
