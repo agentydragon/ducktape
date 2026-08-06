@@ -4,8 +4,10 @@ from collections.abc import Iterator
 
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, ZAI_ANTHROPIC_MODELS
+from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
@@ -281,6 +283,45 @@ def test_committed_configs_match_composed_expectations() -> None:
     expected = {"proxy-config.yaml": _expected_main_config()}
     for filename, expected_config in expected.items():
         assert _load_config(filename) == expected_config, filename
+
+
+# The two Codex lanes are named in three places: _CLIPROXY_MODELS here, and
+# `oai_lane_models` + `codex_client_models` in tf/gitops/litellm-keys/main.tf, which scope
+# the virtual keys. A comment in that file asks the lists to be kept in sync; these pin it
+# instead, so adding a Codex model cannot half-land and leave a key allowlisting a model
+# that does not exist (or omitting one that does).
+def _litellm_keys_locals() -> dict:
+    blocks = locals_blocks(get_required_path("ducktape/tf/gitops/litellm-keys/main.tf"))
+    return one(blocks)
+
+
+def test_terraform_codex_lanes_match_the_cliproxy_model_list() -> None:
+    tf_locals = _litellm_keys_locals()
+    assert tf_locals["oai_lane_models"] == [f"{model}-chatgpt" for model in _CLIPROXY_MODELS]
+    assert tf_locals["codex_client_models"] == [f"codex-{model}" for model in _CLIPROXY_MODELS]
+
+
+# main.tf's own comment: "Model names must match generated model_name entries in
+# cluster/k8s/litellm/app/proxy-config.yaml". These are the locals that spell names out
+# literally, so every element must resolve. zai_lane_models is the one that still builds
+# its names with a for-expression; the zai test in cluster/k8s/haku/dispatch/litellm
+# covers it.
+_TF_LITERAL_MODEL_LOCALS = [
+    "oai_lane_models",
+    "classifier_models",
+    "tana_client_models",
+    "codex_client_models",
+    "embedding_client_models",
+    "gemini_client_models",
+]
+
+
+def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
+    served = {entry["model_name"] for entry in _expected_main_config()["model_list"]}
+    tf_locals = _litellm_keys_locals()
+    for local in _TF_LITERAL_MODEL_LOCALS:
+        missing = [model for model in tf_locals[local] if model not in served]
+        assert not missing, f"{local} allows models the proxy does not serve: {missing}"
 
 
 def test_config_maps_mount_their_matching_committed_configs() -> None:

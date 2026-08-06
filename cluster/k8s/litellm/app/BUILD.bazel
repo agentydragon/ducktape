@@ -24,10 +24,13 @@ py_test(
         "kustomization.yaml",
         "proxy-config.yaml",
         "service.yaml",
+        "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [
         ":model_rosters",
+        "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

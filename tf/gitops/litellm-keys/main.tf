@@ -61,10 +61,16 @@ locals {
   # (haku oai zone, codex-pod, agent-workspaces-codex). Same names as before 2026-08-06,
   # now served by CLIProxyAPI rather than the retired litellm-chatgpt sub-instance --
   # see _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
-  # which is what these must stay in sync with.
+  # which pins this list against it. Spelled out rather than built with a for-expression
+  # so the names are greppable and so the test can compare structurally -- HCL2 returns a
+  # for-expression as unevaluated source text, not a list.
   oai_lane_models = [
-    for m in ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"] :
-    "${m}-chatgpt"
+    "gpt-5.4-chatgpt",
+    "gpt-5.5-chatgpt",
+    "gpt-5.6-sol-chatgpt",
+    "gpt-5.6-terra-chatgpt",
+    "gpt-5.6-luna-chatgpt",
+    "gpt-5.3-codex-spark-chatgpt",
   ]
   # Real Anthropic models (ANTHROPIC_MODELS in model_rosters.py) — the
   # dispatcher's classifier gate.
