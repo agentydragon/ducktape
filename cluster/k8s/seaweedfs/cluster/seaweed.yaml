@@ -164,7 +164,17 @@ spec:
       limits:
         memory: 1536Mi
       storageClassName: local-path-ovh-ssd
-      metricsPort: 9328
+      # MUST match the hdd group's metricsPort. Even in topology-only mode the
+      # operator also emits a topology-less `seaweedfs-volume-peer` Service (and a
+      # `seaweedfs-volume` ServiceMonitor) whose selector matches EVERY volume pod
+      # but publishes a single port. With ssd on 9328 that Service scraped the two
+      # ssd servers on 9325, which they do not serve: two permanently-failing
+      # targets, enough to hold TargetDown above its 10% threshold indefinitely.
+      # The ssd servers themselves were always scraped fine via their own
+      # per-topology ServiceMonitor, so this was noise, not blindness.
+      # Nothing else needs these to differ -- 8444 and 18444 are already identical
+      # across both groups, and separate pods can share a port number freely.
+      metricsPort: 9325
       extraArgs: ["-disk=ssd"]
       # NVMe#2 is one shared XFS pool (this ssd server + forgejo-db + filer-db);
       # go read-only before the disk fills so the fragile CNPG DBs keep a reserve.
