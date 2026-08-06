@@ -1,5 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# No ServiceMonitors here on purpose. The seaweedfs-operator generates one per
+# component (and per volumeTopology group) directly from the Seaweed CR's
+# `metricsPort` fields, owning them via ownerReferences -- so anything declared
+# here is either ignored or fought over. Verified 2026-08-06: all six live
+# ServiceMonitors (master, volume, volume-hdd, volume-ssd, filer, s3) carry
+# ownerReferences to Seaweed/seaweedfs.
+#
+# This directory used to declare four of them. Three had been silently losing to
+# the operator's copies for months; the fourth (seaweedfs-volume) carried BOTH
+# Flux inventory labels and the operator's ownerReferences, i.e. two controllers
+# reconciling one object.
+#
+# To change what is scraped, change `metricsPort` in ../cluster/seaweed.yaml.
+# Gotcha worth keeping from the deleted file: the operator names each metrics
+# port `<component>-metrics` (e.g. `master-metrics`), NOT `metrics` -- a hand-
+# written ServiceMonitor referencing `metrics` matches no port and silently
+# scrapes nothing.
 resources:
-  - servicemonitor.yaml
   - prometheusrule.yaml
