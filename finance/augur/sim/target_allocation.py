@@ -15,15 +15,21 @@ Two mechanisms, composed:
 - `allocation.withdrawal_by_sleeve` / `deposit_by_sleeve` place it — which sleeves the
   amount comes from or goes to, so the portfolio moves toward its target ratios.
 
-The composition has a property worth stating rather than checking at the call site: because
-the band's two sides are mutually exclusive, this policy can never sell and buy in the same
-month. That follows from the band having an interior, and `validate_band_bounds` is what
-guarantees it has one.
+Rebalancing rides that cashflow, which is free: the trade was going to happen anyway. A
+month inside the band emits nothing at all, however far the portfolio has drifted — so a
+sleeve that quietly doubles is never sold down.
 
-Rebalancing happens ONLY through cashflow that was going to happen anyway. There is no
-periodic rebalance and no drift tolerance, because turnover and its tax drag would swamp
-the effect the allocation study is trying to measure. A month inside the band emits nothing
-at all.
+`allocation.rebalance_by_sleeve` is the opt-in escape from that, and it is OFF unless a
+policy sets `rebalance_tolerance`. Turnover and its tax drag are exactly what the allocation
+study is trying to MEASURE, so a default that rebalanced would bake in the answer.
+
+It fires only in a month the band is quiet. When the band is moving money its water-filling
+is already the best rebalance that cashflow can buy, and layering a second one on top would
+sell a sleeve to raise cash and buy the same sleeve back in the same month.
+
+That third state is why this policy CAN now sell and buy in one month, which it could not
+before: the band's two sides remain mutually exclusive (`validate_band_bounds` guarantees
+the band has an interior), but a rebalance is inherently both at once.
 
 ## What it deliberately does not emit
 
@@ -50,7 +56,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.actor_view import ActorView
-from finance.augur.sim.allocation import deposit_by_sleeve, withdrawal_by_sleeve
+from finance.augur.sim.allocation import deposit_by_sleeve, rebalance_by_sleeve, withdrawal_by_sleeve
 from finance.augur.sim.cash_band import cash_order
 
 
@@ -96,7 +102,8 @@ class SleeveOrders(NamedTuple):
     the engine choosing how much to trade rather than executing what it was told. Doing the
     division here makes the rounding rule a decision with a name and a test.
 
-    Never both non-zero in the same month — see the module docstring.
+    Both can be non-zero in the same month, but only a rebalance does that, and never for the
+    same sleeve — see the module docstring.
     """
 
     sell_quanta: jnp.ndarray
@@ -127,13 +134,23 @@ def _quanta_for_cents(
 
 
 def decide(
-    *, view: ActorView, universe: SleeveUniverse, floor_cents: jnp.ndarray, ceiling_cents: jnp.ndarray
+    *,
+    view: ActorView,
+    universe: SleeveUniverse,
+    floor_cents: jnp.ndarray,
+    ceiling_cents: jnp.ndarray,
+    rebalance_tolerance: float | None = None,
 ) -> SleeveOrders:
     """Choose this month's orders from this month's observation.
 
     `floor_cents` and `ceiling_cents` are `(rollout,)` because the band may be CPI-indexed
     and inflation differs by path. Their ordering is validated at config time by
     `cash_band.validate_band_bounds`; it cannot be checked here, where they are traced.
+
+    `rebalance_tolerance` is compile-time config rather than a traced value, so `None` means
+    the drift-triggered rebalance is not merely skipped but never traced at all — a policy
+    that does not rebalance compiles to the program it compiled to before the mechanism
+    existed.
 
     Sleeve `s` prices off instrument `s` of the view — one policy's sleeves are the actor's
     tradable set today, in the same order.
@@ -154,23 +171,31 @@ def decide(
         unit_price_cents=view.instrument_price_cents,
         quantity_scale=view.instrument_quantity_scale[:, None],
     )
+    # A raise must COVER what the month needs, so it rounds up. A trim has no such target: it
+    # is bounded by the excess over target, and overshooting it would realize tax on a sale
+    # nothing asked for. The two are mutually exclusive per rollout — a rebalance fires only
+    # when the band is quiet — so summing the quantized sides is a selection, and it keeps
+    # each rounding rule attached to the thing that justifies it.
+    sell_quanta = to_quanta(
+        cents=withdrawal_by_sleeve(value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents),
+        round_up=True,
+    )
+    buy_quanta = to_quanta(
+        cents=deposit_by_sleeve(value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents),
+        round_up=False,
+    )
+    if rebalance_tolerance is not None:
+        quiet = (order.raise_cents == 0) & (order.invest_cents == 0)
+        trim_sell, trim_buy = rebalance_by_sleeve(
+            value_cents=sleeve_value, weights=universe.weights, tolerance=rebalance_tolerance
+        )
+        sell_quanta = sell_quanta + jnp.where(quiet, to_quanta(cents=trim_sell, round_up=False), 0)
+        buy_quanta = buy_quanta + jnp.where(quiet, to_quanta(cents=trim_buy, round_up=False), 0)
+
     return SleeveOrders(
         # Capped by the holding, because you cannot sell what you do not have. The buy side
         # has no such cap — that asymmetry is why the clamp sits here and not in the
         # conversion, which knows only about prices.
-        sell_quanta=jnp.minimum(
-            to_quanta(
-                cents=withdrawal_by_sleeve(
-                    value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
-                ),
-                round_up=True,
-            ),
-            view.sleeve_quanta(universe.lot_rows),
-        ),
-        buy_quanta=to_quanta(
-            cents=deposit_by_sleeve(
-                value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents
-            ),
-            round_up=False,
-        ),
+        sell_quanta=jnp.minimum(sell_quanta, view.sleeve_quanta(universe.lot_rows)),
+        buy_quanta=buy_quanta,
     )

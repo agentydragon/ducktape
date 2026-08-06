@@ -924,6 +924,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                 policy_index=policy,
                 agent=agent_code,
                 cash_slot=int(ta_policies.cash_slot[policy]),
+                rebalance_tolerance=ta_policies.rebalance_tolerances[policy],
                 floor=(
                     int(ta_policies.floor_kind[policy]),
                     int(ta_policies.floor_fixed[policy]),
@@ -1949,6 +1950,7 @@ def _program_impl(
                 ),
                 floor_cents=_amount_values_tuple(tp.floor, ta_floor_series[ti], external_values, month, r),
                 ceiling_cents=_amount_values_tuple(tp.ceiling, ta_ceiling_series[ti], external_values, month, r),
+                rebalance_tolerance=tp.rebalance_tolerance,
             )
             for si, sleeve in enumerate(tp.sleeves):
                 # Buys are queued rather than executed: they must not run until obligations have

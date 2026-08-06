@@ -8,7 +8,12 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.allocation import deposit_by_sleeve, target_value_cents, withdrawal_by_sleeve
+from finance.augur.sim.allocation import (
+    deposit_by_sleeve,
+    rebalance_by_sleeve,
+    target_value_cents,
+    withdrawal_by_sleeve,
+)
 
 
 def _deposit(value: list[list[int]], weights: list[int], invest_cents: list[int]) -> list[list[int]]:
@@ -30,9 +35,10 @@ def _withdraw(value: list[list[int]], weights: list[int], raise_cents: list[int]
 
 
 def test_nothing_is_sold_to_raise_nothing() -> None:
-    """Drift alone must never trigger a trade. A portfolio can sit far off target
-    indefinitely; only a cashflow moves it, because rebalancing turnover would cost more in
-    tax drag than the drift costs in risk."""
+    """Drift alone never moves THIS split. A portfolio can sit far off target indefinitely
+    while only cashflow rebalances it — which is the default, because whether the tax drag of
+    turnover is worth the drift it removes is what the allocation study measures rather than
+    assumes. `rebalance_by_sleeve` is the opt-in that trades on drift alone."""
 
     assert _withdraw([[10_000], [1]], [1, 1], [0]) == [[0], [0]]
 
@@ -227,6 +233,113 @@ def test_zero_and_negative_weights_are_rejected() -> None:
             weights=np.asarray([1, 0], dtype=np.int64),
             raise_cents=jnp.asarray([0], dtype=jnp.int64),
         )
+
+
+# -- Rebalancing on drift alone ------------------------------------------------------------
+
+
+def _rebalance(value: list[list[int]], weights: list[int], tolerance: float) -> tuple[list[list[int]], list[list[int]]]:
+    sell, buy = rebalance_by_sleeve(
+        value_cents=jnp.asarray(value, dtype=jnp.int64),
+        weights=np.asarray(weights, dtype=np.int64),
+        tolerance=tolerance,
+    )
+    return ([[int(x) for x in row] for row in sell], [[int(x) for x in row] for row in buy])
+
+
+def test_a_trigger_goes_all_the_way_back_to_target() -> None:
+    """Not to the edge of the tolerance. 900/100 against equal weights is 500/500 on target, so
+    400 moves across — even though a 0.25 tolerance would have been satisfied by moving 275."""
+
+    assert _rebalance([[900], [100]], [1, 1], 0.25) == ([[400], [0]], [[0], [400]])
+
+
+def test_drift_inside_the_tolerance_trades_nothing() -> None:
+    """600/400 is 100 off a 500 target: 20% drift, inside a 25% tolerance. The whole point of a
+    tolerance is that the portfolio is allowed to sit off target, so this must be exactly zero
+    rather than a small trade."""
+
+    assert _rebalance([[600], [400]], [1, 1], 0.25) == ([[0], [0]], [[0], [0]])
+
+
+def test_one_sleeve_over_the_tolerance_rebalances_every_sleeve() -> None:
+    """All-or-nothing. Sleeve 2 is 100/1000 = 10% off its target, well inside the tolerance, but
+    sleeve 0 is over it — and once the portfolio is being rebalanced there is no reason to leave
+    a sleeve off target, since the trade is already being paid for."""
+
+    sell, buy = _rebalance([[1_600], [1_100], [300]], [1, 1, 1], 0.25)
+
+    assert sell == [[600], [100], [0]]
+    assert buy == [[0], [0], [700]]
+
+
+def test_drift_is_measured_relative_to_each_sleeves_own_target() -> None:
+    """A one-point move means something very different for a 90% sleeve than for a 10% one.
+    Here both sleeves are 90 cents off, which is 1% of the big sleeve's target and 9% of the
+    small one's — so a 5% tolerance fires on the small sleeve and an absolute rule would not
+    have fired at all."""
+
+    sell, buy = _rebalance([[8_910], [1_090]], [9, 1], 0.05)
+
+    assert (sell, buy) == ([[0], [90]], [[90], [0]])
+
+
+def test_a_rebalance_never_spends_more_than_it_raised() -> None:
+    """The invariant that lets the executor run the sells and the buys as two independent legs.
+    Flooring each sleeve's target discards at most a cent per sleeve, and the discarded cents
+    have to land on the SELL side — a buy leg larger than its sell leg would overdraw the
+    account by whatever the market moved in between."""
+
+    for total, weights in ((10_000, [1, 1, 1]), (99_991, [7, 3]), (1, [1, 1]), (12_345_678, [5, 3, 2, 1])):
+        value = [[total if i == 0 else 0] for i in range(len(weights))]
+        sell, buy = _rebalance(value, weights, 0.0)
+        assert sum(row[0] for row in sell) >= sum(row[0] for row in buy), f"{total=} {weights=}"
+
+
+def test_an_empty_portfolio_rebalances_nothing() -> None:
+    """Every sleeve is trivially on target, and the relative test would be comparing zero
+    against zero."""
+
+    assert _rebalance([[0], [0]], [1, 1], 0.0) == ([[0], [0]], [[0], [0]])
+
+
+def test_a_portfolio_too_small_to_have_per_sleeve_targets_trades_nothing() -> None:
+    """One cent across two equal sleeves floors both targets to zero, so "on target" is a state
+    the portfolio cannot reach. Firing anyway would sell the cent and buy nothing back — a
+    rebalance that is purely a drain, repeated every month."""
+
+    assert _rebalance([[1], [0]], [1, 1], 0.0) == ([[0], [0]], [[0], [0]])
+
+
+def test_a_zero_tolerance_still_means_something() -> None:
+    """Not a disabled rebalance — the disabled state is the policy not configuring one at all.
+    Zero means correct any drift at all, which one cent of drift is."""
+
+    assert _rebalance([[501], [499]], [1, 1], 0.0) == ([[1], [0]], [[0], [1]])
+
+
+def test_rebalance_rollouts_are_independent() -> None:
+    """A rollout inside its tolerance must not be dragged into a trade by a neighbour that
+    crossed — `fires` is per-rollout, and an `.any()` over the wrong axis would do exactly that."""
+
+    sell, buy = _rebalance([[900, 550], [100, 450]], [1, 1], 0.25)
+
+    assert sell == [[400, 0], [0, 0]]
+    assert buy == [[0, 0], [400, 0]]
+
+
+def test_a_negative_tolerance_is_rejected() -> None:
+    with pytest.raises(ValueError, match="must not be negative"):
+        _rebalance([[1], [1]], [1, 1], -0.1)
+
+
+def test_the_rebalance_traces_under_jit() -> None:
+    weights = np.asarray([1, 1], dtype=np.int64)
+    rebalance = jax.jit(lambda v: rebalance_by_sleeve(value_cents=v, weights=weights, tolerance=0.25))
+
+    sell, buy = rebalance(jnp.asarray([[900], [100]], dtype=jnp.int64))
+
+    assert (int(sell[0, 0]), int(buy[1, 0])) == (400, 400)
 
 
 if __name__ == "__main__":

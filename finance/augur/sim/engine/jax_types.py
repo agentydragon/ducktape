@@ -72,6 +72,8 @@ class _FoldedTargetAllocation:
     policy_index: int
     agent: int
     cash_slot: int
+    # Static, so `None` means the drift rebalance is never traced rather than merely inactive.
+    rebalance_tolerance: float | None
     floor: tuple[int, int, int, int, int]
     ceiling: tuple[int, int, int, int, int]
     lot_slots: tuple[int, ...]

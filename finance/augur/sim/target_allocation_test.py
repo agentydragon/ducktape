@@ -43,12 +43,21 @@ def _view(*, funding_cash: int, other_cash: int = 50_000, outflow: int = 0):
     )
 
 
-def _act(*, funding_cash: int, other_cash: int = 50_000, outflow: int = 0, floor: int = 100, ceiling: int = 1_000):
+def _act(
+    *,
+    funding_cash: int,
+    other_cash: int = 50_000,
+    outflow: int = 0,
+    floor: int = 100,
+    ceiling: int = 1_000,
+    rebalance_tolerance: float | None = None,
+):
     return decide(
         view=_view(funding_cash=funding_cash, other_cash=other_cash, outflow=outflow),
         universe=_UNIVERSE,
         floor_cents=jnp.asarray([floor], dtype=jnp.int64),
         ceiling_cents=jnp.asarray([ceiling], dtype=jnp.int64),
+        rebalance_tolerance=rebalance_tolerance,
     )
 
 
@@ -57,9 +66,14 @@ def _flat(orders: SleeveOrders) -> tuple[list[int], list[int]]:
 
 
 def test_a_quiet_month_inside_the_band_emits_nothing() -> None:
-    """The composed no-trade guarantee, and the one most easily lost. Drift is corrected
-    only through cashflow that was going to happen anyway; a policy that trades on drift
-    alone would pay tax every month to chase a ratio nobody asked it to hit exactly."""
+    """The composed no-trade guarantee, and the one most easily lost. By default drift is
+    corrected only through cashflow that was going to happen anyway; a policy that traded on
+    drift alone would pay tax every month to chase a ratio nobody asked it to hit exactly.
+
+    The portfolio here is 900/100 against equal weights — as far off target as this fixture
+    gets — so it is exactly the state a drift rebalance WOULD trade in. That is the point:
+    without a configured tolerance it emits nothing at all.
+    """
 
     assert _flat(_act(funding_cash=500)) == ([0, 0], [0, 0])
 
@@ -255,6 +269,53 @@ def test_a_purchase_stays_within_budget_across_scales_and_prices(scale: int, pri
 
 def test_an_unpriceable_sleeve_buys_nothing() -> None:
     assert _quanta(cents=1_000, price_cents=0, scale=1, round_up=False) == 0
+
+
+# -- Rebalancing on drift alone ------------------------------------------------------------
+
+
+def test_a_configured_tolerance_trades_in_a_quiet_month() -> None:
+    """The same quiet month as above, with a tolerance configured. 900/100 against equal
+    weights is 500/500 on target, so 400 crosses — and this is the first time the policy emits
+    a sell and a buy in the same month, which the band alone could never do."""
+
+    assert _flat(_act(funding_cash=500, rebalance_tolerance=0.25)) == ([400, 0], [0, 400])
+
+
+def test_a_rebalance_is_suppressed_while_the_band_is_raising() -> None:
+    """Not merely additive. The raise already water-fills out of the overweight sleeve, which
+    is the best rebalance that cashflow can buy; adding a drift trade on top would sell sleeve
+    0 to raise cash and buy sleeve 1 with cash the month needs to SPEND.
+
+    The assertion is the unchanged raise, not "no buy": a rebalance that fired here would also
+    change the sell side, so asserting only the buy would miss half of it.
+    """
+
+    assert _flat(_act(funding_cash=50, rebalance_tolerance=0.25)) == _flat(_act(funding_cash=50))
+
+
+def test_a_rebalance_is_suppressed_while_the_band_is_investing() -> None:
+    """The mirror. The deposit already fills the underweight sleeve first."""
+
+    assert _flat(_act(funding_cash=5_000, rebalance_tolerance=0.25)) == _flat(_act(funding_cash=5_000))
+
+
+def test_a_tolerance_wide_enough_to_cover_the_drift_still_trades_nothing() -> None:
+    """Configuring a rebalance is not the same as asking for one every month. The fixture is
+    80% off target, so a tolerance above that leaves it alone."""
+
+    assert _flat(_act(funding_cash=500, rebalance_tolerance=1.0)) == ([0, 0], [0, 0])
+
+
+def test_a_rebalance_sell_is_still_capped_by_the_holding() -> None:
+    """The cap belongs to the sell side as a whole, not to the raise path that first needed it.
+    Sleeve 0 is worth 900 cents at a cent a quantum, so a trim can ask for at most 900 quanta —
+    and this asserts the cap is applied AFTER the two sell sources are summed, which is the
+    only place it can be applied once."""
+
+    orders = _act(funding_cash=500, rebalance_tolerance=0.25)
+
+    assert int(orders.sell_quanta[0, 0]) <= 900
 
 
 if __name__ == "__main__":

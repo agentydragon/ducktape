@@ -49,6 +49,7 @@ def _scenario(
     rent: float = 0.0,
     income: float = 0.0,
     purchase_slots: int = 0,
+    rebalance_tolerance: float | None = None,
 ) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
@@ -124,6 +125,7 @@ def _scenario(
                 cash_floor_usd=floor,
                 cash_ceiling_usd=ceiling,
                 purchase_slots_per_sleeve=purchase_slots,
+                rebalance_tolerance=rebalance_tolerance,
             )
         ],
         tax_profiles=[],
@@ -378,6 +380,83 @@ def test_running_out_of_purchase_slots_aborts_the_run() -> None:
 
     with pytest.raises(ValueError, match="ran out of purchase slots: 1 configured, 2 needed"):
         _run(scenario)
+
+
+def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month() -> None:
+    """The mechanism neither side of the band can express. Cash sits at $50,000 inside a
+    [$10,000, $90,000] band, so nothing is being funded and nothing is being invested — and yet
+    the portfolio is 9:1 against a 1:1 target.
+
+    Without a tolerance this is exactly `test_a_month_inside_the_band_sells_nothing`. With one,
+    $40,000 crosses: 400 units of stock sold and 400 units of bonds bought, landing both sleeves
+    on $50,000. The sale and the purchase are two independent legs of the engine — the sell runs
+    before settlement and the buy after — so this also pins that they meet in the same month.
+    """
+
+    scenario = _scenario(
+        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=0.25
+    )
+    lots = _lots(scenario, month=1)
+
+    assert lots["stock"] == 500.0
+    assert lots["allocation_sale_buy_p0_s1_0"] == 400.0
+    # Untouched: the bond sleeve was the underweight one, so the trim never reaches it.
+    assert lots["bond"] == 100.0
+    assert lots["allocation_sale_buy_p0_s0_0"] == 0.0
+    # Cash-neutral to the cent. A rebalance is a portfolio operation, not a funding one.
+    assert _cash(scenario)[1] == 50_000.0
+
+
+def test_a_rebalanced_portfolio_then_sits_still() -> None:
+    """One trigger, not one per month. Once both sleeves are on target the drift is zero, so a
+    flat price path produces exactly one rebalance over the horizon — which is why a single
+    purchase slot per sleeve is enough here, and why a policy that re-triggered every month
+    would exhaust its slots and abort instead of quietly churning."""
+
+    scenario = _scenario(
+        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=0.25
+    )
+    run = _run(scenario)
+    trades = run.events_log.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
+
+    assert [(str(row["lot_id"]), float(row["units_sold"])) for row in trades] == [("stock", 400.0)]
+    assert _lots(scenario, month=_HORIZON) == _lots(scenario, month=1)
+
+
+def test_a_tolerance_wider_than_the_drift_changes_nothing() -> None:
+    """Configuring a rebalance is not asking for one. The fixture is 80% off target, so a 100%
+    tolerance leaves it exactly where an unconfigured policy would."""
+
+    with_tolerance = _scenario(
+        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=1.0
+    )
+    without = _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1)
+
+    assert _lots(with_tolerance, month=_HORIZON) == _lots(without, month=_HORIZON)
+    assert _cash(with_tolerance) == _cash(without)
+
+
+def test_a_rebalance_does_not_mint_or_burn_money() -> None:
+    """Two legs, two counterparties, one conserved tensor. A rebalance is the first month in
+    which the agent both sells and buys, so it is the first chance for the sell leg's credit and
+    the buy leg's debit to disagree."""
+
+    scenario = _scenario(
+        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=0.25
+    )
+    state = np.asarray(_run(scenario).buffers.state.cash_state, dtype=np.int64)
+    totals = state.sum(axis=tuple(range(1, state.ndim)))
+
+    assert np.all(totals == totals[0])
+
+
+def test_rebalancing_without_somewhere_to_buy_is_rejected() -> None:
+    """Config-time, because the alternative is a policy that only ever sells: every trigger
+    would move the overweight sleeve into cash with no leg to put it back, draining the
+    portfolio a little more each time it fires."""
+
+    with pytest.raises(ValueError, match="no purchase slots"):
+        _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, rebalance_tolerance=0.25)
 
 
 if __name__ == "__main__":

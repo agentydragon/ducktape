@@ -537,6 +537,18 @@ class TargetAllocationPolicy(BaseModel):
     cash_floor_usd: AmountSpec = 0.0
     cash_ceiling_usd: AmountSpec
     cause_id_prefix: str = "allocation_sale"
+    rebalance_tolerance: NonNegativeFloat | None = Field(
+        default=None,
+        description=(
+            "Drift, relative to a sleeve's own target, at which the policy sells overweight "
+            "sleeves down and buys underweight ones up in a month with no cash need at all. "
+            "0.25 is the '25' of the standard 5/25 rule. `None` means never — cashflow stays "
+            "the only rebalancing mechanism, which is the default because the turnover and tax "
+            "drag of periodic rebalancing are what the allocation study exists to measure, and "
+            "a default that rebalanced would assume the answer. `0.0` is a real setting, not a "
+            "disabled one: it rebalances whenever anything is off by a cent."
+        ),
+    )
     purchase_slots_per_sleeve: NonNegativeInt = Field(
         default=0,
         description=(
@@ -571,6 +583,13 @@ class TargetAllocationPolicy(BaseModel):
         validate_band_bounds(
             floor_usd=_base_amount_usd(self.cash_floor_usd), ceiling_usd=_base_amount_usd(self.cash_ceiling_usd)
         )
+        if self.rebalance_tolerance is not None and self.purchase_slots_per_sleeve == 0:
+            raise ValueError(
+                f"target-allocation policy for {self.agent_id}/{self.account_id} sets "
+                f"{self.rebalance_tolerance=} but no purchase slots. A rebalance sells the overweight "
+                "sleeves and buys the underweight ones; with nowhere to buy it would only ever sell, "
+                "draining the portfolio into cash a little more on every trigger"
+            )
         return self
 
 

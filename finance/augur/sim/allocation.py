@@ -31,9 +31,12 @@ underweight sleeve" means.
 
 Two consequences worth naming:
 
-- A withdrawal is the ONLY rebalancing mechanism here. There is no separate rebalance
-  action, because turnover and its tax drag would otherwise swamp the effect the whole
-  study is trying to measure. With no drift and no cashflow this returns all zeros.
+- Cashflow is the DEFAULT rebalancing mechanism: a withdrawal or a deposit moves the
+  portfolio toward target for free, because the trade was going to happen anyway. With no
+  drift and no cashflow both return all zeros. `rebalance_by_sleeve` is the opt-in third
+  mechanism — a trade taken for no reason but the drift itself — and it is off unless a
+  policy configures a tolerance, because its turnover and tax drag are exactly what the
+  allocation study exists to measure rather than assume.
 - `L` is a level, not a fraction of the sale, so a sleeve that is far overweight can fund
   the entire withdrawal on its own while the others are untouched.
 """
@@ -153,6 +156,49 @@ def deposit_by_sleeve(
 
     given = jnp.maximum(_round_half_up(water * weights[:, None]) - value_cents, 0)
     return _settle_residual(taken=given, value_cents=given + wanted[None, :], wanted=wanted)
+
+
+def rebalance_by_sleeve(
+    *, value_cents: jnp.ndarray, weights: NDArray[np.int64], tolerance: float
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Trim every sleeve above target and top up every sleeve below it — or trade nothing at all.
+
+    The mechanism neither `withdrawal_by_sleeve` nor `deposit_by_sleeve` can express: those two
+    only ever move money that was already moving, so a sleeve that quietly doubles is never sold
+    down. This one trades for no reason but the drift.
+
+    Returns `(sell_cents, buy_cents)`, both `(sleeve, rollout)`. They are disjoint per sleeve — a
+    sleeve is above target or below it, never both — and each is zero in a rollout that did not
+    trigger.
+
+    ALL-OR-NOTHING per rollout, and all the way back to TARGET rather than to the edge of the
+    tolerance. Stopping at the edge would leave the portfolio sitting on its own trigger, which is
+    the forced-trading trap the cash band avoids by refilling to its far edge; here it would mean
+    paying the tax on a sale that buys almost no correction.
+
+    Drift is measured RELATIVE to each sleeve's own target, because a one-point move means
+    something very different for a 90% sleeve than for a 1% one — `tolerance=0.25` is the "25" of
+    the standard 5/25 rule. `tolerance=0.0` is a meaningful setting, not a disabled one: it
+    rebalances to target whenever anything is off by a cent.
+
+    Sells exceed buys by the cents that flooring each sleeve's target discards (at most one per
+    sleeve), so a rebalance can never spend more than it raised. That remainder stays in cash.
+    """
+
+    _validate_weights(weights)
+    if tolerance < 0:
+        raise ValueError(f"rebalance tolerance must not be negative; got {tolerance=}")
+    if value_cents.ndim != 2:
+        raise ValueError(f"value_cents must be (sleeve, rollout), got {value_cents.shape}")
+    if value_cents.shape[0] != weights.shape[0]:
+        raise ValueError(f"value_cents has {value_cents.shape[0]} sleeves but weights has {weights.shape[0]}")
+
+    target = target_value_cents(weights=weights, total_cents=value_cents.sum(axis=0))
+    drift = value_cents - target
+    # `target > 0` guards the empty portfolio: with nothing held every sleeve is exactly on target,
+    # and the relative test would be comparing zero against zero.
+    fires = ((jnp.abs(drift) >= tolerance * target) & (target > 0)).any(axis=0)
+    return jnp.where(fires, jnp.maximum(drift, 0), 0), jnp.where(fires, jnp.maximum(-drift, 0), 0)
 
 
 def _settle_residual(*, taken: jnp.ndarray, value_cents: jnp.ndarray, wanted: jnp.ndarray) -> jnp.ndarray:
