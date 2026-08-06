@@ -21,13 +21,21 @@ spec:
   # synchronously enters the device-code flow, so the pod never binds its port
   # and the startup probe kills it (#3198).
   #
-  # The seed init container is meant to repair that unattended and cannot, for
-  # the third time in a row. Its guard was `[ -f auth.json ]`, which could not
-  # replace a half-written file holding only `device_code_requested_at` (#3199);
-  # it became `grep -q '"refresh_token"'`, which cannot replace a token that is
-  # present but revoked -- today. Each fix tested one notch deeper without ever
-  # testing whether the credential actually WORKS, which is the only property
-  # that matters.
+  # Re-authenticating is the part that never got better, and is why this is being
+  # retired rather than repaired. LiteLLM has no in-place login: a new token means
+  # running `codex login` interactively elsewhere, reshaping the result into
+  # LiteLLM's *different* flat auth.json schema (see the seed Secret's description),
+  # SOPS-encrypting it, committing, waiting for Flux, and then trusting this init
+  # container to replace the PVC copy. That guard has been wrong twice --
+  # `[ -f auth.json ]` could not replace a file holding only
+  # `device_code_requested_at` (#3199), and `grep -q '"refresh_token"'` cannot
+  # replace a present-but-revoked token (today). Both test the file's shape;
+  # neither can test whether the credential works, which is the only property that
+  # decides whether the pod starts.
+  #
+  # CLIProxyAPI replaces the whole ritual with one command against the running pod
+  # (`-codex-device-login`), written straight to its PVC and picked up by a file
+  # watcher without a restart.
   #
   # Still pointed at by 6 model entries in proxy-config.yaml (gpt-5.4-chatgpt,
   # gpt-5.5-chatgpt, gpt-5.6-{sol,terra,luna}-chatgpt, gpt-5.3-codex-spark-chatgpt)

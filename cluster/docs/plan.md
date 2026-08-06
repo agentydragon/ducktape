@@ -55,24 +55,26 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   could use the Codex subscription. CLIProxyAPI arrived later for a different client —
   Claude Code, which needs Anthropic-shaped tool calls that LiteLLM's Responses bridge
   mistranslates.
-  **What made it annoying was bootstrapping the OAuth token, not running it.** LiteLLM
-  builds the ChatGPT provider's authenticator during ASGI startup, and on an expired
-  token that call synchronously enters the device-code flow — so the pod never binds its
-  port and dies to its own startup probe. While those models lived in the main proxy that
-  took Ollama, z.ai, Anthropic, Groq and Gemini down with ChatGPT, which is why [#3198]
-  carved out this single-replica `Recreate` deployment with its own PVC: to contain the
-  blast radius. Since the token can only be minted interactively, the initial one has to
-  be injected by an init container copying from a SOPS seed, and **that guard has now
-  been wrong three times**: `[ -f auth.json ]` could not replace a half-written file
-  holding only `device_code_requested_at` ([#3199]), so it became
-  `grep -q '"refresh_token"'`, which could not replace a present-but-revoked token —
-  2026-08-06, ~3h of crashlooping. Every version tested the file's shape; none tested
-  whether the credential works, which is the only thing that decides whether the pod
-  starts.
-  CLIProxyAPI does not have this shape: one device login onto a PVC, a file watcher, a
-  15m refresh worker, and no auth work on the startup path. It also serves
-  `/v1/responses` directly, so it can front Codex CLI as well as Claude Code and the
-  second instance buys nothing.
+  [#3198] gave it its own single-replica `Recreate` deployment because LiteLLM builds the
+  ChatGPT authenticator during ASGI startup: an expired token sends that call into the
+  device-code flow, the pod never binds its port, and it dies to its own startup probe —
+  which in the main proxy took Ollama, z.ai, Anthropic, Groq and Gemini down too. That
+  split worked and is not why this was retired.
+  **What stayed painful was re-authenticating it.** LiteLLM has no in-place login, so a
+  new token meant: run `codex login` interactively somewhere with a browser, reshape the
+  result into LiteLLM's _different_ flat `auth.json` schema (see the seed Secret's own
+  description — "flattened from a Codex `codex login`"), SOPS-encrypt it, commit, push,
+  wait for Flux, and then rely on an init-container guard to actually replace the copy on
+  the PVC. That guard was wrong twice: `[ -f auth.json ]` could not replace a half-written
+  file holding only `device_code_requested_at` ([#3199]), and its replacement
+  `grep -q '"refresh_token"'` could not replace a present-but-revoked token (2026-08-06,
+  ~3h of crashlooping). Both tested the file's shape; neither could test whether the
+  credential works, which is the only property that decides whether the pod starts.
+  CLIProxyAPI replaces that whole ritual with one command against the running pod
+  (`-codex-device-login`), writing straight to its PVC, picked up by a file watcher
+  without a restart and kept alive by a 15m refresh worker. It also serves
+  `/v1/responses` directly, so it can front Codex CLI as well as Claude Code and this
+  instance buys nothing.
 
   [#3198]: https://github.com/agentydragon/ducktape/pull/3198
 
