@@ -120,6 +120,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(augur_config),
+        security_distributions=augur_config.security_distributions,
         harvest_policies=resolved_portfolio.harvest_policies,
         known_location_ids=catalog.location_ids,
         locations=sim_locations_from_config(augur_config.locations),

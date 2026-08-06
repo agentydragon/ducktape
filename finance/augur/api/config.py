@@ -28,6 +28,7 @@ from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
 from finance.augur.budget.schema import BudgetConfig
 from finance.augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
+from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.model.vecm import VecmProviderConfig
@@ -102,6 +103,45 @@ class CalibrationCatalogConfig(ApiModel):
     )
 
 
+class DistributionTaxShareConfig(ApiModel):
+    """One tax-character slice of a distributing security's payout.
+
+    A vector rather than a tag because real funds are mixed and publish the split: an
+    aggregate bond fund is part Treasury (state-exempt) and part corporate (exempt nowhere),
+    and a national muni fund is federally exempt throughout while only its in-state slice is
+    exempt at the state level. The fractions come from the fund's own annual disclosure.
+    """
+
+    fraction: float = Field(gt=0.0, le=1.0)
+    issuer_jurisdiction_id: str | None = Field(
+        default=None,
+        description=(
+            "The taxing authority that issued the underlying debt — `federal_us` for the "
+            "Treasury slice, `california` for CA munis. `None` means a non-governmental issuer, "
+            "which no jurisdiction exempts."
+        ),
+    )
+
+
+class SecurityDistributionConfig(ApiModel):
+    """A security that pays a monthly per-unit cash distribution, and how that payout is taxed.
+
+    Deployment-level rather than per-holding: what a fund is made of is a fact about the
+    INSTRUMENT, the same argument that keeps a holding's price series out of portfolio config.
+    Two positions in the same fund cannot disagree about what it holds.
+
+    Only the tax character is declared here. The AMOUNT is exogenous — it moves with the fed
+    rate and credit spreads — and reaches the sim as a `security_distribution:<symbol>` level
+    series in dollars per unit.
+
+    Presence in the deployment's list is what makes a security distribute; a security absent
+    from it simply does not, with no flag to set to `false`.
+    """
+
+    symbol: SecuritySymbol
+    tax_character: tuple[DistributionTaxShareConfig, ...] = Field(min_length=1)
+
+
 class LocationConfig(ApiModel):
     """A deployment-owned location identity and its local modeling inputs.
 
@@ -132,6 +172,14 @@ class Config(ApiModel):
     portfolio_sources: PortfolioSourcesConfig
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
+    security_distributions: tuple[SecurityDistributionConfig, ...] = Field(
+        default=(),
+        description=(
+            "Securities that pay a monthly per-unit cash distribution, with the tax character of "
+            "that payout. Bond funds need this: their return is distributions plus price change, "
+            "so a fund declared only as a holding is modeled at price alone and loses its yield."
+        ),
+    )
     # CLEANUP(added 2026-06-02): `default_rollout_samples` is no longer surfaced on the wire — the
     #   frontend seeds its rollout count from a local constant clamped to `max_rollout_samples`,
     #   so nothing reads this. Remove the field once gaffer-private's config YAML drops the key
@@ -179,6 +227,22 @@ class Config(ApiModel):
             "live here, in the deployment's gaffer-private config — not in ducktape)."
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_security_distributions(self) -> Config:
+        duplicate_symbols = _duplicates(str(entry.symbol) for entry in self.security_distributions)
+        if duplicate_symbols:
+            raise ValueError(f"security_distributions must name each symbol once: {duplicate_symbols}")
+        for entry in self.security_distributions:
+            total = sum(share.fraction for share in entry.tax_character)
+            # Exactly 1, not "at most 1": a short split pays out less than the fund distributes,
+            # which reads as a lower yield rather than as the misconfiguration it is.
+            if abs(total - 1.0) > 1e-9:
+                raise ValueError(
+                    f"security_distributions[{entry.symbol}] allocates {total} of its payout; "
+                    "the tax-character fractions must sum to 1"
+                )
+        return self
 
     @model_validator(mode="after")
     def _validate_default_preset(self) -> Config:

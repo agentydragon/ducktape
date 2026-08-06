@@ -43,6 +43,7 @@ def main() -> int:
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
+        security_distributions=config.security_distributions,
         known_location_ids=catalog.location_ids,
         locations=sim_locations_from_config(config.locations),
         properties_by_id=catalog.properties_by_id,

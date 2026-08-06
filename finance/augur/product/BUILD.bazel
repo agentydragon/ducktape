@@ -185,6 +185,33 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_fund_distribution_e2e",
+    size = "medium",
+    srcs = ["test_fund_distribution_e2e.py"],
+    data = [
+        "//finance/augur/api:public_fixture_config",
+        "//finance/augur/api:public_fixture_properties",
+    ],
+    deps = [
+        ":conftest",
+        ":scenarios",
+        ":service",
+        ":wire",
+        "//:conftest",
+        "//finance/augur/api:config",
+        "//finance/augur/api:portfolio",
+        "//finance/augur/model:deterministic",
+        "//finance/augur/model:independent",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:provider_config",
+        "//finance/augur/model:series",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "asset_key",
     srcs = ["asset_key.py"],

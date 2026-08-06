@@ -10,6 +10,7 @@ import threading
 
 import numpy as np
 
+from finance.augur.api.config import SecurityDistributionConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.schemas import Frame
 from finance.augur.api.wire import Property
@@ -33,6 +34,7 @@ from finance.augur.product.scenarios import (
     initial_bonds_from_portfolio,
     initial_lots_from_portfolio,
     required_private_equity_issuers,
+    security_distributions_from_portfolio,
 )
 from finance.augur.product.wire import (
     MetricFanRequest,
@@ -62,6 +64,7 @@ class ProductService:
         portfolio: PortfolioConfig,
         initial_cash_usd: float,
         primary_agent_id: str,
+        security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         harvest_policies: tuple[HarvestPolicy, ...] = (),
         known_location_ids: frozenset[str],
         locations: dict[str, Location],
@@ -85,6 +88,9 @@ class ProductService:
         self._max_horizon_months = int(max_horizon_months)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
+        self._security_distributions = security_distributions_from_portfolio(
+            portfolio, security_distributions, primary_agent_id=primary_agent_id
+        )
         self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
         # Keep one product projection in flight per API process. JAX/XLA batches are memory-heavy
@@ -211,6 +217,7 @@ class ProductService:
             initial_lots=self._initial_lots,
             properties_by_id=self._properties_by_id,
             initial_bonds=self._initial_bonds,
+            security_distributions=self._security_distributions,
             harvest_policies=self._harvest_policies,
         )
         sampling_request = ExogenousSamplingRequest(

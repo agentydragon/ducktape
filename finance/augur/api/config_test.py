@@ -13,9 +13,11 @@ from finance.augur.api.config import (
     AgentDefinition,
     CalibrationCatalogConfig,
     Config,
+    DistributionTaxShareConfig,
     LocationConfig,
     PropertyAssetConfig,
     PropertySourceConfig,
+    SecurityDistributionConfig,
     dump_augur_config_yaml,
     load_augur_config,
 )
@@ -392,6 +394,32 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, 
         str(reloaded.property_source.property_assets[0].image_url)
         == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
+
+
+def test_a_security_distribution_must_allocate_its_whole_payout(minimal_config: MinimalConfig) -> None:
+    """A short split pays out less than the fund distributes, which reads as a lower yield
+    rather than as the misconfiguration it is."""
+
+    with pytest.raises(ValidationError, match="fractions must sum to 1"):
+        minimal_config(
+            security_distributions=(
+                SecurityDistributionConfig(
+                    symbol=SecuritySymbol("bnd"),
+                    tax_character=(DistributionTaxShareConfig(fraction=0.4, issuer_jurisdiction_id="federal_us"),),
+                ),
+            )
+        )
+
+
+def test_a_security_distribution_is_declared_once_per_symbol(minimal_config: MinimalConfig) -> None:
+    """Two declarations for one fund cannot both be what it holds, and the pool would pay twice."""
+
+    declaration = SecurityDistributionConfig(
+        symbol=SecuritySymbol("bnd"), tax_character=(DistributionTaxShareConfig(fraction=1.0),)
+    )
+
+    with pytest.raises(ValidationError, match="name each symbol once"):
+        minimal_config(security_distributions=(declaration, declaration))
 
 
 if __name__ == "__main__":

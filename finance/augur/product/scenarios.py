@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from more_itertools import one
 
-from finance.augur.api.config import Config, LocationConfig
+from finance.augur.api.config import Config, LocationConfig, SecurityDistributionConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
 from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
@@ -31,6 +31,7 @@ from finance.augur.sim.scenario import (
     Agent,
     BondHolding,
     CapitalImprovementEvent,
+    DistributionTaxSlice,
     FilingStatus,
     FixedAmount,
     HarvestPolicy,
@@ -51,6 +52,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
+    SecurityDistribution,
     SeriesIndexedAmount,
     SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
@@ -130,6 +132,35 @@ def initial_bonds_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id
     return bonds
 
 
+def security_distributions_from_portfolio(
+    portfolio: PortfolioConfig, declarations: tuple[SecurityDistributionConfig, ...], *, primary_agent_id: str
+) -> tuple[SecurityDistribution, ...]:
+    """Payout specs for every held pool of a security the deployment declares as distributing.
+
+    The two halves meet here and nowhere else: the deployment's list says WHAT a fund is made
+    of (a fact about the instrument), the portfolio says WHERE it is held, and this function
+    knows the product's cash topology well enough to name the destination.
+    """
+
+    distributions = portfolio.to_security_distributions(
+        tax_character_by_symbol={
+            declaration.symbol: tuple(
+                DistributionTaxSlice(fraction=share.fraction, issuer_jurisdiction_id=share.issuer_jurisdiction_id)
+                for share in declaration.tax_character
+            )
+            for declaration in declarations
+        },
+        payout_account_id=PRIMARY_ACCOUNT_ID,
+    )
+    unsupported_owner_ids = sorted({d.agent_id for d in distributions if d.agent_id != primary_agent_id})
+    if unsupported_owner_ids:
+        raise ValueError(
+            "product portfolio projection only supports distributions on holdings owned by the "
+            f"primary agent; got owner agent ids {unsupported_owner_ids}"
+        )
+    return distributions
+
+
 def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     # Keyed by the sim-frame wire id (matching the `asset_id` column on decoded sim event
     # frames) so sim events can be labeled; the wire id is derived from the typed `asset`.
@@ -151,6 +182,7 @@ def build_scenario(
     initial_lots: tuple[InitialLot, ...],
     properties_by_id: dict[str, Property],
     initial_bonds: tuple[BondHolding, ...] = (),
+    security_distributions: tuple[SecurityDistribution, ...] = (),
     harvest_policies: tuple[HarvestPolicy, ...] = (),
 ) -> Scenario:
     horizon_months = int(scenario_key.horizon_months)
@@ -375,6 +407,7 @@ def build_scenario(
         agents=agents,
         initial_lots=list(initial_lots),
         initial_bonds=list(initial_bonds),
+        security_distributions=list(security_distributions),
         initial_cash=initial_cash,
         recurring_obligations=recurring_obligations,
         recurring_transfers=recurring_transfers,

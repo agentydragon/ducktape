@@ -9,6 +9,7 @@ this shape into lower-level sim objects at the runtime boundary.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cached_property
@@ -27,7 +28,7 @@ from pydantic import (
 
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
-from finance.augur.sim.scenario import BondHolding, InitialLot
+from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -299,6 +300,48 @@ class PortfolioConfig(PortfolioConfigModel):
             for position in self.holdings
             for lot in position.lots
         )
+
+    def to_security_distributions(
+        self,
+        *,
+        tax_character_by_symbol: Mapping[SecuritySymbol, tuple[DistributionTaxSlice, ...]],
+        payout_account_id: str,
+    ) -> tuple[SecurityDistribution, ...]:
+        """One payout spec per held pool of a declared distributing security.
+
+        A pool is (owner, custody account, asset): units in two accounts pay into the same
+        cash account but are two pools, because the units they pay on are separate. Two
+        positions in the same fund in the same account are ONE pool, so the pools are deduped
+        here — emitting both would pay the whole holding twice.
+
+        `payout_account_id` is required for the same reason `to_initial_bonds` requires a
+        coupon account: portfolio accounts are CUSTODY accounts and carry no cash row, so a
+        distribution paid into one would have nowhere to go.
+
+        A declared security nobody holds contributes nothing, which is what makes the
+        deployment's list a catalog rather than a per-portfolio duplicate.
+        """
+
+        account_by_id = {account.account_id: account for account in self.accounts}
+        pools: dict[tuple[str, str, SecuritySymbol], SecurityDistribution] = {}
+        for position in self.holdings:
+            if not isinstance(position, SecurityHoldingConfig):
+                continue
+            tax_character = tax_character_by_symbol.get(position.symbol)
+            if tax_character is None:
+                continue
+            agent_id = account_by_id[position.account_id].owner_agent_id
+            pools.setdefault(
+                (agent_id, position.account_id, position.symbol),
+                SecurityDistribution(
+                    asset=position.asset,
+                    agent_id=agent_id,
+                    holding_account_id=position.account_id,
+                    to_account_id=payout_account_id,
+                    tax_character=tax_character,
+                ),
+            )
+        return tuple(pools.values())
 
     def to_initial_bonds(self, *, coupon_account_id: str) -> tuple[BondHolding, ...]:
         """The bond mirror of `to_initial_lots`, with the same two conversions plus a routing.
