@@ -8,9 +8,30 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
+  # SUSPENDED 2026-08-06 -- superseded by CLIProxyAPI. Scaled to 0 rather than
+  # deleted so the auth PVC and its rotated refresh token survive while the
+  # cutover is confirmed; the whole directory is meant to be removed once
+  # Codex CLI is confirmed working through cli-proxy-api. See
+  # <cluster/k8s/litellm/README.md> for why this existed and what replaced it.
+  #
+  # It was already down when it was suspended: crashlooping ~3h (31 restarts) on
+  # 2026-08-06, startup probe never seeing :4000, almost certainly a dead OAuth
+  # refresh token on the PVC that the seed init container would not replace --
+  # its check is `grep -q '"refresh_token"'`, presence not validity, so a revoked
+  # token blocks its own re-seed. That failure mode is exactly what CLIProxyAPI's
+  # dedicated session was introduced to avoid.
+  #
+  # Still pointed at by 6 model entries in proxy-config.yaml (gpt-5.4-chatgpt,
+  # gpt-5.5-chatgpt, gpt-5.6-{sol,terra,luna}-chatgpt, gpt-5.3-codex-spark-chatgpt)
+  # and, through them, by the baked Codex CLI configs in
+  # <cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml> and
+  # <x/codex_pod_image/home.nix>. Those keep failing until the entries are
+  # repointed at cli-proxy-api's /v1/responses surface -- no image rebuild needed,
+  # the model *names* can stay.
+  #
   # The ChatGPT provider rotates a single OAuth refresh token. Recreate plus one
   # replica guarantees that rollouts never overlap token writers.
-  replicas: 1
+  replicas: 0
   strategy:
     type: Recreate
   selector:

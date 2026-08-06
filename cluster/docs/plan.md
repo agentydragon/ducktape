@@ -48,6 +48,28 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **Docker CI**: `docker-ci` — parked.
 - **Firecrawl**: `firecrawl-{namespace,db,app}` — parked.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
+- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`): scaled to 0 on 2026-08-06,
+  superseded by [CLIProxyAPI](../k8s/cli-proxy-api/README.md). It was a second LiteLLM
+  Deployment inside the `litellm` namespace holding its **own** ChatGPT/Codex OAuth
+  session on a PVC, serving the `*-chatgpt` models over the Responses API so Codex CLI
+  could use the Codex subscription. CLIProxyAPI arrived later for a different client —
+  Claude Code, which needs Anthropic-shaped tool calls that LiteLLM's Responses bridge
+  mistranslates — and the two ran side by side, each refreshing a separate OAuth token
+  against the same account.
+  Two sessions is what made this annoying. This one died on 2026-08-06 with a dead
+  refresh token and could not recover unattended: its seed init container tests
+  `grep -q '"refresh_token"'` — presence, not validity — so a revoked token blocks its
+  own re-seed, and the pod crashlooped for ~3h presenting only as a failed startup
+  probe. CLIProxyAPI's README already names the shared-token refresh race as the reason
+  it holds a dedicated session; running two of them re-created that hazard one level up.
+  CLIProxyAPI also serves `/v1/responses` directly, so it can front Codex CLI too and
+  the second instance buys nothing. **Not yet deleted**: the 6 `*-chatgpt` entries in
+  `k8s/litellm/app/proxy-config.yaml` still point here, and through them the baked Codex
+  configs in `k8s/agents/agent-sandbox/workspace-image/codex-config.toml` and
+  `x/codex_pod_image/home.nix`. Repoint those entries at CLIProxyAPI's `/v1/responses`
+  (the model _names_ can stay, so no image rebuild), confirm Codex CLI works, then
+  delete the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret and the Gatus
+  check.
 - **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
   parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
   registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
