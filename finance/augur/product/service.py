@@ -30,6 +30,7 @@ from finance.augur.product.decode import (
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
     build_scenario,
+    initial_bonds_from_portfolio,
     initial_lots_from_portfolio,
     required_private_equity_issuers,
 )
@@ -83,6 +84,7 @@ class ProductService:
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
+        self._initial_bonds = initial_bonds_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
         # Keep one product projection in flight per API process. JAX/XLA batches are memory-heavy
@@ -208,6 +210,7 @@ class ProductService:
             initial_cash_usd=self._initial_cash_usd,
             initial_lots=self._initial_lots,
             properties_by_id=self._properties_by_id,
+            initial_bonds=self._initial_bonds,
             harvest_policies=self._harvest_policies,
         )
         sampling_request = ExogenousSamplingRequest(

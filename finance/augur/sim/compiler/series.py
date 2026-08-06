@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
+from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
@@ -42,6 +42,16 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     # Holdings are marked every month off their asset-price series (`plan.lot_asset_series_index`).
     for lot in scenario.initial_lots:
         add(asset_price_key_or_none(lot.asset))
+    # A TIPS' principal rides CPI, so an inflation-indexed bond DEMANDS inflation even when
+    # nothing else in the scenario does. Without this, `compile_bonds._cpi_series_row` raises
+    # ("carry no inflation path") for any scenario that does not happen to want CPI for another
+    # reason — a CPI-indexed spend, cash band, tender floor, or property obligation.
+    #
+    # Demand side only, deliberately: the supply-side twin must NOT add this. Inflation reaches
+    # the cube by having been SAMPLED; adding the key there when nobody sampled it would give
+    # the TIPS an all-NaN price row instead of the loud raise, which is strictly worse.
+    if any(bond.inflation_indexed for bond in scenario.initial_bonds):
+        add(InflationKey())
     for scheduled_transfer in scenario.scheduled_transfers:
         _add_amount_series_key(scheduled_transfer.amount_usd, add)
     for recurring_transfer in scenario.recurring_transfers:

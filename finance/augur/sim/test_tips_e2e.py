@@ -16,8 +16,10 @@ import pytest_bazel
 
 from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.level_series_groups import IndexSeriesGroups
+from finance.augur.model.series import InflationKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.decode import monthly_metric_arrays
+from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
 
@@ -201,6 +203,28 @@ def test_net_worth_carries_a_tips_at_indexed_principal() -> None:
 
     assert bond_value(indexed=True)[-1] == 2 * _FACE
     assert bond_value(indexed=False)[-1] == _FACE
+
+
+def test_a_tips_demands_an_inflation_path_from_the_exogenous_model() -> None:
+    """The demand a TIPS makes that nothing else in a scenario need make.
+
+    Every other level-series demand comes from something PRICED — a lot, a sleeve, a sale. A
+    bond has no price series at all, so a TIPS is the one instrument whose exogenous demand is
+    invisible from the thing that carries it. Without this, `compile_bonds` raises "carry no
+    inflation path" for any caller that derives its sampling request from the scenario — which
+    is what the product surface does — unless it happens to want CPI for some other reason.
+
+    Asserted on the DEMAND function rather than through a run, because a run supplies its own
+    bundle and would pass either way. That is exactly how the gap stayed invisible from `sim/`.
+    """
+
+    indexed = _scenario(cpi=[1.0] * (_HORIZON + 1), indexed=True)
+    nominal = _scenario(cpi=[1.0] * (_HORIZON + 1), indexed=False)
+
+    assert InflationKey() in scenario_level_series_keys(indexed)
+    # And not otherwise: a nominal bond's cashflows are fixed by its terms, so demanding a
+    # series it never reads would make an unmodeled-inflation deployment fail for no reason.
+    assert InflationKey() not in scenario_level_series_keys(nominal)
 
 
 if __name__ == "__main__":

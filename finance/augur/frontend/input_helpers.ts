@@ -61,6 +61,9 @@ export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_v
 export const METRIC_OPTIONS = [
   { value: "holding_value_usd", chartValue: "holdingValueUsd", label: "Holdings value" },
   { value: "private_equity_value_usd", chartValue: "privateEquityValueUsd", label: "Private equity value" },
+  // Face still on the books. Above Liquid net worth because it is NOT in it — a bond held to
+  // maturity is neither marked nor saleable — but it is in Net worth below.
+  { value: "bond_value_usd", chartValue: "bondValueUsd", label: "Bond value" },
   { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
   { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
   { value: "property_value_usd", chartValue: "propertyValueUsd", label: "Property value" },

@@ -520,7 +520,11 @@ def _bond_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np
         value = np.broadcast_to(per_month[:, None], (plan.horizon_months + 1, plan.rollout_count)).copy()
     failed_month = failed_month_index_batch(dense)
     months = np.arange(plan.horizon_months + 1)[:, None]
-    return np.where((failed_month[None, :] >= 0) & (months >= failed_month[None, :]), 0.0, value)
+    # Strictly greater, matching every other term. Snapshot `i` is the state ENTERING month `i`,
+    # so a rollout that fails DURING month `m` still has a real snapshot at `m` — cash and
+    # holdings both keep theirs. `>=` zeroed the opening snapshot too, which showed a portfolio
+    # losing its ladder one month before it lost anything else.
+    return np.where((failed_month[None, :] >= 0) & (months > failed_month[None, :]), 0.0, value)
 
 
 def _mortgage_balance_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:

@@ -14,11 +14,20 @@ from enum import StrEnum
 from functools import cached_property
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    model_validator,
+)
 
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
-from finance.augur.sim.scenario import InitialLot
+from finance.augur.sim.scenario import BondHolding, InitialLot
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -150,6 +159,45 @@ class PrivateEquityHoldingConfig(_HoldingPositionBase):
 type HoldingPositionConfig = Annotated[SecurityHoldingConfig | PrivateEquityHoldingConfig, Field(discriminator="kind")]
 
 
+class BondHoldingConfig(PortfolioConfigModel):
+    """A bond held at scenario start, in the deployment's idiom.
+
+    Deliberately NOT a third `HoldingPositionConfig` variant. A bond is not a tax lot — the
+    sim says so structurally, giving it its own table and excluding it from liquid net worth
+    rather than relying on a rule someone remembers — and the position base would force it to
+    invent a `unit_value_usd` it cannot have (a held bond is never marked) and at least one
+    `HoldingTaxLotConfig` it does not have. Sitting under `holdings` would also put it in the
+    target-allocation sleeve seed, where the policy would try to sell it every month forever.
+
+    Months are relative to month 0, like `HoldingTaxLotConfig.holding_period_months_at_start`,
+    so a portfolio never mixes calendar dates with sim-relative indexes.
+    """
+
+    bond_id: str = Field(pattern=_ID_PATTERN)
+    account_id: str = Field(pattern=_ID_PATTERN)
+    label: str | None = None
+    issuer_jurisdiction_id: str | None = Field(
+        default=None,
+        description=(
+            "The taxing authority that issued the debt — `federal_us` for a Treasury, "
+            "`california` for a CA muni, `None` for a corporate issuer. Whether the holder "
+            "owes tax on the coupon is a relation between this issuer and the holder's own "
+            "jurisdictions, never a property of the bond: in-state is holder-relative."
+        ),
+    )
+    face_value_usd: PositiveFloat
+    # Carried even though the sim requires it to equal face today. The sim rejects a non-par
+    # purchase explicitly so a real holding bought at 98.5 raises rather than being silently
+    # treated as par — and this is where a user writes 98.5, so dropping the field would
+    # defeat exactly the loud failure that validator exists to produce.
+    purchase_price_usd: PositiveFloat
+    annual_coupon_rate: NonNegativeFloat
+    coupon_period_months: PositiveInt = 6
+    inflation_indexed: bool = False
+    holding_period_months_at_start: NonNegativeInt = 0
+    months_to_maturity_at_start: PositiveInt
+
+
 class PortfolioConfig(PortfolioConfigModel):
     """Deployment-authored portfolio facts.
 
@@ -160,6 +208,9 @@ class PortfolioConfig(PortfolioConfigModel):
 
     accounts: tuple[PortfolioAccountConfig, ...] = ()
     holdings: tuple[HoldingPositionConfig, ...] = ()
+    # Separate from `holdings` for the reasons on `BondHoldingConfig`: a bond is not a tax lot,
+    # is never marked, and must not reach the target-allocation sleeve seed.
+    bonds: tuple[BondHoldingConfig, ...] = ()
 
     @model_validator(mode="after")
     def _validate_references(self) -> PortfolioConfig:
@@ -173,6 +224,18 @@ class PortfolioConfig(PortfolioConfigModel):
         )
         if missing_accounts:
             raise ValueError(f"portfolio positions reference unknown account_id values: {missing_accounts}")
+
+        # Checked here rather than left to the sim's account resolution: a bond pointing at an
+        # account that does not exist has nowhere to pay its coupons.
+        missing_bond_accounts = sorted(
+            {bond.account_id for bond in self.bonds if bond.account_id not in known_accounts}
+        )
+        if missing_bond_accounts:
+            raise ValueError(f"portfolio bonds reference unknown account_id values: {missing_bond_accounts}")
+
+        duplicate_bonds = _duplicates(bond.bond_id for bond in self.bonds)
+        if duplicate_bonds:
+            raise ValueError(f"portfolio bonds must have unique bond_id values: {duplicate_bonds}")
 
         duplicate_positions = _duplicates(position.position_id for position in self.holdings)
         if duplicate_positions:
@@ -195,6 +258,16 @@ class PortfolioConfig(PortfolioConfigModel):
     @property
     def total_holdings_value_usd(self) -> float:
         return sum(position.current_value_usd for position in self.holdings)
+
+    @property
+    def total_bond_face_value_usd(self) -> float:
+        """Face still on the books, kept apart from holdings VALUE on purpose.
+
+        A held-to-maturity bond is never marked, so folding face into a total that means
+        "what these are worth" would assert a mark the model deliberately does not produce.
+        """
+
+        return sum(float(bond.face_value_usd) for bond in self.bonds)
 
     @property
     def level_anchors(self) -> PortfolioLevelAnchors:
@@ -225,6 +298,40 @@ class PortfolioConfig(PortfolioConfigModel):
             )
             for position in self.holdings
             for lot in position.lots
+        )
+
+    def to_initial_bonds(self, *, coupon_account_id: str) -> tuple[BondHolding, ...]:
+        """The bond mirror of `to_initial_lots`, with the same two conversions plus a routing.
+
+        The owner comes through the CUSTODY account, not the bond — the account is the
+        owner-bearing object. Both months are relative to month 0: a bond bought 24 months ago
+        and maturing in 96 lands at `purchase_month_index=-24`, `maturity_month_index=96`.
+
+        `coupon_account_id` is required and has no default because a bond's config account is
+        where it is HELD, and the sim's is where its coupons LAND — two different things that
+        are the same string only by coincidence. Portfolio accounts are custody accounts
+        (`taxable_brokerage`); they carry no cash row, so a coupon paid into one would have
+        nowhere to go. The caller knows its own cash topology, so it names the destination.
+        This mirrors sale proceeds, which already land in the funding account rather than in
+        the account whose lots were sold.
+        """
+
+        account_by_id = {account.account_id: account for account in self.accounts}
+        return tuple(
+            BondHolding(
+                bond_id=bond.bond_id,
+                agent_id=account_by_id[bond.account_id].owner_agent_id,
+                account_id=coupon_account_id,
+                issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                face_value_usd=bond.face_value_usd,
+                purchase_price_usd=bond.purchase_price_usd,
+                annual_coupon_rate=bond.annual_coupon_rate,
+                coupon_period_months=bond.coupon_period_months,
+                inflation_indexed=bond.inflation_indexed,
+                purchase_month_index=-int(bond.holding_period_months_at_start),
+                maturity_month_index=int(bond.months_to_maturity_at_start),
+            )
+            for bond in self.bonds
         )
 
 

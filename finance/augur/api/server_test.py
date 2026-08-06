@@ -118,20 +118,22 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
             250_000.0,
             250_000.0,
             250_000.0,
-            249_000.0,
-            249_000.0,
-            249_000.0,
-            248_000.0,
-            248_000.0,
-            248_000.0,
-            247_000.0,
-            247_000.0,
-            247_000.0,
+            # +$1,875 of coupon against -$1,000 of spend: both rungs pay at month 0, the TIPS
+            # $1,000 (100k at 2%/yr, semiannual) and the muni $875 (50k at 3.5%/yr).
+            250_875.0,
+            250_875.0,
+            250_875.0,
+            249_875.0,
+            249_875.0,
+            249_875.0,
+            248_875.0,
+            248_875.0,
+            248_875.0,
         ],
     }
     assert fan["terminal_metric_percentiles"] == {
         "percentile": [0.0, 50.0, 100.0],
-        "value": [247_000.0, 247_000.0, 247_000.0],
+        "value": [248_875.0, 248_875.0, 248_875.0],
     }
 
     terminal_distribution = _post_json(
@@ -154,11 +156,11 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert "rollout_summaries" not in terminal_distribution
     assert terminal_distribution["terminal_metric_percentiles"] == {
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
-        "value": [247_000.0, 247_000.0, 247_000.0, 247_000.0, 247_000.0],
+        "value": [248_875.0, 248_875.0, 248_875.0, 248_875.0, 248_875.0],
     }
     assert terminal_distribution["terminal_metric_samples"] == {
         "seed": [7, 8],
-        "value": [247_000.0, 247_000.0],
+        "value": [248_875.0, 248_875.0],
         "failed": [False, False],
     }
 
@@ -182,11 +184,12 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     columns = detail["rollout"]["monthly_metrics"]
     assert len(columns["month_index"]) == 4
     assert columns["month_index"] == [0, 1, 2, 3]
-    assert columns["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
+    assert columns["cash_usd"] == [250_000.0, 250_875.0, 249_875.0, 248_875.0]
     assert columns["holding_value_usd"][0] == 835_500.0
     assert columns["liquid_net_worth_usd"][0] == 1_085_500.0
-    # +$25k for the PHA private-equity position (1000 units at $25 anchor).
-    assert columns["net_worth_usd"][0] == 1_110_500.0
+    # +$25k for the PHA private-equity position (1000 units at $25 anchor), +$150k for the two
+    # bond rungs at face — in net worth, and deliberately not in liquid net worth above.
+    assert columns["net_worth_usd"][0] == 1_260_500.0
     assert set(columns) == {
         "month_index",
         "cash_usd",
@@ -201,12 +204,14 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "shortfall_usd",
     }
     terminal = detail["rollout"]["terminal_metrics"]
-    assert terminal["cash_usd"] == 247_000.0
+    assert terminal["cash_usd"] == 248_875.0
     assert terminal["holding_value_usd"] > 0
     assert terminal["private_equity_value_usd"] > 0
     assert terminal["liquid_net_worth_usd"] == pytest.approx(terminal["cash_usd"] + terminal["holding_value_usd"])
+    # Bonds are the third term: liquid net worth deliberately excludes them (held to maturity,
+    # neither marked nor saleable) while net worth includes them at face.
     assert terminal["net_worth_usd"] == pytest.approx(
-        terminal["liquid_net_worth_usd"] + terminal["private_equity_value_usd"]
+        terminal["liquid_net_worth_usd"] + terminal["private_equity_value_usd"] + terminal["bond_value_usd"]
     )
     assert set(terminal) == {
         "cash_usd",
@@ -308,8 +313,9 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert fan["failed_count"] == 1
     assert "rollout_summaries" not in fan
     assert fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
-    # Month 0 = cash 250k + holdings 835.5k + PHA 25k; failure zeros subsequent months.
-    assert fan["monthly_metric_fan"]["value"] == [1_110_500.0, 0.0, 0.0, 0.0]
+    # Month 0 = cash 250k + holdings 835.5k + PHA 25k + bonds 150k at face; failure zeros
+    # subsequent months.
+    assert fan["monthly_metric_fan"]["value"] == [1_260_500.0, 0.0, 0.0, 0.0]
     assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [0.0]}
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
@@ -324,7 +330,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
     assert columns["holding_value_usd"] == [835_500.0, 0.0, 0.0, 0.0]
-    assert columns["net_worth_usd"] == [1_110_500.0, 0.0, 0.0, 0.0]
+    assert columns["net_worth_usd"] == [1_260_500.0, 0.0, 0.0, 0.0]
     expense, failure = detail["rollout"]["events"]
     assert expense == {
         "month_index": 0,
@@ -350,9 +356,12 @@ def test_backend_server_product_zero_width_band_sells_exactly_the_required_spend
         "horizon_months": 1,
         "monthly_spend_usd": 300_000.0,
         "spend_index": "none",
-        # Floor and ceiling both at zero: the month is projected to end at 250k - 300k = -50k,
-        # so the band raises exactly the $50k shortfall and nothing more. Every sellable holding
-        # sits in the target, and water-filling takes it all from the overweight VOO sleeve.
+        # Floor and ceiling both at zero: the month is projected to end at 250k + 1.875k of bond
+        # coupon - 300k = -48.125k, so the band raises exactly that shortfall and nothing more.
+        # The coupon offset is the point — it is money the month is already going to receive, so
+        # counting it is what stops the band selling assets to cover income it already has. Every
+        # sellable holding sits in the target, and water-filling takes it all from the overweight
+        # VOO sleeve.
         "funding_policy": {
             "sleeve_weights": [
                 {"symbol": "VOO", "weight": 1},
@@ -372,19 +381,22 @@ def test_backend_server_product_zero_width_band_sells_exactly_the_required_spend
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 0.0
     assert terminal["shortfall_usd"] == 0.0
+    # Bonds are the third term now: net worth is liquid + home equity + PE + bonds, and with
+    # cash at zero and no property the identity is holdings + PE + bonds.
     assert terminal["net_worth_usd"] == pytest.approx(
-        columns["holding_value_usd"][1] + columns["private_equity_value_usd"][1]
+        columns["holding_value_usd"][1] + columns["private_equity_value_usd"][1] + columns["bond_value_usd"][1]
     )
     sale, expense = detail["rollout"]["events"]
     assert sale == {
         "month_index": 0,
-        "amount_usd": 50_000.0,
+        "amount_usd": 48_125.0,
         "kind": "holding_sale",
         "asset": {"kind": "security", "symbol": "VOO"},
         "asset_label": "SP500 Proxy (VOO)",
-        "units": pytest.approx(100.0),
-        "proceeds_usd": 50_000.0,
-        "cost_basis_usd": 40_000.0,
+        "units": pytest.approx(96.25),
+        "proceeds_usd": 48_125.0,
+        # 96.25 units out of the $400/unit lot.
+        "cost_basis_usd": 38_500.0,
     }
     assert expense == {
         "month_index": 0,
@@ -456,7 +468,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
     assert fan_response.status_code == 200
     fan = fan_response.json()
     assert fan["model_id"] == "capacity_limited_pe_fixture"
-    assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [254_250.0]}
+    assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [256_125.0]}
     assert "rollout_summaries" not in fan
 
     rollout_response = capacity_limited_private_equity_client.post(
@@ -465,7 +477,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     assert rollout_response.status_code == 200
     detail = rollout_response.json()
-    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == pytest.approx(254_250.0)
+    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == pytest.approx(256_125.0)
     assert detail["rollout"]["terminal_metrics"]["private_equity_value_usd"] == pytest.approx(18_750.0)
     [opportunity] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_opportunity"]
     assert opportunity["event_kind"] == "tender"
@@ -507,14 +519,14 @@ def test_backend_server_product_cash_band_refills_to_the_ceiling_from_the_overwe
     sale, expense = detail["rollout"]["events"]
     assert sale == {
         "month_index": 0,
-        "amount_usd": 31_000.0,
+        "amount_usd": 29_125.0,
         "kind": "holding_sale",
         "asset": {"kind": "security", "symbol": "VOO"},
         "asset_label": "SP500 Proxy (VOO)",
         # 62 units at the $500 anchor, FIFO out of the $400/unit 2020 lot.
-        "units": pytest.approx(62.0),
-        "proceeds_usd": 31_000.0,
-        "cost_basis_usd": pytest.approx(24_800.0),
+        "units": pytest.approx(58.25),
+        "proceeds_usd": 29_125.0,
+        "cost_basis_usd": pytest.approx(23_300.0),
     }
     assert expense["kind"] == "monthly_expense"
     assert expense["amount_paid_usd"] == 1_000.0

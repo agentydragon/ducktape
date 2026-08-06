@@ -12,6 +12,7 @@ from datetime import date, datetime
 from finance.augur.api.config import Config
 from finance.augur.api.finance import FinanceSnapshot
 from finance.augur.api.portfolio import (
+    BondHoldingConfig,
     HoldingPositionConfig,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
@@ -48,6 +49,9 @@ class _PortfolioContribution:
     as_of_date: str | None
     accounts: tuple[PortfolioAccountConfig, ...]
     holdings: tuple[HoldingPositionConfig, ...]
+    # Bonds ride the merge alongside holdings so `_merge_contributions` re-validates them as
+    # part of one `PortfolioConfig`. Plaid contributes none: it imports positions, not terms.
+    bonds: tuple[BondHoldingConfig, ...]
     harvest_policies: tuple[HarvestPolicy, ...]
     latest_captured_at: datetime | None
 
@@ -139,6 +143,9 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
         as_of_date=None,
         accounts=tuple(accounts),
         holdings=tuple(holdings),
+        # Plaid imports positions, not bond terms — a coupon rate and a maturity are not in the
+        # holdings feed, so a bond ladder is deployment-authored config only.
+        bonds=(),
         harvest_policies=tuple(harvest_policies),
         latest_captured_at=max(captured) if captured else None,
     )
@@ -296,6 +303,7 @@ def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribu
         as_of_date=fixed.snapshot.as_of_date if fixed.snapshot is not None else None,
         accounts=fixed.portfolio.accounts,
         holdings=fixed.portfolio.holdings,
+        bonds=fixed.portfolio.bonds,
         harvest_policies=(),
         latest_captured_at=None,
     )
@@ -304,6 +312,7 @@ def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribu
 def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> PortfolioConfig:
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
+    bonds: list[BondHoldingConfig] = []
     account_ids: set[str] = set()
     for contribution in contributions:
         for account in contribution.accounts:
@@ -312,7 +321,8 @@ def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> P
             accounts.append(account)
             account_ids.add(account.account_id)
         holdings.extend(contribution.holdings)
-    return PortfolioConfig(accounts=tuple(accounts), holdings=tuple(holdings))
+        bonds.extend(contribution.bonds)
+    return PortfolioConfig(accounts=tuple(accounts), holdings=tuple(holdings), bonds=tuple(bonds))
 
 
 def _merged_as_of_date(contributions: tuple[_PortfolioContribution, ...]) -> str:

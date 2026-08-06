@@ -10,14 +10,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from finance.augur.model.series import LevelSeriesKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityKey, SecuritySymbol
 
 # Placeholder values for the level series the test config
-# (`augur/api/testdata/config.yaml`) holds — security:VOO, security:btc, security:eth.
+# (`augur/api/testdata/config.yaml`) demands — security:VOO, security:btc, security:eth, and
+# inflation, which the config's TIPS rung demands for its principal accretion.
 # Tests that exercise PE behavior only need these present; tests that
 # exercise per-symbol price behavior seed their own values explicitly.
 TEST_CONFIG_LEVEL_PLACEHOLDERS: Mapping[LevelSeriesKey, float] = {
     SecurityKey(symbol=SecuritySymbol("VOO")): 1.0,
     SecurityKey(symbol=SecuritySymbol("btc")): 1.0,
     SecurityKey(symbol=SecuritySymbol("eth")): 1.0,
+    # Flat at 1.0, so an indexed principal equals its face and the TIPS behaves like a nominal
+    # bond unless a test seeds a real CPI path.
+    InflationKey(): 1.0,
 }

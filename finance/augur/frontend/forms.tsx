@@ -328,6 +328,27 @@ function PortfolioPositionRow({ position }) {
   );
 }
 
+function PortfolioBondRow({ bond }) {
+  const periodsPerYear = 12 / bond.couponPeriodMonths;
+  return (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td className="py-1 pl-3">
+        <div className="augur-strong">{bond.label ?? bond.bondId}</div>
+        <div className="text-xs augur-muted">
+          {bond.inflationIndexed ? "TIPS \u00b7 " : ""}
+          {bond.issuerJurisdictionId ?? "corporate"}
+        </div>
+      </td>
+      <td className="py-1 text-right augur-tabular">{(100 * bond.annualCouponRate).toFixed(2)}%</td>
+      <td className="py-1 text-right augur-tabular augur-muted">{periodsPerYear}x/yr</td>
+      <td className="py-1 text-right augur-tabular augur-muted">{bond.monthsToMaturityAtStart} mo</td>
+      {/* Face, not a mark: a held-to-maturity bond is never priced, so this column is what it
+          redeems for rather than what it would fetch today. */}
+      <td className="py-1 text-right augur-tabular">{fmtUsd(bond.faceValueUsd)}</td>
+    </tr>
+  );
+}
+
 function PortfolioSubtotalRow({ label, valueUsd, dataKey }) {
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
@@ -352,8 +373,10 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   const publicHoldingsValueUsd = sumCurrentValueUsd(publicHoldings);
   const privateSecurityValueUsd = sumCurrentValueUsd(privateSecurityHoldings);
   const cashUsd = portfolio?.cashUsd ?? 0;
-  const totalUsd = cashUsd + (portfolio?.totalHoldingsValueUsd ?? 0);
-  const hasAnything = cashUsd > 0 || holdings.length > 0;
+  const bonds = portfolio?.bonds ?? [];
+  const bondFaceUsd = portfolio?.totalBondFaceValueUsd ?? 0;
+  const totalUsd = cashUsd + (portfolio?.totalHoldingsValueUsd ?? 0) + bondFaceUsd;
+  const hasAnything = cashUsd > 0 || holdings.length > 0 || bonds.length > 0;
   return (
     <div className="px-4 py-3">
       <button
@@ -421,7 +444,16 @@ export function ProductPortfolioPanel({ portfolio, error }) {
                 />
               </>
             )}
-            {holdings.length === 0 && (
+            {bonds.length > 0 && (
+              <>
+                <PortfolioGroupHeaderRow label="Bonds (held to maturity)" />
+                {bonds.map((bond) => (
+                  <PortfolioBondRow key={bond.bondId} bond={bond} />
+                ))}
+                <PortfolioSubtotalRow label="Bond face subtotal" valueUsd={bondFaceUsd} dataKey="bonds" />
+              </>
+            )}
+            {holdings.length === 0 && bonds.length === 0 && (
               <tr className="border-t border-slate-100 dark:border-slate-800">
                 <td colSpan={5} className="py-1 augur-muted">
                   No holdings

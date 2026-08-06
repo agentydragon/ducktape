@@ -151,12 +151,16 @@ def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) 
     page.get_by_label("Metric to plot").select_option("holding_value_usd")
     page.locator("[data-product-fan-chart='holdingValueUsd']").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Initial portfolio").wait_for(state="visible", timeout=15_000)
-    # Grand total (cash + holdings) is shown in the collapsed accordion summary.
-    assert page.locator("[data-product-portfolio-subtotal='total']").inner_text() == "$1,110,500"
+    # Grand total (cash + holdings + bond face) is shown in the collapsed accordion summary.
+    assert page.locator("[data-product-portfolio-subtotal='total']").inner_text() == "$1,260,500"
     # Open the accordion to see per-bucket subtotals inline with their positions.
     page.get_by_text("Initial portfolio").click()
     assert page.locator("[data-product-portfolio-subtotal='public-securities']").inner_text() == "$835,500"
     assert page.locator("[data-product-portfolio-subtotal='private-securities']").inner_text() == "$25,000"
+    # The ladder gets its own group rather than a row in either of those: face is not a mark, so
+    # folding it into a "value" subtotal would assert a price the model does not produce.
+    assert page.locator("[data-product-portfolio-subtotal='bonds']").inner_text() == "$150,000"
+    assert page.get_by_text("Bonds (held to maturity)").is_visible()
 
 
 def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: Page, augur_server: str) -> None:

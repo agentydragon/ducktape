@@ -29,6 +29,7 @@ from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    BondHolding,
     CapitalImprovementEvent,
     FilingStatus,
     FixedAmount,
@@ -118,6 +119,17 @@ def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id:
     return lots
 
 
+def initial_bonds_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id: str) -> tuple[BondHolding, ...]:
+    bonds = portfolio.to_initial_bonds(coupon_account_id=PRIMARY_ACCOUNT_ID)
+    unsupported_owner_ids = sorted({bond.agent_id for bond in bonds if bond.agent_id != primary_agent_id})
+    if unsupported_owner_ids:
+        raise ValueError(
+            "product portfolio projection only supports bonds owned by the primary agent; "
+            f"got owner agent ids {unsupported_owner_ids}"
+        )
+    return bonds
+
+
 def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     # Keyed by the sim-frame wire id (matching the `asset_id` column on decoded sim event
     # frames) so sim events can be labeled; the wire id is derived from the typed `asset`.
@@ -138,6 +150,7 @@ def build_scenario(
     initial_cash_usd: float,
     initial_lots: tuple[InitialLot, ...],
     properties_by_id: dict[str, Property],
+    initial_bonds: tuple[BondHolding, ...] = (),
     harvest_policies: tuple[HarvestPolicy, ...] = (),
 ) -> Scenario:
     horizon_months = int(scenario_key.horizon_months)
@@ -361,6 +374,7 @@ def build_scenario(
     return Scenario(
         agents=agents,
         initial_lots=list(initial_lots),
+        initial_bonds=list(initial_bonds),
         initial_cash=initial_cash,
         recurring_obligations=recurring_obligations,
         recurring_transfers=recurring_transfers,

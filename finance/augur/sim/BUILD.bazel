@@ -257,10 +257,12 @@ py_test(
     name = "test_tips_e2e",
     srcs = ["test_tips_e2e.py"],
     deps = [
+        ":compiler",
         ":scenario",
         ":simulate",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
         "//finance/augur/model:series_model",
         "//finance/augur/product:decode",
         "@pypi//numpy",

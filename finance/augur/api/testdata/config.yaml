@@ -230,5 +230,33 @@ portfolio_sources:
           issuer_id: private_holding_a
           ticker: PHA
           unit_value_usd: 25.0
+      # Held-to-maturity rungs. Separate from `holdings` because a bond is not a tax lot: it is
+      # never marked, is excluded from liquid net worth, and must not become a sellable sleeve.
+      bonds:
+        - bond_id: tips_2031
+          account_id: taxable_brokerage
+          label: TIPS 2031
+          # A Treasury: federally taxable, state-exempt. The `inflation_indexed` flag is what
+          # makes its principal ride CPI — and what makes the scenario demand an inflation path.
+          issuer_jurisdiction_id: federal_us
+          face_value_usd: 100000.0
+          purchase_price_usd: 100000.0
+          annual_coupon_rate: 0.02
+          coupon_period_months: 6
+          inflation_indexed: true
+          holding_period_months_at_start: 12
+          months_to_maturity_at_start: 60
+        - bond_id: ca_muni_2034
+          account_id: taxable_brokerage
+          label: California Muni 2034
+          # In-state for a California resident, so exempt at both levels — the case that makes
+          # "in-state" holder-relative rather than a property of the bond.
+          issuer_jurisdiction_id: california
+          face_value_usd: 50000.0
+          purchase_price_usd: 50000.0
+          annual_coupon_rate: 0.035
+          coupon_period_months: 6
+          holding_period_months_at_start: 6
+          months_to_maturity_at_start: 96
 property_source:
   properties_path: properties.json

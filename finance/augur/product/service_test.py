@@ -280,6 +280,10 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
             SecurityKey(symbol=SecuritySymbol("VOO")),
             SecurityKey(symbol=SecuritySymbol("btc")),
             SecurityKey(symbol=SecuritySymbol("eth")),
+            # Demanded by the config's TIPS rung, not by anything priced: an inflation-indexed
+            # bond's principal rides CPI, so it needs the path even though a bond has no price
+            # series of its own.
+            InflationKey(),
         }
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
@@ -290,21 +294,23 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert len(fan.monthly_metric_fan["month_index"]) == 12
     assert fan.monthly_metric_fan["month_index"] == [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
     assert fan.monthly_metric_fan["percentile"] == [0.0, 50.0, 100.0] * 4
+    # Each month is -$1,000 of spend, offset once at month 0 by $1,875 of bond coupon: the TIPS
+    # pays $1,000 (100k at 2%/yr, semiannual) and the muni $875 (50k at 3.5%/yr).
     assert fan.monthly_metric_fan["value"] == [
         250_000.0,
         250_000.0,
         250_000.0,
-        249_000.0,
-        249_000.0,
-        249_000.0,
-        248_000.0,
-        248_000.0,
-        248_000.0,
-        247_000.0,
-        247_000.0,
-        247_000.0,
+        250_875.0,
+        250_875.0,
+        250_875.0,
+        249_875.0,
+        249_875.0,
+        249_875.0,
+        248_875.0,
+        248_875.0,
+        248_875.0,
     ]
-    assert fan.terminal_metric_percentiles == {"percentile": [0.0, 50.0, 100.0], "value": [247_000.0] * 3}
+    assert fan.terminal_metric_percentiles == {"percentile": [0.0, 50.0, 100.0], "value": [248_875.0] * 3}
 
     terminal_distribution = product.terminal_distribution(
         TerminalDistributionRequest(
@@ -319,11 +325,11 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert not hasattr(terminal_distribution, "monthly_metric_fan")
     assert terminal_distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
-        "value": [247_000.0] * 5,
+        "value": [248_875.0] * 5,
     }
     assert terminal_distribution.terminal_metric_samples == {
         "seed": [7, 8],
-        "value": [247_000.0, 247_000.0],
+        "value": [248_875.0, 248_875.0],
         "failed": [False, False],
     }
 
@@ -332,11 +338,13 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
     assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
+    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 250_875.0, 249_875.0, 248_875.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 835_500.0
     assert detail.rollout.monthly_metrics["liquid_net_worth_usd"][0] == 1_085_500.0
-    # +$25k for the PHA private-equity position (1000 units at $25 anchor).
-    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_110_500.0
+    # +$25k for the PHA private-equity position (1000 units at $25 anchor), +$150k for the two
+    # bond rungs at face. Bonds are in net worth and deliberately NOT in liquid net worth above:
+    # held to maturity, they are neither marked nor saleable.
+    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_260_500.0
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"] * 3
     assert [event.amount_paid_usd for event in detail.rollout.events if event.kind == "monthly_expense"] == [
         1_000.0,
@@ -538,8 +546,9 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     assert fan.failed_count == 1
     assert not hasattr(fan, "rollout_summaries")
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
-    # Month 0 = cash 250k + holdings 835.5k + PHA 25k; failure zeros subsequent months.
-    assert fan.monthly_metric_fan["value"] == [1_110_500.0, 0.0, 0.0, 0.0]
+    # Month 0 = cash 250k + holdings 835.5k + PHA 25k + bonds 150k at face; failure zeros
+    # subsequent months.
+    assert fan.monthly_metric_fan["value"] == [1_260_500.0, 0.0, 0.0, 0.0]
     assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value": [0.0]}
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -552,7 +561,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     assert detail.rollout.terminal_metrics.shortfall_usd == 300_000.0
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"] == [835_500.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_110_500.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_260_500.0, 0.0, 0.0, 0.0]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
@@ -621,16 +630,20 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
     assert detail.rollout.terminal_metrics.cash_usd == 0.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
     terminal_pe_value_usd = float(columns["private_equity_value_usd"][1])  # type: ignore[arg-type]
+    terminal_bond_value_usd = float(columns["bond_value_usd"][1])  # type: ignore[arg-type]
     assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(
-        terminal_holding_value_usd + terminal_pe_value_usd
+        terminal_holding_value_usd + terminal_pe_value_usd + terminal_bond_value_usd
     )
     assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
     assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
     assert sale.asset_label == "SP500 Proxy (VOO)"
-    assert sale.proceeds_usd == pytest.approx(50_000.0)
-    assert sale.units == pytest.approx(100.0)
+    # $48,125, not $50,000: the fixture's bond rungs pay $1,875 of coupon this month, and the
+    # band sizes against the balance the month will END at. Counting income the month is
+    # already going to receive is what stops it selling assets to cover cash it already has.
+    assert sale.proceeds_usd == pytest.approx(48_125.0)
+    assert sale.units == pytest.approx(96.25)
     assert expense.amount_due_usd == 300_000.0
     assert expense.amount_paid_usd == 300_000.0
     assert expense.shortfall_usd == 0.0
@@ -811,7 +824,7 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
     sale, expense = detail.rollout.events
     assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
-    assert sale.proceeds_usd == pytest.approx(31_000.0)
+    assert sale.proceeds_usd == pytest.approx(29_125.0)
     assert sale.asset == SecurityKey(symbol=SecuritySymbol("VOO"))
     assert expense.amount_paid_usd == 1_000.0
 
@@ -837,7 +850,7 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"]
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0]
+    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 250_875.0]
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
@@ -934,10 +947,15 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
     # Required-level-series for the request should include the location-keyed rent series.
     assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
-    # Year-0 cash drops by spend + rent = 4000 each month deterministically.
+    # Year-0 cash drops by spend + rent = 4000 each month deterministically. Asserted as a
+    # per-month DELTA rather than a 12-month total: the fixture's bond rungs pay coupons in
+    # months 0 and 6, and the TIPS coupon rides a stochastic CPI, so a cumulative figure would
+    # depend on the sampled inflation path and this test is about rent.
     cash = detail.rollout.monthly_metrics["cash_usd"]
     assert cash[0] == 250_000.0
-    assert cash[12] == pytest.approx(250_000.0 - 12 * 4_000.0)
+    for month in (2, 3, 4, 5):
+        drop = float(cash[month]) - float(cash[month - 1])  # type: ignore[arg-type]
+        assert drop == pytest.approx(-4_000.0), month
     # Monthly_expense events are still emitted alongside, distinctly from outside_rent.
     expense_events = [event for event in detail.rollout.events if event.kind == "monthly_expense"]
     assert len(expense_events) == 14
@@ -1329,12 +1347,15 @@ def test_property_purchase_metrics_track_value_balance_and_equity(
     home_equity_usd = float(metrics["home_equity_usd"][1])  # type: ignore[arg-type]
     liquid_net_worth_usd = float(metrics["liquid_net_worth_usd"][1])  # type: ignore[arg-type]
     private_equity_value_usd = float(metrics["private_equity_value_usd"][1])  # type: ignore[arg-type]
+    bond_value_usd = float(metrics["bond_value_usd"][1])  # type: ignore[arg-type]
     net_worth_usd = float(metrics["net_worth_usd"][1])  # type: ignore[arg-type]
 
     assert property_value_usd > 0.0
     assert mortgage_balance_usd == pytest.approx(720_000.0)
     assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
-    assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd + private_equity_value_usd)
+    assert net_worth_usd == pytest.approx(
+        liquid_net_worth_usd + home_equity_usd + private_equity_value_usd + bond_value_usd
+    )
     # Required-level-series should include the location's home-value series.
     assert HomeValueKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
