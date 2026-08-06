@@ -64,6 +64,9 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
     # it — including the months before the lot's purchase, where `remaining_quantity` is 0 and the
     # basis column is meaningless either way.
     basis = np.broadcast_to(buffers.state.lot_cost_basis_state.T[None, :, :], (h1, r, s))  # (H+1, r, s)
+    # The purchase month is per-rollout for the same reason: a slot a policy chose to fill is bought
+    # in whatever month its own rollout crossed the band, and the plan's column holds 0 for it.
+    purchase_month = np.broadcast_to(buffers.state.lot_purchase_month_state.T[None, :, :], (h1, r, s))
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(
         {
@@ -73,7 +76,7 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
             "agent_id": code_column(plan, plan.lot_agent_codes[slots]),
             "account_id": code_column(plan, plan.lot_account_codes[slots]),
             "asset_id": asset_code_column(plan, plan.lot_asset_codes[slots]),
-            "purchase_month_index": plan.lot_purchase_month.astype(np.int64)[slots],
+            "purchase_month_index": purchase_month.reshape(-1),
             "cost_basis_per_unit_usd": usd_column(basis.reshape(-1)),
             "remaining_quantity": lot_quantity_column(plan, slots, state.reshape(-1)),
         },

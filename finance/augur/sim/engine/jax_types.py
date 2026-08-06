@@ -54,6 +54,10 @@ class _FoldedSleeve:
     # Quanta per unit, from the compiler rather than from this sleeve's lots: a sleeve holding
     # nothing still has to be priceable, which is what the buy side needs.
     quantity_scale: int
+    # Plan lot indices this sleeve may buy into, in fill order. Empty when the policy configured
+    # no purchase slots, which is what makes the buy side opt-in: a policy with none accumulates
+    # surplus cash instead of investing it.
+    purchase_slots: tuple[int, ...]
 
 
 @dataclass(frozen=True)

@@ -103,16 +103,26 @@ class SleeveOrders(NamedTuple):
     buy_quanta: jnp.ndarray
 
 
-def _quanta_for_cents(*, cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray) -> jnp.ndarray:
-    """Whole quanta worth at least `cents`, at this month's observed market price.
+def _quanta_for_cents(
+    *, cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray, round_up: bool
+) -> jnp.ndarray:
+    """Whole quanta for a cent target, at this month's observed market price.
 
-    Integer ceiling division, so an order is never a quantum short of what it meant to move.
+    `round_up` is where the two sides of the band differ, and it is not a formatting choice.
+    A raise must COVER its target, so it rounds up: a sale a quantum short leaves the account
+    below the balance it was refilling to. A purchase must not EXCEED its target, so it rounds
+    down: the cents a buy is sized against are the cents above the floor the policy is holding
+    back, and rounding up would spend into that floor — at a five-figure unit price, by a
+    four-figure amount. Either way the sub-quantum remainder stays in cash.
+
     A zero price means the instrument has no modeled price series: unpriceable rather than
     free, so it orders nothing.
     """
 
     priced = unit_price_cents > 0
-    quanta = -(-(cents * quantity_scale) // jnp.where(priced, unit_price_cents, 1))
+    scaled = cents * quantity_scale
+    divisor = jnp.where(priced, unit_price_cents, 1)
+    quanta = -(-scaled // divisor) if round_up else scaled // divisor
     return jnp.where(priced & (cents > 0), quanta, 0)
 
 
@@ -152,11 +162,15 @@ def decide(
             to_quanta(
                 cents=withdrawal_by_sleeve(
                     value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
-                )
+                ),
+                round_up=True,
             ),
             view.sleeve_quanta(universe.lot_rows),
         ),
         buy_quanta=to_quanta(
-            cents=deposit_by_sleeve(value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents)
+            cents=deposit_by_sleeve(
+                value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents
+            ),
+            round_up=False,
         ),
     )

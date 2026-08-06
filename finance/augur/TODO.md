@@ -266,15 +266,15 @@ What remains is composing that target with the PE tender floor, and buying.
       how fast that sleeve can be drained. Blocked on nothing in particular;
       wants the PE lot axis to be reachable from `ActorView`.
 
-- [ ] **Reinvest, don't just raise.** Everything the current shape still cannot
-      express is on the buy side: tender proceeds land flat in cash rather than
-      flowing toward whichever sleeve is furthest below target; a sleeve that
-      grows to dominate is never trimmed without a cash need; and the cash
-      ceiling is only a refill target, never an invest-above-this rule.
-      `deposit_by_sleeve` already computes the buy side and is unit-tested, but
-      nothing calls it — there is no purchase executor. All of this arrives
-      together with policy-driven purchases; until then the ceiling
-      deliberately carries one meaning, not two.
+- [ ] **Trim a sleeve that has grown to dominate.** The buy side is done:
+      a policy with `purchase_slots_per_sleeve > 0` invests cash above the
+      ceiling down to the floor, water-filled into whichever sleeves are
+      furthest below target. What is still missing is the other direction —
+      selling an overweight sleeve when there is no cash need at all. Today a
+      sale only ever happens to fund something, so a sleeve that doubles is
+      never trimmed. Doing it needs a drift tolerance, and a tolerance needs
+      the tax drag it causes to be measurable, which is what the allocation
+      study is for.
 
 ## API / Runtime Design Debt
 

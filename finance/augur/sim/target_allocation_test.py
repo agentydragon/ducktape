@@ -180,19 +180,16 @@ def test_weights_and_sleeves_must_agree() -> None:
         SleeveUniverse(weights=np.asarray([1, 1, 1], dtype=np.int64), lot_rows=((0,), (1,)), funding_cash_row=0)
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 # -- Pricing an order ----------------------------------------------------------------------
 
 
-def _quanta(cents: int, price_cents: int, scale: int) -> int:
+def _quanta(cents: int, price_cents: int, scale: int, round_up: bool = True) -> int:
     return int(
         _quanta_for_cents(
             cents=jnp.asarray([[cents]], dtype=jnp.int64),
             unit_price_cents=jnp.asarray([[price_cents]], dtype=jnp.int64),
             quantity_scale=jnp.asarray([[scale]], dtype=jnp.int64),
+            round_up=round_up,
         )[0, 0]
     )
 
@@ -233,3 +230,32 @@ def test_a_zero_ask_orders_nothing_however_it_is_priced() -> None:
     has to be special-cased or every quiet month would trade a single share."""
 
     assert _quanta(cents=0, price_cents=12_345, scale=1) == 0
+
+
+def test_a_purchase_never_spends_more_than_it_was_given() -> None:
+    """The reason the buy side floors where the sell side ceils. The cents a buy is sized against
+    are the cents ABOVE the floor the policy is keeping; buying a 4th unit at 3 cents to place a
+    10-cent deposit spends 12, and the 2 cents come out of the floor the band just promised."""
+
+    assert _quanta(cents=10, price_cents=3, scale=1, round_up=False) == 3
+    assert _quanta(cents=9, price_cents=3, scale=1, round_up=False) == 3
+
+
+@pytest.mark.parametrize("scale", [1, 100, 100_000_000])
+@pytest.mark.parametrize("price_cents", [1, 7, 333, 5_000_000])
+def test_a_purchase_stays_within_budget_across_scales_and_prices(scale: int, price_cents: int) -> None:
+    """Swept for the same reason the sell side is: whether the division lands exactly depends on
+    the (price, scale) pair, and overspending by a quantum at a five-figure unit price is a
+    four-figure overdraft."""
+
+    for cents in (1, 999, 1_000_000, 123_456_789):
+        quanta = _quanta(cents=cents, price_cents=price_cents, scale=scale, round_up=False)
+        assert quanta * price_cents / scale <= cents, f"{cents=} {price_cents=} {scale=}"
+
+
+def test_an_unpriceable_sleeve_buys_nothing() -> None:
+    assert _quanta(cents=1_000, price_cents=0, scale=1, round_up=False) == 0
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

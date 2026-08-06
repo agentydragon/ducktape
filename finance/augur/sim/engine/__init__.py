@@ -65,6 +65,8 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             # lot_cost_basis_state[L, R] — final state, no snapshot axis: a lot's basis is written
             # once at purchase and a lot slot is never reused.
             lot_cost_basis_state=np.zeros((p.lot_count, r), dtype=np.int64),
+            # lot_purchase_month_state[L, R] — same shape and same reason.
+            lot_purchase_month_state=np.zeros((p.lot_count, r), dtype=np.int64),
             # ordinary_state[S, B, R] — B is the income BUCKET count (profile x source), not
             # the profile count. They coincide only while nothing emits interest.
             ordinary_state=np.zeros((s, p.income_bucket_count, r), dtype=np.int64),

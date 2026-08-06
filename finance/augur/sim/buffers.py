@@ -41,6 +41,11 @@ class StateHistoryBuffers:
     # the price its rollout paid; not per-month because a lot slot is never reused, so the basis is
     # written once at purchase and never revised. Every month of a lot's life shares this one value.
     lot_cost_basis_state: NDArray[np.int64]
+    # `(lot, rollout)`, and per-rollout for the same reason and with the same write-once shape: a
+    # slot a policy chose to fill is bought in a different month in each rollout. The plan's static
+    # column cannot stand in — it holds 0 for every slot the policy has not filled yet, so a lot
+    # bought in month 30 would report a 30-year holding period.
+    lot_purchase_month_state: NDArray[np.int64]
     ordinary_state: NDArray[np.int64]
     capital_gain_active_state: NDArray[np.bool_]
     capital_gain_state: NDArray[np.int64]
@@ -72,6 +77,9 @@ class StateHistoryBuffers:
         _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.int64)
         _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.int64)
         _expect_array("lot_cost_basis_state", self.lot_cost_basis_state, shape=(plan.lot_count, r), dtype=np.int64)
+        _expect_array(
+            "lot_purchase_month_state", self.lot_purchase_month_state, shape=(plan.lot_count, r), dtype=np.int64
+        )
         _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.income_bucket_count, r), dtype=np.int64)
         _expect_array(
             "capital_gain_active_state",

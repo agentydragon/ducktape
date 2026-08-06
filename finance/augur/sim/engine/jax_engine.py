@@ -67,7 +67,7 @@ from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import SlotPlan, lot_order_for_pool
-from finance.augur.sim.engine.jax_scatter import scatter_ys_to_buffers
+from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
     _CapitalGainTarget,
     _FoldedHarvest,
@@ -194,6 +194,11 @@ class _ScanState(NamedTuple):
     sale_disp_basis: jnp.ndarray
     sale_disp_proceeds: jnp.ndarray
     sale_oversell: jnp.ndarray  # () bool: any scheduled sale oversold its pool (post-scan hard error)
+    # `(policy, sleeve, R)`: how many purchases a target-allocation sleeve has WANTED so far.
+    # The cursor and the exhaustion counter are the same number — it names the next slot to
+    # fill, and it keeps counting past the last one, so a run that needed more slots than it
+    # was configured says so (post-scan hard error) instead of silently dropping purchases.
+    ta_buy_count: jnp.ndarray
 
 
 @dataclass(frozen=True)
@@ -433,9 +438,10 @@ def run_jax_product_summary(
     product_ys, product_tail = _program_impl(
         external, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
     )
-    oversell, final_failed_month = product_tail
+    oversell, final_failed_month, ta_buy_count = product_tail
     if bool(np.asarray(jax.device_get(oversell))):
         raise ValueError("scheduled asset sale exceeds available lots")
+    check_purchase_slot_exhaustion(plan, np.asarray(jax.device_get(ta_buy_count)))
 
     initial_ys, monthly_ys = product_ys
     series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
@@ -905,6 +911,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     view_lot_rows=tuple(view_rows),
                     pools=tuple(sleeve_pools),
                     quantity_scale=int(ta_policies.sleeve_quantity_scale[policy, sleeve_idx]),
+                    # Slots stay in compile order, which is fill order: the cursor hands out slot
+                    # `k` on the k-th purchase, and the plan gave slot `k` a FIFO rank below slot
+                    # `k+1`. That is what keeps the sale order derivable without a month.
+                    purchase_slots=tuple(
+                        int(slot) for slot in plan.target_allocation_purchase_slots[policy, sleeve_idx] if slot >= 0
+                    ),
                 )
             )
         folded_target_allocation.append(
@@ -1566,6 +1578,7 @@ def _program_impl(
         failed, failed_month = s.failed, s.failed_month
         sale_disp_units, sale_disp_basis = s.sale_disp_units, s.sale_disp_basis
         sale_disp_proceeds, sale_oversell = s.sale_disp_proceeds, s.sale_oversell
+        ta_buy_count = s.ta_buy_count
         active = ~failed
 
         # Primary-residence + lifecycle events (first in the month, eager order). Each event fires when
@@ -1882,6 +1895,9 @@ def _program_impl(
         ta_disp_units = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         ta_disp_basis = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         ta_disp_proceeds = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
+        # Buy orders are DECIDED here and EXECUTED after settlement, so they wait in this list.
+        # `(policy, sleeve, wanted quanta, unit price)`, one entry per sleeve that ordered.
+        ta_buy_orders: list[tuple[_FoldedTargetAllocation, _FoldedSleeve, jnp.ndarray, jnp.ndarray]] = []
         if folded_target_allocation:
             # Marks for every lot, once for the month rather than once per pool: the observation
             # needs a value for each of the policy's lots, and `_value_cents_from_quanta` is the
@@ -1935,10 +1951,11 @@ def _program_impl(
                 ceiling_cents=_amount_values_tuple(tp.ceiling, ta_ceiling_series[ti], external_values, month, r),
             )
             for si, sleeve in enumerate(tp.sleeves):
-                # `buy_quanta` is deliberately unread: investing surplus needs purchase slots the
-                # engine does not have yet. Surplus above the ceiling accumulates, which is what
-                # the config docstring promises — the ceiling is a refill target, not a buy rule.
-                #
+                # Buys are queued rather than executed: they must not run until obligations have
+                # settled, or a purchase could starve a bill into a false ruin. A sleeve with no
+                # purchase slots queues nothing, so surplus above the ceiling just accumulates.
+                if sleeve.purchase_slots:
+                    ta_buy_orders.append((tp, sleeve, orders.buy_quanta[si], sleeve_prices[si]))
                 # The order arrives in quanta, so nothing here converts anything: the units are
                 # spread across the sleeve's pools until they run out. How many units a cent
                 # target was worth is the policy's decision, made against this same price.
@@ -2049,6 +2066,51 @@ def _program_impl(
             cost_basis_per_unit = cost_basis_per_unit.at[buy_lot_slot].set(
                 jnp.where(bought, buy_price, cost_basis_per_unit[buy_lot_slot])
             )
+
+        # Target-allocation purchases, decided above and executed here: same placement as the
+        # scheduled ones, for the same reason. `~failed` rather than the month-opening `active`,
+        # because settlement runs between the decision and this line.
+        for tp, sleeve, want, unit_price in ta_buy_orders:
+            scale = jnp.asarray(sleeve.quantity_scale, dtype=jnp.int64)
+            priced = unit_price > 0
+            # Affordability is measured against cash as it stands NOW, not as the policy saw it:
+            # settlement, a scheduled purchase, or a second policy on the same account can all have
+            # spent in between. Flooring keeps `spent <= cash`, so the clamp cannot overdraw. This
+            # is not the engine choosing a size — the policy's own order already fits the cash it
+            # observed; the clamp binds only when something else took that cash first.
+            affordable = jnp.where(
+                priced, (jnp.maximum(cash[tp.cash_slot], 0) * scale) // jnp.where(priced, unit_price, 1), 0
+            )
+            wanted = jnp.where(~failed, jnp.minimum(want, affordable), 0)
+            used = ta_buy_count[tp.policy_index, sleeve.sleeve_idx]
+            fires = wanted > 0
+            executes = fires & (used < len(sleeve.purchase_slots))
+            quanta = jnp.where(executes, wanted, 0)
+            # Gated on `executes`, not `fires`: an exhausted sleeve that still debited cash would
+            # be paying the market for nothing.
+            spent = _value_cents_from_quanta(quanta, unit_price, scale)
+            cash = _move_cash(
+                cash,
+                debit=tp.cash_slot,
+                credit=structure.external_cash_slot,
+                amount=spent,
+                row_of_world=structure.external_cash_slot,
+            )
+            for k, slot in enumerate(sleeve.purchase_slots):
+                # Which slot a purchase lands in is per-rollout, so the write is a static sweep over
+                # the budget masked by `used == k` rather than a dynamic index: in one traced step a
+                # rollout on its second purchase writes slot 1 while its neighbour writes slot 0.
+                hit = executes & (used == k)
+                lot_remaining = lot_remaining.at[slot].add(jnp.where(hit, quanta, 0))
+                cost_basis_per_unit = cost_basis_per_unit.at[slot].set(
+                    jnp.where(hit, unit_price, cost_basis_per_unit[slot])
+                )
+                lot_purchase_month = lot_purchase_month.at[slot].set(
+                    jnp.where(hit, month.astype(lot_purchase_month.dtype), lot_purchase_month[slot])
+                )
+            # Counted on `fires`, not `executes`: a purchase that found no free slot is precisely
+            # what the post-scan exhaustion check exists to catch.
+            ta_buy_count = ta_buy_count.at[tp.policy_index, sleeve.sleeve_idx].add(fires.astype(jnp.int64))
 
         # Mortgage payments: split each paid mortgage bill into interest (rate/12 on the outstanding
         # principal, capped at the payment) and principal (the remainder, capped at the balance), then
@@ -2400,6 +2462,7 @@ def _program_impl(
             sale_disp_basis=sale_disp_basis,
             sale_disp_proceeds=sale_disp_proceeds,
             sale_oversell=sale_oversell,
+            ta_buy_count=ta_buy_count,
         )
         if product_summary is not None:
             product_inputs_local = product_inputs
@@ -2542,6 +2605,7 @@ def _program_impl(
         sale_disp_basis=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
         sale_disp_proceeds=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
         sale_oversell=jnp.zeros((), dtype=bool),
+        ta_buy_count=_zeros_i64((ta_policy_count, ta_max_sleeves, r)),
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
     # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
@@ -2561,17 +2625,19 @@ def _program_impl(
             obligation_mask=jnp.zeros(product_inputs_local.primary_obligation_mask.shape[1], dtype=bool),
         )
         final_carry, ys = jax.lax.scan(step, init, months)
-        return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month)
+        return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month, final_carry.ta_buy_count)
     final_carry, ys = jax.lax.scan(step, init, months)
     # Horizon-collapsed outputs, read off the final carry rather than emitted per month: the
     # scheduled-sale dispositions (accumulated at each sale's firing month) and the per-lot cost
     # basis (written once at purchase and never revised — a lot slot is never reused).
     return ys, (
         final_carry.cost_basis_per_unit,
+        final_carry.lot_purchase_month,
         final_carry.sale_disp_units,
         final_carry.sale_disp_basis,
         final_carry.sale_disp_proceeds,
         final_carry.sale_oversell,
+        final_carry.ta_buy_count,
     )
 
 

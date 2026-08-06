@@ -10,6 +10,34 @@ from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.engine.jax_types import _ScanMeta
 
 
+def check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.ndarray) -> None:
+    """Abort the whole run if any target-allocation sleeve wanted more purchases than it had slots.
+
+    Aborting rather than dropping the surplus purchases, and aborting the RUN rather than failing
+    the affected rollouts, are the same decision made twice. A dropped purchase is a policy that
+    silently stopped investing partway through the horizon; and failing only the rollouts that hit
+    the wall would drop exactly the paths that traded most, which — since trading tracks volatility
+    — biases the surviving distribution toward calm and makes every result optimistic.
+    """
+
+    counts = np.asarray(ta_buy_count)  # (policy, sleeve, R)
+    if not counts.size:
+        return
+    configured = (plan.target_allocation_purchase_slots >= 0).sum(axis=2)  # (policy, sleeve)
+    wanted = counts.max(axis=2)
+    over = np.argwhere(wanted > configured)
+    if not over.size:
+        return
+    policy_idx, sleeve_idx = (int(x) for x in over[0])
+    prefixes = plan.target_allocation_policies.cause_id_prefixes
+    raise ValueError(
+        f"target-allocation policy {prefixes[policy_idx]!r} sleeve {sleeve_idx} ran out of purchase slots: "
+        f"{int(configured[policy_idx, sleeve_idx])} configured, {int(wanted[policy_idx, sleeve_idx])} needed. "
+        "Raise `purchase_slots_per_sleeve` — every purchase needs its own lot, because it has its own "
+        "basis and its own holding period."
+    )
+
+
 def scatter_ys_to_buffers(
     plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple, final_state: tuple
 ) -> None:
@@ -125,10 +153,14 @@ def scatter_ys_to_buffers(
     # the final `(lot, R)` value is the whole story. The scheduled-sale dispositions hold
     # `(scheduled_sale, lot, R)` already indexed by each sale's slot (the firing month is static, so
     # the decoder re-derives it).
-    lot_basis_final, disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = final_state
+    lot_basis_final, lot_month_final, disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h, ta_buy_count_h = (
+        final_state
+    )
     buffers.state.lot_cost_basis_state[:] = np.asarray(lot_basis_final)
+    buffers.state.lot_purchase_month_state[:] = np.asarray(lot_month_final)
     if bool(np.asarray(oversell_h)):  # match the eager engine's hard error on the first oversell
         raise ValueError("scheduled asset sale exceeds available lots")
+    check_purchase_slot_exhaustion(plan, ta_buy_count_h)
     disp = buffers.lot_dispositions.scheduled
     disp.units[:] = np.asarray(disp_units_h)
     disp.basis[:] = np.asarray(disp_basis_h)

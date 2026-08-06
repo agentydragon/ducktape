@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
+import pytest
 import pytest_bazel
 
 from finance.augur.model.deterministic import Deterministic
@@ -46,12 +47,15 @@ def _scenario(
     stock_units: float = 900.0,
     bond_units: float = 100.0,
     rent: float = 0.0,
+    income: float = 0.0,
+    purchase_slots: int = 0,
 ) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
             InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=opening_cash),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            # Funded only when it owes something, so an unfunded payer can never fail a rollout.
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=income * (_HORIZON + 1)),
         ],
         initial_lots=[
             InitialLot(
@@ -74,19 +78,42 @@ def _scenario(
             ),
         ],
         recurring_obligations=[
-            RecurringObligation(
-                start_month=1,
-                obligation_id="rent",
-                obligation_type="rent",
-                agent_id="alice",
-                from_account_id="checking",
-                to_agent_id="landlord",
-                to_account_id="checking",
-                amount_due_usd=FixedAmount(amount_usd=rent),
-            )
-        ]
-        if rent
-        else [],
+            *(
+                [
+                    RecurringObligation(
+                        start_month=1,
+                        obligation_id="rent",
+                        obligation_type="rent",
+                        agent_id="alice",
+                        from_account_id="checking",
+                        to_agent_id="landlord",
+                        to_account_id="checking",
+                        amount_due_usd=FixedAmount(amount_usd=rent),
+                    )
+                ]
+                if rent
+                else []
+            ),
+            # The landlord paying alice: an inflow, so it is not in alice's scheduled outflow and the
+            # band only sees it the month AFTER it lands. That is what makes the buy side fire more
+            # than once — an (s,S) band above its ceiling invests down to the floor and then sits.
+            *(
+                [
+                    RecurringObligation(
+                        start_month=1,
+                        obligation_id="income",
+                        obligation_type="cash_spend",
+                        agent_id="landlord",
+                        from_account_id="checking",
+                        to_agent_id="alice",
+                        to_account_id="checking",
+                        amount_due_usd=FixedAmount(amount_usd=income),
+                    )
+                ]
+                if income
+                else []
+            ),
+        ],
         target_allocation_policies=[
             TargetAllocationPolicy(
                 agent_id="alice",
@@ -96,6 +123,7 @@ def _scenario(
                 sleeves=[SleeveTarget(asset=_STOCK, weight=1), SleeveTarget(asset=_BOND, weight=1)],
                 cash_floor_usd=floor,
                 cash_ceiling_usd=ceiling,
+                purchase_slots_per_sleeve=purchase_slots,
             )
         ],
         tax_profiles=[],
@@ -261,6 +289,95 @@ def test_configuring_purchase_slots_changes_nothing_until_they_are_filled() -> N
     ]
     assert all(q == 0.0 for lot_id, q in lots.items() if lot_id.startswith("allocation_sale_buy"))
     assert _cash(with_slots) == _cash(without)
+
+
+def test_surplus_above_the_ceiling_is_invested_into_the_underweight_sleeve() -> None:
+    """The buy side, end to end. $100,000 against a $10,000 floor and a $20,000 ceiling invests
+    $90,000 — down to the FLOOR, not to the ceiling, for the same (s,S) reason a raise goes to
+    the far edge.
+
+    Where it goes is water-filling in reverse: stock is worth $90,000 and bonds $10,000 against
+    equal weights, so the deposit levels them at $95,000 each — $85,000 into bonds and $5,000
+    into stock. That is the asymmetry with the sale side made visible: a raise came entirely
+    out of stock, and the deposit goes overwhelmingly the other way.
+    """
+
+    scenario = _scenario(opening_cash=100_000.0, floor=10_000.0, ceiling=20_000.0, purchase_slots=1)
+    lots = _lots(scenario, month=1)
+
+    assert lots["allocation_sale_buy_p0_s0_0"] == 50.0
+    assert lots["allocation_sale_buy_p0_s1_0"] == 850.0
+    # The holdings it started with are untouched: this month bought, it did not rebalance.
+    assert lots["stock"] == 900.0
+    assert lots["bond"] == 100.0
+    # Exactly the floor. A quantum of overshoot would show here as $10,000 minus the overshoot,
+    # which is the band spending money it promised to keep.
+    assert _cash(scenario)[1] == 10_000.0
+
+
+def test_a_purchase_records_the_price_its_rollout_paid() -> None:
+    """Basis comes from the purchase, and it is not knowable at compile time: the slot carries
+    whatever its own rollout paid the month it crossed the band. Reading the plan's static column
+    would report 0, making the whole proceeds a gain on the eventual sale."""
+
+    run = _run(_scenario(opening_cash=100_000.0, floor=10_000.0, ceiling=20_000.0, purchase_slots=1))
+    bought = run.asset_lots.filter(
+        (pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1)
+    ).to_dicts()[0]
+
+    assert float(bought["cost_basis_per_unit_usd"]) == _PRICE
+
+
+def test_a_purchase_does_not_mint_or_burn_money() -> None:
+    """The cash leg, checked the only way that catches a missing one: the cash tensor conserves.
+    Net worth would look right either way — a lot arrives as its cash leaves — so a purchase that
+    debited nobody would be invisible to every other assertion in this file."""
+
+    scenario = _scenario(opening_cash=100_000.0, floor=10_000.0, ceiling=20_000.0, purchase_slots=1)
+    state = np.asarray(_run(scenario).buffers.state.cash_state, dtype=np.int64)
+    totals = state.sum(axis=tuple(range(1, state.ndim)))
+
+    assert np.all(totals == totals[0])
+
+
+def test_successive_purchases_fill_successive_slots() -> None:
+    """The cursor. Each month's buy takes the next free slot, so two purchases are two lots with
+    two purchase months — which is the whole reason a purchase cannot share a slot: they have
+    different holding periods and would net to one wrong basis.
+
+    Income arrives as an inflow, so the band only sees it the month AFTER it lands and the policy
+    invests in months 2 and 3. Both go to bonds: at $10,000 against stock's $90,000, the bond
+    sleeve is still underweight after both deposits.
+    """
+
+    scenario = _scenario(opening_cash=0.0, floor=0.0, ceiling=1_000.0, income=30_000.0, purchase_slots=2)
+    lots = (
+        _run(scenario)
+        .asset_lots.filter(
+            pl.col("lot_id").str.starts_with("allocation_sale_buy_p0_s1_") & (pl.col("month_index") == _HORIZON)
+        )
+        .sort("lot_id")
+        .to_dicts()
+    )
+
+    assert [float(row["remaining_quantity"]) for row in lots] == [300.0, 300.0]
+    assert [int(row["purchase_month_index"]) for row in lots] == [2, 3]
+
+
+def test_running_out_of_purchase_slots_aborts_the_run() -> None:
+    """Aborting, not dropping the surplus purchase — and aborting the RUN, not failing the
+    rollouts that hit the wall. Dropping it is a policy that silently stops investing partway
+    through the horizon; failing only the affected rollouts drops exactly the paths that traded
+    most, and since trading tracks volatility that biases what survives toward calm.
+
+    Same scenario as the test above with one slot instead of two, so the second purchase has
+    nowhere to go.
+    """
+
+    scenario = _scenario(opening_cash=0.0, floor=0.0, ceiling=1_000.0, income=30_000.0, purchase_slots=1)
+
+    with pytest.raises(ValueError, match="ran out of purchase slots: 1 configured, 2 needed"):
+        _run(scenario)
 
 
 if __name__ == "__main__":
