@@ -278,7 +278,7 @@
         mode: "0644"
         backup: true
       notify: Refresh proxmox boot
-      tags: [gpu_passthrough, iommu]
+      tags: [gpu_passthrough, iommu, memory]
 
     - name: Add VFIO modules to /etc/modules
       ansible.builtin.lineinfile:
