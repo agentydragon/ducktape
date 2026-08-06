@@ -7,6 +7,12 @@ metadata:
     description: "Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role."
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
+  # No `ttlSecondsAfterFinished`, for the same reason as the study-casino twin:
+  # a TTL would turn this change-driven GRANT script into an on-schedule one.
+  # The cost is that a failed run holds this Kustomization unready until someone
+  # deletes the Job -- see cluster/docs/troubleshooting.md, "A failed Job wedges
+  # its Flux Kustomization". Re-run by editing readonly-role.sql, which re-hashes
+  # the ConfigMap and lets the `force` annotation recreate the Job.
   backoffLimit: 0
   template:
     metadata:

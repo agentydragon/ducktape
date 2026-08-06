@@ -10,6 +10,10 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
+  # Idempotent fetch-and-write, safe to re-run; the TTL lets a failed run retry
+  # instead of holding this Kustomization unready forever. Rationale in
+  # ../../agents/ha-mcp/credentials/job.yaml.
+  ttlSecondsAfterFinished: 3600
   backoffLimit: 5
   template:
     metadata:

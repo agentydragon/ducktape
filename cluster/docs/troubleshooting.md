@@ -371,6 +371,56 @@ kubectl run -it --rm debug --image=curlimages/curl:latest --restart=Never -- \
   curl http://harmonia.nix-cache.svc.cluster.local:5000/nix-cache-info
 ```
 
+## A Failed Job Wedges Its Flux Kustomization
+
+**Symptom.** A Kustomization sits unready indefinitely, and everything `dependsOn` it
+stacks up behind `DependencyNotReady`:
+
+```text
+Ready=False (HealthCheckFailed): failed early due to stalled resources:
+  [Job/<ns>/<name>-provisioner status: 'Failed']
+```
+
+Its `status.lastAttemptedRevision` moves with new commits while
+`status.lastAppliedRevision` stays pinned to an old one — so a fix that lands in git
+looks applied but never takes effect.
+
+**Why it never self-heals.** Three things compound:
+
+- `wait: true` makes Flux block on **every object it applies**, not just the ones named
+  in `healthChecks`. `plaid-mcp-db` health-checked only its CNPG `Cluster` and still
+  wedged on a Job.
+- A Job's pod template is immutable, so re-applying an unchanged manifest is a no-op.
+  Flux keeps applying; the Failed Job stays Failed.
+- `kustomize.toolkit.fluxcd.io/force: enabled` recreates an object when apply hits an
+  **immutable-field conflict** — i.e. when the manifest changed. It does nothing for a
+  Job that failed for an environmental reason (network policy, dependency down) while
+  its manifest stayed identical.
+
+So a config fix in a _neighbouring_ file — the exact case in
+[#3827](https://github.com/agentydragon/ducktape/pull/3827), where a
+`CiliumNetworkPolicy` selector was blocking the provisioner's egress to Postgres — is
+applied, correct, and completely inert.
+
+**Recovery.** Delete the failed Job; Flux recreates it from git on the next reconcile:
+
+```bash
+kubectl -n <ns> delete job <name>
+kubectl -n <flux-ns> annotate --overwrite kustomization <kustomization> \
+  "reconcile.fluxcd.io/requestedAt=$(date -u +%FT%TZ)"
+```
+
+Nothing is lost — the Job already failed terminally and its definition lives in the repo.
+
+**Prevention, and why it is not applied everywhere.** Idempotent repair/fetch
+provisioners carry `ttlSecondsAfterFinished`, which deletes the finished Job so the next
+reconcile recreates and re-runs it — recovery without a human. Change-driven scripts
+(the `readonly-role` GRANT Jobs) deliberately do **not**: a TTL there would convert a
+run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
+Rationale lives next to the Jobs themselves — see
+<../k8s/agents/ha-mcp/credentials/job.yaml> and
+<../k8s/study-casino/db/readonly-role-provisioner-job.yaml>.
+
 ## Removing a CRD Operator (Uninstall Runbook)
 
 Distilled from the Longhorn uninstall incident

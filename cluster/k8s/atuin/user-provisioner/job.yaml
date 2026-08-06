@@ -81,6 +81,11 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
+  # The script documents itself as idempotent (creates if missing, updates the
+  # password only when the SOPS source changed, else no-op), so re-running is
+  # safe; the TTL lets a failed run retry instead of holding this Kustomization
+  # unready forever. Rationale in ../../agents/ha-mcp/credentials/job.yaml.
+  ttlSecondsAfterFinished: 3600
   backoffLimit: 5
   template:
     metadata:
