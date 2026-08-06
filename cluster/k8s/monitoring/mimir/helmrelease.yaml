@@ -64,7 +64,16 @@ spec:
         multitenancy_enabled: false
 
         ruler:
-          alertmanager_url: http://monitoring-alertmanager.monitoring.svc.cluster.local:9093
+          # `dns+` and the *headless* service, not the ClusterIP one, on purpose.
+          # Alertmanager HA expects the sender to fan out to every replica: all
+          # instances receive all alerts and gossip decides which one notifies.
+          # A ClusterIP URL is a load balancer -- kube-proxy picks one backend per
+          # connection, so every notification landed on a single pod. Observed
+          # 2026-08-06: alertmanager-monitoring-0 held 28 alerts while -1 held 0,
+          # both reporting `cluster: ready, peers: 2`, so nothing looked wrong.
+          # `dns+` resolves the headless service's A records to every pod IP;
+          # alertmanager_refresh_interval (default 1m) re-resolves as pods roll.
+          alertmanager_url: dns+http://alertmanager-operated.monitoring.svc.cluster.local:9093/
           rule_path: /data/rules
 
         ruler_storage:
