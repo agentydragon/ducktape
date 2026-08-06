@@ -1,104 +1,85 @@
-"""`_fifo_sell` is the engine's only disposal executor, so the properties that let one function
-serve two callers are the ones nothing else checks.
+"""`_fifo_sell` is the engine's only disposal executor, and it executes rather than decides.
 
-The e2e tests prove the SCENARIOS that exist today sell the right lots. They cannot prove the
-guarantee that decides whether the two measures can share an implementation at all: a cents
-target must raise AT LEAST what it asked for. That is why a cents target cannot be converted to
-a quanta target once and handed to the unit path — the conversion has to happen per lot, after
-the walk. Measured over 200k random pools, the per-lot form never undershot and converting once
-undershot 733 times by up to 2 cents; under a zero-width band those cents are an unpaid
-obligation, so a rollout fails for a rounding artifact.
+The e2e tests prove today's SCENARIOS sell the right lots. What they cannot prove is the
+property that lets one function serve every caller: it moves exactly the quanta it was
+handed, and refuses outright when it cannot. Converting a dollar amount into a quantity is
+the policy's job — see `target_allocation._quanta_for_cents` and its tests — because doing
+it here would be the engine choosing how much to trade.
 """
 
 from __future__ import annotations
 
 import jax.numpy as jnp
 import numpy as np
-import pytest
 import pytest_bazel
 
-from finance.augur.sim.engine.jax_engine import _fifo_sell, _value_cents_from_quanta
+from finance.augur.sim.engine.jax_engine import _fifo_sell
 
 # Three lots of one asset, one rollout. A pool is (agent, account, asset), so every lot in it
-# shares a price and a quantity scale — which is what makes a single availability measure
-# meaningful in the first place.
+# shares a price and a quantity scale.
 _ORDERED = np.asarray([0, 1, 2], dtype=np.int64)
 
 
-def _sell(*, quanta: list[int], target: int, price_cents: int, scale: int, in_cents: bool):
+def _sell(*, quanta: list[int], target: int, price_cents: int = 100, scale: int = 1, basis_cents: int = 0):
     lots = len(quanta)
     return _fifo_sell(
         jnp.asarray([quanta], dtype=jnp.int64),
         _ORDERED[:lots],
         jnp.asarray([target], dtype=jnp.int64),
         jnp.asarray([price_cents], dtype=jnp.int64),
-        jnp.asarray([[0]] * lots, dtype=jnp.int64),
+        jnp.asarray([[basis_cents]] * lots, dtype=jnp.int64),
         jnp.asarray([scale] * lots, dtype=jnp.int64),
-        in_cents=in_cents,
     )
 
 
-def test_a_units_target_sells_exactly_what_it_asked_for() -> None:
-    """The tender path names units, and a tender that sold a unit more than it offered would be
-    selling something nobody bid for."""
+def test_it_sells_exactly_what_it_was_asked_for_oldest_lot_first() -> None:
+    """Exactly, not approximately. The order is the decision; an executor that rounded it would
+    be making a different trade than the one the policy chose."""
 
-    sold, _proceeds, _basis = _sell(quanta=[100, 100, 100], target=250, price_cents=1, scale=1, in_cents=False)
+    sold, _proceeds, _basis = _sell(quanta=[100, 100, 100], target=250)
 
     assert sold.tolist() == [[100, 100, 50]]
 
 
-def test_a_cents_target_never_raises_less_than_it_asked() -> None:
-    """The property the whole design turns on. A price that does not divide the target evenly is
-    the case that separates the two conversions: ceiling each lot's slice keeps proceeds at or
-    above the ask, and a single up-front conversion is what loses that."""
+def test_it_refuses_an_oversell_rather_than_part_filling_it() -> None:
+    """A part fill would leave the obligation short anyway, but silently. Refusing sends the
+    rollout to settlement, where an unpaid bill is visible as a failure."""
 
-    # 3 cents per unit against a 10-cent ask: 4 units, worth 12 cents, not 3 units worth 9.
-    sold, proceeds, _basis = _sell(quanta=[10, 10], target=10, price_cents=3, scale=1, in_cents=True)
+    sold, _proceeds, _basis = _sell(quanta=[10, 10], target=999)
 
-    assert int(proceeds.sum()) >= 10
-    assert sold.tolist() == [[4, 0]]
+    assert sold.tolist() == [[0, 0]]
 
 
-@pytest.mark.parametrize("scale", [1, 100, 1_000, 100_000])
-@pytest.mark.parametrize("price_cents", [1, 7, 333, 100_000])
-def test_a_cents_target_covers_its_ask_across_scales_and_prices(scale: int, price_cents: int) -> None:
-    """Swept rather than spot-checked, because the undershoot this guards is a rounding artifact:
-    it appears only for particular (price, scale) pairs, which is exactly how it survived being
-    reasoned about instead of measured."""
+def test_proceeds_and_basis_are_valued_on_what_actually_sold() -> None:
+    """The cash leg is derived, never decided: quanta actually moved, times this month's price.
+    Basis comes off the same quanta, so an immediate resale of a whole lot nets zero gain."""
 
-    quanta = [37, 91, 5]
-    available = int(_value_cents_from_quanta(jnp.asarray(quanta), jnp.asarray(price_cents), jnp.asarray(scale)).sum())
-    if available == 0:
-        pytest.skip(f"pool is worthless at {price_cents=} {scale=}, so there is no ask to cover")
-    for target in (1, available // 3, available // 2, available):
-        _sold, proceeds, _basis = _sell(
-            quanta=quanta, target=target, price_cents=price_cents, scale=scale, in_cents=True
-        )
-        assert int(proceeds.sum()) >= target, f"{target=} {price_cents=} {scale=}"
+    sold, proceeds, basis = _sell(quanta=[10, 10], target=15, price_cents=250, basis_cents=100)
+
+    assert sold.tolist() == [[10, 5]]
+    assert proceeds.tolist() == [[2_500, 1_250]]
+    assert basis.tolist() == [[1_000, 500]]
 
 
-def test_an_oversell_sells_nothing_rather_than_part_filling() -> None:
-    """Both measures refuse the whole raise rather than partly filling it. A part-fill would leave
-    the obligation short anyway, but silently — the rollout has to fail at settlement, where the
-    unpaid obligation is visible, not here."""
+def test_a_fractional_scale_sells_fractions_of_a_unit() -> None:
+    """Quanta, not units — crypto is held in satoshis. At scale 100 a target of 250 quanta is
+    2.5 units, and valuing it has to divide by the scale rather than treat quanta as units."""
 
-    units, _p, _b = _sell(quanta=[10, 10], target=999, price_cents=5, scale=1, in_cents=False)
-    cents, _p2, _b2 = _sell(quanta=[10, 10], target=999_999, price_cents=5, scale=1, in_cents=True)
+    sold, proceeds, _basis = _sell(quanta=[400], target=250, price_cents=1_000, scale=100)
 
-    assert units.tolist() == [[0, 0]]
-    assert cents.tolist() == [[0, 0]]
+    assert sold.tolist() == [[250]]
+    assert proceeds.tolist() == [[2_500]]
 
 
 def test_a_zero_target_touches_nothing() -> None:
-    """A month inside the band orders nothing, and that is the common case — the phase runs every
-    month for every policy, so ordering zero has to be free of side effects rather than merely
-    cheap."""
+    """The common case: the phase runs every month for every policy, and a month inside the
+    band orders nothing. Ordering zero has to be inert, not merely cheap."""
 
-    for in_cents in (True, False):
-        sold, proceeds, basis = _sell(quanta=[10, 10], target=0, price_cents=5, scale=1, in_cents=in_cents)
-        assert sold.tolist() == [[0, 0]]
-        assert proceeds.tolist() == [[0, 0]]
-        assert basis.tolist() == [[0, 0]]
+    sold, proceeds, basis = _sell(quanta=[10, 10], target=0)
+
+    assert sold.tolist() == [[0, 0]]
+    assert proceeds.tolist() == [[0, 0]]
+    assert basis.tolist() == [[0, 0]]
 
 
 if __name__ == "__main__":

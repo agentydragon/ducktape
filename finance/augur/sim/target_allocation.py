@@ -42,6 +42,7 @@ policy's output shape to a boundary is exactly the mistake #3745 was closed for.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import NamedTuple
 
 import jax.numpy as jnp
@@ -89,15 +90,30 @@ class SleeveUniverse:
 class SleeveOrders(NamedTuple):
     """What this policy wants done this month, batched over rollouts.
 
-    Both are `(sleeve, rollout)` in `SleeveUniverse` order, in cents. They are TARGETS:
-    execution converts them to whole quanta, and a sell target can fall short when the
-    sleeve cannot cover it.
+    Both are `(sleeve, rollout)` in `SleeveUniverse` order, **in whole quanta** — the unit
+    the lots are held in. Orders are units-only per <plans/actor_actions.md>: a
+    dollar-denominated order would leave the ENGINE to divide by a price and round, which is
+    the engine choosing how much to trade rather than executing what it was told. Doing the
+    division here makes the rounding rule a decision with a name and a test.
 
     Never both non-zero in the same month — see the module docstring.
     """
 
-    sell_cents: jnp.ndarray
-    buy_cents: jnp.ndarray
+    sell_quanta: jnp.ndarray
+    buy_quanta: jnp.ndarray
+
+
+def _quanta_for_cents(*, cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray) -> jnp.ndarray:
+    """Whole quanta worth at least `cents`, at this month's observed market price.
+
+    Integer ceiling division, so an order is never a quantum short of what it meant to move.
+    A zero price means the instrument has no modeled price series: unpriceable rather than
+    free, so it orders nothing.
+    """
+
+    priced = unit_price_cents > 0
+    quanta = -(-(cents * quantity_scale) // jnp.where(priced, unit_price_cents, 1))
+    return jnp.where(priced & (cents > 0), quanta, 0)
 
 
 def decide(
@@ -108,6 +124,9 @@ def decide(
     `floor_cents` and `ceiling_cents` are `(rollout,)` because the band may be CPI-indexed
     and inflation differs by path. Their ordering is validated at config time by
     `cash_band.validate_band_bounds`; it cannot be checked here, where they are traced.
+
+    Sleeve `s` prices off instrument `s` of the view — one policy's sleeves are the actor's
+    tradable set today, in the same order.
     """
 
     order = cash_order(
@@ -116,12 +135,28 @@ def decide(
         floor_cents=floor_cents,
         ceiling_cents=ceiling_cents,
     )
+    # Water-filling stays in cents: "overweight" is a claim about VALUE, and a level where
+    # two sleeves meet has no meaning in units of two different assets. Only the last step —
+    # turning a sleeve's share into an order — is denominated in what actually moves.
     sleeve_value = view.sleeve_value_cents(universe.lot_rows)
+    to_quanta = partial(
+        _quanta_for_cents,
+        unit_price_cents=view.instrument_price_cents,
+        quantity_scale=view.instrument_quantity_scale[:, None],
+    )
     return SleeveOrders(
-        sell_cents=withdrawal_by_sleeve(
-            value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
+        # Capped by the holding, because you cannot sell what you do not have. The buy side
+        # has no such cap — that asymmetry is why the clamp sits here and not in the
+        # conversion, which knows only about prices.
+        sell_quanta=jnp.minimum(
+            to_quanta(
+                cents=withdrawal_by_sleeve(
+                    value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents
+                )
+            ),
+            view.sleeve_quanta(universe.lot_rows),
         ),
-        buy_cents=deposit_by_sleeve(
-            value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents
+        buy_quanta=to_quanta(
+            cents=deposit_by_sleeve(value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents)
         ),
     )

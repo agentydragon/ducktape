@@ -27,6 +27,14 @@ identity is what tax-aware selection needs; aggregating to sleeves is a policy's
 done with compile-time index sets. Carrying only sleeve totals would foreclose lot-level
 policies for a saving the dense shapes do not need.
 
+PRICES, on their own axis, for every instrument the actor may trade — not only the ones it
+holds. What something trades at is a fact about the market, so there is no visibility rule
+to enforce here and no reason to withhold it. Carrying it matters because a policy that
+inferred price from `value / quanta` of its own holdings could not price an instrument it
+owns none of, which is exactly the one a target allocation is trying to buy. The instrument
+axis is built by the engine from the actor's tradable set; today one policy's sleeves are
+that set in order, and a shared instrument table is what a second policy kind would need.
+
 `scheduled_outflow_cents` is what the month is already committed to paying. It belongs in
 the observation because the agent genuinely knows its own bills before it decides how to
 fund them — and because deciding against the projected end-of-month balance rather than
@@ -96,6 +104,12 @@ class ActorView(NamedTuple):
     # without reaching into the engine's classification.
     lot_holding_months: jnp.ndarray
     scheduled_outflow_cents: jnp.ndarray
+    # What the market charges this month, per tradable instrument, `(instrument, R)`. Zero
+    # means unpriceable — no modeled price series — rather than free.
+    instrument_price_cents: jnp.ndarray
+    # Quanta per unit, `(instrument,)`. A market convention about divisibility, not a fact
+    # about the position, which is why it sits on the instrument axis and not the lot one.
+    instrument_quantity_scale: jnp.ndarray
 
     @property
     def total_cash_cents(self) -> jnp.ndarray:
@@ -112,6 +126,15 @@ class ActorView(NamedTuple):
             [self.lot_value_cents[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows]
         )
 
+    def sleeve_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
+        """Aggregate lot quantities into `(sleeve, R)`, same row groups as the value aggregate.
+
+        What a sell order has to be capped by: a policy may want to raise more than a sleeve
+        holds, and asking for it would be an order the executor could only refuse.
+        """
+
+        return jnp.stack([self.lot_quantity[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows])
+
 
 def build_actor_view(
     *,
@@ -123,6 +146,8 @@ def build_actor_view(
     lot_value_cents: jnp.ndarray,
     lot_purchase_month: jnp.ndarray | NDArray[np.int64],
     scheduled_outflow_cents: jnp.ndarray,
+    instrument_price_cents: jnp.ndarray,
+    instrument_quantity_scale: jnp.ndarray | NDArray[np.int64],
 ) -> ActorView:
     """Narrow full engine state to one agent's observation.
 
@@ -136,6 +161,10 @@ def build_actor_view(
     implementation would round differently. Flooring here would report a sleeve worth a cent
     less than selling it actually yields, so a policy asking for the whole sleeve would come
     up short. One valuation, owned by the side that does the selling.
+
+    `instrument_price_cents` arrives resolved for `month` for the same reason marks do, and
+    for one more: the builder must not hold a price cube it could index past the current
+    month. A policy that could read next month's price would make every backtest brilliant.
     """
 
     cash_rows = np.asarray(slots.cash_slots, dtype=np.int64)
@@ -154,4 +183,6 @@ def build_actor_view(
             jnp.int64
         ),
         scheduled_outflow_cents=scheduled_outflow_cents,
+        instrument_price_cents=instrument_price_cents,
+        instrument_quantity_scale=jnp.asarray(instrument_quantity_scale, dtype=jnp.int64),
     )

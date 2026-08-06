@@ -30,6 +30,9 @@ def _view(*, month: int = 6, cash_slots: tuple[int, ...] = (0, 1), lot_slots: tu
         lot_value_cents=jnp.asarray([[500, 2_000], [600, 1_600], [777, 888]], dtype=jnp.int64),
         lot_purchase_month=_PURCHASE_MONTH,
         scheduled_outflow_cents=jnp.asarray([11, 22], dtype=jnp.int64),
+        # Two tradable instruments, priced whether or not they are held.
+        instrument_price_cents=jnp.asarray([[100, 110], [20, 22]], dtype=jnp.int64),
+        instrument_quantity_scale=jnp.asarray([1, 100], dtype=jnp.int64),
     )
 
 

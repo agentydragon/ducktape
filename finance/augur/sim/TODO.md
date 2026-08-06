@@ -429,3 +429,13 @@ Documented to prevent re-discovery; intentionally not on the roadmap.
 - Real-dollar / inflation-adjusted display as a separate accounting
   mode. Should be a postprocessing/read-model layer, not alternate
   simulator accounting.
+- **Trading friction: bid/ask spread, commission, market impact.** Trades
+  execute at the sampled mid price in both directions, so every rebalance
+  is free. Deferred deliberately, but the direction of the error is worth
+  stating: free trading flatters any strategy that trades, and turnover
+  drag is part of what the allocation study is trying to measure. It bites
+  once a scenario turns on how OFTEN to trade — a drift-tolerance rebalance
+  mode, a short ladder rolled frequently, or anything comparing a buy-and-hold
+  sleeve against an actively maintained one. Until then the cash band trades
+  only on cashflow that was going to happen anyway, which keeps turnover low
+  enough that the omission does not decide any answer.

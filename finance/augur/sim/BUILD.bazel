@@ -205,6 +205,7 @@ py_test(
     srcs = ["target_allocation_test.py"],
     deps = [
         ":actor_view",
+        ":conftest",
         ":target_allocation",
         "@pypi//jax",
         "@pypi//numpy",
@@ -594,6 +595,7 @@ py_library(
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series_model",
+        "@pypi//jax",
         "@pypi//pytest",
     ],
 )

@@ -24,6 +24,7 @@ from finance.augur.sim.compiler.helpers import (
     StringTable,
     amount_arrays_cents,
 )
+from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.scenario import Scenario
 
 
@@ -56,6 +57,10 @@ class TargetAllocationCompileOutput:
     ceiling_period: NDArray[np.int64]
     sleeve_assets: NDArray[np.int64]
     sleeve_series: NDArray[np.int64]
+    # Quanta per unit for each sleeve's asset. Per SLEEVE rather than read off the sleeve's
+    # lots, because a sleeve the agent holds none of has no lots to read — and that is
+    # precisely the sleeve a target allocation exists to buy into.
+    sleeve_quantity_scale: NDArray[np.int64]
     weights: NDArray[np.int64]
     cause_id_prefixes: tuple[str, ...]
 
@@ -90,6 +95,7 @@ def compile_target_allocation_policies(
     ceiling_period = np.ones(slot_count, dtype=np.int64)
     sleeve_assets = np.full((slot_count, max_sleeves), NO_CODE, dtype=np.int64)
     sleeve_series = np.full((slot_count, max_sleeves), NO_CODE, dtype=np.int64)
+    sleeve_quantity_scale = np.ones((slot_count, max_sleeves), dtype=np.int64)
     weights = np.zeros((slot_count, max_sleeves), dtype=np.int64)
     prefixes: list[str] = []
 
@@ -128,6 +134,7 @@ def compile_target_allocation_policies(
             sleeve_series[idx, sleeve_idx] = (
                 NO_CODE if price_key is None else series_index_by_id.get(price_key, NO_CODE)
             )
+            sleeve_quantity_scale[idx, sleeve_idx] = quantity_scale_for_asset(sleeve.asset)
 
     return TargetAllocationCompileOutput(
         agent=agent,
@@ -148,6 +155,7 @@ def compile_target_allocation_policies(
         ceiling_period=ceiling_period,
         sleeve_assets=sleeve_assets,
         sleeve_series=sleeve_series,
+        sleeve_quantity_scale=sleeve_quantity_scale,
         weights=weights,
         cause_id_prefixes=tuple(prefixes),
     )
