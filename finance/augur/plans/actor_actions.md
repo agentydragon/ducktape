@@ -446,8 +446,8 @@ Three paths, written down together because their costs are not comparable by int
 
 ### A — bond funds as sleeves
 
-A fund (BND aggregate, MUB national munis, CMF California munis, VTIP short TIPS) is a
-`SecurityKey`: already in every union, already a legal `SleeveTarget.asset`, already anchorable.
+A fund (BND aggregate, MUB national munis, CMF California munis) is a `SecurityKey`: already in
+every union, already a legal `SleeveTarget.asset`, already anchorable.
 Weights, rebalancing and trimming work untouched. It is also what FIRE portfolios actually hold
 — nobody running 60/40 holds a ladder — and it avoids modelling one instrument per Treasury
 maturity.
@@ -488,19 +488,13 @@ dollar-denominated per-unit series — price, and distribution-per-unit — with
 units and handling. **No rate appears in the engine anywhere**: the mechanic is the coupon path
 with nothing new, a bond paying `face x rate` and a fund paying `units x distribution_per_unit`.
 
-Directly observable: `close` versus `adjclose` in the same payload IS the per-share distribution
-history in dollars.
-
-Required for correctness, not only architecture. BND's payout rose sharply after 2022 and that
-rise is the mechanism offsetting the price loss; only a jointly-fitted distribution produces
-that shape. A constant gives the crash without the recovery, **biasing against fixed income
-precisely in the regime a stock/bond mix is chosen to survive.**
+Required for correctness, not only architecture. A payout that does not rise with rates gives
+the crash without the recovery, **biasing against fixed income precisely in the regime a
+stock/bond mix is chosen to survive.**
 
 Cost: a distribution-per-unit is not a price, so it needs its own `LevelSeriesKind` — which
 means both traps below apply, including the `state_space_factor.py:55` union that drops a new
 kind from the state-space basis with no type error. Cheaper than pricing every rung; not free.
-The positivity wall does not bite, because a per-unit distribution is a positive dollar amount
-like a price — the difference from a bond yield, which can reach zero or go negative.
 
 Gap worth naming: this generalizes to equity funds but `IncomeCategory` does not. It has
 ORDINARY and INTEREST only, no qualified dividends, so distributions on an equity fund would be
@@ -509,6 +503,64 @@ overtaxed as ordinary income until a third category exists.
 What A gives up: a fund is marked and traded, so it has no held-to-maturity rate immunity, and
 the floor argument rests on exactly that. Over horizons longer than the fund's duration the two
 converge; for near-dated spending they do not.
+
+### How A gets FITTED, which the first draft got wrong
+
+A's engine half landed in #3834 and #3837 and is right. Its evidence half — one fitted
+`security_distribution:<symbol>` factor per fund, derived from `close` versus `adjclose` — is
+wrong, and the reason is a rule this document already states one section up.
+
+**The coupling between bond-derived quantities belongs INSIDE the exogenous layer.** BND, MUB,
+CMF, a Treasury ladder rung and a fund's payout are all functions of one thing: the curve, plus
+a credit spread and each instrument's duration. Fitting them as independent per-symbol factors
+puts that relation outside the model, where BND and AGG can drift apart for no economic reason
+and where a rate shock reaches one instrument and not another. It is exactly the mistake the
+"consistency is the model's internal property" rule exists to prevent, arrived at from a
+different direction: not a leaked RATIO this time, but a leaked STRUCTURE.
+
+So the exogenous layer carries a latent rates/credit state and DERIVES every bond-derived
+emission from it — each fund's price, each fund's distribution per unit, each bond's price if
+that is ever wanted. Downstream still sees only per-instrument dollar primitives and never
+learns they share a driver, which is why **the boundary type from #3834 survives this
+redesign unchanged.** That is the payoff of having emitted primitives rather than yields: the
+fitting strategy was replaceable without touching the interface.
+
+**The structural consequence: emitted level series are no longer the same set as fitted
+factors.** Today they are conflated — `FactorKey` is the level-key union plus PE marks, and
+`evidence_data.factor_names` is both "what we fit" and "what we emit". A structural model emits
+N series from K < N latent factors, so those two have to come apart before this can be built.
+
+#### Measured, because the first draft asserted these from memory
+
+Reproduced from the public upstreams the evidence repo caches (FRED/Yahoo/Zillow), so the
+numbers are checkable without a checkout:
+
+- **The aligned fit window is 96 months, 2017-12 .. 2026-06.** `_align_inner` inner-joins every
+  factor, so ETH's 2017-12 start truncates all eight. Adding BND, MUB, CMF, VTIP or AGG costs
+  **+0 months each, and +0 for all four together** — the recalled claim, now measured. SGOV
+  costs **−29 months** (window starts 2020-10), so it stays out.
+- **The sparsity is self-inflicted, and rates data is the opposite of sparse.** GS10 has 880
+  monthly observations back to 1953 (73 years), FEDFUNDS 865 back to 1954, GS2 602 back to 1976,
+  AAA/BAA 1291 back to 1919. A joint fit on the intersection spends 96 of GS10's 880 months. A
+  structural model fits its rates block on the long history and couples blocks on the overlap;
+  **that, not the fund list, is what the fixed-income work is really blocked on.**
+- **`close` versus `adjclose` does recover the payout history, and the rate-sensitivity claim
+  holds.** BND averages 2.56%/yr (2018-21) → 3.67%/yr (2024-26) against a −15.2% price return in
+  2022; MUB 2.21 → 3.00 (−9.3%); CMF 1.90 → 2.80 (−10.0%). So a constant payout really would
+  misstate the regime that matters.
+- **The positivity wall DOES bite, and the earlier "it does not" was wrong.** Two distinct
+  findings. (a) BND/MUB/CMF/AGG derive to exactly zero in ~4% of months, always January: those
+  funds go ex-distribution near the end of December, so December carries 2–4x the median and the
+  next month carries nothing — the Dec+Jan pair sums to 1.8–4.2x median, so the money is all
+  there, mis-bucketed by a one-day boundary. An artifact, fixable by bucketing on ex-date. (b)
+  **VTIP is structurally unusable as a level series**: 67 of 165 months non-positive, median
+  monthly payout $0.0000, because a short-TIPS distribution tracks CPI accrual and is genuinely
+  zero in low-inflation months. Drop VTIP from the fund list. Under a derived-from-the-curve
+  model this constraint moves inside, where positivity can be imposed by construction.
+- **Yahoo now downgrades `range=max&interval=1d` to monthly bars** (404 rows for SPY, against
+  8436 with `period1=0&period2=<now>&interval=1d`). `sources.py` uses the former and
+  `yahoo_adjusted_close_frame` requires >=1000 samples for SPY, so the next scraper refresh of
+  that file would hard-fail. Unrelated to fixed income; recorded here because it was found here.
 
 ### B — price the ladder
 
@@ -526,8 +578,14 @@ asked for. What it gives up is comparability against the standard 60/40.
 ### Recommendation
 
 **A, with C as the reference case.** C answers the doctrine's own question for free and should
-run first regardless. A makes the standard comparison possible and its costs are small and
-known. B buys pre-maturity ladder sales, which nothing has yet needed.
+run first regardless. A makes the standard comparison possible. B buys pre-maturity ladder
+sales, which nothing has yet needed — and note that a rates process built for A prices a ladder
+too, so B stops being a separate path and becomes a consumer of the same latent state.
+
+A's cost estimate has moved: its engine half turned out to be small and is landed, and its
+evidence half turned out to be a rates model rather than four fitted series. That is more work
+than the first draft claimed, but it is work the rest of the study wants anyway — the fit window
+it unblocks is currently degrading every existing factor, not just the fixed-income ones.
 
 Two artifacts to record either way, both consequences of decisions right in general and awkward
 for this sweep: **ruin means "could not pay from cash" and a held ladder cannot be sold**, so
@@ -553,11 +611,18 @@ So the order is outcome-first, and deliberately not phase-first:
    flexible spender is never a forced seller, so a working tier policy should REDUCE the
    floor the histogram calls for. Everything else on this list refines a number; this one
    moves it.
-3. **Fixed income as a sleeve, via path A** — bond funds, price-only series, and a
-   distribution-per-unit level series. This is what makes "60/40, rebalanced" expressible and
-   therefore what makes step 1's answer comparable to anything. Its size depends on step 1
-   only in one place: whether the distribution needs to be a jointly fitted factor or can
-   start marginal.
+3. **A rates process inside the exogenous layer**, from which every bond-derived emission is
+   derived. Path A's engine half is landed (#3834, #3837); what remains is the model, and it
+   is the model rather than the instrument list because the coupling between a fund's price,
+   its payout and a bond's price is the thing being modeled. Two prerequisites fall out of it
+   and are worth naming separately, since either could be done first:
+   - **The fit must stop requiring one common window across every factor.** `_align_inner`'s
+     inner join lets crypto's 2017 start truncate a 73-year rates series to 96 months. Nothing
+     about fixed income can be fitted credibly until that is fixed, and every existing factor
+     is degraded by it today.
+   - **Emitted level series must stop being the same set as fitted factors.** A structural
+     model produces N emissions from K < N latent states; `FactorKey` and
+     `evidence_data.factor_names` currently assume the two are one list.
 4. **Whatever step 1 shows the answer is sensitive to.** Candidates, with the direction of
    their error where it is known: the tier/tax-residency bundle (reads optimistic, since a
    cheaper-location tier currently pays California tax); trading friction (recorded in
