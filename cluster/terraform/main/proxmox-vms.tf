@@ -249,11 +249,14 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     timeout = "2m"
   }
 
-  # No `ignore_changes = [disk]`: the Proxmox CSI driver that used to hotplug
-  # unmanaged scsi disks onto this VM was removed 2026-07-16
-  # (see cluster/docs/lessons_learned/2026_07_16_disable_proxmox_csi.md), so the
-  # `disk` blocks above are now the full, authoritative disk shape. tofu manages
-  # all wyrm2 disks declaratively again.
+  # CLEANUP(added 2026-08-05): Remove once the legacy Proxmox CSI scsi1/scsi2
+  # attachments are deliberately detached from VM 110 and a refreshed plan
+  # reports only the declared scsi0 and virtio0-virtio8 disks. Although the CSI
+  # driver was removed 2026-07-16, those two unmounted disks remain attached;
+  # allowing tofu to reconcile the incomplete disk state would remap live disks.
+  lifecycle {
+    ignore_changes = [disk]
+  }
 
   depends_on = [module.wyrm2_image]
 }
