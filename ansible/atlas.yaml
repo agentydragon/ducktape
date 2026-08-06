@@ -261,6 +261,10 @@
     # Kernel 6.8 did not default to min_power and ran 12+ days stable.
     # =0 (keep_firmware_settings) also disables DIPM on this board's firmware,
     # but =1 (max_performance) is explicit. See debug/atlas/black_screen_lockup.md.
+    #
+    # Reserve 96 x 1 GiB hugepages for wyrm2. The VM owns nearly all of Atlas's
+    # interactive workload, so its RAM should not sit on the normal LRU where
+    # direct reclaim can repeatedly scan it without freeing useful host memory.
     - name: Configure kernel cmdline for IOMMU and GPU passthrough
       ansible.builtin.copy:
         dest: /etc/kernel/cmdline
@@ -270,7 +274,7 @@
         # debug/kernel-6.18-amd-kvm-stall.md.
         # CLEANUP(added 2026-03-31): Remove once a pve-kernel containing the
         # RHBZ#2448303 fix (AMD Idle HLT Intercept) ships and atlas runs it.
-        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1 clearcpuid=510"
+        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1 clearcpuid=510 default_hugepagesz=1G hugepagesz=1G hugepages=96"
         mode: "0644"
         backup: true
       notify: Refresh proxmox boot
@@ -342,6 +346,17 @@
         mode: "0644"
       tags: [kvm, workaround]
 
+    # Bound the ARC instead of relying on it to shrink quickly enough during a
+    # host allocation burst. This leaves a predictable host reserve alongside
+    # wyrm2's 96 GiB hugepage pool.
+    - name: Cap the ZFS ARC at 8 GiB
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/zfs-memory.conf
+        content: |
+          options zfs zfs_arc_max=8589934592
+        mode: "0644"
+      tags: [memory, zfs]
+
     - name: Prevent D3cold on RTX 5090 GPUs via udev
       ansible.builtin.copy:
         dest: /etc/udev/rules.d/99-vfio-gpu-no-d3cold.rules
@@ -368,7 +383,7 @@
         cmd: update-initramfs -u
       register: initramfs_result
       changed_when: initramfs_result.rc == 0
-      tags: [gpu_passthrough]
+      tags: [gpu_passthrough, memory, zfs]
 
     # zram swap — replaces the ZFS zvol swap (/dev/zd0).
     # ZFS-backed swap deadlocks under memory pressure: the kernel tries to swap
@@ -401,10 +416,14 @@
         state: started
       tags: [swap, zram]
 
-    - name: Set swappiness to prefer zram over disk
+    # QEMU's guest RAM is anonymous/shmem from the host's perspective. A value
+    # of 150 made direct reclaim strongly prefer scanning wyrm2's 96 GiB mapping,
+    # even though almost none of those pages could be reclaimed. Keep zram as an
+    # emergency pressure valve without making guest RAM the preferred target.
+    - name: Limit swapping of QEMU guest memory
       ansible.builtin.copy:
         dest: /etc/sysctl.d/99-zram.conf
-        content: "vm.swappiness = 150\n"
+        content: "vm.swappiness = 10\n"
         mode: "0644"
       notify: Apply sysctl settings
       tags: [swap, zram]

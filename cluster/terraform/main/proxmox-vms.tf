@@ -29,14 +29,17 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   cpu {
     cores = 32
     type  = "host"
+    numa  = true # Required by Proxmox for hugepage-backed memory
   }
 
   memory {
-    # 96GB. Reduced from 112GB — with balloon=0 (VFIO requires pinned memory),
-    # 112GB + Talos CP (8GB) left only 8GB for host+ZFS ARC, causing ZFS write
-    # stalls (memory_available_bytes went negative). 96GB leaves 24GB headroom.
-    dedicated = 98304
-    floating  = 0 # Disable balloon (VFIO incompatible)
+    # Keep wyrm2 at 96 GiB, but back it with the 1 GiB hugepage pool reserved by
+    # ansible/atlas.yaml. This removes guest RAM from normal host reclaim while
+    # leaving the rest of Atlas's memory explicitly available to the host/ARC.
+    dedicated      = 98304
+    floating       = 0 # Disable balloon (VFIO incompatible)
+    hugepages      = "1024"
+    keep_hugepages = true
   }
 
   # GPU passthrough. hostpci0 → guest 01:00.0 (first PCI), hostpci1 → guest
