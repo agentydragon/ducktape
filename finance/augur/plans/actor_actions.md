@@ -530,6 +530,42 @@ factors.** Today they are conflated — `FactorKey` is the level-key union plus 
 `evidence_data.factor_names` is both "what we fit" and "what we emit". A structural model emits
 N series from K < N latent factors, so those two have to come apart before this can be built.
 
+#### The shape: a small purpose-built provider, not a generalization of the existing fit
+
+The allocation question does not need every instrument. It needs enough of the economy to
+choose between **cash, Treasuries, California municipals, and broad equity** — Rai's own
+framing, and close to the smallest set that can express both a FIRE 60/40 and a floor+surplus
+construction. So this is a NEW exogenous provider type sitting beside `independent`, `vecm`,
+`state_space` and `composite` in the `models:` registry, selectable per request through
+`ScenarioKey.model_id` and therefore A/B-able against what exists today with zero downstream
+change.
+
+Its INTERNAL state is a handful of macro factors — a short rate, a term factor, a muni/credit
+spread, an equity process, inflation. Its EMISSIONS are the per-instrument dollar primitives the
+sim already consumes: a price and a distribution-per-unit for each modeled fund, plus inflation.
+The coupling lives entirely between those two layers, which is the whole point: one rate shock
+moves a fund's price down and its payout up **coherently**, because both are derived from the
+same state and the same duration, and the sim never learns they are related.
+
+**This dissolves both prerequisites above rather than waiting on them.** A separate provider
+does not go through `_align_inner`, `FactorKey` or `evidence_data.factor_names` at all — those
+belong to the state-space provider. It fits its own factors on their own histories (GS10 from
+1953, FEDFUNDS from 1954), so the 96-month window never binds it. The earlier claim that nothing
+about fixed income can be fitted until the joint fit is fixed is **wrong for this path**; it is
+true only for bolting bonds onto the existing state-space model, which this does not do. The
+joint fit's window is still worth fixing, but on its own merits and not as a blocker.
+
+It can also start un-fitted, the way `independent` does: hand-set parameters, an honest
+structural shape, and a fit later. That gets a terminal-wealth distribution out of a coherent
+rates model before any evidence-pipeline work at all.
+
+**One gap this surfaces immediately: cash earns nothing.** The engine has no interest on cash
+balances anywhere. With cash as one of the four sleeves and a short rate as one of the factors,
+that is not a rounding error — it biases the study against holding cash exactly when the short
+rate makes cash competitive, which is the regime where the question is interesting. A cash yield
+is the same `units x per-unit` mechanic as a fund distribution, tagged
+`InterestIncome(issuer_jurisdiction_id="federal_us")` for a Treasury money-market fund.
+
 #### Measured, because the first draft asserted these from memory
 
 Reproduced from the public upstreams the evidence repo caches (FRED/Yahoo/Zillow), so the
@@ -611,31 +647,30 @@ So the order is outcome-first, and deliberately not phase-first:
    flexible spender is never a forced seller, so a working tier policy should REDUCE the
    floor the histogram calls for. Everything else on this list refines a number; this one
    moves it.
-3. **A rates process inside the exogenous layer**, from which every bond-derived emission is
-   derived. Path A's engine half is landed (#3834, #3837); what remains is the model, and it
-   is the model rather than the instrument list because the coupling between a fund's price,
-   its payout and a bond's price is the thing being modeled. Two prerequisites fall out of it
-   and are worth naming separately, since either could be done first:
-   - **The fit must stop requiring one common window across every factor.** `_align_inner`'s
-     inner join lets crypto's 2017 start truncate a 73-year rates series to 96 months. Nothing
-     about fixed income can be fitted credibly until that is fixed, and every existing factor
-     is degraded by it today.
-   - **Emitted level series must stop being the same set as fitted factors.** A structural
-     model produces N emissions from K < N latent states; `FactorKey` and
-     `evidence_data.factor_names` currently assume the two are one list.
-4. **Whatever step 1 shows the answer is sensitive to.** Candidates, with the direction of
+3. **A small purpose-built exogenous provider**: cash, Treasuries, California municipals and
+   broad equity, off a handful of coupled macro factors, emitting the per-instrument dollar
+   primitives the sim already consumes. Path A's engine half is landed (#3834, #3837); what
+   remains is the model, and it is the model rather than the instrument list because the
+   coupling is the thing being modeled. It sits beside the existing providers rather than
+   replacing them, so it needs no change to the joint fit and can start un-fitted. Bring the
+   cash yield with it — cash currently earns nothing, which biases the study against one of
+   its own four sleeves.
+4. **The joint fit's single-window constraint**, on its own merits. `_align_inner`'s inner
+   join lets crypto's 2017 start truncate a 73-year rates series to 96 months, degrading every
+   existing factor. Not a blocker for step 3, which is why it is listed after it.
+5. **Whatever step 1 shows the answer is sensitive to.** Candidates, with the direction of
    their error where it is known: the tier/tax-residency bundle (reads optimistic, since a
    cheaper-location tier currently pays California tax); trading friction (recorded in
    `sim/TODO.md` with its direction); bond marking and pre-maturity sale, i.e. path B, which
    understates flexibility rather than risk and which path A mostly dissolves.
-5. **C8 and B6**, which are hygiene. C8 unifies the last parallel execution path and B6 puts
+6. **C8 and B6**, which are hygiene. C8 unifies the last parallel execution path and B6 puts
    money in cents at both boundaries (#3741: 25 config fields, 77 decoded columns, 141
    wire/frontend references, ~1168 construction sites — a program, not a PR, whose decode
    half is separable and buys exact reconciliation on its own). Both make the code better
    and neither makes the answer better, which is why they sit below a question that is still
    unanswered.
 
-The tempting order is 5, 2, 1 — finish the architecture, then add capability, then use it.
+The tempting order is 6, 2, 1 — finish the architecture, then add capability, then use it.
 That order has been wrong at every previous step of this plan: C7b was unblocked by D10, and
 the exogenous work above shrank by an order of magnitude the moment the question "do we need
 a rate at all" was asked instead of assumed.
