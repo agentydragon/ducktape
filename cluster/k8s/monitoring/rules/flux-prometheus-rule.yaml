@@ -9,8 +9,23 @@ spec:
   groups:
     - name: flux
       rules:
+        # Suspending a Flux object does not clear its Ready condition, so anything
+        # deliberately disabled reports Ready=False indefinitely. Before this exclusion
+        # 13 of the 18 firing FluxKustomizationNotReady alerts were suspended services
+        # (harbor/*, openhands/*, tandoor, sdr, ...) -- a permanent floor of ~156 ntfy
+        # messages/day that exhausted the provider's daily quota and took *all* paging
+        # down for 23h on 2026-08-05, criticals included.
+        #
+        # Gotcha: `unless` matches on label sets, NOT values, so the `== 1` inside the
+        # parens is load-bearing. Flux omits spec.suspend when unset (no series, which
+        # excludes nothing -- correct), but an object carrying an explicit
+        # `suspend: false` produces the series with value 0, and a bare
+        # `unless on (...) kube_..._suspended` would silently suppress a genuinely
+        # broken service.
         - alert: FluxKustomizationNotReady
-          expr: kube_customresource_flux_kustomization_ready{status!="True"} == 1
+          expr: |
+            kube_customresource_flux_kustomization_ready{status!="True"} == 1
+            unless on (namespace, name) (kube_customresource_flux_kustomization_suspended == 1)
           for: 15m
           labels:
             severity: warning
@@ -18,7 +33,9 @@ spec:
             summary: "Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} is not Ready"
             description: "Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes."
         - alert: FluxHelmReleaseNotReady
-          expr: kube_customresource_flux_helmrelease_ready{status!="True"} == 1
+          expr: |
+            kube_customresource_flux_helmrelease_ready{status!="True"} == 1
+            unless on (namespace, name) (kube_customresource_flux_helmrelease_suspended == 1)
           for: 15m
           labels:
             severity: warning
@@ -26,7 +43,9 @@ spec:
             summary: "Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} is not Ready"
             description: "Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes."
         - alert: FluxGitRepositoryNotReady
-          expr: kube_customresource_flux_gitrepository_ready{status!="True"} == 1
+          expr: |
+            kube_customresource_flux_gitrepository_ready{status!="True"} == 1
+            unless on (namespace, name) (kube_customresource_flux_gitrepository_suspended == 1)
           for: 15m
           labels:
             severity: warning

@@ -295,6 +295,16 @@ spec:
                         labelName: status
                         path: [status, conditions, "[type=Ready]", status]
                         list: ["True", "False", "Unknown"]
+                  # Flux does not clear the Ready condition when a Kustomization is
+                  # suspended, so a deliberately-disabled service reports Ready=False
+                  # forever. Exposing spec.suspend lets the *NotReady alerts exclude
+                  # them; without it they are indistinguishable from real failures.
+                  - name: flux_kustomization_suspended
+                    help: Whether the Flux Kustomization is suspended (spec.suspend).
+                    each:
+                      type: Gauge
+                      gauge:
+                        path: [spec, suspend]
               - groupVersionKind:
                   group: helm.toolkit.fluxcd.io
                   version: v2
@@ -311,6 +321,12 @@ spec:
                         labelName: status
                         path: [status, conditions, "[type=Ready]", status]
                         list: ["True", "False", "Unknown"]
+                  - name: flux_helmrelease_suspended
+                    help: Whether the Flux HelmRelease is suspended (spec.suspend).
+                    each:
+                      type: Gauge
+                      gauge:
+                        path: [spec, suspend]
               - groupVersionKind:
                   group: source.toolkit.fluxcd.io
                   version: v1
@@ -327,6 +343,12 @@ spec:
                         labelName: status
                         path: [status, conditions, "[type=Ready]", status]
                         list: ["True", "False", "Unknown"]
+                  - name: flux_gitrepository_suspended
+                    help: Whether the Flux GitRepository is suspended (spec.suspend).
+                    each:
+                      type: Gauge
+                      gauge:
+                        path: [spec, suspend]
                   - name: flux_gitrepository_artifact_size_bytes
                     help: Flux GitRepository artifact size in bytes.
                     each:
