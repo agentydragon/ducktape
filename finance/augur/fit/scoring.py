@@ -3,7 +3,7 @@
 Augur's `Scorable` protocol exposes one method — `predictive(historical, t,
 horizon=h)` — that returns a `numpyro.distributions.Distribution` describing
 the joint predictive over the cumulative h-step log-return at origin t. Every
-scoring metric (joint log-density, per-factor marginal log-densities,
+scoring metric (joint log-density, per-series marginal log-densities,
 continuous ranked probability score) is a projection of that distribution
 against an observation. This module is the catalogue of projections.
 
@@ -31,28 +31,28 @@ def joint_log_density(pred: dist.Distribution, observed: np.ndarray) -> float:
 
 
 def marginal_log_densities(
-    pred: dist.Distribution, observed: np.ndarray, factor_names: tuple[str, ...]
+    pred: dist.Distribution, observed: np.ndarray, series_names: tuple[str, ...]
 ) -> dict[str, float]:
-    """Per-factor *univariate* log-densities of `observed[i]` under the
-    marginal of `pred` at factor i.
+    """Per-series *univariate* log-densities of `observed[i]` under the
+    marginal of `pred` at series i.
 
-    The sum over factors equals the joint only when factors are
-    uncorrelated. The gap is what cross-factor structure (off-diagonal
+    The sum over series equals the joint only when the series are
+    uncorrelated. The gap is what cross-series structure (off-diagonal
     covariance, cointegration) buys.
     """
 
     mean, sd = _marginal_mean_sd(pred)
     obs = jnp.asarray(observed)
-    if mean.shape != obs.shape or len(factor_names) != int(mean.shape[-1]):
+    if mean.shape != obs.shape or len(series_names) != int(mean.shape[-1]):
         raise ValueError(
-            f"shape mismatch: pred.mean {mean.shape}, observed {obs.shape}, factor_names ({len(factor_names)},)"
+            f"shape mismatch: pred.mean {mean.shape}, observed {obs.shape}, series_names ({len(series_names)},)"
         )
     log_probs = jstats_norm.logpdf(obs, loc=mean, scale=sd)
-    return {name: float(log_probs[i]) for i, name in enumerate(factor_names)}
+    return {name: float(log_probs[i]) for i, name in enumerate(series_names)}
 
 
-def gaussian_crps(pred: dist.Distribution, observed: np.ndarray, factor_names: tuple[str, ...]) -> dict[str, float]:
-    """Per-factor Continuous Ranked Probability Score under the marginal
+def gaussian_crps(pred: dist.Distribution, observed: np.ndarray, series_names: tuple[str, ...]) -> dict[str, float]:
+    """Per-series Continuous Ranked Probability Score under the marginal
     Gaussian predictive. Closed form:
 
         CRPS(N(μ, σ²), y) = σ · [z (2Φ(z) - 1) + 2φ(z) - 1/√π]
@@ -67,11 +67,11 @@ def gaussian_crps(pred: dist.Distribution, observed: np.ndarray, factor_names: t
     obs = jnp.asarray(observed)
     z = (obs - mean) / sd
     crps = sd * (z * (2.0 * jstats_norm.cdf(z) - 1.0) + 2.0 * jstats_norm.pdf(z) - 1.0 / math.sqrt(math.pi))
-    return {name: float(crps[i]) for i, name in enumerate(factor_names)}
+    return {name: float(crps[i]) for i, name in enumerate(series_names)}
 
 
 def _marginal_mean_sd(pred: dist.Distribution) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Return (μ, σ) of the per-factor marginal of `pred`.
+    """Return (μ, σ) of the per-series marginal of `pred`.
 
     Closed form for any MultivariateNormal (σ_i = √Σ_ii). For other
     distributions we currently don't have a closed form — callers should
@@ -91,7 +91,7 @@ def _marginal_mean_sd(pred: dist.Distribution) -> tuple[jnp.ndarray, jnp.ndarray
 
 
 def empirical_marginal_mean_sd(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Fit per-factor (mean, sd) to a (N, F) cloud of samples. Used as a
+    """Fit per-series (mean, sd) to a (N, F) cloud of samples. Used as a
     fallback for predictives that aren't analytically MultivariateNormal
     (the closed-form scorers above then operate on these moments)."""
 

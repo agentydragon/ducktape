@@ -32,7 +32,7 @@ ZILLOW_RENT_REGIONS: dict[LocationId, tuple[str, str]] = {
     LocationId("vallejo_ca"): ("Vallejo", "CA"),
 }
 
-# Minimum overlapping months required across the aligned exogenous factors.
+# Minimum overlapping months required across the aligned exogenous series.
 MINIMUM_ALIGNED_MONTHS = 36
 
 
@@ -80,7 +80,7 @@ class FactorSeriesCalibration:
 
 @dataclass(frozen=True)
 class ExogenousEvidence:
-    factor_names: tuple[str, ...]
+    series_names: tuple[str, ...]
     monthly_log_returns: np.ndarray
     monthly_return_months: tuple[str, ...]
     marginal_returns: dict[str, PeriodReturns]
@@ -91,23 +91,23 @@ class ExogenousEvidence:
 
 
 def calibrate_series_path_priors(
-    factor_names: tuple[str, ...], marginal_returns: dict[str, PeriodReturns]
+    series_names: tuple[str, ...], marginal_returns: dict[str, PeriodReturns]
 ) -> tuple[dict[str, FactorSeriesCalibration], dict[str, float]]:
     calibration: dict[str, FactorSeriesCalibration] = {}
     priors: dict[str, float] = {}
-    for factor_name in factor_names:
-        if factor_name not in marginal_returns:
-            raise ValueError(f"missing marginal returns for exogenous factor {factor_name!r}")
-        returns = marginal_returns[factor_name]
+    for series_name in series_names:
+        if series_name not in marginal_returns:
+            raise ValueError(f"missing marginal returns for exogenous series {series_name!r}")
+        returns = marginal_returns[series_name]
         log_returns = np.asarray(returns.log_returns, dtype="float64")
         duration_months = np.asarray(returns.duration_months, dtype="float64")
         if log_returns.shape != duration_months.shape:
-            raise ValueError(f"{factor_name} marginal returns and durations have different shapes")
+            raise ValueError(f"{series_name} marginal returns and durations have different shapes")
         keep = np.isfinite(log_returns) & np.isfinite(duration_months) & (duration_months > 0)
         log_returns = log_returns[keep]
         duration_months = duration_months[keep]
         if len(log_returns) == 0:
-            raise ValueError(f"{factor_name} has no finite marginal returns")
+            raise ValueError(f"{series_name} has no finite marginal returns")
 
         observed_months = float(np.sum(duration_months))
         monthly_log_mu = float(np.sum(log_returns)) / observed_months
@@ -121,16 +121,16 @@ def calibrate_series_path_priors(
             monthly_log_vol_sigma / math.sqrt(max(observed_months, 1e-9)), MIN_MONTHLY_LOG_MU_SIGMA
         )
 
-        calibration[factor_name] = FactorSeriesCalibration(
+        calibration[series_name] = FactorSeriesCalibration(
             monthly_log_mu=monthly_log_mu,
             monthly_log_mu_sigma=monthly_log_mu_sigma,
             monthly_log_vol_sigma=monthly_log_vol_sigma,
             observed_months=observed_months,
             observation_count=len(log_returns),
         )
-        priors[f"{factor_name}_monthly_log_mu"] = monthly_log_mu
-        priors[f"{factor_name}_monthly_log_mu_sigma"] = monthly_log_mu_sigma
-        priors[f"{factor_name}_monthly_log_vol_sigma"] = monthly_log_vol_sigma
+        priors[f"{series_name}_monthly_log_mu"] = monthly_log_mu
+        priors[f"{series_name}_monthly_log_mu_sigma"] = monthly_log_mu_sigma
+        priors[f"{series_name}_monthly_log_vol_sigma"] = monthly_log_vol_sigma
     return calibration, priors
 
 
@@ -209,7 +209,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     fhfa = loading.monthly_last(_fred_frame(sources.FRED_FHFA_SF))
     mortgage30 = _fred_frame(sources.FRED_MORTGAGE30)
     # Home-value and rent evidence stay keyed by LocationId (their role-natural key); the
-    # flat factor wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
+    # flat series wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
     # boundaries below.
     home_values = {
         location_id: _zillow_frame(sources.ZILLOW_ZHVI, region_name=region_name, state=state)
@@ -219,16 +219,16 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         location_id: _zillow_frame(sources.ZILLOW_ZORI, region_name=region_name, state=state)
         for location_id, (region_name, state) in ZILLOW_RENT_REGIONS.items()
     }
-    home_factor_wire_id = {location_id: HomeValueKey(location_id=location_id).wire_id for location_id in home_values}
-    rent_factor_wire_id = {location_id: RentKey(location_id=location_id).wire_id for location_id in rents}
-    home_factor_names = tuple(home_factor_wire_id.values())
-    rent_factor_names = tuple(rent_factor_wire_id.values())
-    factor_names = (
+    home_series_wire_id = {location_id: HomeValueKey(location_id=location_id).wire_id for location_id in home_values}
+    rent_series_wire_id = {location_id: RentKey(location_id=location_id).wire_id for location_id in rents}
+    home_series_names = tuple(home_series_wire_id.values())
+    rent_series_names = tuple(rent_series_wire_id.values())
+    series_names = (
         SP500_KEY.wire_id,
         BTC_KEY.wire_id,
         ETH_KEY.wire_id,
-        *home_factor_names,
-        *rent_factor_names,
+        *home_series_names,
+        *rent_series_names,
         "inflation",
     )
     aligned = _align_inner(
@@ -236,8 +236,8 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             SP500_KEY.wire_id: _monthly_unit_returns(sp500_total_return),
             BTC_KEY.wire_id: _monthly_unit_returns(btc_price),
             ETH_KEY.wire_id: _monthly_unit_returns(eth_price),
-            **{home_factor_wire_id[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
-            **{rent_factor_wire_id[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
+            **{home_series_wire_id[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
+            **{rent_series_wire_id[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
             "inflation": _monthly_unit_returns(cpi),
         },
         value_column="log_return",
@@ -257,11 +257,11 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         SP500_KEY.wire_id: _returns(sp500_returns),
         BTC_KEY.wire_id: _returns(btc_returns),
         ETH_KEY.wire_id: _returns(eth_returns),
-        **{home_factor_wire_id[loc]: _returns(returns) for loc, returns in home_value_returns.items()},
-        **{rent_factor_wire_id[loc]: _returns(returns) for loc, returns in rent_returns.items()},
+        **{home_series_wire_id[loc]: _returns(returns) for loc, returns in home_value_returns.items()},
+        **{rent_series_wire_id[loc]: _returns(returns) for loc, returns in rent_returns.items()},
         "inflation": _returns(cpi_returns),
     }
-    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)
+    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
 
     latest_observations = {
         "sp500_price_latest": _monthly_latest(sp500_price, sources.FRED_SP500),
@@ -269,7 +269,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         "btc_close_latest": _monthly_latest(btc_price, sources.YAHOO_BTC),
         "eth_close_latest": _monthly_latest(eth_price, sources.YAHOO_ETH),
         "zillow_home_value_latest_by_factor": {
-            home_factor_wire_id[loc]: {
+            home_series_wire_id[loc]: {
                 **_monthly_latest(series, sources.ZILLOW_ZHVI),
                 "region_name": ZILLOW_HOME_VALUE_REGIONS[loc][0],
                 "state": ZILLOW_HOME_VALUE_REGIONS[loc][1],
@@ -277,7 +277,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             for loc, series in home_values.items()
         },
         "zillow_rent_latest_by_factor": {
-            rent_factor_wire_id[loc]: {
+            rent_series_wire_id[loc]: {
                 **_monthly_latest(series, sources.ZILLOW_ZORI),
                 "region_name": ZILLOW_RENT_REGIONS[loc][0],
                 "state": ZILLOW_RENT_REGIONS[loc][1],
@@ -294,7 +294,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         "spy_adjusted_close_monthly_return_count": len(marginal[SP500_KEY.wire_id].log_returns),
         "housing_return_sources": {
             "zillow_city_zhvi_by_factor": {
-                home_factor_wire_id[loc]: {
+                home_series_wire_id[loc]: {
                     **_return_frame_summary(
                         returns, source=sources.ZILLOW_ZHVI.provenance_label, used_as_marginal_evidence=True
                     ),
@@ -312,7 +312,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         },
         "rent_return_sources": {
             "zillow_city_zori_by_factor": {
-                rent_factor_wire_id[loc]: {
+                rent_series_wire_id[loc]: {
                     **_return_frame_summary(
                         returns, source=sources.ZILLOW_ZORI.provenance_label, used_as_marginal_evidence=True
                     ),
@@ -335,8 +335,8 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     }
 
     return ExogenousEvidence(
-        factor_names=factor_names,
-        monthly_log_returns=aligned.select(list(factor_names)).to_numpy().astype("float64"),
+        series_names=series_names,
+        monthly_log_returns=aligned.select(list(series_names)).to_numpy().astype("float64"),
         monthly_return_months=tuple(aligned["month"].dt.strftime("%Y-%m").to_list()),
         marginal_returns=marginal,
         series_path_calibration=series_path_calibration,

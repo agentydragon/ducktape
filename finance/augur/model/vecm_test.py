@@ -33,7 +33,7 @@ def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     # Synthetic 2-factor cointegration data: the factor identities are arbitrary (the test
     # exercises fit/predictive shapes, not series semantics) — two distinct level keys suffice.
     return HistoricalSeries(
-        factor_names=(SecurityKey(symbol=SP500_SYMBOL), InflationKey()), levels=levels, months=months
+        series_names=(SecurityKey(symbol=SP500_SYMBOL), InflationKey()), levels=levels, months=months
     )
 
 
@@ -41,7 +41,7 @@ def _historical_series_4factor(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
     return HistoricalSeries(
-        factor_names=(
+        series_names=(
             SecurityKey(symbol=SP500_SYMBOL),
             HomeValueKey(location_id=LocationId("san_francisco_ca")),
             RentKey(location_id=LocationId("san_francisco_ca")),
@@ -203,7 +203,7 @@ class TestVecmModel:
         levels = np.exp(log_levels - log_levels[0])
         months = tuple(f"2010-{i:02d}" for i in range(levels.shape[0]))
         historical = HistoricalSeries(
-            factor_names=(
+            series_names=(
                 SecurityKey(symbol=SP500_SYMBOL),
                 SecurityKey(symbol=SecuritySymbol("btc")),
                 SecurityKey(symbol=SecuritySymbol("eth")),

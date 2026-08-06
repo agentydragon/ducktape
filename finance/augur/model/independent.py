@@ -72,15 +72,6 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
     label: str = "independent"
     pe_marks: dict[IssuerId, ScalarSeriesSpec] = Field(default_factory=dict)
 
-    @property
-    def factor_names(self) -> tuple[LevelSeriesKey, ...]:
-        """The typed level-series keys this provider models, in iteration order.
-
-        PE marks are not included — they are not level series and have no GBM marginal.
-        """
-
-        return tuple(self._level_specs_by_level_key())
-
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
         return frozenset(self._level_specs_by_level_key())
 
@@ -100,18 +91,16 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         )
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
-        """Joint predictive over the cumulative `horizon`-step log-return at
-        origin t for the factor list `historical.factor_names`.
+        """Joint predictive over the cumulative `horizon`-step log-return at origin t, for the
+        series `historical.series_names` names.
 
-        Under per-series independence (the whole point of this provider) the
-        joint is a `MultivariateNormal` with diagonal covariance. The
-        marginal for factor i is `N(horizon · μ_i, horizon · σ_i²)` — h
-        independent N(μ, σ²) increments cumulate to N(hμ, hσ²).
+        There is no factor basis here and no covariance to speak of: under per-series
+        independence — the whole point of this provider — the joint is a `MultivariateNormal`
+        with DIAGONAL covariance, and the marginal for series i is `N(horizon · μ_i,
+        horizon · σ_i²)`, since h independent N(μ, σ²) increments cumulate to N(hμ, hσ²).
 
-        Returns `None` if any factor in `historical.factor_names` isn't
-        backed by a GBM scalar in the provider config — Constant /
-        Deterministic factors have zero predictive variance and the
-        density is degenerate.
+        Returns `None` if any requested series isn't backed by a GBM scalar — a Constant or
+        Deterministic series has zero predictive variance and the density is degenerate.
         """
         if horizon < 1:
             raise ValueError(f"horizon must be >= 1; got {horizon}")
@@ -119,13 +108,13 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         if t + horizon > n_steps:
             return None
 
-        # `historical.factor_names` are typed LevelSeriesKeys; match them directly against
+        # `historical.series_names` are typed LevelSeriesKeys; match them directly against
         # the typed level-spec map (a series the provider doesn't model isn't present → None).
-        spec_by_factor = self._level_specs_by_level_key()
+        spec_by_series = self._level_specs_by_level_key()
         mus: list[float] = []
         sigmas: list[float] = []
-        for factor in historical.factor_names:
-            spec = spec_by_factor.get(factor)
+        for series in historical.series_names:
+            spec = spec_by_series.get(series)
             if not isinstance(spec, GeometricBrownian):
                 return None
             mus.append(float(spec.monthly_log_return_mu) * horizon)
@@ -136,11 +125,8 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         return dist.MultivariateNormal(mean_arr, covariance_matrix=cov_arr)
 
     def _level_specs_by_level_key(self) -> dict[LevelSeriesKey, ScalarSeriesSpec]:
-        """The provider's level specs keyed by their typed `LevelSeriesKey`.
-
-        The role projections union into one `LevelSeriesKey`-keyed map for
-        `factor_names` / `predictive`.
-        """
+        """The provider's level specs keyed by their typed `LevelSeriesKey` — the role
+        projections unioned into one map, for `emittable_level_keys` and `predictive`."""
 
         return self.by_level_key()
 

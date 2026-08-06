@@ -185,15 +185,15 @@ type PropertyValueKey = Annotated[HomeValueKey, Field(discriminator="kind")]
 type IndexSeriesKey = Annotated[InflationKey | RentKey, Field(discriminator="kind")]
 """Escalates a recurring amount: CPI inflation or a location's rent series."""
 
-type LevelSeriesKeyUnion = InflationKey | SecurityKey | SecurityDistributionKey | HomeValueKey | RentKey
-"""The level-key classes as a bare union, without the discriminator annotation.
+type LevelSeriesKey = Annotated[
+    InflationKey | SecurityKey | SecurityDistributionKey | HomeValueKey | RentKey, Field(discriminator="kind")
+]
+"""Every series the exogenous boundary can EMIT. Not a model's factor basis.
 
-Exists so a consumer that needs to EXTEND the union — the state-space covariance basis, which
-spans level series and private-equity marks together — can name the members once instead of
-re-listing them. That re-listing is a silent trap: a new kind missing from the copy is dropped
-from the basis with no type error, because both spellings are valid unions."""
-
-type LevelSeriesKey = Annotated[LevelSeriesKeyUnion, Field(discriminator="kind")]
+A model that has factors at all — only the vector-space/correlation ones do — names them in its
+own private type, and is free to fit fewer series than the boundary can carry, or more things
+than it emits. `state_space_factor.FactorKey` deliberately lists a subset of these plus a kind
+that is not a level series at all, and `IndependentModel` has no factor concept whatsoever."""
 
 
 class PrivateEquityRegimeCode(IntEnum):

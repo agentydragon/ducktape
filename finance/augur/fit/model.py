@@ -27,7 +27,6 @@ from numpyro import distributions as dist
 
 from finance.augur.model.exogenous import Sampler
 from finance.augur.model.path_models.scenarios import HistoricalSeries
-from finance.augur.model.series import LevelSeriesKey
 
 
 class Fittable(Sampler, Protocol):
@@ -39,7 +38,6 @@ class Fittable(Sampler, Protocol):
     """
 
     label: str
-    factor_names: tuple[LevelSeriesKey, ...]
 
     def fit(self, historical: HistoricalSeries) -> None: ...
 
@@ -52,10 +50,16 @@ class Scorable(Sampler, Protocol):
     A `Scorable` need not be `Fittable` — a YAML-configured Independent
     provider exposes closed-form Gaussian predictives from hand-tuned
     GBM params, without ever calling `fit()`.
+
+    Neither protocol requires a `factor_names`. A factor is a private implementation concept
+    of the vector-space/correlation models; a per-series independent model has no basis, and a
+    provider returning a constant for everything is valid and has nothing to name. Requiring it
+    here is what previously forced `IndependentModel` to expose a factor list that only its own
+    test ever read. What a model is asked for is a `HistoricalSeries` — observed series — and
+    what it does with them is its own business.
     """
 
     label: str
-    factor_names: tuple[LevelSeriesKey, ...]
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         """Joint predictive distribution over the cumulative `horizon`-step

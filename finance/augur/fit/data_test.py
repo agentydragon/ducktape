@@ -33,7 +33,7 @@ def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_eviden
     historical, evidence = load_fred_only_evidence()
 
     # `historical` carries typed LevelSeriesKeys; the evidence layer keeps the wire-id strings.
-    assert tuple(factor.wire_id for factor in historical.factor_names) == evidence.factor_names
+    assert tuple(factor.wire_id for factor in historical.series_names) == evidence.series_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)
     assert evidence.latest_observations["evidence_mode"] == {
         "mode": "fred_only_synthesized",

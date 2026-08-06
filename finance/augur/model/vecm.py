@@ -269,7 +269,7 @@ class VecmModel:
         svi = SVI(_vecm_generative, guide, Adam(self.config.learning_rate), Trace_ELBO())
         result = svi.run(rng, self.config.n_iters, jnp.asarray(log_levels), progress_bar=False)
         self.params = {k: np.asarray(v) for k, v in result.params.items()}
-        self.factor_names = tuple(historical.factor_names)
+        self.factor_names = tuple(historical.series_names)
         self.n_factors = int(log_levels.shape[1])
         self.train_log_levels = log_levels.copy()
 

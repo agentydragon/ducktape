@@ -126,7 +126,7 @@ def held_out_predictive_score(
     held_out_count = n_steps - train_end
     # Report labels are the factors' wire ids — the metric breakdown is a human-readable
     # {factor_label: score} report; the typed LevelSeriesKey identity rides on `historical`.
-    factor_labels = tuple(factor.wire_id for factor in historical.factor_names)
+    factor_labels = tuple(factor.wire_id for factor in historical.series_names)
     log_densities: list[float] = []
     marginal_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     crps_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
@@ -218,7 +218,7 @@ def rolling_origin_predictive_score(
         raise ValueError(f"min_train {min_train} leaves no held-out months (n_steps={n_steps})")
 
     label_holder = model_factory().label
-    factor_labels = tuple(factor.wire_id for factor in historical.factor_names)
+    factor_labels = tuple(factor.wire_id for factor in historical.series_names)
     fit_cache: FittableScorable | None = None
     fit_origin: int | None = None
     log_densities: list[float] = []
@@ -230,7 +230,7 @@ def rolling_origin_predictive_score(
         if fit_cache is None or (t - min_train) % refit_every == 0:
             current_fit = model_factory()
             train_series = HistoricalSeries(
-                factor_names=historical.factor_names,
+                series_names=historical.series_names,
                 levels=historical.levels[: t + 1],
                 months=historical.months[: t + 1],
             )

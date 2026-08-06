@@ -2,11 +2,14 @@
 
 `MirroringSampler` wraps any exogenous `Sampler` (the way `CompositeModel` composes
 macro + PE) and declares that one series is, for now, the same market as another: the
-inner model fits `source`, and the wrapper emits `target` as a per-rollout copy of the
+inner model EMITS `source`, and the wrapper emits `target` as a per-rollout copy of the
 sampled `source` path. Use it for a sub-area that shares its city's price/rent index when
 we lack the data to model them apart. Because `target` becomes a first-class produced
-series — indistinguishable from a fitted factor to calibration, projection, and product —
-swapping in a real fitted `source` later needs zero downstream change.
+series — indistinguishable from any other emission to calibration, projection, and product —
+swapping in a real modeled `source` later needs zero downstream change.
+
+Says "emits", never "fits": the wrapped `Sampler` may not fit anything at all (a constant
+provider is valid), so what this can require of it is that the source is emittable.
 """
 
 from __future__ import annotations
@@ -52,10 +55,12 @@ class MirroringSampler:
         emittable = self.inner.emittable_level_keys()
         seen_targets: set[LevelSeriesKey] = set()
         for mirror in self.mirror_series:
+            # "emittable", not "fitted": this wraps any `Sampler`, including one that has no
+            # factors and never fits anything, and `emittable_level_keys` is what was checked.
             if mirror.source not in emittable:
-                raise ValueError(f"mirror source {mirror.source.wire_id!r} is not a fitted level factor")
+                raise ValueError(f"mirror source {mirror.source.wire_id!r} is not a series the wrapped model emits")
             if mirror.target in emittable:
-                raise ValueError(f"mirror target {mirror.target.wire_id!r} is already a fitted factor")
+                raise ValueError(f"mirror target {mirror.target.wire_id!r} is already emitted by the wrapped model")
             if mirror.target.kind != mirror.source.kind:
                 raise ValueError(
                     f"mirror target {mirror.target.wire_id!r} and source {mirror.source.wire_id!r} must share a kind"

@@ -185,7 +185,7 @@ class StateSpaceModel:
     ) -> StateSpaceModelArtifact:
         # The artifact's on-disk factor identity is the wire-id string; the typed
         # FactorKeys on `historical` project to it here, the artifact's write boundary.
-        base_factor_names = tuple(factor.wire_id for factor in historical.factor_names)
+        base_factor_names = tuple(factor.wire_id for factor in historical.series_names)
         returns = historical_log_returns(historical)
         if returns.shape[0] < 3:
             raise ValueError("state-space training needs at least three monthly return rows")
@@ -341,14 +341,14 @@ class StateSpaceModel:
         n_steps = historical.levels.shape[0] - 1
         if t + horizon > n_steps:
             return None
-        # `historical.factor_names` are typed FactorKeys; the artifact indexes by their
+        # `historical.series_names` are typed FactorKeys; the artifact indexes by their
         # wire id (its on-disk factor identity). Align columns through that wire-id projection.
         factor_index = {factor: idx for idx, factor in enumerate(self.artifact.factor_names)}
         try:
-            indices = [factor_index[factor.wire_id] for factor in historical.factor_names]
+            indices = [factor_index[factor.wire_id] for factor in historical.series_names]
         except KeyError:
             return None
-        mean = np.asarray([self.artifact.monthly_log_return_mu[factor.wire_id] for factor in historical.factor_names])
+        mean = np.asarray([self.artifact.monthly_log_return_mu[factor.wire_id] for factor in historical.series_names])
         cov = np.asarray(self.artifact.monthly_log_return_cov, dtype=np.float64)[np.ix_(indices, indices)]
         return dist.MultivariateNormal(
             jnp.asarray(mean * horizon, dtype=jnp.float32),

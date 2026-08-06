@@ -93,7 +93,7 @@ def evaluate_all(
             fit_train_end = max(1, round((historical.levels.shape[0] - 1) * train_fraction))
             # Mutating fit on a fresh instance avoids leaking state across calls.
             train_series = HistoricalSeries(
-                factor_names=historical.factor_names,
+                series_names=historical.series_names,
                 levels=historical.levels[: fit_train_end + 1],
                 months=historical.months[: fit_train_end + 1],
             )
@@ -118,7 +118,7 @@ def evaluate_all(
         )
         multi_step_rows.append({"model": spec.label, **asdict(multi_step)})
     return {
-        "factor_names": list(historical.factor_names),
+        "factor_names": list(historical.series_names),
         "n_steps": historical.levels.shape[0] - 1,
         "first_month": historical.months[0],
         "last_month": historical.months[-1],

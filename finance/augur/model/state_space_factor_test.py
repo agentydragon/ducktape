@@ -9,6 +9,7 @@ from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
     IssuerId,
+    LevelSeriesKind,
     LocationId,
     RentKey,
     SecurityKey,
@@ -16,6 +17,16 @@ from finance.augur.model.series import (
 from finance.augur.model.state_space_factor import FactorKey, PrivateEquityMarkKey, parse_factor_key
 
 _ADAPTER: TypeAdapter[FactorKey] = TypeAdapter(FactorKey)
+
+# One structural example per level kind, so the coverage test below can assert that each is
+# accepted or rejected rather than only that the kind was thought about.
+_EXAMPLE_BY_KIND: dict[LevelSeriesKind, dict[str, str]] = {
+    LevelSeriesKind.INFLATION: {"kind": "inflation"},
+    LevelSeriesKind.SECURITY: {"kind": "security", "symbol": "SPY"},
+    LevelSeriesKind.SECURITY_DISTRIBUTION: {"kind": "security_distribution", "symbol": "bnd"},
+    LevelSeriesKind.HOME_VALUE: {"kind": "home_value", "location_id": "san_francisco_ca"},
+    LevelSeriesKind.RENT: {"kind": "rent", "location_id": "vallejo_ca"},
+}
 
 
 def test_parse_factor_key_decodes_level_series() -> None:
@@ -58,6 +69,42 @@ def test_discriminated_union_validates_each_variant() -> None:
 def test_parse_factor_key_rejects_unknown_wire_id() -> None:
     with pytest.raises(ValueError, match="neither a level series nor a private-equity mark"):
         parse_factor_key("mystery:thing")
+
+
+def test_parse_factor_key_rejects_an_emittable_series_this_model_does_not_fit() -> None:
+    """A level kind added for another provider is not automatically a state-space factor.
+
+    `security_distribution` is emittable and has a valid wire id, so it decodes fine as a level
+    key — and would land in the covariance basis by default, where `_coupling_allowed` falls
+    through and gives it half its empirical correlation to every macro factor. Being emittable
+    is not the same as being fitted here.
+    """
+
+    with pytest.raises(ValueError, match="does not fit"):
+        parse_factor_key("security_distribution:bnd")
+
+
+def test_factor_key_covers_every_level_kind_deliberately() -> None:
+    """Fails when a `LevelSeriesKind` is added, which is the point.
+
+    `FactorKey` lists its level members explicitly rather than deriving them from the level-key
+    union, so that a new emission kind cannot join this model's basis by default. The cost of
+    that choice is drift, and this is what catches it: adding a kind fails here until someone
+    decides which side it belongs on and records the decision in this set.
+    """
+
+    fitted = {LevelSeriesKind.INFLATION, LevelSeriesKind.SECURITY, LevelSeriesKind.HOME_VALUE, LevelSeriesKind.RENT}
+    not_fitted = {LevelSeriesKind.SECURITY_DISTRIBUTION}
+
+    assert fitted | not_fitted == set(LevelSeriesKind), (
+        "a LevelSeriesKind was added without deciding whether the state-space model fits it. "
+        "If it does, add it to FactorKey and to `fitted` here; if it does not, add it to `not_fitted`."
+    )
+    for kind in fitted:
+        assert _ADAPTER.validate_python(_EXAMPLE_BY_KIND[kind]).kind == kind
+    for kind in not_fitted:
+        with pytest.raises(ValidationError):
+            _ADAPTER.validate_python(_EXAMPLE_BY_KIND[kind])
 
 
 def test_extra_forbid_rejects_stray_keys() -> None:

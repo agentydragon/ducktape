@@ -67,7 +67,7 @@ def fit_state_space_artifact(
 def _latest_level_by_factor(evidence: ExogenousEvidence) -> dict[str, float]:
     return {
         factor: _latest_factor_observation(evidence.latest_observations, factor).value
-        for factor in evidence.factor_names
+        for factor in evidence.series_names
     }
 
 
@@ -75,7 +75,7 @@ def _conditioning_from_evidence(
     evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
 ) -> ExogenousConditioningContext:
     observations: dict[str, tuple[ExogenousObservedPoint, ...]] = {
-        factor: (_latest_factor_observation(evidence.latest_observations, factor),) for factor in evidence.factor_names
+        factor: (_latest_factor_observation(evidence.latest_observations, factor),) for factor in evidence.series_names
     }
     for fitted in private_factors:
         observations[fitted.factor.factor_name] = (fitted.conditioning_point,)
@@ -207,7 +207,7 @@ def _historical_cumulative_return(
     historical: HistoricalSeries, factor_name: str, start: date, end: date
 ) -> float | None:
     try:
-        factor_idx = [factor.wire_id for factor in historical.factor_names].index(factor_name)
+        factor_idx = [factor.wire_id for factor in historical.series_names].index(factor_name)
     except ValueError:
         return None
     periods = [pd.Period(month, freq="M") for month in historical.months]
@@ -224,7 +224,7 @@ def _historical_cumulative_return(
 
 
 def _monthly_sigma(historical: HistoricalSeries, factor_name: str) -> float:
-    factor_idx = [factor.wire_id for factor in historical.factor_names].index(factor_name)
+    factor_idx = [factor.wire_id for factor in historical.series_names].index(factor_name)
     returns = np.diff(np.log(historical.levels[:, factor_idx]))
     return float(np.std(returns, ddof=1))
 
@@ -233,7 +233,7 @@ def _source_manifest(
     evidence: ExogenousEvidence, private_factors: tuple[FittedPrivateEquityStateSpaceFactor, ...]
 ) -> dict[str, Any]:
     return {
-        "public_factor_names": evidence.factor_names,
+        "public_factor_names": evidence.series_names,
         "monthly_return_months": {
             "first": evidence.monthly_return_months[0],
             "last": evidence.monthly_return_months[-1],

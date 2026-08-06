@@ -1,4 +1,4 @@
-"""Load aligned monthly log-returns for the exogenous factors.
+"""Load aligned monthly log-returns for the exogenous series.
 
 `load_evidence(...)` returns a typed `(HistoricalSeries, ExogenousEvidence)`
 tuple from the public Yahoo-SPY, Zillow, and FRED source data (paths are
@@ -61,7 +61,7 @@ def load_historical(*, fred_only: bool = False) -> HistoricalSeries:
 
 def _historical_from_evidence(evidence: ExogenousEvidence) -> HistoricalSeries:
     return _historical_from_log_returns(
-        evidence.factor_names, evidence.monthly_log_returns, evidence.monthly_return_months
+        evidence.series_names, evidence.monthly_log_returns, evidence.monthly_return_months
     )
 
 
@@ -70,10 +70,10 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     `ExogenousEvidence` matching the production loader's shape with what we
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
     SF for housing, FRED rent CPI, FRED US CPI, FRED 30-year mortgage."""
-    # Home-value factors are derived structurally from the configured locations (each one's
+    # Home-value series are derived structurally from the configured locations (each one's
     # HomeValueKey wire id); the FRED-only path replicates one Case-Shiller SF series across them.
-    home_factor_names = tuple(HomeValueKey(location_id=loc).wire_id for loc in ZILLOW_HOME_VALUE_REGIONS)
-    factor_names = (SP500_KEY.wire_id, *home_factor_names, "rent:san_francisco_ca", "inflation")
+    home_series_names = tuple(HomeValueKey(location_id=loc).wire_id for loc in ZILLOW_HOME_VALUE_REGIONS)
+    series_names = (SP500_KEY.wire_id, *home_series_names, "rent:san_francisco_ca", "inflation")
     sp500 = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SP500))
     home = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SFXRSA))
     rent = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SF_RENT_CPI))
@@ -83,7 +83,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     aligned = _align_inner(
         {
             SP500_KEY.wire_id: sp500,
-            **dict.fromkeys(home_factor_names, home),
+            **dict.fromkeys(home_series_names, home),
             "rent:san_francisco_ca": rent,
             "inflation": cpi,
         },
@@ -92,21 +92,21 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     if aligned.height < 36:
         raise ValueError(f"only {aligned.height} aligned months across the FRED-only synthesized series")
 
-    monthly_log_returns = np.diff(np.log(aligned.select(list(factor_names)).to_numpy().astype("float64")), axis=0)
+    monthly_log_returns = np.diff(np.log(aligned.select(list(series_names)).to_numpy().astype("float64")), axis=0)
     return_months = tuple(aligned["month"].dt.strftime("%Y-%m").to_list()[1:])
-    historical = _historical_from_log_returns(factor_names, monthly_log_returns, return_months)
+    historical = _historical_from_log_returns(series_names, monthly_log_returns, return_months)
 
     durations = np.ones_like(monthly_log_returns[:, 0])
     marginal = {
         name: PeriodReturns(log_returns=monthly_log_returns[:, idx], duration_months=durations)
-        for idx, name in enumerate(factor_names)
+        for idx, name in enumerate(series_names)
     }
-    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)
+    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(series_names, marginal)
     latest_observations: dict[str, Any] = {
         "sp500_price_latest": _monthly_latest(sp500, FRED_SP500),
         "case_shiller_sf_latest": _monthly_latest(home, FRED_SFXRSA),
         "case_shiller_home_value_latest_by_factor": {
-            factor_name: _monthly_latest(home, FRED_SFXRSA) for factor_name in home_factor_names
+            series_name: _monthly_latest(home, FRED_SFXRSA) for series_name in home_series_names
         },
         "sf_rent_cpi_latest": _monthly_latest(rent, FRED_SF_RENT_CPI),
         "cpi_latest": _monthly_latest(cpi, FRED_CPI),
@@ -122,7 +122,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         },
     }
     evidence = ExogenousEvidence(
-        factor_names=factor_names,
+        series_names=series_names,
         monthly_log_returns=monthly_log_returns,
         monthly_return_months=return_months,
         marginal_returns=marginal,
@@ -135,7 +135,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
 
 
 def _historical_from_log_returns(
-    factor_names: tuple[str, ...], monthly_log_returns: np.ndarray, return_months: tuple[str, ...]
+    series_names: tuple[str, ...], monthly_log_returns: np.ndarray, return_months: tuple[str, ...]
 ) -> HistoricalSeries:
     n_factors = monthly_log_returns.shape[1]
     cum = np.concatenate([np.zeros((1, n_factors)), np.cumsum(monthly_log_returns, axis=0)], axis=0)
@@ -145,7 +145,7 @@ def _historical_from_log_returns(
     year, month = map(int, return_months[0].split("-"))
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     months = (f"{prev_year:04d}-{prev_month:02d}", *return_months)
-    # The evidence layer carries wire-id factor names; this is the typed boundary where they
+    # The evidence layer carries wire-id series names; this is the typed boundary where they
     # decode to LevelSeriesKeys for the model-facing HistoricalSeries.
-    level_keys = tuple(parse_level_series_key(name) for name in factor_names)
-    return HistoricalSeries(factor_names=level_keys, levels=levels, months=months)
+    level_keys = tuple(parse_level_series_key(name) for name in series_names)
+    return HistoricalSeries(series_names=level_keys, levels=levels, months=months)

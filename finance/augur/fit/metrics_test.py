@@ -134,7 +134,7 @@ def _toy_historical(n_steps: int, *, mu: np.ndarray, sigma: np.ndarray, seed: in
     log_returns = rng.normal(loc=mu, scale=sigma, size=(n_steps, n_factors))
     levels = np.exp(np.concatenate([np.zeros((1, n_factors)), np.cumsum(log_returns, axis=0)], axis=0))
     months = tuple(f"2000-{i:02d}" for i in range(n_steps + 1))
-    return HistoricalSeries(factor_names=_synthetic_factor_keys(n_factors), levels=levels, months=months)
+    return HistoricalSeries(series_names=_synthetic_factor_keys(n_factors), levels=levels, months=months)
 
 
 class TestHeldOutPredictiveScore:

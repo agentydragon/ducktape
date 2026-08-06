@@ -9,16 +9,25 @@ from finance.augur.model.series import LevelSeriesKey
 
 @dataclass(frozen=True)
 class HistoricalSeries:
-    factor_names: tuple[LevelSeriesKey, ...]
+    """Observed monthly levels, one column per series — the shared training/scoring input.
+
+    `series_names`, not `factor_names`: these are OBSERVATIONS, and a factor is a private
+    implementation concept of the vector-space/correlation models. Only those name their own
+    basis, and they are free to fit a different set than they were shown; a per-series
+    independent model has no basis at all, and a provider that returns a constant for
+    everything is perfectly valid and never encounters the word.
+    """
+
+    series_names: tuple[LevelSeriesKey, ...]
     levels: np.ndarray
     months: tuple[str, ...]
 
     def __post_init__(self) -> None:
         if self.levels.ndim != 2:
             raise ValueError(f"levels must be 2-D (T+1, F); got shape {self.levels.shape}")
-        if self.levels.shape[1] != len(self.factor_names):
+        if self.levels.shape[1] != len(self.series_names):
             raise ValueError(
-                f"levels has {self.levels.shape[1]} factor columns but factor_names has {len(self.factor_names)}"
+                f"levels has {self.levels.shape[1]} series columns but series_names has {len(self.series_names)}"
             )
         if self.levels.shape[0] != len(self.months):
             raise ValueError(f"levels has {self.levels.shape[0]} time rows but months has {len(self.months)}")

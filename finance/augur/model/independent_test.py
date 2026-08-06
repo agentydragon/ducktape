@@ -121,9 +121,10 @@ def test_realized_model_keeps_role_structure(example_config: IndependentProvider
     assert set(model.property_values.home_value) == {"san_francisco_ca"}
     assert set(model.index_series.rent) == {"san_francisco_ca"}
     assert set(model.pe_marks) == {"private_equity_x"}
-    # The level series surface as typed FactorKeys (a subset of which are LevelSeriesKeys),
-    # one per series across all roles.
-    assert {key.wire_id for key in model.factor_names} == {
+    # The level series surface as typed LevelSeriesKeys, one per series across all roles.
+    # Through `emittable_level_keys`, which is the only thing that ever asked: this provider
+    # is per-series independent, so it has no factor basis to expose and no longer pretends to.
+    assert {key.wire_id for key in model.emittable_level_keys()} == {
         "inflation",
         "security:SPY",
         "home_value:san_francisco_ca",
