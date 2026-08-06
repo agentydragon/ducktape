@@ -95,31 +95,74 @@ spec:
               - namespace
           - target_matchers:
               - alertname = InfoInhibitor
+        # ntfy is the DEFAULT receiver and suppression is an explicit denylist below.
+        #
+        # This used to be an allowlist (`receiver: "null"` by default, one child route
+        # naming the alertnames that page). That fails silently in the direction that
+        # matters: an alert not named in the allowlist is discarded with no signal
+        # anywhere, so a newly added rule looks healthy and fires into nothing. It cost
+        # a 45h haku-console connector outage whose alert had been built, verified
+        # firing, and never routed; and it silently dropped ControlPlaneLeasePutLatency
+        # when that alert was renamed and the allowlist regex kept the old names.
+        # Defaulting to ntfy makes the failure mode "too loud" rather than "silent".
+        #
+        # The denylist below reproduces the previous delivered set EXACTLY: every
+        # alertname defined in the ruler as of 2026-08-06 that was not in the old
+        # allowlist is listed here (116 names; 21 of them critical). Loosening it is
+        # deliberately a separate change -- this one is a behavioral no-op.
+        #
+        # Deviation from that parity: a NEW alertname, from a chart upgrade or a new
+        # rule, is not in the denylist and therefore pages. That is the point of the
+        # inversion, and it is the one behavior this change does alter.
         route:
-          group_by: ["namespace"]
           group_wait: 30s
           group_interval: 5m
-          repeat_interval: 12h
-          receiver: "null"
+          repeat_interval: 2h
+          receiver: ntfy
+          # One alert per ntfy message. ntfy.sh caps a published message at
+          # ~4KB; a group_by of ["namespace"] bundled every flux-system alert
+          # (21+ FluxKustomizationNotReady during a storm) into one notification
+          # that, expanded by the X-Template "alertmanager" renderer, exceeded
+          # the cap and was rejected with HTTP 400 code 40041 ("message or title
+          # is too large after replacing template"). Alertmanager treats 4xx as
+          # unrecoverable, so alerts were silently dropped exactly when many were
+          # firing. group_by ["..."] disables aggregation so each alert is its
+          # own small message.
+          #
+          # Gotcha: this trades a size limit for a rate limit. One message per
+          # alert instance against ntfy.sh's free daily quota is what produced
+          # the 429 (code 42908) outage that took paging down for 23h on
+          # 2026-08-05. It holds only while the delivered set stays this small --
+          # revisit group_by (["alertname"] bounds both) before widening the
+          # denylist, not after.
+          group_by: ["..."]
           routes:
+            # Everything below here is suppressed. Grouped by family so pruning is
+            # a line edit rather than a diff against one 3KB regex.
             - receiver: "null"
               matchers:
-                - alertname = "Watchdog"
-            - receiver: ntfy
+                - alertname =~ "Watchdog|InfoInhibitor"
+            - receiver: "null"
               matchers:
-                - alertname =~ "FluxKustomizationNotReady|FluxHelmReleaseNotReady|FluxGitRepositoryNotReady|FluxMainGitRepositoryArtifactLarge|ControlPlaneSystemDiskBusy|ControlPlanePodSystemDiskWriterHigh|ControlPlaneLeasePutLatencyHigh|ControlPlaneLeasePutLatencyCritical"
-              repeat_interval: 2h
-              # One alert per ntfy message. ntfy.sh caps a published message at
-              # ~4KB; the parent route's group_by ["namespace"] bundled every
-              # flux-system alert (21+ FluxKustomizationNotReady during a storm)
-              # into one notification that, expanded by the X-Template
-              # "alertmanager" renderer, exceeded the cap and was rejected with
-              # HTTP 400 code 40041 ("message or title is too large after
-              # replacing template"). Alertmanager treats 4xx as unrecoverable,
-              # so alerts were silently dropped exactly when many were firing.
-              # group_by ["..."] disables aggregation so each alert is its own
-              # small message.
-              group_by: ["..."]
+                - alertname =~ "AlertmanagerClusterCrashlooping|AlertmanagerClusterDown|AlertmanagerClusterFailedToSendAlerts|AlertmanagerConfigInconsistent|AlertmanagerFailedReload|AlertmanagerFailedToSendAlerts|AlertmanagerMembersInconsistent"
+            - receiver: "null"
+              matchers:
+                - alertname =~ "ClusterExternalSecretNotReady|ExternalSecretNotReady|ExternalSecretsControllerBacklogged|ExternalSecretsControllerLongRunningWorker"
+            - receiver: "null"
+              matchers:
+                - alertname =~ "CDIDataImportCronOutdated|CDIDataVolumeUnusualRestartCount|CDIDefaultStorageClassDegraded|CDIMultipleDefaultVirtStorageClasses|CDINoDefaultStorageClass|CDINotReady|CDIOperatorDown|CDIStorageProfilesIncomplete"
+            - receiver: "null"
+              matchers:
+                - alertname =~ "ConfigReloaderSidecarErrors|PrometheusOperatorListErrors|PrometheusOperatorNodeLookupErrors|PrometheusOperatorNotReady|PrometheusOperatorReconcileErrors|PrometheusOperatorRejectedResources|PrometheusOperatorStatusUpdateErrors|PrometheusOperatorSyncFailed|PrometheusOperatorWatchErrors|TargetDown"
+            - receiver: "null"
+              matchers:
+                - alertname =~ "NodeBondingDegraded|NodeCPUHighUsage|NodeClockNotSynchronising|NodeClockSkewDetected|NodeDiskIOSaturation|NodeFileDescriptorLimit|NodeFilesystemAlmostOutOfFiles|NodeFilesystemAlmostOutOfSpace|NodeFilesystemFilesFillingUp|NodeFilesystemSpaceFillingUp|NodeHighNumberConntrackEntriesUsed|NodeMemoryHighUtilization|NodeMemoryMajorPagesFaults|NodeNetworkInterfaceFlapping|NodeNetworkReceiveErrs|NodeNetworkTransmitErrs|NodeRAIDDegraded|NodeRAIDDiskFailure|NodeSystemSaturation|NodeSystemdServiceCrashlooping|NodeSystemdServiceFailed|NodeTextFileCollectorScrapeError"
+            - receiver: "null"
+              matchers:
+                - alertname =~ "KubeAPIDown|KubeAPIErrorBudgetBurn|KubeAPITerminatedRequests|KubeAggregatedAPIDown|KubeAggregatedAPIErrors|KubeCPUOvercommit|KubeCPUQuotaOvercommit|KubeClientCertificateExpiration|KubeClientErrors|KubeContainerWaiting|KubeControllerManagerDown|KubeDaemonSetMisScheduled|KubeDaemonSetNotScheduled|KubeDaemonSetRolloutStuck|KubeDeploymentGenerationMismatch|KubeDeploymentReplicasMismatch|KubeDeploymentRolloutStuck|KubeHpaMaxedOut|KubeHpaReplicasMismatch|KubeJobFailed|KubeJobNotCompleted|KubeMemoryOvercommit|KubeMemoryQuotaOvercommit|KubeNodeEviction|KubeNodeNotReady|KubeNodePressure|KubeNodeReadinessFlapping|KubeNodeUnreachable|KubePdbNotEnoughHealthyPods|KubePersistentVolumeErrors|KubePersistentVolumeFillingUp|KubePersistentVolumeInodesFillingUp|KubePodCrashLooping|KubePodNotReady|KubeQuotaAlmostFull|KubeQuotaExceeded|KubeQuotaFullyUsed|KubeSchedulerDown|KubeStateMetricsListErrors|KubeStateMetricsShardingMismatch|KubeStateMetricsShardsMissing|KubeStateMetricsWatchErrors|KubeStatefulSetGenerationMismatch|KubeStatefulSetReplicasMismatch|KubeStatefulSetUpdateNotRolledOut|KubeVersionMismatch|KubeletClientCertificateExpiration|KubeletClientCertificateRenewalErrors|KubeletDown|KubeletPlegDurationHigh|KubeletPodStartUpLatencyHigh|KubeletServerCertificateExpiration|KubeletServerCertificateRenewalErrors|KubeletTooManyPods"
+            - receiver: "null"
+              matchers:
+                - alertname =~ "CPUThrottlingHigh|GrocyMcpNoTools|HakuConsoleConnectionRefreshStale|HomeAssistantUnavailable|McpUpstreamTokenRefreshFailed|SeaweedFSReplicaPlacementMismatch|TanaMcpFacadeNoTools|TanaMcpFacadeProbeStale|TanaMcpFacadeUpstreamDown"
         receivers:
           - name: "null"
           - name: ntfy
