@@ -1,24 +1,53 @@
-# Mandatory exogenous macro core
+# Do we need an exogenous rate?
 
-Making CPI, a nominal term structure, and a muni/Treasury ratio things every exogenous
-sample carries, rather than things a scenario may request. Prerequisite for bonds: a
-nominal dollar in month 240 means nothing without CPI, and a bond cannot be marked
-without a curve.
+Mostly not — and the parts that do need one need less than a term structure. This note
+exists because the answer is not obvious and the obvious answer is wrong in an expensive
+direction: a mandatory macro core with a jointly-fitted nominal curve is weeks of work,
+and almost none of it is on the path to the allocation question.
 
-The framing is Rai's:
+## What already works with no rate at all
 
-> augur is supposed to insofar as possible simulate the real financial mechanics once all
-> the messy unpredictable stuff of the real world is in the "exogenous" bucket. […]
-> inflation and probably fed rates too should become proper baked in things the exogenous
-> part has to provide
+`BondHolding` (<../sim/scenario.py>) is a held-to-maturity bond: par purchase, fixed
+coupon, `inflation_indexed` for TIPS, `issuer_jurisdiction_id` carrying muni tax character
+holder-relative, and a `bond_value_usd` metric structurally excluded from liquid net worth.
 
-This does not conflict with the `REQUIREMENTS.md` non-goal. That entry puts inflation
-modeling in `augur/model` as an exogenous path input rather than a simulator-owned
-stochastic layer, and mandatory-exogenous is exactly that shape — inflation stays
-exogenous, it just stops being optional. Nominal simulation and real-terms-as-
-postprocessing both survive untouched.
+Its cashflows are fixed by its terms. The one stochastic input is CPI, for TIPS principal
+accretion — and CPI is already a fitted factor (<../fit/evidence_data.py> `:232`), already
+requestable through `required_index_series`. **The floor is already expressible.**
 
-## The finding that reorders the work
+That also corrects an argument this note used to make. "Rates must be jointly distributed
+with equities or the model cannot produce 2022" is true for a bond sleeve that is MARKED or
+TRADED. For a HELD ladder it is backwards: 2022 did not hurt a holder who held. The risk a
+held nominal ladder actually carries is inflation, and inflation is already modeled — which
+is precisely the TIPS-over-munis argument for the floor, and the model can already make it.
+
+## What actually needs a rate
+
+| Want                                         | Needs                       | Really exogenous?                                                                                      |
+| -------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Buy away from par                            | the purchase yield          | **No.** For a bond bought today that is an observed scalar — config, not a path.                       |
+| Mark to market; sell a rung early            | a curve at the sale month   | Yes.                                                                                                   |
+| Issue new rungs mid-horizon at future yields | a curve at each issue month | Yes — but blocked first by `initial_bonds` being the only way a bond enters at all, which is sim-side. |
+
+A fourth route sidesteps all of it: a bond **fund** is a `SecurityKey` — a security with a
+price series — fully expressible today with no new machinery. If the question is "how much
+in bonds" rather than "which rungs", it is already answerable.
+
+## Recommended order
+
+1. **Non-par purchase with a configured purchase yield.** Pure sim math, no exogenous
+   change, and it turns a toy ladder into one bought at real prices. Highest value per unit
+   of work by a wide margin.
+2. **Mid-horizon bond issuance**, if a rolling ladder matters. Sim-side; a configured yield
+   per issuance keeps it exogenous-free.
+3. **Only then a curve**, and only if marking or early sale turns out to matter.
+
+Everything below is the survey of what step 3 would cost, kept because the constraints it
+found are real and would otherwise be rediscovered the hard way.
+
+## If a curve is eventually needed
+
+### The constraint that shapes it
 
 **A raw signed rate cannot be a `LevelSeriesKind`.** The level stack is multiplicative and
 log-based end to end, and positivity is enforced — not assumed — in at least ten places:
@@ -48,10 +77,10 @@ honest routes, and the choice belongs before any code:
   constraint because it defines its own per-channel validators. Costs: it is outside the
   factor basis, so keeping it jointly distributed with equities takes deliberate work.
 
-**Recommendation: the positive transform**, because of the correlation requirement below.
+**If it happens, the positive transform**, because of the correlation requirement below.
 A sibling block that is sampled independently would be worse than no rates at all.
 
-## The correlation is the whole ballgame
+### Correlation, where it applies
 
 If rates are sampled independently of the equity/inflation block, the model cannot produce
 2022 — equities and bonds falling together because rates rose with inflation. That is
@@ -74,7 +103,7 @@ Two landmines there, both easy to miss:
   couples with home values and rents at 0.5 is a modeling decision and belongs in an
   explicit branch next to `_CRYPTO_SYMBOLS`.
 
-## What "mandatory" has to mean structurally
+### What "mandatory" would have to mean structurally
 
 `SampledExogenousBundle` (<../model/exogenous.py> `:222`-`:232`) has **no `__post_init__`
 and every field defaults to empty**, so nothing today can express a producer-side
@@ -92,7 +121,7 @@ per-request consumer contract. Adding the obligation collides with three things:
   contradicts that comment — so the comment gets rewritten or the core gets unioned in at
   that one site.
 
-## Evidence
+### Evidence
 
 `DGS2`, `DGS10`, `DGS30`, `DFII10` are **absent** — zero hits repo-wide. The only
 rate-adjacent series is `MORTGAGE30US` (<../../evidence/sources.py> `:93`), and it is not a
@@ -106,7 +135,7 @@ gap, so adding either **truncates the fit window for every existing factor**. De
 whether the rate factors join the main aligned frame or are fitted on their own window and
 bordered in via `StateSpaceAdditionalFactor`.
 
-## Order of work
+### Order of work, if it happens
 
 1. Choose the representation (positive transform vs sibling block). Everything else depends
    on it and nothing else is worth writing first.
@@ -123,7 +152,7 @@ bordered in via `StateSpaceAdditionalFactor`.
 `fit/train_round_trip_test.py:61` asserts emitted keys `==` requested keys and will need
 updating at step 5; it is the canary for the whole contract change.
 
-## Not in scope
+### Not in scope
 
 Deriving real yields as nominal − expected inflation rather than modeling them separately —
 worth doing (it enforces no-arbitrage between TIPS and nominals and yields breakevens for
