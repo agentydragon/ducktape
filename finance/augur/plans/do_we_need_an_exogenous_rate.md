@@ -45,9 +45,37 @@ in bonds" rather than "which rungs", it is already answerable.
 Everything below is the survey of what step 3 would cost, kept because the constraints it
 found are real and would otherwise be rediscovered the hard way.
 
-## If a curve is eventually needed
+## If a curve is eventually needed, it should emit PRICES
 
-### The constraint that shapes it
+Rai's framing, and it is the same principle that moved instrument prices into the
+observation in #3793: what something trades at is a fact about the market, so the exogenous
+layer hands it over rather than having the engine infer it. A rate is a derived,
+human-facing summary of a price — something you print, not something the model carries.
+
+This also dissolves the positivity problem below rather than working around it. That whole
+wall exists because a YIELD can be zero or negative; a **price is positive by
+construction**, so it slots into the log-based level stack with no fight at all.
+
+Two things stop it from being simply "emit a price series per bond", and both are reasons
+to emit **discount factors** and let the engine derive each bond's price as
+`sum(cashflow x discount factor)`:
+
+- **Bond prices are not independent instruments.** Thirty ladder rungs are thirty price
+  paths with about three degrees of freedom between them. Fitted separately, the way SPY and
+  BTC are, the model will produce curves that cross themselves — a 10-year and an 11-year
+  bond wandering apart with an arbitrage sitting between them.
+- **A bond price has a terminal boundary condition**: it must converge to par at maturity.
+  `GeometricBrownian` is `initial * exp(cumsum)` with no mean reversion and no terminal pin
+  (<../model/gbm.py> `:51`), so a per-bond series fitted with today's machinery would let a
+  bond mature at a price that is not par.
+
+Discount factors are positive, few, jointly fittable with equities and inflation like any
+other factor, and pull-to-par falls out of the arithmetic for free. The sim never sees a
+rate.
+
+### What that costs
+
+#### Why not a raw yield
 
 **A raw signed rate cannot be a `LevelSeriesKind`.** The level stack is multiplicative and
 log-based end to end, and positivity is enforced — not assumed — in at least ten places:
@@ -77,10 +105,11 @@ honest routes, and the choice belongs before any code:
   constraint because it defines its own per-channel validators. Costs: it is outside the
   factor basis, so keeping it jointly distributed with equities takes deliberate work.
 
-**If it happens, the positive transform**, because of the correlation requirement below.
-A sibling block that is sampled independently would be worse than no rates at all.
+**A discount factor is the positive transform**, per the section above; the sibling block
+remains an option only if something genuinely cannot be expressed as a positive level, and a
+block sampled independently of equities would be worse than no rates at all.
 
-### Correlation, where it applies
+#### Correlation, where it applies
 
 If rates are sampled independently of the equity/inflation block, the model cannot produce
 2022 — equities and bonds falling together because rates rose with inflation. That is
@@ -103,7 +132,7 @@ Two landmines there, both easy to miss:
   couples with home values and rents at 0.5 is a modeling decision and belongs in an
   explicit branch next to `_CRYPTO_SYMBOLS`.
 
-### What "mandatory" would have to mean structurally
+#### What "mandatory" would have to mean structurally
 
 `SampledExogenousBundle` (<../model/exogenous.py> `:222`-`:232`) has **no `__post_init__`
 and every field defaults to empty**, so nothing today can express a producer-side
@@ -121,7 +150,7 @@ per-request consumer contract. Adding the obligation collides with three things:
   contradicts that comment — so the comment gets rewritten or the core gets unioned in at
   that one site.
 
-### Evidence
+#### Evidence
 
 `DGS2`, `DGS10`, `DGS30`, `DFII10` are **absent** — zero hits repo-wide. The only
 rate-adjacent series is `MORTGAGE30US` (<../../evidence/sources.py> `:93`), and it is not a
@@ -135,7 +164,7 @@ gap, so adding either **truncates the fit window for every existing factor**. De
 whether the rate factors join the main aligned frame or are fitted on their own window and
 bordered in via `StateSpaceAdditionalFactor`.
 
-### Order of work, if it happens
+#### Order of work, if it happens
 
 1. Choose the representation (positive transform vs sibling block). Everything else depends
    on it and nothing else is worth writing first.
@@ -152,7 +181,7 @@ bordered in via `StateSpaceAdditionalFactor`.
 `fit/train_round_trip_test.py:61` asserts emitted keys `==` requested keys and will need
 updating at step 5; it is the canary for the whole contract change.
 
-### Not in scope
+#### Not in scope
 
 Deriving real yields as nominal − expected inflation rather than modeling them separately —
 worth doing (it enforces no-arbitrage between TIPS and nominals and yields breakevens for
