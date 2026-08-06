@@ -126,6 +126,31 @@ py_test(
 )
 
 py_test(
+    name = "test_ipo_prior_terminal_distribution_e2e",
+    size = "medium",
+    srcs = ["test_ipo_prior_terminal_distribution_e2e.py"],
+    data = [
+        "//finance/augur/api:public_fixture_config",
+        "//finance/augur/api:public_fixture_properties",
+    ],
+    deps = [
+        ":conftest",
+        ":service",
+        ":wire",
+        "//:conftest",
+        "//finance/augur/api:config",
+        "//finance/augur/calibration:catalog",
+        "//finance/augur/calibration:ipo_prior",
+        "//finance/augur/calibration:testing",
+        "//finance/augur/model:private_equity_risk",
+        "//finance/augur/model:provider_config",
+        "//finance/evidence:markets",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "service_test",
     size = "medium",
     srcs = ["service_test.py"],
