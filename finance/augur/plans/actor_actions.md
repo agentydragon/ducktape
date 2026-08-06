@@ -396,6 +396,15 @@ Two intermediate positions were considered and are wrong by that principle. Emit
 **yield** makes the sim carry a quantity it must convert. Emitting **discount factors** is
 less leaky and still makes the engine learn to discount a cashflow, which is the model's job.
 
+**Stated generally, because both of those were proposed and rejected one at a time before the
+pattern was visible: emit observable PRIMITIVES, never derived RATIOS.** A ratio forces the
+consumer to reconstruct one of its operands, and that reconstruction is the model's job leaking
+downstream. A yield is `distribution / price`; a discount factor is a price of a unit cashflow.
+Emit the price and the cashflow and every ratio is derivable by whoever wants one — including
+the model itself, which is where the derivation belongs. The test is mechanical: if the sim has
+to MULTIPLY the emitted quantity by something to recover dollars, it is a ratio and the wrong
+thing crossed the boundary.
+
 Three consequences, recorded because each was expensive to work out:
 
 - **The positivity wall stops mattering.** The level stack is multiplicative and log-based,
@@ -424,6 +433,108 @@ an unrecognized factor, silently coupling it to every macro factor at 0.5 shrink
 a series with a short history truncates the fit window for **every existing factor** —
 DFII10 starts in 2003 and DGS30 has a 2002–2006 gap.
 
+## How to model fixed income
+
+The allocation question — "how should I allocate my current assets?" — cannot be answered
+without a stock/bond mix, and the comparison anyone reaches for first is "60/40, rebalanced".
+**That is inexpressible today.** Bonds are held-to-maturity, never marked, structurally excluded
+from liquid net worth, and outside the target allocation, so fixed income cannot be a
+rebalanceable SLEEVE. #3825 made a held ladder configurable end to end; it did not make it an
+allocation.
+
+Three paths, written down together because their costs are not comparable by intuition.
+
+### A — bond funds as sleeves
+
+A fund (BND aggregate, MUB national munis, CMF California munis, VTIP short TIPS) is a
+`SecurityKey`: already in every union, already a legal `SleeveTarget.asset`, already anchorable.
+Weights, rebalancing and trimming work untouched. It is also what FIRE portfolios actually hold
+— nobody running 60/40 holds a ladder — and it avoids modelling one instrument per Treasury
+maturity.
+
+It needs three things, and the second silently doubles the return if missed.
+
+**1. Distributions, which are the actual return mechanic.** A bond fund's return is
+distributions plus price change; the price change mean-reverts toward zero over the fund's
+duration while the payout is the durable part. Not a bolt-on.
+
+The tax character is a VECTOR of fractions, not a tag — real funds are mixed and publish the
+split (BND is part Treasury and part corporate; MUB is fed-exempt throughout but only its CA
+slice is CA-exempt for a Californian). **This needs no new tax machinery**: split the
+distribution into streams, each tagged with an existing
+`InterestIncome(issuer_jurisdiction_id=…)`, and the income-bucket axis plus the per-link
+inclusion mask already compute exemption per category. It is the muni-bond path called several
+times with weights.
+
+Those fractions are NOT exogenous: a fund's state breakdown follows its mandate, is published
+annually, and is stable. They belong with the instrument definition, next to the price-series
+declaration — not in portfolio config, which would let two positions in the same fund disagree
+about what CMF is.
+
+**2. The price series must become price-only.** Every security is fitted on Yahoo ADJUSTED close
+(`loading.yahoo_adjusted_close_frame` reads `indicators.adjclose`), which already contains
+reinvested distributions. A distribution stream on top of a total-return path counts the return
+twice. Yahoo returns `close` in the same payload, so this is a loader change rather than a new
+evidence source — and nothing would flag it.
+
+**3. The distribution is exogenous, and crosses the boundary as DOLLARS PER UNIT.** It moves
+with the fed rate and credit spreads, so it is a market fact belonging in the black-box half
+rather than a config constant asserting a white-box answer about it.
+
+But per the rule above, the quantity that crosses must be the primitive. A _yield_ would make
+the sim multiply by market value to recover cash; a _distribution per unit_ is multiplied by
+units held, which is the operation the sim already performs for price. So a fund emits two
+dollar-denominated per-unit series — price, and distribution-per-unit — with the same shape,
+units and handling. **No rate appears in the engine anywhere**: the mechanic is the coupon path
+with nothing new, a bond paying `face x rate` and a fund paying `units x distribution_per_unit`.
+
+Directly observable: `close` versus `adjclose` in the same payload IS the per-share distribution
+history in dollars.
+
+Required for correctness, not only architecture. BND's payout rose sharply after 2022 and that
+rise is the mechanism offsetting the price loss; only a jointly-fitted distribution produces
+that shape. A constant gives the crash without the recovery, **biasing against fixed income
+precisely in the regime a stock/bond mix is chosen to survive.**
+
+Cost: a distribution-per-unit is not a price, so it needs its own `LevelSeriesKind` — which
+means both traps below apply, including the `state_space_factor.py:55` union that drops a new
+kind from the state-space basis with no type error. Cheaper than pricing every rung; not free.
+The positivity wall does not bite, because a per-unit distribution is a positive dollar amount
+like a price — the difference from a bond yield, which can reach zero or go negative.
+
+Gap worth naming: this generalizes to equity funds but `IncomeCategory` does not. It has
+ORDINARY and INTEREST only, no qualified dividends, so distributions on an equity fund would be
+overtaxed as ordinary income until a third category exists.
+
+What A gives up: a fund is marked and traded, so it has no held-to-maturity rate immunity, and
+the floor argument rests on exactly that. Over horizons longer than the fund's duration the two
+converge; for near-dated spending they do not.
+
+### B — price the ladder
+
+Mark real bonds so a ladder can be a rebalanced sleeve and be sold pre-maturity, per the design
+above. Costs the pricing model plus a forced carrier redesign: once bonds are BOUGHT during the
+sim, rebalancing mints one per purchase and instrument count goes O(horizon).
+
+### C — no fixed-income sleeve at all
+
+Keep the ladder held-to-maturity and sweep its SIZE as a portfolio config rather than a weight.
+Zero new work. This is the floor+surplus doctrine's own shape — the floor is pre-committed and
+spent down, not rebalanced, and rebalancing is an equity-sleeve concept the construction never
+asked for. What it gives up is comparability against the standard 60/40.
+
+### Recommendation
+
+**A, with C as the reference case.** C answers the doctrine's own question for free and should
+run first regardless. A makes the standard comparison possible and its costs are small and
+known. B buys pre-maturity ladder sales, which nothing has yet needed.
+
+Two artifacts to record either way, both consequences of decisions right in general and awkward
+for this sweep: **ruin means "could not pay from cash" and a held ladder cannot be sold**, so
+long-dated rungs against near-term spending produce false ruins; and **with purchase slots
+configured, a maturing rung that pushes cash above the ceiling gets invested in equities**,
+which is wrong for money earmarked to be spent (the default of 0 slots is safe).
+
 ## What next
 
 The engine is no longer the constraint. Equities, crypto and PE are modeled with a joint
@@ -434,27 +545,32 @@ is in. **The remaining risk is that nobody has yet asked the model the actual qu
 So the order is outcome-first, and deliberately not phase-first:
 
 1. **Build the real scenario and get a terminal-wealth distribution out of it.** Nothing
-   blocks this. It is also the only step that can tell us which of the rest is worth doing,
-   and until it runs, every estimate of that is a guess. Expect it to surface plumbing gaps
-   rather than modeling gaps.
+   blocks this — it is path C above, expressible today. It is also the only step that can tell
+   us which of the rest is worth doing, and until it runs, every estimate of that is a guess.
+   Expect it to surface plumbing gaps rather than modeling gaps.
 2. **Spending as a policy** (D11, then D12). This is the one modeling gap that plausibly
    changes the ANSWER rather than its precision: flexibility is risk capacity, because a
    flexible spender is never a forced seller, so a working tier policy should REDUCE the
    floor the histogram calls for. Everything else on this list refines a number; this one
    moves it.
-3. **Whatever step 1 shows the answer is sensitive to.** Candidates, with the direction of
-   their error where it is known: bond marking and pre-maturity sale (understates
-   flexibility, not risk — see the deferral above); the tier/tax-residency bundle (reads
-   optimistic, since a cheaper-location tier currently pays California tax); trading friction
-   (recorded in `sim/TODO.md` with its direction).
-4. **C8 and B6**, which are hygiene. C8 unifies the last parallel execution path and B6 puts
+3. **Fixed income as a sleeve, via path A** — bond funds, price-only series, and a
+   distribution-per-unit level series. This is what makes "60/40, rebalanced" expressible and
+   therefore what makes step 1's answer comparable to anything. Its size depends on step 1
+   only in one place: whether the distribution needs to be a jointly fitted factor or can
+   start marginal.
+4. **Whatever step 1 shows the answer is sensitive to.** Candidates, with the direction of
+   their error where it is known: the tier/tax-residency bundle (reads optimistic, since a
+   cheaper-location tier currently pays California tax); trading friction (recorded in
+   `sim/TODO.md` with its direction); bond marking and pre-maturity sale, i.e. path B, which
+   understates flexibility rather than risk and which path A mostly dissolves.
+5. **C8 and B6**, which are hygiene. C8 unifies the last parallel execution path and B6 puts
    money in cents at both boundaries (#3741: 25 config fields, 77 decoded columns, 141
    wire/frontend references, ~1168 construction sites — a program, not a PR, whose decode
    half is separable and buys exact reconciliation on its own). Both make the code better
    and neither makes the answer better, which is why they sit below a question that is still
    unanswered.
 
-The tempting order is 4, 2, 1 — finish the architecture, then add capability, then use it.
+The tempting order is 5, 2, 1 — finish the architecture, then add capability, then use it.
 That order has been wrong at every previous step of this plan: C7b was unblocked by D10, and
 the exogenous work above shrank by an order of magnitude the moment the question "do we need
 a rate at all" was asked instead of assumed.
