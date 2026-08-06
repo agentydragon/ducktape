@@ -131,7 +131,13 @@ class CompiledSimulation:
     # whose asset_id has no registered sampled level (defensive: shouldn't normally happen
     # for holdings, but the sentinel keeps lookups safe).
     lot_asset_series_index: NDArray[np.int64]
+    # Month-0 value of the engine's per-rollout purchase month. Static only until a lot is
+    # bought: a policy-chosen purchase writes the month its rollout actually paid.
     lot_purchase_month: NDArray[np.int64]
+    # What FIFO sorts by. Separate from the month because a slot a policy will fill has no
+    # compile-time month, yet its position in the sale order is fixed: slots fill
+    # monotonically, so the rank is known even when the month is not.
+    lot_fifo_rank: NDArray[np.int64]
     lot_cost_basis_per_unit: NDArray[np.int64]
     lot_initial_quantity: NDArray[np.int64]
     lot_quantity_scale: NDArray[np.int64]
@@ -196,7 +202,7 @@ def lot_order_for_pool(
     lot_agent_codes: NDArray[np.int64],
     lot_account_codes: NDArray[np.int64],
     lot_asset_codes: NDArray[np.int64],
-    lot_purchase_month: NDArray[np.int64],
+    lot_fifo_rank: NDArray[np.int64],
     lot_id_codes: NDArray[np.int64],
     agent_code: int,
     account_code: int,
@@ -204,14 +210,19 @@ def lot_order_for_pool(
 ) -> NDArray[np.int64]:
     """Return FIFO-ordered lot indices for one `(agent, account, asset)` pool.
 
-    Lot identity and purchase month are plan columns, so the order is static: the engine
-    resolves it once host-side and the traced step gathers by the resulting indices. Lots in
-    different accounts are not fungible, which is why the account code is part of the key."""
+    Lot identity and FIFO rank are plan columns, so the order is static: the engine resolves
+    it once host-side and the traced step gathers by the resulting indices. Lots in different
+    accounts are not fungible, which is why the account code is part of the key.
+
+    Rank rather than purchase month, because the two stopped being the same thing once a
+    purchase month became per-rollout. A slot a policy will fill has no compile-time month,
+    but it does have a fixed place in the order — slots fill monotonically, so a later slot
+    is always a later purchase, in every rollout."""
 
     eligible = np.flatnonzero(
         (lot_agent_codes == agent_code) & (lot_account_codes == account_code) & (lot_asset_codes == asset_code)
     )
-    order = np.lexsort((lot_id_codes[eligible], lot_purchase_month[eligible]))
+    order = np.lexsort((lot_id_codes[eligible], lot_fifo_rank[eligible]))
     return eligible[order]
 
 
@@ -353,6 +364,7 @@ def compile_simulation(
     lot_account_codes: list[int] = []
     lot_asset_codes: list[int] = []
     lot_purchase_month: list[int] = []
+    lot_fifo_rank: list[int] = []
     lot_cost_basis_per_unit: list[np.int64] = []
     lot_initial_quantity: list[np.int64] = []
     lot_quantity_scale: list[int] = []
@@ -363,6 +375,7 @@ def compile_simulation(
         lot_account_codes.append(strings.require(lot.account_id))
         lot_asset_codes.append(assets.require(lot.asset))
         lot_purchase_month.append(int(lot.purchase_month_index))
+        lot_fifo_rank.append(int(lot.purchase_month_index))
         lot_cost_basis_per_unit.append(usd_to_cents(lot.cost_basis_per_unit_usd))
         lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
         lot_quantity_scale.append(scale)
@@ -380,6 +393,7 @@ def compile_simulation(
         lot_account_codes.append(strings.require(purchase.to_account_id))
         lot_asset_codes.append(assets.require(purchase.asset))
         lot_purchase_month.append(int(purchase.month))
+        lot_fifo_rank.append(int(purchase.month))
         # Basis is per-rollout from here on: the engine promotes this column to `(lot, rollout)`
         # carry state and the purchase writes the realized price into its slot.
         lot_cost_basis_per_unit.append(np.int64(0))
@@ -477,6 +491,7 @@ def compile_simulation(
         lot_asset_codes=np.asarray(lot_asset_codes, dtype=np.int64),
         lot_asset_series_index=lot_asset_series_index,
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
+        lot_fifo_rank=np.asarray(lot_fifo_rank, dtype=np.int64),
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.int64),
         lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.int64),
         lot_quantity_scale=np.asarray(lot_quantity_scale, dtype=np.int64),

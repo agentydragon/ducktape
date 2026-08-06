@@ -651,7 +651,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     lot_agent_codes=plan.lot_agent_codes,
                     lot_account_codes=plan.lot_account_codes,
                     lot_asset_codes=plan.lot_asset_codes,
-                    lot_purchase_month=plan.lot_purchase_month,
+                    lot_fifo_rank=plan.lot_fifo_rank,
                     lot_id_codes=plan.lot_id_codes,
                     agent_code=int(sales.agent[s]),
                     account_code=int(sales.source_account[s]),
@@ -885,7 +885,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                         lot_agent_codes=plan.lot_agent_codes,
                         lot_account_codes=plan.lot_account_codes,
                         lot_asset_codes=plan.lot_asset_codes,
-                        lot_purchase_month=plan.lot_purchase_month,
+                        lot_fifo_rank=plan.lot_fifo_rank,
                         lot_id_codes=plan.lot_id_codes,
                         agent_code=agent_code,
                         account_code=account_code,
@@ -945,7 +945,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         lot_indices = np.flatnonzero(pe_issuers.lot_mask[issuer_idx])
         if lot_indices.size == 0:
             continue
-        ordered = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
+        ordered = lot_indices[np.argsort(plan.lot_fifo_rank[lot_indices], kind="stable")]
         policy_idx = int(pe_issuers.policy_index[issuer_idx])
         if policy_idx >= 0:
             owner_non_pe = tuple(int(lot) for lot in np.flatnonzero(pe_policies.owner_non_pe_lot_mask[policy_idx]))
