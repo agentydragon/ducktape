@@ -31,9 +31,10 @@ spec:
     # covered here with no edit. (Note README currently says only `rugged` carries
     # the taint; both do, verified 2026-08-06.)
     #
-    # CLEANUP(added 2026-08-06): re-diff against the chart's
-    # `kubernetes-system-kubelet` group on every kube-prometheus-stack bump --
-    # a forked rule silently keeps the old expression when upstream fixes theirs.
+    # CLEANUP(added 2026-08-06): re-diff against the chart on every
+    # kube-prometheus-stack bump -- a forked rule silently keeps the old expression
+    # when upstream fixes theirs. Sources: `kubernetes-system-kubelet` for
+    # KubeNodeNotReady/KubeNodeUnreachable, `general.rules` for TargetDown.
     - name: roaming-node-alerts
       rules:
         - alert: KubeNodeNotReady
@@ -69,3 +70,38 @@ spec:
             summary: "Node is unreachable."
             description: "{{ $labels.node }} is unreachable and some workloads may be rescheduled. Roaming nodes are excluded, so this is a node that was expected to stay up."
             runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodeunreachable
+        # Same exclusion, applied to the scrape-target ratio. The `unless` reaches
+        # only the kubelet job by construction: `up` carries `node` for kubelet but
+        # not for node-exporter or app targets, and a series without `node` matches
+        # on the empty string, which never equals a real node name -- so everything
+        # else passes through with stock behaviour. Verified 2026-08-06: stock fired
+        # for kubelet + node-exporter + seaweedfs-volume-peer, this fires for the
+        # latter two only, and the kubelet down-ratio goes 22.2% -> 0%.
+        #
+        # Excluded from BOTH sides of the ratio on purpose. Filtering only the
+        # numerator would leave roaming targets padding the denominator, diluting
+        # the percentage and making a real outage LESS likely to cross the 10%
+        # threshold -- a silent desensitisation, which is worse than the noise.
+        #
+        # TargetDown stays on the Alertmanager denylist for now: node-exporter has
+        # no `node` label to filter on (it would need an instance->IP->node join via
+        # kube_node_status_addresses) and seaweedfs-volume-peer is genuinely down.
+        # This removes one of the three reasons it cannot be re-enabled.
+        - alert: TargetDown
+          expr: |
+            100 * (
+              count by (cluster, job, namespace, service) (
+                (up == 0) unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+              )
+              /
+              count by (cluster, job, namespace, service) (
+                up unless on (node) (kube_node_spec_taint{key="node-role.kubernetes.io/roaming"} == 1)
+              )
+            ) > 10
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "One or more targets are unreachable."
+            description: '{{ printf "%.4g" $value }}% of the {{ $labels.job }}/{{ $labels.service }} targets in {{ $labels.namespace }} namespace are down. Roaming nodes are excluded from both sides of the ratio.'
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/general/targetdown

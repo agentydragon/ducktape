@@ -44,6 +44,7 @@ spec:
       disabled:
         KubeNodeNotReady: true
         KubeNodeUnreachable: true
+        TargetDown: true
       rules:
         alertmanager: true
         # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
