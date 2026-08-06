@@ -138,6 +138,9 @@ class CompiledSimulation:
     # compile-time month, yet its position in the sale order is fixed: slots fill
     # monotonically, so the rank is known even when the month is not.
     lot_fifo_rank: NDArray[np.int64]
+    # `(policy, sleeve, slot)` lot indices a target-allocation policy may buy into, NO_CODE
+    # where a policy has fewer sleeves or a smaller budget than the dense shape.
+    target_allocation_purchase_slots: NDArray[np.int64]
     lot_cost_basis_per_unit: NDArray[np.int64]
     lot_initial_quantity: NDArray[np.int64]
     lot_quantity_scale: NDArray[np.int64]
@@ -368,12 +371,17 @@ def compile_simulation(
     lot_cost_basis_per_unit: list[np.int64] = []
     lot_initial_quantity: list[np.int64] = []
     lot_quantity_scale: list[int] = []
+    # Kept alongside the code list so the price-series lookup below is derived from the lots
+    # that actually exist. Rebuilding it from the scenario instead means every new source of
+    # lots has to be remembered in two places, and the one that forgets is silently short.
+    lot_assets: list[AssetKey] = []
     for lot in scenario.initial_lots:
         scale = quantity_scale_for_asset(lot.asset)
         lot_id_codes.append(strings.require(lot.lot_id))
         lot_agent_codes.append(strings.require(lot.agent_id))
         lot_account_codes.append(strings.require(lot.account_id))
         lot_asset_codes.append(assets.require(lot.asset))
+        lot_assets.append(lot.asset)
         lot_purchase_month.append(int(lot.purchase_month_index))
         lot_fifo_rank.append(int(lot.purchase_month_index))
         lot_cost_basis_per_unit.append(usd_to_cents(lot.cost_basis_per_unit_usd))
@@ -392,6 +400,7 @@ def compile_simulation(
         lot_agent_codes.append(strings.require(purchase.agent_id))
         lot_account_codes.append(strings.require(purchase.to_account_id))
         lot_asset_codes.append(assets.require(purchase.asset))
+        lot_assets.append(purchase.asset)
         lot_purchase_month.append(int(purchase.month))
         lot_fifo_rank.append(int(purchase.month))
         # Basis is per-rollout from here on: the engine promotes this column to `(lot, rollout)`
@@ -399,6 +408,44 @@ def compile_simulation(
         lot_cost_basis_per_unit.append(np.int64(0))
         lot_initial_quantity.append(np.int64(0))
         lot_quantity_scale.append(quantity_scale_for_asset(purchase.asset))
+
+    # Purchase slots for the target-allocation policies: `purchase_slots_per_sleeve` empty lots
+    # per sleeve, so a policy that buys has somewhere to put what it bought. Each purchase needs
+    # its OWN lot — a lot bought in a different month has a different holding period and a
+    # different basis — and lots are a dense axis, so the count is configured rather than grown.
+    #
+    # The rank is above every real month and increases with the slot, which is what lets the
+    # sale order stay compile-time derivable: a sleeve's slots fill in cursor order, so a later
+    # slot is a later purchase in every rollout even though its month is not known here.
+    max_slots = max((p.purchase_slots_per_sleeve for p in scenario.target_allocation_policies), default=0)
+    ta_purchase_slots = np.full(
+        (
+            max(1, len(scenario.target_allocation_policies)),
+            target_allocation_policies.sleeve_assets.shape[1],
+            max(1, max_slots),
+        ),
+        NO_CODE,
+        dtype=np.int64,
+    )
+    for policy_idx, policy in enumerate(scenario.target_allocation_policies):
+        # Bought lots join the pool the sleeve already sells from, so a purchase and a later
+        # sale of the same sleeve meet in one FIFO walk rather than two disjoint pools.
+        account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
+        for sleeve_idx, sleeve in enumerate(policy.sleeves):
+            for k in range(policy.purchase_slots_per_sleeve):
+                ta_purchase_slots[policy_idx, sleeve_idx, k] = len(lot_id_codes)
+                lot_id_codes.append(strings.require(f"{policy.cause_id_prefix}_buy_p{policy_idx}_s{sleeve_idx}_{k}"))
+                lot_agent_codes.append(strings.require(policy.agent_id))
+                lot_account_codes.append(strings.require(account_id))
+                lot_asset_codes.append(assets.require(sleeve.asset))
+                lot_assets.append(sleeve.asset)
+                # Month 0 until the purchase writes the month its rollout actually paid. An
+                # unfilled slot holds zero units, so nothing ever reads it.
+                lot_purchase_month.append(0)
+                lot_fifo_rank.append(scenario.horizon_months + len(lot_fifo_rank))
+                lot_cost_basis_per_unit.append(np.int64(0))
+                lot_initial_quantity.append(np.int64(0))
+                lot_quantity_scale.append(quantity_scale_for_asset(sleeve.asset))
 
     lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
     lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
@@ -409,10 +456,7 @@ def compile_simulation(
             NO_CODE
             if (price_key := asset_price_key_or_none(asset)) is None
             else series_index_by_id.get(price_key, NO_CODE)
-            for asset in (
-                *(lot.asset for lot in scenario.initial_lots),
-                *(purchase.asset for purchase in scenario.scheduled_asset_purchases),
-            )
+            for asset in lot_assets
         ],
         dtype=np.int64,
     )
@@ -492,6 +536,7 @@ def compile_simulation(
         lot_asset_series_index=lot_asset_series_index,
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
         lot_fifo_rank=np.asarray(lot_fifo_rank, dtype=np.int64),
+        target_allocation_purchase_slots=ta_purchase_slots,
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.int64),
         lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.int64),
         lot_quantity_scale=np.asarray(lot_quantity_scale, dtype=np.int64),

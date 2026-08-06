@@ -230,5 +230,38 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
     # would emit a zero-unit row for it and the equality above is what refuses that.
 
 
+def test_configuring_purchase_slots_changes_nothing_until_they_are_filled() -> None:
+    """Slots are capacity, not behaviour. A policy given room to buy still holds only what it
+    started with until something fills them, and the empty slots must not disturb the sale side:
+    they join the same FIFO pool as the sleeve's real lots, so a slot that counted as a lot
+    would shift what a sale reaches for.
+
+    They sort LAST by construction rather than by luck — their FIFO rank is above every real
+    month — which is what lets the sale order stay compile-time derivable once a policy starts
+    filling them in months that differ per rollout.
+    """
+
+    without = _scenario(opening_cash=5_000.0, floor=10_000.0, ceiling=40_000.0)
+    with_slots = without.model_copy(
+        update={
+            "target_allocation_policies": [
+                without.target_allocation_policies[0].model_copy(update={"purchase_slots_per_sleeve": 3})
+            ]
+        }
+    )
+
+    lots = _lots(with_slots, month=1)
+
+    assert {lot_id: q for lot_id, q in lots.items() if not lot_id.startswith("allocation_sale_buy")} == _lots(
+        without, month=1
+    )
+    # Six slots, two sleeves by three, and every one of them still empty.
+    assert sorted(lot_id for lot_id in lots if lot_id.startswith("allocation_sale_buy")) == [
+        f"allocation_sale_buy_p0_s{sleeve}_{k}" for sleeve in (0, 1) for k in (0, 1, 2)
+    ]
+    assert all(q == 0.0 for lot_id, q in lots.items() if lot_id.startswith("allocation_sale_buy"))
+    assert _cash(with_slots) == _cash(without)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

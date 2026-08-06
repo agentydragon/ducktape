@@ -537,6 +537,18 @@ class TargetAllocationPolicy(BaseModel):
     cash_floor_usd: AmountSpec = 0.0
     cash_ceiling_usd: AmountSpec
     cause_id_prefix: str = "allocation_sale"
+    purchase_slots_per_sleeve: NonNegativeInt = Field(
+        default=0,
+        description=(
+            "How many separate purchases this policy may make into each sleeve over the whole "
+            "horizon. Every purchase needs its own lot — a lot bought in a different month has "
+            "a different holding period and a different basis — and lots are a dense axis, so "
+            "the count is configured rather than grown. Zero means the policy never buys, "
+            "which is the default because surplus cash accumulating above the ceiling is what "
+            "augur did before a policy could invest it. A run that wants more purchases than "
+            "it configured ABORTS rather than quietly buying less: see the exhaustion check."
+        ),
+    )
 
     @model_validator(mode="after")
     def _reject_duplicate_and_inverted(self) -> TargetAllocationPolicy:
