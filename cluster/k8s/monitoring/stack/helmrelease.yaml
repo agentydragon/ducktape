@@ -168,11 +168,31 @@ spec:
             # 2026-08-05 paging outage happened -- suppressed alerts for
             # deliberately-suspended services became a permanent floor that
             # exhausted the daily quota and took *all* paging down for 23h.
+            # TargetDown is suppressed for ONE job rather than wholesale. Its other
+            # causes are gone: kubelet by the roaming taint exclusion (#3815);
+            # litellm-chatgpt with the suspension (#3812); and seaweedfs-volume-peer
+            # twice over -- #3818 aligned the ssd metricsPort so the scrape would
+            # succeed, then #3819 deleted the ServiceMonitor that was scraping that
+            # topology-less Service at all, which is what actually retired the job.
+            # (The operator does not recreate that ServiceMonitor: it emits them per
+            # volumeTopology group, and the flat spec.volume is deliberately omitted.
+            # #3818 was therefore not required for this alert.) node-exporter is
+            # the last one: its `up` series carry no `node` label, only `instance`, so
+            # excluding roaming nodes there needs an instance -> IP -> node join
+            # through kube_node_status_addresses, which is a lot of dense PromQL
+            # inside a rule that guards every scrape target in the cluster.
+            #
+            # Narrow beats wholesale here: a NEW target going down now pages, which
+            # is the entire point of the alert and was not true while the alertname
+            # was denied outright.
+            - receiver: "null"
+              matchers:
+                - alertname = "TargetDown"
+                - job = "node-exporter"
+
             - receiver: "null"
               matchers:
                 # 10066 -- one ExternalSecret dead ~14d (airlock google-access-token).
-                # 10058 -- 4 scrape targets down 5d: kube-system, litellm, monitoring, seaweedfs.
-                #          Monitoring blind spots; worth fixing first.
                 # 10049 -- CDI storage profiles incomplete (info).
                 #  9926 -- version drift: iguana/rugged/wyrm2 on v1.36.2 vs v1.35.1 elsewhere.
                 #  7935 -- wyrm2's disk is genuinely nearly full.
@@ -181,7 +201,7 @@ spec:
                 #  3231 -- a quota fully used (info).
                 #   614 -- containers stuck Waiting.
                 #   157 -- major page faults.
-                - alertname =~ "ExternalSecretNotReady|TargetDown|CDIStorageProfilesIncomplete|KubeVersionMismatch|NodeFilesystemAlmostOutOfSpace|TanaMcpFacadeProbeStale|CPUThrottlingHigh|KubeQuotaFullyUsed|KubeContainerWaiting|NodeMemoryMajorPagesFaults"
+                - alertname =~ "ExternalSecretNotReady|CDIStorageProfilesIncomplete|KubeVersionMismatch|NodeFilesystemAlmostOutOfSpace|TanaMcpFacadeProbeStale|CPUThrottlingHigh|KubeQuotaFullyUsed|KubeContainerWaiting|NodeMemoryMajorPagesFaults"
 
             # Same category, but specifically the fallout of roaming laptops
             # leaving the cluster. Unlike KubeNodeNotReady/KubeNodeUnreachable
