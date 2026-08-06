@@ -48,7 +48,7 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **Docker CI**: `docker-ci` — parked.
 - **Firecrawl**: `firecrawl-{namespace,db,app}` — parked.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
-- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`): scaled to 0 on 2026-08-06,
+- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`): scaled to 0 and then deleted on 2026-08-06,
   superseded by [CLIProxyAPI](../k8s/cli-proxy-api/README.md). It was a second LiteLLM
   Deployment inside the `litellm` namespace holding its **own** ChatGPT/Codex OAuth
   session on a PVC, serving the `*-chatgpt` models over the Responses API so Codex CLI
@@ -83,14 +83,26 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   Claude Code and this instance buys nothing.
 
   [#3198]: https://github.com/agentydragon/ducktape/pull/3198
+  [#3199]: https://github.com/agentydragon/ducktape/pull/3199
 
-  [#3199]: <https://github.com/agentydragon/ducktape/pull/3199> **Not yet deleted**: the 6 `*-chatgpt` entries in
-  `k8s/litellm/app/proxy-config.yaml` still point here, and through them the baked Codex
-  configs in `k8s/agents/agent-sandbox/workspace-image/codex-config.toml` and
-  `x/codex_pod_image/home.nix`. Repoint those entries at CLIProxyAPI's `/v1/responses`
-  (the model _names_ can stay, so no image rebuild), confirm Codex CLI works, then
-  delete the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret and the Gatus
-  check.
+  Deleted: the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret, Gatus check,
+  and the 6 `*-chatgpt` entries in `k8s/litellm/app/proxy-config.yaml`.
+
+  **Still to do — Codex CLI has no working model.** Deleting the `*-chatgpt` entries
+  removed the last thing the baked Codex configs could resolve
+  (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml> and
+  <../../x/codex_pod_image/home.nix>, both pinning `gpt-5.6-sol-chatgpt`); they had been
+  failing since the scale-to-0 anyway. The existing `codex-*` models are **not** a
+  drop-in: they are `model: anthropic/<slug>` with `model_info.mode: chat`, while both
+  configs set `wire_api = "responses"`. Fix either by adding `mode: responses` LiteLLM
+  entries pointed at CLIProxyAPI's `/v1/responses` surface (it exists — a `POST` returns
+  401, not 404), or by moving the Codex configs to `wire_api = "chat"` and the `codex-*`
+  names.
+
+  `tf/gitops/litellm-keys/main.tf`'s `oai_lane_models` still scopes three virtual keys
+  (haku oai zone, `codex-pod`, `agent-workspaces-codex`) to the now-absent `*-chatgpt`
+  names; repoint it in the same change. Do not empty it — an empty `models` list means
+  every model in LiteLLM.
 
 - **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
   parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo

@@ -4,7 +4,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
-        "chatgpt-proxy-config.yaml",
         "proxy-config.yaml",
     ],
     visibility = ["//debug/litellm_probe:__pkg__"],
@@ -20,9 +19,6 @@ py_test(
     name = "test_litellm_config",
     srcs = ["test_litellm_config.py"],
     data = [
-        "chatgpt-deployment.yaml",
-        "chatgpt-proxy-config.yaml",
-        "chatgpt-service.yaml",
         "deployment.yaml",
         "httproute.yaml",
         "kustomization.yaml",

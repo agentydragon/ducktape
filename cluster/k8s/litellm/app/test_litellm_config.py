@@ -1,4 +1,4 @@
-"""Compose and verify the committed main and ChatGPT-only LiteLLM configs."""
+"""Compose and verify the committed main LiteLLM config."""
 
 from collections.abc import Iterator
 
@@ -9,7 +9,6 @@ from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, ZAI_ANTHROPI
 from util.bazel.runfiles import get_required_path
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
-_CHATGPT_LITELLM_BASE = "http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1"
 
 # (name suffix, num_ctx). None num_ctx = model default (128k for gpt-oss).
 _CTX_VARIANTS: list[tuple[str, int | None]] = [("128k", None), ("256k", 262_144), ("512k", 524_288), ("1m", 1_048_576)]
@@ -31,36 +30,6 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 # llm-proxy routes its /v1/messages here. The OpenAI-shaped coding-plan route was removed
 # in favor of this one.
 _ZAI_ANTHROPIC_BASE = "https://api.z.ai/api/anthropic"
-
-# ChatGPT subscription via LiteLLM's native `chatgpt/` provider (ChatGPT backend-api /
-# Codex OAuth). The stateful provider runs only in the single-replica litellm-chatgpt
-# Deployment; the main proxy chains these public model names to that internal proxy via
-# LiteLLM's native Responses passthrough. A broken OAuth token can therefore take down
-# ChatGPT models without blocking startup of every other provider.
-#
-# No upstream API key: auth is a flat auth.json (access_token/refresh_token/id_token,
-# with expires_at/account_id auto-derived) on a writable PVC, seeded from the
-# litellm-chatgpt-auth-seed secret. The provider refreshes the access token on demand and
-# rewrites that file, so the mount must be read-write. `drop_params` strips the
-# max_tokens/metadata fields this backend rejects.
-#
-# Only these models are served by the Codex/ChatGPT-account backend (verified live).
-# Others tried and rejected with "not supported when using Codex with a ChatGPT
-# account": gpt-5.4-pro, gpt-5.3-codex, gpt-5.3-instant, gpt-5.3-chat-latest.
-#
-# GOTCHA: usable via STREAMING only. Non-streaming responses come back with an empty
-# output[] and the /v1/chat/completions bridge fails with "Unknown items in responses
-# API response: []" — an unfixed LiteLLM bug (BerriAI/litellm#25429; fix PRs like #27562
-# still unmerged as of litellm 1.90.x). Callers must send stream:true to /v1/responses.
-_CHATGPT_MODELS: list[str] = [
-    "gpt-5.4",
-    "gpt-5.5",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.3-codex-spark",
-]
-
 
 # Groq (fast open-model inference: Llama chat + Whisper ASR). Key from the
 # GROQ_API_KEY env var (litellm-groq-key secret). Free tier.
@@ -122,8 +91,10 @@ _TANA_MODELS: list[tuple[str, str]] = [
 
 # CLIProxyAPI (ChatGPT/Codex subscription) fronted with the `anthropic/` provider. It speaks
 # Anthropic /v1/messages and is the one path that translates Codex tool calls correctly
-# (function_call -> tool_use) — the thing LiteLLM's own Responses bridge and the `*-chatgpt`
-# entries above could not do. Client key from CLIPROXY_CLIENT_KEY (cli-proxy-api-client-key
+# (function_call -> tool_use) — the thing LiteLLM's own Responses bridge could not do
+# (BerriAI/litellm#25429). It is now the only route to the Codex subscription: the
+# `*-chatgpt` models and their private litellm-chatgpt Deployment were retired 2026-08-06,
+# see cluster/docs/plan.md. Client key from CLIPROXY_CLIENT_KEY (cli-proxy-api-client-key
 # mirrored into the litellm namespace). Reasoning effort is driven by Claude Code's
 # effortLevel -> reasoning_effort passthrough, so one entry per slug suffices.
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
@@ -177,30 +148,6 @@ def _gemini_entries() -> Iterator[dict]:
             "model_name": model,
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "embedding"},
-        }
-
-
-def _chatgpt_proxy_entries() -> Iterator[dict]:
-    for model in _CHATGPT_MODELS:
-        model_name = f"{model}-chatgpt"
-        yield {
-            "model_name": model_name,
-            "litellm_params": {
-                "model": f"litellm_proxy/{model_name}",
-                # The Responses passthrough appends /responses, so this base includes /v1.
-                "api_base": _CHATGPT_LITELLM_BASE,
-                "api_key": "os.environ/LITELLM_MASTER_KEY",
-            },
-            "model_info": {"mode": "responses"},
-        }
-
-
-def _chatgpt_provider_entries() -> Iterator[dict]:
-    for model in _CHATGPT_MODELS:
-        yield {
-            "model_name": f"{model}-chatgpt",
-            "litellm_params": {"model": f"chatgpt/{model}"},
-            "model_info": {"mode": "responses"},
         }
 
 
@@ -275,7 +222,6 @@ def _expected_main_config() -> dict:
     model_list.extend(_zai_anthropic_entries())
     model_list.extend(_tana_entries())
     model_list.extend(_cliproxy_entries())
-    model_list.extend(_chatgpt_proxy_entries())
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())
     model_list.extend(_gemini_entries())
@@ -287,16 +233,8 @@ def _expected_main_config() -> dict:
         "litellm_settings": {"drop_params": True, "callbacks": ["langfuse_otel", "prometheus"]},
         # The virtual-key DB (DATABASE_URL in the Deployment) must never become a
         # second model source: models stay in this committed, parity-tested config.
-        # DB-registered models also bypass the chatgpt provider's responses config
-        # and break streaming (BerriAI/litellm#28044).
-        "general_settings": {"store_model_in_db": False},
-    }
-
-
-def _expected_chatgpt_config() -> dict:
-    return {
-        "model_list": list(_chatgpt_provider_entries()),
-        "litellm_settings": {"drop_params": True, "callbacks": ["prometheus"]},
+        # DB-registered models also bypass per-model responses config and break
+        # streaming (BerriAI/litellm#28044).
         "general_settings": {"store_model_in_db": False},
     }
 
@@ -308,89 +246,15 @@ def _load_config(filename: str) -> dict:
 
 
 def test_committed_configs_match_composed_expectations() -> None:
-    expected = {"proxy-config.yaml": _expected_main_config(), "chatgpt-proxy-config.yaml": _expected_chatgpt_config()}
+    expected = {"proxy-config.yaml": _expected_main_config()}
     for filename, expected_config in expected.items():
         assert _load_config(filename) == expected_config, filename
-
-
-def test_chatgpt_models_are_isolated_behind_internal_proxy() -> None:
-    main_config = _expected_main_config()
-    chatgpt_config = _expected_chatgpt_config()
-    main_models = {
-        model["model_name"]: model for model in main_config["model_list"] if model["model_name"].endswith("-chatgpt")
-    }
-    chatgpt_models = {model["model_name"]: model for model in chatgpt_config["model_list"]}
-
-    assert chatgpt_models
-    assert main_models.keys() == chatgpt_models.keys()
-    assert all(not model["litellm_params"]["model"].startswith("chatgpt/") for model in main_config["model_list"])
-    for name, main_model in main_models.items():
-        assert main_model == {
-            "model_name": name,
-            "litellm_params": {
-                "model": f"litellm_proxy/{name}",
-                "api_base": "http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1",
-                "api_key": "os.environ/LITELLM_MASTER_KEY",
-            },
-            "model_info": {"mode": "responses"},
-        }
-        assert chatgpt_models[name] == {
-            "model_name": name,
-            "litellm_params": {"model": f"chatgpt/{name.removesuffix('-chatgpt')}"},
-            "model_info": {"mode": "responses"},
-        }
-
-
-def test_chatgpt_auth_state_is_absent_from_main_deployment() -> None:
-    main = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/deployment.yaml").read_text())
-    chatgpt = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/chatgpt-deployment.yaml").read_text())
-    main_pod = main["spec"]["template"]["spec"]
-    chatgpt_pod = chatgpt["spec"]["template"]["spec"]
-
-    assert main["spec"]["strategy"] == {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}}
-    # Suspended 2026-08-06 (superseded by CLIProxyAPI); 1 while it ran, because the
-    # rotating auth.json tolerates exactly one writer. The rest of this test still
-    # holds: the point is that auth state lives here and NOT in the main deployment,
-    # which stays true at rest and must keep holding until the whole thing is deleted.
-    assert chatgpt["spec"]["replicas"] == 0
-    assert chatgpt["spec"]["strategy"] == {"type": "Recreate"}
-    assert "initContainers" not in main_pod
-    assert [container["name"] for container in chatgpt_pod["initContainers"]] == ["seed-chatgpt-auth"]
-    assert chatgpt_pod["initContainers"][0]["command"][-1] == (
-        "grep -q '\"refresh_token\"' /data/chatgpt/auth.json || cp /seed/auth.json /data/chatgpt/auth.json"
-    )
-    assert "CHATGPT_TOKEN_DIR" not in {env["name"] for env in main_pod["containers"][0]["env"]}
-    assert "CHATGPT_TOKEN_DIR" in {env["name"] for env in chatgpt_pod["containers"][0]["env"]}
-    assert {volume["name"] for volume in main_pod["volumes"]}.isdisjoint({"chatgpt-auth", "chatgpt-auth-seed"})
-    chatgpt_volumes = {volume["name"]: volume for volume in chatgpt_pod["volumes"]}
-    assert chatgpt_volumes.keys() == {"config", "chatgpt-auth", "chatgpt-auth-seed"}
-    assert chatgpt_volumes["config"]["configMap"]["name"] == "litellm-chatgpt-config"
-    assert chatgpt_volumes["chatgpt-auth"]["persistentVolumeClaim"]["claimName"] == "litellm-chatgpt-auth"
-    assert chatgpt_volumes["chatgpt-auth-seed"]["secret"]["secretName"] == "litellm-chatgpt-auth-seed"
-    assert main["spec"]["selector"] != chatgpt["spec"]["selector"]
 
 
 def test_config_maps_mount_their_matching_committed_configs() -> None:
     kustomization = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/kustomization.yaml").read_text())
     config_files = {config["name"]: config["files"] for config in kustomization["configMapGenerator"]}
-    assert config_files == {
-        "litellm-chatgpt-config": ["config.yaml=chatgpt-proxy-config.yaml"],
-        "litellm-config": ["config.yaml=proxy-config.yaml"],
-    }
-
-
-def test_chatgpt_proxy_is_cluster_private_and_selectors_are_disjoint() -> None:
-    main_service = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/service.yaml").read_text())
-    chatgpt_service = yaml.safe_load(
-        get_required_path("ducktape/cluster/k8s/litellm/app/chatgpt-service.yaml").read_text()
-    )
-    route = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/httproute.yaml").read_text())
-
-    assert main_service["spec"]["type"] == "ClusterIP"
-    assert chatgpt_service["spec"]["type"] == "ClusterIP"
-    assert main_service["spec"]["selector"] == {"app.kubernetes.io/name": "litellm"}
-    assert chatgpt_service["spec"]["selector"] == {"app.kubernetes.io/name": "litellm-chatgpt"}
-    assert {backend["name"] for rule in route["spec"]["rules"] for backend in rule["backendRefs"]} == {"litellm"}
+    assert config_files == {"litellm-config": ["config.yaml=proxy-config.yaml"]}
 
 
 if __name__ == "__main__":

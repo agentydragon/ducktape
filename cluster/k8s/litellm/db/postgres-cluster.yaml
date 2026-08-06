@@ -1,6 +1,6 @@
 # LiteLLM's virtual-key/spend database (Prisma-managed schema; LiteLLM migrates it
 # on startup). OVH-HA profile per docs/cnpg_conventions.md: LiteLLM must keep serving
-# external-provider models (z.ai/GLM, chatgpt) during a home outage, so its DB lives
+# external-provider models (z.ai/GLM, Anthropic) during a home outage, so its DB lives
 # on the always-on OVH nodes. The litellm Deployment deliberately floats
 # (prefers proxmox, allows OVH — see app/deployment.yaml); DB traffic is light
 # (key lookups + spend writes), so the possible cross-site hop is acceptable.

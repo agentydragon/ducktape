@@ -244,48 +244,6 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: gpt-5.4-chatgpt
-    litellm_params:
-      model: litellm_proxy/gpt-5.4-chatgpt
-      api_base: http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1
-      api_key: os.environ/LITELLM_MASTER_KEY
-    model_info:
-      mode: responses
-  - model_name: gpt-5.5-chatgpt
-    litellm_params:
-      model: litellm_proxy/gpt-5.5-chatgpt
-      api_base: http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1
-      api_key: os.environ/LITELLM_MASTER_KEY
-    model_info:
-      mode: responses
-  - model_name: gpt-5.6-sol-chatgpt
-    litellm_params:
-      model: litellm_proxy/gpt-5.6-sol-chatgpt
-      api_base: http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1
-      api_key: os.environ/LITELLM_MASTER_KEY
-    model_info:
-      mode: responses
-  - model_name: gpt-5.6-terra-chatgpt
-    litellm_params:
-      model: litellm_proxy/gpt-5.6-terra-chatgpt
-      api_base: http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1
-      api_key: os.environ/LITELLM_MASTER_KEY
-    model_info:
-      mode: responses
-  - model_name: gpt-5.6-luna-chatgpt
-    litellm_params:
-      model: litellm_proxy/gpt-5.6-luna-chatgpt
-      api_base: http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1
-      api_key: os.environ/LITELLM_MASTER_KEY
-    model_info:
-      mode: responses
-  - model_name: gpt-5.3-codex-spark-chatgpt
-    litellm_params:
-      model: litellm_proxy/gpt-5.3-codex-spark-chatgpt
-      api_base: http://litellm-chatgpt.litellm.svc.cluster.local:4000/v1
-      api_key: os.environ/LITELLM_MASTER_KEY
-    model_info:
-      mode: responses
   - model_name: claude-opus-5
     litellm_params:
       model: anthropic/claude-opus-5

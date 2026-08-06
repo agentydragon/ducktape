@@ -57,8 +57,13 @@ locals {
     for m in ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1", "glm-5.2"] :
     "${m}-anthropic"
   ]
-  # Only the models the Codex/ChatGPT-account backend actually serves
-  # (see _CHATGPT_MODELS in test_litellm_config.py).
+  # DANGLING as of 2026-08-06: the `*-chatgpt` entries these name were deleted from
+  # proxy-config.yaml with the litellm-chatgpt sub-instance. The three keys scoped to
+  # this list (haku oai zone, codex-pod, agent-workspaces-codex) therefore allow models
+  # that no longer exist. Left in place deliberately: an empty `models` list means *all*
+  # models in LiteLLM, so this must be repointed, not emptied, once Codex CLI is moved
+  # onto CLIProxyAPI-backed entries. See cluster/docs/plan.md, LiteLLM ChatGPT
+  # sub-instance.
   oai_lane_models = [
     for m in ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"] :
     "${m}-chatgpt"

@@ -96,13 +96,6 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: ChatGPT LiteLLM
-    group: ai
-    url: http://litellm-chatgpt.litellm.svc.cluster.local:4000/health/liveliness
-    interval: 60s
-    conditions:
-      - "[STATUS] == 200"
-
   - name: LiteLLM inference
     group: ai
     url: http://litellm.litellm.svc.cluster.local:4000/v1/chat/completions

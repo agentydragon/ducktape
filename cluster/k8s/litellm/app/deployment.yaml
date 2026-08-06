@@ -20,9 +20,11 @@ metadata:
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
-  # ChatGPT OAuth state lives in the separate single-replica litellm-chatgpt
-  # Deployment. This proxy is stateless, so a broken provider cannot block its
-  # startup and normal rollouts can preserve both serving replicas.
+  # This proxy is stateless -- every provider credential is a static key, so no
+  # provider can block startup and normal rollouts preserve both serving replicas.
+  # Keep it that way: the one provider that ever held OAuth state (litellm-chatgpt,
+  # deleted 2026-08-06) needed a whole second single-replica Deployment to avoid
+  # taking this one down with it.
   strategy:
     type: RollingUpdate
     rollingUpdate:
