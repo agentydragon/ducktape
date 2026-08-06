@@ -7,15 +7,14 @@ metadata:
     release: kube-prometheus-stack
 spec:
   groups:
-    # Forks of two kube-prometheus-stack rules, which are switched off via
-    # `defaultRules.disabled` in ../stack/helmrelease.yaml. The only change is
-    # excluding roaming nodes; everything else is copied verbatim from chart
-    # version 82.3.0, group `kubernetes-system-kubelet`.
+    # Forks of kube-prometheus-stack rules, switched off via `defaultRules.disabled`
+    # in ../stack/helmrelease.yaml. The only change is excluding roaming nodes;
+    # everything else is copied verbatim from chart version 82.3.0.
     #
     # Why fork rather than suppress by alertname in the Alertmanager route: the
-    # alertname denylist is all-or-nothing, so denying these two meant a *control
-    # plane* node going NotReady also paged nobody. Excluding by taint keeps the
-    # alert for every non-roaming node.
+    # alertname denylist is all-or-nothing, so denying an alert here also silenced
+    # it for the *control plane* -- a node going NotReady paged nobody. Excluding
+    # by taint keeps the alert for every non-roaming node.
     #
     # Why the taint and not the node names: `iguana` and `rugged` are defined in
     # several places at once and hardcoding a third would be one more thing to
