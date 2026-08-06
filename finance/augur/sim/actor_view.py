@@ -176,12 +176,9 @@ def build_actor_view(
         lot_quantity=quantity,
         lot_value_cents=lot_value_cents[lot_rows],
         lot_cost_basis_per_unit_cents=lot_cost_basis_per_unit_cents[lot_rows],
-        # Broadcast to `(lot, R)` so every field shares one shape. Purchase month is
-        # compile-time today; when the policy decides WHEN to buy it becomes per-rollout
-        # state and only this line changes.
-        lot_holding_months=jnp.broadcast_to((month - lot_purchase_month[lot_rows])[:, None], quantity.shape).astype(
-            jnp.int64
-        ),
+        # Already `(lot, R)`: the purchase month is per-rollout carried state, because a slot
+        # a policy chose to fill is bought in a different month in each rollout.
+        lot_holding_months=(month - lot_purchase_month[lot_rows]).astype(jnp.int64),
         scheduled_outflow_cents=scheduled_outflow_cents,
         instrument_price_cents=instrument_price_cents,
         instrument_quantity_scale=jnp.asarray(instrument_quantity_scale, dtype=jnp.int64),

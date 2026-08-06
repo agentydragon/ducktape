@@ -157,6 +157,12 @@ class _ScanState(NamedTuple):
     # `(lot, R)`: per-rollout because a purchased lot's basis is the price its rollout paid.
     # Initial lots broadcast their configured basis and never change it.
     cost_basis_per_unit: jnp.ndarray
+    # `(lot, R)`, and per-rollout for the same reason: once a policy decides WHEN to buy, a
+    # slot fills in a different month in each rollout, and the holding period that decides
+    # long vs short gain is measured from it. FIFO ORDER does not depend on this — a sleeve's
+    # slots fill monotonically, so slot index is the order in every rollout, and an unfilled
+    # slot holds zero units so a walk reaching it early takes nothing.
+    lot_purchase_month: jnp.ndarray
     capital_gain_active: jnp.ndarray
     capital_gain_ytd: jnp.ndarray
     tlh: jnp.ndarray
@@ -224,6 +230,9 @@ class _TracedConfig(NamedTuple):
     property_cashflow_amount_fixed: jnp.ndarray
     property_cashflow_amount_base: jnp.ndarray
     cost_basis_per_unit: jnp.ndarray
+    # Month-0 opening value of the carried per-rollout purchase month; policy-chosen
+    # purchases overwrite their slot's entry when they fill it.
+    lot_purchase_month: jnp.ndarray
     cash_initial_balance: jnp.ndarray
     lot_initial_quantity: jnp.ndarray
     property_adjusted_basis: jnp.ndarray
@@ -279,6 +288,7 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
         property_cashflow_amount_fixed=jnp.asarray(plan.property_cashflows.amount_fixed),
         property_cashflow_amount_base=jnp.asarray(plan.property_cashflows.amount_base),
         cost_basis_per_unit=jnp.asarray(plan.lot_cost_basis_per_unit),
+        lot_purchase_month=jnp.asarray(plan.lot_purchase_month),
         cash_initial_balance=jnp.asarray(plan.cash_initial_balance),
         lot_initial_quantity=jnp.asarray(plan.lot_initial_quantity),
         property_adjusted_basis=jnp.asarray(plan.properties.adjusted_basis),
@@ -332,7 +342,6 @@ class _Operands(NamedTuple):
     tax_slot_table: jnp.ndarray
     salt_cap_table: jnp.ndarray
     # Device arrays the bodies + de-`plan`-ed cores read directly.
-    lot_purchase_month: jnp.ndarray
     capital_gain_agent_codes: jnp.ndarray
     cg_rep_profile: jnp.ndarray
     property_owner_profile_index: jnp.ndarray
@@ -1102,7 +1111,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         property_is_primary_table=property_is_primary_table,
         tax_slot_table=tax_slot_table,
         salt_cap_table=salt_cap_table,
-        lot_purchase_month=jnp.asarray(plan.lot_purchase_month),
         capital_gain_agent_codes=jnp.asarray(plan.capital_gain_agent_codes),
         cg_rep_profile=jnp.asarray(cg_rep_profile),
         property_owner_profile_index=jnp.asarray(plan.property_owner_profile_index),
@@ -1305,7 +1313,6 @@ def _program_impl(
     property_is_primary_table = baked.property_is_primary_table
     tax_slot_table = baked.tax_slot_table
     salt_cap_table = baked.salt_cap_table
-    lot_purchase_month = baked.lot_purchase_month
     cg_rep_profile = baked.cg_rep_profile
     property_owner_profile_index = baked.property_owner_profile_index
     liability_owner_profile_index = baked.liability_owner_profile_index
@@ -1539,6 +1546,7 @@ def _program_impl(
     def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
         cost_basis_per_unit = s.cost_basis_per_unit
+        lot_purchase_month = s.lot_purchase_month
         cg_active, cg_ytd, tlh = s.capital_gain_active, s.capital_gain_ytd, s.tlh
         property_active, property_basis = s.property_active, s.property_basis
         property_contribution, property_equity = s.property_contribution, s.property_equity
@@ -1751,7 +1759,7 @@ def _program_impl(
             lot_rem_pad = jnp.concatenate([lot_remaining, _zeros_i64((1, r))], axis=0)  # (L+1, R)
             cost_pad = jnp.concatenate([cost_basis_per_unit, _zeros_i64((1, r))], axis=0)  # (L+1, R)
             scale_pad = jnp.concatenate([lot_quantity_scale, jnp.ones(1, dtype=jnp.int64)])  # (L+1,)
-            lpm_pad = jnp.concatenate([lot_purchase_month.astype(jnp.int32), jnp.zeros(1, jnp.int32)])
+            lpm_pad = jnp.concatenate([lot_purchase_month.astype(jnp.int32), _zeros_i64((1, r)).astype(jnp.int32)])
             pool_qty = lot_rem_pad[sale_olots]  # (N, P, R) supply per pool lot
             target = jnp.where((active[None, :]) & (month == sale_months_t)[:, None], sale_qty_t[:, None], 0)  # (N, R)
             prior = sale_prior_t @ target  # (N, R) demand already claimed by earlier same-pool sales
@@ -1801,12 +1809,14 @@ def _program_impl(
             )
 
             # Capital gains: classify each pool lot long/short, accrue per sale's cg agents via cg_map.
-            long_m = (month - lpm_pad[sale_olots]) >= 12  # (N, P)
-            gains_long = (gains * long_m[:, :, None]).sum(axis=1)  # (N, R)
-            gains_short = (gains * (~long_m)[:, :, None]).sum(axis=1)
+            # `(N, P, R)`: the purchase month is per-rollout, so one rollout's long-term gain
+            # on a pool lot is another's short-term.
+            long_m = (month - lpm_pad[sale_olots]) >= 12
+            gains_long = (gains * long_m).sum(axis=1)  # (N, R)
+            gains_short = (gains * ~long_m).sum(axis=1)
             sold_pos = sold > 0
-            act_long = (sold_pos & long_m[:, :, None]).any(axis=1)  # (N, R)
-            act_short = (sold_pos & (~long_m)[:, :, None]).any(axis=1)
+            act_long = (sold_pos & long_m).any(axis=1)  # (N, R)
+            act_short = (sold_pos & ~long_m).any(axis=1)
             cg_ytd = cg_ytd.at[:, CapitalGainClassification.LONG_TERM, :].add(sale_cg_map_t.T @ gains_long)
             cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].add(sale_cg_map_t.T @ gains_short)
             cg_active = cg_active.at[:, CapitalGainClassification.LONG_TERM, :].set(
@@ -2360,6 +2370,7 @@ def _program_impl(
             property_tax_ytd=property_tax_ytd,
             lot_remaining=lot_remaining,
             cost_basis_per_unit=cost_basis_per_unit,
+            lot_purchase_month=lot_purchase_month,
             capital_gain_active=cg_active,
             capital_gain_ytd=cg_ytd,
             tlh=tlh,
@@ -2501,6 +2512,7 @@ def _program_impl(
         property_tax_ytd=property_tax_ytd0,
         lot_remaining=lot0,
         cost_basis_per_unit=_zeros_i64((p.lot_count, r)),
+        lot_purchase_month=_zeros_i64((p.lot_count, r)),
         capital_gain_active=cg_active0,
         capital_gain_ytd=cg_ytd0,
         tlh=tlh0,
@@ -2537,6 +2549,7 @@ def _program_impl(
         cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
         lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
         cost_basis_per_unit=jnp.broadcast_to(cfg.cost_basis_per_unit[:, None], (p.lot_count, r)),
+        lot_purchase_month=jnp.broadcast_to(cfg.lot_purchase_month[:, None], (p.lot_count, r)),
     )
     if product_summary is not None:
         product_inputs_local = product_inputs
@@ -2968,20 +2981,23 @@ def _record_capital_gains(
     """TLH give-back, then classify each lot's gain
     long/short and accrue.
 
-    Branch-free: the per-lot long/short split is a static `(L,)` boolean mask (holding period vs
-    the lot's purchase month), so the whole `[2, R]` classification block is one masked sum/any —
-    no per-lot scatter loop, no data-dependent branching. The only Python loop is over the
+    Branch-free: the long/short split is a `(L, R)` boolean mask (holding period vs the lot's
+    purchase month), so the whole `[2, R]` classification block is one masked sum/any — no
+    per-lot scatter loop, no data-dependent branching. The only Python loop is over the
     statically-resolved capital-gain profiles (`cg_profiles`) of the selling agent.
+
+    Per-rollout rather than `(L,)`: a slot a policy chose to fill is bought in a different
+    month in each rollout, and one rollout's short-term gain is another's long-term.
     """
     gains, tlh_cumulative_harvest = _apply_tlh_give_back(
         folded_harvest, tlh_cumulative_harvest, lot_remaining, sold_units, gains
     )
-    long_mask = (month - lot_purchase_month) >= 12  # (L,)
-    masks = jnp.stack([long_mask, ~long_mask])  # (2, L), rows ordered LONG_TERM=0, SHORT_TERM=1
+    long_mask = (month - lot_purchase_month) >= 12  # (L, R)
+    masks = jnp.stack([long_mask, ~long_mask])  # (2, L, R), rows ordered LONG_TERM=0, SHORT_TERM=1
     sold = sold_units > 0  # (R, L)
-    # einsum over lots: (2, L) x (R, L) -> (2, R) per-classification gain sums and activity flags.
-    gains_by_class = jnp.einsum("cl,rl->cr", masks.astype(gains.dtype), gains)
-    active_by_class = (masks[:, None, :] & sold[None, :, :]).any(axis=2)  # (2, R)
+    # einsum over lots: (2, L, R) x (R, L) -> (2, R) per-classification gain sums.
+    gains_by_class = jnp.einsum("clr,rl->cr", masks.astype(gains.dtype), gains)
+    active_by_class = (masks & sold.T[None, :, :]).any(axis=1)  # (2, R)
     for profile in cg_profiles:
         capital_gain_active = capital_gain_active.at[profile].set(capital_gain_active[profile] | active_by_class)
         capital_gain_ytd = capital_gain_ytd.at[profile].add(gains_by_class)

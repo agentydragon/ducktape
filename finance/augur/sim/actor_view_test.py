@@ -14,7 +14,10 @@ import pytest_bazel
 
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
 
-_PURCHASE_MONTH = np.asarray([0, 3, 3], dtype=np.int64)
+# `(lot, R)`: the purchase month is per-rollout carried state, because a slot a policy chose
+# to fill is bought in a different month in each rollout. Rollout 1 bought lot 0 three months
+# later than rollout 0, so the holding period differs across the row.
+_PURCHASE_MONTH = np.asarray([[0, 3], [3, 3], [3, 3]], dtype=np.int64)
 
 
 def _view(*, month: int = 6, cash_slots: tuple[int, ...] = (0, 1), lot_slots: tuple[int, ...] = (0, 1)):
@@ -81,7 +84,7 @@ def test_holding_period_is_months_since_acquisition() -> None:
 
     view = _view(month=6)
 
-    assert [[int(x) for x in row] for row in view.lot_holding_months] == [[6, 6], [3, 3]]
+    assert [[int(x) for x in row] for row in view.lot_holding_months] == [[6, 3], [3, 3]]
 
 
 def test_the_month_reaches_only_the_holding_period() -> None:
