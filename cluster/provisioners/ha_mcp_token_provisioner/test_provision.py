@@ -13,13 +13,15 @@ from kubernetes.client.exceptions import ApiException
 from cluster.provisioners.ha_mcp_token_provisioner import provision as provision_module
 from cluster.provisioners.ha_mcp_token_provisioner.provision import (
     CLIENT_ID,
+    CLIENT_NAME,
+    LIFESPAN_DAYS,
     TOKEN_SECRET_NAME,
     TOKEN_SECRET_NAMESPACE,
     USERNAME,
     login,
-    mint_long_lived_token,
     provision,
     read_token_secret,
+    replace_long_lived_token,
     token_is_valid,
     write_token_secret,
 )
@@ -87,48 +89,116 @@ def test_login_runs_home_assistant_login_flow():
     )
 
 
-async def test_mint_long_lived_token_uses_authenticated_websocket(monkeypatch: pytest.MonkeyPatch):
-    class FakeWebsocket:
-        def __init__(self):
-            self.responses = iter(
-                [
-                    '{"type":"auth_required"}',
-                    '{"type":"auth_ok"}',
-                    '{"id":1,"success":true,"result":"long-lived-token"}',
-                ]
-            )
-            self.sent: list[dict[str, object]] = []
+class _FakeWebsocket:
+    def __init__(self, responses: list[str]):
+        self.responses = iter(responses)
+        self.sent: list[dict[str, object]] = []
 
-        async def recv(self) -> str:
-            return next(self.responses)
+    async def recv(self) -> str:
+        return next(self.responses)
 
-        async def send(self, message: str) -> None:
-            self.sent.append(json.loads(message))
+    async def send(self, message: str) -> None:
+        self.sent.append(json.loads(message))
 
+
+def _connect_to(websocket: _FakeWebsocket, urls: list[str]):
     class FakeConnection:
-        def __init__(self, websocket: FakeWebsocket):
-            self.websocket = websocket
-
-        async def __aenter__(self) -> FakeWebsocket:
-            return self.websocket
+        async def __aenter__(self) -> _FakeWebsocket:
+            return websocket
 
         async def __aexit__(self, *args: object) -> None:
             pass
 
-    websocket = FakeWebsocket()
-    urls: list[str] = []
-
     def connect(url: str) -> FakeConnection:
         urls.append(url)
-        return FakeConnection(websocket)
+        return FakeConnection()
 
-    monkeypatch.setattr(provision_module.websockets, "connect", connect)
-    assert await mint_long_lived_token("access-token", "ws://home-assistant/api/websocket") == "long-lived-token"
+    return connect
+
+
+def _tokens_reply(message_id: int, tokens: list[dict[str, object]]) -> str:
+    return json.dumps({"id": message_id, "success": True, "result": tokens})
+
+
+async def test_replace_long_lived_token_revokes_the_stale_token_before_minting(monkeypatch: pytest.MonkeyPatch):
+    """The deadlock this guards: Home Assistant refuses a duplicate client_name."""
+    websocket = _FakeWebsocket(
+        [
+            '{"type":"auth_required"}',
+            '{"type":"auth_ok"}',
+            _tokens_reply(
+                1,
+                [
+                    {"id": "session", "type": "normal", "client_name": None},
+                    {"id": "other-app", "type": "long_lived_access_token", "client_name": "something-else"},
+                    {"id": "stale", "type": "long_lived_access_token", "client_name": CLIENT_NAME},
+                ],
+            ),
+            '{"id":2,"success":true,"result":{}}',
+            '{"id":3,"success":true,"result":"fresh-token"}',
+        ]
+    )
+    urls: list[str] = []
+    monkeypatch.setattr(provision_module.websockets, "connect", _connect_to(websocket, urls))
+
+    assert await replace_long_lived_token("access-token", "ws://home-assistant/api/websocket") == "fresh-token"
     assert urls == ["ws://home-assistant/api/websocket"]
     assert websocket.sent == [
         {"type": "auth", "access_token": "access-token"},
-        {"id": 1, "type": "auth/long_lived_access_token", "client_name": "ha-mcp-cluster", "lifespan": 3650},
+        {"id": 1, "type": "auth/refresh_tokens"},
+        {"id": 2, "type": "auth/delete_refresh_token", "refresh_token_id": "stale"},
+        {"id": 3, "type": "auth/long_lived_access_token", "client_name": CLIENT_NAME, "lifespan": LIFESPAN_DAYS},
     ]
+
+
+async def test_replace_long_lived_token_mints_directly_when_none_exists(monkeypatch: pytest.MonkeyPatch):
+    websocket = _FakeWebsocket(
+        [
+            '{"type":"auth_required"}',
+            '{"type":"auth_ok"}',
+            _tokens_reply(1, [{"id": "session", "type": "normal", "client_name": None}]),
+            '{"id":2,"success":true,"result":"fresh-token"}',
+        ]
+    )
+    monkeypatch.setattr(provision_module.websockets, "connect", _connect_to(websocket, []))
+
+    assert await replace_long_lived_token("access-token", "ws://ha/api/websocket") == "fresh-token"
+    assert [message["type"] for message in websocket.sent] == [
+        "auth",
+        "auth/refresh_tokens",
+        "auth/long_lived_access_token",
+    ]
+
+
+async def test_replace_long_lived_token_skips_unsolicited_events(monkeypatch: pytest.MonkeyPatch):
+    """A reply is matched by id, so an interleaved event is not mistaken for one."""
+    websocket = _FakeWebsocket(
+        [
+            '{"type":"auth_required"}',
+            '{"type":"auth_ok"}',
+            '{"id":99,"type":"event","event":{}}',
+            _tokens_reply(1, []),
+            '{"id":2,"success":true,"result":"fresh-token"}',
+        ]
+    )
+    monkeypatch.setattr(provision_module.websockets, "connect", _connect_to(websocket, []))
+
+    assert await replace_long_lived_token("access-token", "ws://ha/api/websocket") == "fresh-token"
+
+
+async def test_replace_long_lived_token_surfaces_rejection(monkeypatch: pytest.MonkeyPatch):
+    websocket = _FakeWebsocket(
+        [
+            '{"type":"auth_required"}',
+            '{"type":"auth_ok"}',
+            _tokens_reply(1, []),
+            '{"id":2,"success":false,"error":{"code":"unknown_error","message":"Unknown error"}}',
+        ]
+    )
+    monkeypatch.setattr(provision_module.websockets, "connect", _connect_to(websocket, []))
+
+    with pytest.raises(RuntimeError, match="auth/long_lived_access_token"):
+        await replace_long_lived_token("access-token", "ws://ha/api/websocket")
 
 
 def test_read_token_secret_handles_missing_and_decodes_existing():
