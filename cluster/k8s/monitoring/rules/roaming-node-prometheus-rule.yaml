@@ -1,0 +1,71 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: roaming-node-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # Forks of two kube-prometheus-stack rules, which are switched off via
+    # `defaultRules.disabled` in ../stack/helmrelease.yaml. The only change is
+    # excluding roaming nodes; everything else is copied verbatim from chart
+    # version 82.3.0, group `kubernetes-system-kubelet`.
+    #
+    # Why fork rather than suppress by alertname in the Alertmanager route: the
+    # alertname denylist is all-or-nothing, so denying these two meant a *control
+    # plane* node going NotReady also paged nobody. Excluding by taint keeps the
+    # alert for every non-roaming node.
+    #
+    # Why the taint and not the node names: `iguana` and `rugged` are defined in
+    # several places at once and hardcoding a third would be one more thing to
+    # forget. All of these describe the same set today:
+    #   - node taint `node-role.kubernetes.io/roaming=true:NoSchedule`  <- keyed on here
+    #   - node label `topology.kubernetes.io/region=roaming`
+    #   - `terraform/main/home-nodes.tf` (the declarations)
+    #   - `nebula-mesh.json` at the repo root (mesh roster)
+    #   - the Node Types table in <cluster/README.md>
+    # The taint wins because it is the *operational* statement -- a node tainted
+    # roaming is one the scheduler is told may vanish, which is exactly the
+    # property that makes NotReady uninteresting. Taint a new laptop and it is
+    # covered here with no edit. (Note README currently says only `rugged` carries
+    # the taint; both do, verified 2026-08-06.)
+    #
+    # CLEANUP(added 2026-08-06): re-diff against the chart's
+    # `kubernetes-system-kubelet` group on every kube-prometheus-stack bump --
+    # a forked rule silently keeps the old expression when upstream fixes theirs.
+    - name: roaming-node-alerts
+      rules:
+        - alert: KubeNodeNotReady
+          expr: |
+            (
+              kube_node_status_condition{condition="Ready",job="kube-state-metrics",status="true"} == 0
+              and on (cluster, node)
+              kube_node_spec_unschedulable{job="kube-state-metrics"} == 0
+            )
+            unless on (node) (kube_node_spec_taint{job="kube-state-metrics",key="node-role.kubernetes.io/roaming"} == 1)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node is not ready."
+            description: "{{ $labels.node }} has been unready for more than 15 minutes. Roaming nodes are excluded, so this is a node that was expected to stay up."
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodenotready
+        # Upstream already excludes nodes carrying a "this node is going away"
+        # taint (cluster-autoscaler, spot termination). Roaming laptops are the
+        # same category, so this adds one key to that existing regex rather than
+        # bolting on a second mechanism.
+        - alert: KubeNodeUnreachable
+          expr: |
+            (
+              kube_node_spec_taint{effect="NoSchedule",job="kube-state-metrics",key="node.kubernetes.io/unreachable"}
+              unless ignoring (key, value)
+              kube_node_spec_taint{job="kube-state-metrics",key=~"ToBeDeletedByClusterAutoscaler|cloud.google.com/impending-node-termination|aws-node-termination-handler/spot-itn|node-role.kubernetes.io/roaming"}
+            ) == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node is unreachable."
+            description: "{{ $labels.node }} is unreachable and some workloads may be rescheduled. Roaming nodes are excluded, so this is a node that was expected to stay up."
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubenodeunreachable

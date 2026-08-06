@@ -7,3 +7,4 @@ resources:
   - grocy-mcp-prometheus-rule.yaml
   - haku-console-connection-prometheus-rule.yaml
   - mcp-auth-prometheus-rule.yaml
+  - roaming-node-prometheus-rule.yaml

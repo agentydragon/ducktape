@@ -37,6 +37,13 @@ spec:
     # Global settings
     defaultRules:
       create: true
+      # Forked into ../rules/roaming-node-prometheus-rule.yaml so roaming
+      # laptops (iguana/rugged) can be excluded by taint. Denying these two by
+      # alertname in the route below would also have silenced them for the
+      # control-plane nodes, which is the opposite of what we want.
+      disabled:
+        KubeNodeNotReady: true
+        KubeNodeUnreachable: true
       rules:
         alertmanager: true
         # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
@@ -143,32 +150,61 @@ spec:
           # denylist, not after.
           group_by: ["..."]
           routes:
-            # Everything below here is suppressed. Grouped by family so pruning is
-            # a line edit rather than a diff against one 3KB regex.
+            # PERMANENT. Watchdog fires continuously by design and is the heartbeat
+            # for the external dead-man's switch (see cluster/docs/plan.md); paging
+            # on it would be backwards. InfoInhibitor exists only to feed the
+            # inhibit_rules above.
             - receiver: "null"
               matchers:
                 - alertname =~ "Watchdog|InfoInhibitor"
+
+            # NOT NOISE -- UNFIXED PROBLEMS. Everything below fires ~continuously
+            # because something is genuinely broken and has been for days. Each
+            # line is a to-do, not a policy: fix the cause, delete the entry. The
+            # number is minutes firing over the 7 days to 2026-08-06.
+            #
+            # Do NOT add to this list to quieten a new alert. That is how the
+            # 2026-08-05 paging outage happened -- suppressed alerts for
+            # deliberately-suspended services became a permanent floor that
+            # exhausted the daily quota and took *all* paging down for 23h.
+            - receiver: "null"
+              matchers:
+                # 10066 -- one ExternalSecret dead ~14d (airlock google-access-token).
+                # 10058 -- 4 scrape targets down 5d: kube-system, litellm, monitoring, seaweedfs.
+                #          Monitoring blind spots; worth fixing first.
+                # 10049 -- CDI storage profiles incomplete (info).
+                #  9926 -- version drift: iguana/rugged/wyrm2 on v1.36.2 vs v1.35.1 elsewhere.
+                #  7935 -- wyrm2's disk is genuinely nearly full.
+                #  7286 -- Tana probe stale.
+                #  4234 -- CPU throttling (info).
+                #  3231 -- a quota fully used (info).
+                #   614 -- containers stuck Waiting.
+                #   157 -- major page faults.
+                - alertname =~ "ExternalSecretNotReady|TargetDown|CDIStorageProfilesIncomplete|KubeVersionMismatch|NodeFilesystemAlmostOutOfSpace|TanaMcpFacadeProbeStale|CPUThrottlingHigh|KubeQuotaFullyUsed|KubeContainerWaiting|NodeMemoryMajorPagesFaults"
+
+            # Same category, but specifically the fallout of roaming laptops
+            # leaving the cluster. Unlike KubeNodeNotReady/KubeNodeUnreachable
+            # (now forked in ../rules/roaming-node-prometheus-rule.yaml and
+            # excluded by taint), these carry no `node` label -- only namespace and
+            # pod -- so there is no way to say "on a roaming node" at the routing
+            # layer. Suppressing by namespace would blind us to real failures in
+            # loki/egress-proxy/gecko. Re-evaluate once the laptops stop flapping;
+            # if still needed, the fix is forking these rules the same way.
+            - receiver: "null"
+              matchers:
+                - alertname =~ "KubePodNotReady|KubePodCrashLooping|KubeJobFailed|KubeDaemonSetRolloutStuck|KubeDeploymentReplicasMismatch|KubeDeploymentRolloutStuck"
+
+            # The pager reporting on its own delivery. These fired for the whole
+            # 23h outage and could not be delivered, because delivery was the
+            # broken thing -- routing them adds quota pressure during exactly the
+            # incident where quota is the problem. The external dead-man's switch
+            # is the real fix. AlertmanagerClusterDown / ...Crashlooping / ...
+            # ConfigInconsistent / ...FailedReload / ...MembersInconsistent DO page
+            # (enabled in #3800/#3802): those describe a broken Alertmanager that
+            # can still send.
             - receiver: "null"
               matchers:
                 - alertname =~ "AlertmanagerClusterFailedToSendAlerts|AlertmanagerFailedToSendAlerts"
-            - receiver: "null"
-              matchers:
-                - alertname =~ "ExternalSecretNotReady"
-            - receiver: "null"
-              matchers:
-                - alertname =~ "CDIDataImportCronOutdated|CDIDataVolumeUnusualRestartCount|CDIDefaultStorageClassDegraded|CDIMultipleDefaultVirtStorageClasses|CDINoDefaultStorageClass|CDINotReady|CDIOperatorDown|CDIStorageProfilesIncomplete"
-            - receiver: "null"
-              matchers:
-                - alertname =~ "ConfigReloaderSidecarErrors|PrometheusOperatorListErrors|PrometheusOperatorNodeLookupErrors|PrometheusOperatorNotReady|PrometheusOperatorReconcileErrors|PrometheusOperatorRejectedResources|PrometheusOperatorStatusUpdateErrors|PrometheusOperatorSyncFailed|PrometheusOperatorWatchErrors|TargetDown"
-            - receiver: "null"
-              matchers:
-                - alertname =~ "NodeBondingDegraded|NodeCPUHighUsage|NodeClockSkewDetected|NodeDiskIOSaturation|NodeFilesystemAlmostOutOfSpace|NodeHighNumberConntrackEntriesUsed|NodeMemoryHighUtilization|NodeMemoryMajorPagesFaults|NodeNetworkInterfaceFlapping|NodeNetworkReceiveErrs|NodeNetworkTransmitErrs|NodeSystemSaturation|NodeSystemdServiceCrashlooping|NodeSystemdServiceFailed|NodeTextFileCollectorScrapeError"
-            - receiver: "null"
-              matchers:
-                - alertname =~ "KubeAPITerminatedRequests|KubeAggregatedAPIDown|KubeAggregatedAPIErrors|KubeCPUOvercommit|KubeCPUQuotaOvercommit|KubeClientErrors|KubeContainerWaiting|KubeDaemonSetMisScheduled|KubeDaemonSetNotScheduled|KubeDaemonSetRolloutStuck|KubeDeploymentGenerationMismatch|KubeDeploymentReplicasMismatch|KubeDeploymentRolloutStuck|KubeHpaMaxedOut|KubeHpaReplicasMismatch|KubeJobFailed|KubeJobNotCompleted|KubeMemoryOvercommit|KubeMemoryQuotaOvercommit|KubeNodeEviction|KubeNodeNotReady|KubeNodePressure|KubeNodeReadinessFlapping|KubeNodeUnreachable|KubePodCrashLooping|KubePodNotReady|KubeQuotaAlmostFull|KubeQuotaExceeded|KubeQuotaFullyUsed|KubeStatefulSetGenerationMismatch|KubeStatefulSetReplicasMismatch|KubeStatefulSetUpdateNotRolledOut|KubeVersionMismatch|KubeletClientCertificateRenewalErrors|KubeletDown|KubeletPlegDurationHigh|KubeletPodStartUpLatencyHigh|KubeletServerCertificateRenewalErrors|KubeletTooManyPods"
-            - receiver: "null"
-              matchers:
-                - alertname =~ "CPUThrottlingHigh|TanaMcpFacadeProbeStale"
         receivers:
           - name: "null"
           - name: ntfy
