@@ -351,13 +351,36 @@
 
     # Bound the ARC instead of relying on it to shrink quickly enough during a
     # host allocation burst. This leaves a predictable host reserve alongside
-    # wyrm2's 96 GiB hugepage pool.
+    # wyrm2's 96 GiB hugepage pool. Own the canonical zfs.conf path: modprobe
+    # concatenates matching option lines, so a second file can silently lose to
+    # a later lexical filename (as zfs-memory.conf did to the old zfs.conf).
     - name: Cap the ZFS ARC at 8 GiB
       ansible.builtin.copy:
-        dest: /etc/modprobe.d/zfs-memory.conf
+        dest: /etc/modprobe.d/zfs.conf
         content: |
           options zfs zfs_arc_max=8589934592
         mode: "0644"
+      tags: [memory, zfs]
+
+    - name: Remove duplicate legacy ZFS ARC configuration
+      ansible.builtin.file:
+        path: /etc/modprobe.d/zfs-memory.conf
+        state: absent
+      tags: [memory, zfs]
+
+    - name: Read the live ZFS ARC cap
+      ansible.builtin.command:
+        cmd: cat /sys/module/zfs/parameters/zfs_arc_max
+      register: zfs_arc_max_live
+      changed_when: false
+      tags: [memory, zfs]
+
+    - name: Apply the ZFS ARC cap live
+      ansible.builtin.command:
+        cmd: /usr/bin/tee /sys/module/zfs/parameters/zfs_arc_max
+        stdin: "8589934592"
+      when: zfs_arc_max_live.stdout != "8589934592"
+      changed_when: true
       tags: [memory, zfs]
 
     - name: Prevent D3cold on RTX 5090 GPUs via udev
