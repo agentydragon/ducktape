@@ -54,6 +54,12 @@ def is_tag_for_pkg(tag: str, pkg: str) -> bool:
     return _HEX_SUFFIX_RE.match(tag[len(prefix) :]) is not None
 
 
+def tag_package(tag: str) -> str | None:
+    """Return the package a release tag belongs to, or None if it is not one of ours."""
+    pkg, _, suffix = tag.rpartition("-")
+    return pkg if pkg and _HEX_SUFFIX_RE.match(suffix) else None
+
+
 class Artifact(BaseModel, frozen=True):
     pkg: str = Field(description="artifact pin name (artifact-pins.json key)")
     filename: str = Field(description="Artifact filename attached to the GitHub release")

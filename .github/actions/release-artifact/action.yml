@@ -23,10 +23,6 @@ inputs:
     description: "Override RBE container image (optional)"
     required: false
     default: ""
-  retention_days:
-    description: "Delete releases older than this many days"
-    required: false
-    default: "30"
   bazel_flags:
     description: >
       Extra bazel flags appended to both build invocations (unstamped and
@@ -105,7 +101,6 @@ runs:
       env:
         GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
         PKG: ${{ inputs.pkg }}
-        RETENTION_DAYS: ${{ inputs.retention_days }}
       run: |
         set -euo pipefail
 
@@ -148,25 +143,3 @@ runs:
           --latest=false
 
         echo "Released: $PKG ($tag)"
-
-    # Prune runs unconditionally so unchanged-content jobs still clean up old
-    # releases. -L 5000 ensures we see all releases for high-churn packages
-    # (e.g. skills has 500+); the default 200 hides everything past the
-    # 30-day cutoff for daily-released packages.
-    - name: Prune stale releases
-      shell: bash
-      env:
-        GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
-        PKG: ${{ inputs.pkg }}
-        RETENTION_DAYS: ${{ inputs.retention_days }}
-        KEEP_TAG: ${{ steps.check.outputs.tag }}
-      run: |
-        set -euo pipefail
-        cutoff=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
-        gh release list --json tagName,createdAt -L 5000 \
-          --jq ".[] | select(.tagName | test(\"^${PKG}-[0-9a-f]{12}$\")) | select(.createdAt < \"${cutoff}\") | .tagName" \
-          | while read -r old_tag; do
-              [[ "$old_tag" == "$KEEP_TAG" ]] && continue
-              echo "  pruning $old_tag"
-              gh release delete "$old_tag" --yes --cleanup-tag
-            done

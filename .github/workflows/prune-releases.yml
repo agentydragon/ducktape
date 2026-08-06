@@ -1,0 +1,39 @@
+name: Prune releases
+# Delete GitHub Releases past the retention window, once a day for the whole repo.
+#
+# This used to be a step inside every release-matrix job. `gh release list` is the
+# only GraphQL call in the release path, it pages the entire release list, and it ran
+# in ~66 concurrent jobs that each discarded every package but their own -- which
+# exhausted the 5,000/hour GraphQL quota and failed the whole release lane with
+# "API rate limit already exceeded".
+#
+# Runs on the ducktape-automation GitHub App token rather than GH_RELEASE_PAT so the
+# scan draws on the App's own rate-limit bucket instead of competing with a human's.
+"on":
+  schedule:
+    - cron: "20 5 * * *"
+  workflow_dispatch: {}
+concurrency:
+  group: prune-releases
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  prune:
+    name: Prune stale releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: devel
+
+      - uses: ./.github/actions/mint-automation-token
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Delete releases past the retention window
+        run: pip install uv && uv run devinfra/ci/prune_releases.py
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}

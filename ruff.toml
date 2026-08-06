@@ -188,6 +188,7 @@ split-on-trailing-comma = false
 "devinfra/ci/check_release.py" = ["E402"]
 "devinfra/ci/ci_decide.py" = ["E402"]
 "devinfra/ci/sync_pins.py" = ["E402"]
+"devinfra/ci/prune_releases.py" = ["E402"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]
