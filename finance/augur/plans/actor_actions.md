@@ -1,8 +1,12 @@
 # Actors, actions, and the seam between them
 
-Design for how agents act in augur. Written after a first attempt cut the boundary in the
-wrong place; this records both the target shape and the reasoning, so the wrong cut does
-not get re-derived.
+Design for how agents act in augur, and the live plan for what is left. Written after a
+first attempt cut the boundary in the wrong place; it records the target shape and the
+reasoning, so the wrong cut does not get re-derived.
+
+Phases A, B, C and D are done but for C8, D11 and D12 — the build order below carries the
+status. **"What next" is the section to read** if you want the current plan rather than how
+it was arrived at.
 
 ## Why the first attempt was wrong
 
@@ -193,9 +197,16 @@ without its reason gets "simplified" away.
   differently: the quanta are FLOORED, so the value they represent is at most the budget; that
   value is then ROUNDED to cents, and rounding cannot cross an integer bound it is already
   under (`round(x) <= N` whenever `x <= N` for integer `N`).
-- **Cost basis is per-rollout.** A lot bought in month 3 carries the price _its_ rollout
-  paid. Reading a compile-time column instead reports zero basis and books the entire
-  proceeds as gain.
+- **Cost basis AND purchase month are per-rollout.** A lot bought in month 3 carries the
+  price and the month _its_ rollout paid. Reading a compile-time column instead reports zero
+  basis (booking the entire proceeds as gain) and month 0 (making every later sale
+  long-term).
+- **An affordability clamp survives on the buy side, and the reason is not the policy.**
+  The rule above puts affordability on the policy, and it holds: the policy sizes against
+  the cash it observed. But settlement, a scheduled purchase, or a second policy on the same
+  account can all spend between the observation and the execution, and an unclamped buy
+  would then overdraw. Flooring the order keeps `spent <= cash`, so the clamp binds only
+  when something else took the cash first — it is not the engine choosing a size.
 - **Buying settles after obligations**, so it can never starve an obligation into a false
   ruin, and is gated on the post-settlement failure mask so a failed rollout stops
   transacting immediately.
@@ -218,9 +229,16 @@ without its reason gets "simplified" away.
 - **Water-filling, both directions.** A level `L` with `sum_i max(0, value_i - L*weight_i) = S`
   lands the portfolio _on_ target rather than nearer it. The deposit side is the mirror,
   and the two must be exact inverses.
-- **Rebalancing rides cashflow only.** No periodic rebalance, no drift tolerance: turnover
-  and its tax drag would swamp the effect the study measures. Zero drift plus zero cashflow
-  must emit zero actions.
+- **Rebalancing rides cashflow by default.** A withdrawal or deposit moves the portfolio
+  toward target for free, because the trade was going to happen anyway. Zero drift plus zero
+  cashflow emits zero actions.
+- **Drift-triggered trimming is opt-in and off by default** (`rebalance_tolerance`, #3813).
+  Whether the tax drag of turnover is worth the drift it removes is what the study
+  MEASURES, so a default that rebalanced would assume the answer. When configured it fires
+  only in a month the band is quiet — the band's own water-filling is already the best
+  rebalance that cashflow can buy — and it goes all the way back to target rather than to
+  the tolerance edge, for the same forced-trading reason the cash band refills to its far
+  edge.
 - **Cash band is (s,S), refilling to the far edge.** Not mainly for turnover — refilling
   only to the floor puts the agent back at its trigger next month, making it a **forced
   seller into every dip**, which is the risk the whole exercise exists to price. Recorded
@@ -251,18 +269,19 @@ Stated with direction because a deferral whose bias is unknown is a trap.
   California tax, and every result about it reads **optimistic**. One-off transition costs
   (moving, breaking a lease) are unmodelled too, and they are what make hysteresis an
   economic constraint rather than an anti-chatter device.
-- **Bonds are not tradeable by a policy** until a discount curve exists. Selling one before
-  maturity needs a price the simulator can _calculate_; book value would be an
-  approximation, and sim calculates rather than approximates. Until then, an action selling
-  one must be rejected loudly.
+- **Bonds are held, not traded.** `BondHolding` is par-purchase, held-to-maturity: coupons,
+  CPI accretion for TIPS, redemption at maturity. Selling one early or marking it monthly
+  needs a price, which nothing produces yet, so an action selling one must be rejected
+  loudly. Note the direction of THIS error is favourable and worth stating: a held ladder
+  genuinely is rate-immune, so not marking it is not a simplification — it is the accounting
+  that matches the strategy. What is understated is flexibility, not risk.
 - **Private equity is not purchasable.** It is marked, not priced. A unit-denominated order
   is perfectly well formed against it — the missing piece is the cash leg, since there is no
   price at which those units convert. So the rejection is at execution, not a malformed
   action.
-- **Basis and purchase month are carried as history but never change.** Slots are never
-  reused, so `(lot, rollout)` final state would cost a factor of `snapshot_months` less —
-  361x at a 30-year horizon. Separable from the behavioural work; changes the decoded
-  per-month frame, so it should be a deliberate change rather than a side effect.
+- **Bond marking and pre-maturity sale.** See "What the exogenous layer owes" below: the
+  blocker is a price the simulator can calculate, and the shape of that is now settled even
+  though none of it is built.
 
 ## Build order
 
@@ -296,9 +315,10 @@ bears on the work ahead.
 - **A rewritten test is worth nothing until it has been seen to fail.** Break the behaviour
   deliberately and confirm. This is how B7 was validated and how A1 was proven — 6 of 8 new
   conservation tests fail with the fix reverted.
-- **Purchase month is still a static plan column** while cost basis is per-rollout state.
-  B4 fixed half of that asymmetry deliberately; the rest lands in phase D, when policies
-  decide WHEN to buy.
+- **The purchase-month asymmetry is closed.** B4 made basis per-rollout and left the
+  purchase month a static plan column; #3797 and #3810 finished it, once policies could
+  decide WHEN to buy. Both are now `(lot, rollout)` final state and both reach the decoded
+  frame.
 - **The mortgage payoff has no cash leg.** It extinguishes a liability without crediting
   anyone, even a modelled lender, which is why a property sale's contra entry is the NET.
   Pinned by a test so a later edit must choose rather than drift.
@@ -310,62 +330,137 @@ DECODE side is separable from the config side, where nearly all the call sites a
 decode half alone buys exact reconciliation of decoded frames, which the conservation
 invariant currently has to reach into raw buffers to get.
 
-### Phase C — unify execution, without changing behaviour
+### Phase C — unify execution — done but for C8
 
 **C7a. One primitive moves money** (#3760). `_move_cash` takes both sides or moves nothing;
 eleven phases call it and `cash.at[` appears once in the file. The one-sided write #3753 fixed
-in five places is no longer expressible. It also gave the three settlement-style helpers a
-rest-of-world row they did not have, so an unresolved counterparty settles there instead of
-being dropped by `_scatter_rows`' sentinel — a guarantee rather than a fix, since
-`AccountSlots.resolve` already makes a live `-1` unreachable.
+in five places is no longer expressible.
 
-**C7b. One disposal executor — BLOCKED, and the blocker is not stylistic.** Three sale paths
-exist: scheduled sales (units, open-coded across N sales), private equity (units,
-`_fifo_sell_units`), and the liquidity policy (CENTS, `_fifo_sell_cents`). A single executor
-takes a quantity, so the cents path would have to convert its target up front — and that is a
-different number. `_fifo_sell_cents` allocates a cent target across lots and ceilings EACH
-lot's slice to quanta; converting once and walking units ceilings ONCE. Measured over 400k
-random trades: whole-unit assets never disagree, but fractional quanta do — 0.3% at scale 100,
-47% at scale 100,000 (crypto), by a quantum each time.
+**C7b. One disposal executor** (#3789). This was blocked, and the blocker was real rather
+than stylistic: three sale paths existed and the liquidity policy's target was denominated in
+CENTS while the other two were in units. `_fifo_sell_cents` allocated a cent target across
+lots and ceilinged EACH lot's slice to quanta; converting once and walking units ceilings
+ONCE. Measured over 400k random trades: whole-unit assets never disagreed, but fractional
+quanta did — 0.3% at scale 100, 47% at scale 100,000 (crypto), by a quantum each time.
 
-So C7b cannot be behaviour-preserving while `LiquidityPolicy` exists. **D10 deletes it**, after
-which every target is a quantity and the executor is unblocked. Until then the two
-unit-denominated paths could share one executor, which is worth doing only if C7b's remainder
-is not simply deferred behind D10.
+D10 deleting `LiquidityPolicy` removed the last cents-denominated target and unblocked it.
+One `_fifo_sell` now carries an `in_cents` parameter for the one caller that still needs it.
 
-**C8. Schedules become clock policies.** `Scheduled*` / `Recurring*` lower to a clock policy
-emitting actions; the parallel execution paths are deleted. Still behaviour-preserving.
+**C8. Schedules become clock policies — NOT done.** `Scheduled*` / `Recurring*` still lower
+through parallel execution paths rather than emitting actions. It is the last piece of the
+conceptual unification and it is behaviour-preserving, which also means it buys no answer.
+See the ordering note below.
 
-Note the shape of the action type is NOT settled by C. Fixing it before a policy emits through
-it is the mistake #3745 and #3746 were closed for; the dense form is the per-month table the
-compiler already builds, and what a policy needs from it is learned in D.
+### Phase D — capability — done but for spending
 
-### Phase D — new capability
+**D9. Purchase slots** (#3804, #3810). Configured slot count per sleeve, a `(policy, sleeve,
+rollout)` cursor in the scan carry, per-rollout basis and purchase month written at the fill,
+and the exhaustion abort. Buys execute after obligation settlement, gated on the
+post-settlement failure mask.
 
-**D9. Purchase slots** with a runtime cursor, per-rollout purchase month, and the exhaustion
-abort.
+**D10. The target-allocation policy** (#3785, #3788, #3793). Deleted `LiquidityPolicy`
+outright including the wire/product/frontend change; ordered sell-list became per-holding
+integer weights, trigger/amount became floor/ceiling. #3793 put instrument prices in the
+observation and made orders units-only, which is what let the buy side exist at all.
 
-**D10. The target-allocation policy**, with `allocation.py` and `cash_band.py` as internals
-and the observation type from the closed PR. Deletes `LiquidityPolicy` outright, including
-the full-stack wire/product/frontend change: ordered sell-list to per-holding integer
-weights, trigger/amount to floor/ceiling. **Unblocks C7b** by removing the last
-cents-denominated disposal target.
+**D10b. Drift-triggered trimming** (#3813), which the plan had not anticipated. Selling an
+overweight sleeve when there is no cash need is the one thing neither side of the band could
+express, and a sleeve that quietly doubles was otherwise never sold down.
 
-**D11. Policy-chosen payment amounts.** `AmountSpec` is structurally closed to simulated
-state, which is what makes spending config rather than a decision today.
+**D11. Policy-chosen payment amounts — NOT done.** `AmountSpec` is structurally closed to
+simulated state, which is what makes spending config rather than a decision.
 
-**D12. Tier state**: policy-internal mode, hysteresis, an explicit one-month lag, and a
-declared precedence against rebalancing so the substitution between cutting spending and
-selling assets is configured rather than decided by evaluation order.
+**D12. Tier state — NOT done.** Policy-internal mode, hysteresis, an explicit one-month lag,
+and a declared precedence against rebalancing.
 
-### Independent
+## What the exogenous layer owes
 
-The jointly sampled par-yield path and bond mark-to-market, both needed before a bond can be
-a sleeve at all — until a discount curve exists, a pre-maturity bond sale has no price the
-simulator can calculate.
+Marking a bond, or selling one before maturity, needs a price. The shape of where that price
+comes from is settled even though none of it is built, and settling it removed most of what
+an earlier draft of this plan had scoped as weeks of work.
+
+**Consistency is the model's internal property.** Rai's framing:
+
+> "prices should be rationally consistent" should just be a property that lives inside the
+> structure of the exogenous model. i.e. that model knows about things like normal shapes of
+> yield curves. and nothing downstream does.
+
+So the interface is uniform — **every tradeable instrument has a price series**, and a bond
+is marked exactly the way an equity is. Curve shape, no-arbitrage between rungs, and
+pull-to-par at maturity are invariants the model maintains internally. Neither the sim nor
+the engine learns what a discount curve is. This is the same principle that moved instrument
+prices into the observation in #3793: what something trades at is a fact about the market,
+so the exogenous layer hands it over rather than having the engine infer it.
+
+Two intermediate positions were considered and are wrong by that principle. Emitting a
+**yield** makes the sim carry a quantity it must convert. Emitting **discount factors** is
+less leaky and still makes the engine learn to discount a cashflow, which is the model's job.
+
+Three consequences, recorded because each was expensive to work out:
+
+- **The positivity wall stops mattering.** The level stack is multiplicative and log-based,
+  and positivity is enforced — not assumed — in ten places (`HistoricalSeries` rejects
+  non-positive levels; the VECM fits `np.log(levels)`; anchoring is a multiplicative rescale
+  by month-0 so a zero month-0 is unanchorable; `sample_sanity` raises rather than reporting
+  a band miss). All of that constrains emitted LEVEL SERIES. A yield that is internal model
+  state, projected into positive prices, never becomes a `LevelSeriesKey`, so none of those
+  sites are on the path.
+- **`PrivateEquityRiskModel` is the precedent.** It carries hazards, regimes, lockups and
+  event priors — none of them level series — and emits marks. Rich internals, narrow emitted
+  surface. A bond-pricing model has the same shape.
+- **The instruments to price are scenario-defined, not fit-defined.** A ladder's rungs come
+  from config, so the model must price an instrument it was never fitted on — "the path for
+  a 4.2% coupon, 2041 CA muni". That is a pricing FUNCTION over internal curve state,
+  evaluated per requested instrument, rather than a fixed factor set.
+  `ExogenousSamplingRequest` already names what must be priced; this extends what can be
+  named.
+
+Two traps for whoever builds it, both found by survey and both silent:
+`model/state_space_factor.py:55` hand-spreads the four level-key classes instead of using
+`LevelSeriesKey`, so a new level kind is dropped from the state-space basis **with no type
+error**; and `model/state_space.py`'s `_coupling_allowed` falls through to `return True` for
+an unrecognized factor, silently coupling it to every macro factor at 0.5 shrinkage. Also:
+`fit/evidence_data.py` aligns factors with an INNER join under a 36-month minimum, so adding
+a series with a short history truncates the fit window for **every existing factor** —
+DFII10 starts in 2003 and DGS30 has a 2002–2006 gap.
+
+## What next
+
+The engine is no longer the constraint. Equities, crypto and PE are modeled with a joint
+fit; a held ladder including TIPS and muni tax character works; the funding policy raises,
+invests and trims; federal and California tax including per-jurisdiction interest exemption
+is in. **The remaining risk is that nobody has yet asked the model the actual question.**
+
+So the order is outcome-first, and deliberately not phase-first:
+
+1. **Build the real scenario and get a terminal-wealth distribution out of it.** Nothing
+   blocks this. It is also the only step that can tell us which of the rest is worth doing,
+   and until it runs, every estimate of that is a guess. Expect it to surface plumbing gaps
+   rather than modeling gaps.
+2. **Spending as a policy** (D11, then D12). This is the one modeling gap that plausibly
+   changes the ANSWER rather than its precision: flexibility is risk capacity, because a
+   flexible spender is never a forced seller, so a working tier policy should REDUCE the
+   floor the histogram calls for. Everything else on this list refines a number; this one
+   moves it.
+3. **Whatever step 1 shows the answer is sensitive to.** Candidates, with the direction of
+   their error where it is known: bond marking and pre-maturity sale (understates
+   flexibility, not risk — see the deferral above); the tier/tax-residency bundle (reads
+   optimistic, since a cheaper-location tier currently pays California tax); trading friction
+   (recorded in `sim/TODO.md` with its direction).
+4. **C8 and B6**, which are hygiene. C8 unifies the last parallel execution path and B6 puts
+   money in cents at both boundaries (#3741: 25 config fields, 77 decoded columns, 141
+   wire/frontend references, ~1168 construction sites — a program, not a PR, whose decode
+   half is separable and buys exact reconciliation on its own). Both make the code better
+   and neither makes the answer better, which is why they sit below a question that is still
+   unanswered.
+
+The tempting order is 4, 2, 1 — finish the architecture, then add capability, then use it.
+That order has been wrong at every previous step of this plan: C7b was unblocked by D10, and
+the exogenous work above shrank by an order of magnitude the moment the question "do we need
+a rate at all" was asked instead of assumed.
 
 ## Superseded
 
 PRs #3745 (policy arithmetic and observation) and #3746 (decide/execute split) were closed
-against this replan. Their content returns at steps 2 and 5; the arithmetic and the
-observation type survive unchanged, the aggregate boundary does not.
+against this replan. Their content returned in D10: the arithmetic and the observation type
+survived unchanged, the aggregate boundary did not.
