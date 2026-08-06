@@ -45,33 +45,51 @@ in bonds" rather than "which rungs", it is already answerable.
 Everything below is the survey of what step 3 would cost, kept because the constraints it
 found are real and would otherwise be rediscovered the hard way.
 
-## If a curve is eventually needed, it should emit PRICES
+## If a curve is eventually needed, it emits PRICES
 
-Rai's framing, and it is the same principle that moved instrument prices into the
-observation in #3793: what something trades at is a fact about the market, so the exogenous
-layer hands it over rather than having the engine infer it. A rate is a derived,
-human-facing summary of a price — something you print, not something the model carries.
+Rai's framing, and the same principle that moved instrument prices into the observation in
+#3793: what something trades at is a fact about the market, so the exogenous layer hands it
+over rather than having the engine infer it.
 
-This also dissolves the positivity problem below rather than working around it. That whole
-wall exists because a YIELD can be zero or negative; a **price is positive by
-construction**, so it slots into the log-based level stack with no fight at all.
+Stated in full, because it settles several questions at once:
 
-Two things stop it from being simply "emit a price series per bond", and both are reasons
-to emit **discount factors** and let the engine derive each bond's price as
-`sum(cashflow x discount factor)`:
+> "prices should be rationally consistent" should just be a property that lives inside the
+> structure of the exogenous model. i.e. that model knows about things like normal shapes of
+> yield curves. and nothing downstream does.
 
-- **Bond prices are not independent instruments.** Thirty ladder rungs are thirty price
-  paths with about three degrees of freedom between them. Fitted separately, the way SPY and
-  BTC are, the model will produce curves that cross themselves — a 10-year and an 11-year
-  bond wandering apart with an arbitrage sitting between them.
-- **A bond price has a terminal boundary condition**: it must converge to par at maturity.
-  `GeometricBrownian` is `initial * exp(cumsum)` with no mean reversion and no terminal pin
-  (<../model/gbm.py> `:51`), so a per-bond series fitted with today's machinery would let a
-  bond mature at a price that is not par.
+So the interface is uniform — **every tradeable instrument has a price series**, and a bond
+is marked exactly the way an equity is. Curve shape, no-arbitrage between rungs, and
+pull-to-par at maturity are all invariants the model maintains internally. Neither the sim
+nor the engine learns what a discount curve is.
 
-Discount factors are positive, few, jointly fittable with equities and inflation like any
-other factor, and pull-to-par falls out of the arithmetic for free. The sim never sees a
-rate.
+An earlier draft of this note proposed emitting discount factors and having the engine
+compute `sum(cashflow x discount factor)`. That is less leaky than emitting a yield and
+still wrong by this principle: it makes the engine learn to discount a cashflow, which is
+the model's job.
+
+Two things follow, and both are simplifications:
+
+- **The positivity wall stops mattering.** It constrains emitted LEVEL SERIES. A yield that
+  is internal model state, projected into positive prices, never becomes a `LevelSeriesKey`,
+  so none of the ten enforcement sites below are on the path at all. That was the largest
+  cost the survey found.
+- **`PrivateEquityRiskModel` is the precedent**, not a new sibling bundle block. It carries
+  hazards, regimes, lockups and event priors — none of them level series — and emits marks.
+  Rich internals, narrow emitted surface. A bond-pricing model has the same shape.
+
+One genuine difference from an equity, worth knowing before building it: **the instruments
+to price are scenario-defined, not fit-defined.** A ladder's rungs come from config, so the
+model must price an instrument it was never fitted on — "the path for a 4.2% coupon, 2041 CA
+muni". That is a pricing FUNCTION over internal curve state, evaluated per requested
+instrument, rather than a fixed factor set. It needs no new architectural concept:
+`ExogenousSamplingRequest` already names what must be priced; this extends what can be
+named.
+
+The survey below is kept for the parts that still apply — the joint-fit requirement, the
+`state_space_factor.py:55` trap, and the evidence-window cost — and for the record of why a
+raw yield is not an option even internally to a level-series representation.
+
+### What that costs
 
 ### What that costs
 
