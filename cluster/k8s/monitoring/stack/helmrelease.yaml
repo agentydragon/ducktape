@@ -106,14 +106,20 @@ spec:
         # when that alert was renamed and the allowlist regex kept the old names.
         # Defaulting to ntfy makes the failure mode "too loud" rather than "silent".
         #
-        # The denylist below reproduces the previous delivered set EXACTLY: every
-        # alertname defined in the ruler as of 2026-08-06 that was not in the old
-        # allowlist is listed here (116 names; 21 of them critical). Loosening it is
-        # deliberately a separate change -- this one is a behavioral no-op.
+        # The denylist started as an exact reproduction of the old delivered set (116
+        # names, 21 of them critical) so the inversion itself was a behavioral no-op.
+        # It is now being pruned deliberately, a batch at a time.
         #
-        # Deviation from that parity: a NEW alertname, from a chart upgrade or a new
-        # rule, is not in the denylist and therefore pages. That is the point of the
-        # inversion, and it is the one behavior this change does alter.
+        # Every candidate is checked against 7 DAYS of ALERTS history before removal,
+        # not a spot check. A 3h sample said TanaMcpFacadeProbeStale was quiet; over 7d
+        # it fires 7286 min (~72% of the week), and enabling it would have planted a
+        # permanently-firing alert in a channel whose daily quota is the thing that
+        # broke on 2026-08-05. Query:
+        #   max by (alertname) (count_over_time(ALERTS{alertstate="firing"}[7d]))
+        #
+        # Deviation worth knowing: a NEW alertname, from a chart upgrade or a new rule,
+        # is not in the denylist and therefore pages. That asymmetry is the point of the
+        # inversion -- silence is the failure mode that cost a 45h connector outage.
         route:
           group_wait: 30s
           group_interval: 5m
@@ -144,7 +150,7 @@ spec:
                 - alertname =~ "Watchdog|InfoInhibitor"
             - receiver: "null"
               matchers:
-                - alertname =~ "AlertmanagerClusterCrashlooping|AlertmanagerClusterDown|AlertmanagerClusterFailedToSendAlerts|AlertmanagerConfigInconsistent|AlertmanagerFailedReload|AlertmanagerFailedToSendAlerts|AlertmanagerMembersInconsistent"
+                - alertname =~ "AlertmanagerClusterCrashlooping|AlertmanagerClusterDown|AlertmanagerClusterFailedToSendAlerts|AlertmanagerFailedToSendAlerts"
             - receiver: "null"
               matchers:
                 - alertname =~ "ClusterExternalSecretNotReady|ExternalSecretNotReady|ExternalSecretsControllerBacklogged|ExternalSecretsControllerLongRunningWorker"
@@ -156,13 +162,13 @@ spec:
                 - alertname =~ "ConfigReloaderSidecarErrors|PrometheusOperatorListErrors|PrometheusOperatorNodeLookupErrors|PrometheusOperatorNotReady|PrometheusOperatorReconcileErrors|PrometheusOperatorRejectedResources|PrometheusOperatorStatusUpdateErrors|PrometheusOperatorSyncFailed|PrometheusOperatorWatchErrors|TargetDown"
             - receiver: "null"
               matchers:
-                - alertname =~ "NodeBondingDegraded|NodeCPUHighUsage|NodeClockNotSynchronising|NodeClockSkewDetected|NodeDiskIOSaturation|NodeFileDescriptorLimit|NodeFilesystemAlmostOutOfFiles|NodeFilesystemAlmostOutOfSpace|NodeFilesystemFilesFillingUp|NodeFilesystemSpaceFillingUp|NodeHighNumberConntrackEntriesUsed|NodeMemoryHighUtilization|NodeMemoryMajorPagesFaults|NodeNetworkInterfaceFlapping|NodeNetworkReceiveErrs|NodeNetworkTransmitErrs|NodeRAIDDegraded|NodeRAIDDiskFailure|NodeSystemSaturation|NodeSystemdServiceCrashlooping|NodeSystemdServiceFailed|NodeTextFileCollectorScrapeError"
+                - alertname =~ "NodeBondingDegraded|NodeCPUHighUsage|NodeClockNotSynchronising|NodeClockSkewDetected|NodeDiskIOSaturation|NodeFileDescriptorLimit|NodeFilesystemAlmostOutOfFiles|NodeFilesystemAlmostOutOfSpace|NodeFilesystemFilesFillingUp|NodeHighNumberConntrackEntriesUsed|NodeMemoryHighUtilization|NodeMemoryMajorPagesFaults|NodeNetworkInterfaceFlapping|NodeNetworkReceiveErrs|NodeNetworkTransmitErrs|NodeRAIDDegraded|NodeRAIDDiskFailure|NodeSystemSaturation|NodeSystemdServiceCrashlooping|NodeSystemdServiceFailed|NodeTextFileCollectorScrapeError"
             - receiver: "null"
               matchers:
-                - alertname =~ "KubeAPIDown|KubeAPIErrorBudgetBurn|KubeAPITerminatedRequests|KubeAggregatedAPIDown|KubeAggregatedAPIErrors|KubeCPUOvercommit|KubeCPUQuotaOvercommit|KubeClientCertificateExpiration|KubeClientErrors|KubeContainerWaiting|KubeControllerManagerDown|KubeDaemonSetMisScheduled|KubeDaemonSetNotScheduled|KubeDaemonSetRolloutStuck|KubeDeploymentGenerationMismatch|KubeDeploymentReplicasMismatch|KubeDeploymentRolloutStuck|KubeHpaMaxedOut|KubeHpaReplicasMismatch|KubeJobFailed|KubeJobNotCompleted|KubeMemoryOvercommit|KubeMemoryQuotaOvercommit|KubeNodeEviction|KubeNodeNotReady|KubeNodePressure|KubeNodeReadinessFlapping|KubeNodeUnreachable|KubePdbNotEnoughHealthyPods|KubePersistentVolumeErrors|KubePersistentVolumeFillingUp|KubePersistentVolumeInodesFillingUp|KubePodCrashLooping|KubePodNotReady|KubeQuotaAlmostFull|KubeQuotaExceeded|KubeQuotaFullyUsed|KubeSchedulerDown|KubeStateMetricsListErrors|KubeStateMetricsShardingMismatch|KubeStateMetricsShardsMissing|KubeStateMetricsWatchErrors|KubeStatefulSetGenerationMismatch|KubeStatefulSetReplicasMismatch|KubeStatefulSetUpdateNotRolledOut|KubeVersionMismatch|KubeletClientCertificateExpiration|KubeletClientCertificateRenewalErrors|KubeletDown|KubeletPlegDurationHigh|KubeletPodStartUpLatencyHigh|KubeletServerCertificateExpiration|KubeletServerCertificateRenewalErrors|KubeletTooManyPods"
+                - alertname =~ "KubeAPIErrorBudgetBurn|KubeAPITerminatedRequests|KubeAggregatedAPIDown|KubeAggregatedAPIErrors|KubeCPUOvercommit|KubeCPUQuotaOvercommit|KubeClientErrors|KubeContainerWaiting|KubeDaemonSetMisScheduled|KubeDaemonSetNotScheduled|KubeDaemonSetRolloutStuck|KubeDeploymentGenerationMismatch|KubeDeploymentReplicasMismatch|KubeDeploymentRolloutStuck|KubeHpaMaxedOut|KubeHpaReplicasMismatch|KubeJobFailed|KubeJobNotCompleted|KubeMemoryOvercommit|KubeMemoryQuotaOvercommit|KubeNodeEviction|KubeNodeNotReady|KubeNodePressure|KubeNodeReadinessFlapping|KubeNodeUnreachable|KubePdbNotEnoughHealthyPods|KubePersistentVolumeInodesFillingUp|KubePodCrashLooping|KubePodNotReady|KubeQuotaAlmostFull|KubeQuotaExceeded|KubeQuotaFullyUsed|KubeStateMetricsListErrors|KubeStateMetricsShardingMismatch|KubeStateMetricsShardsMissing|KubeStateMetricsWatchErrors|KubeStatefulSetGenerationMismatch|KubeStatefulSetReplicasMismatch|KubeStatefulSetUpdateNotRolledOut|KubeVersionMismatch|KubeletClientCertificateRenewalErrors|KubeletDown|KubeletPlegDurationHigh|KubeletPodStartUpLatencyHigh|KubeletServerCertificateRenewalErrors|KubeletTooManyPods"
             - receiver: "null"
               matchers:
-                - alertname =~ "CPUThrottlingHigh|GrocyMcpNoTools|HakuConsoleConnectionRefreshStale|HomeAssistantUnavailable|McpUpstreamTokenRefreshFailed|SeaweedFSReplicaPlacementMismatch|TanaMcpFacadeNoTools|TanaMcpFacadeProbeStale|TanaMcpFacadeUpstreamDown"
+                - alertname =~ "CPUThrottlingHigh|SeaweedFSReplicaPlacementMismatch|TanaMcpFacadeNoTools|TanaMcpFacadeProbeStale"
         receivers:
           - name: "null"
           - name: ntfy

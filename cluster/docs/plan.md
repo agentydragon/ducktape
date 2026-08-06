@@ -4,6 +4,25 @@
 workers and roaming laptops. Cilium Gateway API, DNS automation, Authentik SSO.
 PowerDNS and Authentik run on CloudNativePG `local-path`.
 
+## TODO: external dead-man's switch for the paging path
+
+Nothing in-cluster can reliably tell you that in-cluster alerting is dead. On
+2026-08-05 ntfy delivery failed for 23h (`HTTP 429 code 42908`, free daily quota
+exhausted by alerts firing on deliberately-suspended Flux objects — fixed in #3795).
+`AlertmanagerFailedToSendAlerts` fired for the whole outage and could not report it,
+because the broken thing _was_ alert delivery. Every Alertmanager-health alert has
+that same circularity, which is why none of them are worth routing to ntfy on their
+own.
+
+The construction that does work: `Watchdog` already fires continuously by design and
+routes to `"null"`. Point it at an external service (healthchecks.io, Better Stack, a
+cron on the VPS) that alerts when the heartbeat **stops** arriving. Costs zero ntfy
+messages and is the only signal that survives the pager itself failing.
+
+Deliberately not done as part of the alert-routing work in #3792/#3795/#3798: it needs
+an external account and an egress path, which is a different kind of decision than
+editing a route.
+
 ## Dropped Services
 
 - **Capacitor** (2026-03-22): Removed. `ghcr.io/gimlet-io/capacitor-next` requires a
