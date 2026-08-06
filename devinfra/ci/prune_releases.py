@@ -77,27 +77,32 @@ def releases_to_delete(releases: list[Release], *, pinned: set[str], cutoff: dat
 
 
 def main() -> None:
-    repo = Github(auth=Auth.Token(os.environ["GH_TOKEN"])).get_repo(REPO)
-    releases = [
-        Release(tag=release.tag_name, created_at=release.created_at)
-        for release in repo.get_releases()
-        if not release.draft and not release.prerelease
-    ]
+    # per_page=100 is the API maximum; PyGithub defaults to 30, which is ~38 sequential
+    # pages for this repo's ~1100 releases and took 16 minutes on the first real run.
+    repo = Github(auth=Auth.Token(os.environ["GH_TOKEN"]), per_page=100).get_repo(REPO)
+    # Hold the API objects: the delete pass needs them, and re-listing to find them again
+    # would pay for the whole pagination twice.
+    published = {
+        release.tag_name: release for release in repo.get_releases() if not release.draft and not release.prerelease
+    }
+    releases = [Release(tag=tag, created_at=release.created_at) for tag, release in published.items()]
     pinned = pinned_tags(Sources.model_validate_json(sources_path().read_text()))
     stale = releases_to_delete(releases, pinned=pinned, cutoff=datetime.now(UTC) - timedelta(days=RETENTION_DAYS))
 
     by_package: dict[str, int] = defaultdict(int)
     for tag in stale:
         by_package[tag_package(tag) or "?"] += 1
-    print(f"{len(releases)} releases, {len(pinned)} pinned, deleting {len(stale)}")
+    print(f"{len(releases)} releases, {len(pinned)} pinned, deleting {len(stale)}", flush=True)
     for pkg, count in sorted(by_package.items()):
-        print(f"  {pkg}: {count}")
+        print(f"  {pkg}: {count}", flush=True)
 
-    for release in repo.get_releases():
-        if release.tag_name in stale:
-            print(f"deleting {release.tag_name}")
-            release.delete_release()
-            repo.get_git_ref(f"tags/{release.tag_name}").delete()
+    # Deleting a subset is safe and resumable: the keep/delete decision is computed over
+    # the full listing before anything is removed, so a run that is cut short simply
+    # leaves the remainder for tomorrow.
+    for tag in stale:
+        print(f"deleting {tag}", flush=True)
+        published[tag].delete_release()
+        repo.get_git_ref(f"tags/{tag}").delete()
 
 
 if __name__ == "__main__":

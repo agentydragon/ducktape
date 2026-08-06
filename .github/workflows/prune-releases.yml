@@ -22,7 +22,9 @@ jobs:
   prune:
     name: Prune stale releases
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # ~1100 releases to page plus a large first-run backlog to delete; steady state is
+    # far quicker, but the first few runs drain hundreds of tags.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
         with:
