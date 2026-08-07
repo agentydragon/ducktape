@@ -59,6 +59,20 @@ private_equity_marks:
   private_equity_x: {kind: gbm, initial_value: 50.0, monthly_log_return_mu: 0.00642, monthly_log_return_sigma: 0.10103}
 ```
 
+```yaml
+# Small structural macro model. Two latent rates drive every instrument, so a rate move
+# prices the whole sleeve coherently: a fund's price falls and its payout climbs (slowly,
+# over its duration) off the same state. Instruments are ROWS, not extra random walks — a
+# symbol, a duration, and a spread over the curve at that duration.
+type: structural_macro
+initial_short_rate: 0.042
+equity: {symbol: VOO, initial_price_usd: 520.0}
+instruments:
+  - {symbol: VMFXX, duration_years: 0.0, initial_price_usd: 1.0} # cash, as an MMF holding
+  - {symbol: VGIT, duration_years: 5.3, initial_price_usd: 59.0} # intermediate Treasuries
+  - {symbol: CMF, duration_years: 5.5, initial_price_usd: 56.0, spread: -0.012} # CA munis
+```
+
 Each per-type config lives next to the model/provider it instantiates and
 exposes its own `.realize_model()` method. This module is just the
 discriminated union that ties them together for Pydantic's type dispatcher.
@@ -76,6 +90,7 @@ from finance.augur.model.mirroring import MirroringSampler, MirrorLevelSeries
 from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.state_space import StateSpaceProviderConfig
+from finance.augur.model.structural_macro import StructuralMacroProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.model.vecm import VecmProviderConfig
 
@@ -84,6 +99,7 @@ _LeafProviderConfig = (
     IndependentProviderConfig
     | VecmProviderConfig
     | StateSpaceProviderConfig
+    | StructuralMacroProviderConfig
     | TrainedPrivateEquityProviderConfig
     | PrivateEquityRiskProviderConfig
 )

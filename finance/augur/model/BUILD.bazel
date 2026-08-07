@@ -269,9 +269,41 @@ py_library(
         ":private_equity_risk",
         ":schemas",
         ":state_space",
+        ":structural_macro",
         ":trained_private_equity",
         ":vecm",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "structural_macro",
+    srcs = ["structural_macro.py"],
+    deps = [
+        ":exogenous",
+        ":schemas",
+        ":series",
+        ":series_model",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "structural_macro_test",
+    srcs = ["structural_macro_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":provider_config",
+        ":series",
+        ":structural_macro",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
