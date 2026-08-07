@@ -102,6 +102,13 @@ def _zillow(dataset_stem: str, output_filename: str) -> EvidenceSource:
 # Stored raw (untrimmed upstream bytes); deployment-specific trimming (the Zillow city
 # filter) stays at read time in evidence_data.py, so this spec stays deployment-agnostic.
 FRED_CPI = _fred("CPIAUCSL", "fred_cpi_us.csv")
+# The two rate series the structural macro provider's latent state is fitted on. Monthly by
+# construction (not a daily series collapsed at read time), and long: FEDFUNDS to 1954-07,
+# GS10 to 1953-04. That length is the point — a window short enough to miss either Volcker or
+# ZIRP fits a mean-reverting rate that has never seen a regime, and the whole reason to model
+# rates structurally is to price a 30-year horizon that will contain regimes.
+FRED_FEDFUNDS = _fred("FEDFUNDS", "fred_fedfunds.csv")
+FRED_GS10 = _fred("GS10", "fred_gs10.csv")
 FRED_SP500 = _fred("SP500", "fred_sp500.csv")
 FRED_MORTGAGE30 = _fred("MORTGAGE30US", "fred_mortgage30.csv")
 FRED_SFXRSA = _fred("SFXRSA", "fred_sfxrsa.csv")
@@ -119,6 +126,8 @@ ZILLOW_ZORI = _zillow("zori/City_zori_uc_sfrcondomfr_sm_sa_month", "zillow_city_
 
 EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     FRED_CPI,
+    FRED_FEDFUNDS,
+    FRED_GS10,
     FRED_SP500,
     FRED_MORTGAGE30,
     FRED_SFXRSA,

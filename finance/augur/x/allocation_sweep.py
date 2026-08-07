@@ -10,7 +10,8 @@ parameters behind them — nothing here is fitted — so read the SHAPE and not 
 shape it produces is the textbook one, which is the encouraging part: at a low withdrawal
 rate more equity strictly RAISES P[ruin] (the spend is already covered, so equity adds only
 variance); at a high one it strictly lowers it (bonds cannot fund the spend at all, so risk
-is the only option); in between the curve is U-shaped with a minimum around 60/40.
+is the only option); in between the curve is U-shaped. WHERE the minimum sits moves with the
+withdrawal rate and with the portfolio, so it is an output of a run and never a default.
 
 Runs remotely — `bazelisk run` locally cannot fetch `rules_mypy` through the egress policy:
 
@@ -270,8 +271,12 @@ def _terminal_liquid_usd(run: SimulationRun) -> np.ndarray:
 
 
 def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:
-    """What the hand-set parameters actually imply, so the levels below can be judged against
-    something rather than read as if they were fitted."""
+    """What the parameters actually imply, so the levels below can be judged against something.
+
+    The rates block is fitted on 70 years of FRED; equity drift and inflation are not, and they
+    are what the table turns on most. Printing the implied real equity return next to a P[ruin]
+    is the cheapest available defence against reading a hand-set number as a finding.
+    """
 
     equity = config.equity
     assert equity is not None
@@ -280,7 +285,8 @@ def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:
     muni = config.instruments[0]
     muni_yield = config.initial_short_rate + min(muni.duration_years / 10.0, 1.0) * config.initial_term_spread
     print(
-        f"parameters (HAND-SET, not fitted): equity {equity_nominal:.1%}/yr nominal at "
+        f"rates block FITTED (FEDFUNDS/GS10 1954-2026); equity and inflation still HAND-SET: "
+        f"equity {equity_nominal:.1%}/yr nominal at "
         f"{np.sqrt(12) * equity.monthly_log_return_sigma:.1%} vol, inflation {inflation:.1%}/yr "
         f"→ {equity_nominal - inflation:.1%}/yr real\n"
         f"  muni starting yield {muni_yield + muni.spread:.2%}/yr "

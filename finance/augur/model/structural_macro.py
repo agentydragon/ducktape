@@ -112,17 +112,31 @@ class StructuralMacroProviderConfig(FrozenModel):
     type: Literal["structural_macro"] = "structural_macro"
 
     # --- latent rates state -------------------------------------------------------------
-    initial_short_rate: NonNegativeFloat = 0.042
-    short_rate_mean: NonNegativeFloat = 0.03
-    # Monthly pull toward the mean. 0.03 is a ~2-year half-life, which is roughly how long a
-    # hiking or cutting cycle takes to play out.
-    short_rate_mean_reversion: float = Field(default=0.03, ge=0.0, le=1.0)
-    short_rate_monthly_sigma: NonNegativeFloat = 0.0025
+    # FITTED by `augur.fit.structural_macro` on FRED FEDFUNDS and GS10 - FEDFUNDS, monthly,
+    # 1954-07 to 2026-07 (865 months). The initial levels are the last observation, not fitted.
+    #
+    # The first draft of these was hand-set, and the fit moved two of them a long way in the
+    # same direction — both toward MORE rate risk, so every P[ruin] computed against the
+    # hand-set block was too kind to bonds:
+    #   short-rate reversion  0.03    -> 0.0098  (a ~2-year half-life was really ~6)
+    #   short-rate sigma      0.0025  -> 0.0048  (half the real monthly volatility)
+    # The hand-set comment claimed 0.03 was "roughly how long a hiking or cutting cycle takes
+    # to play out", which was the error: the rate does not revert on the cycle's timescale, it
+    # wanders for years. The spread parameters were closer, and its sigma was also ~3x light.
+    #
+    # Read the sigmas; treat the means and half-lives as soft. OLS on a near-unit-root series
+    # biases reversion up and barely identifies the mean at all — over 1990-2026 the same fit
+    # gives a 1.71% short-rate mean against this 4.93%. `fit/structural_macro.py` documents
+    # why, and a study whose answer turns on the mean should sweep it.
+    initial_short_rate: NonNegativeFloat = 0.0363
+    short_rate_mean: NonNegativeFloat = 0.0493
+    short_rate_mean_reversion: float = Field(default=0.0098, ge=0.0, le=1.0)
+    short_rate_monthly_sigma: NonNegativeFloat = 0.0048
 
-    initial_term_spread: float = 0.005
-    term_spread_mean: float = 0.01
-    term_spread_mean_reversion: float = Field(default=0.05, ge=0.0, le=1.0)
-    term_spread_monthly_sigma: NonNegativeFloat = 0.0015
+    initial_term_spread: float = 0.0097
+    term_spread_mean: float = 0.0096
+    term_spread_mean_reversion: float = Field(default=0.0455, ge=0.0, le=1.0)
+    term_spread_monthly_sigma: NonNegativeFloat = 0.0046
 
     # --- inflation ----------------------------------------------------------------------
     initial_inflation_level: PositiveFloat = 100.0

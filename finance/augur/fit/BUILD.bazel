@@ -351,3 +351,28 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_library(
+    name = "structural_macro",
+    srcs = ["structural_macro.py"],
+    deps = [
+        "//finance/augur/model:structural_macro",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "structural_macro_test",
+    srcs = ["structural_macro_test.py"],
+    deps = [
+        ":structural_macro",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/fit:conftest",
+        "//finance/evidence:loading",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
