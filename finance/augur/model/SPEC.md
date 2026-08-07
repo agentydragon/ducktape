@@ -61,21 +61,27 @@ how much they move an allocation answer.
    and neither explains half a percent of variance. So it is zero and the model carries no
    bond/equity coupling at all. **A question that turns on bond/equity correlation is not
    answered here** — which is exactly what a 60/40 study turns on, making this the largest gap.
-3. **The equity drift is a choice of window, not an estimate.** Over 1980–2026 (VFINX) it is
-   11.35%/yr; over 1973–2026 (MITTX, the oldest US mutual fund and the longest total-return
-   series this pipeline can parse) it is **7.17%/yr** at the same ~15.5% volatility. Four
-   points of annual drift, from including the 1970s. Roughly half a point of that gap is
-   MITTX's active-fund fees; the rest is history. **No amount of estimation care closes a gap
-   that large** — anything conditioned on an equity return is conditioned on this choice
-   first, and the shipped default uses the more generous window.
+3. **The equity window moves the drift ~2pp and the volatility ~2.5pp.** Over the CRSP total
+   market (Ken French, dividends included, 1926-07–2026-06, 100 years) equity returns
+   **10.37%/yr at 18.3% vol**; over 1980–2026 the same series gives 12.29% at 15.7%. The
+   century is both lower-returning and a third more volatile, because it contains 1929–32 —
+   whose −83.7% nominal drawdown the series reproduces against the actual ≈−84%. The shipped
+   default is fitted on the short, generous window.
 
-   The record is bounded at 1973 for the historical replay. Extending it means Shiller's
-   `ie_data.xls` (monthly S&P price + dividends + CPI + long rate to 1871), which is reachable
-   but is a legacy `.xls` needing an `xlrd` dependency the lockfile does not carry;
-   `TB3MS` (1934) and `CPIAUCNS` (1913) are already in the evidence spec for that. Even then
-   the ceiling is ~5 independent 30-year windows — history cannot supply more.
+   _Correction:_ an earlier revision claimed a 4pp window effect, measured as MITTX (1973–)
+   against VFINX (1980–). That was wrong. MITTX returns 7.17%/yr while its own market returns
+   11.34% over the **identical** window — the gap was manager drag or an adjusted-close defect,
+   not history. Use `FRENCH_FACTORS`; MITTX stays in the evidence set only as a cross-check.
 
-4. **Equity history is 46 years.** VFINX 1980–2026 is the longest _total-return_ series
+4. **The record still stops at 1973 until the loaders catch up.** `FRENCH_FACTORS` supplies
+   equity total return AND the one-month T-bill from 1926; `LTGOVTBD` (1925–2000) spliced with
+   `GS10` supplies the long rate; `CPIAUCNS` reaches 1913. Together that is **1200 months —
+   840 overlapping 30-year windows and ~3.3 independent ones**, against 277 and ~1.8 today.
+   The sources are in the evidence spec; the loaders and the LTGOVTBD/GS10 splice are not
+   written yet, so nothing consumes them. Even at 1871 (Shiller) the ceiling is ~5
+   independent windows: history cannot supply more, which is why a fitted model belongs
+   beside the replay rather than instead of it.
+   VFINX 1980–2026 is the longest _total-return_ series
    obtainable, covering 1987, 2000 and 2008 but not 1929 or the 1970s inflation. `^GSPC`
    reaches 1970 and corroborates both the drift (8.29% price + ~2.9% yield ≈ 11.2%) and the
    volatility (15.3% vs 15.4%), but it is price-only, so using it directly would mean choosing

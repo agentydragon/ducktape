@@ -12,15 +12,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-_CONTENT_TYPES = {"csv": "text/csv", "json": "application/json"}
+_CONTENT_TYPES = {"csv": "text/csv", "json": "application/json", "zip": "application/zip"}
 
 # Per-kind User-Agent: Yahoo demands a browser UA; FRED rejects "Mozilla/*"
 # (anti-scraping) but serves a curl UA; Zillow's static CSV host is indifferent.
-_USER_AGENTS = {"fred": "curl/8.0", "yahoo": "Mozilla/5.0", "zillow": "curl/8.0"}
+_USER_AGENTS = {"fred": "curl/8.0", "french": "curl/8.0", "yahoo": "Mozilla/5.0", "zillow": "curl/8.0"}
 
 
 class EvidenceKind(StrEnum):
     FRED = "fred"
+    FRENCH = "french"
     YAHOO = "yahoo"
     ZILLOW = "zillow"
 
@@ -88,6 +89,24 @@ def _yahoo(symbol: str, output_filename: str) -> EvidenceSource:
     )
 
 
+def _french(dataset: str, output_filename: str) -> EvidenceSource:
+    """Ken French's data library — a ZIP of one CSV, monthly from 1926-07.
+
+    The longest broad-market TOTAL-RETURN series reachable, and it arrives as plain CSV inside
+    a zip, so it needs no `xlrd` the way Shiller's legacy `.xls` does. The factors file carries
+    `Mkt-RF` and `RF` in percent per month: the market's total return (CRSP value-weighted, ALL
+    listed US equity, dividends included) is their sum, and `RF` is the one-month T-bill.
+    One fetch supplies both the equity leg and the short rate, from 1926.
+    """
+
+    return EvidenceSource(
+        kind=EvidenceKind.FRENCH,
+        series_id=dataset,
+        upstream_url=f"https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/{dataset}_CSV.zip",
+        output_filename=output_filename,
+    )
+
+
 def _zillow(dataset_stem: str, output_filename: str) -> EvidenceSource:
     return EvidenceSource(
         kind=EvidenceKind.ZILLOW,
@@ -113,6 +132,11 @@ FRED_FEDFUNDS = _fred("FEDFUNDS", "fred_fedfunds.csv")
 # modern Fed, which is blocked on a longer TOTAL-RETURN equity series (see YAHOO_MITTX).
 FRED_TB3MS = _fred("TB3MS", "fred_tb3ms.csv")
 FRED_CPI_NSA = _fred("CPIAUCNS", "fred_cpi_us_nsa.csv")
+# Long-term government bond yield, 1925-01 to 2000-06. The pre-1953 long rate, to be SPLICED
+# with GS10 where they overlap. Deviation worth knowing before splicing: this is a long-term
+# composite, not a 10-year constant maturity, so its duration differs and the join is an
+# approximation — acceptable for a term SPREAD, not for pricing a specific bond.
+FRED_LTGOVTBD = _fred("LTGOVTBD", "fred_ltgovtbd.csv")
 FRED_GS10 = _fred("GS10", "fred_gs10.csv")
 FRED_SP500 = _fred("SP500", "fred_sp500.csv")
 FRED_MORTGAGE30 = _fred("MORTGAGE30US", "fred_mortgage30.csv")
@@ -126,21 +150,11 @@ YAHOO_SPY = _yahoo("SPY", "yahoo_spy_chart_adjusted.json")
 # dividend add-back — which is what rules out the longer price-only index (`^GSPC`, 1970-),
 # where recovering total return would be a modelling decision rather than a data pull.
 YAHOO_VFINX = _yahoo("VFINX", "yahoo_vfinx_chart_adjusted.json")
-# MFS Massachusetts Investors Trust, 1973-05 — the oldest US mutual fund, and the longest
-# TOTAL-RETURN equity series reachable from a source this pipeline already parses. Seven years
-# longer than VFINX, and those seven years are the ones that matter: it contains 1973-74, whose
-# real drawdown is the worst modern equities have delivered and the exact stagflation a
-# CPI-indexed spender most needs represented. Measured here: -48.5% real, bottoming 1982-07,
-# against the S&P's real ~-51% over the same span.
-#
-# ACTIVELY MANAGED, which is the cost. A large-cap core fund tracks the market closely but
-# carries manager effects and ~0.6% of fees against VFINX's ~0.14%, so perhaps 0.5pp of the
-# drift gap below is fees rather than history.
-#
-# The gap is the point, and it dwarfs any estimation error: 7.17%/yr nominal over 1973-2026
-# against VFINX's 11.35% over 1980-2026, at the same ~15.5% vol. Four points of annual drift
-# from the WINDOW, not from the estimator. Anything conditioned on an equity return is
-# conditioned on that choice first.
+# MFS Massachusetts Investors Trust, 1973-05. Kept because it is the oldest US mutual fund and
+# a useful cross-check, but NOT a broad-equity proxy: it returns 7.17%/yr over 1973-2026 while
+# the CRSP total market returns 11.34%/yr over the IDENTICAL window. A 4.2pp shortfall against
+# its own market is manager drag or an adjusted-close defect, not history — an earlier revision
+# of this file read that gap as a window effect and was wrong. Use FRENCH_FACTORS for equity.
 YAHOO_MITTX = _yahoo("MITTX", "yahoo_mittx_chart_adjusted.json")
 YAHOO_BTC = _yahoo("BTC-USD", "yahoo_btc_chart_adjusted.json")
 YAHOO_ETH = _yahoo("ETH-USD", "yahoo_eth_chart_adjusted.json")
@@ -148,6 +162,7 @@ ZILLOW_ZHVI = _zillow(
     "zhvi/City_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month",
     "zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
 )
+FRENCH_FACTORS = _french("F-F_Research_Data_Factors", "french_research_data_factors.zip")
 ZILLOW_ZORI = _zillow("zori/City_zori_uc_sfrcondomfr_sm_sa_month", "zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv")
 
 EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
@@ -155,6 +170,7 @@ EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     FRED_FEDFUNDS,
     FRED_TB3MS,
     FRED_CPI_NSA,
+    FRED_LTGOVTBD,
     FRED_GS10,
     FRED_SP500,
     FRED_MORTGAGE30,
@@ -164,6 +180,7 @@ EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     YAHOO_SPY,
     YAHOO_VFINX,
     YAHOO_MITTX,
+    FRENCH_FACTORS,
     YAHOO_BTC,
     YAHOO_ETH,
     ZILLOW_ZHVI,
