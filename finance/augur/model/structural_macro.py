@@ -17,25 +17,26 @@ Coherently, but not proportionally, and the difference is the point: the price r
 the rate move at once and the payout responds over years. They are two different functions of
 the same state, not one series and a multiple of it.
 
-The stochastic state is two rates, neither of them emitted:
+The stochastic state is a JOINT VAR(1) on three quantities, only the last of them emitted:
 
 - `short_rate` — prices cash and anchors the front of the curve
 - `term_spread` — 10y minus short. A fund's price move is its duration times the change in
   the yield AT ITS DURATION, so a single rate cannot price a short fund and a long one
+- `inflation_rate` — trailing-year, which is what a bond sleeve and a central bank both react
+  to. Its INTEGRAL is the emitted CPI level
 
-Everything else is a deterministic function of those two plus its own shock. An instrument is
+Joint rather than three separate processes, because the couplings are where the answer lives:
+inflation is persistent (own lag 0.981), the short rate loads on lagged inflation with a
+long-run pass-through of 1.77 — above the Taylor principle, which nothing here imposed — and
+the innovations are correlated. Everything else is a deterministic function of that state plus
+its own shock. An instrument is
 a config ROW, not another random walk: a symbol, a duration, and a static spread over the
 curve at that duration. Adding a fourth fund adds a row. A muni's spread is negative and
 constant here — the cyclical part of a credit spread is a real thing this model does not
 have, and the honest consequence is that it cannot produce a muni selloff that Treasuries
 escape. Equity carries its own shock plus a `rate_beta` term on the short rate — the only
 bond/equity channel there is, and it is fitted to ZERO, so equity and rates are in practice
-INDEPENDENT here; inflation carries its own shock and is the one series that is both state and
-emission, since spending is CPI-indexed. Those inflation shocks are i.i.d. around a constant
-drift, which is the model's largest single weakness and the first gap in <SPEC.md>: realized
-inflation is strongly persistent (AR(1) rho ~0.57) and the short rate tracks it (corr ~0.70), so a
-CPI-indexed spend here compounds against a bond sleeve that can never be rescued by the rate
-rise that real inflation provokes.
+INDEPENDENT here.
 
 What the model is, what it is fitted on, and what it cannot answer — including that
 independence, which is load-bearing — is declared in <SPEC.md>. Read that before trusting a
@@ -52,7 +53,7 @@ from collections import Counter
 from typing import Literal
 
 import numpy as np
-from pydantic import Field, NonNegativeFloat, PositiveFloat
+from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.schemas import FrozenModel
@@ -134,51 +135,74 @@ class EquitySpec(FrozenModel):
     rate_beta: float = 0.0
 
 
+class MacroVarSpec(FrozenModel):
+    """`state[t] = intercept + transition @ state[t-1] + shock_cholesky @ z[t]`, `z ~ N(0, I)`.
+
+    State order is `(short_rate, term_spread, inflation_rate)`, every entry an annualized
+    decimal. `shock_cholesky` is lower-triangular, so one draw of independent normals yields
+    correctly correlated innovations — a rate surprise and an inflation surprise arrive
+    together, which three separate processes cannot express at all.
+    """
+
+    initial_state: tuple[float, float, float]
+    intercept: tuple[float, float, float]
+    transition: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+    shock_cholesky: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+
+    @model_validator(mode="after")
+    def _reject_explosive(self) -> MacroVarSpec:
+        """A spectral radius at or above 1 is a state with no long-run mean.
+
+        Rejected here rather than discovered at horizon 360: an explosive VAR still samples,
+        and what it produces is a plausible-looking early path attached to a 30-year tail where
+        the short rate reaches thousands of percent. Nothing downstream would flag that.
+        """
+
+        radius = float(np.max(np.abs(np.linalg.eigvals(np.asarray(self.transition)))))
+        if radius >= 1.0:
+            raise ValueError(f"macro VAR transition has spectral radius {radius:.4f} >= 1; the state is explosive")
+        return self
+
+
+# The fit, verbatim. Kept as a constant rather than inlined as field defaults because a VAR is
+# a single object — mixing a transition row from one fit with a Cholesky factor from another
+# would be silently wrong, and separate fields would let that happen one edit at a time.
+FITTED_MACRO_VAR = MacroVarSpec(
+    initial_state=(0.0363, 0.0084, 0.036588),
+    intercept=(-0.00046861, 0.00079576, 0.00124274),
+    transition=((0.989118, 0.032695, 0.019242), (-0.002894, 0.947199, -0.004301), (-0.003116, -0.038973, 0.980979)),
+    shock_cholesky=((0.00479308, 0.0, 0.0), (-0.0039163, 0.00248131, 0.0), (0.00047397, 0.00051737, 0.00353245)),
+)
+
+SHORT_RATE, TERM_SPREAD, INFLATION_RATE = 0, 1, 2
+
+
 class StructuralMacroProviderConfig(FrozenModel):
     """YAML config for the structural macro provider. See the module docstring."""
 
     type: Literal["structural_macro"] = "structural_macro"
 
-    # --- latent rates state -------------------------------------------------------------
-    # FITTED by `augur.fit.structural_macro` on FRED FEDFUNDS and GS10 - FEDFUNDS, monthly,
-    # 1954-07 to 2026-07 (865 months). The initial levels are the last observation, not fitted.
+    # --- joint macro state: a VAR(1) on (short_rate, term_spread, inflation_rate) ---------
+    # FITTED by `augur.fit.structural_macro.fit_macro_var` on FRED FEDFUNDS, GS10 and
+    # CPIAUCSL, monthly, 1955-08 to 2026-06 (850 months). Inflation is trailing-year log
+    # inflation; all three states are annualized decimals.
     #
-    # The first draft of these was hand-set, and the fit moved two of them a long way in the
-    # same direction — both toward MORE rate risk, so every P[ruin] computed against the
-    # hand-set block was too kind to bonds:
-    #   short-rate reversion  0.03    -> 0.0098  (a ~2-year half-life was really ~6)
-    #   short-rate sigma      0.0025  -> 0.0048  (half the real monthly volatility)
-    # The hand-set comment claimed 0.03 was "roughly how long a hiking or cutting cycle takes
-    # to play out", which was the error: the rate does not revert on the cycle's timescale, it
-    # wanders for years. The spread parameters were closer, and its sigma was also ~3x light.
-    #
-    # Read the sigmas; treat the means and half-lives as soft. OLS on a near-unit-root series
-    # biases reversion up and barely identifies the mean at all — over 1990-2026 the same fit
-    # gives a 1.71% short-rate mean against this 4.93%. `fit/structural_macro.py` documents
-    # why, and a study whose answer turns on the mean should sweep it.
-    initial_short_rate: NonNegativeFloat = 0.0363
-    short_rate_mean: NonNegativeFloat = 0.0493
-    short_rate_mean_reversion: float = Field(default=0.0098, ge=0.0, le=1.0)
-    short_rate_monthly_sigma: NonNegativeFloat = 0.0048
+    # ONE process rather than three independent ones, because they are not independent and the
+    # couplings are where the answer lives. The version this replaced had inflation as an iid
+    # shock around a fixed drift and no link to rates at all, which produced two failures that
+    # are gone here:
+    #   - a 30-year price level that was effectively deterministic (1-sigma x2.64..x3.01,
+    #     against x1.95..x4.85 realized). Inflation is now a STATE with its own 0.981 lag, so
+    #     a high-inflation decade is reachable. Simulated 30y band: x2.11..x4.78.
+    #   - no Fed reaction, so a CPI-indexed spend could outrun a bond sleeve forever. The
+    #     short-rate equation now loads +0.0192 on lagged inflation, a long-run pass-through
+    #     of 1.77 — above the Taylor principle's 1.0, which nothing here imposed.
+    macro_state: MacroVarSpec = Field(default_factory=lambda: FITTED_MACRO_VAR)
 
-    initial_term_spread: float = 0.0097
-    term_spread_mean: float = 0.0096
-    term_spread_mean_reversion: float = Field(default=0.0455, ge=0.0, le=1.0)
-    term_spread_monthly_sigma: NonNegativeFloat = 0.0046
-
-    # --- inflation ----------------------------------------------------------------------
-    # FITTED on FRED CPIAUCSL, monthly, 1947-2026 (952 months): 3.51%/yr at 1.2% vol. Longer
-    # than the equity window on purpose — each marginal gets its own longest history, since
-    # only a CROSS-block parameter needs a shared one. The hazard that leaves is named in
-    # `fit/structural_macro.py`: the implied real equity return pairs a sample containing the
-    # 1970s with one that does not.
+    # The CPI level's arbitrary base. Only RATIOS of it are ever read (an amount indexed from
+    # month a to month b), so the value is a unit choice; it is the inflation RATE inside
+    # `macro_state` that carries the economics.
     initial_inflation_level: PositiveFloat = 100.0
-    # `sigma` is the DISPERSION OF ONE MONTH's shock, and the shocks are independent, so the
-    # 30-year price level it implies is far too certain: a 1-sigma band of x2.64..x3.01 where
-    # 1947-2026 delivered x1.95..x4.85 across its 30-year windows, a spread 4.8x wider. Raising
-    # sigma would not fix that — the missing thing is persistence, not scale. See SPEC.md § 1.
-    inflation_monthly_log_mu: float = 0.00288
-    inflation_monthly_log_sigma: NonNegativeFloat = 0.00340
 
     # --- instruments --------------------------------------------------------------------
     equity: EquitySpec | None = None
@@ -235,24 +259,13 @@ class StructuralMacroModel:
         rollouts = request.rollout_count
         months = request.horizon_months + 1
 
-        short_rate = _mean_reverting_path(
-            initial=config.initial_short_rate,
-            mean=config.short_rate_mean,
-            reversion=config.short_rate_mean_reversion,
-            sigma=config.short_rate_monthly_sigma,
-            shocks=_shocks(request, "structural_macro:short_rate", months=months),
-            floor=MINIMUM_ANNUAL_YIELD,
-        )
-        term_spread = _mean_reverting_path(
-            initial=config.initial_term_spread,
-            mean=config.term_spread_mean,
-            reversion=config.term_spread_mean_reversion,
-            sigma=config.term_spread_monthly_sigma,
-            shocks=_shocks(request, "structural_macro:term_spread", months=months),
-            floor=None,
-        )
+        state = _macro_state_path(config.macro_state, request, rollouts=rollouts, months=months)
+        short_rate = np.maximum(state[SHORT_RATE], MINIMUM_ANNUAL_YIELD)
+        term_spread = state[TERM_SPREAD]
 
-        blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [(InflationKey(), _inflation_path(config, request, months))]
+        blocks: list[tuple[LevelSeriesKey, np.ndarray]] = [
+            (InflationKey(), _inflation_level(config, state[INFLATION_RATE]))
+        ]
         for spec in config.instruments:
             price, distribution = _instrument_paths(spec, short_rate=short_rate, term_spread=term_spread)
             blocks.append((SecurityKey(symbol=spec.symbol), price))
@@ -266,9 +279,33 @@ class StructuralMacroModel:
             provenance={
                 "exogenous_provider_label": self.label,
                 "instruments": tuple(spec.symbol for spec in config.instruments),
-                "notes": ("hand-parameterised structural macro model; rates state is not fitted",),
+                "notes": ("joint VAR(1) macro state fitted on FRED FEDFUNDS/GS10/CPIAUCSL 1955-2026",),
             },
         )
+
+
+def _macro_state_path(
+    spec: MacroVarSpec, request: ExogenousSamplingRequest, *, rollouts: int, months: int
+) -> np.ndarray:
+    """`(state, rollout, month)` — the VAR stepped forward from today's observed state.
+
+    One shock stream for the whole block, not one per state: the innovations are CORRELATED
+    (that is what `shock_cholesky` is for), so drawing them from separate seeded streams would
+    silently discard the covariance the joint fit exists to capture.
+    """
+
+    intercept = np.asarray(spec.intercept)
+    transition = np.asarray(spec.transition)
+    cholesky = np.asarray(spec.shock_cholesky)
+
+    normals = np.stack(
+        [_shocks(request, f"structural_macro:macro_state:{index}", months=months) for index in range(len(intercept))]
+    )
+    path = np.empty((len(intercept), rollouts, months), dtype=np.float64)
+    path[:, :, 0] = np.asarray(spec.initial_state)[:, None]
+    for month in range(1, months):
+        path[:, :, month] = intercept[:, None] + transition @ path[:, :, month - 1] + cholesky @ normals[:, :, month]
+    return path
 
 
 def _shocks(request: ExogenousSamplingRequest, stream_id: str, *, months: int) -> np.ndarray:
@@ -281,28 +318,6 @@ def _shocks(request: ExogenousSamplingRequest, stream_id: str, *, months: int) -
 
     seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=stream_id)
     return np.stack([np.random.default_rng(seed).standard_normal(months) for seed in seeds])
-
-
-def _mean_reverting_path(
-    *, initial: float, mean: float, reversion: float, sigma: float, shocks: np.ndarray, floor: float | None
-) -> np.ndarray:
-    """Ornstein-Uhlenbeck in discrete monthly steps, on the LEVEL of a rate.
-
-    On the level, not the log: a rate legitimately reaches zero and can even go negative,
-    which is precisely why a rate cannot be a `LevelSeriesKey` and only its dollar
-    consequences cross the boundary. `floor` applies where a negative would be nonsense (a
-    yield); the term spread has none, because an inverted curve is a real and important state.
-    """
-
-    rollouts, months = shocks.shape
-    path = np.empty((rollouts, months), dtype=np.float64)
-    path[:, 0] = initial
-    for month in range(1, months):
-        drift = reversion * (mean - path[:, month - 1])
-        path[:, month] = path[:, month - 1] + drift + sigma * shocks[:, month]
-    if floor is not None:
-        path = np.maximum(path, floor)
-    return path
 
 
 def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spread: np.ndarray) -> np.ndarray:
@@ -380,10 +395,16 @@ def _equity_path(spec: EquitySpec, request: ExogenousSamplingRequest, short_rate
     return spec.initial_price_usd * np.exp(np.cumsum(log_returns, axis=1))
 
 
-def _inflation_path(
-    config: StructuralMacroProviderConfig, request: ExogenousSamplingRequest, months: int
-) -> np.ndarray:
-    shocks = _shocks(request, "structural_macro:inflation", months=months)
-    log_returns = config.inflation_monthly_log_mu + config.inflation_monthly_log_sigma * shocks
-    log_returns[:, 0] = 0.0
-    return config.initial_inflation_level * np.exp(np.cumsum(log_returns, axis=1))
+def _inflation_level(config: StructuralMacroProviderConfig, inflation_rate: np.ndarray) -> np.ndarray:
+    """CPI level from the annualized inflation-rate STATE: one twelfth of it accrues each month.
+
+    Always positive, because it is an exponential of a sum — so deflation is representable
+    (a negative rate) without the level ever reaching zero, which the multiplicative level
+    stack requires. The previous version drew an i.i.d. log return each month and so had no
+    persistence at all; here the persistence lives in the state and this is just its integral.
+    """
+
+    monthly = inflation_rate / MONTHS_PER_YEAR
+    # Month 0 is the anchor, not a return: the level starts at exactly the configured value.
+    monthly[:, 0] = 0.0
+    return config.initial_inflation_level * np.exp(np.cumsum(monthly, axis=1))

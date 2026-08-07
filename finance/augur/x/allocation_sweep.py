@@ -26,7 +26,14 @@ import polars as pl
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
-from finance.augur.model.structural_macro import EquitySpec, InstrumentSpec, StructuralMacroProviderConfig
+from finance.augur.model.structural_macro import (
+    INFLATION_RATE,
+    SHORT_RATE,
+    TERM_SPREAD,
+    EquitySpec,
+    InstrumentSpec,
+    StructuralMacroProviderConfig,
+)
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
 from finance.augur.sim.projections import project_net_worth
@@ -282,18 +289,21 @@ def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:
 
     equity = config.equity
     assert equity is not None
-    equity_nominal = np.expm1(equity.monthly_log_return_mu * 12)
-    inflation = np.expm1(config.inflation_monthly_log_mu * 12)
-    muni = config.instruments[0]
-    muni_yield = config.initial_short_rate + min(muni.duration_years / 10.0, 1.0) * config.initial_term_spread
+    nominal = float(np.expm1(equity.monthly_log_return_mu * 12))
+    transition = np.asarray(config.macro_state.transition)
+    long_run = np.linalg.solve(np.eye(3) - transition, np.asarray(config.macro_state.intercept))
+    initial = config.macro_state.initial_state
     print(
-        f"all blocks FITTED: rates FEDFUNDS/GS10 1954-2026, inflation CPI 1947-2026, equity "
-        f"VFINX 1980-2026 → equity {equity_nominal:.1%}/yr nominal at "
-        f"{np.sqrt(12) * equity.monthly_log_return_sigma:.1%} vol, inflation {inflation:.1%}/yr "
-        f"→ {equity_nominal - inflation:.1%}/yr real. Equity and rates are INDEPENDENT "
-        f"(SPEC.md § Gaps); the bond sleeve is a marked fund, not a held ladder.\n"
-        f"  muni starting yield {muni_yield + muni.spread:.2%}/yr "
-        f"(curve {muni_yield:.2%} {muni.spread:+.2%} muni spread), duration {muni.duration_years}y"
+        f"macro state: joint VAR(1) on (short rate, term spread, inflation), fitted on FRED "
+        f"FEDFUNDS/GS10/CPIAUCSL 1955-2026.\n"
+        f"  today {initial[SHORT_RATE]:.2%} / {initial[TERM_SPREAD]:+.2%} / "
+        f"{initial[INFLATION_RATE]:.2%}   long-run {long_run[SHORT_RATE]:.2%} / "
+        f"{long_run[TERM_SPREAD]:+.2%} / {long_run[INFLATION_RATE]:.2%}\n"
+        f"  inflation persistence {transition[INFLATION_RATE][INFLATION_RATE]:.3f}, Fed "
+        f"pass-through {transition[SHORT_RATE][INFLATION_RATE] / (1 - transition[SHORT_RATE][SHORT_RATE]):.2f}\n"
+        f"equity: VFINX 1980-2026, {nominal:.1%}/yr nominal at "
+        f"{np.sqrt(12) * equity.monthly_log_return_sigma:.1%} vol. Equity and rates are "
+        f"INDEPENDENT (SPEC.md § Gaps); the bond sleeve is a marked fund, not a held ladder.\n"
     )
 
 

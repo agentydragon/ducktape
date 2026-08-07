@@ -30,11 +30,41 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.model.structural_macro import (
+    INFLATION_RATE,
     MINIMUM_ANNUAL_YIELD,
+    SHORT_RATE,
     EquitySpec,
     InstrumentSpec,
+    MacroVarSpec,
     StructuralMacroProviderConfig,
 )
+
+ZERO_SHOCKS = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+
+def _diagonal_var(
+    *,
+    short_initial: float = 0.04,
+    short_mean: float = 0.04,
+    short_lag: float = 0.97,
+    spread: float = 0.005,
+    inflation: float = 0.025,
+    shock_cholesky: tuple[tuple[float, float, float], ...] = ZERO_SHOCKS,
+) -> MacroVarSpec:
+    """A VAR with no cross-terms — three independent mean-reverting rates.
+
+    Deliberately NOT the fitted one: these tests are about what the instrument layer does with
+    a rate path, so they want a path they can state in one line ("the short rate rises toward
+    6%"). The fitted VAR's couplings are tested separately, by the tests that name them.
+    """
+
+    return MacroVarSpec(
+        initial_state=(short_initial, spread, inflation),
+        intercept=(short_mean * (1.0 - short_lag), spread * 0.03, inflation * 0.02),
+        transition=((short_lag, 0.0, 0.0), (0.0, 0.97, 0.0), (0.0, 0.0, 0.98)),
+        shock_cholesky=shock_cholesky,
+    )
+
 
 HORIZON = 60
 SEEDS = (11, 22, 33)
@@ -45,18 +75,15 @@ EQUITY = SecuritySymbol("EQ")
 
 
 def _config(**updates: object) -> StructuralMacroProviderConfig:
-    """A deterministic two-instrument config: every shock scale is zero.
+    """A deterministic two-instrument config: the VAR's shock factor is all zeros.
 
-    With no shocks the latent rates path is the bare mean-reversion curve, so a test can state
-    "the short rate rises over the horizon" by choosing `initial_short_rate` below
-    `short_rate_mean` and then assert what that rise does — no sampling noise, no tolerance
-    bands, no seed to get lucky with.
+    With no shocks the state path is the bare mean-reversion curve, so a test can state "the
+    short rate rises over the horizon" and then assert what that rise does — no sampling noise,
+    no tolerance bands, no seed to get lucky with.
     """
 
     fields: dict[str, object] = {
-        "short_rate_monthly_sigma": 0.0,
-        "term_spread_monthly_sigma": 0.0,
-        "inflation_monthly_log_sigma": 0.0,
+        "macro_state": _diagonal_var(),
         "instruments": (
             InstrumentSpec(symbol=BOND, duration_years=6.0, initial_price_usd=100.0),
             InstrumentSpec(symbol=CASH, duration_years=0.0, initial_price_usd=1.0),
@@ -75,11 +102,11 @@ def _series(bundle: SampledExogenousBundle, key: LevelSeriesKey, *, horizon_mont
 
 
 def _rising_rates() -> StructuralMacroProviderConfig:
-    return _config(initial_short_rate=0.01, short_rate_mean=0.06)
+    return _config(macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06))
 
 
 def _falling_rates() -> StructuralMacroProviderConfig:
-    return _config(initial_short_rate=0.06, short_rate_mean=0.01)
+    return _config(macro_state=_diagonal_var(short_initial=0.06, short_mean=0.01))
 
 
 def test_rate_rise_moves_price_down_and_payout_up_together() -> None:
@@ -114,8 +141,7 @@ def test_longer_duration_loses_more_to_the_same_rate_rise() -> None:
     long_fund = SecuritySymbol("LONG")
     short_fund = SecuritySymbol("SHORT")
     config = _config(
-        initial_short_rate=0.01,
-        short_rate_mean=0.06,
+        macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06),
         instruments=(
             InstrumentSpec(symbol=long_fund, duration_years=12.0),
             InstrumentSpec(symbol=short_fund, duration_years=2.0),
@@ -151,9 +177,9 @@ def test_a_funds_book_yield_converges_with_a_half_life_of_its_duration() -> None
     duration instead of jumping to it. That lag is what reproduces 2022-2025 — a price that
     fell at once and a payout that took years to climb — rather than a step function.
 
-    `short_rate_mean_reversion=1.0` makes the market yield a STEP: it jumps in month 1 and
-    stays. Without that, the market yield is itself still converging and the measured half-life
-    would be a blend of the two rates rather than the one being claimed.
+    A zero own-lag makes the market yield a STEP: it jumps in month 1 and stays. Without that,
+    the market yield is itself still converging and the measured half-life would be a blend of
+    the two rates rather than the one being claimed.
     """
 
     duration_years = 6.0
@@ -164,10 +190,8 @@ def test_a_funds_book_yield_converges_with_a_half_life_of_its_duration() -> None
 
     bundle = _sample(
         _config(
-            initial_short_rate=0.01,
-            short_rate_mean=0.06,
-            short_rate_mean_reversion=1.0,
-            term_spread_mean_reversion=1.0,
+            # `short_lag=0` makes the yield a STEP: it jumps in month 1 and stays.
+            macro_state=_diagonal_var(short_initial=0.01, short_mean=0.06, short_lag=0.0),
             instruments=(InstrumentSpec(symbol=BOND, duration_years=duration_years, initial_price_usd=100.0),),
         ),
         horizon_months=horizon,
@@ -200,7 +224,7 @@ def test_yields_stay_positive_through_a_zirp_decade() -> None:
     """2009-2021 was a real regime, and a zero payout would break the level stack, which is
     multiplicative. The floor is what keeps a ZIRP path from being unsamplable."""
 
-    config = _config(initial_short_rate=0.001, short_rate_mean=0.0)
+    config = _config(macro_state=_diagonal_var(short_initial=0.001, short_mean=0.0))
     bundle = _sample(config)
     for spec in config.instruments:
         payout = _series(bundle, SecurityDistributionKey(symbol=spec.symbol))
@@ -298,7 +322,12 @@ def test_a_rollout_path_does_not_depend_on_the_batch_it_was_sampled_with() -> No
         matrix = bundle.level_matrix(SecurityKey(symbol=BOND), rollout_count=len(seeds), horizon_months=HORIZON)
         return np.asarray(matrix[index])
 
-    assert np.array_equal(path((5,), 0), path((99, 5, 7), 1))
+    # `allclose`, not `array_equal`: the macro state steps through a matrix multiply, and BLAS
+    # picks its blocking from the batch width, so the same rollout in a batch of 1 and a batch
+    # of 3 differs in the last bits. The property that matters — a rollout's path is determined
+    # by its own seed and not by its neighbours — holds exactly; bitwise reproducibility across
+    # batch SHAPES is a stronger claim than a matmul can make.
+    assert np.allclose(path((5,), 0), path((99, 5, 7), 1), rtol=1e-12, atol=0.0)
 
 
 def test_shocks_actually_move_the_paths() -> None:
@@ -370,6 +399,118 @@ def test_config_round_trips_through_the_provider_union() -> None:
 def test_negative_duration_is_rejected() -> None:
     with pytest.raises(ValidationError):
         InstrumentSpec(symbol=BOND, duration_years=-1.0)
+
+
+def _state(config: StructuralMacroProviderConfig, *, horizon_months: int, rollouts: int = 400) -> np.ndarray:
+    """The latent macro path, recovered from the emissions the model actually publishes.
+
+    The state is never emitted, so it is reconstructed: the CPI level's month-on-month log
+    change times twelve IS the inflation-rate state, and a zero-duration instrument's payout
+    over its face times twelve IS the short rate. Testing through the emissions rather than
+    reaching into a private path is the point — a coupling that exists only internally and
+    never reaches a series is not a coupling anyone downstream can use.
+    """
+
+    seeds = tuple(range(rollouts))
+    bundle = config.realize_model().sample(ExogenousSamplingRequest(horizon_months=horizon_months, rollout_seeds=seeds))
+
+    def matrix(key: LevelSeriesKey) -> np.ndarray:
+        return bundle.level_matrix(key, rollout_count=rollouts, horizon_months=horizon_months)
+
+    inflation = np.diff(np.log(matrix(InflationKey())), axis=1) * 12.0
+    short_rate = matrix(SecurityDistributionKey(symbol=CASH))[:, 1:] * 12.0 / 1.0
+    return np.stack([short_rate, inflation])
+
+
+def _fitted_config() -> StructuralMacroProviderConfig:
+    """The shipped VAR, with only a zero-duration instrument so the short rate is readable."""
+
+    return StructuralMacroProviderConfig(
+        instruments=(InstrumentSpec(symbol=CASH, duration_years=0.0, initial_price_usd=1.0),)
+    )
+
+
+def test_inflation_is_persistent_rather_than_iid() -> None:
+    """The failure that motivated the joint fit. i.i.d. shocks around a fixed drift made the
+    30-year price level effectively deterministic; a persistent state makes a high-inflation
+    decade reachable, which is the scenario a CPI-indexed spend most needs represented."""
+
+    horizon = 240
+    inflation = _state(_fitted_config(), horizon_months=horizon)[1]
+
+    # Month-to-month autocorrelation across rollouts, at a horizon well past the initial state.
+    assert float(np.corrcoef(inflation[:, 120], inflation[:, 121])[0, 1]) > 0.9
+
+    # The acceptance test for the whole joint-fit change, and the quantity that actually bit:
+    # dispersion of the CUMULATIVE price level. The rate itself is stationary, so its spread
+    # saturates — asserting on that would test the wrong thing. Under i.i.d. monthly shocks the
+    # cumulative spread grows as sqrt(H); persistence makes it grow closer to H, and the gap is
+    # what makes a high-inflation decade reachable rather than a rounding error.
+    cumulative = np.sum(inflation, axis=1) / 12.0
+    iid_equivalent = float(np.std(inflation)) * np.sqrt(inflation.shape[1]) / 12.0
+
+    assert float(np.std(cumulative)) > 3.0 * iid_equivalent
+
+
+def test_the_short_rate_follows_inflation() -> None:
+    """The Fed reaction, which the independent version had at exactly zero.
+
+    Load-bearing for the bond sleeve specifically: the state that erodes a CPI-indexed spend
+    has to also be the state that raises what new bonds pay, or fixed income can be caught by
+    inflation with no mechanism to ever catch up.
+    """
+
+    horizon = 240
+    short_rate, inflation = _state(_fitted_config(), horizon_months=horizon)
+
+    # Across rollouts at a distant horizon: the paths that inflated are the paths with high rates.
+    assert float(np.corrcoef(inflation[:, -1], short_rate[:, -1])[0, 1]) > 0.5
+
+
+def test_a_permanent_inflation_shift_raises_the_short_rate_more_than_one_for_one() -> None:
+    """The Taylor principle, as a property of the fit rather than a constraint on it.
+
+    A stable policy rule raises the NOMINAL rate by more than the inflation increase, or real
+    rates fall as inflation rises. Nothing in the fit imposes this; that it comes out above one
+    is the strongest single check that the joint estimate is not nonsense.
+    """
+
+    spec = StructuralMacroProviderConfig().macro_state
+    transition = np.asarray(spec.transition)
+    pass_through = transition[SHORT_RATE][INFLATION_RATE] / (1.0 - transition[SHORT_RATE][SHORT_RATE])
+
+    assert pass_through > 1.0
+
+
+def test_an_explosive_state_is_rejected() -> None:
+    """A spectral radius at or above one samples perfectly happily and produces a plausible
+    early path attached to a tail where the short rate reaches thousands of percent. Nothing
+    downstream inspects the state, so nothing downstream could catch it."""
+
+    with pytest.raises(ValidationError, match="explosive"):
+        MacroVarSpec(
+            initial_state=(0.04, 0.005, 0.025),
+            intercept=(0.0, 0.0, 0.0),
+            transition=((1.01, 0.0, 0.0), (0.0, 0.9, 0.0), (0.0, 0.0, 0.9)),
+            shock_cholesky=ZERO_SHOCKS,
+        )
+
+
+def test_macro_shocks_are_correlated_across_states() -> None:
+    """`shock_cholesky` is lower-triangular for a reason: one draw of independent normals has
+    to produce innovations that arrive together. Sampling each state from its own stream would
+    silently discard the covariance the joint fit exists to capture, and every marginal would
+    still look right."""
+
+    spec = StructuralMacroProviderConfig().macro_state
+    cholesky = np.asarray(spec.shock_cholesky)
+    covariance = cholesky @ cholesky.T
+    off_diagonal = covariance[SHORT_RATE][1]
+
+    assert not np.isclose(off_diagonal, 0.0)
+    # Lower-triangular, so state 0's innovation cannot depend on states 1-2's draws.
+    assert cholesky[0][1] == 0.0
+    assert cholesky[0][2] == 0.0
 
 
 if __name__ == "__main__":

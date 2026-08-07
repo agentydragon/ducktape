@@ -35,9 +35,11 @@ surface at all; what happens between the state and the emissions is the model's 
 | equity      | Yahoo `VFINX` adjusted close | 1980-01 – 2026-08 | 559    |
 | `rate_beta` | `VFINX` on Δ`FEDFUNDS`       | 1980-01 – 2026-07 | 558    |
 
-Each **marginal** is fitted on its own longest history; only a **cross-block** parameter needs
-a shared window, because a covariance off a non-overlap is undefined rather than merely noisy.
-`rate_beta` is the model's one cross-block parameter and the only thing paying that cost.
+The three macro states are fitted JOINTLY as a VAR(1) — persistence, the Fed's reaction to
+inflation, and correlated innovations all come from that one estimate, so it necessarily uses
+their common window. Equity is a marginal and keeps its own longer history; `rate_beta`, the
+one parameter linking equity to the macro state, pays the common-window cost and comes out
+indistinguishable from zero.
 
 Instrument durations, spreads, prices and tax character are **not** fitted — they are facts
 about specific funds, stated in config.
@@ -47,23 +49,12 @@ about specific funds, stated in config.
 Every one of these is a reason a number out of this model can be wrong. They are ordered by
 how much they move an allocation answer.
 
-1. **Inflation is i.i.d. around a constant drift, and nothing reacts to it.** The monthly rate
-   draws an independent shock, so the price level is a random walk with no persistence. Two
-   consequences, both measured against CPI 1947–2026:
-   - **No regimes, and 30-year uncertainty ~5× too narrow.** Realized monthly inflation has
-     AR(1) ρ = **0.57**; this model assumes 0. Over 30 years the model's 1σ band on the price
-     level is ×2.64–3.01, where history delivered ×1.95–4.85 (a spread **4.8×** the model's).
-     A 1970s decade is unreachable here, and so is a sustained-low one.
-   - **No Fed reaction.** The short rate and trailing-12-month inflation correlate at **0.70**
-     in the data — the strongest relationship in this whole model's subject matter — and at
-     exactly **0** here, because the two processes share no state.
-
-   Together these bias the _bond_ sleeve specifically, and hard. A spend indexed to CPI against
-   a fund with a fixed nominal starting yield turns a small gap between the two into a
-   near-certainty compounded over 30 years, with no mechanism for rates to rise in response and
-   close it. **Any all-bond or bond-heavy result from this model should be read as pessimistic
-   for that reason**, and the fix is structural: inflation as an AR(1) rate, and an inflation
-   term in the short rate's drift, so the two stop being independent.
+1. **No regime switching, and the rate means are barely identified.** The joint VAR is a
+   single linear process: 2009–2021 ZIRP and 1981 differ only by draw, not by regime. Its
+   30-year inflation band (×2.11–4.78 simulated against ×1.95–4.85 realized) now matches
+   history, but that is a stationary process reproducing a dispersion, not a model that knows
+   regimes exist. It also slightly OVERSHOOTS the realized 30-year spread (0.41 against 0.31),
+   though the realized figure comes from ~2.6 independent windows and is itself uncertain.
 
 2. **Equity and rates are independent.** `rate_beta` fits to **+1.57 (R² = 0.0041)** over
    1993–2026 and **−0.62 (R² = 0.0051)** over 1980–2026: the sign is not stable across windows
