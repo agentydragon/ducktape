@@ -562,9 +562,57 @@ rates model before any evidence-pipeline work at all.
 **One gap this surfaces immediately: cash earns nothing.** The engine has no interest on cash
 balances anywhere. With cash as one of the four sleeves and a short rate as one of the factors,
 that is not a rounding error — it biases the study against holding cash exactly when the short
-rate makes cash competitive, which is the regime where the question is interesting. A cash yield
-is the same `units x per-unit` mechanic as a fund distribution, tagged
-`InterestIncome(issuer_jurisdiction_id="federal_us")` for a Treasury money-market fund.
+rate makes cash competitive, which is the regime where the question is interesting.
+
+The resolution needs no new engine mechanic, and it is more accurate than one would be.
+**A money-market fund is a fund**: duration zero, price pinned at 1.00, distribution per unit
+equal to the short rate over twelve. It is a `SecurityKey`, a legal sleeve target, and it pays
+through the exact `units x distribution_per_unit` path #3834 already built. So the CASH SLEEVE
+is an MMF holding, and the sim's cash slots stay what they actually are — the transactional
+buffer the band manages, which in reality earns approximately nothing. Two different things that
+the word "cash" was covering for.
+
+#### The provider's own shape, concretely
+
+Latent state per (rollout, month), none of it emitted:
+
+| factor             | why it is separate                                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| short rate         | prices cash, and anchors the front of the curve                                                                |
+| term spread        | 10y minus short; a fund's price move is duration x the yield change AT ITS DURATION, so one rate is not enough |
+| credit/muni spread | what makes a muni fund differ from a Treasury fund by more than tax treatment                                  |
+| equity log-price   | correlated with the above — the correlation is the parameter a 60/40 study turns on                            |
+| inflation          | already an emission, and TIPS/CPI-indexed spending need it                                                     |
+
+An instrument is a config row, not a factor: a symbol, a duration, and which spread it carries.
+From the state plus that row the provider derives, for each fund:
+
+- `security:<symbol>` — a price-only path. Monthly return is carry minus `duration x change in
+its yield`. No convexity term; at these durations it is a rounding error against everything
+  else that is uncertain.
+- `security_distribution:<symbol>` — `book_yield x price / 12`, where **`book_yield` converges
+  toward the market yield with a half-life of about the fund's duration** rather than jumping to
+  it. That lag is the whole structural claim, and it is the shape the measurements above show:
+  BND's payout did not move in 2022 when its price fell 15%, and then climbed from 2.56%/yr to
+  3.67%/yr across 2023-2025 as the fund rolled into higher-coupon holdings.
+
+**A floor on the modeled yield is required, not a fudge.** A distribution per unit is a level
+series and the level stack is multiplicative, so a zero breaks it — and a short rate that can
+reach zero is not hypothetical, it is 2009-2021. Floor the modeled yield around a basis point:
+real money-market funds never paid exactly zero either, because a fund that would has its fee
+waived instead. Recorded because the earlier draft claimed the positivity wall does not bite,
+and it does; this is where it bites and this is the answer.
+
+**Scope of the first build**: emit inflation, equity and the funds — not home values or rent,
+and no private equity. A scenario that demands one of those and selects this provider fails
+loudly at `validate_sample_satisfies_request`, which is correct: this provider does not model
+housing, and the allocation question does not need it. Composite still supplies PE for the
+presets that want it.
+
+**Un-fitted first**, with hand-set parameters, the way `independent` works. That yields a
+coherent rates model — one where a rate shock moves price and payout together — before any
+evidence-pipeline work at all, and it is what makes the fit a later, separable step rather than
+a prerequisite.
 
 #### Measured, because the first draft asserted these from memory
 
