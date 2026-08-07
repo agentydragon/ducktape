@@ -7,8 +7,11 @@ today's numbers, and would break on every evidence refresh while catching nothin
 
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import date
 from itertools import pairwise
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,8 +25,10 @@ from finance.augur.fit.structural_macro import (
     fit_ornstein_uhlenbeck,
     fit_rate_beta,
     fit_rates_block,
+    load_macro_history,
     splice_at_seam,
 )
+from finance.evidence import sources
 from finance.evidence.loading import MonthlyLevel
 
 TRUE_REVERSION = 0.02
@@ -333,3 +338,53 @@ def test_too_little_overlap_to_anchor_is_rejected() -> None:
     early = _levels(1900, [4.5] * 125)  # only 5 months of overlap
     with pytest.raises(ValueError, match="fewer than the"):
         splice_at_seam(early=early, late=late)
+
+
+def _write_evidence(directory: Path) -> None:
+    """A miniature evidence checkout: four files in the real formats, 400 months from 1970."""
+
+    months = _months(400, 1970)
+
+    body = ["This file was created using a test.", "", ",Mkt-RF,SMB,HML,RF"]
+    body.extend(f"{m.year}{m.month:02d},   1.00,   0.00,   0.00,   0.30" for m in months)
+    body.extend(
+        ["", " Annual Factors: January-December ", ",Mkt-RF,SMB,HML,RF", "  1971,  29.44,  -2.20,  -4.58,   3.12"]
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("F-F_Research_Data_Factors.csv", "\n".join(body) + "\n")
+    (directory / sources.FRENCH_FACTORS.output_filename).write_bytes(buffer.getvalue())
+
+    def csv(source: object, series_id: str, value_for: object) -> None:
+        rows = "\n".join(f"{m.isoformat()},{value_for(m)}" for m in months)  # type: ignore[operator]
+        (directory / source.output_filename).write_text(f"observation_date,{series_id}\n{rows}\n")  # type: ignore[attr-defined]
+
+    csv(sources.FRED_GS10, "GS10", lambda m: 5.0)
+    csv(sources.FRED_LTGOVTBD, "LTGOVTBD", lambda m: 5.4)
+    csv(sources.FRED_CPI_NSA, "CPIAUCNS", lambda m: 100.0)
+
+
+def test_the_century_record_assembles_from_the_four_evidence_series(tmp_path: Path) -> None:
+    """The seam between "sources are in the spec" and "the replay can use them"."""
+
+    _write_evidence(tmp_path)
+    history = load_macro_history(tmp_path)
+
+    assert history.months == 400
+    # French's RF is a monthly simple return; the record speaks annualized decimals.
+    assert history.short_rate[0] == pytest.approx(0.30 * 12 / 100.0)
+    # Mkt-RF + RF = 1.30%/month, compounded into an index.
+    assert history.equity_level[1] / history.equity_level[0] == pytest.approx(1.013)
+    # GS10 5.0 against a short rate of 3.6%.
+    assert history.term_spread[0] == pytest.approx(0.05 - 0.036)
+
+
+def test_the_annual_factor_rows_do_not_reach_the_record(tmp_path: Path) -> None:
+    """End-to-end version of the loader's own guard: a 29.44% monthly equity return would be
+    the single largest observation in the record and would survive every downstream check."""
+
+    _write_evidence(tmp_path)
+    history = load_macro_history(tmp_path)
+
+    growth = history.equity_level[1:] / history.equity_level[:-1]
+    assert float(np.max(growth)) == pytest.approx(1.013)

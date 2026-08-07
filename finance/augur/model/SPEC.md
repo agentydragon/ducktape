@@ -73,19 +73,18 @@ how much they move an allocation answer.
    11.34% over the **identical** window — the gap was manager drag or an adjusted-close defect,
    not history. Use `FRENCH_FACTORS`; MITTX stays in the evidence set only as a cross-check.
 
-4. **The record still stops at 1973 until the loaders catch up.** `FRENCH_FACTORS` supplies
-   equity total return AND the one-month T-bill from 1926; `LTGOVTBD` (1925–2000) spliced with
-   `GS10` supplies the long rate; `CPIAUCNS` reaches 1913. Together that is **1200 months —
-   840 overlapping 30-year windows and ~3.3 independent ones**, against 277 and ~1.8 today.
-   The sources are in the evidence spec; the loaders and the LTGOVTBD/GS10 splice are not
-   written yet, so nothing consumes them. Even at 1871 (Shiller) the ceiling is ~5
-   independent windows: history cannot supply more, which is why a fitted model belongs
-   beside the replay rather than instead of it.
-   VFINX 1980–2026 is the longest _total-return_ series
-   obtainable, covering 1987, 2000 and 2008 but not 1929 or the 1970s inflation. `^GSPC`
-   reaches 1970 and corroborates both the drift (8.29% price + ~2.9% yield ≈ 11.2%) and the
-   volatility (15.3% vs 15.4%), but it is price-only, so using it directly would mean choosing
-   a dividend add-back — a modelling decision, not a data pull.
+4. **The replay's record now reaches 1926, but the sample is still tiny.** `load_macro_history`
+   assembles it from four series: Ken French's factors (CRSP total market AND the one-month
+   T-bill, so equity and the short rate are aligned by construction), `LTGOVTBD` spliced under
+   `GS10` for the long rate, and `CPIAUCNS` for prices. That is **1200 months — 840 overlapping
+   30-year windows and ~3.3 independent ones**, against 199 and ~1.5 before.
+
+   Two costs come with it. The spliced long rate carries an unquantified duration-mismatch
+   offset before 1953 (`splice_at_seam`), and the record now spans regimes — a gold standard,
+   no Fed, WWII rate pegs — whose relevance to 2026 is a judgement, not a data question. And
+   even at 1871 the ceiling is ~5 independent windows: history cannot supply more, which is why
+   a fitted model belongs beside the replay rather than instead of it.
+
 5. **No cyclical credit spread.** A muni's spread over the curve is a constant, so the model
    cannot produce a muni selloff that Treasuries escape — which is exactly what a credit event
    looks like, and exactly when a floor is tested.

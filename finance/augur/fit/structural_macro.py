@@ -37,10 +37,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
+from pathlib import Path
 
 import numpy as np
 
+from finance.augur.model.historical_windows import MacroHistory, macro_history_from_levels
 from finance.augur.model.structural_macro import MONTHS_PER_YEAR
+from finance.evidence import loading, sources
 from finance.evidence.loading import MonthlyLevel
 
 # FRED publishes both rate series in PERCENT; every rate inside augur is a decimal.
@@ -416,3 +419,49 @@ def splice_at_seam(
     spliced = [MonthlyLevel(month=m, value=v + shift) for m, v in sorted(early_by_month.items()) if m < seam]
     spliced.extend(MonthlyLevel(month=m, value=late_by_month[m]) for m in sorted(late_by_month))
     return spliced
+
+
+DECIMAL_TO_PERCENT = 100.0
+
+
+def load_macro_history(evidence_dir: Path) -> MacroHistory:
+    """Assemble the century-long record the historical-window sampler replays.
+
+    Four series, three of them needing a decision the raw data does not make for you:
+
+    - **Equity and the short rate come from ONE file.** Ken French's factors give the CRSP
+      total market (`Mkt-RF + RF`) and the one-month T-bill together, monthly from 1926-07, so
+      the two are aligned by construction rather than by a join that could slip.
+    - **The equity LEVEL is a compounded index**, not a price. `MacroHistory` rebases every
+      window to a common start, so only ratios matter and the base is arbitrary.
+    - **The long rate is spliced** (`splice_at_seam`), which is the only step carrying an
+      unquantified error — see that function.
+    - **CPI is the NOT-seasonally-adjusted series.** `CPIAUCSL` starts 1947 and would truncate
+      the record by two decades; `CPIAUCNS` reaches 1913. Seasonality is irrelevant here
+      because every consumer reads a 12-month ratio.
+
+    The record is the intersection, so its start is whichever series begins latest — today
+    French's 1926-07.
+    """
+
+    factors = loading.french_factors_frame(
+        loading.source_bytes(evidence_dir, sources.FRENCH_FACTORS), sources.FRENCH_FACTORS
+    )
+    months = factors.get_column("month").to_list()
+    equity_index = np.cumprod(1.0 + factors.get_column("market_total_return").to_numpy())
+    # The T-bill is a monthly simple return; the rest of the model speaks ANNUALIZED PERCENT.
+    short_rate_percent = factors.get_column("risk_free_rate").to_numpy() * MONTHS_PER_YEAR * DECIMAL_TO_PERCENT
+
+    long_rate = splice_at_seam(
+        early=loading.read_monthly_levels(evidence_dir, sources.FRED_LTGOVTBD),
+        late=loading.read_monthly_levels(evidence_dir, sources.FRED_GS10),
+    )
+
+    return macro_history_from_levels(
+        short_rate_percent=list(zip(months, short_rate_percent.tolist(), strict=True)),
+        long_rate_percent=[(level.month, level.value) for level in long_rate],
+        equity_level=list(zip(months, equity_index.tolist(), strict=True)),
+        cpi_level=[
+            (level.month, level.value) for level in loading.read_monthly_levels(evidence_dir, sources.FRED_CPI_NSA)
+        ],
+    )

@@ -356,8 +356,10 @@ py_library(
     name = "structural_macro",
     srcs = ["structural_macro.py"],
     deps = [
+        "//finance/augur/model:historical_windows",
         "//finance/augur/model:structural_macro",
         "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
     ],
 )
@@ -370,7 +372,9 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/fit:conftest",
+        "//finance/augur/model:historical_windows",
         "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
