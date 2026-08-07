@@ -116,6 +116,11 @@ FRED_FHFA_SF = _fred("ATNHPIUS41884Q", "fred_fhfa_sf_oakland_berkeley.csv")
 # SF rent CPI: only the FRED-only degraded path uses it; production rent is Zillow ZORI.
 FRED_SF_RENT_CPI = _fred("CUURA422SEHA", "fred_sf_rent_cpi.csv")
 YAHOO_SPY = _yahoo("SPY", "yahoo_spy_chart_adjusted.json")
+# Vanguard's 500 index fund, 1980- : the longest TOTAL-RETURN equity series obtainable here,
+# and 46 years against SPY's 33. Adjusted close reinvests distributions, so it needs no
+# dividend add-back — which is what rules out the longer price-only index (`^GSPC`, 1970-),
+# where recovering total return would be a modelling decision rather than a data pull.
+YAHOO_VFINX = _yahoo("VFINX", "yahoo_vfinx_chart_adjusted.json")
 YAHOO_BTC = _yahoo("BTC-USD", "yahoo_btc_chart_adjusted.json")
 YAHOO_ETH = _yahoo("ETH-USD", "yahoo_eth_chart_adjusted.json")
 ZILLOW_ZHVI = _zillow(
@@ -134,6 +139,7 @@ EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     FRED_FHFA_SF,
     FRED_SF_RENT_CPI,
     YAHOO_SPY,
+    YAHOO_VFINX,
     YAHOO_BTC,
     YAHOO_ETH,
     ZILLOW_ZHVI,

@@ -28,9 +28,14 @@ a config ROW, not another random walk: a symbol, a duration, and a static spread
 curve at that duration. Adding a fourth fund adds a row. A muni's spread is negative and
 constant here — the cyclical part of a credit spread is a real thing this model does not
 have, and the honest consequence is that it cannot produce a muni selloff that Treasuries
-escape. Equity carries its own shock plus a `rate_beta` term on the short rate, which is the
-only bond/equity coupling there is; inflation carries its own shock and is the one series
-that is both state and emission, since spending is CPI-indexed.
+escape. Equity carries its own shock plus a `rate_beta` term on the short rate — the only
+bond/equity channel there is, and it is fitted to ZERO, so equity and rates are in practice
+INDEPENDENT here; inflation carries its own shock and is the one series that is both state and
+emission, since spending is CPI-indexed.
+
+What the model is, what it is fitted on, and what it cannot answer — including that
+independence, which is load-bearing — is declared in <SPEC.md>. Read that before trusting a
+number out of this.
 
 There is no factor concept in the public surface here, and nothing in `Sampler` asks for one:
 what this model does between its state and its emissions is its own business.
@@ -92,18 +97,37 @@ class InstrumentSpec(FrozenModel):
 class EquitySpec(FrozenModel):
     """Broad equity, priced as a correlated log process rather than off the curve.
 
-    `rate_beta` is the whole coupling to rates: the log return picks up
-    `rate_beta * (change in the short rate)` on top of its own drift and shock. Negative by
-    convention — a rate rise is an equity headwind — and small, because the relationship is
-    real but weak. It is here rather than in a covariance matrix because there is no
-    covariance matrix: this model has structure instead.
+    `rate_beta` is the ONLY channel to rates: the log return picks up
+    `rate_beta * (change in the short rate)` on top of its own drift and shock. It exists here
+    rather than in a covariance matrix because there is no covariance matrix — this model has
+    structure instead — and it defaults to ZERO because the data does not support a value.
+    See the field comment: the fitted coupling is the wrong sign and explains 0.4% of variance.
     """
 
     symbol: SecuritySymbol
     initial_price_usd: PositiveFloat
-    monthly_log_return_mu: float = 0.0055
-    monthly_log_return_sigma: NonNegativeFloat = 0.042
-    rate_beta: float = -2.0
+    # FITTED on VFINX adjusted close (total return), monthly, 1980-2026 (559 months):
+    # 11.35%/yr nominal at 15.4% vol. VFINX rather than SPY because it is 46 years against 33
+    # and covers 1987, 2000 and 2008. The hand-set 6.82% was 4.5pp low, which is why every
+    # P[ruin] measured against it read high.
+    #
+    # Corroborated out of sample: `^GSPC` price-only over 1970-2026 gives 8.29%/yr, which with
+    # a ~2.9% historical dividend yield implies ~11.2% total — and its 15.3% vol matches to a
+    # tenth of a point, as it should, since dividends are smooth. That series is not used
+    # directly because recovering total return from it is a modelling decision, not a data pull.
+    monthly_log_return_mu: float = 0.00896
+    monthly_log_return_sigma: NonNegativeFloat = 0.04433
+    # ZERO, and this is a finding rather than a default. Regressing equity's monthly log return
+    # on the same month's change in the short rate gives, on two windows:
+    #   1993-2026 (SPY):   beta = +1.57, R^2 = 0.0041
+    #   1980-2026 (VFINX): beta = -0.62, R^2 = 0.0051
+    # The SIGN is not stable across windows and neither fit explains more than half a percent
+    # of the variance. One window could be an unlucky sample; two that disagree on the sign are
+    # the absence of a contemporaneous monthly relationship. So the model carries no coupling
+    # rather than noise dressed as structure. The consequence is load-bearing and stated in
+    # SPEC.md: equity and rates are INDEPENDENT here, so this model cannot answer a question
+    # that turns on bond/equity correlation — which is what a 60/40 study turns on.
+    rate_beta: float = 0.0
 
 
 class StructuralMacroProviderConfig(FrozenModel):
@@ -139,9 +163,14 @@ class StructuralMacroProviderConfig(FrozenModel):
     term_spread_monthly_sigma: NonNegativeFloat = 0.0046
 
     # --- inflation ----------------------------------------------------------------------
+    # FITTED on FRED CPIAUCSL, monthly, 1947-2026 (952 months): 3.51%/yr at 1.2% vol. Longer
+    # than the equity window on purpose — each marginal gets its own longest history, since
+    # only a CROSS-block parameter needs a shared one. The hazard that leaves is named in
+    # `fit/structural_macro.py`: the implied real equity return pairs a sample containing the
+    # 1970s with one that does not.
     initial_inflation_level: PositiveFloat = 100.0
-    inflation_monthly_log_mu: float = 0.0021
-    inflation_monthly_log_sigma: NonNegativeFloat = 0.0025
+    inflation_monthly_log_mu: float = 0.00288
+    inflation_monthly_log_sigma: NonNegativeFloat = 0.00340
 
     # --- instruments --------------------------------------------------------------------
     equity: EquitySpec | None = None
