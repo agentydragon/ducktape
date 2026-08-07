@@ -31,7 +31,11 @@ have, and the honest consequence is that it cannot produce a muni selloff that T
 escape. Equity carries its own shock plus a `rate_beta` term on the short rate — the only
 bond/equity channel there is, and it is fitted to ZERO, so equity and rates are in practice
 INDEPENDENT here; inflation carries its own shock and is the one series that is both state and
-emission, since spending is CPI-indexed.
+emission, since spending is CPI-indexed. Those inflation shocks are i.i.d. around a constant
+drift, which is the model's largest single weakness and the first gap in <SPEC.md>: realized
+inflation is strongly persistent (AR(1) rho ~0.57) and the short rate tracks it (corr ~0.70), so a
+CPI-indexed spend here compounds against a bond sleeve that can never be rescued by the rate
+rise that real inflation provokes.
 
 What the model is, what it is fitted on, and what it cannot answer — including that
 independence, which is load-bearing — is declared in <SPEC.md>. Read that before trusting a
@@ -169,6 +173,10 @@ class StructuralMacroProviderConfig(FrozenModel):
     # `fit/structural_macro.py`: the implied real equity return pairs a sample containing the
     # 1970s with one that does not.
     initial_inflation_level: PositiveFloat = 100.0
+    # `sigma` is the DISPERSION OF ONE MONTH's shock, and the shocks are independent, so the
+    # 30-year price level it implies is far too certain: a 1-sigma band of x2.64..x3.01 where
+    # 1947-2026 delivered x1.95..x4.85 across its 30-year windows, a spread 4.8x wider. Raising
+    # sigma would not fix that — the missing thing is persistence, not scale. See SPEC.md § 1.
     inflation_monthly_log_mu: float = 0.00288
     inflation_monthly_log_sigma: NonNegativeFloat = 0.00340
 
