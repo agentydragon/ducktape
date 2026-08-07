@@ -267,7 +267,7 @@ class StructuralMacroModel:
             (InflationKey(), _inflation_level(config, state[INFLATION_RATE]))
         ]
         for spec in config.instruments:
-            price, distribution = _instrument_paths(spec, short_rate=short_rate, term_spread=term_spread)
+            price, distribution = instrument_paths(spec, short_rate=short_rate, term_spread=term_spread)
             blocks.append((SecurityKey(symbol=spec.symbol), price))
             blocks.append((SecurityDistributionKey(symbol=spec.symbol), distribution))
         if config.equity is not None:
@@ -332,10 +332,17 @@ def _instrument_yield(spec: InstrumentSpec, *, short_rate: np.ndarray, term_spre
     return np.maximum(short_rate + curve_fraction * term_spread + spec.spread, MINIMUM_ANNUAL_YIELD)
 
 
-def _instrument_paths(
+def instrument_paths(
     spec: InstrumentSpec, *, short_rate: np.ndarray, term_spread: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """`(price, distribution_per_unit)` for one fund, both in dollars per unit.
+
+    Public because two providers share it: this one, driven by a simulated state, and
+    `historical_windows`, driven by realized history. That split is deliberate — the duration
+    response, the book-yield lag and the coupon-on-face rule are claims about INSTRUMENTS, not
+    about the economy, so they should not differ between a fitted model and a replay of the
+    past. If they did, the two would not be comparable, which is the entire point of having
+    both.
 
     Price: minus `duration * change in this instrument's own yield`. No convexity term — at
     these durations it is a rounding error next to everything else that is uncertain.

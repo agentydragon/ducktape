@@ -277,6 +277,34 @@ py_library(
 )
 
 py_library(
+    name = "historical_windows",
+    srcs = ["historical_windows.py"],
+    deps = [
+        ":exogenous",
+        ":series",
+        ":structural_macro",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "historical_windows_test",
+    srcs = ["historical_windows_test.py"],
+    deps = [
+        ":conftest",
+        ":exogenous",
+        ":historical_windows",
+        ":series",
+        ":structural_macro",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "structural_macro",
     srcs = ["structural_macro.py"],
     deps = [
