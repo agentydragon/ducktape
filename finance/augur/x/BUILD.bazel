@@ -1,0 +1,24 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "allocation_sweep_lib",
+    srcs = ["allocation_sweep.py"],
+    deps = [
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model:structural_macro",
+        "//finance/augur/sim:codec",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:projections",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:simulate",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_binary(
+    name = "allocation_sweep",
+    main_module = "finance.augur.x.allocation_sweep",
+    deps = [":allocation_sweep_lib"],
+)
