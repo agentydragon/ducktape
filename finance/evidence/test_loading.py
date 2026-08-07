@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
+import textwrap
+import zipfile
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -9,12 +12,13 @@ import pytest_bazel
 
 from finance.evidence.loading import (
     fred_series_frame,
+    french_factors_frame,
     monthly_last,
     read_monthly_levels,
     source_bytes,
     yahoo_adjusted_close_frame,
 )
-from finance.evidence.sources import EVIDENCE_SOURCES, FRED_CPI, YAHOO_BTC, ZILLOW_ZHVI, EvidenceKind
+from finance.evidence.sources import EVIDENCE_SOURCES, FRED_CPI, FRENCH_FACTORS, YAHOO_BTC, ZILLOW_ZHVI, EvidenceKind
 
 FRED_TEXT = (
     "observation_date,CPIAUCSL\n"
@@ -124,3 +128,75 @@ def test_source_bytes_missing_file_raises(tmp_path: Path) -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def _french_zip(body: str, *, member: str = "F-F_Research_Data_Factors.csv") -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(member, body)
+    return buffer.getvalue()
+
+
+_FRENCH_BODY = textwrap.dedent("""\
+    This file was created using the 202606 CRSP database.
+    The 1-month TBill rate data until 202405 are from Ibbotson Associates.
+
+    ,Mkt-RF,SMB,HML,RF
+    192607,   2.89,  -2.55,  -2.39,   0.22
+    192608,   2.64,  -1.20,   3.82,   0.25
+    192609,   0.36,  -1.29,   0.13,   0.23
+
+     Annual Factors: January-December
+    ,Mkt-RF,SMB,HML,RF
+      1927,  29.44,  -2.20,  -4.58,   3.12
+      1928,  35.56,   3.73,  -5.26,   3.56
+
+    Copyright 2026 Eugene F. Fama and Kenneth R. French
+    """)
+
+
+def test_french_factors_are_parsed_as_decimal_monthly_returns() -> None:
+    frame = french_factors_frame(_french_zip(_FRENCH_BODY), FRENCH_FACTORS)
+
+    assert frame.height == 3
+    assert frame.get_column("month").to_list() == [date(1926, 7, 1), date(1926, 8, 1), date(1926, 9, 1)]
+    # Total return is Mkt-RF + RF, in decimals: 2.89 + 0.22 = 3.11%.
+    assert frame.get_column("market_total_return")[0] == pytest.approx(0.0311)
+    assert frame.get_column("risk_free_rate")[0] == pytest.approx(0.0022)
+
+
+def test_the_annual_section_is_not_mistaken_for_monthly_rows() -> None:
+    """The one failure this loader exists to prevent. The annual block repeats the same four
+    column names and its values (29.44 for 1927) parse as plausible monthly returns, so
+    including it would add outliers to the sample and inflate every fitted volatility without
+    producing a single malformed value."""
+
+    frame = french_factors_frame(_french_zip(_FRENCH_BODY), FRENCH_FACTORS)
+
+    assert frame.height == 3
+    assert frame.get_column("market_total_return").max() < 0.05
+    assert date(1927, 1, 1) not in frame.get_column("month").to_list()
+
+
+def test_a_gap_in_the_monthly_series_is_rejected() -> None:
+    """Row count against the date span. A dropped month would silently shorten every window in
+    the historical replay and misalign it against the other evidence series."""
+
+    body = _FRENCH_BODY.replace("192608,   2.64,  -1.20,   3.82,   0.25\n", "")
+    with pytest.raises(ValueError, match="gapless"):
+        french_factors_frame(_french_zip(body), FRENCH_FACTORS)
+
+
+def test_an_archive_without_exactly_one_member_is_rejected() -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("a.csv", _FRENCH_BODY)
+        archive.writestr("b.csv", _FRENCH_BODY)
+    with pytest.raises(ValueError, match="expected exactly 1"):
+        french_factors_frame(buffer.getvalue(), FRENCH_FACTORS)
+
+
+def test_a_file_with_no_monthly_rows_is_rejected() -> None:
+    body = "header only\n\n Annual Factors: January-December \n,Mkt-RF,SMB,HML,RF\n  1927,  29.44,  -2.20,  -4.58,   3.12\n"
+    with pytest.raises(ValueError, match="no monthly rows"):
+        french_factors_frame(_french_zip(body), FRENCH_FACTORS)

@@ -111,17 +111,22 @@ class EquitySpec(FrozenModel):
 
     symbol: SecuritySymbol
     initial_price_usd: PositiveFloat
-    # FITTED on VFINX adjusted close (total return), monthly, 1980-2026 (559 months):
-    # 11.35%/yr nominal at 15.4% vol. VFINX rather than SPY because it is 46 years against 33
-    # and covers 1987, 2000 and 2008. The hand-set 6.82% was 4.5pp low, which is why every
-    # P[ruin] measured against it read high.
+    # FITTED on the CRSP value-weighted total US market (Ken French's factors, `Mkt-RF + RF`),
+    # monthly, 1926-07 to 2026-06 — 1200 months, a full century, dividends included.
+    # 10.37%/yr nominal at 18.3% vol.
     #
-    # Corroborated out of sample: `^GSPC` price-only over 1970-2026 gives 8.29%/yr, which with
-    # a ~2.9% historical dividend yield implies ~11.2% total — and its 15.3% vol matches to a
-    # tenth of a point, as it should, since dividends are smooth. That series is not used
-    # directly because recovering total return from it is a modelling decision, not a data pull.
-    monthly_log_return_mu: float = 0.00896
-    monthly_log_return_sigma: NonNegativeFloat = 0.04433
+    # A century rather than the 46 years this used before, and BOTH numbers moved:
+    #   drift       11.35% -> 10.37%   (-1.0pp)
+    #   volatility   15.4% ->  18.3%   (+2.9pp)
+    # The volatility is the larger move and the one that had been invisible, because the
+    # shorter window omits 1929-32. For a ruin probability the vol term plausibly matters more
+    # than the drift, and this is the first parameter change here that makes the answer WORSE
+    # rather than better.
+    #
+    # Validated before adoption: the series' worst nominal drawdown over the century is -83.7%,
+    # against 1929-32's actual about -84%.
+    monthly_log_return_mu: float = 0.00822
+    monthly_log_return_sigma: NonNegativeFloat = 0.05290
     # ZERO, and this is a finding rather than a default. Regressing equity's monthly log return
     # on the same month's change in the short rate gives, on two windows:
     #   1993-2026 (SPY):   beta = +1.57, R^2 = 0.0041

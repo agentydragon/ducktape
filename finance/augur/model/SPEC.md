@@ -61,12 +61,12 @@ how much they move an allocation answer.
    and neither explains half a percent of variance. So it is zero and the model carries no
    bond/equity coupling at all. **A question that turns on bond/equity correlation is not
    answered here** — which is exactly what a 60/40 study turns on, making this the largest gap.
-3. **The equity window moves the drift ~2pp and the volatility ~2.5pp.** Over the CRSP total
-   market (Ken French, dividends included, 1926-07–2026-06, 100 years) equity returns
-   **10.37%/yr at 18.3% vol**; over 1980–2026 the same series gives 12.29% at 15.7%. The
-   century is both lower-returning and a third more volatile, because it contains 1929–32 —
-   whose −83.7% nominal drawdown the series reproduces against the actual ≈−84%. The shipped
-   default is fitted on the short, generous window.
+3. **Equity is now fitted on the full century, and the window still matters.** The shipped
+   default is the CRSP total market over 1926-07–2026-06: **10.37%/yr at 18.3% vol**. The same
+   series over 1980–2026 gives 12.29% at 15.7%, so restricting to the recent past would raise
+   the drift ~2pp and cut the volatility ~2.5pp. Nothing forces a century — it is a choice,
+   and the honest reason for it is that a 30-year horizon should be priced against a record
+   containing more than one regime.
 
    _Correction:_ an earlier revision claimed a 4pp window effect, measured as MITTX (1973–)
    against VFINX (1980–). That was wrong. MITTX returns 7.17%/yr while its own market returns
