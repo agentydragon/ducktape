@@ -108,6 +108,11 @@ FRED_CPI = _fred("CPIAUCSL", "fred_cpi_us.csv")
 # ZIRP fits a mean-reverting rate that has never seen a regime, and the whole reason to model
 # rates structurally is to price a 30-year horizon that will contain regimes.
 FRED_FEDFUNDS = _fred("FEDFUNDS", "fred_fedfunds.csv")
+# 3-month T-bill (1934) and unadjusted CPI (1913), both reaching well behind FEDFUNDS' 1954.
+# Not used yet: they are the front end and the price index for a record extended back past the
+# modern Fed, which is blocked on a longer TOTAL-RETURN equity series (see YAHOO_MITTX).
+FRED_TB3MS = _fred("TB3MS", "fred_tb3ms.csv")
+FRED_CPI_NSA = _fred("CPIAUCNS", "fred_cpi_us_nsa.csv")
 FRED_GS10 = _fred("GS10", "fred_gs10.csv")
 FRED_SP500 = _fred("SP500", "fred_sp500.csv")
 FRED_MORTGAGE30 = _fred("MORTGAGE30US", "fred_mortgage30.csv")
@@ -121,6 +126,22 @@ YAHOO_SPY = _yahoo("SPY", "yahoo_spy_chart_adjusted.json")
 # dividend add-back — which is what rules out the longer price-only index (`^GSPC`, 1970-),
 # where recovering total return would be a modelling decision rather than a data pull.
 YAHOO_VFINX = _yahoo("VFINX", "yahoo_vfinx_chart_adjusted.json")
+# MFS Massachusetts Investors Trust, 1973-05 — the oldest US mutual fund, and the longest
+# TOTAL-RETURN equity series reachable from a source this pipeline already parses. Seven years
+# longer than VFINX, and those seven years are the ones that matter: it contains 1973-74, whose
+# real drawdown is the worst modern equities have delivered and the exact stagflation a
+# CPI-indexed spender most needs represented. Measured here: -48.5% real, bottoming 1982-07,
+# against the S&P's real ~-51% over the same span.
+#
+# ACTIVELY MANAGED, which is the cost. A large-cap core fund tracks the market closely but
+# carries manager effects and ~0.6% of fees against VFINX's ~0.14%, so perhaps 0.5pp of the
+# drift gap below is fees rather than history.
+#
+# The gap is the point, and it dwarfs any estimation error: 7.17%/yr nominal over 1973-2026
+# against VFINX's 11.35% over 1980-2026, at the same ~15.5% vol. Four points of annual drift
+# from the WINDOW, not from the estimator. Anything conditioned on an equity return is
+# conditioned on that choice first.
+YAHOO_MITTX = _yahoo("MITTX", "yahoo_mittx_chart_adjusted.json")
 YAHOO_BTC = _yahoo("BTC-USD", "yahoo_btc_chart_adjusted.json")
 YAHOO_ETH = _yahoo("ETH-USD", "yahoo_eth_chart_adjusted.json")
 ZILLOW_ZHVI = _zillow(
@@ -132,6 +153,8 @@ ZILLOW_ZORI = _zillow("zori/City_zori_uc_sfrcondomfr_sm_sa_month", "zillow_city_
 EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     FRED_CPI,
     FRED_FEDFUNDS,
+    FRED_TB3MS,
+    FRED_CPI_NSA,
     FRED_GS10,
     FRED_SP500,
     FRED_MORTGAGE30,
@@ -140,6 +163,7 @@ EVIDENCE_SOURCES: tuple[EvidenceSource, ...] = (
     FRED_SF_RENT_CPI,
     YAHOO_SPY,
     YAHOO_VFINX,
+    YAHOO_MITTX,
     YAHOO_BTC,
     YAHOO_ETH,
     ZILLOW_ZHVI,
