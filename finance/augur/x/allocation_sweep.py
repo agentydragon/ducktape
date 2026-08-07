@@ -5,8 +5,9 @@ else held fixed: constant CPI-adjusted spending, one target-allocation policy wi
 band, and a Californian's tax profile so a muni fund's exemption is worth what it is worth.
 
 Exploratory, hence `x/`. The point is to see what the provider produces once it is wired to
-a real portfolio, not to assert anything. The numbers are only as good as the hand-set
-parameters behind them — nothing here is fitted — so read the SHAPE and not the levels. The
+a real portfolio, not to assert anything. Every parameter is fitted now, but fitted is not the
+same as complete — the fit windows are a choice and the gaps in <../model/SPEC.md> are things
+no fit closes — so read the SHAPE and not the levels. The
 shape it produces is the textbook one, which is the encouraging part: at a low withdrawal
 rate more equity strictly RAISES P[ruin] (the spend is already covered, so equity adds only
 variance); at a high one it strictly lowers it (bonds cannot fund the spend at all, so risk
@@ -273,9 +274,10 @@ def _terminal_liquid_usd(run: SimulationRun) -> np.ndarray:
 def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:
     """What the parameters actually imply, so the levels below can be judged against something.
 
-    The rates block is fitted on 70 years of FRED; equity drift and inflation are not, and they
-    are what the table turns on most. Printing the implied real equity return next to a P[ruin]
-    is the cheapest available defence against reading a hand-set number as a finding.
+    Every block is fitted now, so the defence this printout provides has changed: the risk is
+    no longer a hand-set number read as a finding, it is FITTED numbers read as complete. What
+    the model structurally cannot do — no equity/rates coupling, no held-to-maturity
+    instrument — does not show up anywhere in the table below, so it is printed above it.
     """
 
     equity = config.equity
@@ -285,10 +287,11 @@ def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:
     muni = config.instruments[0]
     muni_yield = config.initial_short_rate + min(muni.duration_years / 10.0, 1.0) * config.initial_term_spread
     print(
-        f"rates block FITTED (FEDFUNDS/GS10 1954-2026); equity and inflation still HAND-SET: "
-        f"equity {equity_nominal:.1%}/yr nominal at "
+        f"all blocks FITTED: rates FEDFUNDS/GS10 1954-2026, inflation CPI 1947-2026, equity "
+        f"VFINX 1980-2026 → equity {equity_nominal:.1%}/yr nominal at "
         f"{np.sqrt(12) * equity.monthly_log_return_sigma:.1%} vol, inflation {inflation:.1%}/yr "
-        f"→ {equity_nominal - inflation:.1%}/yr real\n"
+        f"→ {equity_nominal - inflation:.1%}/yr real. Equity and rates are INDEPENDENT "
+        f"(SPEC.md § Gaps); the bond sleeve is a marked fund, not a held ladder.\n"
         f"  muni starting yield {muni_yield + muni.spread:.2%}/yr "
         f"(curve {muni_yield:.2%} {muni.spread:+.2%} muni spread), duration {muni.duration_years}y"
     )
