@@ -374,3 +374,45 @@ def fit_macro_var(
         latest_month=usable[-1],
         sample_months=len(usable),
     )
+
+
+# ── The full-century record, for the historical-window sampler ────────────────────────────
+
+SEAM_ANCHOR_MONTHS = 12
+"""Overlap months averaged to align a spliced series at its seam. See `splice_at_seam`."""
+
+
+def splice_at_seam(
+    *, early: Sequence[MonthlyLevel], late: Sequence[MonthlyLevel], anchor_months: int = SEAM_ANCHOR_MONTHS
+) -> list[MonthlyLevel]:
+    """Extend `late` backwards with `early`, level-shifted to meet it at the seam.
+
+    Built for `LTGOVTBD` (long-term government composite, 1925-2000) under `GS10` (10-year
+    constant maturity, 1953-). They measure different durations, so they do not agree: over
+    their 567-month overlap the difference averages -0.13pp but swings from -0.63pp in the
+    1970s to +0.33pp in the 1990s, sd 0.44pp.
+
+    That time variation is why the shift is computed from the FIRST `anchor_months` of overlap
+    rather than from the whole of it. A whole-overlap mean would import a 1990s discrepancy
+    into a 1930s observation; a seam anchor only claims the two series agree where they are
+    joined, which is the one place continuity actually matters — a 30-year window starting in
+    1926 ends in 1956 and crosses the seam, so a step there would read as a real rate move.
+
+    The residual error is not removed and cannot be: pre-seam values carry an unknown
+    duration-mismatch offset of roughly the overlap's spread. Fine for a term SPREAD feeding a
+    duration approximation; not fine for pricing a specific bond.
+    """
+
+    late_by_month = {level.month: level.value for level in late}
+    early_by_month = {level.month: level.value for level in early}
+    overlap = sorted(set(late_by_month) & set(early_by_month))
+    if len(overlap) < anchor_months:
+        raise ValueError(f"the two series overlap in {len(overlap)} months, fewer than the {anchor_months} anchor")
+
+    anchor = overlap[:anchor_months]
+    shift = float(np.mean([late_by_month[m] - early_by_month[m] for m in anchor]))
+    seam = overlap[0]
+
+    spliced = [MonthlyLevel(month=m, value=v + shift) for m, v in sorted(early_by_month.items()) if m < seam]
+    spliced.extend(MonthlyLevel(month=m, value=late_by_month[m]) for m in sorted(late_by_month))
+    return spliced

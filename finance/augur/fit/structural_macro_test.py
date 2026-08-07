@@ -22,6 +22,7 @@ from finance.augur.fit.structural_macro import (
     fit_ornstein_uhlenbeck,
     fit_rate_beta,
     fit_rates_block,
+    splice_at_seam,
 )
 from finance.evidence.loading import MonthlyLevel
 
@@ -276,3 +277,59 @@ def test_rate_beta_needs_enough_shared_months() -> None:
             equity_levels=[MonthlyLevel(month=r.month, value=100.0 + i) for i, r in enumerate(rates[:100])],
             short_rate=rates,
         )
+
+
+def _levels(start_year: int, values: list[float]) -> list[MonthlyLevel]:
+    return [MonthlyLevel(month=m, value=v) for m, v in zip(_months(len(values), start_year), values, strict=True)]
+
+
+def test_the_splice_shifts_the_early_series_to_meet_the_late_one() -> None:
+    """The seam is where continuity matters: a 30-year window starting in 1926 crosses 1953, so
+    a step there would read as a real rate move rather than a change of measurement."""
+
+    late = _levels(1910, [4.0 + 0.01 * i for i in range(300)])
+    # Same shape, offset by a constant, starting 120 months earlier.
+    early = _levels(1900, [4.0 + 0.01 * (i - 120) + 0.5 for i in range(420)])
+
+    spliced = splice_at_seam(early=early, late=late)
+
+    assert len(spliced) == 420
+    assert spliced[0].month == early[0].month
+    assert spliced[-1].month == late[-1].month
+    # Continuous across the seam: consecutive steps are the series' own 0.01, not 0.01 - 0.5.
+    steps = [b.value - a.value for a, b in pairwise(spliced)]
+    assert max(steps) == pytest.approx(0.01, abs=1e-9)
+    assert min(steps) == pytest.approx(0.01, abs=1e-9)
+
+
+def test_the_late_series_is_never_altered_by_the_splice() -> None:
+    """It is the better measurement and the one every other fit uses; the early series is what
+    bends to meet it. Shifting the modern half would silently change the fitted rate block."""
+
+    late = _levels(1910, [4.0 + 0.02 * i for i in range(300)])
+    early = _levels(1900, [9.0] * 420)
+
+    spliced = {level.month: level.value for level in splice_at_seam(early=early, late=late)}
+
+    assert all(spliced[level.month] == pytest.approx(level.value) for level in late)
+
+
+def test_the_shift_comes_from_the_seam_not_the_whole_overlap() -> None:
+    """The two series disagree by a time-VARYING amount, so a whole-overlap mean would import a
+    late-period discrepancy into an early-period observation."""
+
+    late = _levels(1910, [4.0] * 300)
+    # Agrees at the seam, then drifts far apart later in the overlap.
+    early = _levels(1900, [4.0] * 130 + [4.0 + 0.05 * i for i in range(290)])
+
+    spliced = splice_at_seam(early=early, late=late)
+
+    # Seam-anchored: the offset is ~0 there, so pre-seam values pass through essentially intact.
+    assert spliced[0].value == pytest.approx(4.0, abs=0.02)
+
+
+def test_too_little_overlap_to_anchor_is_rejected() -> None:
+    late = _levels(1910, [4.0] * 300)
+    early = _levels(1900, [4.5] * 125)  # only 5 months of overlap
+    with pytest.raises(ValueError, match="fewer than the"):
+        splice_at_seam(early=early, late=late)
