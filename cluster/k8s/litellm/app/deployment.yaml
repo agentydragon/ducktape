@@ -143,7 +143,9 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 12
+            # Cold startup includes LiteLLM imports, model registration, and a
+            # Prisma migration. Allow several minutes for that path to finish.
+            failureThreshold: 36
           resources:
             requests:
               cpu: 100m
