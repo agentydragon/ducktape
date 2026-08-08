@@ -19,6 +19,13 @@ spec:
         app.kubernetes.io/name: haku-runner
     spec:
       automountServiceAccountToken: false
+      # Long enough for the runner to drain a job it already started (config.yaml's
+      # `shutdown_timeout: 30m`, itself bounded by `timeout: 30m`) plus artifact upload.
+      # The default 30s is what actually killed these builds: KEDA scales on QUEUED jobs, so
+      # an in-flight job reads as zero demand, the HPA deletes the pod, and the kubelet
+      # SIGKILLs 30 seconds later — mid-build, with a truncated log and no error line.
+      # Raising this without `shutdown_timeout` set, or vice versa, still drops the job.
+      terminationGracePeriodSeconds: 2100
       # Pin to the ACTUAL OVH workers (ks_game_worker0/1), not the OVH control planes.
       # The OVH CPs are schedulable (allowSchedulingOnControlPlanes) and region=hil, and
       # are misleadingly keyed kimsufi_worker0/1 in tofu though their role is controlplane

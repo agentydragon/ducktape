@@ -85,3 +85,21 @@ from zero to the hard cap of four.
 this operator-only namespace. The runner pod does not mount that Secret; only KEDA reads it.
 Each runner uses an `emptyDir` cache, so it is warm for consecutive jobs on that pod but is
 intentionally discarded when KEDA scales down.
+
+**Gotcha: the trigger counts QUEUED jobs, so a running job reads as zero demand.** Nothing tells
+the HPA which pod is busy, so once `stabilizationWindowSeconds` (600s) elapses it will delete a
+pod that is mid-build. Two settings make that survivable, and **both are required** — either one
+alone still drops the job:
+
+| setting                                            | where             | value |
+| -------------------------------------------------- | ----------------- | ----- |
+| `runner.shutdown_timeout`                          | `config.yaml`     | 30m   |
+| `spec.template.spec.terminationGracePeriodSeconds` | `deployment.yaml` | 2100  |
+
+The first tells act_runner to finish the running job on SIGTERM; the second stops the kubelet
+SIGKILLing it 30 seconds in (the default, and the reason `bazel-ci / image` died on every
+ducktape repin — the only builds long enough to outlive the window). Keep `shutdown_timeout` at
+or below the grace period, and both at or above `runner.timeout`.
+
+This makes a reaped job survive; it does not stop the reaping. The metric would have to count
+in-progress jobs as well as queued ones for the HPA to stop wanting the pod gone.

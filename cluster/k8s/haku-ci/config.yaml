@@ -8,6 +8,12 @@ log:
 runner:
   capacity: 1
   timeout: 30m
+  # On SIGTERM, finish the running job instead of dropping it. KEDA scales on QUEUED jobs,
+  # so a job that has started reads as zero demand and the HPA reaps its pod mid-build —
+  # which is what killed `bazel-ci / image` on every ducktape repin (the only builds long
+  # enough to outlive the 600s stabilization window). Must stay <= the pod's
+  # terminationGracePeriodSeconds, or the kubelet SIGKILLs before this timeout can elapse.
+  shutdown_timeout: 30m
   # `<label>:docker://<image>` runs jobs in that container image. Must carry the
   # docker CLI (to reach the dind sidecar) AND node+git (so actions/checkout and
   # other JS actions run). The standard act image bundles all three.
