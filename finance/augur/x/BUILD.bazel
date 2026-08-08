@@ -22,3 +22,23 @@ py_binary(
     main_module = "finance.augur.x.allocation_sweep",
     deps = [":allocation_sweep_lib"],
 )
+
+py_library(
+    name = "replay_vs_fitted_lib",
+    srcs = ["replay_vs_fitted.py"],
+    deps = [
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:historical_windows",
+        "//finance/augur/model:series",
+        "//finance/augur/model:structural_macro",
+        "//finance/evidence:sources",
+        "//finance/scraper:http_fetch",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "replay_vs_fitted",
+    main_module = "finance.augur.x.replay_vs_fitted",
+    deps = [":replay_vs_fitted_lib"],
+)
