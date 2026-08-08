@@ -200,3 +200,14 @@ def test_a_file_with_no_monthly_rows_is_rejected() -> None:
     body = "header only\n\n Annual Factors: January-December \n,Mkt-RF,SMB,HML,RF\n  1927,  29.44,  -2.20,  -4.58,   3.12\n"
     with pytest.raises(ValueError, match="no monthly rows"):
         french_factors_frame(_french_zip(body), FRENCH_FACTORS)
+
+
+def test_read_monthly_levels_rejects_a_french_factors_file() -> None:
+    """`read_monthly_levels` dispatches on kind, and a kind with no case falls off the end of
+    the match into `monthly_last(raw)` with `raw` unbound — an `UnboundLocalError` a long way
+    from the cause. Adding FRENCH to the evidence set did exactly that and the repo-wide gate
+    did not catch it, so every kind now either parses or says why it cannot, and `assert_never`
+    makes the NEXT kind a type error instead of a runtime surprise."""
+
+    with pytest.raises(ValueError, match="not one level series"):
+        read_monthly_levels(Path("/nonexistent"), FRENCH_FACTORS)

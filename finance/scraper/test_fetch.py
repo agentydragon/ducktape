@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from finance.evidence.markets import MarketEntry, Platform
-from finance.evidence.sources import EvidenceKind, EvidenceSource
+from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceKind, EvidenceSource
 from finance.scraper.fetch import EVIDENCE_META_FILENAME, EvidenceManifest, commit_and_push, run_scrape, write_sources
 from finance.scraper.http_fetch import HttpGet, _ca_file
 from finance.scraper.market_mirror import KALSHI_API, MANIFOLD_API
@@ -458,3 +458,20 @@ async def test_run_scrape_failed_market_is_tolerated_until_stale(tmp_path: Path)
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_every_declared_source_is_fetched_and_written_verbatim(tmp_path: Path) -> None:
+    """The scraper is format-agnostic on purpose: it writes response bytes under
+    `output_filename` and never parses. This pins that for EVERY source in the spec, including
+    binary ones — Ken French ships a zip, and a scraper that assumed text would corrupt it in a
+    way only the loader would notice, one CronJob cycle later."""
+
+    bodies = {source.upstream_url: bytes([0, 159, 146, 150]) + source.series_id.encode() for source in EVIDENCE_SOURCES}
+
+    async def fake_get(url: str, user_agent: str) -> bytes:
+        return bodies[url]
+
+    asyncio.run(write_sources(tmp_path, EVIDENCE_SOURCES, http_get=fake_get))
+
+    for source in EVIDENCE_SOURCES:
+        assert (tmp_path / source.output_filename).read_bytes() == bodies[source.upstream_url]

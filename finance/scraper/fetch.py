@@ -1,8 +1,9 @@
 """Git-scrape public evidence upstreams into the augur-evidence repo.
 
-Clones the evidence repo, GETs each public source (FRED / Yahoo / Zillow) with
-its per-source User-Agent, writes each into the working tree under its
-`output_filename`, runs the prediction-market mirror pass (`market_mirror`) for
+Clones the evidence repo, GETs each public source (FRED / Yahoo / Zillow / Ken
+French) with its per-source User-Agent, writes each into the working tree under its
+`output_filename` as raw BYTES — so a binary upstream (French ships a zip) needs
+nothing special here; parsing is the loader's job, not the scraper's — runs the prediction-market mirror pass (`market_mirror`) for
 the rostered markets, then commits-if-changed + pushes. Git provides history,
 change-detection (an unchanged upstream produces the same tree), and an atomic
 "latest" (HEAD) — no object store, no pointer protocol.

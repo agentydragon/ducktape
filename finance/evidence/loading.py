@@ -18,6 +18,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import assert_never
 
 import polars as pl
 
@@ -244,6 +245,13 @@ def read_monthly_levels(evidence_dir: Path, source: EvidenceSource) -> list[Mont
             raw = yahoo_adjusted_close_frame(source_bytes(evidence_dir, source), source)
         case EvidenceKind.ZILLOW:
             raise ValueError(f"{source.provenance_label}: Zillow is a wide city table, not a single level series")
+        case EvidenceKind.FRENCH:
+            raise ValueError(
+                f"{source.provenance_label}: a French factors file is several RETURN series, not one level "
+                f"series; use french_factors_frame and compound the column you want"
+            )
+        case _ as unreachable:
+            assert_never(unreachable)
     monthly = monthly_last(raw)
     return [
         MonthlyLevel(month=month, value=value)
