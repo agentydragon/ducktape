@@ -264,6 +264,7 @@ py_library(
     srcs = ["provider_config.py"],
     deps = [
         ":composite",
+        ":historical_windows",
         ":independent",
         ":mirroring",
         ":private_equity_risk",
@@ -281,9 +282,12 @@ py_library(
     srcs = ["historical_windows.py"],
     deps = [
         ":exogenous",
+        ":schemas",
         ":series",
         ":structural_macro",
+        "//finance/evidence:loading",
         "@pypi//numpy",
+        "@pypi//pydantic",
     ],
 )
 
@@ -294,10 +298,13 @@ py_test(
         ":conftest",
         ":exogenous",
         ":historical_windows",
+        ":provider_config",
         ":series",
         ":structural_macro",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

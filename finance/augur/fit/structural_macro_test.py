@@ -7,11 +7,8 @@ today's numbers, and would break on every evidence refresh while catching nothin
 
 from __future__ import annotations
 
-import io
-import zipfile
 from datetime import date
 from itertools import pairwise
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -25,10 +22,7 @@ from finance.augur.fit.structural_macro import (
     fit_ornstein_uhlenbeck,
     fit_rate_beta,
     fit_rates_block,
-    load_macro_history,
-    splice_at_seam,
 )
-from finance.evidence import sources
 from finance.evidence.loading import MonthlyLevel
 
 TRUE_REVERSION = 0.02
@@ -282,109 +276,3 @@ def test_rate_beta_needs_enough_shared_months() -> None:
             equity_levels=[MonthlyLevel(month=r.month, value=100.0 + i) for i, r in enumerate(rates[:100])],
             short_rate=rates,
         )
-
-
-def _levels(start_year: int, values: list[float]) -> list[MonthlyLevel]:
-    return [MonthlyLevel(month=m, value=v) for m, v in zip(_months(len(values), start_year), values, strict=True)]
-
-
-def test_the_splice_shifts_the_early_series_to_meet_the_late_one() -> None:
-    """The seam is where continuity matters: a 30-year window starting in 1926 crosses 1953, so
-    a step there would read as a real rate move rather than a change of measurement."""
-
-    late = _levels(1910, [4.0 + 0.01 * i for i in range(300)])
-    # Same shape, offset by a constant, starting 120 months earlier.
-    early = _levels(1900, [4.0 + 0.01 * (i - 120) + 0.5 for i in range(420)])
-
-    spliced = splice_at_seam(early=early, late=late)
-
-    assert len(spliced) == 420
-    assert spliced[0].month == early[0].month
-    assert spliced[-1].month == late[-1].month
-    # Continuous across the seam: consecutive steps are the series' own 0.01, not 0.01 - 0.5.
-    steps = [b.value - a.value for a, b in pairwise(spliced)]
-    assert max(steps) == pytest.approx(0.01, abs=1e-9)
-    assert min(steps) == pytest.approx(0.01, abs=1e-9)
-
-
-def test_the_late_series_is_never_altered_by_the_splice() -> None:
-    """It is the better measurement and the one every other fit uses; the early series is what
-    bends to meet it. Shifting the modern half would silently change the fitted rate block."""
-
-    late = _levels(1910, [4.0 + 0.02 * i for i in range(300)])
-    early = _levels(1900, [9.0] * 420)
-
-    spliced = {level.month: level.value for level in splice_at_seam(early=early, late=late)}
-
-    assert all(spliced[level.month] == pytest.approx(level.value) for level in late)
-
-
-def test_the_shift_comes_from_the_seam_not_the_whole_overlap() -> None:
-    """The two series disagree by a time-VARYING amount, so a whole-overlap mean would import a
-    late-period discrepancy into an early-period observation."""
-
-    late = _levels(1910, [4.0] * 300)
-    # Agrees at the seam, then drifts far apart later in the overlap.
-    early = _levels(1900, [4.0] * 130 + [4.0 + 0.05 * i for i in range(290)])
-
-    spliced = splice_at_seam(early=early, late=late)
-
-    # Seam-anchored: the offset is ~0 there, so pre-seam values pass through essentially intact.
-    assert spliced[0].value == pytest.approx(4.0, abs=0.02)
-
-
-def test_too_little_overlap_to_anchor_is_rejected() -> None:
-    late = _levels(1910, [4.0] * 300)
-    early = _levels(1900, [4.5] * 125)  # only 5 months of overlap
-    with pytest.raises(ValueError, match="fewer than the"):
-        splice_at_seam(early=early, late=late)
-
-
-def _write_evidence(directory: Path) -> None:
-    """A miniature evidence checkout: four files in the real formats, 400 months from 1970."""
-
-    months = _months(400, 1970)
-
-    body = ["This file was created using a test.", "", ",Mkt-RF,SMB,HML,RF"]
-    body.extend(f"{m.year}{m.month:02d},   1.00,   0.00,   0.00,   0.30" for m in months)
-    body.extend(
-        ["", " Annual Factors: January-December ", ",Mkt-RF,SMB,HML,RF", "  1971,  29.44,  -2.20,  -4.58,   3.12"]
-    )
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("F-F_Research_Data_Factors.csv", "\n".join(body) + "\n")
-    (directory / sources.FRENCH_FACTORS.output_filename).write_bytes(buffer.getvalue())
-
-    def csv(source: object, series_id: str, value_for: object) -> None:
-        rows = "\n".join(f"{m.isoformat()},{value_for(m)}" for m in months)  # type: ignore[operator]
-        (directory / source.output_filename).write_text(f"observation_date,{series_id}\n{rows}\n")  # type: ignore[attr-defined]
-
-    csv(sources.FRED_GS10, "GS10", lambda m: 5.0)
-    csv(sources.FRED_LTGOVTBD, "LTGOVTBD", lambda m: 5.4)
-    csv(sources.FRED_CPI_NSA, "CPIAUCNS", lambda m: 100.0)
-
-
-def test_the_century_record_assembles_from_the_four_evidence_series(tmp_path: Path) -> None:
-    """The seam between "sources are in the spec" and "the replay can use them"."""
-
-    _write_evidence(tmp_path)
-    history = load_macro_history(tmp_path)
-
-    assert history.months == 400
-    # French's RF is a monthly simple return; the record speaks annualized decimals.
-    assert history.short_rate[0] == pytest.approx(0.30 * 12 / 100.0)
-    # Mkt-RF + RF = 1.30%/month, compounded into an index.
-    assert history.equity_level[1] / history.equity_level[0] == pytest.approx(1.013)
-    # GS10 5.0 against a short rate of 3.6%.
-    assert history.term_spread[0] == pytest.approx(0.05 - 0.036)
-
-
-def test_the_annual_factor_rows_do_not_reach_the_record(tmp_path: Path) -> None:
-    """End-to-end version of the loader's own guard: a 29.44% monthly equity return would be
-    the single largest observation in the record and would survive every downstream check."""
-
-    _write_evidence(tmp_path)
-    history = load_macro_history(tmp_path)
-
-    growth = history.equity_level[1:] / history.equity_level[:-1]
-    assert float(np.max(growth)) == pytest.approx(1.013)
