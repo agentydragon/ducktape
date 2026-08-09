@@ -162,6 +162,7 @@ py_binary(
 
 py_test(
     name = "data_test",
+    size = "medium",
     srcs = ["data_test.py"],
     deps = [
         ":conftest",
@@ -191,6 +192,7 @@ py_test(
 
 py_test(
     name = "private_equity_test",
+    size = "medium",
     srcs = ["private_equity_test.py"],
     deps = [
         ":private_equity",
@@ -307,6 +309,7 @@ py_binary(
 
 py_test(
     name = "test_dilution_prior",
+    size = "medium",
     srcs = ["test_dilution_prior.py"],
     deps = [
         ":dilution_prior",
@@ -342,6 +345,7 @@ py_test(
 
 py_test(
     name = "test_derive_dilution_prior",
+    size = "medium",
     srcs = ["test_derive_dilution_prior.py"],
     deps = [
         ":derive_dilution_prior_lib",

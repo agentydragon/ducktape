@@ -52,6 +52,7 @@ py_library(
 
 py_test(
     name = "locations_test",
+    size = "medium",
     srcs = ["locations_test.py"],
     data = [":location_data"],
     deps = [
@@ -648,7 +649,7 @@ py_test(
 
 py_test(
     name = "scan_test",
-    size = "small",
+    size = "medium",
     srcs = ["scan_test.py"],
     data = [":jurisdiction_data"],
     deps = [
@@ -734,7 +735,7 @@ py_test(
 
 py_test(
     name = "test_property_stakes_e2e",
-    size = "small",
+    size = "medium",
     srcs = ["test_property_stakes_e2e.py"],
     deps = [
         ":conftest",

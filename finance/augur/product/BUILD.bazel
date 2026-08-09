@@ -95,6 +95,7 @@ py_library(
 
 py_test(
     name = "portfolio_test",
+    size = "medium",
     srcs = ["portfolio_test.py"],
     deps = [
         ":asset_key",

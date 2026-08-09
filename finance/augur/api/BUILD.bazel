@@ -103,6 +103,7 @@ py_library(
 
 py_test(
     name = "config_test",
+    size = "medium",
     srcs = ["config_test.py"],
     deps = [
         ":config",
@@ -128,6 +129,7 @@ py_test(
 
 py_test(
     name = "portfolio_sources_test",
+    size = "medium",
     srcs = ["portfolio_sources_test.py"],
     deps = [
         ":conftest",
@@ -147,6 +149,7 @@ py_test(
 
 py_test(
     name = "local_regulation_test",
+    size = "medium",
     srcs = ["local_regulation_test.py"],
     deps = [
         ":conftest",
@@ -170,6 +173,7 @@ py_library(
 
 py_test(
     name = "portfolio_test",
+    size = "medium",
     srcs = ["portfolio_test.py"],
     deps = [
         ":conftest",
@@ -268,6 +272,7 @@ py_test(
 
 py_test(
     name = "test_calibration_endpoint",
+    size = "medium",
     srcs = ["test_calibration_endpoint.py"],
     data = [
         ":public_fixture_calibration_catalog",
@@ -439,6 +444,7 @@ py_binary(
 
 py_test(
     name = "export_schema_test",
+    size = "medium",
     srcs = ["test_export_schema.py"],
     # Source follows the test_<module>.py convention while the target keeps the
     # conventional <name>_test label, so the inferred main wouldn't match srcs.
