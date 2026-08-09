@@ -44,6 +44,21 @@ spec:
       # available during a home outage. Ollama requests can cross the mesh to wyrm2.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Spread the two replicas across nodes: co-located, a single drain takes
+      # the Service to zero backends, which in-cluster clients see as an
+      # immediate EPERM on connect (same end state as the 2026-08-09 outage).
+      # ScheduleAnyway, not DoNotSchedule -- there is no PDB here, so a hard
+      # constraint would only convert "both on one node" into "pending pod"
+      # whenever hil-ovh is short a node. Same reasoning as the namespace's
+      # deliberate lack of a VPA maxAllowed: don't add new ways to block
+      # admission when the failure mode being guarded is already starvation.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
       containers:
         - name: litellm
           image: litellm/litellm:1.90.2
