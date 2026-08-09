@@ -270,6 +270,7 @@ resources:
   - matrix/secrets/flux-kustomization.yaml
   - matrix/db/flux-kustomization.yaml
   - matrix/app/flux-kustomization.yaml
+  - matrix/user-provisioner/flux-kustomization.yaml
   - matrix/agent-rbac/flux-kustomization.yaml
 
   # --- nix-cache ---
