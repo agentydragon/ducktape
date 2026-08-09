@@ -16,5 +16,6 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: ha-mcp
+      namespace: flux-system
     - name: monitoring-stack
       namespace: flux-system
