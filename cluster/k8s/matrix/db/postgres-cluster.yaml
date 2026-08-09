@@ -16,8 +16,10 @@ spec:
       topology.kubernetes.io/region: proxmox
 
   storage:
-    # CLEANUP(added 2026-04-02): Migrate to local-path-proxmox
-    storageClass: local-path
+    # Matches the proxmox nodeSelector above, and the class Synapse's media
+    # store already uses. The plain `local-path` class this used before the
+    # namespace was parked no longer exists — it was split per location.
+    storageClass: local-path-proxmox
     size: 10Gi
 
   monitoring:
