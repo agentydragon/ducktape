@@ -57,3 +57,34 @@ and commit-status reporting stays off via the runner's own
 
 Until this lands, the `buildbuddy_api` skill's "bisect with target history instead of
 `git bisect`" recipe does not work against ducktape CI.
+
+## What BuildBuddy intends, and what we do instead
+
+Reading the two emissions as a table makes the design obvious:
+
+|                          | `prNumber == 0`                        | `prNumber != 0`                        |
+| ------------------------ | -------------------------------------- | -------------------------------------- |
+| **workflow**             | `ROLE=CI`, no disable → **tracked**    | `ROLE=CI` + disable → not tracked      |
+| **`bb remote --script`** | `HOSTED_BAZEL` + disable → not tracked | `HOSTED_BAZEL` + disable → not tracked |
+
+Tracking is on in exactly **one** cell — a workflow run on a non-PR event — and for a `--script`
+run _both_ gates fail independently. That redundancy is the tell that the exclusion is deliberate
+rather than an oversight: a PR builds an unmerged commit whose per-target results are not part of
+mainline history, and `bb remote --script` is classified as _hosted bazel_, which carries no
+promise of being a clean mainline commit at all. Indexing either would make "when did this target
+start failing" answer the wrong question.
+
+The sanctioned way to get target history is therefore to run CI as a BuildBuddy **workflow**.
+ducktape deliberately does not (`AGENTS.md`: all CI runs through GitHub Actions → `bbr`, no
+`buildbuddy.yaml`), so this override exists to reproduce the tracked cell without adopting
+workflows — **not** to assert CI-ness for every remote build.
+
+Hence the condition: the metadata is emitted only on `push`, which is exactly that cell.
+`ci.yml` already restricts pushes to `main`/`devel`, so no branch match is needed, and
+`pull_request` / `pull_request_target` / `workflow_dispatch` all fall through. Making the flags
+unconditional would index PR commits into mainline history — precisely the noise BuildBuddy's own
+`prNumber` check exists to prevent — and would widen the `ROLE=CI` assertion, whose only safety
+argument is that the target tracker is its sole server-side consumer _today_.
+
+**Known cost:** no per-target history for PR runs, so a test's duration trend is visible on
+`devel` after merge rather than on the PR before it. That is the trade BuildBuddy itself makes.
