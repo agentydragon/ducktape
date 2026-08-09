@@ -24,7 +24,6 @@ spec:
       namespace: ducktape-flux
     - name: matrix-db # externalPostgresql reads the CNPG-generated matrix-db-app secret
     - name: matrix-secrets # signing key, macaroon, registration and redis secrets
-      namespace: flux-system
     - name: sso-providers-tf # writes matrix-oidc-config into the authentik namespace
       namespace: flux-system
     - name: reflector # mirrors matrix-oidc-config into the matrix namespace
