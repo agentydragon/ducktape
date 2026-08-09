@@ -40,6 +40,19 @@ spec:
       # reflected into this namespace by cluster/k8s/forgejo-images/.
       imagePullSecrets:
         - name: forgejo-images-creds
+      # Matches haku-{claude-oauth,openclaw-spike}-proxy, which run the same image.
+      # This namespace sets no pod-security.kubernetes.io labels, so only the
+      # cluster-default baseline applies and none of this is enforced for us --
+      # it has to be stated here. The deliberate waiver for this agent is about
+      # egress destinations (cnp-egress.yaml); it does not extend to pod security,
+      # and this pod holds the densest credential set of the three proxies.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: iron-proxy
           # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned
@@ -77,6 +90,10 @@ spec:
               containerPort: 8080
             - name: metrics
               containerPort: 9090
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: config
               mountPath: /etc/iron-proxy
