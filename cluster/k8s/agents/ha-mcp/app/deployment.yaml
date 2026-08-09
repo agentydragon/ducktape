@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: ha-mcp
   annotations:
-    description: "Writable Home Assistant MCP server behind the shared Authentik OAuth facade. The upstream HA token remains server-side; only agentydragon may complete OAuth, and Haku applies its own per-call approval policy."
+    description: "Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal and gated by a static bearer that only haku-console holds. The upstream HA token remains server-side, and Haku applies its own per-call approval policy."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -85,16 +85,13 @@ spec:
             - configMapRef:
                 name: ha-mcp-config
           env:
-            - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
+            # The same token haku-console presents (reflected as ha-mcp-bearer into
+            # haku-console by the emberstack reflector) — one source of truth, no drift.
+            - name: MCP_FACADE_CLIENT_AUTH__STATIC_BEARER
               valueFrom:
                 secretKeyRef:
-                  name: ha-mcp-oidc
-                  key: client_id
-            - name: MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: ha-mcp-oidc
-                  key: client_secret
+                  name: ha-mcp-bearer
+                  key: bearer-token
           resources:
             requests:
               memory: "128Mi"

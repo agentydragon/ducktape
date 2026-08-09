@@ -1,9 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - bearer.sops.yaml
   - configmap.yaml
-  - valkey-kimsufi-instance.yaml
   - deployment.yaml
   - service.yaml
-  - httproute.yaml
   - networkpolicy.yaml

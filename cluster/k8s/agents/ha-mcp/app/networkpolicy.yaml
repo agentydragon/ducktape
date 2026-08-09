@@ -4,14 +4,15 @@ metadata:
   name: ha-mcp-ingress
   namespace: ha-mcp
   annotations:
-    description: "Default-deny ingress for HA-MCP. The Gateway reaches only the OAuth facade; the upstream server port is reachable only over pod-local loopback."
+    description: "Default-deny ingress for HA-MCP. Only haku-console reaches the facade port; the upstream server port is reachable only over pod-local loopback. No Gateway ingress — this MCP is cluster-internal since the move to a static bearer."
 spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: ha-mcp
   ingress:
-    - fromEntities:
-        - ingress
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
       toPorts:
         - ports:
             - port: "8765"

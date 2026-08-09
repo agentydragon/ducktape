@@ -128,6 +128,13 @@ spec:
                 secretKeyRef:
                   name: haku-sandbox-mcp-bearer
                   key: bearer-token
+            # ha-mcp static bearer — the SAME token the facade validates, reflected from
+            # ha-mcp/ha-mcp-bearer into this namespace (emberstack reflector).
+            - name: HAKU_CONSOLE_MCP_CREDENTIAL_HA_MCP_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: ha-mcp-bearer
+                  key: bearer-token
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:

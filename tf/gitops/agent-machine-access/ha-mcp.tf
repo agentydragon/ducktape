@@ -1,6 +1,14 @@
 # HA-MCP has broad read/write access to Home Assistant through a server-side
-# long-lived token. Keep its public MCP surface behind the shared OAuth facade
-# and restrict consent to agentydragon.
+# long-lived token.
+#
+# CLEANUP(added 2026-08-09): this whole file is UNUSED as of the move to a cluster-internal
+#   static bearer — ha-mcp no longer runs the Authentik OAuth gate, has no public HTTPRoute, and
+#   never reads the `ha-mcp-oidc` Secret this provisions. It is deliberately retained as the
+#   rollback path: reverting the k8s change restores a working OAuth setup only while this
+#   Authentik application and its Secret still exist. Delete this file once the static-bearer
+#   connection has held for one full token-lifetime window (i.e. past 2026-09-09) without a
+#   revert — at that point `grep -rn ha-mcp-oidc cluster/` should also come back empty except
+#   for the machine-access-tf comment, which goes with it.
 
 resource "random_id" "ha_mcp_secret_rotation" {
   byte_length = 4

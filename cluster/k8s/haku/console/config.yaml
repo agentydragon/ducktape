@@ -242,20 +242,24 @@ mcp:
           client_registration:
             kind: dynamic
             client_name: Haku Console
-    # Writable Home Assistant management through homeassistant-ai/ha-mcp. The
-    # upstream Home Assistant token remains in the ha-mcp pod; callers authenticate
-    # to the shared facade through operator OAuth. Read tools now auto-approve
-    # (the readOnlyHint subset, minus ha_report_issue — see `home_assistant_reads` above); every
-    # state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
+    # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream Home
+    # Assistant token remains in the ha-mcp pod; haku-console authenticates with a static bearer
+    # reflected from ha-mcp/ha-mcp-bearer, exactly like tana-rw and sandbox-mcp. Read tools
+    # auto-approve (the readOnlyHint subset, minus ha_report_issue — see `home_assistant_reads`
+    # above); every state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
+    #
+    # Was operator OAuth with dynamic client registration until 2026-08-09. That broke on
+    # 2026-08-06: the facade's registration store went away and every refresh 404'd, so the
+    # connection sat `degraded` with `attempts: 1, next_retry_at: null` — the console stops and
+    # waits for the operator by design, so it never self-heals. Haku is the only consumer and
+    # ha-mcp is our own in-cluster service, so there was no consent boundary OAuth was buying.
     - id: home-assistant
       backend:
         kind: remote_mcp
-        url: https://ha-mcp.allegedly.works/mcp
+        url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
         auth:
-          kind: remote_server_oauth
-          client_registration:
-            kind: dynamic
-            client_name: Haku Console
+          kind: static_bearer
+          bearer_token_secret: ha-mcp-bearer
     # osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM,
     # place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no
     # per-operator identity, so unlike every other remote server here it isn't

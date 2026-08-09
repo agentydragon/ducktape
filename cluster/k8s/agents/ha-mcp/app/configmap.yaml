@@ -23,11 +23,11 @@ data:
   ENABLE_YAML_CONFIG_EDITING: "false"
   HAMCP_ENABLE_DEV_MODE: "false"
   ENABLE_TOOL_SECURITY_POLICIES: "false"
-  MCP_FACADE_AUTH__OIDC_ISSUER: "https://auth.allegedly.works/application/o/ha-mcp/"
-  MCP_FACADE_AUTH__PUBLIC_BASE_URL: "https://ha-mcp.allegedly.works"
   MCP_FACADE_FACADE_NAME: "Home Assistant MCP Facade"
   MCP_FACADE_UPSTREAM__KIND: "http"
   MCP_FACADE_UPSTREAM__URL: "http://localhost:8086/mcp"
-  MCP_FACADE_PERSISTENCE__KIND: "valkey"
-  MCP_FACADE_PERSISTENCE__HOST: "ha-mcp-valkey-kimsufi-master.ha-mcp.svc.cluster.local"
-  MCP_FACADE_PERSISTENCE__DB: "0"
+  # Client auth is a cluster-internal static bearer (MCP_FACADE_CLIENT_AUTH__STATIC_BEARER,
+  # injected from the ha-mcp-bearer Secret in deployment.yaml), not the public Authentik OAuth
+  # gate. FacadeSettings requires exactly one of `auth` / `client_auth`, so the MCP_FACADE_AUTH__*
+  # keys are absent by design. With no OAuth there is no client registration or token state to
+  # keep, so the facade needs no persistence backend and the Valkey is gone with it.

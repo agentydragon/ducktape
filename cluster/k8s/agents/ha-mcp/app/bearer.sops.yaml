@@ -1,0 +1,43 @@
+# StaticBearerGuard token for the HA MCP facade's /mcp mount. Minted fresh in this
+# repo (agents may author a SOPS Secret by encrypting to the rule's public keys; see
+# cluster/AGENTS.md "Annotating a SOPS-encrypted Secret"). The emberstack reflector
+# mirrors it into haku-console so the console presents the SAME token
+# (HAKU_CONSOLE_MCP_CREDENTIAL_HA_MCP_BEARER) when it calls this MCP — one source of
+# truth, no drift (same pattern as haku-sandbox-mcp and tana's account PAT).
+apiVersion: v1
+kind: Secret
+metadata:
+    name: ha-mcp-bearer
+    namespace: ha-mcp
+    annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
+type: Opaque
+stringData:
+    bearer-token: ENC[AES256_GCM,data:kvSikF6GMwAu0QQ2ZFKMyLidsgUc1Z9PcRQTwJU21blABUIW17HJi5LQr35fMyk1FhMr2DHih9QMQU6geb60GA==,iv:dUmpGhengIoGx9WDyIjGJ2zE50CzfEFjoLPmBqUEENo=,tag:+Jk2lMPg3vIQ3XEaHO2K9Q==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQT1RkUUlJcmNPQ2ZMdzgw
+            YmdiV2h4U041d0VnU2pLd0x3YWFFOG5kLzNNCkN2MHE0ekhUK1dTTXd3Rko4K2Z2
+            RmhQRkw5Q0pDMWNPN0V6eVVzc3dHeEUKLS0tIHhNUVZwQjgzck0zY3ZTcXhSUE9q
+            azFHOVIyeVI5TUxlZFc5ODRGZGtmMzAK+LT5FIylD/QyalgKGebM8XAKNxbdM2KQ
+            FSz1/vDNIR06O4qww+JKDtyGL0ys+PI9CeOk/iLn+Ysd82ZeuASsKg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPcHhuL2JpdTlUdzkvc0xX
+            aWtxQnlqRmNUaWlpQVY3TnFJdk5NMExhT0YwCkVBZFIwNy9ZL3dvYk54bUFiWFN2
+            czVlcmwwY0RmYkNIMFhaUjk1ckhnem8KLS0tIE52K1hUQkgyc29RK0xaV3RMaXNl
+            VzU4MExmekU2SnkyOVBibnB4N1M4TlkKg40l1/NuiqvAV6dNJvXkSB02l6Wfhs3V
+            aTbZdypOZPjdxzIiFcQsFR5g0BWHjSBZUwNDcQDhoq2xKTohjXugnA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-09T20:57:40Z"
+    mac: ENC[AES256_GCM,data:fIpLKjhcbc8tgLiXeckq7UqrPOPPyELnFOHsZxwwyS2yUtVLTmS5kfB3gzs6tabmUoF/EXKu9BXF1JWQ3VGLRC5uuC4uFXpuZUei5NRT24+hMmhNSEKon7BSYboSxsMRXRGewZUsfLm6x6E2jE1hzLRrSt948LN+K/q4I2TtAyA=,iv:X09XWsLlXnPyW/YTGeZuiSfAHyBcLW81XPypN3eQ6w4=,tag:tH2gNfUUUKtjo4NmYhzDzg==,type:str]
+    version: 3.13.3
