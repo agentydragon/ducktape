@@ -6,9 +6,8 @@ metadata:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
   annotations:
-    # controlledValues: VPA scales limits in proportion to requests, so a low
+    # RequestsOnly — VPA scales limits in proportion to requests, so a low
     # steady-state recommendation can collapse a limit below what cold start
     # needs (2026-08-09 LiteLLM outage). Limits stay as declared here.
     goldilocks.fairwinds.com/vpa-resource-policy: >
-      { "containerPolicies": [ { "containerName": "*", "controlledValues":
-      "RequestsOnly", "minAllowed": { "cpu": "50m", "memory": "256Mi" } } ] }
+      {"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}
