@@ -74,7 +74,7 @@ class SleeveUniverse:
     would try to sell it every month forever.
     """
 
-    weights: NDArray[np.int64]
+    weights: NDArray[np.int64] | jnp.ndarray
     lot_rows: tuple[tuple[int, ...], ...]
     funding_cash_row: int
 

@@ -19,6 +19,7 @@ from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import SecurityKey
+from finance.augur.sim.engine.jax_engine import _program_impl
 from finance.augur.sim.scenario import (
     Agent,
     FixedAmount,
@@ -50,6 +51,7 @@ def _scenario(
     income: float = 0.0,
     purchase_slots: int = 0,
     rebalance_tolerance: float | None = None,
+    weights: tuple[int, int] = (1, 1),
 ) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
@@ -121,7 +123,7 @@ def _scenario(
                 account_id="checking",
                 # Equal weights against a 9:1 holding, so the stock sleeve is the overweight one
                 # and every sale must come out of it first.
-                sleeves=[SleeveTarget(asset=_STOCK, weight=1), SleeveTarget(asset=_BOND, weight=1)],
+                sleeves=[SleeveTarget(asset=_STOCK, weight=weights[0]), SleeveTarget(asset=_BOND, weight=weights[1])],
                 cash_floor_usd=floor,
                 cash_ceiling_usd=ceiling,
                 purchase_slots_per_sleeve=purchase_slots,
@@ -457,6 +459,29 @@ def test_rebalancing_without_somewhere_to_buy_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="no purchase slots"):
         _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, rebalance_tolerance=0.25)
+
+
+def test_sweeping_sleeve_weights_does_not_recompile() -> None:
+    """A sleeve weight is swept numeric config, so it must be TRACED, not part of the static key.
+
+    It used to be folded into `_Static` through `_FoldedSleeve.weight`, which made every distinct
+    weight vector its own XLA program: an eleven-point allocation sweep paid eleven full compiles,
+    minutes apiece at a realistic path count, and that is what made a 2000-path sweep unrunnable.
+    Nothing about a weight is a shape — only ratios matter, and the water-fill divides by
+    `sum(weight)` at runtime.
+
+    Asserted on JAX's own compile cache rather than wall time, which would be flaky.
+    """
+
+    _run(_scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, weights=(1, 1)))
+    warmed = _program_impl._cache_size()
+
+    for weights in ((3, 7), (19, 81), (50, 50)):
+        _run(_scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, weights=weights))
+
+    assert _program_impl._cache_size() == warmed, (
+        "changing sleeve weights added a compiled variant, so weights are back in the static key"
+    )
 
 
 if __name__ == "__main__":

@@ -366,6 +366,10 @@ class _Operands(NamedTuple):
     # Per policy, a `(sleeve,)` series row. Per SLEEVE, not per pool: every pool in a sleeve
     # holds the same asset, so a per-pool list was the same price repeated.
     ta_sleeve_series: list[jnp.ndarray]
+    # Per policy, a `(sleeve,)` weight row. TRACED, not folded into `_Static`: a sleeve weight is
+    # swept numeric config, and baking it into the static key made every distinct weight vector a
+    # separate XLA compile — so an allocation sweep paid one full compile PER ARM.
+    ta_sleeve_weights: list[jnp.ndarray]
 
 
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -917,7 +921,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     lot_slots.extend(int(x) for x in ordered)
             sleeves.append(
                 _FoldedSleeve(
-                    weight=int(ta_policies.weights[policy, sleeve_idx]),
                     sleeve_idx=sleeve_idx,
                     view_lot_rows=tuple(view_rows),
                     pools=tuple(sleeve_pools),
@@ -1102,6 +1105,21 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         _series_ops([int(ta_policies.sleeve_series[tp.policy_index, sleeve.sleeve_idx]) for sleeve in tp.sleeves])
         for tp in folded_target_allocation
     ]
+    for _tp in folded_target_allocation:
+        _row = np.asarray(
+            [int(ta_policies.weights[_tp.policy_index, _s.sleeve_idx]) for _s in _tp.sleeves], dtype=np.int64
+        )
+        # Positivity is checked HERE, on concrete values, because the operand below is traced and
+        # `allocation._validate_weights` can then only check shape. `SleeveTarget.weight` already
+        # makes this unrepresentable; this is the belt to that braces.
+        if np.any(_row <= 0):
+            raise ValueError(f"target-allocation weights must all be positive; got {_row.tolist()}")
+    ta_sleeve_weights = [
+        jnp.asarray(
+            [int(ta_policies.weights[tp.policy_index, sleeve.sleeve_idx]) for sleeve in tp.sleeves], dtype=jnp.int64
+        )
+        for tp in folded_target_allocation
+    ]
 
     baked = _Operands(
         cash0=cash0,
@@ -1150,6 +1168,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         ta_floor_series=ta_floor_series,
         ta_ceiling_series=ta_ceiling_series,
         ta_sleeve_series=ta_sleeve_series,
+        ta_sleeve_weights=ta_sleeve_weights,
     )
 
     # Capital-gain accrual targets: each agent code that sells (funding policies / PE owners) maps to the
@@ -1353,6 +1372,7 @@ def _program_impl(
     ta_floor_series = baked.ta_floor_series
     ta_ceiling_series = baked.ta_ceiling_series
     ta_sleeve_series = baked.ta_sleeve_series
+    ta_sleeve_weights = baked.ta_sleeve_weights
     folded_target_allocation = structure.folded_target_allocation
     # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
     tcfg = cfg
@@ -1979,7 +1999,7 @@ def _program_impl(
             orders = decide(
                 view=view,
                 universe=SleeveUniverse(
-                    weights=np.asarray([sleeve.weight for sleeve in tp.sleeves], dtype=np.int64),
+                    weights=ta_sleeve_weights[ti],
                     lot_rows=tuple(sleeve.view_lot_rows for sleeve in tp.sleeves),
                     funding_cash_row=0,
                 ),

@@ -45,9 +45,13 @@ class _FoldedSleeve:
     what `SleeveUniverse` is defined against — the view has already narrowed to this agent, so
     plan indices would read the wrong lots. `pools` keeps the plan indices, since execution
     sells against the engine's own lot tensor.
+
+    No `weight` here on purpose: this record is folded into `_Static` and so forms part of the XLA
+    compile key, and a weight is swept numeric config rather than structure. Baking it in made every
+    distinct weight vector its own compiled program, so an allocation sweep paid a full compile per
+    arm. Weights ride the traced `_Operands.ta_sleeve_weights` instead.
     """
 
-    weight: int
     sleeve_idx: int
     view_lot_rows: tuple[int, ...]
     pools: tuple[_SalePool, ...]

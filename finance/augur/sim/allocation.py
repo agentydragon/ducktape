@@ -48,20 +48,24 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def target_value_cents(*, weights: NDArray[np.int64], total_cents: jnp.ndarray) -> jnp.ndarray:
+def target_value_cents(*, weights: NDArray[np.int64] | jnp.ndarray, total_cents: jnp.ndarray) -> jnp.ndarray:
     """Each sleeve's on-target value: `total * weight_i / sum(weight)`, floored.
 
     `weights` is `(sleeve,)`, `total_cents` is `(rollout,)`, result is `(sleeve, rollout)`.
     """
 
     _validate_weights(weights)
-    # `weights` is static numpy; lift it explicitly so the product is a typed jax Array
-    # rather than `Any`, and take the divisor as a Python int since it is compile-time known.
-    return (jnp.asarray(weights)[:, None] * total_cents[None, :]) // int(weights.sum())
+    # The divisor is TRACED, not a Python int. It used to be `int(weights.sum())` on the grounds
+    # that weights are compile-time known — true, but the cost of making them so was that every
+    # distinct weight vector became a separate XLA compile, so a sweep over allocations paid a
+    # full compile per arm. Weights are swept numeric config; only their RATIOS matter, and
+    # nothing here needs their values at trace time.
+    weights = jnp.asarray(weights)
+    return (weights[:, None] * total_cents[None, :]) // jnp.sum(weights)
 
 
 def withdrawal_by_sleeve(
-    *, value_cents: jnp.ndarray, weights: NDArray[np.int64], raise_cents: jnp.ndarray
+    *, value_cents: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, raise_cents: jnp.ndarray
 ) -> jnp.ndarray:
     """Split a cash-raise across sleeves so what remains is as close to target as possible.
 
@@ -112,7 +116,7 @@ def withdrawal_by_sleeve(
 
 
 def deposit_by_sleeve(
-    *, value_cents: jnp.ndarray, weights: NDArray[np.int64], invest_cents: jnp.ndarray
+    *, value_cents: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, invest_cents: jnp.ndarray
 ) -> jnp.ndarray:
     """Split cash to invest across sleeves so the result is as close to target as possible.
 
@@ -159,7 +163,7 @@ def deposit_by_sleeve(
 
 
 def rebalance_by_sleeve(
-    *, value_cents: jnp.ndarray, weights: NDArray[np.int64], tolerance: float
+    *, value_cents: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, tolerance: float
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Trim every sleeve above target and top up every sleeve below it — or trade nothing at all.
 
@@ -232,8 +236,19 @@ def _round_half_up(values: jnp.ndarray) -> jnp.ndarray:
     return jnp.floor(values + 0.5).astype(jnp.int64)
 
 
-def _validate_weights(weights: NDArray[np.int64]) -> None:
+def _validate_weights(weights: NDArray[np.int64] | jnp.ndarray) -> None:
+    """Shape always; POSITIVITY whenever the values are concrete.
+
+    `weights` may arrive TRACED — the engine passes a device array so that sweeping an allocation
+    does not recompile (see `target_value_cents`) — and a tracer has no values to test, so
+    `np.any(weights <= 0)` would raise on the tracer itself instead of rejecting a bad weight.
+    Shape stays checkable either way, because a tracer's shape is static.
+
+    The guarantee is not weaker on the traced path, only enforced earlier: `_build_program` checks
+    the concrete `ta_policies.weights` while building that operand, and `SleeveTarget.weight` is a
+    `PositiveInt`, so a non-positive weight is unrepresentable at the scenario boundary.
+    """
     if weights.ndim != 1 or weights.shape[0] == 0:
         raise ValueError(f"weights must be a non-empty 1-D array, got {weights.shape}")
-    if np.any(weights <= 0):
+    if isinstance(weights, np.ndarray) and np.any(weights <= 0):
         raise ValueError(f"weights must all be positive; got {weights.tolist()}")
