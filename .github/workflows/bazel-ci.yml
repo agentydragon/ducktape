@@ -132,7 +132,27 @@ jobs:
           linkage_roles: test,build
           script: |
             set -euo pipefail
-            RBE_FLAGS="--config=rbe --config=ci --remote_default_exec_properties=container-image=docker://$RBE_IMAGE"
+            # BuildBuddy's per-target pass/fail history (`bbapi target {history,stats,flakes}`)
+            # is off for this repo, which is why localizing an intermittent failure means
+            # re-running CI and watching instead of querying. Two gates in `target_tracker.go`
+            # both have to pass, and `bb remote` fails both — see
+            # `enterprise/server/cmd/ci_runner/main.go`, where `isWorkflow` is false for a
+            # `--script` run (no workflow id):
+            #
+            #   ROLE=CI is only emitted `if isWorkflow`, so we get ROLE=HOSTED_BAZEL, and the
+            #   tracker's first gate is `GetRole() != "CI" -> return`.
+            #
+            #   DISABLE_TARGET_TRACKING=true is emitted `if !isWorkflow || prNumber != 0`, so it
+            #   is always set for us, and it is the tracker's second gate.
+            #
+            # Hence both overrides. Overriding only the DISABLE flag is a no-op — the role gate
+            # is checked first. `false` is honored because the server parses the value
+            # (`getBoolValue` accepts only true/True/TRUE/yes/1) rather than testing for the
+            # key's presence, and a command-line `--build_metadata` beats the runner's generated
+            # buildbuddy.bazelrc (Bazel dedupes repeated keys last-wins). ROLE=CI gates nothing
+            # else server-side — the tracker is its only consumer — and commit-status reporting
+            # stays off via the runner's own DISABLE_COMMIT_STATUS_REPORTING.
+            RBE_FLAGS="--config=rbe --config=ci --build_metadata=ROLE=CI --build_metadata=DISABLE_TARGET_TRACKING=false --remote_default_exec_properties=container-image=docker://$RBE_IMAGE"
             export CI_VM_PROBE_DIR="/home/buildbuddy/workspace/.ducktape-ci-vm-probe"
             probe_bb_runner() {
               python3 devinfra/ci/bb_runner_probe.py snapshot "$1" || true
