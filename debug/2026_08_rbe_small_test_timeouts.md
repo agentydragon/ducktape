@@ -98,6 +98,44 @@ answer if this keeps recurring outside augur — flagged, not taken unilaterally
 same test is green in CI, because the executor image differs. That is the same class of
 gap as "a green `bbr test` does not imply green lint".
 
+## Re-measured 2026-08-09, and the list changed
+
+Splitting this out of #3698 meant re-running the evidence, and it no longer reproduces. Same
+pinned image (`ghcr.io/agentydragon/rbe-worker@sha256:daa5830d…`), same `--nocache_test_results`:
+
+| target                         |    2026-08-03 | 2026-08-09 |
+| ------------------------------ | ------------: | ---------: |
+| `fit:private_equity_test`      |         26.4s |   **9.7s** |
+| `model:gbm_test`               | TIMEOUT 69.2s |  **10.4s** |
+| `fit:test_dilution_prior`      | TIMEOUT 62.6s |   **9.6s** |
+| `sim:scan_test`                | TIMEOUT 60.0s |  **20.0s** |
+| `sim:test_property_stakes_e2e` | TIMEOUT 64.1s |  **14.4s** |
+
+2.7-6x faster, and every target sized above now runs under 30s. The cause is not established —
+the worker image may have been rebuilt in the intervening six days, which would also quietly
+answer the open question below. **The `medium` sizes are kept anyway**: the slowdown was never
+explained, so it can return, and an oversized budget costs nothing but a Bazel warning while an
+undersized one costs a red CI run on an unrelated PR.
+
+What the re-measurement did change is **which** tests sit near the line. A full-suite run
+(`//finance/augur/...`, CI image, no cache) puts four `small` tests in the top of the
+distribution, and **none of them were in #3698's list**:
+
+| target                           | measured | was                     |
+| -------------------------------- | -------: | ----------------------- |
+| `sim:test_target_allocation_e2e` |    42.4s | `small` (macro default) |
+| `api:test_export_schema`         |    33.4s | `small` (macro default) |
+| `sim:target_allocation_test`     |    30.6s | explicit `small`        |
+| `sim:allocation_test`            |    30.5s | explicit `small`        |
+
+At 42.4s against a 60s budget, `test_target_allocation_e2e` has 1.4x of headroom — tighter than
+anything the original investigation flagged. (It grew a case in #3868, which is part of why.)
+These four are sized here too.
+
+`api:test_export_schema` is worth calling out separately: #3698 sized `api:export_schema_test`,
+and there are **two py_test targets on the same `test_export_schema.py` source**. It sized one of
+the pair and missed the twin, which is the one that actually measures slow.
+
 ## Why the usual bisect recipe was unavailable
 
 `bbapi target {history,stats,flakes}` return empty for this repo, so localizing this by

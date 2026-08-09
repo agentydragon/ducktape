@@ -476,6 +476,7 @@ filegroup(
 
 py_test(
     name = "test_export_schema",
+    size = "medium",
     srcs = ["test_export_schema.py"],
     deps = [
         ":conftest",
