@@ -14,8 +14,15 @@ Authentik blueprints' custom `!Find`/`!Env` tags).
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
+
+# Flux's setter marker, e.g. `# {"$imagepolicy": "flux-system:haku-console"}` or the
+# field-scoped `"flux-system:haku-console:tag"`.
+_IMAGE_POLICY_MARKER = re.compile(r'"\$imagepolicy":\s*"([^"]+)"')
 
 # ImageRepositories defined in Haku's haku-state repo, reconciled into
 # haku-sandbox — not under cluster/k8s, so the validator can't see them. An operator-owned
@@ -66,4 +73,33 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
             for policy, ref in sorted(policy_refs.items())
             if ref not in image_repos
         ),
+    ]
+
+
+def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+    """Every `$imagepolicy` setter marker names an ImagePolicy that exists.
+
+    The marker is a YAML *comment*, so it survives into none of the parsed resources and
+    nothing else here can see it: a typo'd or renamed policy name leaves the marker inert,
+    Flux silently stops updating that image, and the deployment freezes on whatever tag it
+    last had. That reads as "this image just isn't being rebuilt" — which is how
+    `claude-iron-deployment.yaml` sat un-updated (PR #3882).
+
+    Matched by regex over the source text rather than by parsing, deliberately: the
+    Authentik blueprints' custom `!Find`/`!Env` tags choke a YAML walk of this tree.
+    """
+    policies = {
+        f"{resource.namespace}:{resource.name}"
+        for result in cluster.build_results
+        for resource in result.resources
+        if isinstance(resource, ImagePolicyResource)
+    }
+
+    return [
+        f"{path.relative_to(k8s_dir)} has an $imagepolicy marker for '{ref}', but no such "
+        "ImagePolicy is defined under cluster/k8s. Flux will silently never update this image."
+        for path in sorted(k8s_dir.rglob("*.yaml"))
+        for ref in _IMAGE_POLICY_MARKER.findall(path.read_text())
+        # A marker may name a field (`namespace:name:tag`); the policy is the first two parts.
+        if ":".join(ref.split(":")[:2]) not in policies
     ]

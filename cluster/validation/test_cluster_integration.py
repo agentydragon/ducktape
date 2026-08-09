@@ -31,7 +31,7 @@ from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
-from cluster.validation.image_automation import check_image_automation_webhook
+from cluster.validation.image_automation import check_image_automation_webhook, check_image_policy_markers
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
 from cluster.validation.postbuild_substitutions import check_postbuild_substitution_sources
 from cluster.validation.terraform_backends import check_terraform_backends
@@ -120,6 +120,12 @@ def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
     raw-YAML-walking bug.
     """
     errors = check_image_automation_webhook(cluster)
+    assert not errors, "\n".join(errors)
+
+
+def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Every `$imagepolicy` marker names a defined ImagePolicy, so no image silently stops rolling."""
+    errors = check_image_policy_markers(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
 
