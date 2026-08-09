@@ -163,10 +163,10 @@ spec:
             failureThreshold: 36
           resources:
             requests:
-              # A starting value only: the namespace's vpa-resource-policy puts
-              # this container on RequestsOnly, so VPA owns the request from
-              # here (it settles around 180m) and the limits below are what
-              # actually apply.
+              # A starting value only: the default-vpa-requests-only Kyverno
+              # policy puts this namespace on RequestsOnly, so VPA owns the
+              # request from here (it settles around 180m) and the limits below
+              # are what actually apply.
               cpu: 100m
               memory: 1Gi
             limits:
