@@ -273,10 +273,14 @@ What remains is composing that target with the PE tender floor, and buying.
       Absent that, the simulator never samples a bad roll and is biased toward shallow ladders —
       it cannot price the "defer and buy later" strategy at all, only assume it works.
       Three pieces:
-  - A real yield per term out of the macro model. Closed form from the existing VAR — nominal
-    yield at term N minus the model's own expected average inflation over N — so no new state
-    and no refit. Being parameterized by term, it is also most of what bond pricing needs
-    (`sim/TODO.md` § Bonds).
+  - **A curve that reaches past 10 years — do this first, it is the smallest piece and it
+    unblocks the other two.** `_instrument_yield` clamps at `min(duration/10, 1)`, so a 30-year
+    bond is priced at the 10-year yield and most of a real ladder is invisible to the model
+    (SPEC gap 8 sizes the error). A Gaussian VAR admits an affine term structure whose loadings
+    are compile-time constants, so the whole curve is a matmul against the `(R, H, 3)` state
+    path already emitted — no new series, no new stochastic dimensions. The real curve is the
+    same recursion with `r − π` as the short rate. This is also what bond mark-to-market needs
+    (`sim/TODO.md` § Bonds), so three backlog items share one mechanism.
   - Mid-horizon purchase of an indexed bond. The blocker once believed to exist — that a rung
     bought in month `t` delivers month-`t` dollars, unknowable at config time — is not real: a
     TIPS pays `face × CPI_T/CPI_t`, so delivering `X` month-0 dollars needs

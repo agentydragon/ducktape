@@ -118,9 +118,34 @@ how much they move an allocation answer.
 7. **The rate means are barely identified.** OLS on a near-unit-root series biases mean
    reversion upward and pins the long-run mean weakly: the same fit gives a 4.93% short-rate
    mean over 1954–2026 and 1.71% over 1990–2026. Read the sigmas; sweep the means.
-8. **A linear curve.** The yield at an instrument's duration interpolates between the short
-   rate and the 10-year point. It orders cash, a short fund and an intermediate fund correctly;
-   it cannot price a barbell against a bullet.
+8. **The curve is clamped flat past 10 years.** `_instrument_yield` is
+   `short_rate + min(duration/10, 1) * term_spread + spread`, so it interpolates the front and
+   then STOPS: a 30-year bond is priced at exactly the 10-year yield. It orders cash, a short
+   fund and an intermediate fund correctly, and it cannot price a barbell against a bullet — but
+   the flat long end is the larger defect, because it is where a real ladder lives. Against the
+   2026-07-30 real curve (10y 2.41%, 30y 2.98%) the missing 57bp is **−15.3% on a 30-year zero**,
+   and it overstates a 30-year full-burn ladder's cost by about **$349k**.
+
+   Fixing it is cheaper than it looks and is the keystone for three separate gaps. A Gaussian
+   VAR(1) admits an affine term structure, `D(t, τ) = exp(A_τ + B_τᵀ x_t)`, whose `A` and `B`
+   solve a linear recursion in the fitted parameters and are therefore COMPILE-TIME constants —
+   `(n_tenors,)` and `(n_tenors, 3)`. The whole curve at every tenor and month is then a matmul
+   against the `(R, H, 3)` state path that already exists: no new emitted series, no new
+   stochastic dimensions, and cross-tenor consistency by construction rather than by
+   interpolation. The REAL curve is the same recursion with `r − π` as the short rate, since
+   that is another linear function of the same state; the breakeven falls out as the difference
+   and is checkable against `T10YIE`.
+
+   _Subtlety worth stating before anyone implements it:_ with zero risk premia the recursion
+   prices the expectations-hypothesis curve, which undershoots long yields — while `term_spread`
+   is fitted to realized `GS10 − FEDFUNDS` and so already embeds the historical term premium. A
+   naive no-arbitrage recursion would therefore contradict the state it is built from. Either fit
+   market prices of risk so the model's own 10-year reproduces the `term_spread` state (correct,
+   and weakly identified off 850 months), or treat it as a fitted factor curve — Nelson–Siegel
+   loadings with a fitted decay, so the long end is extrapolated by a shape fitted to data rather
+   than clamped. The second is the smaller change and does not claim rigor this state vector
+   cannot support.
+
 9. **No equity distribution.** `IncomeCategory` has no qualified-dividend rate, so an equity
    dividend routed through the interest path would be overtaxed as ordinary income. Equity
    emits a total-return price and no payout — consistent, but it means dividend TIMING and its
@@ -140,10 +165,12 @@ how much they move an allocation answer.
     once and holds it never samples a bad roll, so it **understates the risk of deferring**
     purchases and is biased TOWARD shallow ladders.
 
-    Closing it needs two things, neither of which requires a refit: a real yield per term,
-    derivable in closed form from the existing VAR as the nominal yield at that term minus the
-    model's own expected average inflation over it; and a mid-horizon bond purchase on the sim
-    side, whose trigger belongs in an actor policy rather than a schedule.
+    Closing it needs two things, neither of which requires a refit: the real curve from gap 8,
+    which is where the per-tenor real yield comes from and is shared with bond mark-to-market;
+    and a mid-horizon bond purchase on the sim side, whose trigger belongs in an actor policy
+    rather than a schedule. Note the ordering — the curve is the smaller piece and comes first,
+    since without it a 30-year rung is indistinguishable from a 10-year one and the study's long
+    end is mispriced whether or not the ladder rolls.
 
 11. **Nothing is regime-switching.** Rates mean-revert around one level with one volatility.
     The 2009–2021 ZIRP era and 1981 are the same process here, differing only by draw.
