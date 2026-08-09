@@ -135,7 +135,7 @@ if [ -n "$PR_HEAD_SHA" ]; then
   bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
   bazel-diff get-impacted-targets \
     -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
-    > /tmp/affected-raw.txt
+    >/tmp/affected-raw.txt
 
   # bazel-diff's impacted set includes plain source-file labels
   # (e.g. a .py file referenced from a BUILD file but not wrapped
@@ -156,13 +156,17 @@ if [ -n "$PR_HEAD_SHA" ]; then
   # small python helper that takes affected-raw.txt and writes the resolved affected
   # set + test-query files directly, instead of building query expressions in shell.
   quote() { sed '/^$/d; s/.*/"&"/' "$1" | tr '\n' ' '; }
-  { printf 'set('; quote /tmp/affected-raw.txt; \
-    printf ') except kind("source file", set('; \
-    quote /tmp/affected-raw.txt; printf '))\n'; } \
-    > /tmp/affected-query.txt
-  bazel query --query_file=/tmp/affected-query.txt > /tmp/affected.txt
+  {
+    printf 'set('
+    quote /tmp/affected-raw.txt
+    printf ') except kind("source file", set('
+    quote /tmp/affected-raw.txt
+    printf '))\n'
+  } \
+    >/tmp/affected-query.txt
+  bazel query --query_file=/tmp/affected-query.txt >/tmp/affected.txt
 
-  N=$(wc -l < /tmp/affected.txt)
+  N=$(wc -l </tmp/affected.txt)
   echo "affected targets: $N"
   if [ "$N" -eq 0 ]; then
     echo "No targets affected by this PR — skipping test/build."
@@ -175,12 +179,16 @@ if [ -n "$PR_HEAD_SHA" ]; then
   # set(...) embeds the same patterns in the query expression
   # instead, written to a file (--query_file) rather than argv
   # so a large affected set can't hit command-line length limits.
-  { printf 'tests(set('; quote /tmp/affected.txt; printf '))\n'; } \
-    > /tmp/test-query.txt
+  {
+    printf 'tests(set('
+    quote /tmp/affected.txt
+    printf '))\n'
+  } \
+    >/tmp/test-query.txt
 else
   # push to devel / workflow_dispatch: full sweep.
   TARGETS="//..."
-  echo 'tests(//...)' > /tmp/test-query.txt
+  echo 'tests(//...)' >/tmp/test-query.txt
 fi
 
 # `bazel test` requires the resolved pattern to include at least
@@ -199,8 +207,8 @@ echo "test targets in scope: $TEST_TARGET_COUNT"
 probe_bb_runner before-test
 if [ "$TEST_TARGET_COUNT" -eq 0 ]; then
   echo "No test targets in scope -- skipping bazel test."
-  bazel build --keep_going $RBE_FLAGS $TARGETS && \
-    probe_bb_runner after-build
+  bazel build --keep_going $RBE_FLAGS $TARGETS \
+    && probe_bb_runner after-build
 else
   # `bazel test` still hard-fails with exit 4 ("no test targets were
   # found") when every test in the affected set is filtered out by
@@ -218,7 +226,7 @@ else
   if [ "$test_rc" -ne 0 ]; then
     exit "$test_rc"
   fi
-  probe_bb_runner after-test && \
-    bazel build --keep_going $RBE_FLAGS $TARGETS && \
-    probe_bb_runner after-build
+  probe_bb_runner after-test \
+    && bazel build --keep_going $RBE_FLAGS $TARGETS \
+    && probe_bb_runner after-build
 fi
