@@ -20,15 +20,15 @@ spec:
       kind: Deployment
       name: ha-mcp
       namespace: ha-mcp
+  # bearer.sops.yaml is SOPS-encrypted; without this Flux applies the ENC[...] ciphertext
+  # literally and the facade rejects every call from haku-console.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
-    - name: gateway
-      namespace: flux-system
     - name: home-assistant
       namespace: flux-system
     - name: ha-mcp-namespace
       namespace: ducktape-flux
     - name: ha-mcp-credentials
-    - name: valkey
-      namespace: flux-system
-    - name: agent-machine-access-tf
-      namespace: flux-system
