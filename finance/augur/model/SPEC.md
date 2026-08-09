@@ -125,9 +125,26 @@ how much they move an allocation answer.
    dividend routed through the interest path would be overtaxed as ordinary income. Equity
    emits a total-return price and no payout — consistent, but it means dividend TIMING and its
    tax treatment are absent.
-10. **No held-to-maturity instrument.** Every fixed-income holding here is a marked fund with
-    duration risk. A TIPS or Treasury ladder held to maturity has none, so a study whose floor
-    is a real ladder should expect this model to understate that floor.
+10. **No real yield, so a ladder cannot roll.** A ladder held from scenario start IS
+    representable — the sim's `BondHolding(inflation_indexed=True)` needs only the CPI path,
+    which this model emits, and it carries no duration risk because it is never marked. What is
+    missing is buying a rung MID-HORIZON, which requires the real yield prevailing in that month,
+    and this model emits no yield of any kind (it emits prices and distributions; see gap 8 for
+    the curve it does carry internally).
+
+    That bites harder than it sounds, because of a fact about the instrument rather than the
+    model: **TIPS are issued in 5-, 10- and 30-year terms only**, so roughly 30 years is the
+    longest real floor anyone can contract for. Any study whose horizon exceeds that is exactly
+    the case where the ladder must be rolled at an unknown future real yield — and here it never
+    is. The direction of the resulting bias is worth stating plainly: a model that buys a ladder
+    once and holds it never samples a bad roll, so it **understates the risk of deferring**
+    purchases and is biased TOWARD shallow ladders.
+
+    Closing it needs two things, neither of which requires a refit: a real yield per term,
+    derivable in closed form from the existing VAR as the nominal yield at that term minus the
+    model's own expected average inflation over it; and a mid-horizon bond purchase on the sim
+    side, whose trigger belongs in an actor policy rather than a schedule.
+
 11. **Nothing is regime-switching.** Rates mean-revert around one level with one volatility.
     The 2009–2021 ZIRP era and 1981 are the same process here, differing only by draw.
 12. **No housing, no private equity, no crypto.** By design — compose with another provider

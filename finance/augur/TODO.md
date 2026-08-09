@@ -266,6 +266,38 @@ What remains is composing that target with the PE tender floor, and buying.
       how fast that sleeve can be drained. Blocked on nothing in particular;
       wants the PE lot axis to be reachable from `ActorView`.
 
+- [ ] **A ladder that rolls.** Today an inflation-indexed ladder can only be HELD from
+      scenario start (`BondHolding`), never extended. Since TIPS are issued in 5/10/30-year
+      terms only, ~30 years is the longest real floor that can be contracted for at all, so any
+      horizon past that needs rungs bought mid-simulation at the real yield prevailing then.
+      Absent that, the simulator never samples a bad roll and is biased toward shallow ladders —
+      it cannot price the "defer and buy later" strategy at all, only assume it works.
+      Three pieces:
+  - A real yield per term out of the macro model. Closed form from the existing VAR — nominal
+    yield at term N minus the model's own expected average inflation over N — so no new state
+    and no refit. Being parameterized by term, it is also most of what bond pricing needs
+    (`sim/TODO.md` § Bonds).
+  - Mid-horizon purchase of an indexed bond. The blocker once believed to exist — that a rung
+    bought in month `t` delivers month-`t` dollars, unknowable at config time — is not real: a
+    TIPS pays `face × CPI_T/CPI_t`, so delivering `X` month-0 dollars needs
+    `face = X × CPI_t/CPI_0`, known at PURCHASE time. The genuine new machinery is that
+    `annual_coupon_rate` becomes traced (it is the prevailing real yield) instead of a
+    compile-time constant, moving bond cashflows off the static table — the path
+    `inflation_indexed=True` already opened.
+  - The trigger is a POLICY, not a schedule. An unconditional scheduled buy is not a neutral
+    default, it is the maximally-forced-buyer strategy, and its underfunding clamp is silent —
+    realized ladder depth would become path-dependent and unreported, i.e. measuring a strategy
+    with no name. It also means a second scheduled-purchase type on a channel already tombstoned
+    for deletion (`ScheduledAssetPurchase`, #3739). The policy maintains K years of real
+    coverage, with a real-yield threshold knob below which it defers; that knob is what turns
+    "wait and decide later" from prose into a measurable arm. A schedule stays useful as a
+    deterministic test fixture for the execution layer, not as config.
+    Open design questions: whether the ladder joins the target-allocation denominator (today it
+    cannot — sleeves outside the denominator are what make a target alongside an untradeable
+    holding expressible); phase ordering against the cash band, since both want the same dollars
+    in the same month and getting it wrong manufactures churn; and that a coverage target the
+    policy cannot afford must be a reported event, never a clamp.
+
 - [ ] **Trim a sleeve that has grown to dominate.** The buy side is done:
       a policy with `purchase_slots_per_sleeve > 0` invests cash above the
       ceiling down to the floor, water-filled into whichever sleeves are
