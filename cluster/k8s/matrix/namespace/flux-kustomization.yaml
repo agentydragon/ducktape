@@ -1,0 +1,14 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: matrix-namespace
+  namespace: ducktape-flux
+spec:
+  interval: 1h
+  path: ./cluster/k8s/matrix/namespace
+  prune: false
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  timeout: 1m

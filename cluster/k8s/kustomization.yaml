@@ -266,9 +266,11 @@ resources:
   - haku/dispatch/dispatcher/flux-kustomization.yaml # dispatcher: classifier gate + Job stamping + result turn-in
 
   # --- matrix ---
-  # Parked: live Matrix objects were deleted and the manifests remain on disk
-  # for a future revival. Do not apply the Flux Kustomizations while parked,
-  # otherwise stale suspended/dependency status keeps showing up as cluster debt.
+  - matrix/namespace/flux-kustomization.yaml
+  - matrix/secrets/flux-kustomization.yaml
+  - matrix/db/flux-kustomization.yaml
+  - matrix/app/flux-kustomization.yaml
+  - matrix/agent-rbac/flux-kustomization.yaml
 
   # --- nix-cache ---
   - nix-cache/namespace/flux-kustomization.yaml
