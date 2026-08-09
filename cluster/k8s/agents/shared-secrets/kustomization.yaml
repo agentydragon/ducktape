@@ -5,6 +5,4 @@ resources:
   - attic-push-token.sops.yaml
   - buildbuddy-api-key.sops.yaml
   - github-token.sops.yaml
-  - openclaw-anthropic-api-key.sops.yaml
-  - openclaw-openai-api-key.sops.yaml
   - openclaw-telegram-bot-token.sops.yaml

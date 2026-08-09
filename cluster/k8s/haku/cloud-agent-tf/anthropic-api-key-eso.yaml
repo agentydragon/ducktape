@@ -1,0 +1,12 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-cloud-anthropic-api-key
+  namespace: flux-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { name: llm-anthropic-haku, kind: SecretStore }
+  target: { name: haku-cloud-anthropic-api-key, creationPolicy: Owner }
+  data:
+    - secretKey: api-key
+      remoteRef: { key: llm-anthropic-haku, property: api-key }

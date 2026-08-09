@@ -1,0 +1,252 @@
+# Each credential/consumer edge has its own source-side Role and target-side
+# SecretStore. A target namespace can therefore only reflect the one source
+# Secret named by its Role's resourceNames, rather than every LLM credential.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-zai-reader
+  namespace: litellm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-anthropic-haku-reader
+  namespace: litellm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-groq-reader
+  namespace: litellm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-gemini-reader
+  namespace: litellm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-zai-reader
+  namespace: openhands
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-anthropic-haku-reader
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-zai-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-zai"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-anthropic-haku-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-anthropic-haku"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-groq-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-groq"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-gemini-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-gemini"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-zai-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-zai-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-zai-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-zai-openhands-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-zai-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-zai-reader
+    namespace: openhands
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-anthropic-haku-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-anthropic-haku-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-anthropic-haku-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-anthropic-haku-flux-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-anthropic-haku-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-anthropic-haku-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-groq-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-groq-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-groq-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-gemini-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-gemini-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-gemini-reader
+    namespace: litellm
+---
+# These target-local stores are capabilities: their authenticated ServiceAccount
+# can read only the matching source Secret in ducktape-flux.
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-zai
+  namespace: litellm
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-zai-reader, namespace: litellm }
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-anthropic-haku
+  namespace: litellm
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-anthropic-haku-reader, namespace: litellm }
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-groq
+  namespace: litellm
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-groq-reader, namespace: litellm }
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-gemini
+  namespace: litellm
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-gemini-reader, namespace: litellm }
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-zai
+  namespace: openhands
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-zai-reader, namespace: openhands }
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-anthropic-haku
+  namespace: flux-system
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-anthropic-haku-reader, namespace: flux-system }
+      remoteNamespace: ducktape-flux

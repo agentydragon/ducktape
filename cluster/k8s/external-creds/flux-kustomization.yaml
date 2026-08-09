@@ -1,12 +1,11 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: litellm-secrets
-  namespace: flux-system
+  name: external-creds
+  namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/litellm/secrets
+  path: ./cluster/k8s/external-creds
   prune: true
   decryption:
     provider: sops
@@ -15,11 +14,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  timeout: 5m
+    namespace: flux-system
   dependsOn:
-    - name: external-creds
-      namespace: ducktape-flux
     - name: litellm-namespace
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
+    - name: openhands-namespace
+    - name: external-secrets-operator
+  timeout: 5m

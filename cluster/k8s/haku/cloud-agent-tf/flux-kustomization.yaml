@@ -26,6 +26,8 @@ spec:
       name: haku-cloud-agent
       namespace: flux-system
   dependsOn:
+    - name: external-creds
+      namespace: ducktape-flux
     - name: tofu-controller
     - name: tofu-state-db
     # The agent reaches the cluster through this MCP; its first deployment run
