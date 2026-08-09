@@ -11,12 +11,12 @@ on:
   pull_request:
     branches: [devel]
     paths:
-      - "cluster/proxies/iron_proxy_image/**"
+      - "cluster/images/iron-proxy/**"
       - ".github/workflows/iron-proxy-image.yml"
   push:
     branches: [devel]
     paths:
-      - "cluster/proxies/iron_proxy_image/**"
+      - "cluster/images/iron-proxy/**"
       - ".github/workflows/iron-proxy-image.yml"
   workflow_dispatch:
 
@@ -69,7 +69,7 @@ jobs:
           echo "REF=$REF" >> "$GITHUB_ENV"
           docker build \
             --build-arg "IRON_PROXY_REVISION=$IRON_PROXY_REVISION" \
-            -f cluster/proxies/iron_proxy_image/Dockerfile \
+            -f cluster/images/iron-proxy/Dockerfile \
             -t "$REF" \
             .build/iron-proxy
 
