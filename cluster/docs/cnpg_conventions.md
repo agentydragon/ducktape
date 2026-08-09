@@ -71,7 +71,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | inventree-db           | Proxmox-single                | Yes         |
 | harbor-db              | OVH single-instance (interim) | Exception\* |
 | props-db               | OVH-HA                        | Yes         |
-| matrix-db              | Proxmox-single                | Yes         |
+| matrix-db              | OVH-HA                        | Yes         |
 | tandoor-db             | Proxmox-single                | Yes         |
 
 \* `harbor-db` moved off Proxmox 2026-06-03 (`region: hil` / `local-path-ovh`) so

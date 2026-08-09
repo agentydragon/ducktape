@@ -55,9 +55,10 @@ spec:
     # The chart derives public_baseurl as https://<publicServerName>.
     publicServerName: matrix.allegedly.works
 
-    # Pin to Proxmox nodes
+    # Same zone as matrix-db (cnpg_conventions.md R5) and the only nodes where
+    # the SeaweedFS CSI node plugin runs, which the media store below needs.
     nodeSelector:
-      topology.kubernetes.io/region: proxmox
+      topology.kubernetes.io/zone: hil-ovh
 
     # Resources
     resources:
@@ -68,19 +69,19 @@ spec:
         cpu: 200m
         memory: 512Mi
 
-    # Persistence for media store
-    # TODO: consider migrating to SeaweedFS S3 via synapse-s3-storage-provider
+    # Media store on distributed storage — the AGENTS.md default for app data
+    # volumes, and RWX, so Synapse is not pinned to whichever node owns a local
+    # directory. Supersedes the old idea of synapse-s3-storage-provider against
+    # SeaweedFS S3: that module never replaces the local media path (it is a
+    # backup/retrieval layer needing a custom image and an eviction cron), while
+    # the CSI class gives Synapse the filesystem it insists on directly.
     persistence:
       enabled: true
-      storageClass: "local-path-proxmox"
+      storageClass: "seaweedfs-ovh"
       size: 20Gi
-      accessMode: ReadWriteOnce
+      accessMode: ReadWriteMany
 
-    # Deployment strategy - use Recreate for RWO PVC compatibility
-    # RollingUpdate causes stuck deployments when previous pod holds PVC lock
     synapse:
-      strategy:
-        type: Recreate
       # Reloader: auto-restart pods when secrets change
       annotations:
         reloader.stakater.com/auto: "true"
