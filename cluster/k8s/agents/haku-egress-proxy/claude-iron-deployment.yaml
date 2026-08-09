@@ -29,7 +29,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: iron-proxy
-          image: git.allegedly.works/ducktape-ci/public-coder-iron-proxy:devel-20260731032842-683f674
+          # Was the only one of the three iron-proxy deployments without an
+          # $imagepolicy marker, so it silently stopped tracking the image its
+          # two siblings roll on. Still on the pre-rename path until Flux writes
+          # the first tag pushed as `iron-proxy`.
+          image: git.allegedly.works/ducktape-ci/public-coder-iron-proxy:devel-20260731032842-683f674 # {"$imagepolicy": "flux-system:iron-proxy"}
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
             - name: CLAUDE_CODE_OAUTH_TOKEN

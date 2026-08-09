@@ -1,25 +1,27 @@
-# Build the temporary public-coder-agent iron-proxy image from the exact
-# unreleased upstream revision that adds HTTP/2/gRPC MITM support. Remove this
-# workflow when an official iron-proxy release contains that change.
-# TODO(public-coder-agent): Delete this workflow after switching back to that
-# official upstream image.
-name: Public Coder Iron Proxy Image
+# Build iron-proxy from the exact unreleased upstream revision that adds
+# HTTP/2/gRPC MITM support. Shared by every iron-proxy deployment in the
+# cluster, not owned by any one of them.
+#
+# CLEANUP(added 2026-08-09): delete this workflow and return every consumer to
+#   the official upstream image once iron-proxy v0.50.0 ships stable — c90f4fe
+#   is already in v0.50.0-rc.1/rc.2, just not in any non-RC tag.
+name: Iron Proxy Image
 
 on:
   pull_request:
     branches: [devel]
     paths:
-      - "cluster/k8s/agents/public-coder-agent/proxy/image/**"
-      - ".github/workflows/public-coder-iron-proxy-image.yml"
+      - "cluster/proxies/iron_proxy_image/**"
+      - ".github/workflows/iron-proxy-image.yml"
   push:
     branches: [devel]
     paths:
-      - "cluster/k8s/agents/public-coder-agent/proxy/image/**"
-      - ".github/workflows/public-coder-iron-proxy-image.yml"
+      - "cluster/proxies/iron_proxy_image/**"
+      - ".github/workflows/iron-proxy-image.yml"
   workflow_dispatch:
 
 concurrency:
-  group: public-coder-iron-proxy-image-${{ github.ref }}
+  group: iron-proxy-image-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -31,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      IMAGE: git.allegedly.works/ducktape-ci/public-coder-iron-proxy
+      IMAGE: git.allegedly.works/ducktape-ci/iron-proxy
       IRON_PROXY_REVISION: c90f4fe31607552ed05675fc7ad239d94b431af2
     steps:
       - name: Checkout Ducktape
@@ -67,7 +69,7 @@ jobs:
           echo "REF=$REF" >> "$GITHUB_ENV"
           docker build \
             --build-arg "IRON_PROXY_REVISION=$IRON_PROXY_REVISION" \
-            -f cluster/k8s/agents/public-coder-agent/proxy/image/Dockerfile \
+            -f cluster/proxies/iron_proxy_image/Dockerfile \
             -t "$REF" \
             .build/iron-proxy
 
