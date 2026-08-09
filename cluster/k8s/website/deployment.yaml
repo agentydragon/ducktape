@@ -28,7 +28,11 @@ spec:
               memory: 16Mi
             limits:
               cpu: 100m
-              memory: 64Mi
+              # TODO(vpa-memory-audit): 64Mi -> 192Mi. VPA observed 100Mi for
+              # both request and upper bound. That is a lot for nginx serving
+              # static files; likely worker count x buffer sizing rather than
+              # real need, so this ceiling should come back down.
+              memory: 192Mi
           volumeMounts:
             - name: html
               mountPath: /usr/share/nginx/html

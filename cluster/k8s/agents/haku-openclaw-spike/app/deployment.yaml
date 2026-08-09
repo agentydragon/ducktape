@@ -204,7 +204,12 @@ spec:
               memory: 1Gi
             limits:
               cpu: "4"
-              memory: 8Gi
+              # TODO(vpa-memory-audit): 8Gi -> 16Gi. VPA observed a 6.30Gi
+              # request / 8.39Gi upper bound. A single OpenClaw process holding
+              # 6.3Gi resident is the most suspicious number in this sweep —
+              # investigate before accepting 16Gi, this smells like a leak
+              # rather than a working set.
+              memory: 16Gi
           volumeMounts:
             - name: config
               mountPath: /cfg

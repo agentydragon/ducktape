@@ -111,7 +111,9 @@ spec:
               memory: 256Mi
             limits:
               cpu: 1000m
-              memory: 1Gi
+              # TODO(vpa-memory-audit): 1Gi -> 1.5Gi. VPA observed a 933Mi
+              # request / 1004Mi upper bound — right at the old ceiling.
+              memory: 1.5Gi
           # Startup work (alembic migrations + specimen sync + executor build)
           # runs in a background task on the event loop; meanwhile /health
           # responds immediately so kubelet doesn't kill the pod. /readyz

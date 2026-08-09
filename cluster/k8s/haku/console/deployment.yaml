@@ -317,7 +317,12 @@ spec:
               memory: 128Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              # TODO(vpa-memory-audit): 512Mi -> 3Gi. VPA observed a 1.29Gi
+              # request / 1.74Gi upper bound, so the old limit was under half
+              # what this actually uses and only survived because VPA was
+              # silently raising it. A Node static-file + API server wanting
+              # 1.3Gi resident looks wrong — check for a leak before accepting.
+              memory: 3Gi
           livenessProbe:
             tcpSocket:
               port: api

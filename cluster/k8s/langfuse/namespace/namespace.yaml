@@ -6,4 +6,16 @@ metadata:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
   annotations:
-    goldilocks.fairwinds.com/cpu-min: "500m"
+    # Replaces a `goldilocks.fairwinds.com/cpu-min` annotation that goldilocks
+    # never read — it is not part of the annotation set, so it silently did
+    # nothing. RequestsOnly stops VPA scaling limits with requests, which is
+    # what collapses a CPU limit below what cold start needs.
+    #
+    # clickhouse is held on the default RequestsAndLimits deliberately: its
+    # 1.5Gi limit comes from the chart's `resourcesPreset: medium`, not from
+    # this repo, and VPA's upper bound for it (~2Gi) is above that. Pinning it
+    # to the preset would re-create the OOMKills noted in the HelmRelease.
+    # Give it an explicit limit and move it to RequestsOnly — see TODO.md.
+    goldilocks.fairwinds.com/vpa-resource-policy: >
+      {"containerPolicies": [{"containerName": "clickhouse", "controlledValues":
+      "RequestsAndLimits"}, {"containerName": "*", "controlledValues": "RequestsOnly"}]}

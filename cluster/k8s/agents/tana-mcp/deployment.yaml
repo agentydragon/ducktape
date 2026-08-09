@@ -138,7 +138,9 @@ spec:
               cpu: 10m
               memory: 64Mi
             limits:
-              memory: 128Mi
+              # TODO(vpa-memory-audit): 128Mi -> 256Mi. VPA observed a 121Mi
+              # request / 153Mi upper bound, i.e. already over the old limit.
+              memory: 256Mi
       volumes:
         # Tana's ~/.config/tana is just workspace cache + Firebase auth
         # IndexedDB. Both are re-derivable on cold start: workspace from the

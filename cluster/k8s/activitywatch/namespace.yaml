@@ -8,3 +8,9 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: privileged
     pod-security.kubernetes.io/warn: privileged
+  annotations:
+    # RequestsOnly — VPA scales limits in proportion to requests, so a low
+    # steady-state recommendation can collapse a limit below what cold start
+    # needs (2026-08-09 LiteLLM outage). Limits stay as declared here.
+    goldilocks.fairwinds.com/vpa-resource-policy: >
+      {"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}

@@ -13,7 +13,9 @@ metadata:
     # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
     # regardless of node load). CPU is compressible: without a limit the pod
     # bursts freely on idle capacity and gets its fair share when contended.
-    # Memory limits are still managed (RequestsAndLimits is the default).
+    # controlledValues applies to every resource in the policy, so memory
+    # limits are NOT VPA-managed here either — the declared limit below is what
+    # applies. (An earlier version of this comment claimed the opposite.)
     goldilocks.fairwinds.com/vpa-resource-policy: >
       {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
 
@@ -64,7 +66,9 @@ spec:
               memory: "128Mi"
               cpu: "50m"
             limits:
-              memory: "256Mi"
+              # TODO(vpa-memory-audit): 256Mi -> 512Mi. VPA observed a 259Mi
+              # request / 272Mi upper bound, i.e. already over the old limit.
+              memory: "512Mi"
           startupProbe:
             httpGet:
               path: /healthz

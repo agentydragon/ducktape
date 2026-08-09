@@ -90,6 +90,53 @@ agents-mitmproxy, proxmox.
 **Critical unprotected services** (no NetworkPolicy at all):
 external-secrets, forgejo, harbor.
 
+## VPA memory audit — are these limits really needed?
+
+Goldilocks VPA was moved to `controlledValues: RequestsOnly` across the
+auto-mode namespaces after the 2026-08-09 LiteLLM outage (VPA scales limits in
+proportion to requests, which collapsed the CPU limit to 150m and made cold
+start impossible). Limits are now whatever the manifest declares.
+
+That exposed a second problem: **14 containers declared a memory limit below
+what they actually use**, and only VPA silently raising the ceiling kept them
+alive. Each was raised to clear VPA's observed upper bound, tagged
+`TODO(vpa-memory-audit)` at the site. Raising them was the safe move, not
+necessarily the right one — several of these numbers look like leaks, not
+working sets.
+
+Worth investigating before treating the new ceilings as correct, roughly in
+descending order of "that can't be right":
+
+- [ ] `haku-openclaw-spike` openclaw — 8Gi → 16Gi, VPA saw 6.30Gi resident for
+      a single OpenClaw process. Most suspicious number in the sweep.
+- [ ] `forgejo` — 2Gi → 8Gi, VPA saw 3.24Gi. Git pack cache? Mirror sync?
+- [ ] `haku-console` server — 512Mi → 3Gi, VPA saw 1.29Gi for a static-file +
+      API server.
+- [ ] `haku-egress-proxy` mitmproxy — 1Gi → 3Gi, VPA saw 1.15Gi. Second time it
+      has outgrown its limit; the existing comment claims the working set stays
+      bounded under `stream_large_bodies`, and it evidently does not.
+- [ ] `grocy-{sf,vallejo}` valkey — 128Mi → 384Mi, VPA saw 256Mi. Check the
+      eviction policy; this is a cache with apparently unbounded key growth.
+- [ ] `website` nginx — 64Mi → 192Mi, VPA saw 100Mi to serve static files.
+- [ ] Remaining, smaller: `grocy` mcp-base server (256Mi → 768Mi), `tana-mcp`
+      firebase-resigner (128Mi → 256Mi), `tana-mcp-facade` server (256Mi →
+      512Mi), `props` (1Gi → 1.5Gi), `activitywatch` readonly-proxy (64Mi →
+      128Mi).
+
+Two follow-ups on the mechanism itself:
+
+- [ ] `langfuse` clickhouse is deliberately held on `RequestsAndLimits`: its
+      1.5Gi limit comes from the chart's `resourcesPreset: medium` rather than
+      this repo, and VPA's upper bound (~2Gi) exceeds it, so pinning it would
+      re-create the OOMKills the HelmRelease already documents. Replace the
+      preset with an explicit `resources:` block, then move it to RequestsOnly
+      with the rest.
+- [ ] Add a `cluster/validation` check that rejects unknown
+      `goldilocks.fairwinds.com/*` annotation keys. `cpu-min` was invented
+      twice (`litellm` #3856, `langfuse`), goldilocks ignored it silently both
+      times, and the litellm one was only discovered by the outage it failed to
+      prevent.
+
 ## Missing resource limits
 
 Goldilocks VPA enabled (auto mode) for nix-cache, ollama, and litellm —

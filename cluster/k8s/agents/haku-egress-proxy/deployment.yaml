@@ -92,7 +92,12 @@ spec:
               # Headroom over the 512Mi that OOM-killed under haku-ci build traffic;
               # with stream_large_bodies the working set stays bounded, this is slack
               # for concurrent connections + the dynamic cert cache.
-              memory: 1Gi
+              # TODO(vpa-memory-audit): 1Gi -> 3Gi. VPA observed a 1.15Gi
+              # request / 1.73Gi upper bound, so the working set is NOT staying
+              # bounded the way the note above assumes — this is the second time
+              # mitmproxy has outgrown its limit. Retained flows are the usual
+              # cause; confirm before accepting a 3x ceiling.
+              memory: 3Gi
       volumes:
         - name: mitmproxy-ca
           secret:

@@ -15,7 +15,11 @@ spec:
         memory: 64Mi
       limits:
         cpu: 200m
-        memory: 128Mi
+        # TODO(vpa-memory-audit): 128Mi -> 384Mi. VPA observed 256Mi for both
+        # request and upper bound — double the old limit. This valkey backs the
+        # Grocy MCP cache; 256Mi resident suggests unbounded key growth rather
+        # than a working set, so check the eviction policy.
+        memory: 384Mi
   storage:
     volumeClaimTemplate:
       spec:

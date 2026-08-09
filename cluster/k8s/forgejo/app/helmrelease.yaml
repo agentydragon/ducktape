@@ -248,7 +248,12 @@ spec:
     resources:
       limits:
         cpu: "4"
-        memory: 2Gi
+        # TODO(vpa-memory-audit): 2Gi -> 8Gi. VPA observed a 3.24Gi request /
+        # 4.79Gi upper bound — the declared limit was below what Forgejo
+        # actually uses, and only VPA raising it kept this from OOMing. 3.2Gi
+        # resident for this instance's repo count is worth understanding
+        # (git pack cache? mirror sync?) before treating 8Gi as correct.
+        memory: 8Gi
       requests:
         cpu: 500m
         memory: 512Mi

@@ -163,13 +163,15 @@ spec:
             failureThreshold: 36
           resources:
             requests:
-              # Kept in step with the namespace's vpa-resource-policy floor.
-              # VPA scales the limit in proportion to the request, so this 1:4
-              # ratio is what makes that floor land on a 2-CPU limit -- enough
-              # for the cold start path the startup probe below waits on.
-              cpu: 500m
+              # A starting value only: the namespace's vpa-resource-policy puts
+              # this container on RequestsOnly, so VPA owns the request from
+              # here (it settles around 180m) and the limits below are what
+              # actually apply.
+              cpu: 100m
               memory: 1Gi
             limits:
+              # 2 CPU is the cold start budget the startup probe below waits
+              # on, not a steady-state figure — see the namespace annotation.
               cpu: "2"
               # LiteLLM 1.90.2 with the virtual-key DB idles at ~1020Mi
               # (measured); this deployment previously ran uncapped.

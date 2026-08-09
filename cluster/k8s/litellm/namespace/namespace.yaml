@@ -6,21 +6,22 @@ metadata:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
   annotations:
-    # Both Deployments in this namespace (litellm, tana-litellm) run a
-    # container named "litellm" whose cold start is far more CPU-hungry than
-    # its steady state: LiteLLM imports, model registration, and a Prisma
-    # migration all have to finish inside the startup probe budget.
+    # Both Deployments here (litellm, tana-litellm) run a container named
+    # "litellm" whose cold start is far more CPU-hungry than its steady state:
+    # imports, model registration, and a Prisma migration all have to finish
+    # inside the startup probe budget.
     #
-    # VPA sizes from steady-state usage (~180m here) and scales the CPU
-    # *limit* down in proportion to the request. On 2026-08-09 that admitted
-    # the pods at a 150m limit, cold start could not finish, the startup probe
-    # killed every attempt, and the loop fed itself: a container stuck in
-    # startup burns no CPU, so the recommendation stayed low. Both replicas
-    # crashlooped for hours and the Service lost all backends, which surfaces
-    # to in-cluster clients as an immediate EPERM on connect.
+    # VPA sizes from steady-state usage (~180m here) and scales the CPU *limit*
+    # down in proportion to the request. On 2026-08-09 that admitted the pods
+    # at a 150m limit, cold start could not finish, the startup probe killed
+    # every attempt, and the loop fed itself: a container stuck in startup
+    # burns no CPU, so the recommendation stayed low. Both replicas crashlooped
+    # for hours and the Service lost all backends, which surfaces to in-cluster
+    # clients as an immediate EPERM on connect, not a timeout.
     #
-    # Floor the request so the derived limit stays large enough to boot. No
-    # maxAllowed: the failure mode is starvation, not runaway growth, and a
-    # ceiling would only add a new way to throttle a real load spike.
+    # RequestsOnly rather than a minAllowed floor: a floor only works by pinning
+    # the request high enough to drag the derived limit up with it, reserving
+    # CPU nobody uses. This leaves every limit exactly as declared and lets VPA
+    # go back to right-sizing requests, which is the part it is good at.
     goldilocks.fairwinds.com/vpa-resource-policy: >
-      {"containerPolicies": [{"containerName": "litellm", "minAllowed": {"cpu": "500m"}}]}
+      {"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}
