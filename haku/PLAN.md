@@ -87,68 +87,24 @@ Sketch to design out later (a real mechanism-design + security effort, not built
   token/RBAC model, how "less-restricted browsing" stays contained, and where the line
   sits between "draft for review" and "act."
 
-## Haku Console risky-tool broker
+## Future: broaden conversational Haku
 
-Haku Console is the MCP/HTTP policy and approval boundary: calls that pass reviewed auto-approval
-policy execute immediately, while all others become operator approval requests. The invariant stays
-the same: exact call reviewed, trusted console approval, console-owned audit/result state, and
-credentials scoped or proxied rather than trusted to Haku's restraint.
+The concrete milestone—one conversation-scoped sandbox waking from a durable `haku-state` checkout—is
+tracked in [`plans/claude_sandbox_haku_runtime.md`](plans/claude_sandbox_haku_runtime.md).
 
-## Future: a conversational interface with Haku (operator, 2026-07-06)
+After that path is reliable, possible extensions are named conversations and handoff/fork, scheduled
+or event-driven wakes, and alternate message surfaces. All should reuse the same bounded runtime,
+shared Haku identity, Console-owned policy/approval path, and Git concurrency rules rather than
+introducing a second privileged execution path.
 
-Today the only way to reach Haku mid-stream is the console's capability tier: fire the
-claude-code-web routine (optionally with per-run `text`) and get one fresh, fire-and-forget
-`run.md` pass — no back-and-forth, no memory of the exchange beyond what lands in
-`haku-state`. The operator wants something more like chatting with Haku directly, plus
-richer push notifications. **Chat is the higher-priority half of this; notifications are a
-nice-to-have.** Nothing below is designed yet — this is the shape of the ask, to work through
-in a follow-up design pass.
-
-- **A chat-like surface** — a Telegram bot and/or a web UI — where Haku reads messages and
-  replies, as an easier and richer affordance than the console's launch dialog for:
-  - **Quick dispatch**: send Haku a task in a message, superseding the console's
-    "canned per-fire instructions" TODO (`TODO.md` → _Console_) with a lower-friction
-    version of the same idea.
-  - **An ongoing, longer conversation** — not just one-shot fire-and-forget: follow-ups,
-    clarifying questions, iterating on a task, without re-stating context each time.
-  - **Multiple conversation threads**, à la ChatGPT/claude.ai — separate topics or tasks
-    kept apart rather than one running transcript.
-  - **Inline action affordances** — clickable prebaked answers/actions in Haku's messages,
-    not just prose. Conceptually the same idea as `haku-ui`'s markdown affordance widgets
-    (`<signal-toggle>`, `<handoff>`, `<launch>`, `<feedback>`) but rendered in a chat surface
-    (e.g. Telegram inline-keyboard buttons with `callback_data`, which is a different wire
-    shape than a link-based affordance).
-- **Richer mobile notifications** — push notifications (today: one-way ntfy, no replies, no
-  buttons — see _Open questions_ below) that carry action buttons, so the operator can act
-  from the lock screen instead of opening a dashboard.
-
-Open design questions to work through before building anything:
-
-- How a chat surface reconciles with Haku's run-based execution model: today each web-home
-  invocation is one bounded `run.md` pass, not a standing process. Does "ongoing
-  conversation" mean a live conversational loop (a new runtime shape), or per-message dispatch
-  against a conversation thread/log kept in `haku-state` that each run picks up and appends to
-  (closer to today's model, but not a live chat)?
-- Where conversation threads live and who owns them — `haku-state` (consistent with "state is
-  Haku's only memory") or a separate store, and how threads relate to `items/` and `runs/`.
-- How action-button clicks get enforced: a chat message and click-to-action carries the same
-  shape of risk as `requestLaunch`, but a bot API has no equivalent of "trusted-rendered
-  chrome" to confirm against — worth a hard look before wiring any button to a mutating
-  action.
-- Bot/webhook identity and perimeter: a Telegram bot needs a public inbound route and its own
-  credential, same class of new capability surface as `haku-ui`/the console — it inherits
-  Haku's security doctrine (`docs/security.md`), not a chat SDK trusting the model to behave.
-- Whether chat-dispatched one-off tasks run at Haku's own orchestrator privilege (like today's
-  launch-routine) or can ever route through the dispatch plane's worker zones
-  (`plans/multi_agent.md`).
+Agent-authored transcript content remains untrusted UI. Any inline executable action needs a
+Console-owned schema, trusted rendering, actor checks, and the same audit path as an ordinary Console
+action.
 
 ## Open questions
 
 - **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist
   building an expected-utility framework before the queue has real traffic.
-- **Notification thresholds**: ntfy is the channel; when to ping vs. wait for a dashboard
-  visit is a `memory/` matter, tuned via intake. See _Future: a conversational interface
-  with Haku_ above for the fuller chat/rich-notification direction this was gesturing at.
 - **Git as item store at scale**: a repo gives auditability, trivial backup, and
   human-editable state, but no queries or concurrent-writer safety. Fine at personal
   volumes with effectively serialized writers. If volume/concurrency ever outgrows it,
