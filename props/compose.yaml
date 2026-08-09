@@ -58,8 +58,6 @@ services:
       - ./config.toml:/etc/props/config.toml:ro
     environment:
       PROPS_CONFIG_FILE: /etc/props/config.toml
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_UPSTREAM_URL: https://api.openai.com
       PROPS_REGISTRY_UPSTREAM_URL: http://props-registry:5000
       PGHOST: props-postgres
       PGPORT: "5432"
@@ -91,8 +89,6 @@ services:
       - ./config.toml:/etc/props/config.toml:ro
     environment:
       PROPS_CONFIG_FILE: /etc/props/config.toml
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_BASE_URL: https://api.openai.com/v1
       PGHOST: props-postgres
       PGPORT: "5432"
       PGUSER: postgres

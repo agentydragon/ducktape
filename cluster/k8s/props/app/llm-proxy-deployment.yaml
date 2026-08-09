@@ -46,11 +46,6 @@ spec:
                 secretKeyRef:
                   name: props-db-app
                   key: password
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: props-openai-api-key
-                  key: api-key
             - name: OLLAMA_API_KEY
               valueFrom:
                 secretKeyRef:

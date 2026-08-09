@@ -1,8 +1,6 @@
 """Tests for LLM proxy upstream routing.
 
-Tests that _get_upstream_route correctly resolves:
-- OpenAI models (upstream_name=NULL) → default OpenAI upstream
-- Custom models → configured upstreams with model name rewriting
+Tests that _get_upstream_route requires explicit configured upstreams.
 """
 
 from __future__ import annotations
@@ -64,39 +62,6 @@ def test_resolve_upstream_url_from_env() -> None:
     config = UpstreamConfig(url_env="MY_URL_VAR", api_key_env="KEY")
     with patch.dict("os.environ", {"MY_URL_VAR": "http://test.example.com/v1"}):
         assert _resolve_upstream_url(config) == "http://test.example.com/v1"
-
-
-def test_resolve_upstream_url_default_for_missing_env() -> None:
-    """Missing env var falls back to OpenAI default."""
-    config = UpstreamConfig(url_env="MISSING_VAR", api_key_env="KEY")
-    with patch.dict("os.environ", {}, clear=True):
-        assert _resolve_upstream_url(config) == "https://api.openai.com/v1"
-
-
-def test_openai_model_uses_default_upstream(synced_db: Database, sample_config: PropsConfig) -> None:
-    """OpenAI model (upstream_name=NULL) routes to default OpenAI upstream."""
-    # Insert a model with no upstream info (simulating OpenAI model)
-    with synced_db.session() as session:
-        session.merge(
-            ModelMetadata(
-                model_id="gpt-4o",
-                input_usd_per_1m_tokens=2.50,
-                cached_input_usd_per_1m_tokens=1.25,
-                output_usd_per_1m_tokens=10.00,
-                context_window_tokens=128000,
-                max_output_tokens=16384,
-                upstream_name=None,
-                upstream_model=None,
-            )
-        )
-        session.commit()
-
-    with synced_db.session() as session:
-        with patch.dict("os.environ", {"OPENAI_BASE_URL": "https://api.openai.com/v1", "OPENAI_API_KEY": "sk-test"}):
-            route = _get_upstream_route("gpt-4o", session, sample_config, LLMApiShape.RESPONSES)
-        assert route.url == "https://api.openai.com/v1"
-        assert route.api_key == "sk-test"
-        assert route.model_name == "gpt-4o"
 
 
 def test_custom_model_routes_to_configured_upstream(synced_db: Database, sample_config: PropsConfig) -> None:

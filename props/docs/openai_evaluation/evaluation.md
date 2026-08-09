@@ -13,19 +13,26 @@ See <../local_llm_evaluation/evaluation.md> for the local LLM variant.
 
 ## OpenAI-Specific Configuration
 
-No `[upstreams.*]` or `[[models]]` sections are needed in the config file —
-OpenAI models like `gpt-5-mini` are already in `model_metadata.yaml` with
-`upstream_name=NULL`, which routes to the default OpenAI upstream automatically.
+Declare both the OpenAI upstream and every model that may use it in the config
+file. Props has no implicit direct-OpenAI fallback:
 
-The backend needs `OPENAI_BASE_URL` set:
+```toml
+[upstreams.openai]
+url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
 
-```bash
-OPENAI_BASE_URL="https://api.openai.com/v1"
+[[models]]
+name = "gpt-5-mini"
+upstream = "openai"
+upstream_model = "gpt-5-mini"
+input_usd_per_1m_tokens = 0.25
+cached_input_usd_per_1m_tokens = 0.025
+output_usd_per_1m_tokens = 2.0
+context_window_tokens = 400000
+max_output_tokens = 128000
 ```
 
-**Critical**: the URL must include `/v1`. The LLM proxy appends `/responses`
-to the base URL — without `/v1`, the resulting URL
-`https://api.openai.com/responses` returns 404.
+The upstream URL must include `/v1`: the LLM proxy appends `/responses`.
 
 ## Running Critics
 

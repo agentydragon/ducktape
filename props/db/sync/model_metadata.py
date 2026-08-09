@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from openai_utils.api_shape import LLMApiShape
-from openai_utils.model_metadata import MODEL_METADATA
 from props.db.models import ModelMetadata
 from props.db.sync.stats import SyncStats
 
@@ -18,44 +16,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def sync_model_metadata_with_session(session: Session, config: PropsConfig | None = None) -> SyncStats:
-    """Sync model_metadata table from MODEL_METADATA and config sources.
-
-    Syncs from two sources:
-    - OpenAI models from openai_utils.model_metadata.MODEL_METADATA (upstream_name=NULL)
-    - Custom models from PropsConfig.models (upstream_name/upstream_model from config)
-    """
+def sync_model_metadata_with_session(session: Session, config: PropsConfig) -> SyncStats:
+    """Sync model_metadata exactly from explicitly routed config models."""
     # Build complete source model set
     source_models: dict[str, ModelMetadata] = {}
 
-    # Add OpenAI models (no upstream fields = defaults)
-    for model_id, meta in MODEL_METADATA.items():
-        source_models[model_id] = ModelMetadata(
-            model_id=model_id,
-            input_usd_per_1m_tokens=meta.input_usd_per_1m_tokens,
-            cached_input_usd_per_1m_tokens=meta.cached_input_usd_per_1m_tokens,
-            output_usd_per_1m_tokens=meta.output_usd_per_1m_tokens,
-            context_window_tokens=meta.context_window_tokens,
-            max_output_tokens=meta.max_output_tokens,
-            upstream_name=None,
-            upstream_model=None,
-            api_shape=LLMApiShape.RESPONSES,
+    for custom in config.models:
+        source_models[custom.name] = ModelMetadata(
+            model_id=custom.name,
+            input_usd_per_1m_tokens=custom.input_usd_per_1m_tokens,
+            cached_input_usd_per_1m_tokens=custom.cached_input_usd_per_1m_tokens,
+            output_usd_per_1m_tokens=custom.output_usd_per_1m_tokens,
+            context_window_tokens=custom.context_window_tokens,
+            max_output_tokens=custom.max_output_tokens,
+            upstream_name=custom.upstream,
+            upstream_model=custom.upstream_model,
+            api_shape=custom.api_shape,
         )
-
-    # Add custom models from config
-    if config is not None:
-        for custom in config.models:
-            source_models[custom.name] = ModelMetadata(
-                model_id=custom.name,
-                input_usd_per_1m_tokens=custom.input_usd_per_1m_tokens,
-                cached_input_usd_per_1m_tokens=custom.cached_input_usd_per_1m_tokens,
-                output_usd_per_1m_tokens=custom.output_usd_per_1m_tokens,
-                context_window_tokens=custom.context_window_tokens,
-                max_output_tokens=custom.max_output_tokens,
-                upstream_name=custom.upstream,
-                upstream_model=custom.upstream_model,
-                api_shape=custom.api_shape,
-            )
 
     # Full sync: make DB exactly match source
     logger.info(f"Syncing model_metadata table (source: {len(source_models)} models)...")

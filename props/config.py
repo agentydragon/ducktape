@@ -11,9 +11,8 @@ Model routing uses data from two sources:
 1. **Database (model_metadata table)**:
    - All model pricing/limits (input_usd_per_1m_tokens, context_window_tokens, etc.)
    - Upstream routing pointers (upstream_name, upstream_model)
-   - Synced via `props db recreate` from:
-     - openai_utils/model_metadata.yaml (OpenAI models, upstream_name=NULL)
-     - PropsConfig.models (custom models, upstream_name/upstream_model from config)
+   - Synced via `props db recreate` from `PropsConfig.models`; each model has
+     an explicit upstream_name/upstream_model from config.
 
 2. **Config file (PROPS_CONFIG_FILE)**:
    - Upstream definitions (upstreams.*): URL and API key env var names

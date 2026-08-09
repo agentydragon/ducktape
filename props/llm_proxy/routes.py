@@ -42,9 +42,6 @@ router = APIRouter()
 # Request timeout for upstream OpenAI calls
 UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
 
-# Default OpenAI upstream config used when model has no explicit upstream
-DEFAULT_OPENAI_UPSTREAM = UpstreamConfig(url_env="OPENAI_BASE_URL", api_key_env="OPENAI_API_KEY")
-
 # Anthropic Messages API version header value (the wire-format version the upstream expects).
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -79,7 +76,10 @@ def _resolve_upstream_url(config: UpstreamConfig) -> str:
     if config.url:
         return config.url
     if config.url_env:
-        return os.environ.get(config.url_env, "https://api.openai.com/v1")
+        url = os.environ.get(config.url_env)
+        if url:
+            return url
+        raise ValueError(f"Upstream URL environment variable {config.url_env} is not set")
     raise ValueError("Upstream config must have url or url_env")
 
 
@@ -100,18 +100,15 @@ def _get_upstream_route(
             detail=f"Model '{model_id}' uses api_shape='{metadata_api_shape.value}', not '{api_shape.value}'",
         )
 
-    # Determine which upstream to use (NULL = "openai" default)
+    # Every serving model must name an explicit configured upstream.
     upstream_name = metadata.upstream_name
     upstream_config: UpstreamConfig
     if upstream_name is None:
-        upstream_config = DEFAULT_OPENAI_UPSTREAM
-    else:
-        maybe_config = config.upstreams.get(upstream_name)
-        if maybe_config is None:
-            raise HTTPException(
-                status_code=500, detail=f"Model {model_id} references unknown upstream: {upstream_name}"
-            )
-        upstream_config = maybe_config
+        raise HTTPException(status_code=500, detail=f"Model {model_id} has no configured upstream")
+    maybe_config = config.upstreams.get(upstream_name)
+    if maybe_config is None:
+        raise HTTPException(status_code=500, detail=f"Model {model_id} references unknown upstream: {upstream_name}")
+    upstream_config = maybe_config
 
     # Resolve URL and API key
     upstream_url = _resolve_upstream_url(upstream_config)

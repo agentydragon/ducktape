@@ -56,12 +56,14 @@ import uvicorn
 from fastapi import FastAPI
 
 from openai_utils.model import OpenAIModelProto
+from openai_utils.model_metadata import get_model_metadata
 from props.backend.app import BackendDeps, create_app
-from props.config import DockerExecutorConfig, PropsConfig
+from props.config import CustomModelConfig, DockerExecutorConfig, PropsConfig, UpstreamConfig
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.llm_proxy.app import create_app as create_llm_proxy_app  # alias: backend.app also defines create_app
 from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
@@ -169,7 +171,6 @@ async def _serve_app(app: FastAPI, port: int, *, name: str, host: str = "0.0.0.0
 def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig, e2e_registry_url: str) -> None:
     """Set env vars needed by the backend's lifespan."""
     monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     for key, value in db_config.to_env_dict().items():
         monkeypatch.setenv(key, value)
 
@@ -183,6 +184,7 @@ async def _make_stack(
     monkeypatch: pytest.MonkeyPatch,
     *,
     model: str,
+    models: Sequence[str],
     images: Sequence[BazelImage] = (),
 ) -> AsyncIterator[E2EStack]:
     """Shared stack setup: start fake OpenAI, backend, proxies, registry, push images."""
@@ -190,9 +192,6 @@ async def _make_stack(
 
     try:
         _set_backend_env(monkeypatch, db.config, e2e_registry_url)
-        # The LLM proxy's upstream: it forwards agents' /v1/responses calls here.
-        monkeypatch.setenv("OPENAI_BASE_URL", f"{fake_openai.url}/v1")
-
         backend_port = pick_free_port()
         llm_proxy_port = pick_free_port()
         registry_proxy_port = pick_free_port()
@@ -210,7 +209,20 @@ async def _make_stack(
             agent_env=agent_base_env,
             executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
             llm_proxy_url=llm_proxy_url,
+            upstreams={"fake-openai": UpstreamConfig(url=f"{fake_openai.url}/v1", api_key_env="FAKE_OPENAI_API_KEY")},
+            models=[
+                CustomModelConfig(
+                    name=model_id,
+                    upstream="fake-openai",
+                    upstream_model=model_id,
+                    **get_model_metadata(model_id).model_dump(),
+                )
+                for model_id in models
+            ],
         )
+        with db.session() as session:
+            sync_model_metadata_with_session(session, config)
+            session.commit()
         deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
 
         async with (
@@ -285,7 +297,14 @@ async def e2e_stack(
     ) -> AsyncIterator[E2EStack]:
         fake_openai = FakeOpenAIServer(dict(mocks), host="0.0.0.0", port=0)
         async with _make_stack(
-            fake_openai, synced_db, async_docker_client, e2e_registry_url, monkeypatch, model=model, images=images
+            fake_openai,
+            synced_db,
+            async_docker_client,
+            e2e_registry_url,
+            monkeypatch,
+            model=model,
+            models=list(mocks),
+            images=images,
         ) as stack:
             yield stack
 

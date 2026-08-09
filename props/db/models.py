@@ -969,12 +969,11 @@ class ClusteringPending(Base):
 class ModelMetadata(Base):
     """Model metadata: pricing, context limits, and upstream routing.
 
-    Synchronized from:
-    - openai_utils.model_metadata.MODEL_METADATA (OpenAI models)
-    - PropsConfig.models (custom/local models)
+    Synchronized from PropsConfig.models. Every served model declares its
+    upstream explicitly in that configuration.
 
     Upstream routing:
-    - upstream_name: References [upstreams.*] in props config. NULL = "openai" default.
+    - upstream_name: References [upstreams.*] in props config.
     - upstream_model: Model name to send in API request. NULL = use model_id.
 
     Enables post-hoc cost calculation, context validation, and multi-upstream routing.
@@ -988,7 +987,7 @@ class ModelMetadata(Base):
     output_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
     context_window_tokens: Mapped[int] = mapped_column(nullable=False)
     max_output_tokens: Mapped[int] = mapped_column(nullable=False)
-    upstream_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    upstream_name: Mapped[str] = mapped_column(String, nullable=False)
     upstream_model: Mapped[str | None] = mapped_column(String, nullable=True)
     api_shape: Mapped[LLMApiShape] = mapped_column(
         StringBackedStrEnumColumn(LLMApiShape), nullable=False, server_default=LLMApiShape.RESPONSES.value

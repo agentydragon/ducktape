@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from props.config import load_config_from_env
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
@@ -90,7 +91,7 @@ def cmd_db_recreate(
 
     console.print("Syncing model metadata...")
     with db.session() as session:
-        sync_model_metadata_with_session(session)
+        sync_model_metadata_with_session(session, load_config_from_env())
         session.commit()
     console.print("✓ Model metadata synced")
     console.print("\nTo sync specimens, use: props db sync-specimen --code-tar <tar> --data-yaml <yaml>")

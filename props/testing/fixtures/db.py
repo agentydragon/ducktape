@@ -16,6 +16,8 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+from openai_utils.model_metadata import MODEL_METADATA
+from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
@@ -29,6 +31,19 @@ tracer = trace.get_tracer(__name__)
 
 # Path to test specimens (git-tracked fixtures)
 TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
+
+
+def _test_model_config() -> PropsConfig:
+    """Explicitly route every test model through the test-only fake upstream."""
+    return PropsConfig(
+        backend_url="http://props-test:8000",
+        agent_env={},
+        upstreams={"test": UpstreamConfig(url="http://props-test-upstream:8000/v1", api_key_env="TEST_API_KEY")},
+        models=[
+            CustomModelConfig(name=model_id, upstream="test", upstream_model=model_id, **metadata.model_dump())
+            for model_id, metadata in MODEL_METADATA.items()
+        ],
+    )
 
 
 @pytest.fixture
@@ -144,7 +159,7 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
     with db.session() as session:
-        sync_model_metadata_with_session(session)
+        sync_model_metadata_with_session(session, _test_model_config())
         for slug in fixture_slugs:
             base_path = f"props/testing/fixtures/testdata/specimens/{slug}"
             code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
