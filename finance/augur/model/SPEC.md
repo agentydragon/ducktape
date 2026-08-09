@@ -27,19 +27,25 @@ surface at all; what happens between the state and the emissions is the model's 
 
 ## What is fitted, and on what
 
-| Block       | Source                       | Window            | Months |
-| ----------- | ---------------------------- | ----------------- | ------ |
-| short rate  | FRED `FEDFUNDS`              | 1954-07 – 2026-07 | 865    |
-| term spread | FRED `GS10` − `FEDFUNDS`     | 1954-07 – 2026-07 | 865    |
-| inflation   | FRED `CPIAUCSL`              | 1947-01 – 2026-06 | 952    |
-| equity      | Yahoo `VFINX` adjusted close | 1980-01 – 2026-08 | 559    |
-| `rate_beta` | `VFINX` on Δ`FEDFUNDS`       | 1980-01 – 2026-07 | 558    |
+| Block       | Source                                | Window            | Months |
+| ----------- | ------------------------------------- | ----------------- | ------ |
+| short rate  | FRED `FEDFUNDS`                       | 1955-08 – 2026-06 | 850    |
+| term spread | FRED `GS10` − `FEDFUNDS`              | 1955-08 – 2026-06 | 850    |
+| inflation   | FRED `CPIAUCSL`, trailing-year log    | 1955-08 – 2026-06 | 850    |
+| equity      | Ken French factors, CRSP total market | 1926-07 – 2026-06 | 1200   |
+| `rate_beta` | equity on Δ`FEDFUNDS` (fits to zero)  | 1980-01 – 2026-07 | 558    |
 
-The three macro states are fitted JOINTLY as a VAR(1) — persistence, the Fed's reaction to
-inflation, and correlated innovations all come from that one estimate, so it necessarily uses
-their common window. Equity is a marginal and keeps its own longer history; `rate_beta`, the
-one parameter linking equity to the macro state, pays the common-window cost and comes out
-indistinguishable from zero.
+The three macro states share ONE window because they are fitted JOINTLY as a VAR(1):
+persistence, the Fed's reaction to inflation, and correlated innovations all come from that
+single estimate, and `fit_macro_var` inner-joins the three series, so the shortest one sets the
+start. Equity is a marginal and keeps its own much longer history; `rate_beta`, the one
+parameter linking equity to the macro state, pays the common-window cost and comes out
+indistinguishable from zero (gap 2).
+
+**Deviation worth knowing:** the VAR reads `CPIAUCSL` (seasonally adjusted) while the historical
+replay's record reads `CPIAUCNS` (not adjusted, and reaching 1913 rather than 1947 — gap 4). The
+two are not interchangeable at monthly frequency, but both consumers read a trailing-year ratio,
+which is where seasonality cancels.
 
 Instrument durations, spreads, prices and tax character are **not** fitted — they are facts
 about specific funds, stated in config.
@@ -60,7 +66,21 @@ how much they move an allocation answer.
    1993–2026 and **−0.62 (R² = 0.0051)** over 1980–2026: the sign is not stable across windows
    and neither explains half a percent of variance. So it is zero and the model carries no
    bond/equity coupling at all. **A question that turns on bond/equity correlation is not
-   answered here** — which is exactly what a 60/40 study turns on, making this the largest gap.
+   answered here** — which is exactly what a 60/40 study turns on.
+
+   _How much it can move a 30-year answer, since "largest gap" invites the reader to assume it
+   explains any disagreement._ Over 360 months the equity log-sd is `0.05290 × √360 = 1.004`
+   and the CPI log-sd is ≈0.409 (from the ×2.11–4.78 band in gap 1) — so **CPI carries only
+   ~14% of real-equity log-variance**. Propagating a correlation through
+   `sd² = sd_eq² + sd_cpi² − 2ρ·sd_eq·sd_cpi` gives a 100%-equity 30-year real p5 of 1.02× at
+   ρ = 0, 1.16× at ρ = +0.2, and 2.28× at the impossible ρ = +1. The historical replay puts
+   that same percentile at **4.07×**, so coupling cannot close that gap: reaching 4.07× needs a
+   30-year variance ratio of 0.059, which is a statement about **mean reversion** (gap 3), not
+   about correlation. Two consequences worth stating plainly: the replay's 4.07× is not a p5 —
+   it is the 42nd-worst of 839 overlapping windows off ~3.3 independent ones (gap 4) — and for
+   a question about how deep a fixed-income floor should be, gaps 3, 9 and 10 each move the
+   answer more than this one does.
+
 3. **Equity is now fitted on the full century, and the window still matters.** The shipped
    default is the CRSP total market over 1926-07–2026-06: **10.37%/yr at 18.3% vol**. The same
    series over 1980–2026 gives 12.29% at 15.7%, so restricting to the recent past would raise
@@ -88,9 +108,13 @@ how much they move an allocation answer.
 5. **No cyclical credit spread.** A muni's spread over the curve is a constant, so the model
    cannot produce a muni selloff that Treasuries escape — which is exactly what a credit event
    looks like, and exactly when a floor is tested.
-6. **Mismatched inflation and equity windows.** Inflation reaches 1947, equity only 1993, so
-   the implied real equity return pairs a sample containing the 1970s with one that does not.
-   It lands near the long-run realized real figure, which is a coincidence, not a control.
+6. **Mismatched inflation and equity windows** — still true, but it now runs the other way, and
+   the old text here described the pre-refit state. Equity is fitted on 1926-07–2026-06 (1200
+   months, gap 3); the joint VAR inner-joins `FEDFUNDS`/`GS10`/`CPIAUCSL` and so starts at
+   1955-08 (850 months). The implied real equity return therefore pairs a sample containing the
+   1930s with one that does not. That is the deliberate consequence of the marginals-keep-their-
+   own-history rule above, not an oversight — but it means the real figure is a quotient of two
+   different centuries and should not be read as a fitted quantity.
 7. **The rate means are barely identified.** OLS on a near-unit-root series biases mean
    reversion upward and pins the long-run mean weakly: the same fit gives a 4.93% short-rate
    mean over 1954–2026 and 1.71% over 1990–2026. Read the sigmas; sweep the means.
