@@ -318,24 +318,35 @@ for whenever this is picked up:
   and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is
   reimplementation, and it also fences the agent out of anything not anticipated — threads,
   relations, redactions. Three shapes, and the deciding factor is not convenience:
-  - **A second Matrix account** (a member that can read, send blocked by power levels) is
-    the most honest modelling, and scoping is Matrix's own ACLs rather than ours. But it
-    puts a real Matrix token in the sandbox, and the homeserver is publicly routed — **an
-    exfiltrated read token keeps working, from anywhere, after the sandbox is gone.** A
-    proxied capability dies with the sandbox. That asymmetry is the argument against it,
-    not R5.1's letter.
-  - **A read-only proxy** keeps the capability inside the egress fence and reuses the shape
-    this deployment already runs for the Anthropic token (R5.1a). Unlike the Postgres case,
-    this one is HTTP, so the existing mechanism transfers directly.
-  - **A read route on the console, authenticated by the bridge token** — the preferred
-    shape, because it needs no new credential and no new deployment. The sandbox already
-    authenticates to the console per session; a read route under that auth resolves the
-    room from the session, which gives R5.3's "another room is not expressible" structurally
-    rather than through a path allowlist someone has to get right. The console already
-    exposes `/mcp` and the node-daemon API to non-browser callers.
+  - **A second read-only Matrix account, reached through credential substitution** — the
+    preferred shape. A `@haku-reader`-style member with sending blocked by power levels,
+    whose token the sandbox never holds: it carries a placeholder, and the egress proxy
+    substitutes the real value only for the homeserver host, exactly as
+    `haku-claude-oauth-proxy` already does for `api.anthropic.com` (R5.1a). The agent then
+    uses the real client-server API with ordinary Matrix tooling — nothing reimplemented,
+    nothing fenced off — while an exfiltrated placeholder is worth nothing anywhere, so the
+    capability still dies with the sandbox. The proxy can additionally restrict method and
+    path, making read-only belt-and-braces rather than resting on power levels alone.
+  - **A read route on the console, authenticated by the bridge token.** Needs no new
+    credential, no new account, and no proxy configuration, and the room resolves from the
+    session — R5.3's "another room is not expressible" comes out structurally. The cost is
+    that it _is_ the reimplementation this requirement is trying to avoid: every endpoint
+    worth having has to be re-exposed by hand.
+  - **A standalone read-only proxy** in front of Synapse. Same containment as substitution
+    but a new deployment and a path allowlist to get right; no advantage over the first
+    option, which reuses a proxy that already exists.
 
-  What still has to be decided: how much of the CS API to pass through, and whether
-  responses are proxied verbatim (cheap to build, verbose in context) or projected down.
+  What still has to be decided: how much of the CS API to expose, and whether responses come
+  back verbatim (nothing to build, verbose in context) or trimmed. Worth checking before
+  choosing — `/messages` accepts a `filter` with `types`/`not_types`, so Matrix's own filter
+  may do the trimming server-side, including dropping lifecycle notices once they carry the
+  namespaced key (R3.3a). If it can, verbatim and cheap-in-context stop being in tension.
+
+  **Scoping is the real difference between the top two.** Substitution scopes by _account
+  membership_ — the reader can reach any room it is in — while a console route scopes by
+  _session_. Equivalent today with one room and one agent, divergent under R3.6a's
+  `(operator, agent)` generalization, where a shared reader account would see every
+  conversation. Whichever is chosen should be revisited there.
 
 ### R6 — Status and presence
 
