@@ -79,6 +79,9 @@ async function withStatus(message, work) {
     document.querySelectorAll("button").forEach((button) => {
       button.disabled = false;
     });
+    // Connect's disabled state is derived, not a spinner: blanket re-enabling would arm it with no
+    // institution chosen or no product checked, and submitting then dereferences a null selection.
+    setFormEnabled();
   }
 }
 async function loadConfig() {
@@ -119,14 +122,19 @@ async function selectInstitution(institutionId) {
     .join("");
   box.classList.toggle("visible", detail.syncable_products.length > 0);
   const hint = document.getElementById("institution-hint");
+  // Name the subject in both sentences. "Also offered but not synced here" read as either "not
+  // synced by this institution" or "not synced by this app", which are opposite meanings.
   if (detail.syncable_products.length === 0) {
-    hint.textContent = `${detail.name} offers nothing this app can sync.`;
+    hint.textContent = `${detail.name} offers nothing this app can mirror.`;
   } else if (detail.unsupported_products.length > 0) {
-    hint.textContent = `Also offered but not synced here: ${detail.unsupported_products.join(", ")}.`;
+    hint.textContent = `${detail.name} also offers products this app does not mirror: ${detail.unsupported_products.join(", ")}.`;
   } else {
     hint.textContent = "";
   }
   setFormEnabled();
+  // withStatus leaves its in-progress message up unless the work replaces it, so without this the
+  // form sits under "Loading institution products..." forever after a successful load.
+  setStatus(`Selected ${detail.name}.`);
 }
 
 function setFormEnabled() {
