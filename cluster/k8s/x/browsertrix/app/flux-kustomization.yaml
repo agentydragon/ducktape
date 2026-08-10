@@ -27,7 +27,7 @@ spec:
     - name: seaweedfs-browsertrix-bucket
       namespace: flux-system
     - name: seaweedfs-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
     - name: local-path-provisioner

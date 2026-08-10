@@ -27,3 +27,4 @@ spec:
     - name: tofu-state-db
     - name: authentik
     - name: authentik-sso-secrets
+      namespace: ducktape-flux

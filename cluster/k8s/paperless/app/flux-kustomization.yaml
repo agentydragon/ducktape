@@ -18,7 +18,7 @@ spec:
     - name: paperless-namespace
       namespace: ducktape-flux
     - name: paperless-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: paperless-cache
       namespace: ducktape-flux
     - name: paperless-db

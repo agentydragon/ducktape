@@ -232,15 +232,25 @@ class PlaidClient:
         `institution_id` attribute and Plaid rejects it with `INVALID_INSTITUTION` — it is not a
         documented request field for /link/token/create, only a response and webhook one. The
         typeahead still decides *which products* to request; Link picks the institution.
+
+        Only ONE product goes in `products`; the rest go in `required_if_supported_products`.
+        `products` is a hard requirement checked against the *accounts the user selects*, not just
+        the institution — so requesting liabilities at a brokerage that offers them institution-wide
+        but has no loan or card account fails the Link *after* the user has already consented at
+        their bank. `required_if_supported_products` activates per selected account and never fails
+        the flow, so a product that turns out not to apply is simply skipped.
         """
+        anchor, conditional = _split_link_products(products)
         request_args: dict[str, object] = {
             "client_name": client_name,
             "user": LinkTokenCreateRequestUser(client_user_id=client_user_id),
-            "products": [Products(product) for product in products],
+            "products": [Products(anchor)],
             "country_codes": [CountryCode("US")],
             "language": "en",
             "redirect_uri": redirect_uri,
         }
+        if conditional:
+            request_args["required_if_supported_products"] = [Products(product) for product in conditional]
         if Product.TRANSACTIONS.value in products:
             request_args["transactions"] = {"days_requested": transaction_days_requested}
         request = LinkTokenCreateRequest(**request_args)
@@ -343,6 +353,23 @@ def _create_sdk_api(creds: PlaidCreds) -> plaid_api.PlaidApi:
     # fastmcp -> httpx), matching how the other MCP servers get their CA roots.
     configuration.ssl_ca_cert = certifi.where()
     return plaid_api.PlaidApi(plaid.ApiClient(configuration))
+
+
+def _split_link_products(products: list[str]) -> tuple[str, list[str]]:
+    """Split a requested set into the one hard-required product and the conditional rest.
+
+    The anchor is the earliest in `Product` declaration order, which is also least-to-most likely to
+    have no eligible account: nearly every account supports transactions, investments needs a
+    brokerage, liabilities needs a loan or card. Anchoring on the broadest keeps the one product
+    that CAN fail the Link as the one least likely to.
+    """
+    if not products:
+        raise ValueError("a Link token needs at least one product")
+    ordered = [p.value for p in Product if p.value in set(products)]
+    unknown = sorted(set(products) - {p.value for p in Product})
+    if unknown:
+        raise ValueError(f"not products this app syncs: {unknown}")
+    return ordered[0], ordered[1:]
 
 
 def _plaid_api_error(endpoint: str, exc: PlaidApiException) -> PlaidClientError:

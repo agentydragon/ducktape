@@ -27,7 +27,7 @@ spec:
     - name: seaweedfs-wayback-archive-bucket
       namespace: flux-system
     - name: seaweedfs-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: seaweedfs-cluster
       namespace: flux-system
     - name: gateway

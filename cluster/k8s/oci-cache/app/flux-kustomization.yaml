@@ -34,3 +34,4 @@ spec:
     # mirrors into oci-cache for Zot's AWS_* env.
     - name: seaweedfs-registry-cache-bucket
     - name: seaweedfs-secrets
+      namespace: ducktape-flux

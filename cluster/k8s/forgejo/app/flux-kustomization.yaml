@@ -32,8 +32,10 @@ spec:
     - name: cert-manager
       namespace: ducktape-flux
     - name: forgejo-secrets
+      namespace: ducktape-flux
     - name: seaweedfs-forgejo-bucket # S3 bucket for packages/LFS/attachments
     - name: seaweedfs-secrets # source of s3-identity-forgejo (mirrored into the namespace by reflector)
+      namespace: ducktape-flux
     - name: reflector # Mirrors forgejo-oauth-client-secret + s3-identity-forgejo into the namespace
       namespace: ducktape-flux
     - name: sso-providers-tf # Writes forgejo-oauth-client-secret to authentik namespace

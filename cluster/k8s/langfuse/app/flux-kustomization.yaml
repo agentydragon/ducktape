@@ -26,6 +26,7 @@ spec:
     - name: langfuse-namespace
       namespace: ducktape-flux
     - name: langfuse-secrets
+      namespace: ducktape-flux
     - name: langfuse-cache
     - name: langfuse-db
     - name: seaweedfs-langfuse-bucket

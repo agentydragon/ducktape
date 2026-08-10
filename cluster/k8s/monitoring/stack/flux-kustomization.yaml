@@ -28,6 +28,7 @@ spec:
     - name: gateway
     - name: cert-manager-environment
     - name: monitoring-stack-secrets
+      namespace: ducktape-flux
     - name: sso-providers-tf
     - name: grafana-db
       namespace: ducktape-flux

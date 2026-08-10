@@ -20,7 +20,7 @@ spec:
     - name: seaweedfs-operator
       namespace: flux-system
     - name: seaweedfs-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: seaweedfs-filer-db # Filer is configured with postgres2 backend.
       namespace: flux-system
     - name: local-path-provisioner

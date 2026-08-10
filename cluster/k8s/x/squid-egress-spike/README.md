@@ -100,7 +100,7 @@ the `security_file_certgen` init both survived the OpenSSL/musl move.
 
 Verdict per question: (1) 7.x port — **yes**, with the `DONT_VERIFY_PEER` trap
 above; (2) destination scoping — **security property holds**, and the strip
-semantics have since been settled below; (3) several credentials — **yes**; (4) base64 `Basic`
+semantics were settled and re-verified below; (3) several credentials — **yes**; (4) base64 `Basic`
 — **yes**; (5) caching — `cache deny has_auth` **works**, hit path not
 demonstrated.
 
@@ -154,8 +154,12 @@ Leaking the placeholder string to an allowed host costs nothing: the agent
 already holds it, and redeeming it still requires the destination its rule names.
 `credentials.conf.tmpl` carries this as an invariant, since scoping only the
 `add` is the easy mistake and it is invisible until someone tests the negative
-case. **Not yet re-run** — case (b) should now echo `Bearer
-spike-other-placeholder` instead of nothing.
+case.
+
+**Confirmed by re-running on 7.6-VCS**: case (b) now arrives as
+`Bearer spike-other-placeholder`, unmodified. Substitution at the named
+destination still works for both the `Bearer` and the base64 `Basic` rule, so
+scoping the `deny` did not disturb the path it shares with the `add`.
 
 ### Two things this run could not show
 

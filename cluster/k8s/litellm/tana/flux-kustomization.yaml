@@ -16,9 +16,9 @@ spec:
     - name: litellm-namespace
       namespace: ducktape-flux
     - name: litellm-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: langfuse-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: gateway
       namespace: flux-system
     - name: reflector

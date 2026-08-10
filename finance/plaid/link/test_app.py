@@ -293,7 +293,7 @@ def test_link_token_never_pins_an_institution() -> None:
 
     assert response.status_code == 200
     assert "institution_id" not in api.link_token_requests[0]
-    assert api.link_token_requests[0]["products"] == ["transactions", "liabilities"]
+    assert api.link_token_requests[0]["products"] == ["transactions"]
 
 
 def test_link_token_rejects_an_empty_product_set() -> None:
@@ -315,13 +315,18 @@ def test_create_link_token_initializes_requested_products() -> None:
 
     assert result.link_token == "link-token-1"
     assert result.products == ["transactions", "liabilities"]
+    # Only transactions is hard-required; liabilities is conditional, so a selected account set with
+    # no card or loan cannot fail the Link after the user has already consented at their bank.
+    assert api.link_token_requests[0]["products"] == ["transactions"]
+    assert api.link_token_requests[0]["required_if_supported_products"] == ["liabilities"]
     assert result.transaction_days_requested == 730
     assert api.link_token_requests == [
         {
             "client_name": "Plaid MCP",
             "country_codes": ["US"],
             "language": "en",
-            "products": ["transactions", "liabilities"],
+            "products": ["transactions"],
+            "required_if_supported_products": ["liabilities"],
             "redirect_uri": "https://example.test/link/callback",
             "transactions": {"days_requested": 730},
             "user": {"client_user_id": "owner"},
@@ -353,8 +358,25 @@ def test_create_link_token_omits_transactions_config_without_transactions_produc
     )
 
     assert result.products == ["investments"]
+    assert "required_if_supported_products" not in api.link_token_requests[0]
     assert result.transaction_days_requested is None
     assert "transactions" not in api.link_token_requests[0]
+
+
+def test_link_token_anchors_on_the_broadest_product() -> None:
+    """The anchor is the one product that CAN fail the Link, so it must be the one least likely to
+    have no eligible account. Liabilities anchors only when it is all that was asked for."""
+    api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+
+    client.create_link_token(
+        products=["liabilities", "investments"], redirect_uri="https://x.test/cb", client_user_id="owner"
+    )
+    client.create_link_token(products=["liabilities"], redirect_uri="https://x.test/cb", client_user_id="owner")
+
+    assert api.link_token_requests[0]["products"] == ["investments"]
+    assert api.link_token_requests[0]["required_if_supported_products"] == ["liabilities"]
+    assert api.link_token_requests[1]["products"] == ["liabilities"]
 
 
 def test_create_update_link_token_requests_additional_consented_products_only() -> None:

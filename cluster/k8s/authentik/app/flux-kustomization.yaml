@@ -36,7 +36,9 @@ spec:
       namespace: ducktape-flux
     - name: authentik-db # Wait for CNPG cluster ready and authentik-db-app secret to exist
     - name: authentik-secrets # Admin password, secret key, bootstrap token (SOPS)
+      namespace: ducktape-flux
     - name: authentik-sso-secrets # Supporting identity and Google OAuth inputs
+      namespace: ducktape-flux
     - name: cert-manager # Wait for cert-manager for TLS certificates
       namespace: ducktape-flux
     - name: gateway # Wait for Gateway API for external access
