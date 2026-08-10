@@ -21,7 +21,7 @@ deliberately avoid.
 |              | Cache           | Cred substitution        | Allowlist        | External decision hook |
 | ------------ | --------------- | ------------------------ | ---------------- | ---------------------- |
 | Squid        | ✅ mature       | ⚠️ fixed-string only     | ✅ granular ACLs | ✅ `external_acl_type` |
-| iron-proxy   | ❌              | ✅                       | ✅ glob + CIDR   | ⚠️ `judge`, LLM-only   |
+| iron-proxy   | ❌ (can chain)  | ✅                       | ✅ glob + CIDR   | ⚠️ `judge`, LLM-only   |
 | mitmproxy    | ❌              | ⚠️ via own addon         | ❌               | ⚠️ via own addon       |
 | agentgateway | ❌              | ✅ (CB4A Model A)        | not documented   | ✅ PDP                 |
 | Envoy        | ⚠️ alpha filter | ✅ `credential_injector` | ✅               | ✅ `ext_authz`         |
@@ -39,20 +39,55 @@ has no dynamic-certificate machinery. See
 the same shape — a gateway, not a transparent forward proxy for arbitrary
 hostnames — so unmodified `git`/`pip`/`npm` against real hosts is out.
 
-## Finding: you cannot chain them either
+## Finding: chaining works, in one direction
 
-The natural workaround is two proxies in series. Both orders are blocked:
+An earlier draft of this note claimed both orders were blocked. That was wrong
+about iron, and the correction matters because it reopens the composition:
 
-- **Squid (cache) → iron (creds)**: Squid cannot forward _bumped_ traffic to a
-  `cache_peer` parent. Upstream's own position is that multi-hop proxying with
-  certificate mimicking "is difficult at best and not possible in current Squid
-  versions"; Squid 4 can only splice TLS via `CONNECT` to parents, which defeats
-  the bump the cache needs.
-- **iron (creds) → Squid (cache)**: iron-proxy documents no `upstream_proxy` /
-  `parent_proxy` / `HTTP_PROXY` handling. It dials upstreams directly.
+- **Squid (cache) → iron (creds)**: genuinely blocked. Squid cannot forward
+  _bumped_ traffic to a `cache_peer` parent; upstream's position is that
+  multi-hop proxying with certificate mimicking "is difficult at best and not
+  possible in current Squid versions", and Squid 4 can only splice TLS via
+  `CONNECT` to parents, which defeats the bump the cache needs.
+- **iron (creds) → Squid (cache)**: **supported.** `proxy.upstream_proxy` is a
+  real config key, undocumented in the README but present in
+  `internal/config/upstream_proxy.go`:
 
-Because caching HTTPS requires decrypting it, the cache **must be** the MITM
-layer. "Add a cache behind the fence" is not available.
+  ```yaml
+  proxy:
+    upstream_proxy:
+      http_proxy: "http://cache:3128"
+      https_proxy: "http://cache:3128"
+      no_proxy: "localhost,127.0.0.1"
+  ```
+
+  `http`, `https`, `socks5` and `socks5h` schemes are accepted; there is no
+  proxy-auth field. Verified in-cluster: iron starts cleanly with the key set
+  (config parsing is strict — `dec.KnownFields(true)` — so an invalid key fails
+  loudly), and a request then produces an upstream dial to the configured proxy
+  rather than to the origin.
+
+  Two gotchas found while testing:
+  - **`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars override the config.**
+    Anything that injects proxy env into an iron pod silently re-points its
+    egress. Kyverno already injects exactly these into every `haku-sandbox` pod.
+  - **`upstream_deny_cidrs` defaults block `127.0.0.0/8`**, so an upstream proxy
+    on loopback is refused by iron's own SSRF guard. A sidecar reached over the
+    pod IP is fine; same-container loopback is not.
+
+So the viable shape is **workload → iron (bump, substitute, allowlist) → Squid
+(bump again, cache) → origin**, with Squid in its ordinary bumping role and no
+`cache_peer` involved. Two-layer MITM, which is what makes it work.
+
+The cost is not free: Squid sits _after_ substitution, so it sees the real
+credentials in plaintext and would cache responses to authenticated requests.
+RFC 9111 already forbids caching those absent explicit opt-in, and both hops
+stay inside the cluster — but the credential is exposed to a second component,
+which is the property iron exists to protect.
+
+Note the ordering constraint is the opposite of what security would prefer:
+Squid-first would keep credentials away from the cache, and that is the order
+Squid cannot do.
 
 ## Options, ranked
 
