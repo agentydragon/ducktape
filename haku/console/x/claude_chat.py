@@ -11,7 +11,8 @@ import logging
 import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, Literal, Protocol, cast
+from enum import StrEnum
+from typing import Annotated, Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from claude_agent_sdk import (
@@ -32,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.chat_models import ENDED_SESSION_STATUSES, ChatMessageRole, ChatMessageStatus, ChatSessionStatus
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
@@ -45,10 +47,11 @@ internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
 
 
-SessionStatus = Literal["provisioning", "ready", "responding", "closing", "closed", "failed"]
-MessageRole = Literal["user", "assistant"]
-MessageStatus = Literal["pending", "streaming", "complete", "failed"]
-BridgeAuthentication = Literal["accepted", "terminal", "rejected"]
+class BridgeAuthentication(StrEnum):
+    ACCEPTED = "accepted"
+    # The session is already over, so the runner should stop rather than retry.
+    TERMINAL = "terminal"
+    REJECTED = "rejected"
 
 
 class ClaudeChatToolUseView(BaseModel):
@@ -63,8 +66,8 @@ class ClaudeChatMessageView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message_id: UUID
-    role: MessageRole
-    status: MessageStatus
+    role: ChatMessageRole
+    status: ChatMessageStatus
     content: str
     tool_uses: list[ClaudeChatToolUseView]
     error: str | None
@@ -72,9 +75,12 @@ class ClaudeChatMessageView(BaseModel):
     updated_at: datetime
 
 
-ProvisioningStep = Literal[
-    "claim_created", "waiting_for_sandbox", "waiting_for_pod", "waiting_for_pod_ready", "waiting_for_runner"
-]
+class ProvisioningStep(StrEnum):
+    CLAIM_CREATED = "claim_created"
+    WAITING_FOR_SANDBOX = "waiting_for_sandbox"
+    WAITING_FOR_POD = "waiting_for_pod"
+    WAITING_FOR_POD_READY = "waiting_for_pod_ready"
+    WAITING_FOR_RUNNER = "waiting_for_runner"
 
 
 class ClaudeSandboxProvisioningView(BaseModel):
@@ -102,7 +108,7 @@ class ClaudeChatSessionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    status: SessionStatus
+    status: ChatSessionStatus
     error: str | None
     created_at: datetime
     updated_at: datetime
@@ -207,7 +213,7 @@ class KubernetesSandboxClaims:
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
-                return _provisioning_view(claim_name, step="claim_created")
+                return _provisioning_view(claim_name, step=ProvisioningStep.CLAIM_CREATED)
             raise
 
         claim_condition = _condition(claim, "Ready")
@@ -217,7 +223,7 @@ class KubernetesSandboxClaims:
         if sandbox_name is None:
             return _provisioning_view(
                 claim_name,
-                step="waiting_for_sandbox",
+                step=ProvisioningStep.WAITING_FOR_SANDBOX,
                 claim_ready=_condition_bool(claim_condition),
                 claim_reason=claim_reason,
                 claim_message=claim_message,
@@ -231,7 +237,7 @@ class KubernetesSandboxClaims:
             if error.status == 404:
                 return _provisioning_view(
                     claim_name,
-                    step="waiting_for_sandbox",
+                    step=ProvisioningStep.WAITING_FOR_SANDBOX,
                     claim_ready=_condition_bool(claim_condition),
                     claim_reason=claim_reason,
                     claim_message=claim_message,
@@ -248,7 +254,7 @@ class KubernetesSandboxClaims:
             if error.status == 404:
                 return _provisioning_view(
                     claim_name,
-                    step="waiting_for_pod",
+                    step=ProvisioningStep.WAITING_FOR_POD,
                     claim_ready=_condition_bool(claim_condition),
                     claim_reason=claim_reason,
                     claim_message=claim_message,
@@ -261,7 +267,11 @@ class KubernetesSandboxClaims:
         pod_phase = pod.status.phase if pod.status is not None else None
         pod_ready = _pod_ready(pod)
         runner_ready, runner_state = _container_status(pod, "runner")
-        step: ProvisioningStep = "waiting_for_runner" if pod_ready and runner_ready else "waiting_for_pod_ready"
+        step = (
+            ProvisioningStep.WAITING_FOR_RUNNER
+            if pod_ready and runner_ready
+            else ProvisioningStep.WAITING_FOR_POD_READY
+        )
         return _provisioning_view(
             claim_name,
             step=step,
@@ -304,7 +314,7 @@ class ClaudeChatStore:
                 ClaudeChatSession(
                     session_id=session_id,
                     operator_id=operator_id,
-                    status="provisioning",
+                    status=ChatSessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
                     error=None,
@@ -340,22 +350,22 @@ class ClaudeChatStore:
         async with self._sessions.begin() as db:
             record = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if record is None or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token)):
-                return "rejected"
-            if record.status in {"closing", "closed", "failed"}:
-                return "terminal"
-            if record.status != "provisioning" or record.bridge_connected_at is not None:
-                return "rejected"
+                return BridgeAuthentication.REJECTED
+            if record.status in ENDED_SESSION_STATUSES:
+                return BridgeAuthentication.TERMINAL
+            if record.status != ChatSessionStatus.PROVISIONING or record.bridge_connected_at is not None:
+                return BridgeAuthentication.REJECTED
             record.bridge_connected_at = now
-            record.status = "ready"
+            record.status = ChatSessionStatus.READY
             record.updated_at = now
-            return "accepted"
+            return BridgeAuthentication.ACCEPTED
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
         """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
         async with self._sessions() as db:
             result = await db.scalars(
                 select(ClaudeChatSession.session_id).where(
-                    ClaudeChatSession.status.in_(("closing", "closed", "failed")),
+                    ClaudeChatSession.status.in_(ENDED_SESSION_STATUSES),
                     ClaudeChatSession.bridge_token_fingerprint != b"",
                 )
             )
@@ -367,8 +377,8 @@ class ClaudeChatStore:
             if chat is None:
                 return
             chat.bridge_token_fingerprint = b""
-            if chat.status == "closing":
-                chat.status = "closed"
+            if chat.status == ChatSessionStatus.CLOSING:
+                chat.status = ChatSessionStatus.CLOSED
             chat.updated_at = datetime.now(UTC)
 
     async def enqueue_prompt(self, operator_id: UUID, session_id: UUID, prompt_text: str) -> ClaudeChatMessageView:
@@ -381,11 +391,11 @@ class ClaudeChatStore:
             )
             if chat is None:
                 raise KeyError(session_id)
-            if chat.status != "ready":
+            if chat.status != ChatSessionStatus.READY:
                 raise RuntimeError(f"session is not ready (status={chat.status})")
             existing = await db.scalar(
                 select(ClaudeChatMessage).where(
-                    ClaudeChatMessage.session_id == session_id, ClaudeChatMessage.status == "pending"
+                    ClaudeChatMessage.session_id == session_id, ClaudeChatMessage.status == ChatMessageStatus.PENDING
                 )
             )
             if existing is not None:
@@ -393,8 +403,8 @@ class ClaudeChatStore:
             message = ClaudeChatMessage(
                 message_id=uuid4(),
                 session_id=session_id,
-                role="user",
-                status="pending",
+                role=ChatMessageRole.USER,
+                status=ChatMessageStatus.PENDING,
                 content=prompt_text,
                 tool_uses=[],
                 error=None,
@@ -402,7 +412,7 @@ class ClaudeChatStore:
                 updated_at=now,
             )
             db.add(message)
-            chat.status = "responding"
+            chat.status = ChatSessionStatus.RESPONDING
             chat.updated_at = now
             await notify(db, ChatEventKind.PROMPT, session_id)
             await notify(db, ChatEventKind.UPDATE, session_id)
@@ -411,14 +421,14 @@ class ClaudeChatStore:
     async def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
-            if chat is None or chat.status in {"closing", "closed", "failed"}:
+            if chat is None or chat.status in ENDED_SESSION_STATUSES:
                 return None
             message = await db.scalar(
                 select(ClaudeChatMessage)
                 .where(
                     ClaudeChatMessage.session_id == session_id,
-                    ClaudeChatMessage.role == "user",
-                    ClaudeChatMessage.status == "pending",
+                    ClaudeChatMessage.role == ChatMessageRole.USER,
+                    ClaudeChatMessage.status == ChatMessageStatus.PENDING,
                 )
                 .order_by(ClaudeChatMessage.created_at)
                 .with_for_update(skip_locked=True)
@@ -426,9 +436,9 @@ class ClaudeChatStore:
             if message is None:
                 return None
             now = datetime.now(UTC)
-            message.status = "complete"
+            message.status = ChatMessageStatus.COMPLETE
             message.updated_at = now
-            chat.status = "responding"
+            chat.status = ChatSessionStatus.RESPONDING
             chat.updated_at = now
             return message.message_id, message.content
 
@@ -440,8 +450,8 @@ class ClaudeChatStore:
                 ClaudeChatMessage(
                     message_id=message_id,
                     session_id=session_id,
-                    role="assistant",
-                    status="streaming",
+                    role=ChatMessageRole.ASSISTANT,
+                    status=ChatMessageStatus.STREAMING,
                     content="",
                     tool_uses=[],
                     error=None,
@@ -469,10 +479,10 @@ class ClaudeChatStore:
             message.content = content
             if tool_uses is not None:
                 message.tool_uses = tool_uses
-            message.status = "complete" if complete else "streaming"
+            message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
             message.updated_at = now
-            if chat.status not in {"closing", "closed", "failed"}:
-                chat.status = "responding"
+            if chat.status not in ENDED_SESSION_STATUSES:
+                chat.status = ChatSessionStatus.RESPONDING
             chat.updated_at = now
             await notify(db, ChatEventKind.UPDATE, session_id)
 
@@ -480,9 +490,9 @@ class ClaudeChatStore:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id)
-            if chat is None or chat.status in {"closing", "closed", "failed"}:
+            if chat is None or chat.status in ENDED_SESSION_STATUSES:
                 return
-            chat.status = "ready"
+            chat.status = ChatSessionStatus.READY
             chat.updated_at = now
             await notify(db, ChatEventKind.UPDATE, session_id)
 
@@ -496,15 +506,15 @@ class ClaudeChatStore:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id)
-            if chat is not None and chat.status not in {"closing", "closed"}:
-                chat.status = "failed"
+            if chat is not None and chat.status not in {ChatSessionStatus.CLOSING, ChatSessionStatus.CLOSED}:
+                chat.status = ChatSessionStatus.FAILED
                 chat.error = error
                 chat.updated_at = now
                 await notify(db, ChatEventKind.UPDATE, session_id)
             if message_id is not None:
                 message = await db.get(ClaudeChatMessage, message_id)
                 if message is not None:
-                    message.status = "failed"
+                    message.status = ChatMessageStatus.FAILED
                     message.error = error
                     message.updated_at = now
 
@@ -517,10 +527,10 @@ class ClaudeChatStore:
             )
             if chat is None:
                 raise KeyError(session_id)
-            chat.status = "closing"
+            chat.status = ChatSessionStatus.CLOSING
             chat.updated_at = datetime.now(UTC)
 
-    async def status(self, session_id: UUID) -> str | None:
+    async def status(self, session_id: UUID) -> ChatSessionStatus | None:
         async with self._sessions() as db:
             chat = await db.get(ClaudeChatSession, session_id)
             return chat.status if chat is not None else None
@@ -528,8 +538,8 @@ class ClaudeChatStore:
     async def closed(self, session_id: UUID) -> None:
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id)
-            if chat is not None and chat.status != "failed":
-                chat.status = "closed"
+            if chat is not None and chat.status != ChatSessionStatus.FAILED:
+                chat.status = ChatSessionStatus.CLOSED
                 chat.updated_at = datetime.now(UTC)
                 await notify(db, ChatEventKind.UPDATE, session_id)
 
@@ -554,7 +564,7 @@ class ClaudeChatStore:
         """
         async with self._sessions.begin() as db:
             status = await db.scalar(select(ClaudeChatSession.status).where(ClaudeChatSession.session_id == session_id))
-            if status != "responding":
+            if status != ChatSessionStatus.RESPONDING:
                 return False
             await notify(db, ChatEventKind.ABORT, session_id)
             return True
@@ -623,13 +633,13 @@ class ClaudeChatService:
         return await self._with_provisioning(view)
 
     async def _with_provisioning(self, view: ClaudeChatSessionView) -> ClaudeChatSessionView:
-        if view.status != "provisioning":
+        if view.status != ChatSessionStatus.PROVISIONING:
             return view
         try:
             provisioning = await self._claims.inspect(session_id=view.session_id)
         except Exception as error:
             provisioning = _provisioning_view(
-                f"claude-{view.session_id.hex}", step="claim_created", observation_error=str(error)
+                f"claude-{view.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
             )
         return view.model_copy(update={"provisioning": provisioning})
 
@@ -658,11 +668,11 @@ class ClaudeChatService:
 
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
-        if authentication == "terminal":
+        if authentication == BridgeAuthentication.TERMINAL:
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1008, reason="runner session is already terminal")
             return
-        if authentication == "rejected":
+        if authentication == BridgeAuthentication.REJECTED:
             await websocket.close(code=1008, reason="invalid or consumed runner credential")
             return
         await websocket.accept()
@@ -693,7 +703,7 @@ class ClaudeChatService:
             await client.connect()
             while True:
                 status = await self._store.status(session_id)
-                if status in {None, "closing", "closed", "failed"}:
+                if status is None or status in ENDED_SESSION_STATUSES:
                     break
                 prompt = await self._store.next_prompt(session_id)
                 if prompt is None:
@@ -863,8 +873,8 @@ def _text_delta(event: dict[str, Any]) -> str:
 def _message_view(message: ClaudeChatMessage) -> ClaudeChatMessageView:
     return ClaudeChatMessageView(
         message_id=message.message_id,
-        role=cast(MessageRole, message.role),
-        status=cast(MessageStatus, message.status),
+        role=message.role,
+        status=message.status,
         content=message.content,
         tool_uses=[ClaudeChatToolUseView.model_validate(tool_use) for tool_use in message.tool_uses],
         error=message.error,
@@ -876,7 +886,7 @@ def _message_view(message: ClaudeChatMessage) -> ClaudeChatMessageView:
 def _session_view(record: ClaudeChatSession, messages: list[ClaudeChatMessage]) -> ClaudeChatSessionView:
     return ClaudeChatSessionView(
         session_id=record.session_id,
-        status=cast(SessionStatus, record.status),
+        status=record.status,
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -1017,7 +1027,7 @@ async def _sse_stream(
         return
     yield f"data: {last_view.model_dump_json()}\n\n"
     while True:
-        if last_view.status in {"closed", "failed"}:
+        if last_view.status in {ChatSessionStatus.CLOSED, ChatSessionStatus.FAILED}:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
         await notifications.wait(ChatEventKind.UPDATE, session_id, timeout_seconds=30.0)

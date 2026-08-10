@@ -16,10 +16,11 @@ from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUse
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatSession
 from haku.console.x.chat_notifications import ChatEventKind
-from haku.console.x.claude_chat import ClaudeChatStore, KubernetesSandboxClaims, _text_delta
+from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatStore, KubernetesSandboxClaims, _text_delta
 from haku.console.x.conftest import runtime_config
 
 
@@ -207,19 +208,19 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
     view, token = await chat_store.create(operator_id)
     session_id = view.session_id
 
-    assert await chat_store.authenticate_bridge(session_id, token) == "accepted"
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     async with migrated_sessions() as db:
         record = await db.get(ClaudeChatSession, session_id)
         assert record is not None
-        assert record.status == "ready"
+        assert record.status == ChatSessionStatus.READY
         assert record.bridge_connected_at is not None
         # Retain only the hash until claim deletion completes. It lets terminal retries prove that
         # they belong to the stale claim without retaining or recovering the bearer itself.
         assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
 
     await chat_store.fail(session_id, "runner failed")
-    assert await chat_store.authenticate_bridge(session_id, token) == "terminal"
-    assert await chat_store.authenticate_bridge(session_id, "wrong") == "rejected"
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.TERMINAL
+    assert await chat_store.authenticate_bridge(session_id, "wrong") == BridgeAuthentication.REJECTED
 
 
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
@@ -230,12 +231,12 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.fail(view.session_id, "sandbox runner disconnected")
     closing = await chat_store.get(operator_id, view.session_id)
-    assert closing.status == "closing"
+    assert closing.status == ChatSessionStatus.CLOSING
     assert closing.error is None
 
     await chat_store.complete_claim_cleanup(view.session_id)
     closed = await chat_store.get(operator_id, view.session_id)
-    assert closed.status == "closed"
+    assert closed.status == ChatSessionStatus.CLOSED
     async with migrated_sessions() as db:
         record = await db.get(ClaudeChatSession, view.session_id)
         assert record is not None
@@ -270,22 +271,24 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 ) -> None:
     """A tool-use block and the text after it are two messages, not one merged row."""
     view, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == "accepted"
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     await chat_service._run_turn(
         cast(Any, _ToolUseClaudeClient()), view.session_id, "Check the Haku MCP catalog", abort_event=asyncio.Event()
     )
 
-    messages = [m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
+    messages = [
+        m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == ChatMessageRole.ASSISTANT
+    ]
     assert [(m.content, [u.model_dump() for u in m.tool_uses], m.status) for m in messages] == [
         (
             "",
             [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}],
-            "complete",
+            ChatMessageStatus.COMPLETE,
         ),
-        ("The Haku Console catalog is available.", [], "complete"),
+        ("The Haku Console catalog is available.", [], ChatMessageStatus.COMPLETE),
     ]
-    assert await chat_store.status(view.session_id) == "ready", "the turn was not completed"
+    assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, "the turn was not completed"
 
 
 class _LifecycleWebSocket:
@@ -347,7 +350,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert websocket.accepted is True
     assert websocket.closed is None
     assert recording_claims.deleted == [session_id]
-    assert await chat_store.status(session_id) == "closed"
+    assert await chat_store.status(session_id) == ChatSessionStatus.CLOSED
     # Cleanup is recorded by clearing the hashed rendezvous credential, which is what takes the
     # session back out of the reconciler's candidate set.
     assert await chat_store.claim_cleanup_candidates() == []
@@ -378,7 +381,7 @@ async def test_terminal_runner_retry_deletes_its_stale_claim(
 
     assert recording_claims.deleted == [session.session_id]
     assert await chat_store.claim_cleanup_candidates() == []
-    assert await chat_store.status(session.session_id) == "closed"
+    assert await chat_store.status(session.session_id) == ChatSessionStatus.CLOSED
     assert websocket.closed == (1008, "runner session is already terminal")
 
 
@@ -446,23 +449,27 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
         try:
             # Long enough to reach the idle wait, which is where the crash used to happen.
             await asyncio.sleep(2)
-            assert await chat_store.status(view.session_id) == "ready", "the runner failed while waiting for a prompt"
+            assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, (
+                "the runner failed while waiting for a prompt"
+            )
 
             # And the wait must actually wake on NOTIFY rather than only time out. A bounded
             # poll rather than an Event: the thing under test is the runner's own wake, so the
             # test must observe it from outside instead of being handed a signal by it.
             await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
             for _ in range(75):
-                if await chat_store.status(view.session_id) == "ready":
+                if await chat_store.status(view.session_id) == ChatSessionStatus.READY:
                     break
                 await asyncio.sleep(0.2)
-            assert await chat_store.status(view.session_id) == "ready", "the turn never completed"
+            assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, "the turn never completed"
         finally:
             runner.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await runner
 
-    [answer] = [m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
+    [answer] = [
+        m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == ChatMessageRole.ASSISTANT
+    ]
     assert answer.content == "pong"
 
 
@@ -476,7 +483,7 @@ async def test_abort_is_refused_when_no_turn_is_in_flight(chat_store, operator_i
     view, token = await chat_store.create(operator_id)
     # The bridge handshake is what takes a session from provisioning to ready, and only a
     # ready session accepts a prompt.
-    assert await chat_store.authenticate_bridge(view.session_id, token) == "accepted"
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     assert await chat_store.request_abort(view.session_id) is False
 
@@ -496,7 +503,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     change removes.
     """
     view, token = await chat_store.create(operator_id)
-    assert await chat_store.authenticate_bridge(view.session_id, token) == "accepted"
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)

@@ -103,6 +103,7 @@ py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
+        ":chat_models",
         ":node_daemon_models",
         ":operator_identity",
         ":provider_connection_registry",
@@ -111,6 +112,11 @@ py_library(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "chat_models",
+    srcs = ["chat_models.py"],
 )
 
 py_library(

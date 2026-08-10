@@ -27,6 +27,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatSessionStatus
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -41,7 +42,6 @@ _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 
 # A session is worth keeping while it is in one of these; anything else (including a
 # missing row) means the room has no working sandbox behind it.
-LIVE_STATUSES = frozenset({"provisioning", "ready", "responding"})
 
 SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
 # How long a replica that lost the election waits before contending again.
@@ -131,7 +131,7 @@ class MatrixTurns:
         if conversation is None or conversation.session_id is None:
             logger.info("Matrix: no session bound yet, holding %d message(s)", len(messages))
             return False
-        if (status := await self._chat_store.status(conversation.session_id)) != "ready":
+        if (status := await self._chat_store.status(conversation.session_id)) != ChatSessionStatus.READY:
             logger.info(
                 "Matrix: session %s is %s, holding %d message(s)", conversation.session_id, status, len(messages)
             )
@@ -231,7 +231,7 @@ class MatrixSessionSupervisor:
             return  # No room yet — nothing to serve, and nowhere to say so.
 
         status = await self._chat_store.status(conversation.session_id) if conversation.session_id is not None else None
-        if status in LIVE_STATUSES:
+        if status in LIVE_SESSION_STATUSES:
             await self._report(str(status), f"session {conversation.session_id} is {status}")
             return
 
@@ -246,7 +246,7 @@ class MatrixSessionSupervisor:
 
         session = await self._chat.create(await self._operator_id())
         await self._conversations.set_session(self._config.user_id, session.session_id)
-        self._last_announced = "provisioning"
+        self._last_announced = ChatSessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
         logger.info("Matrix: provisioned session %s for room %s", session.session_id, conversation.room_id)
 

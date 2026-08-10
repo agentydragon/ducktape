@@ -9,9 +9,10 @@ import pytest
 import pytest_bazel
 from sqlalchemy import delete
 
+from haku.console.chat_models import ChatSessionStatus
 from haku.console.database_schema import ClaudeChatSession
 from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
+from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor
 
@@ -71,7 +72,7 @@ async def test_provisions_a_session_for_a_freshly_bound_room(
 
     [session_id] = recording_claims.created
     assert await bound_session(conversations) == session_id
-    assert await chat_store.status(session_id) == "provisioning"
+    assert await chat_store.status(session_id) == ChatSessionStatus.PROVISIONING
     assert "provisioning a sandbox" in announced[0]
 
 
@@ -133,7 +134,10 @@ async def test_does_not_repeat_an_unchanged_status(
     await supervisor.supervise_once()
     [session_id] = recording_claims.created
     # Provisioning already announced itself; the runner connecting is the next transition.
-    assert await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id]) == "accepted"
+    assert (
+        await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+        == BridgeAuthentication.ACCEPTED
+    )
     announced.clear()
 
     await supervisor.supervise_once()
