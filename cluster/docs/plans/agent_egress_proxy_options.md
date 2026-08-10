@@ -811,6 +811,81 @@ allowlist above never consults the helper. `BH` is the honest signal for "helper
 broken" and should be distinguished from a genuine deny in the audit, otherwise
 an outage looks like a policy decision.
 
+### Target behaviour (operator, eventually)
+
+1. **Depend on haku-console; deny if it is down.** The console is the policy
+   authority, not an optimisation.
+2. **Bounded wait**: the helper gives the console a configured time; an answer
+   inside that window is honoured, otherwise deny.
+3. **haku-console maintains time-boxed, agent-scoped decisions.**
+
+This supersedes the "static allowlist short-circuits so the console is never a
+hard dependency" suggestion above. It is a coherent fail-closed posture; the
+consequences below are what it costs.
+
+#### Squid's TTL becomes the polling interval, not the time box
+
+The helper **cannot** return a per-response `ttl=`. The response keywords are
+`user=`, `password=`, `message=`, `tag=`, `log=` and `clt_conn_tag=`; TTL is
+configured statically on the `external_acl_type` line. So a console decision
+that expires at some specific time cannot be expressed to Squid directly.
+
+The mapping that does work: **Squid's `ttl=` is how often it re-asks; the console
+owns the real expiry.** With `ttl=300`, Squid re-consults at most every five
+minutes and the console applies its own time-boxing on each query, so effective
+revocation latency is one Squid TTL. Shorter TTL = finer time-boxing and more
+console load; longer = coarser and more outage tolerance.
+
+`grace=` helps here — "percentage remaining of TTL where a refresh of a cached
+entry should be initiated" — so entries refresh in the background before they
+expire and requests do not block on revalidation.
+
+#### Console downtime is bounded by that same TTL
+
+Fail-closed does not mean instant outage: cached allows keep working until they
+expire. With `ttl=300`, a console outage degrades over ~5 minutes rather than
+immediately. That is the knob that trades revocation latency against outage
+tolerance, and it should be chosen deliberately rather than defaulted.
+
+#### The circular dependency to avoid
+
+Haku reaches the console at `haku.allegedly.works` **through this proxy**. If the
+gate can deny that host, then a console outage — or a bad policy entry — leaves
+the agent unable to reach the console that would fix it.
+
+**The console's own host must be statically allowed, ahead of the gate**, as
+break-glass. The same probably applies to whatever the agent needs to be useful
+during an incident. That is a small deliberate exception to "everything goes
+through the console", not a retreat from it.
+
+#### Return `ERR`, not `BH`, when the console is unreachable
+
+Squid documents `BH` as "an internal error occurred in the helper" but does not
+specify how it treats `BH` versus `ERR` operationally. Since the requirement is
+a deterministic deny, the helper should return `ERR` for both "console said no"
+and "console unreachable", and distinguish them with `log=` so the audit can
+tell a policy decision from an outage. Do not rely on `BH` semantics for a
+security outcome.
+
+#### Use `message=` to tell the agent why
+
+`message=` is surfaced in the error response, so a denial can carry
+`message="pending operator approval"` rather than an opaque 403. That turns
+deny-now/allow-on-retry into something an agent can act on deliberately —
+retry later versus give up — instead of guessing.
+
+#### Agent-scoped decisions make the cache-key question go away
+
+An earlier subsection frames `%SRC %DST` keying as a problem because a new
+sandbox pod re-prompts. With the console as a durable policy store that is no
+longer true: a cache miss costs an **RPC, not a human interaction**. The console
+answers a known (agent, host) pair instantly from its table.
+
+What does need solving is that `%SRC` is a pod IP, which is ephemeral, while
+"agent-scoped" implies a stable identity. The helper should map IP → pod → a
+stable owner label via the Kubernetes API and send _that_ to the console, so
+decisions survive pod churn.
+
 ### The simpler alternative, if the live hook is too much
 
 haku-console could instead **own `allowed-domains.txt`**, writing approved
