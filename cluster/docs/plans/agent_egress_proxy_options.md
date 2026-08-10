@@ -104,55 +104,81 @@ sharing one cache across every fence amortises it while each iron keeps its own
 credential set and host list. It also gives row 1 a path to an L7 allowlist and
 caching at once, which is what started this.
 
-### Keep credentials out of the shared cache with `no_proxy`
+### Decided: secrets may transit the shared cache
 
-A _central_ cache behind every iron would see post-substitution credentials from
-**all** fences — aggregating in one component exactly what the separate
-listeners and per-proxy CNPs exist to separate. That component would become the
-highest-value target in the egress path.
+A central cache behind every iron sees post-substitution credentials from **all**
+fences, aggregating in one component what the separate listeners and per-proxy
+CNPs otherwise keep apart. **The operator accepts this (2026-08-10)** — the cache
+is reviewed in-cluster infrastructure and trusted for that role.
 
-The fix is a documented field on the key verified above:
+That is a real simplification, and it is what makes the decision hook work at
+all (below). The alternative, kept here in case the posture changes, is
+`upstream_proxy.no_proxy`: point each iron's bypass list at exactly the hosts
+where it substitutes a credential, so the shared cache only ever handles
+anonymous artifact traffic.
 
 ```yaml
 proxy:
   upstream_proxy:
     https_proxy: "http://egress-cache:3128"
-    # Hosts where THIS iron substitutes a credential bypass the cache entirely.
-    no_proxy: "api.anthropic.com,forgejo-http.forgejo,api.github.com,github.com,kubeapi.allegedly.works,haku.allegedly.works"
+    no_proxy: "api.anthropic.com,api.github.com,forgejo-http.forgejo" # if ever wanted
 ```
 
-Each iron routes only its credential-free traffic through the shared cache and
-dials credentialed hosts directly. Nothing is lost: RFC 9111 already forbids
-caching responses to authenticated requests, so those hosts were never going to
-produce hits. The cache then only ever handles anonymous artifact traffic
-(PyPI, npm, Bazel, nixos, codeload), which is both the cacheable set and the
-harmless set.
+Nothing would be lost by that bypass — RFC 9111 forbids caching responses to
+authenticated requests, so those hosts produce no hits either way.
 
-Rule of thumb: **a host belongs in `no_proxy` exactly when it appears in that
-iron's `secrets` transform.** Worth pinning with a test, the same way
-`test_egress_allowlists` pins the host lists — the two lists must not drift.
+### Transit is trusted; storage should still be denied
 
-### Unresolved: the hook and the cache want different homes
+Accepting a credential **in transit** is not the same as accepting it **at
+rest**, and the second is avoidable at zero cost. Squid must not write
+authenticated responses to its cache directory, where they would outlive the
+request and survive a pod restart.
 
-Requirement 4 pulls the opposite way. Squid's `external_acl_type` is the only
-mechanism here that can hold a request for a human and cache the verdict — but
-if credentialed traffic bypasses the cache via `no_proxy`, the hook at the cache
-never sees those domains, and they are the interesting ones to gate.
+RFC 9111 already forbids it by default, so this is about not accidentally
+overriding it:
 
-So the gate wants to be in iron (which already owns the per-fence allowlist),
-and iron's only decision hook is `judge`: LLM-provider-only, `8s` timeout,
-deny-on-timeout, no deferral. That cannot wait for an operator.
+- Do not add `ignore-auth`, `ignore-no-store`, `ignore-private`, or
+  `override-expire` to any `refresh_pattern`. Those are the exact knobs that
+  turn "sees the secret" into "stores the response".
+- Prefer `cache deny` for the credentialed hosts explicitly, rather than relying
+  on origin headers being correct.
+- Consider memory-only (`cache_mem` with no `cache_dir`) for the first
+  iteration. It costs hit rate across restarts and removes on-disk persistence
+  of anything.
 
-Three ways out, none free, decide before building:
+Worth an explicit test, since a wrong `refresh_pattern` fails silently and looks
+like a cache-tuning win.
 
-1. **Ask upstream for a generic decision hook** in iron — a webhook transform
-   with a long timeout and verdict caching. Same conversation as the caching ask.
-2. **Put the gate at the cache and accept its blind spot** — gate only
-   cache-routed (credential-free) traffic, and rely on the static `allowlist`
-   for credentialed hosts, which are few and rarely change.
-3. **Fail closed and decide out-of-band** — `judge` denies unknown domains fast,
-   and the operator approves by editing the allowlist, which is a config change
-   rather than a request-time hold. Least elegant, available today.
+### Requirement 4 lands at the cache, and the decision above is what allows it
+
+With every fence's traffic transiting the shared cache — credentialed included —
+one `external_acl_type` helper there sees **every** domain access attempt in the
+cluster. That is the whole requirement, at a single gate point, using the only
+mechanism surveyed that can both hold a request for a human and remember the
+answer:
+
+- the helper answers `OK` / `ERR` / `BH` and may take as long as it needs;
+- Squid caches the verdict via `ttl=` (default 3600s) and `negative_ttl=`, so an
+  operator is asked once per domain, not once per request;
+- `concurrency=n` keeps one helper serving interleaved queries.
+
+Had credentialed traffic bypassed the cache, this hook would have been blind to
+exactly the domains most worth gating, and the gate would have had to live in
+iron — whose only decision hook is `judge`: LLM-provider-only, `8s` timeout,
+deny-on-timeout, no deferral, and therefore unable to wait for a human. So the
+trust decision above is load-bearing for this feature, not merely a
+simplification.
+
+Implementation is then mostly wiring, because **haku-console already has the
+hard half**: its MCP tool-call approval queue is these semantics exactly —
+synchronous wait, `pending_approval` stub, later approve/deny, execute if
+approved. The helper is a Python process that turns a Squid ACL query into a
+console approval request. Domain gating becomes a new caller of an existing
+mechanism.
+
+Copy the UX from Claude Code's own sandbox: prompt on first access to a new
+host, allow for the session, with a pre-approved list and a strict-deny mode so
+neither prompting nor blocking is mandatory.
 
 ## Options, ranked
 
