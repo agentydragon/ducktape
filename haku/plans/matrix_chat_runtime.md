@@ -384,11 +384,19 @@ a system that already works end to end.
   from Element.
 
 That proves the credential, the sync loop, the watermark, and the outbound send path with
-no Agent SDK anywhere near it. Three things it does **not** prove, all cheap to check
-against the running system and worth doing before they are load-bearing: that exactly one
-of the two console replicas holds the sync lock, that a message sent during a restart is
-answered afterwards, and that a gap too large for one sync response is still recovered
-whole (both R1.7).
+no Agent SDK anywhere near it.
+
+**Downtime recovery and single-leader are verified together.** Scale the console to zero,
+send three messages from Element, scale back to two: all three come back, in order, once.
+The echo is the whole proof — with the console down there is no live delivery path, so a
+message can only arrive through the resumed watermark, and a lost watermark produces
+silence rather than a replay (R1.7a). Three echoes rather than six is the leader election:
+both replicas start on scale-up and contend, and a double-take would double every reply.
+
+What Phase 0 still does **not** prove is a gap too large for one sync response to carry
+(R1.7's gotcha). That needs more messages in the gap than the timeline limit, so it wants a
+deliberate one-off rather than a manual test; the unit tests cover the ordering and
+termination, not whether Synapse honors the pagination boundary as assumed.
 
 The code lives under `haku/console/x/` — experimental, no stable API. Three pieces
 necessarily sit outside it because the stable modules own them: `MatrixConfig` on
