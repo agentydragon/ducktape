@@ -461,6 +461,65 @@ That makes the choice narrower than "pick the best tool": either teach the
 MITM-capable Go proxy to cache (B), or teach the caching MITM proxy to
 substitute (E). No third product is waiting to be found.
 
+## Routes, and what gates each
+
+Three end-states are reachable. Each satisfies the four requirements to a
+different degree, and each is gated on something cheap that has not been done
+yet — so **the next step is an experiment, not a build**.
+
+|                               | 1. Cache     | 2. Substitution | 3. Allowlist | 4. Console hook | Identity at the gate |
+| ----------------------------- | ------------ | --------------- | ------------ | --------------- | -------------------- |
+| **R1** iron → central Squid   | ✅ shared    | ✅ full         | ✅           | ⚠️ at Squid     | ⚠️ fence-level only  |
+| **R2** Squid alone, per fence | ✅ per fence | ⚠️ spike        | ✅           | ✅              | ✅ native `%>a`      |
+| **R3** iron alone, per fence  | ⚠️ build     | ✅ full         | ✅           | ⚠️ upstream     | ⚠️ upstream          |
+
+**R1 — two layers, buildable now.** iron keeps substitution and allowlisting;
+one shared Squid behind it caches. Needs no new code: `upstream_proxy` is
+verified working, and the only missing artifact is an OpenSSL-built Squid image.
+Weakest on requirement 4 — the hook sees which fence, not which workload.
+
+**R2 — one layer, everything in Squid.** Collapses the stack, and uniquely gets
+unforgeable caller identity for free (format codes in `request_header_add`).
+Gated on the `ssl_bump` spike. Costs iron's structured audit and secret
+backends, and gives each fence its own cache.
+
+**R3 — one layer, everything in iron.** Keeps every property currently liked,
+and Valkey is already available as a Souin backend. Gated on upstream appetite
+for two features (RFC 9111 caching, a generic decision hook with caller
+identity) or on carrying a fork — which is less exotic here than elsewhere,
+since a commit-pinned build is already maintained.
+
+**Identity is separable.** Per-agent iron _sidecars_ make the pod IP the
+identity and fix requirement 4 for R1 or R3 without any upstream change. Costs a
+proxy per agent pod; gives per-agent credential scoping as a bonus.
+
+### The two experiments that decide it
+
+Both are ~a day, independent, and can run before committing to anything:
+
+1. **The Squid spike** — build an OpenSSL Squid image (same
+   `cluster/images/` + GitHub Actions pattern as iron), then answer: do
+   `request_header_access` / `request_header_add` apply to `ssl_bump`-decrypted
+   requests, and does the `add` ACL still match after `access` denied the
+   header? **Yes → R2 is live and probably wins.** No → R2 is dead and the
+   choice is R1 versus R3.
+2. **The upstream conversation** — one iron issue covering caching, a generic
+   decision hook, and forwarded caller identity. **Receptive → R3.** Silence →
+   R3 means a fork.
+
+Measuring the actual cache hit rate (via `annotate` + the existing OTLP audit
+export) is worth doing alongside, since caching is the secondary requirement and
+some heavy traffic redirects to signed CDN URLs that will not cache at all.
+
+### What does not depend on any of this
+
+The gap that started this thread — `haku-sandbox` and `haku-ci` having **no L7
+allowlist**, only the Cilium `toFQDNs` layer — is real but not urgent, and it is
+already the standing TODO in `test_egress_allowlists`: _"enforce at two layers,
+not one."_ Every route above ends with row 1 behind a proxy that has an L7
+allowlist, so closing it early only risks moving it twice. Worth doing now only
+if the single-layer posture is judged unacceptable before the routes resolve.
+
 ## Options, ranked
 
 **A. Squid + an ICAP service for substitution.** Squid natively covers 1, 3 and
