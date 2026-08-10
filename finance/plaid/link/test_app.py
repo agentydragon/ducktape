@@ -170,7 +170,7 @@ def test_static_assets_are_served_with_their_own_content_types() -> None:
     assert css.headers["content-type"].startswith("text/css")
     assert js.headers["content-type"].startswith("text/javascript")
     # The per-link row actions are rendered by the script, not present in the served HTML.
-    for action in ("Add scopes", "Repair", "Sync", "Remove"):
+    for action in ("Repair link", "Sync data", "Remove link"):
         assert action in js.text
 
 
@@ -197,6 +197,9 @@ def test_list_links_exposes_product_and_secret_state() -> None:
             "status": "active",
             "access_token_secret": "plaid-item-123-access-token",
             "last_synced_at": "2026-05-31T12:00:00+00:00",
+            # Chase offers transactions + liabilities of what this app syncs; the Item is authorized
+            # for transactions only, so liabilities is the one thing "Add ..." could still request.
+            "addable_products": ["liabilities"],
         }
     ]
 
@@ -221,7 +224,13 @@ def test_web_config_exposes_default_history_depth() -> None:
         response = client.get("/api/config")
 
     assert response.status_code == 200
-    assert response.json() == {"transaction_days": 730, "max_transaction_days": 730}
+    # The form renders one checkbox per entry, so this list is the single source for the control
+    # set -- a Product missing here is a product the UI can never request.
+    assert response.json() == {
+        "transaction_days": 730,
+        "max_transaction_days": 730,
+        "products": ["transactions", "investments", "liabilities"],
+    }
 
 
 def test_institution_search_returns_typeahead_candidates() -> None:
@@ -248,23 +257,22 @@ def test_institution_products_split_into_syncable_and_merely_offered() -> None:
     }
 
 
-def test_link_token_is_pinned_to_the_chosen_institution() -> None:
-    """Link would otherwise show its own institution picker, and a token minted for one bank's
-    products could be spent on another."""
+def test_link_token_never_pins_an_institution() -> None:
+    """`institution_id` is not a documented request field for /link/token/create -- the generated
+    SDK model carries the attribute, but Plaid answers INVALID_INSTITUTION. The typeahead decides
+    which products to request; Link picks the institution."""
     api = _FakePlaidApi()
     with _client(api=api) as client:
-        response = client.post(
-            "/api/link-token", json={"institution_id": "ins_3", "products": ["transactions", "liabilities"]}
-        )
+        response = client.post("/api/link-token", json={"products": ["transactions", "liabilities"]})
 
     assert response.status_code == 200
-    assert api.link_token_requests[0]["institution_id"] == "ins_3"
+    assert "institution_id" not in api.link_token_requests[0]
     assert api.link_token_requests[0]["products"] == ["transactions", "liabilities"]
 
 
 def test_link_token_rejects_an_empty_product_set() -> None:
     with _client() as client:
-        response = client.post("/api/link-token", json={"institution_id": "ins_3", "products": []})
+        response = client.post("/api/link-token", json={"products": []})
 
     assert response.status_code == 422
 

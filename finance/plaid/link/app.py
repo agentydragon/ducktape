@@ -7,7 +7,7 @@ import logging
 import re
 import sys
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Annotated, Literal, Protocol
 from uuid import UUID
@@ -34,6 +34,11 @@ from finance.plaid.db.sync import PlaidApiLike, sync_link
 
 logger = logging.getLogger(__name__)
 
+# Institution product lists change on the order of months, and /api/links is re-fetched after every
+# action -- without this the list view would hit Plaid once per link per refresh.
+_INSTITUTION_TTL = timedelta(hours=6)
+_institution_cache: dict[str, tuple[datetime, InstitutionDetail]] = {}
+
 # The Link UI is HTML, CSS and JS, and gets prettier, editor syntax highlighting and diffs that
 # mean something only while it lives in files with those extensions. Read once at import; these
 # are static assets, not templates.
@@ -48,7 +53,6 @@ _LINK_JS = _ASSETS.joinpath("link.js").read_text("utf-8")
 
 
 class LinkTokenRequest(BaseModel):
-    institution_id: str
     products: list[Product] = Field(min_length=1)
     transaction_days_requested: int | None = Field(default=None, ge=1, le=MAX_TRANSACTION_DAYS)
 
@@ -62,6 +66,9 @@ class LinkTokenResponse(BaseModel):
 class WebConfigResponse(BaseModel):
     transaction_days: int
     max_transaction_days: int = MAX_TRANSACTION_DAYS
+    # Every product this app can sync. The UI renders one checkbox per entry and never invents its
+    # own list, so a new Product cannot ship with the form silently unaware of it.
+    products: list[Product] = Field(default_factory=lambda: list(Product))
 
 
 class InstitutionSearchResult(BaseModel):
@@ -125,6 +132,11 @@ class LinkSummary(BaseModel):
     status: str
     access_token_secret: str
     last_synced_at: str | None
+    # Products this link's institution offers, this app can sync, and the Item is not already
+    # authorized for -- what "Add ..." would actually request. `None` means the institution lookup
+    # failed, which is distinct from "nothing to add": the button is hidden either way, but only
+    # one of them is a problem.
+    addable_products: list[Product] | None
 
 
 class PlaidWebClient(PlaidApiLike, Protocol):
@@ -137,7 +149,6 @@ class PlaidWebClient(PlaidApiLike, Protocol):
         products: list[str],
         redirect_uri: str,
         client_user_id: str,
-        institution_id: str | None = None,
         transaction_days_requested: int = 730,
         client_name: str = "Plaid MCP",
     ) -> LinkTokenResult: ...
@@ -249,14 +260,17 @@ def create_app(
 
     @app.get("/api/links")
     async def list_links() -> list[LinkSummary]:
-        return [_link_summary(link) for link in await require_storage().list_active_links()]
+        client = require_client()
+        return [
+            _link_summary(link, _addable_products(client, link)) for link in await require_storage().list_active_links()
+        ]
 
     @app.get("/api/links/{item_id}")
     async def get_link_state(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> LinkSummary:
         link = await require_storage().get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        return _link_summary(link)
+        return _link_summary(link, _addable_products(require_client(), link))
 
     @app.get("/api/config")
     async def web_config() -> WebConfigResponse:
@@ -294,7 +308,6 @@ def create_app(
         try:
             result = require_client().create_link_token(
                 products=[product.value for product in body.products],
-                institution_id=body.institution_id,
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
                 transaction_days_requested=body.transaction_days_requested or settings.transaction_days,
@@ -339,7 +352,7 @@ def create_app(
         updated = await require_storage().get_link(exchange.item_id)
         if updated is None:
             raise RuntimeError("newly inserted Plaid link disappeared")
-        return _link_summary(updated)
+        return _link_summary(updated, _addable_products(require_client(), updated))
 
     @app.post("/api/links/{item_id}/update-link-token")
     async def create_update_link_token(
@@ -382,7 +395,7 @@ def create_app(
             refreshed = await require_storage().get_link(item_id)
             if refreshed is not None:
                 link = refreshed
-        return _link_summary(link)
+        return _link_summary(link, _addable_products(require_client(), link))
 
     @app.post("/api/links/{item_id}/sync")
     async def sync_existing_link(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> SyncResponse:
@@ -448,7 +461,35 @@ def _merge_products(*groups: list[str]) -> list[str]:
     return merged
 
 
-def _link_summary(link: StoredLink) -> LinkSummary:
+def _cached_institution(client: PlaidWebClient, institution_id: str) -> InstitutionDetail | None:
+    now = datetime.now(UTC)
+    if (hit := _institution_cache.get(institution_id)) is not None and now - hit[0] < _INSTITUTION_TTL:
+        return hit[1]
+    try:
+        detail = client.get_institution(institution_id)
+    except PlaidClientError:
+        # The links list is also the repair surface, so it has to render when Plaid is unreachable.
+        logger.warning("institution lookup failed for %s; hiding its add-products button", institution_id)
+        return None
+    _institution_cache[institution_id] = (now, detail)
+    return detail
+
+
+def _addable_products(client: PlaidWebClient, link: StoredLink) -> list[Product] | None:
+    """Products the UI could still add to this link, or None if that can't be determined.
+
+    Diffed against products_authorized, matching what /update-link-token actually sends as
+    `additional_consented_products` -- so the button's label cannot promise more than the request.
+    """
+    if link.institution_id is None:
+        return None
+    institution = _cached_institution(client, link.institution_id)
+    if institution is None:
+        return None
+    return [p for p in syncable_products(institution.products) if p.value not in link.products_authorized]
+
+
+def _link_summary(link: StoredLink, addable: list[Product] | None) -> LinkSummary:
     observed_days = None
     if link.earliest_transaction_date is not None:
         observed_days = (datetime.now(UTC).date() - link.earliest_transaction_date).days
@@ -472,6 +513,7 @@ def _link_summary(link: StoredLink) -> LinkSummary:
         status=link.status,
         access_token_secret=link.access_token_secret,
         last_synced_at=link.last_synced_at.isoformat() if link.last_synced_at else None,
+        addable_products=addable,
     )
 
 

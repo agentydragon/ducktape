@@ -80,14 +80,15 @@ button:disabled {
   opacity: 0.6;
   cursor: wait;
 }
-.advanced {
-  display: none;
+.checks {
+  display: grid;
   grid-column: 1 / -1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
-.advanced.visible {
-  display: grid;
+.check input:disabled + span,
+.check:has(input:disabled) {
+  opacity: 0.5;
 }
 .typeahead-wrap {
   position: relative;
@@ -202,7 +203,7 @@ th {
   form {
     grid-template-columns: 1fr;
   }
-  .advanced {
+  .checks {
     grid-template-columns: 1fr;
   }
   table {

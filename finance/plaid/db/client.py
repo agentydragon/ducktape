@@ -223,10 +223,16 @@ class PlaidClient:
         products: list[str],
         redirect_uri: str,
         client_user_id: str,
-        institution_id: str | None = None,
         transaction_days_requested: int = 730,
         client_name: str = "Plaid MCP",
     ) -> LinkTokenResult:
+        """Create a Link token for an explicit product set.
+
+        Deliberately does NOT pin the institution. `LinkTokenCreateRequest` carries an
+        `institution_id` attribute and Plaid rejects it with `INVALID_INSTITUTION` — it is not a
+        documented request field for /link/token/create, only a response and webhook one. The
+        typeahead still decides *which products* to request; Link picks the institution.
+        """
         request_args: dict[str, object] = {
             "client_name": client_name,
             "user": LinkTokenCreateRequestUser(client_user_id=client_user_id),
@@ -235,10 +241,6 @@ class PlaidClient:
             "language": "en",
             "redirect_uri": redirect_uri,
         }
-        # Skips Link's own institution picker: the caller already chose one, and picking twice is
-        # how a token's products end up describing a different bank than the user lands on.
-        if institution_id is not None:
-            request_args["institution_id"] = institution_id
         if Product.TRANSACTIONS.value in products:
             request_args["transactions"] = {"days_requested": transaction_days_requested}
         request = LinkTokenCreateRequest(**request_args)

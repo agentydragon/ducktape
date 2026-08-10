@@ -32,13 +32,17 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
 
 `/` and `/link` both serve the management UI for active Plaid Items. It can:
 
-- search institutions, show what the chosen one supports, and create an Item for the
-  products it offers that this app can sync (all preselected);
+- search institutions; the product checkboxes are always the full set this app syncs, with the
+  ones the chosen institution doesn't offer greyed out and unchecked (clearing the box re-enables
+  everything). Link tokens deliberately do **not** pin `institution_id` — the generated SDK model
+  carries that attribute but Plaid answers `INVALID_INSTITUTION`, since it is a response field, not
+  a request one;
 - choose the Transactions history depth for new Items and show the recorded or
   observed history window for active Items;
 - show active Items, requested/authorized/billed products, sync time, and Secret name;
 - launch Plaid update mode to repair or renew an Item;
-- widen an existing Item to every product its institution supports, then sync it;
+- widen an existing Item to the products its institution offers that it isn't authorized for
+  yet — the button appears only when there is something to add, and names it;
 - run a manual sync for one Item;
 - remove an Item through `/item/remove`, delete its access-token Secret, and
   purge its mirrored link/account/transaction rows. Append-only `sync_runs` and

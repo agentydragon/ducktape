@@ -21,6 +21,14 @@ function pills(products) {
   if (!products || products.length === 0) return '<span class="muted">none recorded</span>';
   return `<div class="pill-row">${products.map((product) => `<span class="pill">${escapeHtml(product)}</span>`).join("")}</div>`;
 }
+// Rendered only when there is something to add, and labelled with what that is. A fixed
+// "Add scopes" button silently degraded into a plain re-auth when nothing was missing, and never
+// said which products consenting would actually grant.
+function addProductsButton(link) {
+  const addable = link.addable_products;
+  if (!addable || addable.length === 0) return "";
+  return `<button class="secondary" data-action="update" data-addable="${escapeHtml(addable.join(","))}">Add ${escapeHtml(addable.join(" + "))}</button>`;
+}
 function selectedProducts() {
   return Array.from(document.querySelectorAll("#products input:checked")).map((input) => input.value);
 }
@@ -89,6 +97,7 @@ async function loadConfig() {
   const input = document.getElementById("transaction-days");
   input.max = String(webConfig.max_transaction_days);
   input.value = String(webConfig.transaction_days);
+  renderProductChecks();
   setFormEnabled();
 }
 
@@ -106,21 +115,34 @@ async function searchInstitutions(query) {
   box.classList.toggle("hidden", results.length === 0);
 }
 
+// The checkbox set never changes -- only which entries are available. A control that disappears
+// reads as "this app forgot about liabilities"; one that is present and greyed reads as "this bank
+// does not offer it", which is the true statement.
+function renderProductChecks() {
+  document.getElementById("products").innerHTML = (webConfig.products || [])
+    .map(
+      (product) =>
+        `<label class="check"><input type="checkbox" value="${escapeHtml(product)}" checked /><span>${escapeHtml(product)}</span></label>`
+    )
+    .join("");
+}
+
+function applyInstitutionSupport(supported) {
+  // `supported === null` means no institution is chosen: nothing is known to be unavailable, so
+  // everything is offered again.
+  document.querySelectorAll("#products input").forEach((input) => {
+    const available = supported === null || supported.includes(input.value);
+    input.disabled = !available;
+    input.checked = available;
+  });
+}
+
 async function selectInstitution(institutionId) {
   document.getElementById("institution-results").classList.add("hidden");
   const detail = await apiFetch(`/api/institutions/${encodeURIComponent(institutionId)}`);
   selectedInstitution = detail;
   document.getElementById("institution").value = detail.name;
-  const box = document.getElementById("products");
-  // Everything this institution offers and this app syncs, all checked: the common intent is "link
-  // everything from this bank", and unchecking is the exception.
-  box.innerHTML = detail.syncable_products
-    .map(
-      (product) =>
-        `<label class="check"><input type="checkbox" value="${escapeHtml(product)}" checked />${escapeHtml(product)}</label>`
-    )
-    .join("");
-  box.classList.toggle("visible", detail.syncable_products.length > 0);
+  applyInstitutionSupport(detail.syncable_products);
   const hint = document.getElementById("institution-hint");
   // Two things this sentence has to get right. "Also offered but not synced here" read as either
   // "not synced by this institution" or "not synced by this app" — opposite claims. And it is
@@ -177,10 +199,10 @@ async function refreshLinks() {
       </td>
       <td>
         <div class="actions">
-          <button class="secondary" data-action="update">Add scopes</button>
-          <button class="secondary" data-action="repair">Repair</button>
-          <button class="secondary" data-action="sync">Sync</button>
-          <button class="danger" data-action="remove">Remove</button>
+          ${addProductsButton(link)}
+          <button class="secondary" data-action="repair">Repair link</button>
+          <button class="secondary" data-action="sync">Sync data</button>
+          <button class="danger" data-action="remove">Remove link</button>
         </div>
       </td>`;
     tbody.appendChild(tr);
@@ -268,20 +290,11 @@ document.getElementById("links").addEventListener("click", async (event) => {
     });
     return;
   }
-  // "Add scopes" widens an existing link to everything its institution offers and this app syncs —
-  // the same intent as a new link, applied to one that already exists.
-  let body = { reason: "repair" };
-  if (action === "update") {
-    const institutionId = row.dataset.institution;
-    if (!institutionId) {
-      setStatus("This link has no recorded institution_id, so its available products cannot be looked up.");
-      return;
-    }
-    const detail = await apiFetch(`/api/institutions/${encodeURIComponent(institutionId)}`);
-    body = { reason: "add_scope", products: detail.syncable_products };
-  }
+  // The button carries exactly the products it named, so consenting grants what the label said.
+  const body =
+    action === "update" ? { reason: "add_scope", products: button.dataset.addable.split(",") } : { reason: "repair" };
   await withStatus(
-    action === "repair" ? "Opening Plaid repair flow..." : "Opening Plaid scope request...",
+    action === "repair" ? "Opening Plaid repair flow..." : "Opening Plaid consent for the new products...",
     async () => {
       const token = await apiFetch(`/api/links/${encodeURIComponent(item)}/update-link-token`, {
         method: "POST",
@@ -305,9 +318,9 @@ document.getElementById("institution-results").addEventListener("click", async (
   if (button) await withStatus("Loading institution products...", () => selectInstitution(button.dataset.institution));
 });
 document.getElementById("institution").addEventListener("input", async (event) => {
-  // Typing after a selection invalidates it; the products shown belong to the old institution.
+  // Typing after a selection invalidates it; the availability shown belongs to the old institution.
   selectedInstitution = null;
-  document.getElementById("products").classList.remove("visible");
+  applyInstitutionSupport(null);
   document.getElementById("institution-hint").textContent = "";
   setFormEnabled();
   const query = event.target.value.trim();
@@ -328,11 +341,7 @@ document.getElementById("link-form").addEventListener("submit", async (event) =>
     const token = await apiFetch("/api/link-token", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        institution_id: selectedInstitution.institution_id,
-        products: selected_products,
-        transaction_days_requested,
-      }),
+      body: JSON.stringify({ products: selected_products, transaction_days_requested }),
     });
     const pending = {
       mode: "new",
