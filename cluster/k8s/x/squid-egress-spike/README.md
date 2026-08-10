@@ -94,6 +94,66 @@ Squid a fence would actually run. The bump means run 1's TLS finding is history
 and the four open questions get answered on 7.6. Anything below that predates the
 bump is labelled with the version it was observed on.
 
+**Run 2, 2026-08-10, Squid 7.6-VCS on `alpine:3.23` — all five questions
+answered.** Squid started clean on the new base, so the `/dev/shm` workaround and
+the `security_file_certgen` init both survived the OpenSSL/musl move.
+
+Verdict per question: (1) 7.x port — **yes**, with the `DONT_VERIFY_PEER` trap
+above; (2) destination scoping — **security property holds**, though the strip
+semantics need a decision; (3) several credentials — **yes**; (4) base64 `Basic`
+— **yes**; (5) caching — `cache deny has_auth` **works**, hit path not
+demonstrated.
+
+Observed:
+
+- `Bearer spike-bearer-placeholder` → origin saw
+  `Bearer fake-real-bearer-do-not-use`. Substitution works post-bump on 7.6.
+- `Basic c3Bpa2U6cGxhY2Vob2xkZXI=` → origin saw
+  `Basic c3Bpa2U6ZmFrZS1yZWFsLXBhc3N3b3Jk`. Matching a base64 blob in a
+  `req_header` ACL behaves, so the git-over-HTTPS shape is fine.
+- `Bearer something-else` passed through untouched, and a request with no
+  `Authorization` stayed without one. Two rules on the same header coexisted, each
+  matching only its own placeholder.
+- **The security property holds.** `Bearer spike-other-placeholder`, whose rule
+  names `example.invalid`, was **not** substituted at the echo origin. A
+  placeholder is not redeemable at a destination its rule does not name.
+- Authenticated responses were not cached (`Cache-Status: …;detail=no-cache`),
+  so `cache deny has_auth` does what it says.
+
+### The one thing that needs a decision
+
+Case (b) did not arrive _unchanged_ — the `Authorization` header arrived
+**absent**. That is because each rule's two halves are scoped differently:
+
+```squid
+request_header_access Authorization deny ph_other                # every destination
+request_header_add    Authorization "Bearer …" ph_other to_elsewhere  # one destination
+```
+
+The `deny` strips the header wherever the placeholder matches; only the `add` is
+destination-scoped. So a placeholder presented to the wrong host is deleted
+rather than forwarded.
+
+This **fails safe** — no real credential leaks, and it is arguably better, since
+the placeholder itself never reaches an unintended host. But it is not the
+"substitute, else leave alone" semantic the design assumes, and today it is an
+accident of how the rules are written rather than a decision. Adding the
+destination ACL to the `deny` line (`deny ph_other to_elsewhere`) would give
+passthrough instead. Worth settling before this shape holds a real credential,
+because it decides what an agent observes when it aims a placeholder somewhere
+unexpected: a silently unauthenticated request, or its own header back.
+
+### Two things this run could not show
+
+- **`X-Spike-Client` was `127.0.0.1`.** The test drives curl from inside the
+  squid container, so `%>a` correctly reported loopback. The mechanism works; a
+  meaningful caller identity needs a request from a second pod.
+- **No cache hit was demonstrated.** Both unauthenticated fetches reported
+  `fwd=stale`, because the echo origin returns responses with no freshness
+  information. Measuring a hit rate needs an origin that sends cacheable
+  responses — the `cache deny has_auth` half is the security-relevant one and it
+  is confirmed.
+
 ## Pull credential
 
 The image is private, and the `forgejo-images-creds` pull secret reaches this
