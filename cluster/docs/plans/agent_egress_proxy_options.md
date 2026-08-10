@@ -369,6 +369,66 @@ header, and observe whether the origin sees it. A day at most, and it decides
 between a one-layer and a two-layer architecture — worth doing **before**
 committing to either.
 
+## Cache storage: no S3, anywhere
+
+Squid's `cache_dir` types are `ufs`, `aufs`, `diskd` and `rock` — local
+filesystem directories, or a single database file. There is no object-store
+backend, and no plugin interface that would add one.
+
+Nor is this a Squid gap. **Souin**, the leading Go RFC 9111 cache and the
+library option B would most likely vendor, supports Badger, Nuts, Otter, Olric,
+Redis, Etcd and Nats — **no S3**. Varnish caches to memory or file, ATS to raw
+disk volumes. The S3-plus-cache projects that do exist are the _inverse_ shape:
+caching proxies that sit in front of S3 **as an origin**, not caches that store
+their objects in S3.
+
+The reason is structural. An HTTP cache does many small random reads under a
+tight latency budget, with atomic overwrite and prompt eviction. S3 gives tens
+of milliseconds per GET, no partial writes, and lazy delete semantics. The
+industry answer to "durable, shared cache" is Redis or etcd, not object storage.
+
+### What to actually use here
+
+- **Memory-only for the first iteration** (`cache_mem`, no `cache_dir`). No PVC,
+  no node pinning, the pod reschedules freely, and nothing persists to disk —
+  which also settles the credential-at-rest concern above for free. For a
+  workload that re-pulls the same wheels within a build window, a few GiB of RAM
+  captures most of the available win.
+- **`local-path-ovh-ssd` if disk is wanted.** Not `seaweedfs-ovh`: a cache needs
+  worst-case random IO and `fsync` semantics, and this repo already records
+  SeaweedFS flakiness under Bazel's project-file scan. A cache on a network
+  filesystem is the wrong trade.
+- Node pinning is the real objection to `local-path-*`, and it is cheap here: a
+  cache is disposable, so losing it to a reschedule costs hit rate, not data.
+
+**This is a point for option B over Squid.** If a durable or shared cache is
+ever wanted, a Go cache inside iron can use a Redis or etcd backend; Squid can
+only ever cache to its own local disk. The storage question favours the option
+that keeps caching in-process.
+
+## Are there better-matched proxies? No — and the reason is worth knowing
+
+The eliminating constraint is **dynamic per-host certificate minting in forward
+proxy mode**. Caching HTTPS requires decrypting it, which requires forging a
+cert for an arbitrary origin on the fly. Almost nothing does this:
+
+| Candidate                               | Why it is out                                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Apache Traffic Server                   | Caching forward proxy with a real plugin API, but no per-host cert mimicry; its TLS Bridge plugin tunnels between two ATS instances, which is not MITM |
+| nginx + `ngx_http_proxy_connect_module` | Does `CONNECT` and `proxy_cache`, but no dynamic cert generation, so HTTPS stays an opaque tunnel and is uncacheable                                   |
+| Varnish / nuster                        | Reverse-proxy shaped; no forward `CONNECT`, no MITM                                                                                                    |
+| Envoy / agentgateway                    | Already tested and rejected here for exactly this — no dynamic-certificate machinery inside `CONNECT`                                                  |
+| mitmproxy                               | MITMs, but no cache, and substitution means the bespoke addon already rejected                                                                         |
+| Caddy + forwardproxy + Souin            | The one plausible assemble-from-Go-parts route, but it is a stack to build, not a product to run                                                       |
+
+So the field really is Squid and iron, which is why the survey found no product
+at the intersection. Everything mature either MITMs without caching, or caches
+without MITM.
+
+That makes the choice narrower than "pick the best tool": either teach the
+MITM-capable Go proxy to cache (B), or teach the caching MITM proxy to
+substitute (E). No third product is waiting to be found.
+
 ## Options, ranked
 
 **A. Squid + an ICAP service for substitution.** Squid natively covers 1, 3 and
