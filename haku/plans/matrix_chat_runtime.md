@@ -201,6 +201,24 @@ for whenever this is picked up:
   This is harness behaviour, not an agent capability, so R5.4's exclusion of a join tool
   stands — the agent still cannot reach a room the operator did not put it in.
 
+- **R3.6b [v1] An unbound room is adopted from traffic.** A room Haku is already joined to
+  and is being spoken to in is one the operator put it in, since membership required an
+  invite (R3.6). When nothing is bound, that room becomes the binding — recovering state
+  rather than granting access — and only a message from the operator can trigger it, so the
+  authorization rule is unchanged. Without this, a room joined before a binding existed goes
+  quiet permanently with no way to revive it from a Matrix client; Phase 1 did exactly that
+  to the room Phase 0 had joined.
+
+- **R3.6c [later] Unbinding.** Nothing releases a binding today, so it is first-come and
+  permanent for the life of the row. The natural trigger is Haku being removed from the
+  bound room, which `/sync` reports under `rooms.leave`. It is deferred rather than
+  obvious because the binding is not the only state involved: the session behind it is
+  still running with a live sandbox, and dropping the row orphans it somewhere the
+  supervisor can no longer see. So the leave path has to dispose the session as part of
+  unbinding, or accept a sandbox leaking until its TTL. Until this exists, moving Haku to a
+  different room is a database edit, not an operator gesture — which is the actual argument
+  for building it.
+
 ### R4 — Wakeup sources
 
 - **R4.1 [v1]** Wakeups are a single typed queue with a discriminated payload, not one
