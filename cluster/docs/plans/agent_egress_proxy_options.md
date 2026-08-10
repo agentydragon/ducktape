@@ -180,6 +180,54 @@ Copy the UX from Claude Code's own sandbox: prompt on first access to a new
 host, allow for the session, with a pre-approved list and a strict-deny mode so
 neither prompting nor blocking is mandatory.
 
+#### Caller identity is lost at iron, not at the cache
+
+The approval prompt needs to say _who_ is asking. "Something wants
+`example.com`" is close to unactionable; "the openclaw spike wants
+`example.com`" is a decision an operator can make in a second.
+
+Identity does not survive the first hop. iron knows the caller — its audit
+records `remote_addr` as the client pod, confirmed in the in-cluster test — but
+it then opens its **own** upstream connection, so the cache sees only the iron
+pod's address. What reaches an `external_acl_type` helper via `%SRC` is
+therefore _which fence_, not which workload:
+
+| Fence                                        | Distinguishable at the cache?                                         |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| `haku-claude-sandbox` / spike / public-coder | Yes — separate iron pods, separate source IPs                         |
+| Inside `haku-sandbox`                        | **No** — every sandbox pod, haku-ci runner and haku-ui share one iron |
+
+So the granularity is worst exactly where it matters most: the busiest fence,
+the one with many distinct agents behind a single proxy.
+
+No existing transform closes this. The documented set is `allowlist`, `secrets`,
+`body_capture`, `annotate`, `header_allowlist`, `judge`, `mcp`, `mcp_gateway` —
+`annotate` _captures_ headers into the audit record and `secrets` _replaces_ a
+placeholder it finds; neither injects a new header of iron's own.
+
+Four ways to get identity to the gate:
+
+1. **Ask upstream to forward caller identity** — an option making iron stamp
+   something like `X-Iron-Client: <remote_addr>` on upstream requests, which
+   Squid reads with a `%{X-Iron-Client}>h` format code. Small feature, and it
+   belongs in the same upstream conversation as the decision hook and caching;
+   all three are the same gap.
+2. **Gate at iron instead**, where identity is already known — blocked today,
+   because `judge` cannot hold a request for a human. Solved by the same
+   upstream ask (a generic webhook transform), which would then make the
+   cache-side hook unnecessary.
+3. **One iron per agent**, as a sidecar rather than a shared fence proxy. Pod IP
+   becomes the identity, `%SRC` is sufficient, and each iron holds only that
+   agent's credentials — better scoping than the fence model. Costs a proxy per
+   agent pod, per-agent config, and CA plumbing. This is a documented pattern in
+   the 2026 agent-egress literature, not an invention.
+4. **Accept fence-level granularity.** Adequate for the three single-tenant
+   fences; inadequate inside `haku-sandbox`.
+
+Options 1 and 2 are the same upstream request seen from two ends, and either
+removes the need for the other. Worth resolving before building the helper,
+since it decides whether the helper lives at the cache or at iron.
+
 ## Options, ranked
 
 **A. Squid + an ICAP service for substitution.** Squid natively covers 1, 3 and
