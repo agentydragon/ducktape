@@ -65,15 +65,26 @@ there is no way to ask a healthy Postgres for that.
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-One long-lived connection covers all three channels with a reconnect loop, matching
-<../console_events.py>, the console's other LISTEN consumer. The notify half stays inside
-the caller's transaction, because `pg_notify` delivers on commit.
+**One channel, `claude_chat`, carrying a `ChatEvent`** — `{kind, session_id}`, where `kind`
+is `prompt`, `update`, or `abort`. It used to be three channels each carrying a bare session
+id, which left the event kind implicit in the channel name and every new kind costing
+another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is unchanged.
+`console_events.py` stays a separate channel and a separate connection: it is a different
+subsystem with a different payload and its own lifecycle, and the only thing the two share
+is the mechanism.
 
-**Gotcha for anyone changing the channel names or payloads:** the Deployment rolls with
+One long-lived connection with a reconnect loop, matching <../console_events.py>, the
+console's other LISTEN consumer. The notify half stays inside the caller's transaction,
+because `pg_notify` delivers on commit.
+
+**Gotcha for anyone changing the channel name or payload:** the Deployment rolls with
 `maxUnavailable: 0`, so old and new replicas run together for the length of a roll. A
 renamed channel means the new replica notifies where the old one is not listening, and the
 wakes are lost for that window — the same expand/contract discipline a destructive
-migration needs. Notify on both names for one release, then drop the old.
+migration needs. Notify on both names for one release, then drop the old. The merge above
+is mid-flight on exactly that footing: `notify` still emits the old per-kind channels
+alongside the new one, and the listener still accepts them, until the tombstone in
+`chat_notifications.py` says the last pre-merge replica is gone.
 
 ## Cross-replica state, and the trap it sets
 
@@ -82,7 +93,7 @@ objects — the runner's bridge websocket, its `ClaudeSDKClient`, its abort even
 exactly one. **Anything that has to reach a running turn therefore goes through Postgres
 `NOTIFY`, never an in-process registry**; a dict keyed by session id looks correct in tests
 and single-replica dev, and silently answers "no such session" in production about half the
-time. That is what `_ABORT_CHANNEL` is for, and it is the same mistake the supervisor's
+time. That is what the `abort` event is for, and it is the same mistake the supervisor's
 missing lock was.
 
 ## What necessarily lives outside this directory

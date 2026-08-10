@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.chat_notifications import UPDATE_CHANNEL, ChatNotifications
+from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.x.matrix_client import InboundMessage
 
@@ -277,7 +277,7 @@ class MatrixSessionSupervisor:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
             return
         await self._notifications.wait(
-            UPDATE_CHANNEL, conversation.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
+            ChatEventKind.UPDATE, conversation.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
         )
 
     async def _run(self) -> None:

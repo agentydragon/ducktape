@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.x.chat_notifications import ABORT_CHANNEL, PROMPT_CHANNEL, UPDATE_CHANNEL, ChatNotifications, notify
+from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
 from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
 from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
@@ -404,8 +404,8 @@ class ClaudeChatStore:
             db.add(message)
             chat.status = "responding"
             chat.updated_at = now
-            await notify(db, PROMPT_CHANNEL, session_id)
-            await notify(db, UPDATE_CHANNEL, session_id)
+            await notify(db, ChatEventKind.PROMPT, session_id)
+            await notify(db, ChatEventKind.UPDATE, session_id)
         return _message_view(message)
 
     async def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
@@ -474,7 +474,7 @@ class ClaudeChatStore:
             if chat.status not in {"closing", "closed", "failed"}:
                 chat.status = "responding"
             chat.updated_at = now
-            await notify(db, UPDATE_CHANNEL, session_id)
+            await notify(db, ChatEventKind.UPDATE, session_id)
 
     async def complete_turn(self, session_id: UUID) -> None:
         now = datetime.now(UTC)
@@ -484,7 +484,7 @@ class ClaudeChatStore:
                 return
             chat.status = "ready"
             chat.updated_at = now
-            await notify(db, UPDATE_CHANNEL, session_id)
+            await notify(db, ChatEventKind.UPDATE, session_id)
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
@@ -500,7 +500,7 @@ class ClaudeChatStore:
                 chat.status = "failed"
                 chat.error = error
                 chat.updated_at = now
-                await notify(db, UPDATE_CHANNEL, session_id)
+                await notify(db, ChatEventKind.UPDATE, session_id)
             if message_id is not None:
                 message = await db.get(ClaudeChatMessage, message_id)
                 if message is not None:
@@ -531,7 +531,7 @@ class ClaudeChatStore:
             if chat is not None and chat.status != "failed":
                 chat.status = "closed"
                 chat.updated_at = datetime.now(UTC)
-                await notify(db, UPDATE_CHANNEL, session_id)
+                await notify(db, ChatEventKind.UPDATE, session_id)
 
     async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
         async with self._sessions() as db:
@@ -556,7 +556,7 @@ class ClaudeChatStore:
             status = await db.scalar(select(ClaudeChatSession.status).where(ClaudeChatSession.session_id == session_id))
             if status != "responding":
                 return False
-            await notify(db, ABORT_CHANNEL, session_id)
+            await notify(db, ChatEventKind.ABORT, session_id)
             return True
 
 
@@ -698,7 +698,7 @@ class ClaudeChatService:
                 prompt = await self._store.next_prompt(session_id)
                 if prompt is None:
                     # Wait for a LISTEN/NOTIFY instead of polling.
-                    await self._notifications.wait(PROMPT_CHANNEL, session_id, timeout_seconds=30.0)
+                    await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
                     continue
                 _, text = prompt
                 # Cleared here rather than after the turn: an abort notified just as the
@@ -740,7 +740,7 @@ class ClaudeChatService:
         the one holding this session's websocket, so it arrives over NOTIFY rather than by a
         caller reaching into this process.
         """
-        async with self._notifications.subscribe(ABORT_CHANNEL, session_id) as notified:
+        async with self._notifications.subscribe(ChatEventKind.ABORT, session_id) as notified:
             while True:
                 await notified.wait()
                 notified.clear()
@@ -1020,7 +1020,7 @@ async def _sse_stream(
         if last_view.status in {"closed", "failed"}:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
-        await notifications.wait(UPDATE_CHANNEL, session_id, timeout_seconds=30.0)
+        await notifications.wait(ChatEventKind.UPDATE, session_id, timeout_seconds=30.0)
         try:
             next_view = await store.get(operator_id, session_id)
         except KeyError:

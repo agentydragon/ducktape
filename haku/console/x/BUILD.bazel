@@ -26,6 +26,7 @@ py_library(
     srcs = ["chat_notifications.py"],
     deps = [
         "@pypi//asyncpg",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )

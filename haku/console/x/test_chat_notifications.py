@@ -14,15 +14,25 @@ from uuid import uuid4
 import pytest_bazel
 from sqlalchemy import text
 
-from haku.console.x.chat_notifications import UPDATE_CHANNEL, ChatNotifications, notify
+# Imported privately on purpose: the legacy channels exist only for the length of one roll,
+# so the compatibility test below should stop compiling the moment they are deleted.
+from haku.console.x.chat_notifications import _LEGACY_CHANNELS, ChatEventKind, ChatNotifications, notify
+
+
+async def _woken_within(event: asyncio.Event, seconds: float) -> bool:
+    """Delivery is asynchronous, so an absence can only be asserted by waiting one out."""
+    with contextlib.suppress(TimeoutError):
+        async with asyncio.timeout(seconds):
+            await event.wait()
+    return event.is_set()
 
 
 async def test_a_notify_wakes_the_waiter_for_that_session(notifications, migrated_sessions) -> None:
     session_id = uuid4()
 
-    async with notifications.subscribe(UPDATE_CHANNEL, session_id) as woken:
+    async with notifications.subscribe(ChatEventKind.UPDATE, session_id) as woken:
         async with migrated_sessions.begin() as db:
-            await notify(db, UPDATE_CHANNEL, session_id)
+            await notify(db, ChatEventKind.UPDATE, session_id)
         async with asyncio.timeout(30):
             await woken.wait()
 
@@ -30,19 +40,57 @@ async def test_a_notify_wakes_the_waiter_for_that_session(notifications, migrate
 async def test_a_notify_for_another_session_does_not_wake_this_one(notifications, migrated_sessions) -> None:
     mine, theirs = uuid4(), uuid4()
 
-    async with notifications.subscribe(UPDATE_CHANNEL, mine) as woken:
+    async with notifications.subscribe(ChatEventKind.UPDATE, mine) as woken:
         async with migrated_sessions.begin() as db:
-            await notify(db, UPDATE_CHANNEL, theirs)
-        # Delivery is asynchronous, so waiting out a short window is the only way to assert
-        # an absence; a bare check would pass before the notification had a chance to arrive.
-        with contextlib.suppress(TimeoutError):
-            async with asyncio.timeout(2):
-                await woken.wait()
-        assert not woken.is_set()
+            await notify(db, ChatEventKind.UPDATE, theirs)
+        assert not await _woken_within(woken, 2)
+
+
+async def test_a_notify_of_another_kind_does_not_wake_this_one(notifications, migrated_sessions) -> None:
+    """One channel now carries every kind, so the kind is what keeps the fan-out separate."""
+    session_id = uuid4()
+
+    async with notifications.subscribe(ChatEventKind.ABORT, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await notify(db, ChatEventKind.UPDATE, session_id)
+        assert not await _woken_within(woken, 2)
+
+
+async def test_a_replica_still_on_the_old_channels_wakes_this_one(notifications, migrated_sessions) -> None:
+    """The roll is `maxUnavailable: 0`, so a pre-merge replica notifies into this one.
+
+    What it emits is a bare session id on a per-kind channel; this is the only place that
+    shape is produced now, so it is written out by hand rather than through `notify`.
+    """
+    session_id = uuid4()
+
+    async with notifications.subscribe(ChatEventKind.PROMPT, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text("SELECT pg_notify(:channel, :payload)"),
+                {"channel": _LEGACY_CHANNELS[ChatEventKind.PROMPT], "payload": str(session_id)},
+            )
+        async with asyncio.timeout(30):
+            await woken.wait()
+
+
+async def test_an_unreadable_payload_does_not_take_the_listener_down(notifications, migrated_sessions) -> None:
+    """The parse runs on asyncpg's reader task, which is shared by every waiting session."""
+    session_id = uuid4()
+
+    async with notifications.subscribe(ChatEventKind.UPDATE, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await db.execute(text("SELECT pg_notify('claude_chat', 'not an event')"))
+        assert not await _woken_within(woken, 2)
+
+        async with migrated_sessions.begin() as db:
+            await notify(db, ChatEventKind.UPDATE, session_id)
+        async with asyncio.timeout(30):
+            await woken.wait()
 
 
 async def test_wait_reports_a_timeout_rather_than_hanging(notifications) -> None:
-    assert await notifications.wait(UPDATE_CHANNEL, uuid4(), timeout_seconds=0.5) is False
+    assert await notifications.wait(ChatEventKind.UPDATE, uuid4(), timeout_seconds=0.5) is False
 
 
 async def test_the_listener_reconnects_and_wakes_its_waiters(notifications, migrated_sessions) -> None:
@@ -56,7 +104,7 @@ async def test_the_listener_reconnects_and_wakes_its_waiters(notifications, migr
     """
     session_id = uuid4()
 
-    async with notifications.subscribe(UPDATE_CHANNEL, session_id) as woken:
+    async with notifications.subscribe(ChatEventKind.UPDATE, session_id) as woken:
         async with migrated_sessions.begin() as db:
             await db.execute(
                 text(
@@ -75,7 +123,7 @@ async def test_the_listener_reconnects_and_wakes_its_waiters(notifications, migr
         async with asyncio.timeout(30):
             while not woken.is_set():
                 async with migrated_sessions.begin() as db:
-                    await notify(db, UPDATE_CHANNEL, session_id)
+                    await notify(db, ChatEventKind.UPDATE, session_id)
                 with contextlib.suppress(TimeoutError):
                     async with asyncio.timeout(1):
                         await woken.wait()

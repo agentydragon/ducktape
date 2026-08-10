@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatSession
-from haku.console.x.chat_notifications import ABORT_CHANNEL
+from haku.console.x.chat_notifications import ChatEventKind
 from haku.console.x.claude_chat import ClaudeChatStore, KubernetesSandboxClaims, _text_delta
 from haku.console.x.conftest import runtime_config
 
@@ -502,7 +502,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
         requesting = ClaudeChatStore(async_sessionmaker(other_engine, expire_on_commit=False))
-        async with notifications.subscribe(ABORT_CHANNEL, view.session_id) as aborted:
+        async with notifications.subscribe(ChatEventKind.ABORT, view.session_id) as aborted:
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
                 await aborted.wait()
