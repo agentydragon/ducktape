@@ -3,14 +3,20 @@
 Investigated 2026-08-10, for the idea of haku-console gating its own tool calls ("Haku reached
 for `hostexec` when its own k8s token would do") with a cheap model call rather than a rule.
 
-**Source note.** Langfuse was the intended source and was **not** used: this session had no
-cluster credentials (the session-start SOPS group decrypt failed for every age recipient, so
-no kubeconfig and no Langfuse API key). It turned out not to be needed — the classifier ships
-in the Claude Code binary that `claude-agent-sdk` vendors at
-`claude_agent_sdk/_bundled/claude` (275 MB, not stripped), so the prompt, the request shape and
-the parser are all readable directly. That is **stronger** evidence than a trace: it is the code
+**Source note.** Langfuse was the intended source and **has nothing to show** — checked, not
+assumed. It holds 35,816 generations; a scan of the 120 most recent found `gpt-5.6-terra` (102),
+`gpt-oss:20b` (17) and one embedding, **no Anthropic model at all**, and no request carrying the
+classifier's system prompt. That is consistent rather than surprising: Langfuse sees what passes
+through LiteLLM, and Claude Code's auto mode talks to `api.anthropic.com` directly — the same gap
+<litellm_oauth_passthrough.md> is about. It is worth recording as an independent confirmation of
+that note's central claim.
+
+The classifier was read instead out of the Claude Code binary that `claude-agent-sdk` vendors at
+`claude_agent_sdk/_bundled/claude` (275 MB, not stripped), where the prompt, the request builder
+and the parser are all present. That is **stronger** evidence than a trace anyway: it is the code
 that builds the request, not one sample of it. Everything below is quoted from
-`claude-agent-sdk==0.2.128`.
+`claude-agent-sdk==0.2.128`. What a trace would still add is real token counts and latency, and
+that stays unavailable until some auto-mode traffic goes through the proxy.
 
 ## Shape
 

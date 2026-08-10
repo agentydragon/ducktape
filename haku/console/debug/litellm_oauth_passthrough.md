@@ -25,6 +25,11 @@ So: **no LiteLLM, no Langfuse, no trace of these turns anywhere except the conso
 `claude_chat_messages` rows.** The sandbox never holds the real token — that is the point of the
 substitution — and the egress proxy is a credential swapper, not an observability hop.
 
+**Confirmed from the other end.** Langfuse holds 35,816 generations; the 120 most recent are
+`gpt-5.6-terra` (102, Codex via CLIProxyAPI), `gpt-oss:20b` (17, local) and one embedding —
+**not one Anthropic model**. Nothing that reaches Anthropic on the subscription is visible there
+today, which is exactly the gap this note is about.
+
 ## Could LiteLLM sit in that path?
 
 The obstacle is not LiteLLM's Anthropic support, it is **how subscription OAuth differs from an
