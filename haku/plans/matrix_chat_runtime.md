@@ -312,7 +312,30 @@ for whenever this is picked up:
   host — so it does not transfer to a different wire protocol for free.
 - **R5.4 [v1] Reading only.** The surface is read: fetch by event ID, fetch around an
   event, paginate history. There is no send, edit, react, redact, join, invite, leave, or
-  room-state tool. Speaking happens by auto-forward (R11.1) and needs no tool.
+  room-state capability. Speaking happens by auto-forward (R11.1) and needs nothing.
+
+- **R5.4a [open] Reads should not be a reimplemented Matrix API.** `/messages`, `/context`
+  and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is
+  reimplementation, and it also fences the agent out of anything not anticipated — threads,
+  relations, redactions. Three shapes, and the deciding factor is not convenience:
+  - **A second Matrix account** (a member that can read, send blocked by power levels) is
+    the most honest modelling, and scoping is Matrix's own ACLs rather than ours. But it
+    puts a real Matrix token in the sandbox, and the homeserver is publicly routed — **an
+    exfiltrated read token keeps working, from anywhere, after the sandbox is gone.** A
+    proxied capability dies with the sandbox. That asymmetry is the argument against it,
+    not R5.1's letter.
+  - **A read-only proxy** keeps the capability inside the egress fence and reuses the shape
+    this deployment already runs for the Anthropic token (R5.1a). Unlike the Postgres case,
+    this one is HTTP, so the existing mechanism transfers directly.
+  - **A read route on the console, authenticated by the bridge token** — the preferred
+    shape, because it needs no new credential and no new deployment. The sandbox already
+    authenticates to the console per session; a read route under that auth resolves the
+    room from the session, which gives R5.3's "another room is not expressible" structurally
+    rather than through a path allowlist someone has to get right. The console already
+    exposes `/mcp` and the node-daemon API to non-browser callers.
+
+  What still has to be decided: how much of the CS API to pass through, and whether
+  responses are proxied verbatim (cheap to build, verbose in context) or projected down.
 
 ### R6 — Status and presence
 
