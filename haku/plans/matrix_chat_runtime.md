@@ -1,10 +1,10 @@
 # Matrix as Haku's chat surface — requirements
 
-Status: **Phase 0 done; no agent attached yet.** The homeserver, the `@haku` bot, and a
-console sync loop that joins the operator's DM and echoes are all live — a message typed
-in Element comes back echoed (Build order → Phase 0). Phase 1 attaches the Agent SDK. This
-is a requirements document, not a design: it fixes what the system must do so the design
-can be argued about separately. Requirements marked **[v1]** are the first cut; **[later]**
+Status: **Phases 0 and 1 are live.** The homeserver, the `@haku` bot, the sync loop, the
+room binding and the session supervisor all run in production: a message typed in Element
+drives a real Agent SDK turn and the answer comes back into the room. Phase 2 gives that
+session an identity. This is a requirements document, not a design: it fixes what the
+system must do so the design can be argued about separately. Requirements marked **[v1]** are the first cut; **[later]**
 marks something deliberately deferred with its shape recorded so it is not redesigned from
 scratch.
 
@@ -16,9 +16,14 @@ plugs into. That runtime is not re-specified here.
 The operator chat surface today is `haku/console/claude_chat.py` (~1000 lines: sessions,
 message rows, WebSocket streaming, sandbox claims, reconciliation) plus
 `console/frontend/claude_chat_page.tsx` and the markdown / scroll / code-block modules
-around it. Routing chat through Matrix retires that surface in favour of an existing
-client ecosystem: mobile push, offline history, multi-client sync, and search — none of
-which the console gets otherwise, and all of which would be built by hand.
+around it. Routing chat through Matrix buys an existing client ecosystem instead: mobile
+push, offline history, multi-client sync, and search — none of which the console gets
+otherwise, and all of which would be built by hand.
+
+The SPA surface is **not** retired by this. The two run side by side as separate
+experiments over one piece of session machinery, and whether the SPA view survives is a
+decision for after Matrix has proven itself (Build order → The decision that gates
+Phase 1).
 
 What Matrix does **not** change: the console remains the session owner, the credential
 holder, and the approval authority. Matrix is a transport for prose.
@@ -156,9 +161,8 @@ for whenever this is picked up:
   right moment, and its return value **can** carry text: `PreToolUseHookSpecificOutput`
   declares `additionalContext: NotRequired[str]` (as do `PostToolUse`,
   `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `Notification`,
-  `SubagentStart`). That was recorded here as unverified; it is verified at the type level
-  now, with only the runtime behaviour left to probe. It dominates the tool-result
-  piggyback on the same evidence: identical "only at a tool boundary" limitation, but it
+  `SubagentStart`). Verified at the type level; only the runtime behaviour still wants a
+  probe. It dominates the tool-result piggyback on the same evidence: identical "only at a tool boundary" limitation, but it
   fires for **every** tool including the built-ins rather than only console-brokered MCP
   calls, and it does not overload what a tool result means.
 
@@ -606,7 +610,7 @@ was designed in: the new env vars are inert to the old image, and the password i
 `optional` `secretKeyRef` behind an optional config (R10.3b), so neither half of the pair
 fails on the other's absence.
 
-### Phase 1 — Wire the existing session machinery to it
+### Phase 1 — Wire the existing session machinery to it — **done**
 
 Most of this exists. `claude_chat.py` already has the store (sessions, messages, Postgres
 `LISTEN/NOTIFY`, `next_prompt` / `wait_for_prompt`), the SandboxClaim, the WebSocket
@@ -614,8 +618,8 @@ bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends
 
 - **Ingress**: the sync loop calls `enqueue_prompt` instead of echoing.
 - **Egress**: `_run_turn`'s `final_text` goes to a Matrix send **as well as** the DB row.
-  Not instead of: the SPA chat view is staying as its own experiment (Open questions), so
-  the rows still have a reader, and the Matrix path is a delivery port on the service
+  Not instead of: the SPA chat view stays as its own experiment, so the rows still have a
+  reader, and the Matrix path is a delivery port on the service
   rather than Matrix knowledge inside it. Streaming (R11.1) is off for Matrix only — the
   `StreamEvent` branch and its `asyncio.wait` abort dance survive for the SPA, and the
   simplification the original plan expected here is deferred with that decision.
@@ -717,9 +721,6 @@ for after Matrix has proven itself, not before.
    test ran for 11 seconds, and <agent_sdk_sandbox_runtime.md> lists expiry, revocation
    and rotation as unproven. A pod that never restarts is exactly the case that finds out.
 
-The risk that used to head this list — mounting an appservice registration file into a
-chart with no support for one — is gone with the appservice itself.
-
 ## Open questions
 
 - **Batch cap** (R2.6): what value, and does an overflow split get told it is a split?
@@ -731,9 +732,6 @@ chart with no support for one — is gone with the appservice itself.
   minted per session (R5.1a's second shape), which buys a real query language and pushes
   scoping into the database instead of into a closure. Deferred until there is history worth
   querying — which is also the argument for keeping the session/room link now (R3.3a).
-- ~~**A second invite**~~ — settled as R3.6a: one room at a time, refuse the rest for now.
-  Phase 0 joins every operator invite, which is harmless only because nothing is bound to a
-  room yet; Phase 1 has to implement the restriction.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
@@ -742,14 +740,6 @@ chart with no support for one — is gone with the appservice itself.
   the room a live narration, at the cost of no clean "the answer" to point at.
 - **Status message lifetime** (R6.5): redact on answer, or edit the status into the answer
   so a turn is one message?
-- ~~**What does a rotation look like from the room?**~~ — settled as R3.3a: the replacement
-  is re-awakened with its room, its identity, recent context, and the means to read further
-  back. Primarily from the room, since that is where the conversation already lives; the
-  database holds the trace and needs a link that rotation currently discards.
-- ~~**Does the console chat surface stay?**~~ — settled: it stays for now, as its own
-  experiment rather than as the surface Matrix is replacing. So there are deliberately two
-  ingress paths into the same session machinery, and the streaming path lives on. Revisit
-  once Matrix has run long enough to say whether the SPA view is still earning its keep.
 
 ## Non-goals, stated so they are not re-litigated
 
