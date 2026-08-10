@@ -83,11 +83,48 @@ than RFC 9111 would. Costs: more components, none of them novel. Also shrinks
 the allowlists, since the fence then permits one internal host instead of five
 external ones.
 
-Recommendation: **D for caching, and keep iron for the credential fences.** A
-and B both put a cache and credentials in one process for a benefit the existing
-artifact-cache pattern already delivers. Revisit A only if requirement 4 lands
-on Squid anyway (see below), since that is the one thing Squid does that nothing
-else here does.
+## Decision (operator, 2026-08-10): B
+
+The requirements are **not equal in weight**. Credential substitution is the
+hard one; caching is wanted but secondary. And where caching happens it should
+be **at the HTTP layer**, because RFC 9111 works for any origin, whereas an
+artifact cache has to be built and operated once per ecosystem (PyPI, npm,
+Bazel, …) and only ever covers the ecosystems someone got around to.
+
+That ordering settles it. **A inverts the priorities** — it makes the hard
+requirement the bolted-on ICAP service and the soft one native. **D was the
+cheap answer and is explicitly not what is wanted**: it trades genericity for
+components that already exist, which is a reasonable trade to decline. **C**
+leaves the fence split across two proxies with per-tool configuration.
+
+So: **keep iron-proxy and teach it HTTP caching.** Costs stay as listed under
+B — Go work, and a cache living in a credential-holding pod.
+
+### Why B is more tractable than it looks
+
+- iron's transform pipeline **already short-circuits**. `allowlist` and `judge`
+  return a response without reaching upstream, so "serve this from cache" is
+  expressible in the existing model rather than needing a new one.
+- Go has mature RFC 9111 implementations to vendor rather than write.
+- The streaming property survives if the cache takes a **size cap**: cache below
+  it, stream above it. That is standard practice (Squid's `maximum_object_size`)
+  and it keeps the large-artifact path — the one that OOM-killed mitmproxy —
+  untouched.
+
+### Do these two things before writing any Go
+
+1. **Measure the hit rate first.** The `annotate` transform captures HTTP
+   headers into audit annotations, and the audit log already exports over OTLP.
+   If `annotate` covers _response_ headers (verify — the docs are not explicit),
+   recording `Cache-Control`/`ETag`/`Age` for a week costs one config block and
+   zero code, and tells us what fraction of bytes is actually cacheable. Some of
+   the heaviest traffic redirects to CDNs with signed URLs, which may not cache
+   at all. Caching is the secondary requirement; do not spend Go time on it
+   before knowing the payoff.
+2. **Ask upstream.** iron ships release candidates weekly and is clearly
+   actively developed. An issue asking about RFC 9111 caching may find it
+   planned, wanted, or already prototyped — and upstreaming beats carrying a
+   fork, given we already maintain a commit-pinned build.
 
 ## Requirement 4: the haku-console decision hook
 
