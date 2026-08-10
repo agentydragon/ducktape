@@ -1,6 +1,5 @@
-"""Tests for provision_matrix_users.py's Matrix/Synapse provisioning and token upkeep."""
+"""Tests for provision_matrix_users.py's two-phase Matrix/Synapse provisioning."""
 
-import base64
 import hashlib
 import hmac
 import logging
@@ -8,8 +7,6 @@ import logging
 import httpx
 import pytest
 import pytest_bazel
-from kubernetes import client as k8s
-from kubernetes.client.exceptions import ApiException
 
 from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import (
     ADMIN_DEVICE_ID,
@@ -18,13 +15,9 @@ from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import 
     BOT_USERNAME,
     SERVER_NAME,
     SYNAPSE_URL,
-    TOKEN_SECRET_KEY,
     _bot_exists,
     admin_login,
-    ensure_bot_token,
-    mint_bot_token,
     register_admin,
-    token_is_valid,
     upsert_bot,
 )
 
@@ -157,80 +150,6 @@ def test_admin_login_pins_the_device_id():
     [(_, _, body)] = client.calls
     assert body is not None
     assert body["device_id"] == ADMIN_DEVICE_ID
-
-
-def test_token_is_valid_true_for_the_bots_own_token():
-    client = _FakeClient([_response(200, {"user_id": f"@{BOT_USERNAME}:{SERVER_NAME}"})])
-    assert token_is_valid(client, "tok") is True
-
-
-def test_token_is_valid_false_when_unauthorized():
-    client = _FakeClient([_response(401, {"errcode": "M_UNKNOWN_TOKEN"})])
-    assert token_is_valid(client, "stale") is False
-
-
-def test_token_is_valid_false_when_token_belongs_to_another_user():
-    """A token that authenticates as somebody else is not a usable bot token."""
-    client = _FakeClient([_response(200, {"user_id": f"@someone-else:{SERVER_NAME}"})])
-    assert token_is_valid(client, "tok") is False
-
-
-def test_mint_bot_token_uses_admin_login_as_user():
-    client = _FakeClient([_response(200, {"access_token": "fresh"})])
-
-    assert mint_bot_token(client, "admin-token") == "fresh"
-
-    [(method, url, _)] = client.calls
-    assert method == "POST"
-    assert url.endswith(f"/_synapse/admin/v1/users/%40{BOT_USERNAME}%3A{SERVER_NAME}/login")
-
-
-class _FakeSecretStore:
-    """Records secret writes; raises 404 like the real client for a missing secret."""
-
-    def __init__(self, existing: str | None = None):
-        self.existing = existing
-        self.written: str | None = None
-
-    def read_namespaced_secret(self, name: str, namespace: str) -> k8s.V1Secret:
-        if self.existing is None:
-            raise ApiException(status=404)
-        return k8s.V1Secret(data={TOKEN_SECRET_KEY: base64.b64encode(self.existing.encode()).decode()})
-
-    def patch_namespaced_secret(self, name: str, namespace: str, body: k8s.V1Secret) -> k8s.V1Secret:
-        self.written = body.string_data[TOKEN_SECRET_KEY]
-        return body
-
-    def create_namespaced_secret(self, namespace: str, body: k8s.V1Secret) -> k8s.V1Secret:
-        self.written = body.string_data[TOKEN_SECRET_KEY]
-        return body
-
-
-def test_ensure_bot_token_keeps_a_working_token():
-    client = _FakeClient([_response(200, {"user_id": f"@{BOT_USERNAME}:{SERVER_NAME}"})])
-    v1 = _FakeSecretStore(existing="still-good")
-
-    ensure_bot_token(client, v1, "admin-token")
-
-    assert v1.written is None
-
-
-def test_ensure_bot_token_mints_when_the_stored_one_is_stale():
-    client = _FakeClient([_response(401, {"errcode": "M_UNKNOWN_TOKEN"}), _response(200, {"access_token": "fresh"})])
-    v1 = _FakeSecretStore(existing="stale")
-
-    ensure_bot_token(client, v1, "admin-token")
-
-    assert v1.written == "fresh"
-
-
-def test_ensure_bot_token_mints_when_no_secret_exists():
-    client = _FakeClient([_response(200, {"access_token": "fresh"})])
-    v1 = _FakeSecretStore(existing=None)
-
-    ensure_bot_token(client, v1, "admin-token")
-
-    assert v1.written == "fresh"
 
 
 if __name__ == "__main__":

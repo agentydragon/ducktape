@@ -1,5 +1,5 @@
-"""Matrix/Synapse user provisioner OCI image — registers the admin user, upserts
-the Haku bot via the Synapse admin API, and keeps its access token in a Secret.
+"""Matrix/Synapse user provisioner OCI image — registers the admin user and
+upserts the Haku bot via the Synapse admin API.
 """
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
@@ -10,10 +10,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "provision_matrix_users",
     srcs = ["provision_matrix_users.py"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//kubernetes",
-    ],
+    deps = ["@pypi//httpx"],
 )
 
 py_test(
@@ -22,7 +19,6 @@ py_test(
     deps = [
         ":provision_matrix_users",
         "@pypi//httpx",
-        "@pypi//kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

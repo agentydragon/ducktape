@@ -12,7 +12,6 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
-      serviceAccountName: matrix-user-provisioner
       containers:
         - name: provision
           # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
