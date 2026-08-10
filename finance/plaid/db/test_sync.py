@@ -51,6 +51,12 @@ def _stored_link(item_id: str, products: list[str]) -> StoredLink:
     )
 
 
+def _no_investment_accounts_error() -> PlaidApiException:
+    exc = PlaidApiException(status=400, reason="Bad Request")
+    exc.body = json.dumps({"error_type": "ITEM_ERROR", "error_code": "NO_INVESTMENT_ACCOUNTS"})
+    return exc
+
+
 def _no_liability_accounts_error() -> PlaidApiException:
     exc = PlaidApiException(status=400, reason="Bad Request")
     exc.body = json.dumps({"error_type": "ITEM_ERROR", "error_code": "NO_LIABILITY_ACCOUNTS"})
@@ -166,6 +172,23 @@ async def test_investment_transactions_follow_the_requested_products() -> None:
     await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
 
     assert api.investment_transaction_calls == 1
+
+
+async def test_sync_link_tolerates_no_investment_accounts() -> None:
+    """Products are requested per institution but authorized per Item: Chase-the-institution offers
+    investments while a Chase Item holding one credit card has none, and Plaid 400s rather than
+    returning an empty set. That took down the whole Chase sync, transactions included."""
+    link = _stored_link("item-chase", ["transactions", "investments"])
+    storage = _FakeStorage(links=[link])
+    api = _FakeApi(
+        errors={("investments/holdings/get", "token-for-secret-item-chase"): _no_investment_accounts_error()}
+    )
+
+    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+
+    assert [(status, err) for _, status, err in storage.finished] == [("succeeded", None)]
+    # The investment-transaction call belongs to the same block and must not fire either.
+    assert api.investment_transaction_calls == 0
 
 
 async def test_sync_link_tolerates_no_liability_accounts() -> None:

@@ -181,25 +181,37 @@ async def _sync_link_inner(
         )
 
     if Product.INVESTMENTS.value in link.products_requested:
-        holdings = await _call(
-            api,
-            storage,
-            run_id,
-            "investments/holdings/get",
-            api.investments_holdings_get,
-            InvestmentsHoldingsGetRequest(access_token=access_token),
-            link.item_id,
-        )
-        await storage.apply_holdings(
-            item_id=link.item_id,
-            securities=holdings.get("securities") or [],
-            holdings=holdings.get("holdings") or [],
-            captured_at=captured_at,
-        )
-        end = captured_at.date()
-        start = end - timedelta(days=windows.investment_transaction_days)
-        txns = await _fetch_investment_transactions(api, storage, run_id, access_token, link.item_id, start, end)
-        await storage.upsert_investment_transactions(item_id=link.item_id, transactions=txns, captured_at=captured_at)
+        try:
+            holdings = await _call(
+                api,
+                storage,
+                run_id,
+                "investments/holdings/get",
+                api.investments_holdings_get,
+                InvestmentsHoldingsGetRequest(access_token=access_token),
+                link.item_id,
+            )
+        except PlaidApiException as exc:
+            if _plaid_error_code(exc) != "NO_INVESTMENT_ACCOUNTS":
+                raise
+            # Products are requested per *institution*, but Plaid authorizes them per *Item*: the
+            # Chase institution offers investments while a Chase Item holding one credit card has no
+            # investment accounts, and Plaid 400s rather than returning an empty set. Same shape as
+            # NO_LIABILITY_ACCOUNTS below — a mismatch to skip, not a sync to fail.
+            logger.warning("investments/holdings/get: item %s has no investment accounts; skipping", link.item_id)
+        else:
+            await storage.apply_holdings(
+                item_id=link.item_id,
+                securities=holdings.get("securities") or [],
+                holdings=holdings.get("holdings") or [],
+                captured_at=captured_at,
+            )
+            end = captured_at.date()
+            start = end - timedelta(days=windows.investment_transaction_days)
+            txns = await _fetch_investment_transactions(api, storage, run_id, access_token, link.item_id, start, end)
+            await storage.upsert_investment_transactions(
+                item_id=link.item_id, transactions=txns, captured_at=captured_at
+            )
 
     if Product.LIABILITIES.value in link.products_requested:
         try:
