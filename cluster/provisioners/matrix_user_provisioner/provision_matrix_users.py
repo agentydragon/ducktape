@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 SYNAPSE_URL = "http://matrix-synapse.matrix.svc.cluster.local:8008"
 ADMIN_USERNAME = "provisioner"
+ADMIN_DEVICE_ID = "matrix-user-provisioner"
 BOT_USERNAME = "haku"
 BOT_DISPLAYNAME = "Haku"
 SERVER_NAME = "allegedly.works"
@@ -117,13 +118,21 @@ def upsert_bot(client: SynapseClient, admin_token: str, bot_password: str) -> No
 
 
 def admin_login(client: SynapseClient, admin_password: str) -> str:
-    """Log in as the provisioner admin and return its access token."""
+    """Log in as the provisioner admin and return its access token.
+
+    Pins `device_id` so re-runs reuse one device instead of leaving a new one
+    behind each time. This Job is recreated on every Flux reconcile, so an
+    unpinned login would accumulate admin devices indefinitely — and the obvious
+    way to clean those up is `/logout/all`, which is precisely the operation that
+    invalidates the bot token minted below.
+    """
     resp = client.post(
         f"{SYNAPSE_URL}/_matrix/client/v3/login",
         json={
             "type": "m.login.password",
             "identifier": {"type": "m.id.user", "user": ADMIN_USERNAME},
             "password": admin_password,
+            "device_id": ADMIN_DEVICE_ID,
         },
     )
     resp.raise_for_status()
@@ -141,10 +150,17 @@ def token_is_valid(client: SynapseClient, token: str) -> bool:
 
 
 def mint_bot_token(client: SynapseClient, admin_token: str) -> str:
-    """Mint a non-expiring access token for the bot via admin login-as-user.
+    """Mint an access token for the bot via admin login-as-user.
 
     Preferred over logging in with the bot's password: it leaves the password
     untouched, and so leaves any other live session intact.
+
+    The token does not expire — `valid_until_ms` is optional and omitted here —
+    but it is bound to the *admin's* session, not the bot's: Synapse revokes it
+    if @provisioner calls `/logout/all`, and not if @haku does. It also creates
+    no device, so it never appears in the bot's /devices list and cannot be
+    revoked from a client. Deleting the Secret and re-running is the revocation
+    path; ensure_bot_token then mints a replacement.
     """
     encoded_mxid = urllib.parse.quote(f"@{BOT_USERNAME}:{SERVER_NAME}")
     resp = client.post(
