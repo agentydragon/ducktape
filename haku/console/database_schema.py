@@ -35,7 +35,7 @@ from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
+from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn, TextBackedStrEnumColumn
 
 
 class Base(DeclarativeBase):
@@ -841,7 +841,7 @@ class ClaudeChatSession(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
-    status: Mapped[ChatSessionStatus] = mapped_column(StringBackedStrEnumColumn(ChatSessionStatus), nullable=False)
+    status: Mapped[ChatSessionStatus] = mapped_column(TextBackedStrEnumColumn(ChatSessionStatus), nullable=False)
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -866,8 +866,8 @@ class ClaudeChatMessage(Base):
     session_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[ChatMessageRole] = mapped_column(StringBackedStrEnumColumn(ChatMessageRole), nullable=False)
-    status: Mapped[ChatMessageStatus] = mapped_column(StringBackedStrEnumColumn(ChatMessageStatus), nullable=False)
+    role: Mapped[ChatMessageRole] = mapped_column(TextBackedStrEnumColumn(ChatMessageRole), nullable=False)
+    status: Mapped[ChatMessageStatus] = mapped_column(TextBackedStrEnumColumn(ChatMessageStatus), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
