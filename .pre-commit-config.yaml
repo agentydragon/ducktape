@@ -292,6 +292,9 @@ repos:
             cluster/k8s/agents/public-coder-agent/proxy/iron\.yaml|
             cluster/k8s/agents/haku-egress-proxy/claude-iron\.yaml|
             cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
+            # Strategic-merge patch fragment shared by both iron-proxy Deployments;
+            # carries apiVersion/kind for kustomize but has no spec.selector
+            cluster/k8s/agents/haku-egress-proxy/iron-proxy-common\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             cluster/k8s/haku/dispatch/litellm/workers-litellm-config\.yaml|

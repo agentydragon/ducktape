@@ -56,3 +56,11 @@ patches:
       - op: replace
         path: /metadata/namespace
         value: haku-egress-proxy
+
+  # One copy of the security posture and invocation shape for both iron proxies
+  # here. A name-regex target lets a single patch reach both Deployments, so the
+  # fields that must not diverge exist once -- see iron-proxy-common.yaml for why.
+  - path: iron-proxy-common.yaml
+    target:
+      kind: Deployment
+      name: haku-(claude-oauth|openclaw-spike)-proxy

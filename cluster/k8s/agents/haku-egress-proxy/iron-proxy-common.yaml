@@ -1,0 +1,49 @@
+# The parts every iron-proxy deployment in this namespace must share, applied by
+# the parent kustomization to both of them through one `patches` entry with a
+# name-regex target. Not a standalone manifest -- it is a strategic-merge patch.
+#
+# It exists because these fields drifted once already: public-coder-agent-proxy,
+# the same image in another namespace, was found running as root with a mounted
+# ServiceAccount token while both proxies here were hardened (PR #3890). One copy
+# of the security posture cannot diverge from itself.
+#
+# Only invariants belong here. The axes that legitimately differ per instance --
+# name, labels, listener port, env secrets, config-map name, CA secret -- stay in
+# the individual deployment files.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PATCHED-BY-TARGET # replaced by the target selector; never rendered
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: iron-proxy
+          args: ["-config", "/etc/iron-proxy/iron.yaml"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/iron-proxy
+              readOnly: true
+            - name: ca
+              mountPath: /ca
+              readOnly: true

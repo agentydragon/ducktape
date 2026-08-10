@@ -1,90 +1,85 @@
 # Consolidating the iron-proxy deployments
 
-Probe note, 2026-08-09. Question: the cluster runs three iron-proxy Deployments
-and would gain a fourth if `haku-sandbox` moves off mitmproxy — should they
-share one definition instead of being copies?
+Started 2026-08-09 as a probe: the cluster runs three iron-proxy Deployments and
+would gain a fourth if `haku-sandbox` moves off mitmproxy — should they share one
+definition? Resolved 2026-08-10; the shared definition now exists for the two in
+`haku-egress-proxy`.
 
-## What the copies actually share
+## What drove it
 
-Measured by diffing the three with comments stripped.
+`public-coder-agent-proxy` — the same image in another namespace — was found
+running as root with a mounted ServiceAccount token while both proxies here
+carried full hardening (fixed in #3890). Copy-paste divergence, in the field
+that matters most, on the most credential-dense of the three.
 
-`haku-claude-oauth-proxy` (73 lines) and `haku-openclaw-spike-proxy` (106 lines)
-are **byte-identical except for five things**:
+The duplication was never the problem. Drift was, and duplication is where it
+hid.
 
-| Axis          | claude                        | openclaw spike                     |
-| ------------- | ----------------------------- | ---------------------------------- |
-| Name / labels | `haku-claude-oauth-proxy`     | `haku-openclaw-spike-proxy`        |
-| `description` | one sentence                  | one sentence                       |
-| `env` secrets | 1 (`CLAUDE_CODE_OAUTH_TOKEN`) | 5 (adds Forgejo, console, GH, JWT) |
-| Listener port | 8180                          | 8181                               |
-| Config CM     | `…-proxy-config`              | `…-proxy-config`                   |
+## What was rejected, and why
 
-Everything else — `imagePullSecrets`, `automountServiceAccountToken: false`, the
-pod and container `securityContext`, the image and its `$imagepolicy` marker,
-`args`, `resources`, `volumeMounts`, the shared `haku-egress-proxy-ca` volume —
-is the same text twice.
+**A kustomize Component.** The obvious mechanism, and wrong here twice over.
+No `kind: Component` exists anywhere in `cluster/k8s`, and
+`cluster/validation/kustomize.py` resolves only `resources`, `patches[].path`
+and `configMapGenerator.files` — so component files would read as orphans to
+`test_no_orphaned_files` unless the validator learned a new concept. More
+fundamentally, a component is included once per kustomization, and both
+Deployments live in **one** kustomization; emitting two differently-named
+Deployments from one template would have meant splitting this directory into
+sub-kustomizations.
 
-`public-coder-agent-proxy` (103 lines) is a weaker fit: different namespace,
-its own CA secret (`public-coder-agent-proxy-ca`, not the shared haku CA), and
-port 8080. Two of three is the realistic sharing boundary.
+**A base + overlays split.** Same directory split, plus renaming gymnastics —
+strategic-merge cannot rename, so each overlay needs a JSON6902 `replace
+/metadata/name` and label patches at three sites to keep Service selectors
+matching.
 
-## The finding that matters more than the duplication
+**A consistency test instead of sharing** (assert the invariant fields are equal
+across the iron Deployments, in the spirit of `test_egress_allowlists`). Sound,
+and it would have caught the bug — but it detects drift where the patch below
+prevents it, for about the same effort.
 
-**`public-coder-agent-proxy` has none of the hardening its two siblings have.**
-Verified against the live pod, not just the manifest:
+## What was done
 
-```text
-spec.securityContext:            {}
-containers[0].securityContext:   (absent)
-serviceAccountName:              default   # token automounted
+One strategic-merge patch, `iron-proxy-common.yaml`, applied by this namespace's
+`kustomization.yaml` through a **name-regex target** that reaches both
+Deployments:
+
+```yaml
+- path: iron-proxy-common.yaml
+  target:
+    kind: Deployment
+    name: haku-(claude-oauth|openclaw-spike)-proxy
 ```
 
-The manifest sets no `runAsNonRoot`, no `runAsUser`, no `seccompProfile`, no
-`allowPrivilegeEscalation: false`, no `capabilities: drop: ["ALL"]`, and no
-`automountServiceAccountToken: false`. The namespace carries no
-`pod-security.kubernetes.io/*` labels, so the cluster-default **baseline** is
-all that applies — and baseline requires none of those. The container runs as
-root with a mounted default ServiceAccount token.
+No directory split, no new kustomize concept, no validator change — a patch with
+a `target` selector already applies to many resources, which is what made the
+split unnecessary.
 
-This is the **most** credential-dense of the three: it holds the real GitHub
-PAT, a Haku Console bearer, and a Kubernetes reader token, and its egress is
-deliberately unrestricted. It is the one that should be hardest, and it is the
-softest.
+The patch carries the pull secret, `automountServiceAccountToken: false`, the
+pod and container `securityContext`, `args`, `resources`, and both volume
+mounts. The axes that legitimately differ stay in the per-instance files: name,
+labels, listener port, env secrets, config-map name, CA secret.
 
-Nothing about the deliberate egress waiver implies a pod-security waiver — the
-waiver is documented in `cnp-egress.yaml` as being about destinations. This
-reads as drift from copy-paste divergence, not a decision.
+**Verified output-equivalent**: `kustomize build` before and after is
+byte-identical — 24 resources, 1014 lines, zero diff.
 
-**Recommended before any refactor**: add the five fields to
-`public-coder-agent/proxy/deployment.yaml`, matching the haku siblings. Low
-risk — the same image already runs as uid 65532 in both other deployments, and
-port 8080 needs no privilege. It restarts one proxy pod.
+**It is not a line-count win.** 179 lines became 176, because a patch re-states
+the `spec.template.spec.containers` nesting to reach the fields it sets. The
+earlier "~80 lines saved" estimate in this note was wrong. The win is that the
+security posture exists once and cannot diverge from itself.
 
-## Verdict on the component itself
+## Still open
 
-Worth doing, but for drift-prevention rather than line count — the finding above
-is exactly the failure mode, and `//cluster/validation:test_egress_allowlists`
-already exists because these fences drifted once before.
-
-Deduplicating the two haku proxies saves perhaps 80 lines, which alone would not
-justify the mechanism. What justifies it is that the `haku-sandbox` migration
-adds a fourth copy, and a copy is where hardening goes missing.
-
-**Shape**: a kustomize component under `cluster/k8s/agents/haku-egress-proxy/`
-holding the invariant Deployment, with per-instance patches supplying name,
-port, config-map name, and the extra `env` entries. Kustomize components cannot
-parameterize a name or port directly, so each instance still needs a small
-patch — the win is that the security and image stanzas exist once.
-
-**Open question the probe did not settle**: whether the patch-per-instance
-verbosity leaves enough benefit to be worth the indirection, given the cluster
-validator and reviewers both read the rendered output. Decide that by writing
-the component for the two haku proxies and comparing the rendered result against
-today's files; abandon it if the overlays approach the size of what they replace.
-
-## Next step
-
-1. Harden `public-coder-agent-proxy` (independent of everything else here).
-2. Only then decide the component, and fold it into the `haku-sandbox`
-   migration rather than doing it standalone — that migration is what creates
-   the fourth copy.
+- **`public-coder-agent-proxy` is not covered.** It lives in another namespace
+  and another flux Kustomization, so this patch does not reach it and its
+  hardening is still a second copy — the exact thing that drifted. Either point
+  its kustomization at this file by relative path, or add the cross-namespace
+  consistency test rejected above. The test is probably right for this case,
+  since a cross-directory patch path is its own readability cost.
+- **The fourth copy.** When `haku-sandbox` moves off mitmproxy, its iron proxy
+  should be added to the target regex rather than written from scratch.
+- **Merging the proxy configs.** Operator intent (2026-08-10) is to converge the
+  per-instance `iron.yaml` files, and to let `haku-claude-sandbox` eventually
+  reach the GitHub token and kube JWT through the same proxy rewrite. That
+  relaxes the isolation currently enforced by separate listeners and per-proxy
+  CNPs, so it is a deliberate policy change rather than a refactor — sequence it
+  on its own, not as a side effect of deduplication.

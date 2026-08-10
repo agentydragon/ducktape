@@ -18,15 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: haku-claude-oauth-proxy
     spec:
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        seccompProfile:
-          type: RuntimeDefault
+      # Pull secret, hardening, args, resources and mounts come from
+      # iron-proxy-common.yaml, applied by this namespace's kustomization.
       containers:
         - name: iron-proxy
           # Was the only one of the three iron-proxy deployments without an
@@ -34,7 +27,6 @@ spec:
           # two siblings roll on. Still on the pre-rename path until Flux writes
           # the first tag pushed as `iron-proxy`.
           image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260809231643-86f9b6c # {"$imagepolicy": "flux-system:iron-proxy"}
-          args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
             - name: CLAUDE_CODE_OAUTH_TOKEN
               valueFrom:
@@ -46,24 +38,6 @@ spec:
               containerPort: 8180
             - name: metrics
               containerPort: 9090
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
-          volumeMounts:
-            - name: config
-              mountPath: /etc/iron-proxy
-              readOnly: true
-            - name: ca
-              mountPath: /ca
-              readOnly: true
       volumes:
         - name: config
           configMap:
