@@ -3,20 +3,16 @@
 Investigated 2026-08-10, for the idea of haku-console gating its own tool calls ("Haku reached
 for `hostexec` when its own k8s token would do") with a cheap model call rather than a rule.
 
-**Source note.** Langfuse was the intended source and **has nothing to show** — checked, not
-assumed. It holds 35,816 generations; a recent scan found `gpt-5.6-terra`, `gpt-oss:20b` and one
-embedding, **no Anthropic model at all**, and no request carrying the classifier's system prompt.
-Not an instrumentation gap: `llm.request.type` across the sample is `anthropic_messages` 129 /
-`acompletion` 18 / `aembedding` 3, so LiteLLM traces the Messages API perfectly well — it is the
-dominant traced path. The classifier is absent because Claude Code's auto mode talks to
-`api.anthropic.com` directly and never reaches the proxy, which is the same gap
-<litellm_oauth_passthrough.md> is about.
+**Source.** Everything below is quoted from the Claude Code binary that `claude-agent-sdk==0.2.128`
+vendors at `claude_agent_sdk/_bundled/claude` (275 MB, not stripped), which contains the prompt,
+the request builder and the response parser. That is stronger evidence than a trace: it is the
+code that builds the request rather than one sample of it.
 
-The classifier was read instead out of the Claude Code binary that `claude-agent-sdk` vendors at
-`claude_agent_sdk/_bundled/claude` (275 MB, not stripped), where the prompt, the request builder
-and the parser are all present. That is **stronger** evidence than a trace anyway: it is the code
-that builds the request, not one sample of it. Everything below is quoted from
-`claude-agent-sdk==0.2.128`. What a trace would still add is real token counts and latency, and
+**Langfuse holds none of this**, and cannot: it sees what passes through LiteLLM, and auto mode
+talks to `api.anthropic.com` directly (the gap <litellm*oauth_passthrough.md> is about). Not an
+instrumentation problem — `llm.request.type` across a 150-observation sample is
+`anthropic_messages` 129 / `acompletion` 18 / `aembedding` 3, so the Messages API is the
+\_dominant* traced path there. What a trace would still add is real token counts and latency, and
 that stays unavailable until some auto-mode traffic goes through the proxy.
 
 ## Shape
