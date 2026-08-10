@@ -89,6 +89,71 @@ Note the ordering constraint is the opposite of what security would prefer:
 Squid-first would keep credentials away from the cache, and that is the order
 Squid cannot do.
 
+## Target architecture (operator, 2026-08-10)
+
+**One central caching proxy, with the per-consumer iron-proxies in front of it**,
+and possibly a haku-console decision hook later:
+
+```text
+workload ──▶ iron (bump, substitute, allowlist) ──▶ central cache ──▶ origin
+             one per fence, own credentials          shared by all fences
+```
+
+This is the only order that works (Squid cannot be first — see above), and
+sharing one cache across every fence amortises it while each iron keeps its own
+credential set and host list. It also gives row 1 a path to an L7 allowlist and
+caching at once, which is what started this.
+
+### Keep credentials out of the shared cache with `no_proxy`
+
+A _central_ cache behind every iron would see post-substitution credentials from
+**all** fences — aggregating in one component exactly what the separate
+listeners and per-proxy CNPs exist to separate. That component would become the
+highest-value target in the egress path.
+
+The fix is a documented field on the key verified above:
+
+```yaml
+proxy:
+  upstream_proxy:
+    https_proxy: "http://egress-cache:3128"
+    # Hosts where THIS iron substitutes a credential bypass the cache entirely.
+    no_proxy: "api.anthropic.com,forgejo-http.forgejo,api.github.com,github.com,kubeapi.allegedly.works,haku.allegedly.works"
+```
+
+Each iron routes only its credential-free traffic through the shared cache and
+dials credentialed hosts directly. Nothing is lost: RFC 9111 already forbids
+caching responses to authenticated requests, so those hosts were never going to
+produce hits. The cache then only ever handles anonymous artifact traffic
+(PyPI, npm, Bazel, nixos, codeload), which is both the cacheable set and the
+harmless set.
+
+Rule of thumb: **a host belongs in `no_proxy` exactly when it appears in that
+iron's `secrets` transform.** Worth pinning with a test, the same way
+`test_egress_allowlists` pins the host lists — the two lists must not drift.
+
+### Unresolved: the hook and the cache want different homes
+
+Requirement 4 pulls the opposite way. Squid's `external_acl_type` is the only
+mechanism here that can hold a request for a human and cache the verdict — but
+if credentialed traffic bypasses the cache via `no_proxy`, the hook at the cache
+never sees those domains, and they are the interesting ones to gate.
+
+So the gate wants to be in iron (which already owns the per-fence allowlist),
+and iron's only decision hook is `judge`: LLM-provider-only, `8s` timeout,
+deny-on-timeout, no deferral. That cannot wait for an operator.
+
+Three ways out, none free, decide before building:
+
+1. **Ask upstream for a generic decision hook** in iron — a webhook transform
+   with a long timeout and verdict caching. Same conversation as the caching ask.
+2. **Put the gate at the cache and accept its blind spot** — gate only
+   cache-routed (credential-free) traffic, and rely on the static `allowlist`
+   for credentialed hosts, which are few and rarely change.
+3. **Fail closed and decide out-of-band** — `judge` denies unknown domains fast,
+   and the operator approves by editing the allowlist, which is a config change
+   rather than a request-time hold. Least elegant, available today.
+
 ## Options, ranked
 
 **A. Squid + an ICAP service for substitution.** Squid natively covers 1, 3 and
