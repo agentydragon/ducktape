@@ -44,7 +44,7 @@ from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from haku.console.auto_approval import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
@@ -115,6 +115,12 @@ INSTRUCTIONS = (
     "decides it. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
     "by the console Operator's browser session execute directly and create no approval record. Call "
     "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials. "
+    "If a server is serving tools that your tool list does not contain — discovery does not re-run for "
+    "an established session, so a server that was degraded when you connected has no tools here — name "
+    "them through `call_mcp_tool(server_id, tool_name, arguments)`, passing the same `arguments` the "
+    "generated tool would have taken. `get_mcp_server_status(server_id, include_tool_schemas=True)` "
+    "reports each tool's `approval_mode` and its already-exposed `input_schema`, so you can see which "
+    "of the two shapes to send rather than guessing."
 )
 
 _REQUEST_PREAMBLE = (
@@ -141,6 +147,12 @@ _READ_ONLY_META = mcp_types.ToolAnnotations(readOnlyHint=True, openWorldHint=Fal
 # destructive write. No idempotentHint: a second withdrawal is a conflict, not a no-op, and
 # claiming idempotency would invite client retry loops.
 _LEDGER_MUTATION_META = mcp_types.ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
+
+# The generic dispatch fallback reaches any tool on any configured server, so it is neither
+# read-only nor closed-world. destructiveHint is deliberately left unset: MCP's default for a
+# non-read-only tool is "destructive", which is the only safe assumption when the target tool is a
+# parameter rather than a property of this tool.
+_GENERIC_DISPATCH_META = mcp_types.ToolAnnotations(readOnlyHint=False, openWorldHint=True)
 
 
 @dataclass(frozen=True)
@@ -324,9 +336,9 @@ def _exposed_metadata(
     schema is not reported separately: for an enveloped tool it is already nested under ``input``,
     so returning both would be the same schema twice.
 
-    A caller whose tool list lacks the generated proxy — a session that connected while this server
-    was degraded, say — otherwise has no way to learn whether a tool takes raw arguments or an
-    envelope, since the only thing that ever said so was the proxy's own schema.
+    This is what makes `call_mcp_tool` usable. Its whole reason to exist is a caller whose tool list
+    lacks the generated proxy, and such a caller has no other way to learn whether the tool it wants
+    takes raw arguments or an envelope.
     """
     if isinstance(metadata.state, DegradedServerState):
         return metadata
@@ -441,6 +453,52 @@ def _direct_to_result(result: dict[str, Any]) -> ToolResult:
     )
 
 
+async def _dispatch(
+    context: ConsoleMcpContext,
+    *,
+    server_id: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    passthrough: bool,
+    actor: ToolCallActor,
+) -> ToolResult:
+    """Read one call payload in the shape its tool advertises, then run it through the lifecycle its
+    principal is entitled to.
+
+    Shared by the generated ``<server>__<tool>`` proxies and the generic ``call_mcp_tool`` fallback,
+    which is why the payload parsing lives here rather than in either caller: the two must accept
+    byte-identical arguments, and they must reach the queue through exactly one path. A second
+    parse or a second dispatch is how an approval bypass gets built by accident, since the policy
+    decision lives inside ``submit_and_wait``.
+    """
+    if passthrough:
+        call_args, rationale, title, wait_ms = arguments, "", None, DEFAULT_WAIT_MS
+    else:
+        env = ApprovalRequestEnvelope.model_validate(arguments)
+        call_args, rationale, title = env.input, env.rationale, env.title
+        wait_ms = DEFAULT_WAIT_MS if env.wait_for_result_ms is None else env.wait_for_result_ms
+    req = SubmitToolCallRequest(
+        server_id=server_id,
+        tool_name=tool_name,
+        arguments=call_args,
+        rationale=rationale,
+        title=title,
+        wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
+    )
+    try:
+        if isinstance(actor, OperatorActor):
+            return _direct_to_result(await context.tool_calls.execute_direct(req=req, actor=actor))
+        record = await context.tool_calls.submit_and_wait(req=req, actor=actor)
+    except (
+        BackendAccountNotConnectedError,
+        McpServerNotFoundError,
+        ToolCallNotFoundError,
+        ToolCallStateConflictError,
+    ) as error:
+        raise ToolError(str(error)) from error
+    return _record_to_result(record, context.settings)
+
+
 class ProxyTool(Tool):
     """A connected-server tool re-exposed through the shared application service.
 
@@ -458,34 +516,14 @@ class ProxyTool(Tool):
     actor: ToolCallActor
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        if self.passthrough:
-            call_args, rationale, title, wait_ms = arguments, "", None, DEFAULT_WAIT_MS
-        else:
-            env = ApprovalRequestEnvelope.model_validate(arguments)
-            call_args, rationale, title = env.input, env.rationale, env.title
-            wait_ms = DEFAULT_WAIT_MS if env.wait_for_result_ms is None else env.wait_for_result_ms
-        ctx = self.context
-        req = SubmitToolCallRequest(
+        return await _dispatch(
+            self.context,
             server_id=self.server_id,
             tool_name=self.upstream_tool_name,
-            arguments=call_args,
-            rationale=rationale,
-            title=title,
-            wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
+            arguments=arguments,
+            passthrough=self.passthrough,
+            actor=self.actor,
         )
-        actor = self.actor
-        try:
-            if isinstance(actor, OperatorActor):
-                return _direct_to_result(await ctx.tool_calls.execute_direct(req=req, actor=actor))
-            record = await ctx.tool_calls.submit_and_wait(req=req, actor=actor)
-        except (
-            BackendAccountNotConnectedError,
-            McpServerNotFoundError,
-            ToolCallNotFoundError,
-            ToolCallStateConflictError,
-        ) as error:
-            raise ToolError(str(error)) from error
-        return _record_to_result(record, ctx.settings)
 
 
 def _build_proxy_tool(
@@ -703,8 +741,8 @@ def build_console_mcp(
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
     catalog = OperatorServerCatalog(context)
-    # One registry for both the generated proxies and the exposed reflection, so what a tool's
-    # schema says about its payload shape can never disagree with what dispatch actually accepts.
+    # One registry for both the generated proxies and `call_mcp_tool`, so the two can never disagree
+    # about which payload shape a tool takes.
     policies = AutoApprovalPolicyRegistry(load_console_config(context.settings))
     mcp.add_provider(OperatorToolProvider(context, actor_resolver, catalog, policies))
     mcp.add_middleware(OperatorToolAvailabilityMiddleware(catalog, actor_resolver))
@@ -778,6 +816,63 @@ def build_console_mcp(
                 include_schemas=include_tool_schemas,
             ),
         )
+
+    @mcp.tool(annotations=_GENERIC_DISPATCH_META)
+    async def call_mcp_tool(
+        server_id: str,
+        tool_name: str,
+        arguments: dict[str, Any] | None = None,
+        actor: ToolCallActor = current_actor_dependency,
+    ) -> ToolResult:
+        """Call any tool on any configured MCP server by naming it, when its generated
+        `<server>__<tool>` tool is missing from your tool list.
+
+        `arguments` is exactly what you would pass to that generated tool — the same payload, only
+        addressed by name instead of by tool. So it is the raw upstream arguments for a tool the
+        policy auto-approves, and the `{input, rationale, title?, wait_for_result_ms?}` envelope for
+        one that needs operator approval. Everything downstream is identical: the same policy
+        decision, the same schema check, the same audit row, the same result or non-terminal stub.
+
+        **Read `get_mcp_server_status(server_id, include_tool_schemas=True)` first.** Each tool
+        there reports `approval_mode` (which of the two shapes it takes) and an `input_schema` that
+        is already the exposed one — enveloped where required — so you can send it verbatim. Do not
+        guess the shape: an envelope sent to a pass-through tool becomes literal arguments named
+        `input` and `rationale`, and raw arguments sent to an enveloped tool are rejected.
+
+        Reach for this when the named tool is absent — most often because your session enumerated
+        this server while it was degraded. Discovery does not re-run for an established session, so
+        a server that has since recovered contributes no tools to your registry even though it is
+        serving; that reflection call is current when your own tool list is not.
+
+        Omit `arguments` for a pass-through tool that takes none. `list_mcp_servers` shows what is
+        configured.
+        """
+        servers = _load_servers(context.settings)
+        if not any(server.id == server_id for server in servers):
+            known = ", ".join(sorted(server.id for server in servers)) or "(none configured)"
+            raise ToolError(
+                f"unknown configured MCP server {server_id!r}; configured servers: {known}. "
+                "Use list_mcp_servers to inspect them."
+            )
+        passthrough = _is_passthrough(policies, actor, server_id, tool_name)
+        try:
+            return await _dispatch(
+                context,
+                server_id=server_id,
+                tool_name=tool_name,
+                arguments=arguments or {},
+                passthrough=passthrough,
+                actor=actor,
+            )
+        except ValidationError as error:
+            # The named tool advertises its shape in its own schema, so a client cannot get this
+            # wrong; a caller naming the tool by hand can, and the bare pydantic error does not say
+            # which of the two shapes was expected.
+            raise ToolError(
+                f"{tool_name!r} on {server_id!r} requires operator approval, so `arguments` must be the "
+                "envelope {input: <the real arguments>, rationale: <shown to the operator>, title?, "
+                f"wait_for_result_ms?}}, not the arguments themselves. Details: {error}"
+            ) from error
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:

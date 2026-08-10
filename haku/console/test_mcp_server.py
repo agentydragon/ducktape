@@ -640,6 +640,138 @@ async def test_withdraw_tool_call_is_advertised_as_a_mutation(agent_client: Clie
     assert read_tool_annotations.readOnlyHint is True
 
 
+async def test_call_mcp_tool_dispatches_an_auto_approved_read(harness: _Harness, agent_client: Client) -> None:
+    """The fallback reaches a tool the policy auto-approves and returns the real upstream result,
+    audited against the named server/tool rather than as a call to `call_mcp_tool` itself."""
+    result = await agent_client.call_tool("call_mcp_tool", {"server_id": "gmail", "tool_name": "labels_list"})
+
+    assert result.structured_content is not None
+    assert result.structured_content["labels"][0]["name"] == "haku/triaged"
+    assert result.meta is not None
+    response = await _operator_get(harness, f"/api/tool-calls/{result.meta[MCP_TOOL_CALL_META_KEY]['tool_call_id']}")
+    assert response.status_code == 200, response.text
+    call = response.json()
+    assert call["status"] == ToolCallStatus.OK
+    assert (call["server_id"], call["tool_name"]) == ("gmail", "labels_list")
+
+
+async def test_call_mcp_tool_queues_what_the_named_tool_would_queue(harness: _Harness, agent_client: Client) -> None:
+    """The security property: naming a tool through the fallback must not escape approval. The same
+    manual call that returns a stub through `gmail__drafts_create` returns one here."""
+    result = await agent_client.call_tool(
+        "call_mcp_tool",
+        {
+            "server_id": "gmail",
+            "tool_name": "drafts_create",
+            # Byte-identical to what `gmail__drafts_create` takes, because that is the contract.
+            "arguments": {
+                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+                "rationale": "drafting the reply",
+                "wait_for_result_ms": 0,
+            },
+        },
+    )
+
+    stub = result.structured_content
+    assert stub is not None
+    assert stub["status"] == ToolCallStatus.PENDING_APPROVAL
+    pending = await _operator_get(harness, "/api/approvals/pending")
+    assert pending.status_code == 200, pending.text
+    queued = pending.json()["approvals"]
+    assert len(queued) == 1
+    assert (queued[0]["server_id"], queued[0]["tool_name"]) == ("gmail", "drafts_create")
+    # The operator sees the requester's own words, not a generic "called via the fallback".
+    assert queued[0]["rationale"] == "drafting the reply"
+
+
+async def test_call_mcp_tool_still_enforces_the_tool_schema(harness: _Harness, agent_client: Client) -> None:
+    """A free-form `arguments` object must not become a way past the schema check that makes a bad
+    call born-denied — otherwise the fallback would queue work that can never execute."""
+    with pytest.raises(ToolError, match="single_events"):
+        await agent_client.call_tool(
+            "call_mcp_tool",
+            # `list_events` is auto-approved, so it takes raw arguments here just as it does
+            # through `google_calendar__list_events`.
+            {"server_id": "google_calendar", "tool_name": "list_events", "arguments": {"single_events": True}},
+        )
+
+    response = await _operator_get(harness, "/api/tool-calls")
+    assert response.status_code == 200, response.text
+    calls = response.json()["tool_calls"]
+    assert len(calls) == 1
+    assert calls[0]["status"] == ToolCallStatus.DENIED
+    pending = await _operator_get(harness, "/api/approvals/pending")
+    assert pending.json()["approvals"] == []
+
+
+async def test_call_mcp_tool_rejects_an_unknown_server(harness: _Harness, agent_client: Client) -> None:
+    with pytest.raises(ToolError, match="unknown configured MCP server"):
+        await agent_client.call_tool("call_mcp_tool", {"server_id": "not_a_server", "tool_name": "whatever"})
+
+    # A rejected server name never reaches the ledger, so it cannot spend operator attention.
+    response = await _operator_get(harness, "/api/tool-calls")
+    assert response.json()["tool_calls"] == []
+
+
+async def test_reflected_schema_is_the_one_call_mcp_tool_accepts(agent_client: Client) -> None:
+    """The round trip the pair exists for: reflect a tool you cannot see, send back exactly the
+    shape reported, get the real behaviour. If these two ever disagree the fallback is unusable,
+    because a caller with no generated tool has nothing else to learn the shape from."""
+    status = await agent_client.call_tool("get_mcp_server_status", {"server_id": "gmail", "include_tool_schemas": True})
+    assert status.structured_content is not None
+    tools = {tool["name"]: tool for tool in status.structured_content["server"]["state"]["tools"]}
+
+    # An auto-approved read reports raw upstream arguments...
+    assert tools["labels_list"]["approval_mode"] == "passthrough"
+    assert "input" not in tools["labels_list"]["input_schema"].get("properties", {})
+    # ...and a write reports the envelope, with the upstream schema nested under `input`.
+    create = tools["drafts_create"]
+    assert create["approval_mode"] == "approval_required"
+    assert set(create["input_schema"]["required"]) == {"input", "rationale"}
+    assert "subject" in create["input_schema"]["properties"]["input"]["properties"]
+
+    # Now send each reported shape back through the fallback.
+    read = await agent_client.call_tool("call_mcp_tool", {"server_id": "gmail", "tool_name": "labels_list"})
+    assert read.structured_content is not None
+    assert read.structured_content["labels"][0]["name"] == "haku/triaged"
+    write = await agent_client.call_tool(
+        "call_mcp_tool",
+        {
+            "server_id": "gmail",
+            "tool_name": "drafts_create",
+            "arguments": {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "r"},
+        },
+    )
+    assert write.structured_content is not None
+    assert write.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
+
+
+async def test_call_mcp_tool_names_the_shape_it_wanted(agent_client: Client) -> None:
+    """A caller naming a tool by hand can get the shape wrong in a way a generated tool's schema
+    would have prevented, so the error has to say which shape was expected rather than surfacing a
+    bare pydantic complaint about a missing `input` field."""
+    with pytest.raises(ToolError, match="requires operator approval"):
+        await agent_client.call_tool(
+            "call_mcp_tool",
+            {
+                "server_id": "gmail",
+                "tool_name": "drafts_create",
+                "arguments": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+            },
+        )
+
+
+async def test_call_mcp_tool_is_advertised_as_an_open_world_call(agent_client: Client) -> None:
+    """It can reach any tool on any server, so it must not be annotated read-only or closed-world
+    the way the console-native reads are."""
+    tools = {tool.name: tool for tool in await agent_client.list_tools()}
+
+    annotations = tools["call_mcp_tool"].annotations
+    assert annotations is not None
+    assert annotations.readOnlyHint is False
+    assert annotations.openWorldHint is True
+
+
 async def test_withdraw_tool_call_after_approval_reports_the_real_status(
     harness: _Harness, agent_client: Client
 ) -> None:

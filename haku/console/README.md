@@ -164,6 +164,21 @@ stub means approval happened within the wait but downstream execution is still i
 agent can retract a still-pending stub via `withdraw_tool_call(tool_call_id, reason)` — the one console-native
 ledger mutation, annotated `readOnlyHint=False`.
 
+`call_mcp_tool(server_id, tool_name, arguments?)` is the generic fallback for reaching a tool that
+has no generated proxy in the caller's tool list. **Gotcha it exists for:** discovery is
+request-local but a connected client enumerates once, so a server that was `degraded` at connect
+time contributes no tools for the life of that session — it keeps serving, and the agent cannot name
+anything on it. This closes that gap without a reconnect.
+
+`arguments` is **exactly what the generated tool would have taken** — raw upstream arguments for a
+pass-through tool, the `{input, rationale, …}` envelope for one that needs approval — so the payload
+is the same call, only addressed by name. There is one parse and one dispatch: `_dispatch` reads the
+payload and runs it, and `ProxyTool.run` is pure delegation to it. So the policy decision, the schema
+check that makes a bad call born-denied, the audit row's real `(server_id, tool_name)`, and the
+Operator direct-execution path are the same code for both routes — naming a tool here cannot escape
+approval. Annotated `openWorldHint=True` with `destructiveHint` left unset, because the target is a
+parameter rather than a property of the tool.
+
 **Reflection reports the exposed view, not the upstream one.** `get_mcp_server_status` describes each
 tool as _this proxy_ presents it to the asking caller: `input_schema` is the schema the console
 accepts — already enveloped where the policy requires approval — and `approval_mode` names which of
@@ -171,12 +186,7 @@ the two shapes that is. The upstream schema is not returned alongside it; for an
 already nested under `input`, so reporting both would be the same schema twice. Both fields are
 per-caller, since the policy is per-Agent, and both come from the one `AutoApprovalPolicyRegistry`
 the generated proxies use, so what reflection says about a tool's payload shape cannot disagree with
-what dispatch accepts.
-
-**Gotcha this closes:** the proxy's generated tools were the only thing that ever stated a tool's
-payload shape, so a caller that lacks them could not act on a server it could plainly see. Discovery
-is request-local but a connected client enumerates once, so a server that was `degraded` at connect
-time contributes no tools for the life of that session even after it recovers.
+what dispatch accepts. That is what a caller of `call_mcp_tool` reads to learn which shape to send.
 
 The reflected `instructions` are the upstream server's own `initialize` guidance, passed through
 rather than restated. The handshake happens on every reflection anyway, so this was already being
