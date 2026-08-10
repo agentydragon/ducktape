@@ -105,12 +105,28 @@ setting intent aside: it mutates the request (so "same requests in as out" is ex
 not do), the client id and fingerprint are the first things an upstream would pin on, and the
 blast radius of being wrong is the subscription account.
 
-**We do not need any of it, and that is the point.** Our Matrix path already runs the **real**
-Claude Code binary in the sandbox: the genuine system prompt, headers and TLS are produced by the
-genuine client, and the egress proxy only swaps a placeholder token for the real one. Layers 3 and
-4 are there for callers that are _not_ Claude Code — Codex CLI, arbitrary API clients — which is
-not our case. Adopting CLIProxyAPI for Claude would mean taking on impersonation machinery to
-solve a problem we do not have.
+**We do not need layer 3, and we already do not have layer 4.** Our Matrix path runs the **real**
+Claude Code binary, so the request body — system prompt, messages, betas — is composed by the
+genuine client and the egress proxy only swaps a header value. That is the layer CLIProxyAPI has
+to forge, and we get it for free.
+
+**Correction to an earlier draft of this note, which claimed we also present the genuine TLS.** We
+do not. `haku-egress-proxy` is `iron-proxy` with `tls.mode: "mitm"`: it terminates the sandbox's
+TLS and **re-originates its own connection** to `api.anthropic.com`, so the ClientHello Anthropic
+sees is iron's Go/Rust stack, not Claude Code's — and header order and casing survive only as far
+as iron's own serialisation preserves them. On the transport axis we are already in exactly the
+position CLIProxyAPI's `utls_client.go` exists to avoid.
+
+That is worth sitting with, because it cuts against the reflex reading of layer 4. This path has
+been in production use without trouble, which is evidence that ClientHello fingerprinting is **not
+being enforced** here — or at least not acted on. CLIProxyAPI's uTLS work may be defensive, aimed
+at a different upstream, or simply thorough. Either way, "nobody writes a ClientHello spec unless
+someone is checking" is a weaker inference than it first looks, and our own deployment is the
+counter-example.
+
+So the honest statement of the difference is narrower than "we are the real client": we send the
+real client's **request**, over our own **transport**. Adopting CLIProxyAPI would add forgery of
+the part we currently get honestly, to fix a part we are apparently not being judged on.
 
 So the CLIProxyAPI template does **not** carry over to the Claude side, and the recommendation
 below stands more firmly than when it was written as a fallback.
@@ -185,6 +201,15 @@ was conditioned on does not hold for that route. **The recommendation is the egr
 
 On the ToS point, the distinction now has teeth. Teeing a copy of traffic the real Claude Code
 sends is observability: nothing about the request changes, and the property is enforced by the
-design rather than promised. Rewriting a caller's system prompt to claim it is Claude Code and
-matching Claude Code's TLS fingerprint is a different act, whatever the intent behind it — worth
-naming plainly rather than filing under the same "logging-only" heading.
+design rather than promised. Rewriting a caller's system prompt to claim it is Claude Code is a
+different act, whatever the intent behind it — worth naming plainly rather than filing under the
+same "logging-only" heading. (The TLS half of that sentence used to be here too; per the
+correction above, we re-originate the connection ourselves, so it was never ours to claim.)
+
+**Worth knowing for context:** OpenAI takes the opposite position on the equivalent question.
+ChatGPT Plus/Pro/Team subscription OAuth is a documented, supported way for third-party clients to
+charge model calls to a subscription — Cline ships it as a feature, OpenClaw documents it as a
+provider, and there are maintained OAuth plugins for opencode. That is a real asymmetry rather
+than a misreading, and it is why the Codex side of this cluster has an easier story than the
+Claude side. It does not change what Anthropic's terms say; it does mean the shape we want is not
+inherently unreasonable to want.
