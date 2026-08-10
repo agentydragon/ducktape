@@ -111,6 +111,42 @@ thorough; it is not evidence that we are being measured on something we are alre
 So adopting CLIProxyAPI on the Claude side would mean forging the part we currently get honestly,
 to fix a part nobody appears to be judging.
 
+### Why they built layer 4, and what it implies for our ClientHello
+
+Their history says plainly what the adversary is, and it is **Cloudflare's bot mitigation in front
+of `api.anthropic.com`**, not ToS enforcement:
+
+| Date       | Commit                                                                                                                                                                                                     |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-01-30 | `feat(auth): add custom HTTP client with utls` — "Firefox TLS fingerprinting to **bypass Cloudflare fingerprinting on Anthropic domains**" (auth path only)                                                |
+| 2026-02-28 | `fix(cloak): align outgoing requests with real Claude Code 2.1.63 fingerprint` — "Captured and compared outgoing requests … and fixed **all detectable differences**" (headers, User-Agent, billing block) |
+| 2026-04-02 | `fix: Claude API 请求使用 utls Chrome TLS 指纹` — the executor used Go's `crypto/tls`, whose "**JA3 fingerprint does not match real Claude Code (Bun/BoringSSL) and can be identified by Cloudflare**"     |
+| 2026-04-02 | `fix: 修复反代检测对抗的 3 个问题` — uTLS applied **only** to official Anthropic domains; custom `base_url` keeps standard transport                                                                       |
+| 2026-08-02 | `feat(claude): align OAuth wire identity and TLS with Claude Code 2.1.220` — device IDs, stable per-conversation sessions, a "CCH algorithm over the final serialized request bytes", aligned cache layout |
+
+So it was **reactive**, it names Cloudflare specifically, and it has not stopped — August alone
+adds header casing, a `count_tokens` cloaking gap, and system-block boundary fidelity. That is an
+arms race in progress.
+
+Two conclusions for us, pulling opposite ways.
+
+**Reassuring:** the failure mode of a JA3 mismatch is a **blocked request**, not an account action.
+CDN bot mitigation acts on the connection, so the symptom would be the Matrix agent starting to
+take 403s or challenges — visible, immediate, and reversible. It is not the mechanism by which a
+subscription gets terminated, and it is indifferent to which token the connection carries.
+
+**Less reassuring:** iron re-originates with its own stack, which is exactly the position the April
+commit describes as detectable, and our only protection today is that nothing has tightened on this
+path. Worth knowing what iron's TLS library is before assuming otherwise; "it works now" is the
+whole of the current evidence.
+
+**The trade this exposes is worth naming before it is an incident.** Substituting the token
+requires MITM, and MITM requires re-originating TLS. Credential containment — the sandbox never
+holding the real token — and transport fidelity are therefore mutually exclusive in this design. If
+this path ever starts getting challenged, the fix is to put the real token in the sandbox and drop
+the substitution, letting the genuine client make the genuine connection. That is a real loss of
+the containment property, and it is the decision to have ready rather than to improvise.
+
 ### Is there a private inference API the binary has and the SDK does not expose?
 
 No. Every inference call CLIProxyAPI makes goes to `https://api.anthropic.com/v1/messages`, the
