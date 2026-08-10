@@ -1,6 +1,6 @@
 # Each credential/consumer edge has its own source-side Role and target-side
 # SecretStore. A target namespace can therefore only reflect the one source
-# Secret named by its Role's resourceNames, rather than every LLM credential.
+# Secret named by its Role's resourceNames, rather than every external credential.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,12 +24,6 @@ kind: ServiceAccount
 metadata:
   name: llm-gemini-reader
   namespace: litellm
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: llm-zai-reader
-  namespace: openhands
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -94,20 +88,6 @@ subjects:
   - kind: ServiceAccount
     name: llm-zai-reader
     namespace: litellm
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: llm-zai-openhands-reader
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: llm-zai-reader
-subjects:
-  - kind: ServiceAccount
-    name: llm-zai-reader
-    namespace: openhands
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -221,20 +201,6 @@ spec:
         caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
       auth:
         serviceAccount: { name: llm-gemini-reader, namespace: litellm }
-      remoteNamespace: ducktape-flux
----
-apiVersion: external-secrets.io/v1
-kind: SecretStore
-metadata:
-  name: llm-zai
-  namespace: openhands
-spec:
-  provider:
-    kubernetes:
-      server:
-        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
-      auth:
-        serviceAccount: { name: llm-zai-reader, namespace: openhands }
       remoteNamespace: ducktape-flux
 ---
 apiVersion: external-secrets.io/v1

@@ -17,6 +17,5 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: litellm-namespace
-    - name: openhands-namespace
     - name: external-secrets-operator
   timeout: 5m
