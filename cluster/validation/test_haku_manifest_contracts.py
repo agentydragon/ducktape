@@ -84,12 +84,16 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
 
 
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
-    """The runtime commit stamp and cache-safe rollout strategy must track the actual images."""
+    """The runtime commit stamp must track the actual images, and a bad release must not be an outage."""
     deployment_path = k8s_dir / "haku" / "console" / "deployment.yaml"
     raw = deployment_path.read_text(encoding="utf-8")
     deployment = yaml.safe_load(raw)
 
-    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
+    # `maxUnavailable: 0` is the property worth pinning: a replacement that never becomes Ready
+    # leaves the previous version serving. Recreate did the opposite — every pod deleted before one
+    # started — which turned a two-minute missing Secret into a full console outage on 2026-08-10.
+    assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+    assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
     runtime_tags = {entry["name"]: entry["value"] for entry in containers["server"]["env"] if "value" in entry}
     assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_IMAGE_TAG"]

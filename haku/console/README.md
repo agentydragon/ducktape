@@ -545,10 +545,25 @@ localhost, and sets cache policy by route (`/assets/*` immutable, app shell
 never stored, missing assets and API/health/mcp/auth uncached). No runtime asset copy or shared web
 volume is used.
 
-The Deployment uses `Recreate` because each static image contains only its current bundle. This
-creates an atomic version boundary: a page cannot receive HTML from one replica version and request
-its fingerprinted asset from another. It also means the console is wholly unavailable until a
-replacement is Ready; a broken release causes an unbounded outage and must be fixed forward.
+The Deployment rolls with **`maxUnavailable: 0`**, so a replacement that never becomes Ready leaves
+the running version serving and a bad release is a no-op instead of an outage. It replaced
+`Recreate`, which deleted every pod before starting one: on 2026-08-10 a transiently missing
+reflected Secret (`ha-mcp-bearer`, gone for ~2 minutes while its own namespace churned) took the
+console fully down, where rolling would have been invisible.
+
+Two consequences, both real:
+
+- **Assets can skew during a roll.** Each static image contains only its own fingerprinted bundle,
+  so a browser can take the new shell from one pod and 404 on its chunk against the other. The
+  window is the roll's length and a refresh afterwards fixes it. Closing it needs session
+  persistence so a page load stays on one pod — Service `sessionAffinity` is not obviously honored
+  through Cilium's Gateway API path (Envoy load-balances endpoints itself), so that wants verifying
+  before it is added rather than being configured hopefully.
+- **Migrations must be backward compatible for the length of a roll.** `Recreate` guaranteed no old
+  pod outlived the migration; rolling does not, so old code runs against the new schema for a
+  minute. Additive changes are fine. A destructive one (dropping or renaming a column an old
+  replica still selects) has to be split expand/contract across two releases — the constraint the
+  previous strategy hid.
 
 The server receives both Flux-selected image tags through `HAKU_CONSOLE_{,STATIC_}IMAGE_TAG`.
 `GET /api/deployment` parses their commit suffixes at runtime for the Settings version links. This
@@ -587,7 +602,9 @@ access is Authentik's application access policy.
 
 Postgres is **required**: it backs Operator/Agent authority, the approval ledger, FastMCP state, and
 the Operator OAuth token store. The console applies its Alembic baseline once at startup (`app.main`,
-before serving) — never as a side effect of constructing a store. Baseline `0010` directly creates
+before serving) — never as a side effect of constructing a store. Since the Deployment rolls rather
+than recreating, a migration runs while the previous version is still serving, so each one must be
+backward compatible for the length of a roll (see Perimeter / deploy). Baseline `0010` directly creates
 the canonical Operator/identity and Agent/name/binding/grant/tool-principal graph. Its revision ID is
 deliberately retained from the deployed migration lineage: a database already stamped `0010` is a
 no-op, while a fresh database creates the same frozen schema.
