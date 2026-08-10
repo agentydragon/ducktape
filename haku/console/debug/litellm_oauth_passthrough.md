@@ -102,14 +102,12 @@ Layers 3 and 4 are impersonation: they exist to make a caller that is not Claude
 indistinguishable from one. Setting intent aside, layer 3 also mutates the request, so "the same
 requests out as in" is precisely what it does not give.
 
-**Neither layer is worth buying here.** Layer 3 we already have honestly, because the sandbox runs
-the real binary. Layer 4 we already lack — iron re-originates the connection — and this path runs
-without trouble, which is evidence that ClientHello fingerprinting is not enforced on it, or at
-least not acted on. CLIProxyAPI's uTLS work may be defensive, aimed at another upstream, or simply
-thorough; it is not evidence that we are being measured on something we are already failing.
+**Layer 3 is not worth buying: we already have it honestly**, because the sandbox runs the real
+binary. Adopting CLIProxyAPI on the Claude side would mean forging the part we currently get for
+free.
 
-So adopting CLIProxyAPI on the Claude side would mean forging the part we currently get honestly,
-to fix a part nobody appears to be judging.
+**Layer 4 is a different question, because we already lack it** — iron re-originates the
+connection — and that is not a free position, as the history below shows.
 
 ### Why they built layer 4, and what it implies for our ClientHello
 
