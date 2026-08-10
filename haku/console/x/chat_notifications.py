@@ -19,10 +19,10 @@ The notify half stays inside the caller's transaction (see `notify`), because `p
 delivers on commit: emitting it anywhere else would announce work that a rollback then
 un-did.
 
-**One channel, a typed payload.** What used to be three channels carrying a bare session id
-is one channel carrying a `ChatEvent`. Three channels made the event kind implicit in the
-channel name — untyped, unvalidated, and impossible to extend without another LISTEN — while
-`pg_notify` allows 8000 bytes of payload and this uses about seventy.
+**One channel, a typed payload.** Every event travels on `CHANNEL` as a `ChatEvent`, rather
+than the kind being implicit in one of three channel names — which was untyped, unvalidated,
+and needed another LISTEN per kind. `pg_notify` allows 8000 bytes of payload; this uses about
+seventy.
 """
 
 from __future__ import annotations
@@ -59,7 +59,12 @@ class ChatEventKind(StrEnum):
 
 
 class ChatEvent(BaseModel):
-    """What travels on `CHANNEL`. A wire contract between replicas — see the rollout note below."""
+    """What travels on `CHANNEL`.
+
+    A cross-replica wire contract: both ends of a notification are separate pods, which may
+    run different releases during a roll. Add fields, never rename or remove one, and treat
+    a change of `CHANNEL` itself as destructive — see the expand/contract note in the README.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -67,19 +72,6 @@ class ChatEvent(BaseModel):
     session_id: UUID
 
 
-# CLEANUP(added 2026-08-10): drop the legacy channels, and the second `pg_notify` in `notify`,
-#   once no replica predating the merge is running — i.e. one full release after this lands
-#   (`kubectl get pods -n haku-console -o jsonpath='{..image}'` shows only images at or after
-#   it). Renaming a channel is a destructive wire change and the Deployment rolls with
-#   `maxUnavailable: 0`, so the two schemes have to overlap for one release.
-_LEGACY_CHANNELS = {
-    ChatEventKind.PROMPT: "claude_chat_prompt",
-    ChatEventKind.UPDATE: "claude_chat_update",
-    ChatEventKind.ABORT: "claude_chat_abort",
-}
-_LEGACY_KINDS = {channel: kind for kind, channel in _LEGACY_CHANNELS.items()}
-
-_CHANNELS = (CHANNEL, *_LEGACY_CHANNELS.values())
 _RECONNECT_DELAY = timedelta(seconds=2)
 _CONNECT_TIMEOUT_SECONDS = 10
 _CLOSE_TIMEOUT_SECONDS = 2
@@ -87,26 +79,20 @@ _CLOSE_TIMEOUT_SECONDS = 2
 
 async def notify(db: AsyncSession, kind: ChatEventKind, session_id: UUID) -> None:
     """Emit `pg_notify` inside the caller's transaction, so it fires on commit."""
-    await _pg_notify(db, CHANNEL, ChatEvent(kind=kind, session_id=session_id).model_dump_json())
-    # Also on the pre-merge channel, so replicas still running the old code hear this. See
-    # the tombstone above for when this line goes.
-    await _pg_notify(db, _LEGACY_CHANNELS[kind], str(session_id))
+    await db.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": CHANNEL, "payload": ChatEvent(kind=kind, session_id=session_id).model_dump_json()},
+    )
 
 
-async def _pg_notify(db: AsyncSession, channel: str, payload: str) -> None:
-    await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": payload})
-
-
-def _parse(channel: str, payload: str) -> ChatEvent | None:
+def _parse(payload: str) -> ChatEvent | None:
     try:
-        if channel == CHANNEL:
-            return ChatEvent.model_validate_json(payload)
-        return ChatEvent(kind=_LEGACY_KINDS[channel], session_id=UUID(payload))
+        return ChatEvent.model_validate_json(payload)
     except ValueError:
-        # Pydantic's ValidationError is a ValueError, as is a malformed UUID. Neither is
-        # raised onward: this runs on asyncpg's reader task, and one bad payload must not
-        # cost the connection every other session is being woken through.
-        logger.exception("chat notification on %s carried an unreadable payload: %r", channel, payload)
+        # Pydantic's ValidationError is a ValueError. Not raised onward: this runs on
+        # asyncpg's reader task, and one bad payload must not cost the connection every
+        # other session is being woken through.
+        logger.exception("chat notification carried an unreadable payload: %r", payload)
         return None
 
 
@@ -186,14 +172,14 @@ class ChatNotifications:
             for event in events:
                 event.set()
 
-    def _on_notification(self, _connection: object, _pid: int, channel: str, payload: object) -> None:
+    def _on_notification(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
         """asyncpg dispatches on its reader task, so this must not block or await.
 
         The parameter types are asyncpg's, not ours: its `_Listener` protocol declares the
         payload as `object` and the connection as a union with the pool proxy, so narrowing
         either here would stop matching.
         """
-        event = _parse(channel, str(payload))
+        event = _parse(str(payload))
         if event is None:
             return
         for waiter in self._waiters.get((event.kind, event.session_id), ()):
@@ -206,8 +192,7 @@ class ChatNotifications:
                 connection = await asyncpg.connect(self._dsn, timeout=_CONNECT_TIMEOUT_SECONDS)
                 terminated = asyncio.Event()
                 connection.add_termination_listener(_terminator(terminated))
-                for channel in _CHANNELS:
-                    await connection.add_listener(channel, self._on_notification)
+                await connection.add_listener(CHANNEL, self._on_notification)
                 self._listening.set()
                 self._wake_everyone()
                 await terminated.wait()

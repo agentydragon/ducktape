@@ -73,6 +73,10 @@ another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is un
 subsystem with a different payload and its own lifecycle, and the only thing the two share
 is the mechanism.
 
+`test_notify_puts_a_readable_event_on_the_channel` is the one that pins the wire format —
+channel name and envelope, read off a raw connection. Nothing else would notice if either
+drifted, because every other test has the same code on both ends.
+
 One long-lived connection with a reconnect loop, matching <../console_events.py>, the
 console's other LISTEN consumer. The notify half stays inside the caller's transaction,
 because `pg_notify` delivers on commit.
@@ -81,10 +85,16 @@ because `pg_notify` delivers on commit.
 `maxUnavailable: 0`, so old and new replicas run together for the length of a roll. A
 renamed channel means the new replica notifies where the old one is not listening, and the
 wakes are lost for that window — the same expand/contract discipline a destructive
-migration needs. Notify on both names for one release, then drop the old. The merge above
-is mid-flight on exactly that footing: `notify` still emits the old per-kind channels
-alongside the new one, and the listener still accepts them, until the tombstone in
-`chat_notifications.py` says the last pre-merge replica is gone.
+migration needs. Notify on both names for one release, then drop the old — and gate that
+second release on the roll having **converged** (every pod on an image at or after the
+first), not on a release having elapsed, since `maxUnavailable: 0` means a bad image stalls
+the roll with the old replica still serving. The channel merge was done exactly that way.
+
+The trap in the overlap phase, worth knowing before staging the next one: while both names
+are being notified, every wake is delivered twice, so a woken waiter proves nothing about
+which name woke it. Tests and production alike will look healthy with the new path entirely
+broken, right up until the old one is deleted. Cover the new path end to end on its own
+before contracting.
 
 ## Cross-replica state, and the trap it sets
 
