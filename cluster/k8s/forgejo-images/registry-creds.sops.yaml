@@ -4,37 +4,38 @@ metadata:
     name: forgejo-images-creds
     namespace: forgejo-images
     annotations:
-        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson used as kubelet imagePullSecret (codex-pod, public-coder-agent proxy, grocy user-perms) and Flux ImageRepository secretRef (flux-system) — both via reflector mirroring.
+        description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson is auto-reflected as a kubelet imagePullSecret to codex-pod, public-coder-agent, grocy user-perms, and the squid egress spike, while flux-system uses its reflected copy for ImageRepository authentication.
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,codex-pod,grocy-sf,grocy-vallejo,public-coder-agent
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,codex-pod,grocy-sf,grocy-vallejo,public-coder-agent,squid-egress-spike
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,codex-pod,grocy-sf,grocy-vallejo,public-coder-agent
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,codex-pod,grocy-sf,grocy-vallejo,public-coder-agent,squid-egress-spike
 type: kubernetes.io/dockerconfigjson
 stringData:
-    username: ENC[AES256_GCM,data:pMLXL7SfEtD6eY8=,iv:+uXLAJ6OMSDxlBIwkWVAT3p89WOf0q1fadh3jbcBy4g=,tag:yaHH6itqD49xfIssNXJidw==,type:str]
-    password: ENC[AES256_GCM,data:oV1rjq4rnaKTXIyLEknZ9do9GD1xKJSfxRmFBCUih1oe5mvVIyCsVjhA+SrFyQ==,iv:BjBhw11/vK2O/wnVSYaiNk8fMC24u3BYayEYMkmz9d0=,tag:29e6Q/96CJKEDFt4OBZ61g==,type:str]
-    .dockerconfigjson: ENC[AES256_GCM,data:syQQZNF3MR/xqo9V4eWCpN7ZZWK8DqJImkg88NOcVCNNAkiF4EafaZT81Boo1WemsU/Fca8lTFztJ1vAydDid/tJIkdDB17U8kKg9bolgGQRDtujvvkLbBasnerWv9zNKrP97kkiu3dWz8NZuMGkVkhHNNt6shQb5MdgaEtPkh7+e3tMJTtPfjOjcpxXyC2br8hQWc3yCV83mZ/mhAKTBlGCCaKTN7MLZtZ8tkr+3LWlwGdvzZQXwOT8rreZ7uwJKzorBePI8rxfL6Iy8uUATS17,iv:9FLHOfIGMcJCpWxeJakUp4y/aiRXImXdw09iZlLMvAE=,tag:ZQcvplYHWTTIQm0D6tfwhQ==,type:str]
+    username: ENC[AES256_GCM,data:XnlwU6aDs5umRek=,iv:SVT9j83TeU4WjSTzqJ7zdTxFLMf0eX78nHZnhAR5kHI=,tag:vwptNL3WK11WPFJOGVWN6A==,type:str]
+    password: ENC[AES256_GCM,data:PpEuvheNJZeujkAGgtEqlltbcDLgCOxCDPPI0/u71cmRICfTatGT7fhmR9hKmg==,iv:9MOhUL9LjXbnuMZ6ALCttBTRNHkpoBjRCm2ZdHQa1zw=,tag:1ujfbi7k9ey/P+2a1ZQoCw==,type:str]
+    .dockerconfigjson: ENC[AES256_GCM,data:jsm/1+7rOwXk6Gw+YStUNj4zXcMdIh+hb6f082JrZRbzxxHEKTg0C34oR6ZjSUFKJBIZakFcOiqjxqcNRhbs+X6lLPJsjnmSp6srPF1YKF7GHkIkRh50R4Q9WP6g9AB4Q67A4+WURwsUXL5GUZHuEdACC6uz6zkuCYRwwUpealf8N/+3BRVc8D3xdFzZmT6EEyR/RCIfLQLeiOYeY5ltEkrh906rgxEExfu15qxKn0h65NLjlbjOb5hbrLyDX+anSW1GeF2+Eguqm9RCm6vXSa3+,iv:xX4sWAkwEc8D+oeK2uwOQsWwcF2oTTLozBdQNo1uMrw=,tag:qzDlNwLoRWSXvLYnPrvGtA==,type:str]
 sops:
     age:
-        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
-          enc: |
+        - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXK1RDdGVaNXZrcjFaSXZC
-            ZEIzOTE3cjEwUURSS0c0Nm8zK0FVSFhtNUNnCldPYlJVSGhWUDI0Ti9LQ1JoazBB
-            dGRxUzZpNk84Nk10YXd2akw0bnVFMU0KLS0tIGNFVWdiWTBNSFFONmlQa0ZIbVJI
-            Rm9kVkpuYWE2NTZpMmwrYmMwc1pJd0kKEEFH0DwNU3d3nsaFZFRAVYD6McHEB2KD
-            0BlwqUbb+t00WafLKYXXUGwhqKdCaD5Q3UGgiJiyemuEFNiuqnCd0g==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYQjdaYUxzb0puRWk2QmJP
+            LzFLempWSThIZEI5UlZ2VWMvd2NKV0VBclRRClRuRndXNE8wSEoydEVwR0djdGVD
+            bXpzSitwUzRyUnowaFdRc01oRXM4Q00KLS0tIDY1ZGErZTl0a1pua1NpUURRZnFv
+            d2NZMFJua0tZVHVKYWZoYy9PY2RudTgKykQT/oFXgdpQ62YtD0xUUKD5O/topvgt
+            C3i2kExuxZdl7YfGLgCXA1846wcbmPNMS0M9OnsgsWTOUoOJ9RIZTw==
             -----END AGE ENCRYPTED FILE-----
-        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
-          enc: |
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyNGFjSTJLRnJSLzZPTkF1
-            czg1NkUzNEx4Z2FuQzN0YlhCenBUOXk1OWgwCjNLNlpJYVozSW9paDdXMm5hSFBp
-            ZDZwbU1mZUlkR0doZEtkNjlpcXpjczAKLS0tIEYweERMR0pFSWRmcGZVMnBRTjd2
-            M0dBeDVOR0ZwTzZ6N2FYamVwWmFyZDQKAcfISfmLzrGYI+xO2t6OHBKuOpqysJZT
-            2j+XKcVVZCu30bhHAJ+R651I0G1iG4trCcu01Y680iKcFrGmgsyZHA==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWQ2swTmtlVC9MMjV2YXFQ
+            VlkwYjUxWkk3Mld2SGduM083VmQyc05JQW1vClJydC9wQ05TT3VKc2E3L1k3ZW9n
+            MEw1OXFFTmFJS1dOQTFiMjNuVWJ5WjAKLS0tIFFzNnYrd05neXMwN3pwb1lIRHhx
+            WGUrTTlPVDFPZ2VkUVU4TTIwQzNUNlEKIFzTAeLjuhaaxeTB6bC1elCl2DUuTNvw
+            KhYGFz54ckj8EovEvZ620fbC8N9S53cLfsiFl1Zq6Dzow8m1uknqNg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-07-04T02:20:42Z"
-    mac: ENC[AES256_GCM,data:hnkeCMTrOFPAN+EfnDQHfs8DufnmykpXroVKfzk9HeH83nBWh7wFlPqEgG9LLXohx5l4v/UVGqEUjIILRKCH2z8/EsumLtOKnoo5CSwsl5lA1iZkvKi+LNlzKLwi1Qq6oFwe4RT2DfNvspmfRG2goAOJXCTnS0dFXjdvMvqmkV4=,iv:3pdYcuwLCFiKx0m8CfFmDo3xY4DxvTrnEjR6UzOJQzQ=,tag:9UiCtJoqDknLql2AfEMQoQ==,type:str]
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    version: 3.12.1
+    lastmodified: "2026-08-10T05:18:25Z"
+    mac: ENC[AES256_GCM,data:CzgtoKIC4ZQYp+GmLGXHR/DYwOk0kaeWQ38dgcZENMASESgkWUGpzkrvd+H8At/RszkBKYWN7W/5yaPm+fOdlv6PjPp3l+GgqBuDN2r1AjQWvIIS7BnWNRK1shirzeOzHEgZTOjKVhhVEfwWocPb/qwQFsUwsoUfuwNF1hvOD0g=,iv:I74vmhdAL1EDEtk/folbpCUo6LH5CW5URasws0tSS10=,tag:nic9+blHPDZI62Pt5zlcgQ==,type:str]
+    mac_only_encrypted: true
+    version: 3.13.3

@@ -147,6 +147,18 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # This is an intentionally narrow, cluster-wide pull credential. Its
+  # reflector policy and consumer inventory are plaintext operational metadata,
+  # so keep them out of the MAC: adding a namespace grant must not require
+  # decrypting or rotating the docker credential.
+  - path_regex: cluster/k8s/forgejo-images/registry-creds\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    mac_only_encrypted: true
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # Node-daemon routing credentials are one SSOT consumed by Flux in haku-console and by
   # sops-nix on the matching host. Each host can decrypt only its own credential.
   - path_regex: cluster/k8s/haku/console/node-daemon-wyrm2\.sops\.yaml$
