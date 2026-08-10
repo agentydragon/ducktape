@@ -1,11 +1,12 @@
 # Matrix as Haku's chat surface — requirements
 
-Status: **infrastructure landed; the runtime is not built.** The homeserver, its bot
-account and its credential exist (Build order → Phase 0); nothing in haku-console talks to
-them yet. This is a requirements document, not a design: it fixes what the system must do
-so the design can be argued about separately. Requirements marked **[v1]** are the first
-cut; **[later]** marks something deliberately deferred with its shape recorded so it is not
-redesigned from scratch.
+Status: **Phase 0 done; no agent attached yet.** The homeserver, the `@haku` bot, and a
+console sync loop that joins the operator's DM and echoes are all live — a message typed
+in Element comes back echoed (Build order → Phase 0). Phase 1 attaches the Agent SDK. This
+is a requirements document, not a design: it fixes what the system must do so the design
+can be argued about separately. Requirements marked **[v1]** are the first cut; **[later]**
+marks something deliberately deferred with its shape recorded so it is not redesigned from
+scratch.
 
 Companion to <agent_sdk_sandbox_runtime.md>, which owns the Agent SDK runtime this
 plugs into. That runtime is not re-specified here.
@@ -54,9 +55,23 @@ Matrix as a store of record for anything.
 - **R1.7 [v1] Downtime recovery.** Messages that arrive while the console is down must
   still be processed once it returns, in order, exactly as if it had been up. Resuming
   `/sync` from the persisted `next_batch` token is that mechanism: the homeserver returns
-  everything since, in stream order, however long the gap. The token is therefore durable
-  state, written in the same transaction as the events it covers — an unpersisted token is
-  the only thing that turns an outage into a replay.
+  everything since, in stream order, however long the gap. The token is durable state,
+  written only **after** the events it covers have been acted on — persisting it early is
+  what turns an outage into silent loss rather than a replay.
+- **R1.7a [v1] The token alone is not sufficient.** A resumed `/sync` returns each room's
+  timeline **truncated** to the filter's limit, flagged `limited: true` with a `prev_batch`
+  token, and the events above that limit are simply absent from the response. Advancing the
+  watermark on such a batch drops the middle of the conversation without any error — the
+  exact failure R1.7 exists to prevent, and one that only appears after an outage long
+  enough to matter. A truncated timeline must therefore be paginated backwards from
+  `prev_batch` to the stored watermark before its events are handled. Recovery is bounded,
+  since an unbounded backfill would stall the loop, and reaching that bound is a **loud**
+  log naming the lost range — never a silent truncation.
+- **R1.7b [v1] The first sync takes a position, it does not replay.** With no stored
+  watermark there is no missed range, so the initial sync must establish a position without
+  pulling room backlog; otherwise the console's first act after a fresh deploy is answering
+  messages that predate it. Invites arrive in `invite_state` rather than the timeline, so a
+  pending invite is still seen (R3.6).
 - **R1.8 [v1]** A resumed sync after a long gap can return a very large batch. It is
   subject to the same cap and splitting as any other (R2.6) and the same age fence
   (R2.8) — recovery must not deliver a day of backlog as one turn.
@@ -83,6 +98,21 @@ homeserver-side retry queue, plus a `@haku_*` ghost-user namespace. Reversed bec
 What is genuinely given up: ghost users, which only matter once subagents post under
 distinct identities (`multi_agent.md`, [later]); and immunity to room-membership and
 read-marker semantics, which is moot in a single DM. Revisit if either stops being true.
+
+**Design note — `matrix-nio`, with the state kept outside it.** The client is
+`matrix-nio`, already a repo dependency and already used by `x/ember`. A hand-rolled httpx
+client was tried first and was wrong: the surface looks tiny until protocol subtleties bite,
+and R1.7a is exactly one of those — `limited`/`prev_batch` were dict keys nobody thought to
+read. nio parses events into types (`RoomMessageText` subsumes both the event-type and
+`msgtype` checks) and surfaces the truncation flags, so the gap is visible rather than
+inferred.
+
+Two things it is deliberately not allowed to own, both because the console is a
+leader-elected replica set rather than one long-lived process: the **sync position**, which
+lives in Postgres so it survives a handoff to another pod (nio's on-disk store cannot), and
+**error signalling** — nio returns failures as result-union values, which the loop converts
+to exceptions so a rejected token stays distinguishable from a transport failure and can
+trigger a re-login (R10.3a).
 
 ### R2 — Batching
 
@@ -343,19 +373,29 @@ The target of the first two phases is a **minimal vertical slice**: type a messa
 Element, get Haku's answer in Element. Nothing else. Everything after that is layered onto
 a system that already works end to end.
 
-### Phase 0 — Bot account and an echo, with no agent attached
-
-**Infrastructure done; the echo is what remains.**
+### Phase 0 — Bot account and an echo, with no agent attached — **done**
 
 - Un-park `cluster/k8s/matrix/` — #3878, plus #3886 relocating it to OVH with the media
   store on SeaweedFS and the database on the OVH-HA CNPG profile, and #3892 making the
-  placement actually take effect. The homeserver serves at `matrix.allegedly.works`.
-- Provision `@haku` and reflect its password into `haku-console` — #3895. The account
-  exists; `@openclaw`, which the rename left behind, is deactivated.
+  placement actually take effect. The homeserver serves at `matrix.allegedly.works`, with
+  Element at `chat.allegedly.works`.
+- Provision `@haku` and reflect its password into `haku-console` — #3895. `@openclaw`,
+  which the rename left behind, is deactivated.
+- The echo — #3902. The console logs in as the bot, long-polls `/sync`, joins the
+  operator's DM invite, and sends back what the operator types. Verified live end to end
+  from Element.
 
-What is left is the echo itself: sync as the bot from haku-console and send back whatever
-the operator types. That proves the credential, the sync loop, watermarking, and the
-outbound send path with no Agent SDK anywhere near it.
+That proves the credential, the sync loop, the watermark, and the outbound send path with
+no Agent SDK anywhere near it. Three things it does **not** prove, all cheap to check
+against the running system and worth doing before they are load-bearing: that exactly one
+of the two console replicas holds the sync lock, that a message sent during a restart is
+answered afterwards (R1.7), and the truncated-timeline backfill (R1.7a), which only fires
+above the timeline limit.
+
+The code lives under `haku/console/x/` — experimental, no stable API. Three pieces
+necessarily sit outside it because the stable modules own them: `MatrixConfig` on
+`Settings`, the `MatrixSyncState` table, and its Alembic revision (migrations are one
+lineage for the whole database).
 
 Two properties of this phase worth keeping in view, both consequences of dropping the
 appservice: **no Synapse configuration changes at all**, and **no new listener on
@@ -370,7 +410,10 @@ and image automation bumps the tag, minutes later. In between, the **old image r
 against the new manifests**. In Phase 0 that produced both an orphaned `@openclaw` account
 and a pod stuck in `CreateContainerConfigError` on a Secret the same commit had renamed.
 Neither was harmful, but a rename that matters should either tolerate the window or be
-split across two merges.
+split across two merges. #3902 hit the same window and rode it out, because tolerating it
+was designed in: the new env vars are inert to the old image, and the password is an
+`optional` `secretKeyRef` behind an optional config (R10.3b), so neither half of the pair
+fails on the other's absence.
 
 ### Phase 1 — Wire the existing session machinery to it
 
@@ -433,7 +476,9 @@ chart with no support for one — is gone with the appservice itself.
 - **A second invite** (R3.6): the session is bound to one room (R3.1), so what should
   happen when the operator invites Haku to another — refuse the invite, join but ignore
   the room, or move the conversation? Any answer is fine; silently joining a room nothing
-  services is not.
+  services is not. As built in Phase 0 the loop joins every operator invite and echoes in
+  each, which is harmless only because nothing is bound to a room yet. Phase 1 is where
+  this has to be answered.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
