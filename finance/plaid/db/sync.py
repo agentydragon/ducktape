@@ -22,7 +22,7 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 
-from finance.plaid.db.link_profiles import Product, syncs_investment_transactions
+from finance.plaid.db.link_profiles import Product
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
 from finance.plaid.db.secret_store import SecretStore
 
@@ -197,13 +197,10 @@ async def _sync_link_inner(
             holdings=holdings.get("holdings") or [],
             captured_at=captured_at,
         )
-        if syncs_investment_transactions(link.link_profile):
-            end = captured_at.date()
-            start = end - timedelta(days=windows.investment_transaction_days)
-            txns = await _fetch_investment_transactions(api, storage, run_id, access_token, link.item_id, start, end)
-            await storage.upsert_investment_transactions(
-                item_id=link.item_id, transactions=txns, captured_at=captured_at
-            )
+        end = captured_at.date()
+        start = end - timedelta(days=windows.investment_transaction_days)
+        txns = await _fetch_investment_transactions(api, storage, run_id, access_token, link.item_id, start, end)
+        await storage.upsert_investment_transactions(item_id=link.item_id, transactions=txns, captured_at=captured_at)
 
     if Product.LIABILITIES.value in link.products_requested:
         try:

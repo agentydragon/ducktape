@@ -62,7 +62,7 @@ async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investmen
     await storage.upsert_link(
         item_id=item_id,
         access_token_secret=f"{item_id}-token",
-        link_profile=LinkProfile.INVESTMENTS_FULL,
+        link_profile=LinkProfile.INVESTMENTS,
         products_requested=["investments"],
         institution_id="ins_investments",
         institution_name="Investment Test",

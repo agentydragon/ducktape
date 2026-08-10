@@ -1,20 +1,13 @@
 import pytest
 import pytest_bazel
 
-from finance.plaid.db.link_profiles import (
-    LinkProfile,
-    Product,
-    products_for_profile,
-    profile_catalog,
-    syncs_investment_transactions,
-)
+from finance.plaid.db.link_profiles import LinkProfile, Product, products_for_profile, profile_catalog
 
 
 def test_profiles_map_to_minimal_plaid_products() -> None:
     assert products_for_profile(LinkProfile.CASHFLOW) == ["transactions"]
     assert products_for_profile(LinkProfile.CREDIT_CARD_DETAIL) == ["transactions", "liabilities"]
-    assert products_for_profile(LinkProfile.INVESTMENTS_HOLDINGS) == ["investments"]
-    assert products_for_profile(LinkProfile.INVESTMENTS_FULL) == ["investments"]
+    assert products_for_profile(LinkProfile.INVESTMENTS) == ["investments"]
     assert products_for_profile(LinkProfile.FULL_PICTURE) == ["transactions", "investments", "liabilities"]
 
 
@@ -27,12 +20,6 @@ def test_advanced_profile_requires_explicit_products() -> None:
     ]
 
 
-def test_investment_transaction_sync_is_profile_gated() -> None:
-    assert not syncs_investment_transactions(LinkProfile.INVESTMENTS_HOLDINGS)
-    assert syncs_investment_transactions(LinkProfile.INVESTMENTS_FULL)
-    assert syncs_investment_transactions(LinkProfile.FULL_PICTURE)
-
-
 def test_catalog_covers_every_profile_and_matches_the_product_map() -> None:
     """The catalog is what the link UI renders, so a profile missing from it is a dropdown entry
     that silently disappears, and a products list that disagrees is the drift this replaced."""
@@ -43,7 +30,6 @@ def test_catalog_covers_every_profile_and_matches_the_product_map() -> None:
         assert entry.label, f"{profile} has no label"
         if profile is not LinkProfile.ADVANCED:
             assert entry.products == products_for_profile(profile)
-        assert entry.syncs_investment_transactions == syncs_investment_transactions(profile)
 
 
 def test_advanced_declares_no_fixed_products() -> None:

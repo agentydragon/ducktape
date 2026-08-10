@@ -264,9 +264,7 @@ def test_create_link_token_omits_transactions_config_without_transactions_produc
     client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
     result = client.create_link_token(
-        profile=LinkProfile.INVESTMENTS_HOLDINGS,
-        redirect_uri="https://example.test/link/callback",
-        client_user_id="owner",
+        profile=LinkProfile.INVESTMENTS, redirect_uri="https://example.test/link/callback", client_user_id="owner"
     )
 
     assert result.products == ["investments"]

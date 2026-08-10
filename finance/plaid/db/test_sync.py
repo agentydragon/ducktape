@@ -36,13 +36,15 @@ def test_redact_payload_returns_json_serializable_dates() -> None:
     json.dumps(payload)
 
 
-def _stored_link(item_id: str, products: list[str]) -> StoredLink:
+def _stored_link(
+    item_id: str, products: list[str], *, profile: LinkProfile = LinkProfile.CREDIT_CARD_DETAIL
+) -> StoredLink:
     return StoredLink(
         item_id=item_id,
         label=None,
         institution_id="ins_1",
         institution_name="Testbank",
-        link_profile=LinkProfile.CREDIT_CARD_DETAIL,
+        link_profile=profile,
         products_requested=products,
         transaction_days_requested=None,
         products_authorized=products,
@@ -71,6 +73,7 @@ class _FakeApi:
         self.api_client = _FakeApiClient()
         self._errors = errors or {}
         self.liabilities_calls = 0
+        self.investment_transaction_calls = 0
 
     def _maybe_raise(self, endpoint: str, access_token: str) -> None:
         if (exc := self._errors.get((endpoint, access_token))) is not None:
@@ -93,6 +96,7 @@ class _FakeApi:
         return {"securities": [], "holdings": [], "request_id": "req-hold"}
 
     def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object:
+        self.investment_transaction_calls += 1
         self._maybe_raise("investments/transactions/get", request.access_token)
         return {"total_investment_transactions": 0, "investment_transactions": [], "request_id": "req-itxn"}
 
@@ -154,6 +158,19 @@ class _FakeSecrets:
 
     async def delete_access_token(self, secret_name: str) -> None:
         raise NotImplementedError
+
+
+async def test_investment_transactions_follow_the_product_not_the_profile() -> None:
+    """The profile used to gate this call, so a link whose products grew through update mode kept
+    the sync behaviour its original profile implied — the live Merrill link requests investments
+    while still labelled `cashflow`, and its investment transactions were silently never pulled."""
+    link = _stored_link("item-merrill", ["investments"], profile=LinkProfile.CASHFLOW)
+    storage = _FakeStorage(links=[link])
+    api = _FakeApi()
+
+    await sync_link(api=api, storage=cast(PlaidLinkStorage, storage), secrets=_FakeSecrets(), link=link, trigger="test")
+
+    assert api.investment_transaction_calls == 1
 
 
 async def test_sync_link_tolerates_no_liability_accounts() -> None:

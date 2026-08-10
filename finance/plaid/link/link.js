@@ -5,12 +5,7 @@ let webConfig = { transaction_days: 730, max_transaction_days: 730 };
 let profileInfo = [];
 function profileLabel(p) {
   if (p.value === "advanced") return p.label + " — choose products";
-  const scopes = p.products.join(" + ");
-  // Two profiles request the same product and differ only in sync behaviour, so the scope
-  // list alone would render them identical.
-  const extra =
-    p.syncs_investment_transactions && !p.products.includes("transactions") ? " + investment transactions on sync" : "";
-  return p.label + " — " + scopes + extra;
+  return p.label + " — " + p.products.join(" + ");
 }
 function profileProductsFor(value) {
   const found = profileInfo.find((p) => p.value === value);
