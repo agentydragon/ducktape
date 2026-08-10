@@ -47,6 +47,16 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Just the central ClusterPolicy manifests, so a per-policy test is not
+# invalidated by every unrelated manifest in the cluster (same reasoning as the
+# contract filegroup below). The zone injector under haku/zones/policies is not
+# here on purpose — proxy_injection_policy_files already pins it by name.
+filegroup(
+    name = "kyverno_policy_files",
+    srcs = glob(["kyverno/policies/*.yaml"]),
+    visibility = ["//cluster/validation/kyverno:__pkg__"],
+)
+
 # Small direct-file surface for focused schema/wiring contracts. Keeping this
 # separate from cluster_all_files lets Bazel avoid the full cluster parse and all
 # Kustomize builds when one of these manifests changes.
@@ -98,7 +108,7 @@ filegroup(
 )
 
 # Every policy that injects proxy configuration into a sandbox namespace, pinned
-# to one shared variable set by //cluster/validation:test_proxy_injection.
+# to one shared variable set by //cluster/validation/kyverno:test_proxy_injection.
 filegroup(
     name = "proxy_injection_policy_files",
     srcs = [
@@ -106,7 +116,7 @@ filegroup(
         "kyverno/policies/inject-haku-egress-proxy.yaml",
         "kyverno/policies/inject-mitmproxy.yaml",
     ],
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = ["//cluster/validation/kyverno:__pkg__"],
 )
 
 filegroup(

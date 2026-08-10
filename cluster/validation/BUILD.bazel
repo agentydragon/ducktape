@@ -296,52 +296,6 @@ py_test(
 )
 
 py_library(
-    name = "kyverno",
-    srcs = ["kyverno.py"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_kyverno_policies",
-    srcs = ["test_kyverno_policies.py"],
-    data = [
-        "//cluster/k8s:cluster_all_files",
-        "@multitool//tools/kyverno",
-    ] + glob([
-        "testdata/kyverno/**",
-        "__snapshots__/*.ambr",
-    ]),
-    uses_syrupy = True,
-    deps = [
-        ":kyverno",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//syrupy",
-    ],
-)
-
-py_test(
-    name = "test_proxy_injection",
-    srcs = ["test_proxy_injection.py"],
-    data = [
-        "//cluster/k8s:proxy_injection_policy_files",
-        "@multitool//tools/kyverno",
-    ],
-    deps = [
-        ":kyverno",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
     name = "terraform_hcl",
     srcs = ["terraform_hcl.py"],
     deps = ["@pypi//pygohcl"],

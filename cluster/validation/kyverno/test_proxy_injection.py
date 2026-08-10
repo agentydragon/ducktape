@@ -43,7 +43,7 @@ import pytest
 import pytest_bazel
 import yaml
 
-from cluster.validation.kyverno import apply_policy
+from cluster.validation.kyverno.apply import apply_policy
 from util.bazel.runfiles import get_required_path
 
 # What every proxy-injection policy must inject. Split into the two halves it is

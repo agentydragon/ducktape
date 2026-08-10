@@ -1,0 +1,93 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "apply",
+    srcs = ["apply.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "paths",
+    srcs = ["paths.py"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+# One target per policy: a failure names the policy it belongs to, and a single
+# policy can be run on its own.
+
+py_test(
+    name = "test_inject_mitmproxy",
+    srcs = ["test_inject_mitmproxy.py"],
+    data = [
+        "//cluster/k8s:kyverno_policy_files",
+        "@multitool//tools/kyverno",
+    ] + glob([
+        "testdata/pod_*.yaml",
+        "__snapshots__/test_inject_mitmproxy.ambr",
+    ]),
+    uses_syrupy = True,
+    deps = [
+        ":apply",
+        ":paths",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_restrict_agent_gateway_routes",
+    srcs = ["test_restrict_agent_gateway_routes.py"],
+    data = [
+        "//cluster/k8s:kyverno_policy_files",
+        "@multitool//tools/kyverno",
+    ] + glob([
+        "testdata/httproute_*.yaml",
+        "testdata/tlsroute_*.yaml",
+    ]),
+    deps = [
+        ":apply",
+        ":paths",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_require_secret_store_conditions",
+    srcs = ["test_require_secret_store_conditions.py"],
+    data = [
+        "//cluster/k8s:kyverno_policy_files",
+        "@multitool//tools/kyverno",
+    ] + glob(["testdata/cluster_secret_store_*.yaml"]),
+    deps = [
+        ":apply",
+        ":paths",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Not per-policy: a contract every proxy-injection policy must satisfy,
+# parameterized over them so a new one is covered without editing the test.
+py_test(
+    name = "test_proxy_injection",
+    srcs = ["test_proxy_injection.py"],
+    data = [
+        "//cluster/k8s:proxy_injection_policy_files",
+        "@multitool//tools/kyverno",
+    ],
+    deps = [
+        ":apply",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
