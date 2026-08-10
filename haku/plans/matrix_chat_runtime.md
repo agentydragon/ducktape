@@ -152,9 +152,25 @@ for whenever this is picked up:
   Discards the in-flight step, though completed tool calls stay in the session transcript,
   so it loses less than it appears to. The only path that reaches a turn producing pure
   text with no tool calls.
-- **Hooks.** `PreToolUse` fires at the right moment, but whether its return value can
-  inject conversational context (rather than only allow/deny/modify) is **unverified** and
-  needs a probe before being counted on.
+- **Hooks — the chosen mechanism if steering is ever built.** `PreToolUse` fires at the
+  right moment, and its return value **can** carry text: `PreToolUseHookSpecificOutput`
+  declares `additionalContext: NotRequired[str]` (as do `PostToolUse`,
+  `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `Notification`,
+  `SubagentStart`). That was recorded here as unverified; it is verified at the type level
+  now, with only the runtime behaviour left to probe. It dominates the tool-result
+  piggyback on the same evidence: identical "only at a tool boundary" limitation, but it
+  fires for **every** tool including the built-ins rather than only console-brokered MCP
+  calls, and it does not overload what a tool result means.
+
+**On `interrupt()` being wire-level.** It is not a client-side abort: `interrupt()` writes
+`{"type":"control_request","request_id":…,"request":{"subtype":"interrupt"}}` to the CLI's
+stdin and blocks up to 60s for a correlated `control_response`. There is a whole control
+channel beside the message stream — `initialize`, `mcp_status`, `get_context_usage`,
+`set_permission_mode`, `set_model`, `rewind_files`, `mcp_reconnect`, `mcp_toggle`,
+`stop_task`, `interrupt` — and because `agent_sdk_transport` tunnels SDK stdio over the
+bridge WebSocket, every one of them already reaches the CLI in the sandbox. So the gap is
+specific and worth stating precisely: the channel is rich, and **none of its subtypes adds
+input to a running turn**. Interrupt exists; steer does not.
 
 ### R3 — Session and sandbox lifecycle
 
