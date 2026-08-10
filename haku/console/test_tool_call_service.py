@@ -499,7 +499,11 @@ async def test_two_operator_two_agent_authorization_matrix(
     # even before the background executions run.
     assert tokens.lookups == [actors["oa"].operator_id, actors["ob"].operator_id]
     await service.join_executions()
-    assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
+    # Sorted, not in decision order: `decide()` dispatches each execution as a background task, so
+    # which one reaches the executor first is a race. What matters is that each ran under its own
+    # Operator's token — the ordering intent is already covered by the `tokens.lookups` assertion
+    # above, which is deterministic because auth resolves synchronously inside `decide()`.
+    assert sorted(execution[3] or "" for execution in executor.executions) == ["token-a", "token-b"]
     assert [
         (await service.get(records["aa1"].tool_call_id, actor=actors["oa"])).status,
         (await service.get(records["ab1"].tool_call_id, actor=actors["ob"])).status,
