@@ -16,8 +16,9 @@ open, all encoded in `app/squid.conf` and `app/credentials.conf.tmpl` so they
 are answered by running rather than by reading:
 
 1. **Squid 6.x port.** The header directives are unchanged since Squid 2.x, but
-   the TLS ones were renamed (`sslproxy_flags` → `tls_outgoing_options flags=`,
-   `ssl_crtd` → `security_file_certgen`). This config is the 6.x form.
+   the TLS ones moved. Partly a rename (`ssl_crtd` → `security_file_certgen`) —
+   but see the first finding below, because one of them is not a rename and the
+   difference is silent.
 2. **Destination scoping.** Every rule is `(placeholder AND destination)`.
    Gating on the placeholder alone is an exfiltration primitive — the agent
    holds the placeholder, so it could redeem it at a host of its choosing.
@@ -54,6 +55,33 @@ Expected, and the point of the exercise:
 
 The second row is the security property. If a placeholder is substituted at a
 destination its rule does not name, the design is wrong, not the config.
+
+## Findings
+
+**Run 1, 2026-08-10 — `ssl_bump` works on 6.12; upstream TLS did not.**
+
+Established:
+
+- **Bumping works.** Squid 6.12 decrypted the client `CONNECT` using the
+  cert-manager-issued CA and logged the plaintext `GET /` with its
+  `Authorization` header intact. Question 1's hard half is answered.
+- **The credential rules render correctly.** `envsubst` produced all three
+  destination-scoped rules on tmpfs, each `(placeholder AND destination)`.
+- **`DONT_VERIFY_PEER` is a Squid 5 idiom that 6.x silently repurposes.** Every
+  bumped request failed `ERR_SECURE_CONNECT_FAIL` while `openssl s_client` from
+  the same pod completed the same TLS 1.3 handshake to the same Service IP. The
+  error page said `[No Error] (TLS code: [Unknown Error Code])`; only
+  `squid -k parse` named it, as a deprecation warning. `sslproxy_cert_error` is
+  the 6.x directive, and section 83 debugging is now on so a repeat says so in
+  the log.
+
+Not yet answered: substitution, multi-credential, base64 `Basic`, and caching —
+all four need a request to reach the origin, so they are blocked behind the
+above until the next run.
+
+A general lesson for the fence work: a config that _parses_ is not a config that
+_does what it says_. Squid accepted a directive that no longer had the intended
+effect and reported no error at request time either.
 
 ## Pull credential
 
