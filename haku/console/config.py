@@ -181,13 +181,18 @@ class MatrixConfig(BaseModel):
 
     homeserver: str
     user_id: str
-    # The only MXID whose room invitations are joined (R3.6).
-    operator_user_id: str
-    # Pinned so repeated logins reuse one device instead of leaving a new one per restart.
-    device_id: str = "haku-console"
-    # Absent until the reflected Secret lands in this namespace — an intentional state,
-    # not a misconfiguration. The sync loop does not start without it; the console does.
-    password: SecretStr | None = None
+    operator_user_id: str = Field(description="The only MXID whose room invitations are joined (R3.6).")
+    device_id: str = Field(
+        default="haku-console",
+        description="Pinned so repeated logins reuse one device instead of leaving a new one per restart.",
+    )
+    password: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Absent until the reflected Secret lands in this namespace — an intentional state, not a "
+            "misconfiguration. The sync loop does not start without it; the console does."
+        ),
+    )
 
 
 class ClaudeRuntimeConfig(BaseModel):
@@ -318,8 +323,9 @@ class Settings(BaseSettings):
     # (None → the capability returns 503).
     launch_routine: LaunchRoutineConfig | None = None
 
-    # Matrix chat surface. None → the sync loop does not run (R10.3b).
-    matrix: MatrixConfig | None = None
+    matrix: MatrixConfig | None = Field(
+        default=None, description="Matrix chat surface. None → the sync loop does not run (R10.3b)."
+    )
 
     # The Authentik-gated origin of Haku's own UI service (runs in haku-sandbox), which the
     # console frames full-page as a sandboxed cross-origin iframe; the CSP allows framing it
