@@ -1,0 +1,12 @@
+# Auto-mode namespace that declares its own policy. The +() add-if-absent anchor
+# must leave it alone -- langfuse relies on this to pin clickhouse.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vpa-auto-own-policy
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: >
+      {"containerPolicies": [{"containerName": "pinned", "controlledValues": "RequestsAndLimits"}]}

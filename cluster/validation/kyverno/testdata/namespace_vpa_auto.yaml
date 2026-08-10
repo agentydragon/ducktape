@@ -1,0 +1,8 @@
+# Auto-mode namespace with no policy of its own: the default must apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vpa-auto-plain
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: auto

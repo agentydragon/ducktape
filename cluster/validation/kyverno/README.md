@@ -22,17 +22,18 @@ is parameterized over them, so a new injector is covered without editing it.
 
 ## Coverage
 
-Tested: `inject-mitmproxy`, `inject-haku-egress-proxy`,
-`require-secret-store-conditions`, `restrict-agent-gateway-routes`.
+Tested: `default-vpa-requests-only`, `inject-mitmproxy`,
+`inject-haku-egress-proxy`, `require-secret-store-conditions`,
+`restrict-agent-gateway-routes`.
 
 Untested, and why:
 
 - `require-gitops` and `restrict-agent-kustomization-patch` match on
   `request.userInfo`, which plain `kyverno apply` does not supply. They need
   `--userinfo` or a mock admission context.
-- `default-revision-history-limit` has no test yet. It only defaults an unset
-  field, so the closest template is `test_inject_mitmproxy.py` without the
-  snapshot — the assertion is a single field, which reads better spelled out.
+- `default-revision-history-limit` has no test yet; it is the same shape as
+  `default-vpa-requests-only` (mutate, add-if-absent), so
+  `test_default_vpa_requests_only.py` is the template to copy.
 
 ## Gotchas
 

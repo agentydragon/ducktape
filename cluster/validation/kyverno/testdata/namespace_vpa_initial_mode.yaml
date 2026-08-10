@@ -1,0 +1,9 @@
+# Not auto mode: VPA never mutates running pods here, so the default must not
+# be applied.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vpa-initial-mode
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: initial

@@ -21,6 +21,25 @@ py_library(
 # policy can be run on its own.
 
 py_test(
+    name = "test_default_vpa_requests_only",
+    srcs = ["test_default_vpa_requests_only.py"],
+    data = [
+        # The structural half of this test scans every namespace manifest, so
+        # unlike its siblings it does need the whole tree.
+        "//cluster/k8s:cluster_all_files",
+        "@multitool//tools/kyverno",
+    ] + glob(["testdata/namespace_vpa_*.yaml"]),
+    deps = [
+        ":apply",
+        ":paths",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_inject_mitmproxy",
     srcs = ["test_inject_mitmproxy.py"],
     data = [
