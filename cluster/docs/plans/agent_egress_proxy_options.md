@@ -341,10 +341,31 @@ feature.
 
 ### What is given up versus iron
 
-- **Secret sourcing.** The value lives in `squid.conf`, not read from env or a
-  vault with a TTL. Render it at pod start from the Secret (initContainer +
-  `envsubst` onto an in-memory emptyDir); rotation becomes re-render + reload,
-  which `reloader.stakater.com/auto` already does here.
+- **Secret sourcing needs a render step.** Squid does **not** read environment
+  variables: the `${...}` syntax in `squid.conf` is limited to its own
+  `${process_name}` / `${process_number}` / `${service_name}` macros. iron reads
+  `api_key_env` and file/AWS/1Password sources with TTLs natively; Squid cannot.
+
+  The wiring that works, and keeps the credential out of both git and etcd:
+  1. **ConfigMap** holds the bulk `squid.conf`, credential-free, ending in
+     `include /run/squid-secrets/credentials.conf` — `include` is a real Squid
+     directive that recurses into another file at that position.
+  2. **initContainer** renders only the credential-bearing lines (the
+     `request_header_add` directives) from Secret-backed env vars via `envsubst`
+     into an `emptyDir{medium: Memory}` shared with the Squid container. tmpfs,
+     so the secret never touches disk, and never enters a ConfigMap.
+  3. **Rotation** is re-render plus restart, which `reloader.stakater.com/auto`
+     already drives on the existing iron deployments when their Secret changes.
+
+  Two notes on that step. Rendering is also where the base64 `Basic` value for
+  git-over-HTTPS gets computed, since both halves are static. And
+  `configuration_includes_quoted_values` governs quoted parameters — values with
+  spaces like `"Bearer ghp_…"` rely on it, though the spike's config used quoted
+  values without setting it explicitly and Squid accepted them.
+
+  **Do not** render the finished config into a ConfigMap: that puts the
+  credential in plaintext in etcd and, if generated, in git.
+
 - **Placeholder semantics need a second directive** (see below). Naive
   strip-and-add is not equivalent to substitution and should not be accepted as
   such.
