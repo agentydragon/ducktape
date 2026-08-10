@@ -1,0 +1,28 @@
+# The bump CA, minted by cert-manager rather than by an initContainer.
+#
+# An initContainer-generated CA is regenerated on every pod restart, so anything
+# that trusted the old one silently breaks — wrong shape for a fence, and the
+# spike exists to derisk the real shape. cert-manager gives a stable, rotating
+# CA in a Secret, which is also what trust-manager distributes to workloads in
+# the production fences (see ../../agents/haku-egress-proxy/).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: squid-spike-bump-ca
+  namespace: squid-egress-spike
+  annotations:
+    description: Self-signed CA the spike's Squid uses to mint per-host certificates when bumping.
+spec:
+  isCA: true
+  commonName: squid-spike-bump-ca
+  secretName: squid-spike-bump-ca
+  # Short by fence standards: this is a spike, and a CA that outlives it is
+  # a stray trust root.
+  duration: 720h # 30 days
+  renewBefore: 168h # 7 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: cluster-ca-bootstrap
+    kind: ClusterIssuer

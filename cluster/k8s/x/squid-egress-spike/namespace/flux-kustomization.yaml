@@ -5,7 +5,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 1h
-  path: ./cluster/k8s/agents/squid-egress-spike/namespace
+  path: ./cluster/k8s/x/squid-egress-spike/namespace
   prune: false
   sourceRef:
     kind: GitRepository

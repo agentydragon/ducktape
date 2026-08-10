@@ -3,7 +3,7 @@
 # gnutls and refuses ssl-bump.
 #
 # CLEANUP(added 2026-08-10): delete alongside cluster/images/squid-ssl and
-#   cluster/k8s/agents/squid-egress-spike when the spike concludes.
+#   cluster/k8s/x/squid-egress-spike when the spike concludes.
 name: Squid SSL Image
 
 on:

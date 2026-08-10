@@ -29,11 +29,11 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # Three jobs, all of which must happen before squid starts: mint the
-        # bump CA, initialise the certificate store, and render the credential
-        # rules. The render exists because squid.conf cannot read environment
-        # variables -- its ${...} covers only process_name/process_number/
-        # service_name.
+        # Three jobs, all of which must happen before squid starts: assemble the
+        # bump CA into the single file squid wants, initialise the certificate
+        # store, and render the credential rules. The render exists because
+        # squid.conf cannot read environment variables -- its ${...} covers only
+        # process_name/process_number/service_name.
         - name: prepare
           image: git.allegedly.works/ducktape-ci/squid-ssl:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:squid-ssl"}
           envFrom:
@@ -47,15 +47,14 @@ spec:
           args:
             - |
               set -eu
-              openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
-                -subj "/CN=squid-spike-bump-ca" \
-                -addext "keyUsage=critical,keyCertSign,cRLSign" \
-                -keyout /run/squid-ca/bump-ca.key -out /run/squid-ca/bump-ca.crt
-              cat /run/squid-ca/bump-ca.crt /run/squid-ca/bump-ca.key > /run/squid-ca/bump-ca.pem
+              # Squid wants one file containing both halves; cert-manager emits
+              # them separately. Same combine step the production fences do.
+              cat /run/squid-ca-src/tls.crt /run/squid-ca-src/tls.key > /run/squid-ca/bump-ca.pem
               /usr/lib/squid/security_file_certgen -c -s /var/cache/squid/ssl_db -M 8MB
               envsubst < /etc/squid-template/credentials.conf.tmpl > /run/squid-secrets/credentials.conf
               echo "rendered credential rules:"; grep -c request_header_add /run/squid-secrets/credentials.conf
           volumeMounts:
+            - { name: ca-src, mountPath: /run/squid-ca-src, readOnly: true }
             - { name: ca, mountPath: /run/squid-ca }
             - { name: cache, mountPath: /var/cache/squid }
             - { name: secrets, mountPath: /run/squid-secrets }
@@ -90,6 +89,11 @@ spec:
         - name: template
           configMap:
             name: squid-spike-config
+        # cert-manager's output, mounted only into the initContainer -- squid
+        # itself never sees the raw halves, only the combined file on tmpfs.
+        - name: ca-src
+          secret:
+            secretName: squid-spike-bump-ca
         # The rendered credential rules and the CA private key live on tmpfs,
         # never on disk and never in a ConfigMap.
         - name: secrets

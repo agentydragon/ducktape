@@ -9,7 +9,7 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/agents/squid-egress-spike/app
+  path: ./cluster/k8s/x/squid-egress-spike/app
   prune: true
   wait: true
   sourceRef:
@@ -18,6 +18,8 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: squid-egress-spike-namespace
+    - name: cert-manager-environment
+      namespace: flux-system
     - name: forgejo-images
       namespace: flux-system
     - name: flux-image-automation-forgejo

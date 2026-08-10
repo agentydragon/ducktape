@@ -6,7 +6,7 @@
 # curl and openssl are kept in the image on purpose: this is a spike whose whole
 # point is exec'ing in and driving requests through the proxy.
 #
-# CLEANUP(added 2026-08-10): delete with cluster/k8s/agents/squid-egress-spike
+# CLEANUP(added 2026-08-10): delete with cluster/k8s/x/squid-egress-spike
 #   once the spike has answered its questions and either graduates to a real
 #   fence or is abandoned. See that directory's README for the question list.
 FROM alpine:3.22@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
