@@ -1,3 +1,13 @@
+# Block style only, no `{a: 1, b: 2}` flow mappings anywhere in this file.
+#
+# It carries `$imagepolicy` markers, and Flux's ImageUpdateAutomation
+# re-serialises the whole document when it rewrites a tag. Its YAML emitter
+# writes flow mappings without inner spaces; prettier writes them with. So a
+# flow mapping here means every image update silently reformats the file and
+# leaves devel failing pre-commit — and because those commits are
+# `chore: update images [skip ci]` pushed straight to devel, no CI run catches
+# it. Block style is what the emitter produces natively, so the rewrite touches
+# only the image line.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -65,11 +75,18 @@ spec:
               envsubst < /etc/squid-template/credentials.conf.tmpl > /run/squid-secrets/credentials.conf
               echo "rendered credential rules:"; grep -c request_header_add /run/squid-secrets/credentials.conf
           volumeMounts:
-            - {name: ca-src, mountPath: /run/squid-ca-src, readOnly: true}
-            - {name: ca, mountPath: /run/squid-ca}
-            - {name: cache, mountPath: /var/cache/squid}
-            - {name: secrets, mountPath: /run/squid-secrets}
-            - {name: template, mountPath: /etc/squid-template, readOnly: true}
+            - name: ca-src
+              mountPath: /run/squid-ca-src
+              readOnly: true
+            - name: ca
+              mountPath: /run/squid-ca
+            - name: cache
+              mountPath: /var/cache/squid
+            - name: secrets
+              mountPath: /run/squid-secrets
+            - name: template
+              mountPath: /etc/squid-template
+              readOnly: true
       containers:
         - name: squid
           image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260810054933-f1d9b6a # {"$imagepolicy": "flux-system:squid-ssl"}
@@ -82,17 +99,30 @@ spec:
             capabilities:
               drop: ["ALL"]
           resources:
-            requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: "1", memory: 1Gi}
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
           volumeMounts:
-            - {name: config, mountPath: /etc/squid/squid.conf, subPath: squid.conf, readOnly: true}
-            - {name: ca, mountPath: /run/squid-ca}
-            - {name: cache, mountPath: /var/cache/squid}
-            - {name: secrets, mountPath: /run/squid-secrets, readOnly: true}
-            - {name: run, mountPath: /run/squid}
+            - name: config
+              mountPath: /etc/squid/squid.conf
+              subPath: squid.conf
+              readOnly: true
+            - name: ca
+              mountPath: /run/squid-ca
+            - name: cache
+              mountPath: /var/cache/squid
+            - name: secrets
+              mountPath: /run/squid-secrets
+              readOnly: true
+            - name: run
+              mountPath: /run/squid
             # Squid dies at startup on shm_open without this; a musl/container
             # interaction rather than a config error.
-            - {name: dshm, mountPath: /dev/shm}
+            - name: dshm
+              mountPath: /dev/shm
       volumes:
         - name: config
           configMap:
@@ -108,17 +138,25 @@ spec:
         # The rendered credential rules and the CA private key live on tmpfs,
         # never on disk and never in a ConfigMap.
         - name: secrets
-          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         - name: ca
-          emptyDir: {medium: Memory, sizeLimit: 4Mi}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Mi
         - name: dshm
-          emptyDir: {medium: Memory, sizeLimit: 64Mi}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
         - name: run
-          emptyDir: {sizeLimit: 8Mi}
+          emptyDir:
+            sizeLimit: 8Mi
         # Certificate store only; the HTTP cache is cache_mem, so nothing here
         # can outlive the pod.
         - name: cache
-          emptyDir: {sizeLimit: 256Mi}
+          emptyDir:
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service
