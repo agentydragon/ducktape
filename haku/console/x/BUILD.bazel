@@ -22,11 +22,27 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":claude_chat",
+        ":matrix_session",
+        "//haku/console:config",
+        "//haku/console:operator_identity_store",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_test(
     name = "test_claude_chat",
     srcs = ["test_claude_chat.py"],
     deps = [
         ":claude_chat",
+        ":conftest",
         "//:conftest",
         "//haku/console:config",
         "//haku/console:conftest",
@@ -74,12 +90,17 @@ py_test(
     name = "test_matrix_session",
     srcs = ["test_matrix_session.py"],
     deps = [
+        ":claude_chat",
+        ":conftest",
         ":matrix_session",
         "//:conftest",
         "//haku/console:config",
+        "//haku/console:conftest",
         "//haku/console:database_schema",
+        "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -99,10 +120,13 @@ py_test(
     name = "test_matrix_sync",
     srcs = ["test_matrix_sync.py"],
     deps = [
+        ":conftest",
         ":matrix_client",
+        ":matrix_session",
         ":matrix_sync",
         "//:conftest",
         "//haku/console:config",
+        "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import patch
@@ -14,19 +14,12 @@ import pytest
 import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from kubernetes_asyncio import client as k8s_client
-from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatSession
-from haku.console.x.claude_chat import (
-    ClaudeChatService,
-    ClaudeChatSessionView,
-    ClaudeChatStore,
-    KubernetesSandboxClaims,
-    _provisioning_view,
-    _text_delta,
-)
+from haku.console.x.claude_chat import ClaudeChatStore, KubernetesSandboxClaims, _text_delta
+from haku.console.x.conftest import runtime_config
 
 
 class RecordingCustomObjectsApi:
@@ -58,49 +51,38 @@ class FailingEngine:
         raise RuntimeError("LISTEN unavailable")
 
 
-def _runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
-    values: dict[str, object] = {
-        "namespace": "haku-claude-sandbox",
-        "warm_pool": "haku-claude",
-        "cwd": "/workspace",
-        "session_ttl_seconds": 7200,
-        "oauth_placeholder": "not-a-secret",
-        "https_proxy": "http://proxy.test:8180",
-        "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
-        "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
-        "mcp_url": "http://haku-console.test:9090/mcp",
-        "mcp_static_agent_id": "00000000-0000-4000-8000-000000000001",
-    }
-    values.update(overrides)
-    return ClaudeRuntimeConfig.model_validate(values)
-
-
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
     assert all(field.is_required() for field in ClaudeRuntimeConfig.model_fields.values())
 
 
-def _claims(
-    config: ClaudeRuntimeConfig,
-) -> tuple[KubernetesSandboxClaims, RecordingCustomObjectsApi, RecordingCoreV1Api]:
-    claims = KubernetesSandboxClaims(config)
-    custom = RecordingCustomObjectsApi()
-    core = RecordingCoreV1Api()
-    claims._custom_objects = cast(Any, custom)
-    claims._core_v1 = cast(Any, core)
-    return claims, custom, core
+@pytest.fixture
+def custom_objects_api() -> RecordingCustomObjectsApi:
+    return RecordingCustomObjectsApi()
 
 
-async def test_claim_injects_only_the_session_rendezvous_values() -> None:
-    config = _runtime_config(oauth_placeholder="sk-ant-oat01-proxy-haku-claude-placeholder")
-    claims, api, _ = _claims(config)
+@pytest.fixture
+def core_v1_api() -> RecordingCoreV1Api:
+    return RecordingCoreV1Api()
+
+
+@pytest.fixture
+def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
+    """The real claim builder with only the Kubernetes API objects recorded."""
+    claims = KubernetesSandboxClaims(runtime_config())
+    claims._custom_objects = cast(Any, custom_objects_api)
+    claims._core_v1 = cast(Any, core_v1_api)
+    return claims
+
+
+async def test_claim_injects_only_the_session_rendezvous_values(sandbox_claims, custom_objects_api) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
 
-    await claims.create(
+    await sandbox_claims.create(
         session_id=session_id, bridge_token="one-use-secret", expires_at=datetime(2026, 8, 1, 5, 0, tzinfo=UTC)
     )
 
-    assert api.created is not None
-    args, _ = api.created
+    assert custom_objects_api.created is not None
+    args, _ = custom_objects_api.created
     assert args[:4] == ("extensions.agents.x-k8s.io", "v1beta1", "haku-claude-sandbox", "sandboxclaims")
     body = args[4]
     assert body["metadata"]["name"] == "claude-10000000000040008000000000000001"
@@ -112,22 +94,22 @@ async def test_claim_injects_only_the_session_rendezvous_values() -> None:
     assert body["spec"]["lifecycle"] == {"shutdownPolicy": "DeleteForeground", "shutdownTime": "2026-08-01T05:00:00Z"}
 
 
-async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
-    config = _runtime_config()
-    claims, custom, core = _claims(config)
+async def test_inspect_reports_each_underlying_provisioning_layer(
+    sandbox_claims, custom_objects_api, core_v1_api
+) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     claim_name = "claude-10000000000040008000000000000001"
-    custom.objects[("sandboxclaims", claim_name)] = {
+    custom_objects_api.objects[("sandboxclaims", claim_name)] = {
         "status": {
             "sandbox": {"name": "sandbox-abc"},
             "conditions": [{"type": "Ready", "status": "False", "reason": "PodNotReady", "message": "Waiting for Pod"}],
         }
     }
-    custom.objects[("sandboxes", "sandbox-abc")] = {
+    custom_objects_api.objects[("sandboxes", "sandbox-abc")] = {
         "metadata": {"annotations": {"agents.x-k8s.io/pod-name": "sandbox-pod-abc"}},
         "status": {"conditions": [{"type": "Ready", "status": "False"}]},
     }
-    core.pods["sandbox-pod-abc"] = k8s_client.V1Pod(
+    core_v1_api.pods["sandbox-pod-abc"] = k8s_client.V1Pod(
         status=k8s_client.V1PodStatus(
             phase="Pending",
             conditions=[k8s_client.V1PodCondition(type="Ready", status="False")],
@@ -146,7 +128,7 @@ async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
         )
     )
 
-    info = await claims.inspect(session_id=session_id)
+    info = await sandbox_claims.inspect(session_id=session_id)
 
     assert info.step == "waiting_for_pod_ready"
     assert info.claim_name == claim_name
@@ -162,19 +144,19 @@ async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
     assert info.runner_state == "waiting: ContainerCreating"
 
 
-async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None:
-    config = _runtime_config()
-    claims, custom, core = _claims(config)
+async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait(
+    sandbox_claims, custom_objects_api, core_v1_api
+) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     claim_name = "claude-10000000000040008000000000000001"
-    custom.objects[("sandboxclaims", claim_name)] = {
+    custom_objects_api.objects[("sandboxclaims", claim_name)] = {
         "status": {"sandbox": {"name": "sandbox-abc"}, "conditions": [{"type": "Ready", "status": "True"}]}
     }
-    custom.objects[("sandboxes", "sandbox-abc")] = {
+    custom_objects_api.objects[("sandboxes", "sandbox-abc")] = {
         "metadata": {},
         "status": {"conditions": [{"type": "Ready", "status": "True"}]},
     }
-    core.pods["sandbox-abc"] = k8s_client.V1Pod(
+    core_v1_api.pods["sandbox-abc"] = k8s_client.V1Pod(
         status=k8s_client.V1PodStatus(
             phase="Running",
             conditions=[k8s_client.V1PodCondition(type="Ready", status="True")],
@@ -191,7 +173,7 @@ async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None
         )
     )
 
-    info = await claims.inspect(session_id=session_id)
+    info = await sandbox_claims.inspect(session_id=session_id)
 
     assert info.step == "waiting_for_runner"
     assert info.claim_ready is True
@@ -202,7 +184,7 @@ async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None
 
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
-    config = _runtime_config(ca_bundle="/ca/bundle.pem")
+    config = runtime_config(ca_bundle="/ca/bundle.pem")
 
     assert config.claude_environment() == {
         "CLAUDE_CODE_OAUTH_TOKEN": "not-a-secret",
@@ -224,14 +206,12 @@ def test_text_delta_ignores_non_text_stream_events() -> None:
 
 
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
-    migrated_sessions, migrated_engine, migrated_identity_store
+    chat_store, operator_id, migrated_sessions
 ) -> None:
-    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-test")
-    store = ClaudeChatStore(migrated_sessions, migrated_engine)
-    view, token = await store.create(operator_id)
+    view, token = await chat_store.create(operator_id)
     session_id = view.session_id
 
-    assert await store.authenticate_bridge(session_id, token) == "accepted"
+    assert await chat_store.authenticate_bridge(session_id, token) == "accepted"
     async with migrated_sessions() as db:
         record = await db.get(ClaudeChatSession, session_id)
         assert record is not None
@@ -241,9 +221,9 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
         # they belong to the stale claim without retaining or recovering the bearer itself.
         assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
 
-    await store.fail(session_id, "runner failed")
-    assert await store.authenticate_bridge(session_id, token) == "terminal"
-    assert await store.authenticate_bridge(session_id, "wrong") == "rejected"
+    await chat_store.fail(session_id, "runner failed")
+    assert await chat_store.authenticate_bridge(session_id, token) == "terminal"
+    assert await chat_store.authenticate_bridge(session_id, "wrong") == "rejected"
 
 
 async def test_listen_failure_is_not_reclassified_as_a_timeout() -> None:
@@ -254,117 +234,23 @@ async def test_listen_failure_is_not_reclassified_as_a_timeout() -> None:
 
 
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
-    migrated_sessions, migrated_engine, migrated_identity_store
+    chat_store, operator_id, migrated_sessions
 ) -> None:
-    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-close-test")
-    store = ClaudeChatStore(migrated_sessions, migrated_engine)
-    view, _token = await store.create(operator_id)
+    view, _token = await chat_store.create(operator_id)
 
-    await store.request_close(operator_id, view.session_id)
-    await store.fail(view.session_id, "sandbox runner disconnected")
-    closing = await store.get(operator_id, view.session_id)
+    await chat_store.request_close(operator_id, view.session_id)
+    await chat_store.fail(view.session_id, "sandbox runner disconnected")
+    closing = await chat_store.get(operator_id, view.session_id)
     assert closing.status == "closing"
     assert closing.error is None
 
-    await store.complete_claim_cleanup(view.session_id)
-    closed = await store.get(operator_id, view.session_id)
+    await chat_store.complete_claim_cleanup(view.session_id)
+    closed = await chat_store.get(operator_id, view.session_id)
     assert closed.status == "closed"
     async with migrated_sessions() as db:
         record = await db.get(ClaudeChatSession, view.session_id)
         assert record is not None
         assert record.bridge_token_fingerprint == b""
-
-
-class _LifecycleStore:
-    def __init__(self, session_id: UUID, token: str):
-        self.session_id = session_id
-        self.token = token
-        self.status_value = "provisioning"
-        self.cleanup_completed: list[UUID] = []
-        self.closed_sessions: list[UUID] = []
-
-    async def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
-        del operator_id
-        now = datetime.now(UTC)
-        return (
-            ClaudeChatSessionView(
-                session_id=self.session_id,
-                status="provisioning",
-                error=None,
-                created_at=now,
-                updated_at=now,
-                messages=[],
-            ),
-            self.token,
-        )
-
-    async def authenticate_bridge(self, session_id: UUID, token: str) -> str:
-        assert session_id == self.session_id
-        assert token == self.token
-        self.status_value = "closing"
-        return "accepted"
-
-    async def status(self, session_id: UUID) -> str:
-        assert session_id == self.session_id
-        return self.status_value
-
-    async def watch_aborts(self, session_id: UUID, on_abort: Callable[[], None]) -> None:
-        del session_id, on_abort
-        await asyncio.Event().wait()  # no aborts in this test; just never return
-
-    async def complete_claim_cleanup(self, session_id: UUID) -> None:
-        self.cleanup_completed.append(session_id)
-
-    async def closed(self, session_id: UUID) -> None:
-        self.closed_sessions.append(session_id)
-
-
-class _LifecycleClaims:
-    def __init__(self):
-        self.created: list[UUID] = []
-        self.deleted: list[UUID] = []
-
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
-        assert bridge_token == "bridge-token"
-        assert expires_at > datetime.now(UTC)
-        self.created.append(session_id)
-
-    async def inspect(self, *, session_id: UUID):
-        return _provisioning_view(f"claude-{session_id.hex}", step="claim_created")
-
-    async def delete(self, *, session_id: UUID) -> None:
-        self.deleted.append(session_id)
-
-    async def aclose(self) -> None:
-        return None
-
-
-class _ToolUseStore:
-    def __init__(self):
-        self.message_ids: list[UUID] = []
-        self.updates: list[tuple[UUID, str, list[dict[str, Any]] | None, bool]] = []
-        self.completed_turns: list[UUID] = []
-
-    async def begin_assistant(self, session_id: UUID) -> UUID:
-        del session_id
-        message_id = uuid4()
-        self.message_ids.append(message_id)
-        return message_id
-
-    async def update_assistant(
-        self,
-        session_id: UUID,
-        message_id: UUID,
-        content: str,
-        *,
-        tool_uses: list[dict[str, Any]] | None = None,
-        complete: bool = False,
-    ) -> None:
-        del session_id
-        self.updates.append((message_id, content, tool_uses, complete))
-
-    async def complete_turn(self, session_id: UUID) -> None:
-        self.completed_turns.append(session_id)
 
 
 class _ToolUseClaudeClient:
@@ -390,25 +276,27 @@ class _ToolUseClaudeClient:
         )
 
 
-async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use() -> None:
-    store = _ToolUseStore()
-    service = ClaudeChatService(
-        _runtime_config(), cast(Any, store), cast(Any, _LifecycleClaims()), mcp_token=SecretStr("unused")
+async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
+    chat_store, chat_service, operator_id
+) -> None:
+    """A tool-use block and the text after it are two messages, not one merged row."""
+    view, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == "accepted"
+
+    await chat_service._run_turn(
+        cast(Any, _ToolUseClaudeClient()), view.session_id, "Check the Haku MCP catalog", abort_event=asyncio.Event()
     )
 
-    session_id = uuid4()
-    await service._run_turn(
-        cast(Any, _ToolUseClaudeClient()), session_id, "Check the Haku MCP catalog", abort_event=asyncio.Event()
-    )
-
-    expected = [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}]
-    assert len(store.message_ids) == 2
-    assert store.message_ids[0] != store.message_ids[1]
-    assert store.updates == [
-        (store.message_ids[0], "", expected, True),
-        (store.message_ids[1], "The Haku Console catalog is available.", [], True),
+    messages = [m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
+    assert [(m.content, [u.model_dump() for u in m.tool_uses], m.status) for m in messages] == [
+        (
+            "",
+            [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}],
+            "complete",
+        ),
+        ("The Haku Console catalog is available.", [], "complete"),
     ]
-    assert store.completed_turns == [session_id]
+    assert await chat_store.status(view.session_id) == "ready", "the turn was not completed"
 
 
 class _LifecycleWebSocket:
@@ -438,27 +326,43 @@ class _LifecycleClaudeClient:
         self.disconnected = True
 
 
-async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim() -> None:
-    session_id = uuid4()
-    store = _LifecycleStore(session_id, "bridge-token")
-    claims = _LifecycleClaims()
-    service = ClaudeChatService(
-        _runtime_config(), cast(Any, store), cast(Any, claims), mcp_token=SecretStr("haku-static-bearer")
-    )
+class _ClosingClaudeClient(_LifecycleClaudeClient):
+    """Closes the session on connect, so the runner's loop exits at its first status check.
+
+    Something has to end the loop, which otherwise sits in a 30s `wait_for_prompt`. The fake
+    store this replaced got there by lying in `authenticate_bridge`; putting it in the SDK
+    client keeps the store real and the loop's own exit condition under test.
+    """
+
+    on_connect: Callable[[], Awaitable[None]] | None = None
+
+    async def connect(self) -> None:
+        await super().connect()
+        on_connect = type(self).on_connect
+        assert on_connect is not None
+        await on_connect()
+
+
+async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
     websocket = _LifecycleWebSocket()
 
-    session = await service.create(uuid4())
-    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _LifecycleClaudeClient):
-        await service.handle_runner(cast(Any, websocket), session_id, "bridge-token")
+    session = await chat_service.create(operator_id)
+    session_id = session.session_id
+    _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
+    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _ClosingClaudeClient):
+        await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
-    assert session.session_id == session_id
-    assert claims.created == [session_id]
+    assert recording_claims.created == [session_id]
     assert websocket.accepted is True
     assert websocket.closed is None
-    assert claims.deleted == [session_id]
-    assert store.cleanup_completed == [session_id]
-    assert store.closed_sessions == [session_id]
-    options = cast(Any, _LifecycleClaudeClient.last_options)
+    assert recording_claims.deleted == [session_id]
+    assert await chat_store.status(session_id) == "closed"
+    # Cleanup is recorded by clearing the hashed rendezvous credential, which is what takes the
+    # session back out of the reconciler's candidate set.
+    assert await chat_store.claim_cleanup_candidates() == []
+    options = cast(Any, _ClosingClaudeClient.last_options)
     assert options.mcp_servers == {
         "haku-console": {
             "type": "http",
@@ -470,58 +374,40 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert "haku-static-bearer" not in options.env.values()
 
 
-class _TerminalStore:
-    def __init__(self):
-        self.completed: list[UUID] = []
-
-    async def authenticate_bridge(self, session_id: UUID, token: str) -> str:
-        del session_id, token
-        return "terminal"
-
-    async def complete_claim_cleanup(self, session_id: UUID) -> None:
-        self.completed.append(session_id)
-
-
-async def test_terminal_runner_retry_deletes_its_stale_claim() -> None:
-    session_id = uuid4()
-    store = _TerminalStore()
-    claims = _LifecycleClaims()
-    service = ClaudeChatService(
-        _runtime_config(), cast(Any, store), cast(Any, claims), mcp_token=SecretStr("haku-static-bearer")
-    )
+async def test_terminal_runner_retry_deletes_its_stale_claim(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """A runner presenting a valid credential for an already-closed session is turned away."""
     websocket = _LifecycleWebSocket()
 
-    await service.handle_runner(cast(Any, websocket), session_id, "stale-but-authentic")
+    session = await chat_service.create(operator_id)
+    await chat_store.request_close(operator_id, session.session_id)
 
-    assert claims.deleted == [session_id]
-    assert store.completed == [session_id]
+    await chat_service.handle_runner(
+        cast(Any, websocket), session.session_id, recording_claims.tokens[session.session_id]
+    )
+
+    assert recording_claims.deleted == [session.session_id]
+    assert await chat_store.claim_cleanup_candidates() == []
+    assert await chat_store.status(session.session_id) == "closed"
     assert websocket.closed == (1008, "runner session is already terminal")
 
 
-class _ReconcileStore:
-    def __init__(self, session_ids: list[UUID]):
-        self.session_ids = session_ids
-        self.completed: list[UUID] = []
+async def test_startup_reconciliation_retries_terminal_claim_cleanup(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """Claims left behind by a Console that died mid-teardown are swept on the next boot."""
 
-    async def claim_cleanup_candidates(self) -> list[UUID]:
-        return self.session_ids
+    session_ids = []
+    for _ in range(2):
+        session = await chat_service.create(operator_id)
+        await chat_store.request_close(operator_id, session.session_id)
+        session_ids.append(session.session_id)
 
-    async def complete_claim_cleanup(self, session_id: UUID) -> None:
-        self.completed.append(session_id)
+    await chat_service.reconcile_terminal_claims()
 
-
-async def test_startup_reconciliation_retries_terminal_claim_cleanup() -> None:
-    session_ids = [uuid4(), uuid4()]
-    store = _ReconcileStore(session_ids)
-    claims = _LifecycleClaims()
-    service = ClaudeChatService(
-        _runtime_config(), cast(Any, store), cast(Any, claims), mcp_token=SecretStr("haku-static-bearer")
-    )
-
-    await service.reconcile_terminal_claims()
-
-    assert claims.deleted == session_ids
-    assert store.completed == session_ids
+    assert sorted(recording_claims.deleted) == sorted(session_ids)
+    assert await chat_store.claim_cleanup_candidates() == []
 
 
 if __name__ == "__main__":
@@ -550,9 +436,7 @@ class _RealDbClaudeClient(_LifecycleClaudeClient):
         return _messages()
 
 
-async def test_runner_survives_an_idle_wait_against_a_real_database(
-    migrated_sessions, migrated_engine, migrated_identity_store
-) -> None:
+async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, chat_service, operator_id) -> None:
     """The idle wait is a raw-driver call, so only a real engine exercises it.
 
     `handle_runner` loops: consume a prompt, then block in `wait_for_prompt` until the next
@@ -562,64 +446,57 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(
     'Connection' object has no attribute 'set_autocommit'". Faking Kubernetes is right;
     faking the store hid the bug.
     """
-    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-listen-test")
-    store = ClaudeChatStore(migrated_sessions, migrated_engine)
-    service = ClaudeChatService(
-        _runtime_config(), store, cast(Any, _LifecycleClaims()), mcp_token=SecretStr("haku-static-bearer")
-    )
     # The store mints the real bridge token; no claim is created because handle_runner only
     # ever deletes one on the way out, and Kubernetes is not what this test is about.
-    view, token = await store.create(operator_id)
+    view, token = await chat_store.create(operator_id)
 
     with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
-        runner = asyncio.create_task(service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token))
+        runner = asyncio.create_task(
+            chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
+        )
         try:
             # Long enough to reach the idle wait, which is where the crash used to happen.
             await asyncio.sleep(2)
-            assert await store.status(view.session_id) == "ready", "the runner failed while waiting for a prompt"
+            assert await chat_store.status(view.session_id) == "ready", "the runner failed while waiting for a prompt"
 
             # And the wait must actually wake on NOTIFY rather than only time out. A bounded
             # poll rather than an Event: the thing under test is the runner's own wake, so the
             # test must observe it from outside instead of being handed a signal by it.
-            await store.enqueue_prompt(operator_id, view.session_id, "ping")
+            await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
             for _ in range(75):
-                if await store.status(view.session_id) == "ready":
+                if await chat_store.status(view.session_id) == "ready":
                     break
                 await asyncio.sleep(0.2)
-            assert await store.status(view.session_id) == "ready", "the turn never completed"
+            assert await chat_store.status(view.session_id) == "ready", "the turn never completed"
         finally:
             runner.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await runner
 
-    [answer] = [m for m in (await store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
+    [answer] = [m for m in (await chat_store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
     assert answer.content == "pong"
 
 
-async def test_abort_is_refused_when_no_turn_is_in_flight(
-    migrated_sessions, migrated_engine, migrated_identity_store
-) -> None:
+async def test_abort_is_refused_when_no_turn_is_in_flight(chat_store, operator_id) -> None:
     """An idle session has nothing to interrupt, and saying so is the point of the 409.
 
     The old check asked "is this session's abort event registered in *this* process", which
     is true for the whole life of the runner bridge — so aborting an idle session set the
     event, and the next turn aborted the instant it started.
     """
-    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-abort-idle")
-    store = ClaudeChatStore(migrated_sessions, migrated_engine)
-    view, token = await store.create(operator_id)
+    view, token = await chat_store.create(operator_id)
     # The bridge handshake is what takes a session from provisioning to ready, and only a
     # ready session accepts a prompt.
-    assert await store.authenticate_bridge(view.session_id, token) == "accepted"
+    assert await chat_store.authenticate_bridge(view.session_id, token) == "accepted"
 
-    assert await store.request_abort(view.session_id) is False
+    assert await chat_store.request_abort(view.session_id) is False
 
-    await store.enqueue_prompt(operator_id, view.session_id, "work")
-    assert await store.request_abort(view.session_id) is True
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    assert await chat_store.request_abort(view.session_id) is True
 
 
 async def test_abort_reaches_the_replica_running_the_turn(
-    migrated_db_url, migrated_sessions, migrated_engine, migrated_identity_store
+    migrated_db_url, migrated_sessions, chat_store, operator_id
 ) -> None:
     """The two ends of an abort are on different pods, so it has to cross the database.
 
@@ -629,17 +506,15 @@ async def test_abort_reaches_the_replica_running_the_turn(
     engines is what reproduces that; a single store would pass on the in-process path this
     change removes.
     """
-    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-abort-cross")
-    running = ClaudeChatStore(migrated_sessions, migrated_engine)
-    view, token = await running.create(operator_id)
-    assert await running.authenticate_bridge(view.session_id, token) == "accepted"
-    await running.enqueue_prompt(operator_id, view.session_id, "work")
+    view, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == "accepted"
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
         requesting = ClaudeChatStore(async_sessionmaker(other_engine, expire_on_commit=False), other_engine)
         aborted = asyncio.Event()
-        watcher = asyncio.create_task(running.watch_aborts(view.session_id, aborted.set))
+        watcher = asyncio.create_task(chat_store.watch_aborts(view.session_id, aborted.set))
         try:
             # Retry rather than sleep a magic interval: the LISTEN registers asynchronously,
             # and re-notifying is harmless, so this waits for readiness without guessing it.

@@ -43,6 +43,22 @@ Two behaviours worth knowing before reading the code:
   is single too, while a stalled claim cannot wedge ingress (R1.4). Two locks, not one: they
   are elected independently and can land on different replicas.
 
+## Tests run against a real database
+
+Every store here is exercised through Postgres (the `migrated_*` testcontainer fixtures),
+never a stand-in. What stays faked is what is genuinely outside: Kubernetes, the Matrix
+homeserver, and the Agent SDK client. The rule is not tidiness — a fake store answers from
+the shape the test author imagined, so it agrees with whatever the code does:
+
+- A fake `_listen` passed against a fake engine while the real one raised on **every** call
+  in production, because it was written against psycopg3's API on an asyncpg engine.
+- A fake conversation store let a test bind a room to a session id that had never existed.
+  Postgres refuses: `matrix_conversation.session_id` is a foreign key, so that state is
+  unreachable and the test was describing a scenario the schema forbids.
+
+The one deliberate exception is `FailingEngine`, which exists to make a connection fail —
+there is no way to ask a healthy Postgres for that.
+
 ## Cross-replica state, and the trap it sets
 
 `replicas: 2` means any given HTTP request reaches an arbitrary pod, while a session's live
