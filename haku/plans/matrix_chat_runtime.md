@@ -166,6 +166,32 @@ for whenever this is picked up:
   down when idle**. Every message pays no cold start. This makes the existing
   `session_ttl_seconds` cap (86400) and the `SandboxClaim` `shutdownTime` the wrong shape:
   the claim is renewed or replaced by a lifetime that does not expire on a timer.
+- **R3.2a [v1] Always-up is a renewed lease, not an absent deadline.** Deleting the deadline
+  removes the only thing that reclaims a sandbox when the console is not there to delete it,
+  and "the console died" is precisely when a 2-vCPU claim should not be pinned forever. So
+  the deadline stays and the supervisor renews it while the session is live: sandbox lives
+  as long as something is tending it, and is reclaimed by the controller shortly after
+  nothing is. **There is a precedent to copy rather than invent** — `sandbox_mcp`'s `_renew`
+  slides `shutdownTime` forward on every exec, with a `test` on `resourceVersion` and a
+  retry on 409. Two gaps: the console's Role
+  (<../../cluster/k8s/haku/workspaces/app/haku-console-claude-claim-role.yaml>) grants
+  `create`/`delete`/`get` and no `patch`, and nothing renews on a schedule today because
+  nothing needed to.
+- **R3.2b [v1] The reaper that actually bounds the sandbox is the Kyverno janitor, and it
+  fires at 24 hours.** `haku-claude-workspace-janitor`
+  (<../../cluster/k8s/haku/workspaces/app/cleanuppolicy-haku-claude-janitor.yaml>) deletes
+  every `Sandbox`/`SandboxClaim` in `haku-claude-sandbox` older than 24h by
+  `creationTimestamp` — not by idleness, not by deadline, so a renewed lease does not
+  survive it and neither does removing `shutdownTime`. **Always-up therefore tops out at one
+  day until that policy changes**, and rotation is a _daily_ event rather than a rare one.
+  The janitor is not wrong to exist: its job is catching claims whose owner forgot to delete
+  them, and by `creationTimestamp` alone a healthy always-up claim is indistinguishable from
+  a leaked one. What distinguishes them is the lease — so the fence moves from age to
+  expiry: raise the age fence well past a day and let the controller's own `shutdownTime`
+  handling do the reclaiming, with the janitor demoted to what its sibling in `haku-sandbox`
+  already is, a 7-day backstop for claims the controller somehow did not collect. That also
+  makes the reaper finer-grained: the controller acts on a timestamp, the janitor on an
+  hourly cron.
 - **R3.3 [v1] Context exhaustion is handled by compaction, not rotation.** The session
   compacts in place and its ID survives, so the runtime does nothing and the operator sees
   no seam. Rotation to a fresh session ID remains possible (R3.4) but is a **failure and
@@ -211,6 +237,14 @@ for whenever this is picked up:
   reused (free if its shape is reusable, unknown whether it is). This is the piece to settle
   before building the prompt, because it decides whether anything must happen while the
   session is _healthy_.
+
+  **How often this fires is not a guess — it is 24 hours (R3.2b), and that is an argument
+  for fixing the reaper before accepting summary-less re-awakening.** "Loses the thread's
+  earlier reasoning, and the operator can say so" is a fair trade for a rare event and a
+  poor one for a daily one: every morning would open with an agent that does not know what
+  yesterday was about. The trade is only honest once rotation is rare, which is Phase 3's
+  job. Sequenced the other way — summary first — is building the expensive half to
+  compensate for a fence that a one-line policy change removes.
 
   **The room is the primary source, not the database.** Matrix already holds the
   conversation, it is what the operator sees, and the recovery path is `/messages`
@@ -622,8 +656,15 @@ without an identity, its state, or a guard against losing work is not worth surv
 
 ### Phase 3 — Survive
 
-Always-up sandbox (R3.2) — the claim's `shutdownTime` and `session_ttl_seconds` both exist
-to expire it, so both must change. Reconnect rather than terminal failure: `handle_runner`
+Always-up sandbox (R3.2) — but the ordering inside this phase is decided by which reaper
+binds. `session_ttl_seconds` (7200 in the deployed config) is the one that fires today; the
+Kyverno janitor at 24h (R3.2b) is the one that fires next and is the real ceiling. **Do the
+janitor first**: raising the TTL without it buys 22 hours and leaves rotation daily, whereas
+moving the fence from age to lease (R3.2a) is what makes "always up" mean anything. The
+order is then janitor fence → `patch` on the console's Role → renewal in the supervisor →
+drop `session_ttl_seconds`, and only the last of those is a config value.
+
+Reconnect rather than terminal failure: `handle_runner`
 today calls `store.fail()` on `WebSocketDisconnect` and closes the session, which is
 precisely wrong once the sandbox is meant to outlive a connection (R3.4). Then `event_id`
 dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
