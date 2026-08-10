@@ -56,6 +56,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//haku/console:conftest",
+        "@pypi//asyncpg",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

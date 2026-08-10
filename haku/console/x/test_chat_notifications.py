@@ -11,12 +11,21 @@ import asyncio
 import contextlib
 from uuid import uuid4
 
+import asyncpg
 import pytest_bazel
 from sqlalchemy import text
 
 # Imported privately on purpose: the legacy channels exist only for the length of one roll,
 # so the compatibility test below should stop compiling the moment they are deleted.
-from haku.console.x.chat_notifications import _LEGACY_CHANNELS, ChatEventKind, ChatNotifications, notify
+from haku.console.x.chat_notifications import (
+    _LEGACY_CHANNELS,
+    CHANNEL,
+    ChatEvent,
+    ChatEventKind,
+    ChatNotifications,
+    libpq_dsn,
+    notify,
+)
 
 
 async def _woken_within(event: asyncio.Event, seconds: float) -> bool:
@@ -54,6 +63,45 @@ async def test_a_notify_of_another_kind_does_not_wake_this_one(notifications, mi
         async with migrated_sessions.begin() as db:
             await notify(db, ChatEventKind.UPDATE, session_id)
         assert not await _woken_within(woken, 2)
+
+
+# While `notify` emits on both channels, a woken waiter proves nothing about which of the two
+# woke it — so every other test in this file would pass with the merged path entirely broken.
+# That masking ends the moment the legacy half is deleted, which is the worst possible time to
+# find out. These two cover the merged path's halves separately: the producer puts a readable
+# event on the right channel, and the listener acts on one that arrives there.
+
+
+async def test_notify_puts_a_readable_event_on_the_merged_channel(migrated_db_url, migrated_sessions) -> None:
+    session_id = uuid4()
+    received: asyncio.Queue[str] = asyncio.Queue()
+    connection = await asyncpg.connect(libpq_dsn(migrated_db_url))
+    try:
+        await connection.add_listener(CHANNEL, lambda _conn, _pid, _channel, payload: received.put_nowait(str(payload)))
+        async with migrated_sessions.begin() as db:
+            await notify(db, ChatEventKind.ABORT, session_id)
+        async with asyncio.timeout(30):
+            payload = await received.get()
+    finally:
+        await connection.close(timeout=5)
+
+    assert ChatEvent.model_validate_json(payload) == ChatEvent(kind=ChatEventKind.ABORT, session_id=session_id)
+
+
+async def test_the_merged_channel_alone_wakes_this_one(notifications, migrated_sessions) -> None:
+    session_id = uuid4()
+
+    async with notifications.subscribe(ChatEventKind.UPDATE, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text("SELECT pg_notify(:channel, :payload)"),
+                {
+                    "channel": CHANNEL,
+                    "payload": ChatEvent(kind=ChatEventKind.UPDATE, session_id=session_id).model_dump_json(),
+                },
+            )
+        async with asyncio.timeout(30):
+            await woken.wait()
 
 
 async def test_a_replica_still_on_the_old_channels_wakes_this_one(notifications, migrated_sessions) -> None:
