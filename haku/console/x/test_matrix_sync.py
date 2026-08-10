@@ -9,21 +9,10 @@ from typing import Any, cast
 import pytest_bazel
 from pydantic import SecretStr
 
-from haku.console.config import MatrixConfig
+from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
 from haku.console.x.matrix_session import MatrixConversationStore
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
-
-USER = "@haku:allegedly.works"
-OPERATOR = "@rai:allegedly.works"
-ROOM = "!room:allegedly.works"
-
-CONFIG = MatrixConfig(
-    homeserver="https://matrix.allegedly.works",
-    user_id=USER,
-    operator_user_id=OPERATOR,
-    operator_subject="authentik-user-id",
-)
 
 
 @dataclass
@@ -81,11 +70,11 @@ class _Harness:
     turns: _FakeTurns
 
     async def watermark(self) -> str | None:
-        state = await self.store.load(USER)
+        state = await self.store.load(MATRIX_USER)
         return state.next_batch if state is not None else None
 
     async def token(self) -> str | None:
-        state = await self.store.load(USER)
+        state = await self.store.load(MATRIX_USER)
         return state.access_token if state is not None else None
 
 
@@ -93,22 +82,22 @@ async def _harness(
     sessions,
     result: SyncResult,
     *,
-    room: str | None = ROOM,
+    room: str | None = MATRIX_ROOM,
     accepts: bool = True,
     cached_token: str | None = None,
     watermark: str | None = None,
 ) -> _Harness:
     sync_store = MatrixSyncStore(sessions)
     if cached_token is not None:
-        await sync_store.save_token(USER, cached_token)
+        await sync_store.save_token(MATRIX_USER, cached_token)
     if watermark is not None:
-        await sync_store.save_batch(USER, watermark)
+        await sync_store.save_batch(MATRIX_USER, watermark)
     conversations = MatrixConversationStore(sessions)
     if room is not None:
-        await conversations.claim_room(USER, room)
+        await conversations.claim_room(MATRIX_USER, room)
     turns = _FakeTurns(accepts)
     service = MatrixSyncService(
-        CONFIG,
+        MATRIX_CONFIG,
         SecretStr("pw"),
         engine=cast(Any, None),  # only `run()` takes the advisory lock; these drive one pass
         store=sync_store,
@@ -120,8 +109,8 @@ async def _harness(
     return _Harness(service, matrix, sync_store, turns)
 
 
-def _message(body: str, sender: str = OPERATOR, event_id: str = "$evt") -> InboundMessage:
-    return InboundMessage(room_id=ROOM, event_id=event_id, sender=sender, body=body, origin_server_ts=1)
+def _message(body: str, sender: str = MATRIX_OPERATOR, event_id: str = "$evt") -> InboundMessage:
+    return InboundMessage(room_id=MATRIX_ROOM, event_id=event_id, sender=sender, body=body, origin_server_ts=1)
 
 
 async def test_hands_an_operator_message_to_the_session(migrated_sessions):
@@ -164,24 +153,24 @@ async def test_a_refused_batch_says_so_once(migrated_sessions):
 
 async def test_joins_an_invite_from_the_operator(migrated_sessions):
     harness = await _harness(
-        migrated_sessions, SyncResult("s2", (), (Invite(room_id=ROOM, inviter=OPERATOR),)), room=None
+        migrated_sessions, SyncResult("s2", (), (Invite(room_id=MATRIX_ROOM, inviter=MATRIX_OPERATOR),)), room=None
     )
 
     await harness.service.sync_once("tok")
 
-    assert harness.matrix.joined == [ROOM]
+    assert harness.matrix.joined == [MATRIX_ROOM]
 
 
 async def test_refuses_a_second_room_and_says_so_in_the_first(migrated_sessions):
     """R3.6a — joining would put Haku in a room nothing services, which reads as listening."""
     other = "!other:allegedly.works"
-    harness = await _harness(migrated_sessions, SyncResult("s2", (), (Invite(room_id=other, inviter=OPERATOR),)))
+    harness = await _harness(migrated_sessions, SyncResult("s2", (), (Invite(room_id=other, inviter=MATRIX_OPERATOR),)))
 
     await harness.service.sync_once("tok")
 
     assert harness.matrix.joined == []
     [(room_id, body)] = harness.matrix.notices
-    assert room_id == ROOM
+    assert room_id == MATRIX_ROOM
     assert "still serving" in body
 
 
@@ -197,7 +186,7 @@ async def test_leaves_an_invite_from_anybody_else_pending(migrated_sessions):
 
 async def test_adopts_an_unbound_room_from_operator_traffic(migrated_sessions):
     """Being in the room already required an operator invite, so a binding can be recovered."""
-    stray = InboundMessage("!already-joined:allegedly.works", "$e", OPERATOR, "hi", 1)
+    stray = InboundMessage("!already-joined:allegedly.works", "$e", MATRIX_OPERATOR, "hi", 1)
     harness = await _harness(migrated_sessions, SyncResult("s2", (stray,), ()), room=None)
 
     await harness.service.sync_once("tok")
@@ -220,7 +209,7 @@ async def test_does_not_adopt_from_a_sender_who_is_not_the_operator(migrated_ses
 
 
 async def test_ignores_messages_from_a_room_that_is_not_the_live_one(migrated_sessions):
-    stray = InboundMessage("!stray:allegedly.works", "$e", OPERATOR, "hi", 1)
+    stray = InboundMessage("!stray:allegedly.works", "$e", MATRIX_OPERATOR, "hi", 1)
     harness = await _harness(migrated_sessions, SyncResult("s2", (stray,), ()))
 
     await harness.service.sync_once("tok")
@@ -233,7 +222,7 @@ async def test_reply_posts_the_answer_as_text(migrated_sessions):
 
     await harness.service.reply("the answer")
 
-    assert harness.matrix.sent == [(ROOM, "the answer")]
+    assert harness.matrix.sent == [(MATRIX_ROOM, "the answer")]
 
 
 async def test_announce_posts_a_notice_into_the_live_room(migrated_sessions):
@@ -241,7 +230,7 @@ async def test_announce_posts_a_notice_into_the_live_room(migrated_sessions):
 
     await harness.service.announce("provisioning a sandbox")
 
-    assert harness.matrix.notices == [(ROOM, "provisioning a sandbox")]
+    assert harness.matrix.notices == [(MATRIX_ROOM, "provisioning a sandbox")]
 
 
 async def test_announce_is_a_no_op_with_no_room_bound(migrated_sessions):
