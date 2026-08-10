@@ -254,6 +254,28 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
+    # Matrix chat surface. Absent config is a supported state, not a failure: the bot
+    # password is reflected in from the matrix namespace and is legitimately missing on a
+    # first deploy, and the console must serve its approval queue regardless (R10.3b).
+    # Split around the Claude runtime below: ingress has to exist before the service, which
+    # takes the reply sink, and the supervisor has to come after it.
+    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
+    matrix_conversations: matrix_session.MatrixConversationStore | None = None
+    matrix_reply_sink: matrix_session.MatrixReplySink | None = None
+    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
+        matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
+        matrix_sync_service = matrix_sync.MatrixSyncService(
+            matrix_config,
+            matrix_config.password,
+            db_engine,
+            matrix_sync.MatrixSyncStore(db_sessions),
+            matrix_conversations,
+            matrix_session.MatrixTurns(matrix_config, matrix_conversations, claude_chat_store, operator_identity_store),
+        )
+        matrix_reply_sink = matrix_session.MatrixReplySink(
+            matrix_config, matrix_conversations, matrix_sync_service.reply
+        )
+
     # Resolving configured external identities is database I/O. Keep app construction pure and do
     # this during the async lifespan, after the event loop exists.
     if claude_runtime is not None:
@@ -269,34 +291,26 @@ def create_app(
             claude_chat_store,
             claude_chat.KubernetesSandboxClaims(claude_runtime),
             mcp_token=mcp_agent.token,
+            reply_sink=matrix_reply_sink.deliver if matrix_reply_sink is not None else None,
         )
-    # Matrix chat surface. Absent config is a supported state, not a failure: the bot
-    # password is reflected in from the matrix namespace and is legitimately missing on a
-    # first deploy, and the console must serve its approval queue regardless (R10.3b).
-    # Built here rather than with the other services because the supervisor needs the Claude
-    # runtime above it.
-    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
+    # The supervisor comes after the Claude runtime it provisions through, and announces via
+    # the sync service, which holds the only Matrix credential — one login, one device,
+    # whoever is speaking.
     matrix_supervisor: matrix_session.MatrixSessionSupervisor | None = None
-    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
-        matrix_sync_service = matrix_sync.MatrixSyncService(
+    if (
+        matrix_config is not None
+        and matrix_sync_service is not None
+        and matrix_conversations is not None
+        and claude_chat_service is not None
+    ):
+        matrix_supervisor = matrix_session.MatrixSessionSupervisor(
             matrix_config,
-            matrix_config.password,
-            db_engine,
-            matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversations,
+            claude_chat_service,
+            claude_chat_store,
+            operator_identity_store,
+            matrix_sync_service.announce,
         )
-        if claude_chat_service is not None:
-            # The supervisor announces through the sync service, which holds the only Matrix
-            # credential — one login, one device, whoever is speaking.
-            matrix_supervisor = matrix_session.MatrixSessionSupervisor(
-                matrix_config,
-                matrix_conversations,
-                claude_chat_service,
-                claude_chat_store,
-                operator_identity_store,
-                matrix_sync_service.announce,
-            )
 
     if static_agent_definitions is not None:
         static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)

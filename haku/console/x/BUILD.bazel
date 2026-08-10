@@ -24,6 +24,7 @@ py_library(
     name = "matrix_session",
     srcs = ["matrix_session.py"],
     deps = [
+        ":matrix_client",
         "//haku/console:claude_chat",
         "//haku/console:config",
         "//haku/console:database_schema",

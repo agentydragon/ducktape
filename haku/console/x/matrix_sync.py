@@ -1,9 +1,11 @@
 """The console's Matrix sync loop.
 
 Logs in as the bot, long-polls `/sync`, binds the one room Haku services (R3.6a), and
-acts on what the operator types. Still echoing rather than running a turn — Phase 1 of
-`haku/plans/matrix_chat_runtime.md` replaces `_handle_message`; the credential, the loop,
-the watermark and the send path are already proven under it.
+hands what the operator types to the session behind that room.
+
+A batch the session cannot take yet is not held here: the watermark simply is not
+advanced, so the homeserver re-delivers it next pass. Queue-until-turn-end (R2.2) and
+"nothing is silently dropped" (R1.6) then need no local queue at all.
 
 It is also the only holder of a Matrix credential, so the session supervisor's lifecycle
 notices go out through `announce` rather than through a second login.
@@ -24,9 +26,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import MatrixSyncState
+from haku.console.database_schema import MatrixConversation, MatrixSyncState
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, MatrixClient
-from haku.console.x.matrix_session import MatrixConversationStore
+from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,7 @@ class MatrixSyncService:
         engine: AsyncEngine,
         store: MatrixSyncStore,
         conversations: MatrixConversationStore,
+        turns: MatrixTurns,
     ):
         # Taken separately from `config`, which carries it as optional: the service is
         # only ever constructed once the password is known to be there (R10.3b).
@@ -91,8 +94,10 @@ class MatrixSyncService:
         self._engine = engine
         self._store = store
         self._conversations = conversations
+        self._turns = turns
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         self._sent_event_ids: set[str] = set()
+        self._holding = False
 
     async def _token(self) -> str:
         """A working access token, logging in only when the cached one is not.
@@ -125,6 +130,15 @@ class MatrixSyncService:
         logger.info("Matrix: joined %s on invite from %s", invite.room_id, invite.inviter)
         await self._send_notice(token, invite.room_id, "joined — this is now Haku's room")
 
+    async def reply(self, body: str) -> None:
+        """Post Haku's answer into the live room as ordinary text (R11.1)."""
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            logger.error("Matrix: a turn finished with no room bound; dropping the answer")
+            return
+        event_id = await self._client.send_text(await self._token(), conversation.room_id, body, txn_id=uuid4().hex)
+        self._sent_event_ids.add(event_id)
+
     async def announce(self, body: str) -> None:
         """Post a lifecycle notice into the live room, if there is one.
 
@@ -146,33 +160,54 @@ class MatrixSyncService:
         event_id = await self._client.send_notice(token, room_id, body, txn_id=uuid4().hex)
         self._sent_event_ids.add(event_id)
 
-    async def _handle_message(self, token: str, message: InboundMessage, live_room: str | None) -> None:
-        if message.event_id in self._sent_event_ids:
-            return
-        if message.room_id != live_room:
-            # Only the bound room is serviced (R3.6a). Reachable for a room joined before
-            # the binding existed, and for anything that gets Haku into a room by a path
-            # other than an invite.
-            logger.warning("Matrix: ignoring %s from unserviced room %s", message.event_id, message.room_id)
-            return
-        event_id = await self._client.send_text(
-            token, message.room_id, f"echo: {message.body}", txn_id=f"echo-{message.event_id}"
-        )
-        self._sent_event_ids.add(event_id)
-        logger.info("Matrix: echoed %s from %s", message.event_id, message.sender)
+    def _serviced(self, messages: tuple[InboundMessage, ...], live_room: str | None) -> list[InboundMessage]:
+        """The messages of a batch that are ours to act on."""
+        serviced = []
+        for message in messages:
+            if message.event_id in self._sent_event_ids:
+                continue
+            if message.room_id != live_room:
+                # Only the bound room is serviced (R3.6a). Reachable for a room joined
+                # before the binding existed, and for anything that gets Haku into a room
+                # by a path other than an invite.
+                logger.warning("Matrix: ignoring %s from unserviced room %s", message.event_id, message.room_id)
+                continue
+            serviced.append(message)
+        return serviced
 
     async def sync_once(self, token: str) -> None:
-        """One `/sync` pass: act on what came back, then advance the watermark."""
+        """One `/sync` pass: act on what came back, then advance the watermark.
+
+        Returns without advancing when the session cannot take the batch. That is the whole
+        queue-until-turn-end mechanism (R2.2): the events stay unacknowledged on the
+        homeserver and the next pass re-offers them, so nothing needs to be held here.
+        """
         state = await self._store.load(self._config.user_id)
         result = await self._client.sync(token, state.next_batch if state else None)
         for invite in result.invites:
             await self._handle_invite(token, invite)
         # Read after the invites, so a room bound by this very batch serves it too.
         conversation = await self._conversations.load(self._config.user_id)
-        live_room = conversation.room_id if conversation is not None else None
-        for message in result.messages:
-            await self._handle_message(token, message, live_room)
+        if messages := self._serviced(result.messages, conversation.room_id if conversation is not None else None):
+            if not await self._turns.offer(messages):
+                await self._report_holding(token, conversation, len(messages))
+                return
+            self._holding = False
+            logger.info("Matrix: handed %d message(s) to the session", len(messages))
         await self._store.save_batch(self._config.user_id, result.next_batch)
+
+    async def _report_holding(self, token: str, conversation: MatrixConversation | None, count: int) -> None:
+        """Tell the room once that its messages are waiting, not lost (R1.6).
+
+        Once, not once per pass: a refused batch is re-offered on every sync until it is
+        taken, and a long turn would otherwise fill the room with the same line.
+        """
+        if self._holding or conversation is None:
+            return
+        self._holding = True
+        await self._send_notice(
+            token, conversation.room_id, f"holding {count} message(s) until the current turn finishes"
+        )
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""

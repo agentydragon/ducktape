@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
@@ -588,14 +589,28 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
+# Receives a finished turn's answer, in addition to the message row the SPA reads. The
+# Matrix surface has no SSE stream to read from, so a completed turn has to be pushed
+# somewhere; see `haku.console.x.matrix_session.MatrixReplySink`, which filters to the one
+# session it owns. Unset means the rows are the only output, which is the console SPA.
+ReplySink = Callable[[UUID, str], Awaitable[None]]
+
+
 class ClaudeChatService:
     def __init__(
-        self, config: ClaudeRuntimeConfig, store: ClaudeChatStore, claims: SandboxClaims, *, mcp_token: SecretStr
+        self,
+        config: ClaudeRuntimeConfig,
+        store: ClaudeChatStore,
+        claims: SandboxClaims,
+        *,
+        mcp_token: SecretStr,
+        reply_sink: ReplySink | None = None,
     ):
         self._config = config
         self._store = store
         self._claims = claims
         self._mcp_token = mcp_token
+        self._reply_sink = reply_sink
         self._abort_events: dict[UUID, asyncio.Event] = {}
 
     def request_abort(self, session_id: UUID) -> bool:
@@ -794,10 +809,28 @@ class ClaudeChatService:
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             await self._store.complete_turn(session_id)
+            await self._deliver_reply(session_id, final_text)
         except Exception as error:
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
+
+    async def _deliver_reply(self, session_id: UUID, final_text: str) -> None:
+        """Push the answer to the reply sink, if one is attached.
+
+        Deliberately after `complete_turn` and deliberately not fatal: the turn did happen
+        and its row is written, so a failed push is a delivery problem, not a session
+        problem. Failing here would mark the session dead and cost the whole conversation
+        over a transient send error.
+        TODO(matrix): retry rather than only logging, once the Matrix surface is the only
+        one — today the message row is still readable in the SPA.
+        """
+        if self._reply_sink is None:
+            return
+        try:
+            await self._reply_sink(session_id, final_text)
+        except Exception:
+            logger.exception("Reply delivery failed for session %s", session_id)
 
     async def aclose(self) -> None:
         await self._claims.aclose()

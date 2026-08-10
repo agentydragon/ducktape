@@ -17,7 +17,7 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -29,6 +29,7 @@ from haku.console.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.matrix_client import InboundMessage
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,89 @@ class MatrixConversationStore:
             if row is None:
                 raise RuntimeError("cannot bind a session before a room is bound")
             row.session_id = session_id
+
+
+class MatrixTurns:
+    """Ingress: hands the operator's messages to the session behind the live room.
+
+    Refusal is a first-class answer. `enqueue_prompt` accepts a prompt only on a `ready`
+    session with nothing already queued, so a message can arrive mid-turn, mid-provision,
+    or between a session dying and its replacement. The caller's contract is that a refused
+    batch leaves the sync watermark where it is, so Matrix itself holds the message and the
+    next pass re-offers it — which is what makes queue-until-turn-end (R2.2) and "no
+    message is silently dropped" (R1.6) fall out of machinery that already exists, with no
+    second durable queue to keep correct.
+    """
+
+    def __init__(
+        self,
+        config: MatrixConfig,
+        conversations: MatrixConversationStore,
+        chat_store: ClaudeChatStore,
+        identities: PostgresOperatorIdentityStore,
+    ):
+        self._config = config
+        self._conversations = conversations
+        self._chat_store = chat_store
+        self._identities = identities
+
+    async def offer(self, messages: Sequence[InboundMessage]) -> bool:
+        """Enqueue `messages` as one prompt. False if the session cannot take it yet.
+
+        The whole batch or none of it: a partial enqueue followed by a refusal would be
+        re-offered on the next pass and deliver its accepted half twice.
+        """
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None or conversation.session_id is None:
+            logger.info("Matrix: no session bound yet, holding %d message(s)", len(messages))
+            return False
+        if (status := await self._chat_store.status(conversation.session_id)) != "ready":
+            logger.info(
+                "Matrix: session %s is %s, holding %d message(s)", conversation.session_id, status, len(messages)
+            )
+            return False
+        operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
+        try:
+            await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, _as_prompt(messages))
+        except RuntimeError as error:
+            # Lost a race with the turn loop, or a prompt landed between the status read and
+            # here. Both mean "not now", which is the same answer as an unready session.
+            logger.info("Matrix: session %s refused the batch: %s", conversation.session_id, error)
+            return False
+        return True
+
+
+def _as_prompt(messages: Sequence[InboundMessage]) -> str:
+    """Render a batch as one prompt.
+
+    Event IDs are carried inline so the agent can cite a specific message back, which is
+    the cheap half of treating the room as a source (R11.2) — the read tools are not built
+    yet, but referring to what it was told does not need them.
+    """
+    return "\n".join(f"[{message.event_id}] {message.body}" for message in messages)
+
+
+class MatrixReplySink:
+    """Egress: forwards a finished turn's answer into the live room (R11.1).
+
+    Attached to the shared `ClaudeChatService`, so it sees every session's turn and must
+    filter: only the session bound to the Matrix room is forwarded, and a console SPA
+    session on the same service is left alone.
+    """
+
+    def __init__(self, config: MatrixConfig, conversations: MatrixConversationStore, reply: Announce):
+        self._config = config
+        self._conversations = conversations
+        self._reply = reply
+
+    async def deliver(self, session_id: UUID, final_text: str) -> None:
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None or conversation.session_id != session_id:
+            return
+        if not (body := final_text.strip()):
+            logger.warning("Matrix: session %s finished a turn with no text to send", session_id)
+            return
+        await self._reply(body)
 
 
 class MatrixSessionSupervisor:
