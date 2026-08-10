@@ -15,10 +15,14 @@ substitution works on `ssl_bump`-decrypted requests. These are what it left
 open, all encoded in `app/squid.conf` and `app/credentials.conf.tmpl` so they
 are answered by running rather than by reading:
 
-1. **Squid 6.x port.** The header directives are unchanged since Squid 2.x, but
-   the TLS ones moved. Partly a rename (`ssl_crtd` → `security_file_certgen`) —
-   but see the first finding below, because one of them is not a rename and the
-   difference is silent.
+1. **Current-Squid port.** The header directives are unchanged since Squid 2.x,
+   but the TLS ones moved. Partly a rename (`ssl_crtd` → `security_file_certgen`)
+   — but see the findings below, because one of them is not a rename and the
+   difference is silent. The image tracks the newest stable series (7.x today,
+   via `alpine:3.23`) rather than whatever the base image happens to carry:
+   upstream supports only the newest series, and answering these questions on a
+   Squid we would not deploy is how a silently-changed directive reaches a
+   fence.
 2. **Destination scoping.** Every rule is `(placeholder AND destination)`.
    Gating on the placeholder alone is an exfiltration primitive — the agent
    holds the placeholder, so it could redeem it at a host of its choosing.
@@ -82,6 +86,13 @@ above until the next run.
 A general lesson for the fence work: a config that _parses_ is not a config that
 _does what it says_. Squid accepted a directive that no longer had the intended
 effect and reported no error at request time either.
+
+**Run 1 ran on 6.12; the image has since moved to 7.6.** That was the direct
+consequence of the finding above — `alpine:3.22` pinned us to a series upstream
+calls archival, and the whole point of the spike is to answer questions about the
+Squid a fence would actually run. The bump means run 1's TLS finding is history
+and the four open questions get answered on 7.6. Anything below that predates the
+bump is labelled with the version it was observed on.
 
 ## Pull credential
 

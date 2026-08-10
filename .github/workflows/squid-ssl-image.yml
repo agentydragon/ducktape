@@ -52,6 +52,11 @@ jobs:
           grep -q -- '--with-openssl' /tmp/v || { echo "::error::squid not built --with-openssl"; exit 1; }
           docker run --rm --entrypoint sh "$REF" -c 'ls /usr/lib/squid/security_file_certgen' \
             || { echo "::error::security_file_certgen helper missing"; exit 1; }
+          # Pin the major series. Squid changes directive semantics across major
+          # versions without erroring -- that is what broke the spike's first run
+          # -- so a base-image bump silently moving us off the series the config
+          # was validated against must fail here, not in the fence.
+          grep -qE 'Version 7\.' /tmp/v || { echo "::error::expected Squid 7.x; got: $(head -1 /tmp/v)"; exit 1; }
 
       - uses: ./.github/actions/setup-ci-secrets
         if: github.event_name == 'push'
