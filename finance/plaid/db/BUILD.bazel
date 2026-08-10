@@ -4,6 +4,7 @@ py_library(
     name = "link_profiles",
     srcs = ["link_profiles.py"],
     visibility = ["//finance/plaid:__subpackages__"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(

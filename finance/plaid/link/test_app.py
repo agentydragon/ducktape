@@ -140,10 +140,23 @@ def test_link_ui_exposes_management_actions() -> None:
     assert "Connect Institution" in root_response.text
     assert "History days" in response.text
     assert "Active Links" in response.text
-    assert "Add scopes" in response.text
-    assert "Repair" in response.text
-    assert "Sync" in response.text
-    assert "Remove" in response.text
+
+
+def test_static_assets_are_served_with_their_own_content_types() -> None:
+    """The page references /static/link.{css,js} by absolute path; if those routes break, the UI
+    renders unstyled and inert rather than failing visibly."""
+    with _client() as client:
+        page = client.get("/link")
+        css = client.get("/static/link.css")
+        js = client.get("/static/link.js")
+
+    assert '<link rel="stylesheet" href="/static/link.css" />' in page.text
+    assert '<script src="/static/link.js"></script>' in page.text
+    assert css.headers["content-type"].startswith("text/css")
+    assert js.headers["content-type"].startswith("text/javascript")
+    # The per-link row actions are rendered by the script, not present in the served HTML.
+    for action in ("Add scopes", "Repair", "Sync", "Remove"):
+        assert action in js.text
 
 
 def test_list_links_exposes_product_and_secret_state() -> None:
@@ -189,12 +202,20 @@ def test_get_link_state_unknown_item_returns_404() -> None:
     assert response.status_code == 404
 
 
-def test_web_config_exposes_default_history_depth() -> None:
+def test_web_config_exposes_default_history_depth_and_the_profile_catalog() -> None:
     with _client() as client:
         response = client.get("/api/config")
 
     assert response.status_code == 200
-    assert response.json() == {"transaction_days": 730, "max_transaction_days": 730}
+    body = response.json()
+    assert body["transaction_days"] == 730
+    assert body["max_transaction_days"] == 730
+    # The dropdown is built from this, so a profile the backend knows must reach the UI with the
+    # products it actually requests attached.
+    assert [entry["value"] for entry in body["profiles"]] == [p.value for p in LinkProfile]
+    by_value = {entry["value"]: entry for entry in body["profiles"]}
+    assert by_value["credit_card_detail"]["products"] == ["transactions", "liabilities"]
+    assert by_value["advanced"]["products"] == []
 
 
 def test_create_link_token_initializes_requested_products() -> None:

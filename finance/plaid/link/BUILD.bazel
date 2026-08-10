@@ -9,6 +9,11 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "app",
     srcs = ["app.py"],
+    data = [
+        "link.css",
+        "link.html",
+        "link.js",
+    ],
     deps = [
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",

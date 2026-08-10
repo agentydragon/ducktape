@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plaid Links</title>
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <link rel="stylesheet" href="/static/link.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Plaid Links</h1>
+          <div class="muted">Manage linked institutions and product profiles.</div>
+        </div>
+      </header>
+      <section>
+        <h2>Connect Institution</h2>
+        <form id="link-form">
+          <label>Label <input id="label" placeholder="Chase personal" /></label>
+          <label
+            >Data surface
+            <select id="profile"></select>
+          </label>
+          <div class="muted" id="profile-hint"></div>
+          <label id="transaction-days-wrap"
+            >History days <input id="transaction-days" type="number" min="1" max="730" step="1"
+          /></label>
+          <div id="advanced-products" class="advanced">
+            <label class="check"><input type="checkbox" value="transactions" checked />Transactions</label>
+            <label class="check"><input type="checkbox" value="investments" />Investments</label>
+            <label class="check"><input type="checkbox" value="liabilities" />Liabilities</label>
+          </div>
+          <button type="submit">Connect</button>
+        </form>
+        <div id="status" class="status" role="status"></div>
+      </section>
+      <section>
+        <h2>Active Links</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Institution</th>
+                <th>Access</th>
+                <th>Sync</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="links"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/static/link.js"></script>
+  </body>
+</html>

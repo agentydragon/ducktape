@@ -7,6 +7,8 @@ Item has a particular product set.
 
 from enum import StrEnum
 
+from pydantic import BaseModel
+
 
 class Product(StrEnum):
     TRANSACTIONS = "transactions"
@@ -45,9 +47,18 @@ PROFILE_LABELS: dict[LinkProfile, str] = {
 }
 
 
-def profile_catalog() -> list[dict[str, object]]:
-    """Every profile as the UI needs it: value, label, the products it requests, and whether sync
-    pulls investment transactions.
+class ProfileInfo(BaseModel):
+    """One data-surface choice as the link UI renders it. Lives here rather than in the web app so
+    the dropdown cannot promise a surface the backend does not request."""
+
+    value: LinkProfile
+    label: str
+    products: list[Product]
+    syncs_investment_transactions: bool
+
+
+def profile_catalog() -> list[ProfileInfo]:
+    """Every profile as the UI needs it.
 
     The products belong in the label because Plaid fails the *whole* Link when the institution does
     not support every requested product — so a profile named for an intent ("Full picture") reads as
@@ -55,12 +66,12 @@ def profile_catalog() -> list[dict[str, object]]:
     visible at the point of choosing. `advanced` has no fixed products; the caller supplies them.
     """
     return [
-        {
-            "value": profile.value,
-            "label": PROFILE_LABELS[profile],
-            "products": [p.value for p in PROFILE_PRODUCTS.get(profile, ())],
-            "syncs_investment_transactions": syncs_investment_transactions(profile),
-        }
+        ProfileInfo(
+            value=profile,
+            label=PROFILE_LABELS[profile],
+            products=list(PROFILE_PRODUCTS.get(profile, ())),
+            syncs_investment_transactions=syncs_investment_transactions(profile),
+        )
         for profile in LinkProfile
     ]
 
