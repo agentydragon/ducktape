@@ -4,12 +4,13 @@ Investigated 2026-08-10, for the idea of haku-console gating its own tool calls 
 for `hostexec` when its own k8s token would do") with a cheap model call rather than a rule.
 
 **Source note.** Langfuse was the intended source and **has nothing to show** — checked, not
-assumed. It holds 35,816 generations; a scan of the 120 most recent found `gpt-5.6-terra` (102),
-`gpt-oss:20b` (17) and one embedding, **no Anthropic model at all**, and no request carrying the
-classifier's system prompt. That is consistent rather than surprising: Langfuse sees what passes
-through LiteLLM, and Claude Code's auto mode talks to `api.anthropic.com` directly — the same gap
-<litellm_oauth_passthrough.md> is about. It is worth recording as an independent confirmation of
-that note's central claim.
+assumed. It holds 35,816 generations; a recent scan found `gpt-5.6-terra`, `gpt-oss:20b` and one
+embedding, **no Anthropic model at all**, and no request carrying the classifier's system prompt.
+Not an instrumentation gap: `llm.request.type` across the sample is `anthropic_messages` 129 /
+`acompletion` 18 / `aembedding` 3, so LiteLLM traces the Messages API perfectly well — it is the
+dominant traced path. The classifier is absent because Claude Code's auto mode talks to
+`api.anthropic.com` directly and never reaches the proxy, which is the same gap
+<litellm_oauth_passthrough.md> is about.
 
 The classifier was read instead out of the Claude Code binary that `claude-agent-sdk` vendors at
 `claude_agent_sdk/_bundled/claude` (275 MB, not stripped), where the prompt, the request builder
@@ -145,9 +146,10 @@ through the proxy that already reports there.
 Two caveats before building on it:
 
 - **Placing `cache_control` through LiteLLM is unverified here.** The whole prefix-cache design
-  above depends on the breakpoints surviving the proxy. LiteLLM passes Anthropic-native params
-  for the `anthropic/` provider, so it very likely works, but measure `cache_read_input_tokens`
-  on the second classification rather than assume it.
+  above depends on the breakpoints surviving the proxy. Calling LiteLLM's `/v1/messages` makes
+  this likeliest — it is a passthrough for the `anthropic/` provider, and the trace tally above
+  shows that path is both live and instrumented — but measure `cache_read_input_tokens` on the
+  second classification rather than assume it.
 - **Model allowlists are per-key**, so the console would need its own LiteLLM virtual key scoped
   to whichever model the classifier uses.
 

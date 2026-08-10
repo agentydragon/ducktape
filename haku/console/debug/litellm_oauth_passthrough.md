@@ -25,10 +25,24 @@ So: **no LiteLLM, no Langfuse, no trace of these turns anywhere except the conso
 `claude_chat_messages` rows.** The sandbox never holds the real token — that is the point of the
 substitution — and the egress proxy is a credential swapper, not an observability hop.
 
-**Confirmed from the other end.** Langfuse holds 35,816 generations; the 120 most recent are
-`gpt-5.6-terra` (102, Codex via CLIProxyAPI), `gpt-oss:20b` (17, local) and one embedding —
-**not one Anthropic model**. Nothing that reaches Anthropic on the subscription is visible there
-today, which is exactly the gap this note is about.
+**Confirmed from the other end.** Langfuse holds 35,816 generations; a recent sample is
+`gpt-5.6-terra` (Codex via CLIProxyAPI), `gpt-oss:20b` (local) and one embedding — **not one
+Anthropic model**. Nothing that reaches Anthropic on the subscription is visible there today,
+which is exactly the gap this note is about.
+
+**And the obvious alternative explanation was checked and is wrong.** The suspicion that LiteLLM
+simply does not trace the Anthropic Messages endpoint would have made that absence meaningless —
+but `llm.request.type` across a 150-observation sample is `anthropic_messages` **129**,
+`acompletion` 18, `aembedding` 3. The Messages API is not merely traced, it is the _dominant_
+traced path: the `gpt-5.6-terra` rows are Claude Code speaking `/v1/messages` to LiteLLM, complete
+with input, output and usage. The absence of Anthropic is therefore about **routing, not
+instrumentation** — the subscription traffic never reaches the proxy.
+
+This is also the encouraging datum for the whole idea: whatever fronts the subscription, the
+traces would come out looking like the Claude Code traffic Langfuse already records well. One
+blemish worth knowing — `llm.provider` is empty on the `anthropic_messages` rows (the
+`acompletion` ones say `openai`), so provider attribution is lost on that path even though model,
+input, output and usage all survive.
 
 ## Could LiteLLM sit in that path?
 
