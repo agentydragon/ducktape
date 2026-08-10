@@ -252,6 +252,123 @@ Options 1 and 2 are the same upstream request seen from two ends, and either
 removes the need for the other. Worth resolving before building the helper,
 since it decides whether the helper lives at the cache or at iron.
 
+## Option E: one Squid per fence, doing everything
+
+The chained designs above stack proxies because each product has half the
+feature set. Worth asking the other question: **how hard is iron's substitution
+inside Squid?** If Squid can do it, the stack collapses to a single layer.
+
+### The mechanism exists, natively
+
+Not `request_header_replace` — that replaces a denied header with "some fixed
+string", one value per header name, no ACLs. The usable pair is:
+
+```squid
+acl to_github  dstdomain api.github.com github.com codeload.github.com
+acl to_forgejo dstdomain forgejo-http.forgejo
+
+request_header_access Authorization deny all                    # drop whatever the agent sent
+request_header_add    Authorization "Bearer ghp_…"  to_github   # inject per destination
+request_header_add    Authorization "Basic <b64>"   to_forgejo
+```
+
+`request_header_add field-name field-value [ acl ... ]` — "One or more Squid
+ACLs may be specified to restrict header injection to matching requests", so one
+directive per destination gives per-destination values. Strip-then-add
+reproduces substitution semantics.
+
+**Bonus the chained design cannot offer**: the documented example is
+`request_header_add X-Client-CA "CA=%ssl::>cert_issuer" all`, i.e. **format
+codes are allowed in the value**. So Squid can stamp _proxy-asserted_ client
+identity (`%>a`) — unforgeable, and exactly the thing iron does not do. The
+identity problem above disappears in this design rather than needing an upstream
+feature.
+
+### What is given up versus iron
+
+- **Secret sourcing.** The value lives in `squid.conf`, not read from env or a
+  vault with a TTL. Render it at pod start from the Secret (initContainer +
+  `envsubst` onto an in-memory emptyDir); rotation becomes re-render + reload,
+  which `reloader.stakater.com/auto` already does here.
+- **Placeholder semantics need a second directive** (see below). Naive
+  strip-and-add is not equivalent to substitution and should not be accepted as
+  such.
+- **Base64 `Basic` is precomputed**, not rewritten in flight — the whole
+  `Basic <b64(user:secret)>` string is rendered at config time. Fine for static
+  per-host credentials; it does not generalise the way iron's rule engine does.
+- **Auditing.** `access.log` against iron's structured JSON with per-transform
+  traces. The OTLP path would need rebuilding.
+- **Focus.** Squid is a large C++ codebase with a long CVE history, against a
+  small Go binary built for this job. And "substitution as a maintained
+  project's product rather than forty lines of ours" was the stated reason iron
+  beat our mitmproxy addon — `squid.conf` directives are far less code than an
+  addon, but the argument is not zero.
+
+### Substitution semantics matter, and are expressible
+
+Unconditional strip-and-add is **not** what iron does, and the difference is
+semantic rather than cosmetic. With substitution the agent _asks_ for the
+credential by presenting the placeholder; its absence means "send this
+unauthenticated" or "I am using my own token", and the proxy honours that.
+Strip-and-add erases the distinction — every request to `github.com` carries the
+PAT, so there is no anonymous clone of a public repo, no second account, no
+user-supplied token for one task, and the credential is attached to paths the
+agent never intended to authenticate.
+
+Squid can express the real semantics with a header-matching ACL, so the
+placeholder gates the injection:
+
+```squid
+acl gh_placeholder req_header Authorization -i ^Bearer\ proxy-github-placeholder$
+request_header_access Authorization deny gh_placeholder
+request_header_add    Authorization "Bearer ghp_…" gh_placeholder
+```
+
+Requests without the placeholder pass through untouched — anonymous stays
+anonymous, and an agent-supplied token is left alone. For git over HTTPS the
+same works against the base64 form, since both the placeholder and the real
+value are static and can be rendered at config time.
+
+**Second unknown for the spike**: whether `request_header_add`'s ACL still
+matches after `request_header_access` has denied the header, or whether the deny
+removes the value the ACL needs. If the ordering defeats it, the fallbacks are
+`request_header_replace` — which is _defined_ as acting on denied headers, but
+allows only one value per header name, so it fits a fence carrying a single
+credential (claude, public-coder) and not the openclaw spike's five — or an
+ICAP service.
+
+### Why this is _less_ stacking, not more
+
+Squid cannot chain to Squid: the `cache_peer`-with-`ssl_bump` limitation applies
+to any Squid in a first hop, so "per-fence Squid → central caching Squid" is
+**not available**. An all-Squid design therefore has to be **one Squid per
+fence doing all four jobs** — substitute, allowlist, gate, cache.
+
+That is a single layer, where the iron design needs two. The cost is that each
+fence keeps its own cache instead of sharing one central cache: more disk, lower
+hit rate, no cross-fence reuse of the same PyPI wheel.
+
+|                             | iron → central Squid             | one Squid per fence          |
+| --------------------------- | -------------------------------- | ---------------------------- |
+| Layers                      | 2                                | **1**                        |
+| Cache sharing               | **shared**                       | per fence                    |
+| Caller identity at the gate | needs an upstream feature        | **native (`%>a`)**           |
+| Substitution quality        | **rule engine, secret backends** | strip + add, config-rendered |
+| Credential exposure         | cache sees it (accepted)         | **stays in one process**     |
+
+### The single experiment that decides it
+
+Two things, both cheap to answer at once. First, whether `request_header_access` / `request_header_add` apply to
+**`ssl_bump`-decrypted** requests. `plans/personal_agents/credential_proxy_options.md`
+already flagged this as undocumented in both directions and untestable with the
+image available then (`ubuntu/squid` is gnutls and rejects `ssl-bump`).
+
+So the spike is: build an OpenSSL Squid image (same
+GitHub-Actions-plus-`cluster/images/` pattern as iron), bump one host, inject a
+header, and observe whether the origin sees it. A day at most, and it decides
+between a one-layer and a two-layer architecture — worth doing **before**
+committing to either.
+
 ## Options, ranked
 
 **A. Squid + an ICAP service for substitution.** Squid natively covers 1, 3 and
