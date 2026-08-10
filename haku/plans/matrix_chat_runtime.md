@@ -184,7 +184,25 @@ for whenever this is picked up:
   **last few messages** verbatim, and **how to reach the rest** (the query API in Open
   questions). Only the third is trivially available.
 
-  **[open] Where does the summary come from?** The session that held the context is gone by
+  **[v1] Start without the summary.** The first cut is the last N conversational messages
+  plus how to read the room — no checkpoint, nothing running while the session is healthy.
+  It degrades honestly: a rotation mid-topic loses the thread's earlier reasoning, and the
+  operator can say so and be answered from the room. That is a good trade for not building
+  summarisation before there is evidence about how often rotation actually happens.
+
+  **Control messages are excluded from that N, by an explicit mark.** Lifecycle notices are
+  already `m.notice` while conversation is `m.text`, so the distinction half exists — but
+  `msgtype` is a rendering hint clients may treat loosely, so the contract should be a
+  namespaced key in the event content (`works.allegedly.haku.kind`), with `m.notice` kept
+  for how clients style it. Re-awakening a session with its own status chatter as context
+  is both noise and slightly self-referential.
+
+  **Gotcha: the history read filters differently from ingress.** Ingress excludes Haku's own
+  messages, because answering yourself is a loop (R1.5). History must _include_ them — half
+  a conversation is not context. Same room, same API, opposite rule on the same events, so
+  the two read paths cannot share a filter.
+
+  **[later] Where would the summary come from?** The session that held the context is gone by
   definition, so it cannot produce one at the moment it is needed. Three shapes, with
   different costs: the live session maintains a rolling checkpoint (cheap at rotation, pays
   continuously); the replacement reconstructs one by reading the room (pays only on
