@@ -731,6 +731,94 @@ host and then allows it for the session, with `allowedDomains` to pre-approve
 and `strictAllowlist` to deny instead of prompting. Same shape, worth copying
 including the pre-approve and never-prompt escape hatches.
 
+## How haku-console would drive the filtering
+
+Sketch of requirement 4 under option E, where one Squid per fence sees every
+request from that fence's agents.
+
+### Shape
+
+```squid
+# 1. Known-good domains never consult the helper at all.
+acl known dstdomain "/etc/squid/allowed-domains.txt"
+http_access allow known
+
+# 2. Everything else asks haku-console, once per (client, host) per TTL.
+external_acl_type haku_gate ttl=86400 negative_ttl=30 concurrency=16 \
+  %SRC %DST /usr/local/bin/haku_gate.py
+acl gated external haku_gate
+http_access allow gated
+
+http_access deny all
+```
+
+The helper answers `OK` (match → allowed), `ERR` (no match → falls through to
+`deny all`), or `BH` (helper broken). Squid caches the verdict itself, so an
+operator is asked once per key rather than once per request.
+
+**The static allowlist short-circuiting first is the load-bearing part.** It
+keeps haku-console out of the path for all normal traffic, so console downtime
+degrades "can reach a new domain" rather than "can reach anything". Without that
+ordering, the console becomes a hard dependency of all egress.
+
+### The constraint that shapes the UX
+
+An earlier section of this note says `external_acl_type` "can hold a request for
+a human". Squid's helper protocol does allow a slow answer — but **the agent's
+HTTP client will not wait minutes**, and neither will Squid's own client-side
+timeouts. So a request genuinely held pending operator approval fails at the
+client regardless of what the helper eventually says.
+
+The workable pattern is therefore **deny-now, ask-async, allow-on-retry**:
+
+1. Undecided domain → helper files an approval with haku-console and returns
+   `ERR` immediately (optionally after a short grace, ~5–10s, to catch an
+   operator who is already looking).
+2. `negative_ttl=30` makes that denial expire quickly.
+3. The operator approves in the console; haku-console records it in its policy
+   table.
+4. The agent's retry — or its next run — hits the helper again, which now gets
+   an immediate allow, and Squid caches it for `ttl`.
+
+That is Claude Code's sandbox UX adapted to a client that cannot be prompted:
+the first attempt fails, approval happens out of band, the retry succeeds.
+
+### Why this is mostly wiring
+
+haku-console already implements the hard half. Its MCP tool-call approval queue
+is exactly these semantics — synchronous wait, `pending_approval` stub, later
+approve/deny, decision recorded — so domain gating is a **new caller of an
+existing mechanism**, not a new mechanism. The helper is a small Python process
+translating a Squid ACL query into a console approval request.
+
+Durability splits the right way too: **haku-console owns the decisions**, Squid's
+ACL cache is only an in-memory optimisation that dies with the pod. After a
+restart the helper re-asks and the console answers from its table without
+troubling the operator.
+
+### Two design decisions to make before building
+
+**What goes in the cache key.** Squid keys the ACL cache on the concatenated
+format values, so `%SRC %DST` means one prompt _per client per host_. In a fence
+with many sandbox pods that re-prompts for every new pod. Keying on `%DST` alone
+gives one prompt per host per fence, but then the client identity is available
+only for the audit record, not for the decision. Per-agent policy and low prompt
+volume are in tension here; pick deliberately.
+
+**Fail-closed versus fail-open.** `ERR` on console failure fails closed, which is
+right for a security control — and is survivable precisely because the static
+allowlist above never consults the helper. `BH` is the honest signal for "helper
+broken" and should be distinguished from a genuine deny in the audit, otherwise
+an outage looks like a policy decision.
+
+### The simpler alternative, if the live hook is too much
+
+haku-console could instead **own `allowed-domains.txt`**, writing approved
+domains into a ConfigMap that Squid reloads. No request-time helper, no
+blocking, no cache-key question. The cost is latency between approval and
+effect, and losing per-request context in the prompt. Worth considering as
+step one, with the live helper as step two.
+
 ## Standards context
 
 The IETF draft **CB4A** ("Credential Broker 4 Agents", March 2026) formalises
