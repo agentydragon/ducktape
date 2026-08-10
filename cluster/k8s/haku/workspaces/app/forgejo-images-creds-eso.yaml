@@ -2,9 +2,13 @@
 # the Haku sandbox pods can pull the sandbox image from the private registry.
 # Reflects the source secret's ready-made .dockerconfigjson verbatim and only
 # stamps the type on top (no reassembly, no hardcoded host); sources the
-# reflector-mirrored copy in flux-system, so it needs no change to
-# registry-creds.sops.yaml's allowlist (which would require the cluster SOPS age
-# key). Same pattern as cluster/k8s/agents/osm-mcp/app/forgejo-images-creds-eso.yaml.
+# reflector-mirrored copy in flux-system.
+#
+# The sibling proxies moved to reflector to get off the flux-system store's
+# allowlist, but haku-sandbox stays on ESO deliberately: it is on that allowlist
+# regardless, for alloy-otlp-bearer and haku-mail-token. Converting this one
+# would remove nothing it can already read, so it would be churn rather than a
+# narrowing.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

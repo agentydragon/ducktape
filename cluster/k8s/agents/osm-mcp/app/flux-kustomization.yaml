@@ -23,10 +23,8 @@ spec:
   dependsOn:
     - name: osm-mcp-namespace
       namespace: ducktape-flux
-    # ESO mirrors the forgejo-images-creds pull secret into this namespace (see
-    # forgejo-images-creds-eso.yaml): the ClusterSecretStore + the reflected
-    # source credential in flux-system must exist first.
-    - name: external-secrets-config
-      namespace: ducktape-flux
+    # Reflector mirrors the forgejo-images-creds pull secret into this
+    # namespace, so the source credential must exist first. forgejo-images
+    # itself dependsOn reflector, so this covers both.
     - name: forgejo-images
       namespace: flux-system

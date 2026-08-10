@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - certificate.yaml
   - trust-bundle.yaml
-  - forgejo-images-creds-eso.yaml
   - deployment.yaml
   - service.yaml
   - claude-iron-deployment.yaml
