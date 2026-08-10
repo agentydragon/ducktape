@@ -596,10 +596,15 @@ without an identity, its state, or a guard against losing work is not worth surv
    its own conventions, the second keeps the console in control of context size.
 
 2. **haku-state is cloned into the sandbox.** `cwd` is `/workspace` and it is empty; Haku
-   confirmed as much when asked. Its credential must be produced by the in-cluster GitOps
-   Terraform controller and never minted by hand (root `AGENTS.md`), and should reach the
-   sandbox as a placeholder under substitution (R5.1a) rather than raw. **Open:** clone at
-   provisioning (SandboxTemplate) or at session start (the runner). **Also flagged:** this
+   confirmed as much when asked. **No new credential is needed** — Haku's Forgejo token
+   already exists, produced by the GitOps controller as root `AGENTS.md` requires, and the
+   creds proxy already substitutes placeholders per host (`claude-iron.yaml`'s `proxy_value`
+   plus host rules; the OpenClaw spike does this for a GitHub token alongside the Anthropic
+   one). So this is wiring an existing credential, not minting one. **Open:** clone at
+   provisioning (SandboxTemplate) or at session start (the runner). **Wrinkle:** the
+   substitutions in place today inject a bearer, while git-over-HTTPS authenticates with
+   `Authorization: Basic` or a credential helper — so the rule is not a copy of the
+   Anthropic one, and `git.allegedly.works` also has to be in the egress allowlist. **Also flagged:** this
    needs git in the sandbox, which contradicts the "MCP-only tool surface" decision in
    <agent_sdk_sandbox_runtime.md>. That decision is already not what ships — no
    `disallowed_tools` is set, so the built-ins are live — so it wants revisiting explicitly
