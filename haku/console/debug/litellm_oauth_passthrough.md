@@ -71,11 +71,49 @@ clients, and the main LiteLLM fronts it as the `codex-*` upstream through the or
 The README is explicit that it exists because LiteLLM's own `/v1/messages` bridge mistranslates
 tool calls (BerriAI/litellm#25429).
 
-That is the template. If CLIProxyAPI (or a small shim of our own) can hold a _Claude_
-subscription session the same way it holds the Codex one, LiteLLM needs no new adapter at all —
-it just gets another `anthropic/`-provider entry pointing at a cluster-local base URL. Whether
-CLIProxyAPI supports Claude subscription login is **the one thing to check first**; its own
-docs, not ours, are the source for that.
+**It supports Claude — and _how_ it does is the reason not to use it here.** The deployed build
+answers for itself (`./CLIProxyAPI --help`, v7.2.77, commit c880371):
+
+```text
+  -claude-login
+    Login to Claude using OAuth
+```
+
+Reading the source (`router-for-me/CLIProxyAPI` at `main`), the Claude path is four layers, and
+only the first is what we assumed:
+
+1. **OAuth** — `internal/auth/claude/anthropic_auth.go`: PKCE against
+   `https://claude.ai/oauth/authorize`, token at `https://platform.claude.com/v1/oauth/token`,
+   `ClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"` (Claude Code's own client id, hardcoded),
+   `RedirectURI = "http://localhost:54545/callback"`, scopes
+   `user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload`.
+2. **Outbound auth** — `Authorization: Bearer <token>` for OAuth (vs `x-api-key` for an API key),
+   with `Anthropic-Beta: claude-code-20250219, oauth-2025-04-20`.
+3. **System-prompt cloaking** — `internal/runtime/executor/claude_executor_cloaking.go` **rewrites
+   the caller's request**: it replaces top-level `system` with a synthetic billing block plus
+   `"You are Claude Code, Anthropic's official CLI for Claude."` (marked ephemeral), demotes the
+   caller's real system blocks to mid-conversation system messages after the first user turn, and
+   injects a version (`2.1.220`), an entrypoint (`cli`) and the current date.
+4. **Transport fingerprinting** — `helps/utls_client.go` dials with a Chrome/Claude-Code TLS
+   ClientHello (`tls.HelloChrome_Auto`, `claudeCodeTLSClientHelloSpec`) and reproduces Claude
+   Code's exact header order and casing (`claudeCodeRequestHeaderOrder`, and a map that restores
+   `Anthropic-Beta` / `X-App` casing because Go would canonicalise them).
+
+That is **impersonating the Claude Code client**, not proxying a credential — layers 3 and 4 exist
+specifically to make a non-Claude-Code caller indistinguishable from one. Note what it costs even
+setting intent aside: it mutates the request (so "same requests in as out" is exactly what it does
+not do), the client id and fingerprint are the first things an upstream would pin on, and the
+blast radius of being wrong is the subscription account.
+
+**We do not need any of it, and that is the point.** Our Matrix path already runs the **real**
+Claude Code binary in the sandbox: the genuine system prompt, headers and TLS are produced by the
+genuine client, and the egress proxy only swaps a placeholder token for the real one. Layers 3 and
+4 are there for callers that are _not_ Claude Code — Codex CLI, arbitrary API clients — which is
+not our case. Adopting CLIProxyAPI for Claude would mean taking on impersonation machinery to
+solve a problem we do not have.
+
+So the CLIProxyAPI template does **not** carry over to the Claude side, and the recommendation
+below stands more firmly than when it was written as a fallback.
 
 ## On the "same HTTP requests in as out" requirement
 
@@ -98,19 +136,21 @@ is a shared component. Worth weighing against the LiteLLM route rather than assu
 
 ## Not wired up
 
-Nothing was built. The user asked for a LiteLLM backend "if there is something we can use
-easily", and on the evidence there is not yet: it depends on whether CLIProxyAPI can carry a
-Claude subscription, which is unverified. Sequence before writing any manifest:
+Nothing was built, and after reading CLIProxyAPI's Claude implementation the "easily" the request
+was conditioned on does not hold for that route. **The recommendation is the egress-proxy tee**:
 
-1. Check whether CLIProxyAPI supports Claude/Anthropic subscription login (it already does Codex,
-   Gemini and others; Claude is plausible but unconfirmed here).
-2. If yes → a `cluster/k8s/x/` deployment mirroring `cli-proxy-api`, plus one `anthropic/` entry
-   in the main LiteLLM pointing at it, and the sandbox's `ANTHROPIC_BASE_URL` moved to LiteLLM.
-   The egress-proxy substitution then becomes unnecessary for this path, which is a real
-   simplification — one fewer place the real token lives.
-3. If no → compare a small OAuth-forwarding shim against a Langfuse transform in the egress proxy
-   before choosing.
+1. Add a Langfuse tee to the existing `haku-egress-proxy` transform chain, next to the
+   substitution that already rewrites `Authorization` for `api.anthropic.com`. It sees the exact
+   request and response, changes neither, needs no second credential, and requires no client to
+   be impersonated because the client genuinely _is_ Claude Code.
+2. Route a **classifier** — small, our own, not the agent's traffic — through the existing main
+   LiteLLM against the workspace API key, which already reports to Langfuse
+   (<auto_mode_classifier.md> § "does not need the OAuth question answered").
+3. Leave the subscription behind LiteLLM alone unless something later needs it for a reason
+   beyond observability, since the only known route to it is the impersonation stack above.
 
-On the ToS point: the user's read is that logging-only interception is within the spirit, and
-nothing here changes what is sent to Anthropic. Worth keeping that property explicit in whatever
-lands — a shim that rewrites bodies would be a different question from one that copies them.
+On the ToS point, the distinction now has teeth. Teeing a copy of traffic the real Claude Code
+sends is observability: nothing about the request changes, and the property is enforced by the
+design rather than promised. Rewriting a caller's system prompt to claim it is Claude Code and
+matching Claude Code's TLS fingerprint is a different act, whatever the intent behind it — worth
+naming plainly rather than filing under the same "logging-only" heading.
