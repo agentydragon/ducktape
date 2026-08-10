@@ -176,6 +176,24 @@ for whenever this is picked up:
   replacement session tells it: that it lives in this room, which session it now is (R7.3),
   enough recent messages to pick the thread back up, and how to read further back itself.
 
+  **The target shape is a compaction that crossed a process boundary.** R3.3 treats
+  compaction as the normal path and rotation as the failure path, but they should look the
+  same from the agent's side, because the agent's problem is identical either way: it has
+  lost its context and needs enough to continue. So the re-awakening prompt has four parts —
+  **standing instructions** (R8, static), a **summary of what has been going on**, the
+  **last few messages** verbatim, and **how to reach the rest** (the query API in Open
+  questions). Only the third is trivially available.
+
+  **[open] Where does the summary come from?** The session that held the context is gone by
+  definition, so it cannot produce one at the moment it is needed. Three shapes, with
+  different costs: the live session maintains a rolling checkpoint (cheap at rotation, pays
+  continuously); the replacement reconstructs one by reading the room (pays only on
+  rotation — but that is exactly when things are already degraded, and it is a summarisation
+  pass over unbounded history); or the SDK's own compaction artifact is persisted and
+  reused (free if its shape is reusable, unknown whether it is). This is the piece to settle
+  before building the prompt, because it decides whether anything must happen while the
+  session is _healthy_.
+
   **The room is the primary source, not the database.** Matrix already holds the
   conversation, it is what the operator sees, and the recovery path is `/messages`
   pagination the console already runs for gap recovery (R1.7). The console's own tables hold
