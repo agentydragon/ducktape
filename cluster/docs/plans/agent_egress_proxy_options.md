@@ -477,12 +477,50 @@ So, confirmed:
 **Option E is therefore live**, and it is the only route that satisfies all four
 requirements in a single layer with no upstream dependency.
 
+#### SECURITY: gate on placeholder AND destination, never placeholder alone
+
+The spike config matched the placeholder only:
+
+```squid
+acl ph req_header Authorization -i ^Bearer\ PLACEHOLDER$
+request_header_add Authorization "Bearer REAL-SECRET" ph        # WRONG
+```
+
+That is an **exfiltration primitive**. The agent holds the placeholder — it is in
+its own environment by design — so it can send the placeholder to any reachable
+host and Squid will swap in the real credential on the way out. The placeholder
+stops being a way to _request_ a credential and becomes a way to _extract_ one.
+
+iron does not have this hazard because its `secrets` transform takes an explicit
+`rules: - host:` per secret. The Squid form must AND a destination ACL; multiple
+ACLs on one `request_header_add` line are ANDed:
+
+```squid
+acl ph_github  req_header Authorization -i ^Bearer\ proxy-github-placeholder$
+acl to_github  dstdomain api.github.com github.com codeload.github.com
+request_header_access Authorization deny ph_github
+request_header_add    Authorization "Bearer ghp_…" ph_github to_github
+```
+
+The same applies to the strip: `request_header_access ... deny ph_github` without
+a destination constraint drops the placeholder everywhere, which is harmless but
+makes the intent harder to read.
+
+Worth pinning with a test that asserts every `request_header_add` carrying a
+credential also names a destination ACL — this is a single omitted token away
+from a credential leak, and it will not fail visibly.
+
 #### Caveats on this result
 
 - **Squid 3.5.27 (2017)**, because it is what pulled cleanly;
-  `eraa/squid-ssl` (6.9) 404s. These directives are ancient and stable and the
-  feature has not been removed, but a 6.x/7.x re-run before committing is cheap
-  insurance.
+  `eraa/squid-ssl` (6.9) 404s. The re-run on 6.x/7.x is worth doing, but it is a
+  **config port rather than a semantics re-test**: the header directives are
+  Squid 2.x-era and unchanged, while the surrounding TLS directives were renamed
+  (`sslproxy_flags` → `tls_outgoing_options flags=`, `ssl_crtd` →
+  `security_file_certgen`, the `sslproxy_*` family deprecated). Its real output
+  is the `squid.conf` we would actually deploy — nobody is shipping an
+  unmaintained 2017 build — plus confirmation the `/dev/shm` and session-cache
+  workarounds still apply on a modern base.
 - **Container needs `/dev/shm`** (emptyDir, `medium: Memory`) and
   `sslproxy_session_cache_size 0`; without them Squid dies at startup with
   `shm_open(/squid-ssl_session_cache.shm)` — a musl/container interaction, not a
