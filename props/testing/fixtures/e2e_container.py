@@ -171,6 +171,7 @@ async def _serve_app(app: FastAPI, port: int, *, name: str, host: str = "0.0.0.0
 def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig, e2e_registry_url: str) -> None:
     """Set env vars needed by the backend's lifespan."""
     monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
+    monkeypatch.setenv("FAKE_OPENAI_API_KEY", "test-key")
     for key, value in db_config.to_env_dict().items():
         monkeypatch.setenv(key, value)
 
