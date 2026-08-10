@@ -12,3 +12,5 @@ spec:
   access:
     - user: claude-reader
       actions: [Read, Write, List, Tagging]
+    - user: loom-harvest
+      actions: [Read, Write, List, Tagging]
