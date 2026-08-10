@@ -37,8 +37,11 @@ py_test(
     name = "test_matrix_client",
     srcs = ["test_matrix_client.py"],
     deps = [
+        ":conftest",
         ":matrix_client",
-        "@pypi//httpx",
+        "//:conftest",
+        "@pypi//matrix_nio",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
 )
@@ -61,7 +64,7 @@ py_test(
 py_library(
     name = "matrix_client",
     srcs = ["matrix_client.py"],
-    deps = ["@pypi//httpx"],
+    deps = ["@pypi//matrix_nio"],
 )
 
 py_library(
@@ -71,7 +74,6 @@ py_library(
         ":config",
         ":database_schema",
         ":matrix_client",
-        "@pypi//httpx",
         "@pypi//sqlalchemy",
     ],
 )

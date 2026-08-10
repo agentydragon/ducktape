@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -222,11 +221,7 @@ def create_app(
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_sync_service = matrix_sync.MatrixSyncService(
-            matrix_config,
-            matrix_config.password,
-            db_engine,
-            matrix_sync.MatrixSyncStore(db_sessions),
-            httpx.AsyncClient(),
+            matrix_config, matrix_config.password, db_engine, matrix_sync.MatrixSyncStore(db_sessions)
         )
     node_daemon_service = (
         node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)

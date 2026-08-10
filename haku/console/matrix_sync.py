@@ -15,7 +15,6 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import httpx
 from pydantic import SecretStr
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -72,21 +71,14 @@ class MatrixSyncStore:
 class MatrixSyncService:
     """Runs `/sync` on whichever replica holds the advisory lock."""
 
-    def __init__(
-        self,
-        config: MatrixConfig,
-        password: SecretStr,
-        engine: AsyncEngine,
-        store: MatrixSyncStore,
-        http: httpx.AsyncClient,
-    ):
+    def __init__(self, config: MatrixConfig, password: SecretStr, engine: AsyncEngine, store: MatrixSyncStore):
         # Taken separately from `config`, which carries it as optional: the service is
         # only ever constructed once the password is known to be there (R10.3b).
         self._config = config
         self._password = password
         self._engine = engine
         self._store = store
-        self._client = MatrixClient(http, config.homeserver, config.user_id)
+        self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         self._sent_event_ids: set[str] = set()
 
     async def _token(self) -> str:
@@ -98,7 +90,7 @@ class MatrixSyncService:
         state = await self._store.load(self._config.user_id)
         if state is not None and state.access_token and await self._client.whoami(state.access_token):
             return state.access_token
-        token = await self._client.login(self._password.get_secret_value(), self._config.device_id)
+        token = await self._client.login(self._password.get_secret_value())
         await self._store.save_token(self._config.user_id, token)
         logger.info("Matrix: logged in as %s", self._config.user_id)
         return token
@@ -178,3 +170,4 @@ class MatrixSyncService:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+            await self._client.close()

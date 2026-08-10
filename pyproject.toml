@@ -117,6 +117,7 @@ dependencies = [
 
     # Matrix
     "mautrix>=0.20.0",
+    "matrix-nio>=0.23",
 
     # Banking (plaid_utils)
     "plaid-python>=18.0.0",
@@ -178,7 +179,6 @@ dependencies = [
     "python-dotenv",
 
     # ember
-    "matrix-nio>=0.23",
     "jupyter-client>=8.6",
     "ipython>=8.26",
     "kubernetes>=32.0",

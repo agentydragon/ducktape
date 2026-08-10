@@ -54,7 +54,7 @@ class _FakeMatrix:
     async def whoami(self, token: str) -> bool:
         return self.token_valid
 
-    async def login(self, password: str, device_id: str) -> str:
+    async def login(self, password: str) -> str:
         self.logins += 1
         return "fresh-token"
 
@@ -72,7 +72,7 @@ class _FakeMatrix:
 
 def _service(result: SyncResult, store: _FakeStore | None = None) -> tuple[MatrixSyncService, _FakeMatrix, _FakeStore]:
     store = store or _FakeStore()
-    service = MatrixSyncService(CONFIG, SecretStr("pw"), engine=None, store=store, http=None)  # type: ignore[arg-type]
+    service = MatrixSyncService(CONFIG, SecretStr("pw"), engine=None, store=store)  # type: ignore[arg-type]
     matrix = _FakeMatrix(result)
     service._client = matrix  # type: ignore[assignment]
     return service, matrix, store
