@@ -26,7 +26,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import MatrixConversation, MatrixSyncState
+from haku.console.database_schema import MatrixSyncState
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, MatrixClient
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
 
@@ -187,27 +187,43 @@ class MatrixSyncService:
         for invite in result.invites:
             await self._handle_invite(token, invite)
         # Read after the invites, so a room bound by this very batch serves it too.
-        conversation = await self._conversations.load(self._config.user_id)
-        if messages := self._serviced(result.messages, conversation.room_id if conversation is not None else None):
+        live_room = await self._live_room(token, result.messages)
+        if messages := self._serviced(result.messages, live_room):
             if not await self._turns.offer(messages):
-                await self._report_holding(token, conversation, len(messages))
+                await self._report_holding(token, live_room, len(messages))
                 return
             self._holding = False
             logger.info("Matrix: handed %d message(s) to the session", len(messages))
         await self._store.save_batch(self._config.user_id, result.next_batch)
 
-    async def _report_holding(self, token: str, conversation: MatrixConversation | None, count: int) -> None:
+    async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
+        """The room being serviced, adopting one from traffic when nothing is bound.
+
+        Membership already required an operator invite (R3.6), so a room Haku is joined to
+        and being spoken to in is one the operator put it in — adopting it is recovering a
+        binding, not granting access. Without this, a room joined before the binding existed
+        goes quiet forever with no way for the operator to revive it from a Matrix client.
+        """
+        if (conversation := await self._conversations.load(self._config.user_id)) is not None:
+            return conversation.room_id
+        adopted = next((m.room_id for m in messages if m.sender == self._config.operator_user_id), None)
+        if adopted is None:
+            return None
+        room = await self._conversations.claim_room(self._config.user_id, adopted)
+        logger.info("Matrix: adopted %s from traffic — no room was bound", room)
+        await self._send_notice(token, room, "adopted this room — Haku had no room bound")
+        return room
+
+    async def _report_holding(self, token: str, live_room: str | None, count: int) -> None:
         """Tell the room once that its messages are waiting, not lost (R1.6).
 
         Once, not once per pass: a refused batch is re-offered on every sync until it is
         taken, and a long turn would otherwise fill the room with the same line.
         """
-        if self._holding or conversation is None:
+        if self._holding or live_room is None:
             return
         self._holding = True
-        await self._send_notice(
-            token, conversation.room_id, f"holding {count} message(s) until the current turn finishes"
-        )
+        await self._send_notice(token, live_room, f"holding {count} message(s) until the current turn finishes")
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""

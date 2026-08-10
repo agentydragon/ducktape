@@ -211,6 +211,30 @@ async def test_leaves_an_invite_from_anybody_else_pending():
     assert harness.matrix.joined == []
 
 
+async def test_adopts_an_unbound_room_from_operator_traffic():
+    """Being in the room already required an operator invite, so a binding can be recovered."""
+    stray = InboundMessage("!already-joined:allegedly.works", "$e", OPERATOR, "hi", 1)
+    harness = _harness(SyncResult("s2", (stray,), ()), room=None)
+
+    await harness.service.sync_once("tok")
+
+    assert harness.turns.offered == [["hi"]], "the adopting batch is serviced, not dropped"
+    [(room_id, body)] = harness.matrix.notices
+    assert room_id == "!already-joined:allegedly.works"
+    assert "adopted" in body
+
+
+async def test_does_not_adopt_from_a_sender_who_is_not_the_operator():
+    """Adoption inherits R3.6's rule: only the operator can cause Haku to bind a room."""
+    stray = InboundMessage("!elsewhere:allegedly.works", "$e", "@stranger:allegedly.works", "hi", 1)
+    harness = _harness(SyncResult("s2", (stray,), ()), room=None)
+
+    await harness.service.sync_once("tok")
+
+    assert harness.turns.offered == []
+    assert harness.matrix.notices == []
+
+
 async def test_ignores_messages_from_a_room_that_is_not_the_live_one():
     stray = InboundMessage("!stray:allegedly.works", "$e", OPERATOR, "hi", 1)
     harness = _harness(SyncResult("s2", (stray,), ()))
