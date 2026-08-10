@@ -309,6 +309,7 @@ def create_app(
             claude_chat_store,
             operator_identity_store,
             matrix_sync_service.announce,
+            db_engine,
         )
 
     if static_agent_definitions is not None:

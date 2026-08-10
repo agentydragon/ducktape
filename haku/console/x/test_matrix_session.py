@@ -95,6 +95,7 @@ def _supervisor(conversation: MatrixConversation | None, statuses: dict[UUID, st
         store,  # type: ignore[arg-type]
         _FakeIdentities(),  # type: ignore[arg-type]
         _announce,
+        engine=None,  # type: ignore[arg-type]
     )
     return supervisor, chat, conversations, announced
 

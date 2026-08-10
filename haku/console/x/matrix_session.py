@@ -5,10 +5,12 @@ session, mints a bridge token, and provisions a SandboxClaim; the sandbox then d
 and `handle_runner` lives for the life of that WebSocket. Matrix has no gesture, so
 something has to own *"there is one session and it has a live sandbox"* — that is this.
 
-Runs as a sibling task to the sync loop under the same advisory lock, rather than inside
-it. Sharing the lock keeps exactly one replica provisioning; not sharing the task keeps a
+Runs as a sibling task to the sync loop, under an advisory lock of its own. Being locked
+is what keeps exactly one replica provisioning; being a separate task from `/sync` keeps a
 slow or stalled claim from wedging ingress, which must keep accepting messages while no
-sandbox is up (R1.4).
+sandbox is up (R1.4). Its own lock rather than the sync loop's, because the two only need
+single-execution, not co-location — and a shared lock would mean a supervisor stall could
+only be resolved by giving up ingress leadership too.
 """
 
 from __future__ import annotations
@@ -21,9 +23,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixConversation
@@ -33,11 +35,16 @@ from haku.console.x.matrix_client import InboundMessage
 
 logger = logging.getLogger(__name__)
 
+# Distinct from the sync loop's lock in matrix_sync and the OAuth refresh lock.
+_SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
+
 # A session is worth keeping while it is in one of these; anything else (including a
 # missing row) means the room has no working sandbox behind it.
 LIVE_STATUSES = frozenset({"provisioning", "ready", "responding"})
 
 SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
+# How long a replica that lost the election waits before contending again.
+LEADER_RETRY = datetime.timedelta(seconds=30)
 # A failed provision should not be retried as fast as a healthy poll: claim creation talks
 # to Kubernetes, and a persistent failure would otherwise become a hot loop against it.
 PROVISION_BACKOFF = datetime.timedelta(seconds=60)
@@ -183,8 +190,10 @@ class MatrixSessionSupervisor:
         chat_store: ClaudeChatStore,
         identities: PostgresOperatorIdentityStore,
         announce: Announce,
+        engine: AsyncEngine,
     ):
         self._config = config
+        self._engine = engine
         self._conversations = conversations
         self._chat = chat
         self._chat_store = chat_store
@@ -238,7 +247,8 @@ class MatrixSessionSupervisor:
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
         logger.info("Matrix: provisioned session %s for room %s", session.session_id, conversation.room_id)
 
-    async def _run(self) -> None:
+    async def _supervise_as_leader(self) -> None:
+        """Supervise until cancelled. Only ever entered holding the advisory lock."""
         while True:
             try:
                 await self.supervise_once()
@@ -247,6 +257,37 @@ class MatrixSessionSupervisor:
                 await asyncio.sleep(PROVISION_BACKOFF.total_seconds())
                 continue
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
+
+    async def _run(self) -> None:
+        """Contend for leadership, and supervise for as long as we hold it.
+
+        Without this every replica provisions: two replicas each created a session for the
+        same room, each overwrote the other's pointer, and each narrated the result — which
+        is what the room showed on 2026-08-10. The lock is held for the loop's lifetime
+        rather than per pass, so a session cannot be created between one replica's status
+        read and its decision to replace it.
+        """
+        while True:
+            async with self._engine.connect() as leader:
+                locked = await leader.scalar(
+                    text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _SUPERVISOR_ADVISORY_LOCK}
+                )
+                if not locked:
+                    await asyncio.sleep(LEADER_RETRY.total_seconds())
+                    continue
+                logger.info("Matrix: this replica is the session supervisor")
+                try:
+                    await self._supervise_as_leader()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Matrix: supervision loop exited, retrying")
+                    await asyncio.sleep(PROVISION_BACKOFF.total_seconds())
+                finally:
+                    with contextlib.suppress(Exception):
+                        await leader.scalar(
+                            text("SELECT pg_advisory_unlock(:lock)"), {"lock": _SUPERVISOR_ADVISORY_LOCK}
+                        )
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:

@@ -219,11 +219,16 @@ class MatrixSyncService:
 
         Once, not once per pass: a refused batch is re-offered on every sync until it is
         taken, and a long turn would otherwise fill the room with the same line.
+
+        The reason is deliberately not named. A refusal means "not ready", which covers a
+        turn in flight, a sandbox still provisioning, and no session at all — and the first
+        message ever sent to a fresh room hits the last of those, where announcing "until
+        the current turn finishes" describes a turn that does not exist.
         """
         if self._holding or live_room is None:
             return
         self._holding = True
-        await self._send_notice(token, live_room, f"holding {count} message(s) until the current turn finishes")
+        await self._send_notice(token, live_room, f"holding {count} message(s) until Haku is ready")
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""
