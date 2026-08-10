@@ -55,11 +55,6 @@ spec:
     # The chart derives public_baseurl as https://<publicServerName>.
     publicServerName: matrix.allegedly.works
 
-    # Same zone as matrix-db (cnpg_conventions.md R5) and the only nodes where
-    # the SeaweedFS CSI node plugin runs, which the media store below needs.
-    nodeSelector:
-      topology.kubernetes.io/zone: hil-ovh
-
     # Resources
     resources:
       limits:
@@ -82,6 +77,14 @@ spec:
       accessMode: ReadWriteMany
 
     synapse:
+      # Same zone as matrix-db (cnpg_conventions.md R5) and the only nodes where
+      # the SeaweedFS CSI node plugin runs, which the media store above needs.
+      # This is `synapse.nodeSelector`, not the chart's top-level one — the chart
+      # has no top-level key of that name, so a selector placed there is silently
+      # ignored (which is why the previous `region: proxmox` never pinned
+      # anything, and Synapse only landed on wyrm2 by chance).
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       # Reloader: auto-restart pods when secrets change
       annotations:
         reloader.stakater.com/auto: "true"
@@ -129,6 +132,11 @@ spec:
         existingSecret: synapse-redis-password
         existingSecretPasswordKey: redis-password
       master:
+        # Keep Synapse's Redis in the same zone as Synapse; it is a subchart, so
+        # this key is separate from synapse.nodeSelector above. Without it the
+        # placement is luck, and a cross-site hop for every pub/sub round trip.
+        nodeSelector:
+          topology.kubernetes.io/zone: hil-ovh
         persistence:
           enabled: false
         resources:
