@@ -11,14 +11,14 @@ import pytest_bazel
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
-from haku.runtime.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
-from haku.runtime.agent_sdk_transport.protocol import (
+from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
+from haku.runtime.x.agent_sdk_transport.protocol import (
     END_INPUT_FRAME,
     FINE_GRAINED_TOOL_STREAMING_ENV,
     ClaudeLaunch,
     encode_object,
 )
-from haku.runtime.agent_sdk_transport.runner import (
+from haku.runtime.x.agent_sdk_transport.runner import (
     bridge_websocket_to_claude,
     build_claude_command,
     build_claude_environment,

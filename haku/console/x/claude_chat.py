@@ -35,9 +35,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
-from haku.runtime.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
-from haku.runtime.agent_sdk_transport.protocol import TextWebSocket
-from haku.runtime.agent_sdk_transport.transport import WebSocketTransport
+from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
+from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
+from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])

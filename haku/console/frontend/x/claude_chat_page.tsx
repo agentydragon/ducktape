@@ -9,7 +9,7 @@ import {
   fetchClaudeChatSession,
   sendClaudeChatMessage,
   type ClaudeChatSession,
-} from "./client";
+} from "../client";
 import { Markdown } from "./markdown";
 
 function statusColor(status: ClaudeChatSession["status"]): string {

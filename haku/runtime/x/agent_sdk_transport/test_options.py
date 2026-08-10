@@ -3,8 +3,8 @@
 import pytest_bazel
 from claude_agent_sdk import ClaudeAgentOptions
 
-from haku.runtime.agent_sdk_transport.options import enable_fine_grained_streaming
-from haku.runtime.agent_sdk_transport.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
+from haku.runtime.x.agent_sdk_transport.options import enable_fine_grained_streaming
+from haku.runtime.x.agent_sdk_transport.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
 
 
 def test_enable_fine_grained_streaming_sets_both_sdk_controls() -> None:

@@ -6,8 +6,8 @@ import anyio
 import pytest
 import pytest_bazel
 
-from haku.runtime.agent_sdk_transport.protocol import END_INPUT_FRAME, ClaudeLaunch, encode_object
-from haku.runtime.agent_sdk_transport.transport import WebSocketTransport
+from haku.runtime.x.agent_sdk_transport.protocol import END_INPUT_FRAME, ClaudeLaunch, encode_object
+from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 
 
 class MemoryWebSocket:

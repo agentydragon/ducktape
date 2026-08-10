@@ -585,39 +585,6 @@ ts_library(
 )
 
 ts_library(
-    name = "chat_scroll",
-    srcs = ["chat_scroll.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "markdown",
-    srcs = ["markdown.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/dompurify",
-        "//:node_modules/@types/react",
-        "//:node_modules/dompurify",
-        "//:node_modules/marked",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "claude_chat_page",
-    srcs = ["claude_chat_page.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":chat_scroll",
-        ":client",
-        ":markdown",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
     tsconfig = TSCONFIG,
@@ -625,7 +592,6 @@ ts_library(
         ":agent_enrollment_panel",
         ":approval_state",
         ":bridge",
-        ":claude_chat_page",
         ":client",
         ":confirm_dialog",
         ":console_events",
@@ -646,6 +612,7 @@ ts_library(
         "//:node_modules/@haku/console-bridge",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//haku/console/frontend/x:claude_chat_page",
     ],
 )
 
@@ -717,7 +684,6 @@ filegroup(
         "app.tsx",
         "approval_state.ts",
         "calendar_client.ts",
-        "claude_chat_page.tsx",
         "client.ts",
         "confirm_dialog.tsx",
         "field.tsx",
@@ -747,6 +713,7 @@ filegroup(
         "tool_result_field.tsx",
         "variant_control.tsx",
         "//haku/console/frontend/tool_rendering:tailwind_srcs",
+        "//haku/console/frontend/x:tailwind_content_srcs",
     ],
 )
 
@@ -904,26 +871,6 @@ js_test(
 # is type-checked against those deps' declarations as it compiles, and hands vitest the emitted
 # `.test.js`. There is no separate whole-project type-check target to keep the file list in step
 # with — a spec that is not wired here simply does not exist to Bazel.
-
-ts_library(
-    name = "chat_scroll_test",
-    srcs = ["chat_scroll.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":chat_scroll",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "markdown_test",
-    srcs = ["markdown.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":markdown",
-        "//:node_modules/vitest",
-    ],
-)
 
 ts_library(
     name = "approval_state_test",
@@ -1158,12 +1105,10 @@ vitest_bin.vitest_test(
         ":bridge_client_test",
         ":bridge_test_lib",
         ":calendar_client_test",
-        ":chat_scroll_test",
         ":code_block_test",
         ":geolocation_test",
         ":gmail_client_test",
         ":haku_ui_embed_test",
-        ":markdown_test",
         ":mcp_tool_result_schema_test",
         ":mcp_tool_schema_test",
         ":open_external_test",
@@ -1195,5 +1140,7 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
+        "//haku/console/frontend/x:chat_scroll_test",
+        "//haku/console/frontend/x:markdown_test",
     ],
 )

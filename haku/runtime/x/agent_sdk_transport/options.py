@@ -7,7 +7,7 @@ from dataclasses import replace
 from claude_agent_sdk import ClaudeAgentOptions, __version__ as sdk_version
 from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
-from haku.runtime.agent_sdk_transport.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
+from haku.runtime.x.agent_sdk_transport.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
 
 
 def enable_fine_grained_streaming(options: ClaudeAgentOptions) -> ClaudeAgentOptions:

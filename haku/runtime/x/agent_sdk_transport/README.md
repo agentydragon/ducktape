@@ -6,7 +6,7 @@ WebSocket instead of defining a second conversation protocol. The repository pin
 which bundles Claude Code 2.1.220 and types the required `dontAsk` permission mode directly.
 
 `WebSocketTransport` is the Console-side custom Agent SDK transport. The sandbox runs the
-`//haku/runtime/agent_sdk_transport:runner_bin` Python executable, which opens the WebSocket, starts a
+`//haku/runtime/x/agent_sdk_transport:runner_bin` Python executable, which opens the WebSocket, starts a
 configured local Claude Code executable, and copies newline-delimited JSON between the socket and
 Claude's stdin/stdout. The runner imports no Agent SDK code. On connect, the trusted Console process
 sends a versioned `haku_transport/start` frame containing the CLI arguments, working directory, and

@@ -9,9 +9,9 @@ py_library(
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_auth",
-        "//haku/runtime/agent_sdk_transport:options",
-        "//haku/runtime/agent_sdk_transport:protocol",
-        "//haku/runtime/agent_sdk_transport:transport",
+        "//haku/runtime/x/agent_sdk_transport:options",
+        "//haku/runtime/x/agent_sdk_transport:protocol",
+        "//haku/runtime/x/agent_sdk_transport:transport",
         "@pypi//asyncpg",  # async driver for SQLAlchemy AsyncEngine (LISTEN/NOTIFY, pool)
         "@pypi//claude_agent_sdk",
         "@pypi//fastapi",

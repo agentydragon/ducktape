@@ -1,0 +1,66 @@
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The package tree's shared compiler options; a subpackage extends the parent's ts_config
+# rather than declaring its own (STYLE.md § TypeScript).
+TSCONFIG = "//haku/console/frontend:tsconfig"
+
+ts_library(
+    name = "chat_scroll",
+    srcs = ["chat_scroll.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "markdown",
+    srcs = ["markdown.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/marked",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "claude_chat_page",
+    srcs = ["claude_chat_page.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chat_scroll",
+        ":markdown",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//haku/console/frontend:client",
+    ],
+)
+
+ts_library(
+    name = "chat_scroll_test",
+    srcs = ["chat_scroll.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chat_scroll",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "markdown_test",
+    srcs = ["markdown.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":markdown",
+        "//:node_modules/vitest",
+    ],
+)
+
+# Tailwind scans these for utility classes; the parent package concatenates them with its own.
+filegroup(
+    name = "tailwind_content_srcs",
+    srcs = ["claude_chat_page.tsx"],
+)
