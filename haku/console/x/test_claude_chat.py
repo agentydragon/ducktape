@@ -55,28 +55,34 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
     assert all(field.is_required() for field in ClaudeRuntimeConfig.model_fields.values())
 
 
-def _claims(
-    config: ClaudeRuntimeConfig,
-) -> tuple[KubernetesSandboxClaims, RecordingCustomObjectsApi, RecordingCoreV1Api]:
-    claims = KubernetesSandboxClaims(config)
-    custom = RecordingCustomObjectsApi()
-    core = RecordingCoreV1Api()
-    claims._custom_objects = cast(Any, custom)
-    claims._core_v1 = cast(Any, core)
-    return claims, custom, core
+@pytest.fixture
+def custom_objects_api() -> RecordingCustomObjectsApi:
+    return RecordingCustomObjectsApi()
 
 
-async def test_claim_injects_only_the_session_rendezvous_values() -> None:
-    config = runtime_config(oauth_placeholder="sk-ant-oat01-proxy-haku-claude-placeholder")
-    claims, api, _ = _claims(config)
+@pytest.fixture
+def core_v1_api() -> RecordingCoreV1Api:
+    return RecordingCoreV1Api()
+
+
+@pytest.fixture
+def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
+    """The real claim builder with only the Kubernetes API objects recorded."""
+    claims = KubernetesSandboxClaims(runtime_config())
+    claims._custom_objects = cast(Any, custom_objects_api)
+    claims._core_v1 = cast(Any, core_v1_api)
+    return claims
+
+
+async def test_claim_injects_only_the_session_rendezvous_values(sandbox_claims, custom_objects_api) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
 
-    await claims.create(
+    await sandbox_claims.create(
         session_id=session_id, bridge_token="one-use-secret", expires_at=datetime(2026, 8, 1, 5, 0, tzinfo=UTC)
     )
 
-    assert api.created is not None
-    args, _ = api.created
+    assert custom_objects_api.created is not None
+    args, _ = custom_objects_api.created
     assert args[:4] == ("extensions.agents.x-k8s.io", "v1beta1", "haku-claude-sandbox", "sandboxclaims")
     body = args[4]
     assert body["metadata"]["name"] == "claude-10000000000040008000000000000001"
@@ -88,22 +94,22 @@ async def test_claim_injects_only_the_session_rendezvous_values() -> None:
     assert body["spec"]["lifecycle"] == {"shutdownPolicy": "DeleteForeground", "shutdownTime": "2026-08-01T05:00:00Z"}
 
 
-async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
-    config = runtime_config()
-    claims, custom, core = _claims(config)
+async def test_inspect_reports_each_underlying_provisioning_layer(
+    sandbox_claims, custom_objects_api, core_v1_api
+) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     claim_name = "claude-10000000000040008000000000000001"
-    custom.objects[("sandboxclaims", claim_name)] = {
+    custom_objects_api.objects[("sandboxclaims", claim_name)] = {
         "status": {
             "sandbox": {"name": "sandbox-abc"},
             "conditions": [{"type": "Ready", "status": "False", "reason": "PodNotReady", "message": "Waiting for Pod"}],
         }
     }
-    custom.objects[("sandboxes", "sandbox-abc")] = {
+    custom_objects_api.objects[("sandboxes", "sandbox-abc")] = {
         "metadata": {"annotations": {"agents.x-k8s.io/pod-name": "sandbox-pod-abc"}},
         "status": {"conditions": [{"type": "Ready", "status": "False"}]},
     }
-    core.pods["sandbox-pod-abc"] = k8s_client.V1Pod(
+    core_v1_api.pods["sandbox-pod-abc"] = k8s_client.V1Pod(
         status=k8s_client.V1PodStatus(
             phase="Pending",
             conditions=[k8s_client.V1PodCondition(type="Ready", status="False")],
@@ -122,7 +128,7 @@ async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
         )
     )
 
-    info = await claims.inspect(session_id=session_id)
+    info = await sandbox_claims.inspect(session_id=session_id)
 
     assert info.step == "waiting_for_pod_ready"
     assert info.claim_name == claim_name
@@ -138,19 +144,19 @@ async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
     assert info.runner_state == "waiting: ContainerCreating"
 
 
-async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None:
-    config = runtime_config()
-    claims, custom, core = _claims(config)
+async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait(
+    sandbox_claims, custom_objects_api, core_v1_api
+) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     claim_name = "claude-10000000000040008000000000000001"
-    custom.objects[("sandboxclaims", claim_name)] = {
+    custom_objects_api.objects[("sandboxclaims", claim_name)] = {
         "status": {"sandbox": {"name": "sandbox-abc"}, "conditions": [{"type": "Ready", "status": "True"}]}
     }
-    custom.objects[("sandboxes", "sandbox-abc")] = {
+    custom_objects_api.objects[("sandboxes", "sandbox-abc")] = {
         "metadata": {},
         "status": {"conditions": [{"type": "Ready", "status": "True"}]},
     }
-    core.pods["sandbox-abc"] = k8s_client.V1Pod(
+    core_v1_api.pods["sandbox-abc"] = k8s_client.V1Pod(
         status=k8s_client.V1PodStatus(
             phase="Running",
             conditions=[k8s_client.V1PodCondition(type="Ready", status="True")],
@@ -167,7 +173,7 @@ async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None
         )
     )
 
-    info = await claims.inspect(session_id=session_id)
+    info = await sandbox_claims.inspect(session_id=session_id)
 
     assert info.step == "waiting_for_runner"
     assert info.claim_ready is True

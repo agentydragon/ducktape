@@ -116,6 +116,39 @@ prompt problem rather than an architectural one. Ask for exactly `<block>yes|no<
 short `<reason>`; the model will not spend 8k tokens answering that. Keep one session per
 conversation being gated, so the transcript prefix is warm.
 
+### The classifier does not need the OAuth question answered at all
+
+Worth separating, because the two problems have been running together: **the subscription-OAuth
+work in <litellm*oauth_passthrough.md> is about the \_main agent* traffic, and the classifier does
+not need it.**
+
+The classifier is a prompt plus one XML tag. That makes it provider-portable — but it does not
+have to leave Anthropic to get Langfuse, because **the main LiteLLM already has real Anthropic
+and already logs to Langfuse**: the plain `claude-*` entries take `os.environ/ANTHROPIC_API_KEY`
+(an ESO mirror of the spend-capped haku-cloud workspace key), and the deployment wires
+`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` from `langfuse-secrets`. So haku-console can point a
+classifier at `litellm.litellm.svc.cluster.local:4000` **today** and get Anthropic models,
+Langfuse traces, spend caps, and per-key model allowlists, with no new component and no OAuth.
+
+The economics make this the easy call rather than a compromise. The reason the subscription
+matters for Haku's main turns is that they are large and frequent; a stage-1 screen is **64
+output tokens** over a cached prefix. Paying API-key rates for that is close to free, and it buys
+the thing OAuth cannot: the call shows up in Langfuse like everything else, because it goes
+through the proxy that already reports there.
+
+Two caveats before building on it:
+
+- **Placing `cache_control` through LiteLLM is unverified here.** The whole prefix-cache design
+  above depends on the breakpoints surviving the proxy. LiteLLM passes Anthropic-native params
+  for the `anthropic/` provider, so it very likely works, but measure `cache_read_input_tokens`
+  on the second classification rather than assume it.
+- **Model allowlists are per-key**, so the console would need its own LiteLLM virtual key scoped
+  to whichever model the classifier uses.
+
+If the classifier later wants the subscription anyway — because volume grew, or because it should
+share a cache with the main agent — that is the same problem as the main traffic, and it waits on
+the same answer.
+
 What to copy from the real thing regardless of transport:
 
 - **Two tiers, not one.** Most calls are obviously fine; only escalate the ambiguous ones. Even

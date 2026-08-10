@@ -28,6 +28,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":claude_chat",
+        ":matrix_session",
         "//haku/console:config",
         "//haku/console:operator_identity_store",
         "@pypi//pydantic",

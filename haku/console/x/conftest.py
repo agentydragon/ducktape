@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore, _provisioning_view
+from haku.console.x.matrix_session import MatrixConversationStore
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
@@ -90,6 +91,11 @@ def chat_store(migrated_sessions: async_sessionmaker[AsyncSession], migrated_eng
 @pytest.fixture
 def chat_service(chat_store: ClaudeChatStore, recording_claims: RecordingClaims) -> ClaudeChatService:
     return ClaudeChatService(runtime_config(), chat_store, recording_claims, mcp_token=MCP_TOKEN)
+
+
+@pytest.fixture
+def conversations(migrated_sessions: async_sessionmaker[AsyncSession]) -> MatrixConversationStore:
+    return MatrixConversationStore(migrated_sessions)
 
 
 @pytest.fixture
