@@ -445,6 +445,134 @@ requirements in a single layer with no upstream dependency.
   ACLs on the same header), the base64 `Basic` form for git-over-HTTPS, and
   anything about caching behaviour. None look risky, but none are proven.
 
+## Cache storage: no S3, anywhere
+
+Squid's `cache_dir` types are `ufs`, `aufs`, `diskd` and `rock` — local
+filesystem directories, or a single database file. There is no object-store
+backend, and no plugin interface that would add one.
+
+Nor is this a Squid gap. **Souin**, the leading Go RFC 9111 cache and the
+library option B would most likely vendor, supports Badger, Nuts, Otter, Olric,
+Redis, Etcd and Nats — **no S3**. Varnish caches to memory or file, ATS to raw
+disk volumes. The S3-plus-cache projects that do exist are the _inverse_ shape:
+caching proxies that sit in front of S3 **as an origin**, not caches that store
+their objects in S3.
+
+The reason is structural. An HTTP cache does many small random reads under a
+tight latency budget, with atomic overwrite and prompt eviction. S3 gives tens
+of milliseconds per GET, no partial writes, and lazy delete semantics. The
+industry answer to "durable, shared cache" is Redis or etcd, not object storage.
+
+### Decided: per-Squid `emptyDir` cache, not shared (operator, 2026-08-10)
+
+No PVC, no shared store, no cross-instance cache. Each proxy caches to its own
+`emptyDir` and loses it on reschedule. This is the right trade, and it removes
+work rather than adding it:
+
+- **No node pinning.** `emptyDir` follows the pod anywhere, unlike
+  `local-path-*`. A cache is disposable, so a reschedule costs hit rate, not
+  data.
+- **No sibling mesh.** Squid can share between instances via ICP, HTCP or cache
+  digests, but declining to means the open question _"does sibling peering
+  survive `ssl_bump`?"_ — plausibly blocked by the same limitation as
+  `cache_peer` parents — never has to be answered. One less unknown on the R2
+  path.
+
+**Gotcha to configure carefully**: `emptyDir` consumes the node's ephemeral
+storage, and exceeding its `sizeLimit` **evicts the pod**. Squid's `cache_dir`
+maximum must sit comfortably below the `sizeLimit`, with headroom for
+`cache.log`, `access.log` and the `ssl_db` certificate store — which also needs
+writable space and can share the volume. A cache sized to its own limit evicts
+the proxy under load, presenting as a mysterious egress outage rather than a
+full disk.
+
+Memory (`cache_mem`, no `cache_dir`) stays the simplest first iteration: it
+persists nothing, so it also settles the credential-at-rest concern for free.
+`emptyDir` disk is the second step, when RAM is the binding constraint.
+
+Valkey stays available to option B (Souin speaks go-redis) but is now moot for
+the comparison: with sharing declined, Squid's lack of a pluggable store costs
+nothing.
+
+## Are there better-matched proxies? No — and the reason is worth knowing
+
+The eliminating constraint is **dynamic per-host certificate minting in forward
+proxy mode**. Caching HTTPS requires decrypting it, which requires forging a
+cert for an arbitrary origin on the fly. Almost nothing does this:
+
+| Candidate                               | Why it is out                                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Apache Traffic Server                   | Caching forward proxy with a real plugin API, but no per-host cert mimicry; its TLS Bridge plugin tunnels between two ATS instances, which is not MITM |
+| nginx + `ngx_http_proxy_connect_module` | Does `CONNECT` and `proxy_cache`, but no dynamic cert generation, so HTTPS stays an opaque tunnel and is uncacheable                                   |
+| Varnish / nuster                        | Reverse-proxy shaped; no forward `CONNECT`, no MITM                                                                                                    |
+| Envoy / agentgateway                    | Already tested and rejected here for exactly this — no dynamic-certificate machinery inside `CONNECT`                                                  |
+| mitmproxy                               | MITMs, but no cache, and substitution means the bespoke addon already rejected                                                                         |
+| Caddy + forwardproxy + Souin            | The one plausible assemble-from-Go-parts route, but it is a stack to build, not a product to run                                                       |
+
+So the field really is Squid and iron, which is why the survey found no product
+at the intersection. Everything mature either MITMs without caching, or caches
+without MITM.
+
+That makes the choice narrower than "pick the best tool": either teach the
+MITM-capable Go proxy to cache (B), or teach the caching MITM proxy to
+substitute (E). No third product is waiting to be found.
+
+## Routes, and what gates each
+
+Three end-states are reachable. Each satisfies the four requirements to a
+different degree, and each is gated on something cheap that has not been done
+yet — so **the next step is an experiment, not a build**.
+
+|                               | 1. Cache     | 2. Substitution | 3. Allowlist | 4. Console hook | Identity at the gate |
+| ----------------------------- | ------------ | --------------- | ------------ | --------------- | -------------------- |
+| **R1** iron → central Squid   | ✅ shared    | ✅ full         | ✅           | ⚠️ at Squid     | ⚠️ fence-level only  |
+| **R2** Squid alone, per fence | ✅ per fence | ⚠️ spike        | ✅           | ✅              | ✅ native `%>a`      |
+| **R3** iron alone, per fence  | ⚠️ build     | ✅ full         | ✅           | ⚠️ upstream     | ⚠️ upstream          |
+
+**R1 — two layers, buildable now.** iron keeps substitution and allowlisting;
+one shared Squid behind it caches. Needs no new code: `upstream_proxy` is
+verified working, and the only missing artifact is an OpenSSL-built Squid image.
+Weakest on requirement 4 — the hook sees which fence, not which workload.
+
+**R2 — one layer, everything in Squid.** Collapses the stack, and uniquely gets
+unforgeable caller identity for free (format codes in `request_header_add`).
+Gated on the `ssl_bump` spike. Costs iron's structured audit and secret
+backends, and gives each fence its own cache.
+
+**R3 — one layer, everything in iron.** Keeps every property currently liked,
+and Valkey is already available as a Souin backend. Gated on upstream appetite
+for two features (RFC 9111 caching, a generic decision hook with caller
+identity) or on carrying a fork — which is less exotic here than elsewhere,
+since a commit-pinned build is already maintained.
+
+**Identity is separable.** Per-agent iron _sidecars_ make the pod IP the
+identity and fix requirement 4 for R1 or R3 without any upstream change. Costs a
+proxy per agent pod; gives per-agent credential scoping as a bonus.
+
+### The two experiments that decide it
+
+Both are ~a day, independent, and can run before committing to anything:
+
+1. ~~The Squid spike~~ — **DONE 2026-08-10, both answers yes** (see the spike
+   result under option E). R2 is live, meets all four requirements in one layer,
+   and needs nothing from upstream. It is the front-runner.
+2. **The upstream conversation** — one iron issue covering caching, a generic
+   decision hook, and forwarded caller identity. **Receptive → R3.** Silence →
+   R3 means a fork.
+
+Measuring the actual cache hit rate (via `annotate` + the existing OTLP audit
+export) is worth doing alongside, since caching is the secondary requirement and
+some heavy traffic redirects to signed CDN URLs that will not cache at all.
+
+### What does not depend on any of this
+
+The gap that started this thread — `haku-sandbox` and `haku-ci` having **no L7
+allowlist**, only the Cilium `toFQDNs` layer — is real but not urgent, and it is
+already the standing TODO in `test_egress_allowlists`: _"enforce at two layers,
+not one."_ Every route above ends with row 1 behind a proxy that has an L7
+allowlist, so closing it early only risks moving it twice. Worth doing now only
+if the single-layer posture is judged unacceptable before the routes resolve.
+
 ## Options, ranked
 
 **A. Squid + an ICAP service for substitution.** Squid natively covers 1, 3 and
