@@ -28,6 +28,22 @@ server {
   root /usr/share/nginx/html/dist;
   index index.html;
 
+  # Compress both what nginx serves itself and what it proxies from FastAPI (`gzip_proxied any`;
+  # nginx otherwise leaves upstream responses alone). Neither side was compressed before, so a cold
+  # load pulled the ~1.8 MB SPA bundle in full and a page of the tool-call audit ledger — whole
+  # arguments and result payloads, so hundreds of KB — went over the wire as raw JSON. Both are
+  # highly compressible text.
+  # `text/event-stream` is deliberately absent: the /mcp stream must flush per event, and gzip's
+  # buffering would hold events back (that location also sets `proxy_buffering off`). text/html
+  # needs no listing — nginx always compresses it when gzip is on.
+  gzip on;
+  gzip_proxied any;
+  gzip_min_length 1024;
+  gzip_types application/javascript application/json image/svg+xml text/css;
+  # Responses vary by Accept-Encoding, and the fingerprinted assets are cached `immutable` by any
+  # shared cache in front of us.
+  gzip_vary on;
+
   proxy_http_version 1.1;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;

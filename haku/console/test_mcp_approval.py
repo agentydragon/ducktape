@@ -848,6 +848,35 @@ async def test_list_tool_calls_filters_by_auto_approved(
     assert {c["tool_call_id"] for c in unfiltered} == {manual["tool_call_id"], auto["tool_call_id"]}
 
 
+async def test_list_tool_calls_pages_by_cursor(operator_client: TestClient) -> None:
+    """The history view's paging: `next_cursor` walks the ledger newest-first without repeating or
+    skipping a row, and runs out exactly at its end."""
+    submitted = [
+        _submit_request(
+            operator_client,
+            SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": str(i)}, wait_for_ms=0),
+        )["tool_call_id"]
+        for i in range(5)
+    ]
+
+    walked: list[str] = []
+    cursor: str | None = None
+    for _page in range(3):
+        params: dict[str, Any] = {"limit": 2, "newest_first": True}
+        if cursor is not None:
+            params["cursor"] = cursor
+        body = operator_client.get("/api/tool-calls", params=params).json()
+        walked.extend(row["tool_call_id"] for row in body["tool_calls"])
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+
+    # Newest first, every call exactly once, and the short final page ends the walk.
+    assert walked == list(reversed(submitted))
+    assert cursor is None
+    assert operator_client.get("/api/tool-calls", params={"cursor": "not-a-cursor"}).status_code == 422
+
+
 def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
     return SubmitToolCallRequest(
         server_id="grocy-sf",

@@ -19,7 +19,7 @@ import {
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { shellLanguage } from "./shell_lang";
 
@@ -166,10 +166,57 @@ function compactFoldExtension(): Extension {
   );
 }
 
+// How far outside the viewport a block still mounts its editor, so scrolling reveals finished
+// blocks rather than placeholders resolving under the pointer.
+const MOUNT_MARGIN_PX = 600;
+
+// The placeholder's reserved height, from the mounted editor's own metrics: HAKU_THEME's 0.82rem
+// font at CodeMirror's ~1.4 line-height, plus `.cm-content`'s 0.55rem padding top and bottom.
+const PLACEHOLDER_LINE_REM = 1.15;
+const PLACEHOLDER_PADDING_REM = 1.1;
+
+/** Whether this block has come near the viewport yet — the gate on building its editor.
+ *
+ * An `EditorView` is expensive to construct (DOM, a lezer parse, and for a compact block a
+ * per-frame poll until the fold pass can run), and the history page holds one per row. Mounting
+ * every one up front is what made that page freeze the tab: 500 rows spent ~15s of blocked main
+ * thread, 5s of it in a single task. Off-screen rows now cost a placeholder div until scrolled to.
+ *
+ * Latches on first intersection and stops observing: an editor that scrolls away stays mounted,
+ * since tearing it down would lose the operator's own fold/scroll state within it. Where there is
+ * no `IntersectionObserver` (jsdom under vitest) every block mounts immediately, as before. */
+function useNearViewport(): { ref: (node: HTMLDivElement | null) => void; near: boolean } {
+  const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+  const ref = useCallback(
+    (node: HTMLDivElement | null) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!node || near) return;
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          observer.disconnect();
+          setNear(true);
+        },
+        { rootMargin: `${MOUNT_MARGIN_PX}px` }
+      );
+      observer.observe(node);
+      observerRef.current = observer;
+    },
+    [near]
+  );
+  return { ref, near };
+}
+
 /** Read-only, foldable, syntax-highlighted code. Omit `language` for plain text (an email body, a
  * routine instruction) — same neutral chrome, no grammar and so no fold gutter. `compact` (only
  * meaningful with a `language`) auto-folds so the block fills its height with leading entries
- * instead of overflowing; `lineNumbers` is off by default, on for long detailed surfaces. */
+ * instead of overflowing; `lineNumbers` is off by default, on for long detailed surfaces.
+ *
+ * The editor itself is built only once the block nears the viewport (see `useNearViewport`); until
+ * then it reserves roughly the height it will take, so arriving at it is not a layout jump. */
 export function CodeBlock({
   value,
   language,
@@ -189,6 +236,14 @@ export function CodeBlock({
     }
     return exts;
   }, [language, compact]);
+  const { ref, near } = useNearViewport();
+  if (!near) {
+    // Ten lines is where `maxHeight` below caps the mounted editor, so the placeholder never needs
+    // to reserve more than that.
+    const lines = Math.min(value.split("\n").length, 10);
+    const height = `${lines * PLACEHOLDER_LINE_REM + PLACEHOLDER_PADDING_REM}rem`;
+    return <div ref={ref} className="haku-codeblock-placeholder" style={{ height }} />;
+  }
   return (
     <CodeMirror
       className="haku-codeblock"

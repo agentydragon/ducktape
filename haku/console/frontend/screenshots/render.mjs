@@ -200,6 +200,17 @@ const SCENES = [
     frame: true,
   },
   {
+    // A ledger deeper than one page: the "Load older calls" affordance at the bottom, and the
+    // placeholders code_block.tsx leaves where a row's editor is not built yet (an element shot of
+    // the whole list captures rows past the viewport, which is exactly where those are).
+    name: "history-paged",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    scrollToBottom: ".haku-page-scroll",
+    expectVisible: "button::-p-text(Load older calls)",
+    frame: true,
+  },
+  {
     name: "sync-current",
     viewport: { width: 600, height: 420 },
     clicks: ['[aria-label="Up to date"]'],
@@ -291,6 +302,7 @@ try {
       element,
       fullPage = false,
       frame,
+      scrollToBottom,
     } of SCENES) {
       const page = await browser.newPage();
       // Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
@@ -369,6 +381,15 @@ try {
       await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: 5_000 });
       await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: 5_000 });
       await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
+      // A scene whose subject is at the end of a long scroller (the history view's "Load older
+      // calls") captures the bottom of it. Scrolling is also what mounts the code blocks of the
+      // rows down there, since they build their editors only once near the viewport.
+      if (scrollToBottom) {
+        await page.$eval(scrollToBottom, (element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+        await settle(400);
+      }
       const file = `${name}-${colorScheme}.png`;
       const shot = element
         ? await screenshotElement(page, element, { context: `scene ${name}` })

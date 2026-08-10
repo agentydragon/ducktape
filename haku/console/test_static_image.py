@@ -58,6 +58,15 @@ def test_static_image_cache_contract() -> None:
         assert asset.status_code == 200
         assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
 
+        # The bundle is ~1.8 MB of highly compressible text; served raw it dominated a cold load.
+        # nginx compresses on the fly and so answers chunked, without a content-length — hence
+        # streaming for the wire size (`num_bytes_downloaded` counts pre-decode bytes).
+        with httpx.stream("GET", f"{base_url}{asset_path}", headers={"Accept-Encoding": "gzip"}) as compressed:
+            compressed.read()
+            assert compressed.headers["content-encoding"] == "gzip"
+            assert "accept-encoding" in compressed.headers["vary"].lower()
+            assert compressed.num_bytes_downloaded < len(asset.content) / 2
+
         missing = httpx.get(f"{base_url}/_console/assets/not-current.js")
         assert missing.status_code == 404
         assert missing.headers["cache-control"] == "no-store"
@@ -67,6 +76,11 @@ def test_static_image_cache_contract() -> None:
         nginx_config = rendered.output.decode()
         assert "proxy_set_header X-Forwarded-Proto https;" in nginx_config
         assert "proxy_set_header X-Forwarded-Proto $scheme;" not in nginx_config
+        # The FastAPI side has no upstream here to serve a response, so the half of the compression
+        # contract that covers proxied JSON (a tool-call history page is hundreds of KB of it) is
+        # pinned in the rendered config rather than over the wire.
+        assert "gzip_proxied any;" in nginx_config
+        assert "application/json" in nginx_config
 
 
 if __name__ == "__main__":

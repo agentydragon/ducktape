@@ -309,11 +309,33 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp_approval.py)
     // so the history screenshot scenes exercise the same request the frontend actually sends.
     const autoApproved = new URLSearchParams(url.split("?")[1] ?? "").get("auto_approved");
-    const toolCalls =
+    const matching =
       autoApproved === null
         ? SAMPLE_TOOL_CALLS
         : SAMPLE_TOOL_CALLS.filter((call) => (call.approval_policy_id != null) === (autoApproved === "true"));
-    return jsonResponse({ tool_calls: toolCalls });
+    // The `history-paged` scene needs a ledger deeper than one page, which the handful of
+    // hand-written samples is not: it is what shows the "Load older calls" affordance and the
+    // placeholders standing in for the code blocks of rows that are not near the viewport yet.
+    // Repeated after filtering, so the page is deep enough under the default `auto_approved=false`
+    // the history view actually sends.
+    const ledger =
+      scene === "history-paged"
+        ? Array.from({ length: 26 }, (_unused, index) => ({
+            ...matching[index % matching.length],
+            tool_call_id: `tc_paged_${index}`,
+          }))
+        : matching;
+    // Mirrors the real endpoint's keyset paging (mcp_approval.py): `cursor` is the opaque position
+    // handed out as `next_cursor`, and a full page always offers one.
+    const query = new URLSearchParams(url.split("?")[1] ?? "");
+    const limit = Number(query.get("limit") ?? 100);
+    const cursor = query.get("cursor");
+    const start = cursor === null ? 0 : ledger.findIndex((call) => call.tool_call_id === cursor) + 1;
+    const toolCalls = ledger.slice(start, start + limit);
+    return jsonResponse({
+      tool_calls: toolCalls,
+      next_cursor: toolCalls.length === limit ? toolCalls[toolCalls.length - 1].tool_call_id : null,
+    });
   }
   if (realFetch) return realFetch(input, init);
   return jsonResponse({});

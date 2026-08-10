@@ -553,6 +553,17 @@ ts_library(
 )
 
 ts_library(
+    name = "tool_calls_page_test",
+    srcs = ["tool_calls_page.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":tool_calls_page",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "settings_panel",
     srcs = ["settings_panel.tsx"],
     tsconfig = TSCONFIG,
@@ -1120,6 +1131,7 @@ vitest_bin.vitest_test(
         ":shell_chrome_test",
         ":tana_client_test",
         ":tool_call_decision_test",
+        ":tool_calls_page_test",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
         "//haku/console/frontend/tool_rendering:actions_test",

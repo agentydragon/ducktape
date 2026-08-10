@@ -115,7 +115,10 @@ Core HTTP mutation/audit endpoints and MCP reflection tools:
 - `POST /api/tool-calls/{tool_call_id}/decision` — exact-Origin-gated trusted-frontend approval/denial.
 - `GET /api/tool-calls` / `GET /api/tool-calls/{tool_call_id}` — operator-only audit/result reads.
   The list endpoint accepts repeated `status` filters, a datetime `since` filter on `updated_at`,
-  and an `auto_approved` filter on whether the call carries an `approval_policy_id`.
+  and an `auto_approved` filter on whether the call carries an `approval_policy_id`. It pages by
+  keyset, not offset: each response carries a `next_cursor` (null once the page is the last) to
+  pass back as `cursor`. Offset paging would skip or repeat rows, since calls are submitted into
+  the top of the order between a page and the next.
 - MCP `list_node_daemons` — shared Agent/console heartbeat-derived state for configured execution
   daemons (`connected`, `busy`, `stale`, or `offline`). The Settings panel refreshes it every ten
   seconds through MCP. The separately authenticated `/api/node-daemons/v1/*` machine API lets daemons
@@ -439,15 +442,26 @@ of the authenticated operator's tool-call audit ledger (`frontend/tool_calls_pag
 approvals panel and living at its own route, `/tool-calls` (`frontend/routing.ts`). The console's own
 `/tool-calls` path is reserved; every other path mirrors the framed haku-ui route, and the
 shell renders the history view instead of the iframe when the reserved path matches. It reads `GET /api/tool-calls?newest_first=true`, so the
-newest calls survive the query's limit. Production's nginx already serves the SPA for any
+newest calls come first, and walks older ones a page at a time by following `next_cursor` ("Load
+older calls"). Production's nginx already serves the SPA for any
 non-asset/API path; `app.py`'s dev fallback mirrors that so deep links work locally too.
+
+**The page is small on purpose** (25 rows). A record carries its whole arguments and result
+payload, so asking for the endpoint's `le=500` cap meant a multi-megabyte response — and one
+syntax-highlighted code block built per row, which blocked the browser's main thread for seconds
+before anything was usable. Two properties keep it that way, and a change here should preserve
+both: a live event refetches only the **first** page and merges it over what is loaded
+(`mergeNewestPage`) rather than refetching everything, with at most one refresh in flight so a
+burst of events collapses into one catch-up; and a code block builds its editor only once it
+nears the viewport (`frontend/code_block.tsx`), so rows below the fold cost a placeholder.
+Measurements behind those numbers: <debug/past_tool_calls_perf.md>.
 
 A "Show auto-approved" checkbox (unchecked by default) toggles the `auto_approved` query param on
 that request, so the routine, unconditionally auto-approved traffic (Gmail/Calendar reads, etc.)
 doesn't bury the calls an operator actually had to decide on. The filter runs server-side (`WHERE
 approval_policy_id IS NULL`, in `PostgresToolCallLedger.list_tool_calls`) rather than over-fetching
 and discarding client-side, so it doesn't starve the page of older manual calls once auto-approved
-traffic fills the `HISTORY_LIMIT` window. The same `auto_approved` parameter is threaded through
+traffic fills a page. The same `auto_approved` parameter is threaded through
 `ToolCallApplicationService.list_tool_calls` to the agent-facing MCP `list_tool_calls` tool
 (`mcp_server.py`), so an agent reviewing its own call history can filter the same way.
 
@@ -543,7 +557,9 @@ fingerprinted SPA. nginx serves `/` and `/assets/*`, proxies `/api/*`, `/healthz
 `/mcp`, `/auth/*`, and the `/.well-known/oauth-*` discovery paths to FastAPI on
 localhost, and sets cache policy by route (`/assets/*` immutable, app shell
 never stored, missing assets and API/health/mcp/auth uncached). No runtime asset copy or shared web
-volume is used.
+volume is used. It also gzips both what it serves and what it proxies (`gzip_proxied any` — nginx
+leaves upstream responses alone otherwise), covering the ~1.8 MB SPA bundle and the API's JSON;
+`text/event-stream` is deliberately left out so the `/mcp` stream still flushes per event.
 
 The Deployment rolls with **`maxUnavailable: 0`**, so a replacement that never becomes Ready leaves
 the running version serving and a bad release is a no-op instead of an outage. It replaced

@@ -1,16 +1,46 @@
 import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state";
-import { displayableError, fetchToolCalls, type ToolCallRecord } from "./client";
+import { displayableError, fetchToolCalls, type ToolCallPage, type ToolCallRecord } from "./client";
 import { PendingToolCallActions } from "./pending_tool_call_actions";
 import { ToolCallCard } from "./tool_call_card";
 import { useToolCallDecision } from "./tool_call_decision";
 import { useConsoleEvents } from "./console_events";
 import { useVariant } from "./variant_control";
 
-// Matches the backend's `le=500` cap on GET /api/tool-calls (mcp_approval.py).
-const HISTORY_LIMIT = 500;
+// One screenful and change, not the ledger's `le=500` cap. Every record carries its whole
+// arguments and result payload, so a page of 25 is ~100 KB where 500 was several megabytes — and
+// each row builds a syntax-highlighted code block, which at 500 rows blocked the main thread for
+// seconds on end. Older calls arrive by following `nextCursor` on demand.
+const HISTORY_PAGE_SIZE = 25;
+
+/** The first page, refetched over what is already loaded: the fresh page, then the rows below it
+ * that it did not restate. Merging rather than replacing keeps the pages an operator scrolled
+ * back through while a live event refreshes the top, and refreshes in place any call that
+ * finished since the last read.
+ *
+ * When the page and the loaded list have no row in common, more than a page has been submitted
+ * since the last read, so the rows in between were never fetched. Then the page replaces the list
+ * outright — splicing them together would present a silent gap as a continuous history. */
+export function mergeNewestPage(page: ToolCallPage, loaded: ToolCallPage | null): ToolCallPage {
+  if (!loaded || loaded.records.length === 0) return page;
+  const fresh = new Set(page.records.map((record) => record.tool_call_id));
+  const older = loaded.records.filter((record) => !fresh.has(record.tool_call_id));
+  if (older.length === loaded.records.length) return page;
+  // `loaded.nextCursor` is the position after the deepest page loaded, which the refreshed first
+  // page knows nothing about.
+  return { records: [...page.records, ...older], nextCursor: loaded.nextCursor };
+}
+
+/** The next page appended below what is loaded, dropping any row that arrived in both (a call
+ * submitted between the two requests shifts the ledger under the cursor). */
+export function appendPage(page: ToolCallPage, loaded: ToolCallPage | null): ToolCallPage {
+  if (!loaded) return page;
+  const seen = new Set(loaded.records.map((record) => record.tool_call_id));
+  const added = page.records.filter((record) => !seen.has(record.tool_call_id));
+  return { records: [...loaded.records, ...added], nextCursor: page.nextCursor };
+}
 
 function ToolCallRow({
   record,
@@ -51,37 +81,84 @@ function ToolCallRow({
 // A pending call that streams in (via the live WS signal) can be approved/denied here too,
 // through the same exact-Origin-gated endpoints the approvals panel uses, without going back to the shell.
 export function ToolCallsPage() {
-  const [records, setRecords] = useState<ToolCallRecord[] | null>(null);
+  const [loaded, setLoaded] = useState<ToolCallPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Auto-approved calls are Haku's routine background traffic; hiding them by default keeps the
   // ledger scannable for the calls an operator actually had to weigh in on. The server does the
   // filtering (GET /api/tool-calls?auto_approved=false), so toggling this refetches rather than
-  // reslicing an already-capped page — otherwise auto-approved traffic filling the HISTORY_LIMIT
-  // window would hide older manual calls the client never even fetched.
+  // reslicing an already-capped page — otherwise auto-approved traffic filling a page would hide
+  // older manual calls the client never even fetched.
   const [showAutoApproved, setShowAutoApproved] = useState(false);
 
-  const load = useCallback((showAutoApprovedNow: boolean) => {
-    setLoading(true);
-    fetchToolCalls(HISTORY_LIMIT, showAutoApprovedNow).then(
-      (calls) => {
-        setRecords(calls);
+  // What every fetch below reads, rather than the state: the live-event callback is registered
+  // once (so it would close over a stale filter), and the checkbox handler needs the fetch to use
+  // its new value before that state has committed.
+  const filterRef = useRef(showAutoApproved);
+  // Events arrive in bursts — an agent's call is submitted, approved and finished within a second,
+  // and each of those wakes every open tab. Overlapping refetches would queue a page of full
+  // records each, for a view that only ever shows the newest state, so at most one refresh is in
+  // flight and a burst underneath it collapses into a single catch-up.
+  const refreshingRef = useRef(false);
+  const catchUpRef = useRef(false);
+  // Whether the next fetched page replaces what is loaded instead of merging over it. A ref, not
+  // an argument, because a replacing request made while a refresh is in flight has to survive
+  // into the catch-up: a filter change asked for a different slice of the ledger, and merging
+  // that page over the previous filter's rows would show the two spliced together.
+  const replaceRef = useRef(false);
+
+  const refresh = useCallback(async (replace = false) => {
+    if (replace) replaceRef.current = true;
+    if (refreshingRef.current) {
+      catchUpRef.current = true;
+      return;
+    }
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      for (;;) {
+        const replaceLoaded = replaceRef.current;
+        replaceRef.current = false;
+        const page = await fetchToolCalls(HISTORY_PAGE_SIZE, filterRef.current);
+        setLoaded((previous) => (replaceLoaded ? page : mergeNewestPage(page, previous)));
         setError(null);
-        setLoading(false);
-      },
-      (e: unknown) => {
-        setError(displayableError(e));
-        setLoading(false);
+        if (!catchUpRef.current) break;
+        catchUpRef.current = false;
       }
-    );
+    } catch (e: unknown) {
+      setError(displayableError(e));
+      catchUpRef.current = false;
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
   }, []);
 
-  // Live: initial load on mount plus a refetch whenever a tool call is submitted, approved,
-  // denied, or finishes anywhere — the same WS signal the approvals panel uses.
-  useConsoleEvents(() => load(showAutoApproved));
+  const loadMore = useCallback(async () => {
+    const cursor = loaded?.nextCursor;
+    if (cursor == null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchToolCalls(HISTORY_PAGE_SIZE, filterRef.current, cursor);
+      setLoaded((previous) => appendPage(page, previous));
+      setError(null);
+    } catch (e: unknown) {
+      setError(displayableError(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loaded?.nextCursor, loadingMore]);
 
-  const decisions = useToolCallDecision({ onSettled: () => load(showAutoApproved) });
+  // Live: initial load on mount plus a refetch of the first page whenever a tool call is
+  // submitted, approved, denied, or finishes anywhere — the same WS signal the approvals panel
+  // uses. Pages already scrolled back through survive it (see `mergeNewestPage`).
+  useConsoleEvents(() => void refresh());
 
+  const decisions = useToolCallDecision({ onSettled: () => void refresh() });
+
+  const records = loaded?.records;
+  const hasMore = loaded?.nextCursor != null;
   return (
     <div className="haku-page">
       <header className="haku-page-header">
@@ -91,6 +168,7 @@ export function ToolCallsPage() {
             {records && (
               <Text size="sm" c="dimmed">
                 {records.length}
+                {hasMore ? "+" : ""}
               </Text>
             )}
           </Group>
@@ -103,10 +181,13 @@ export function ToolCallsPage() {
               onChange={(event) => {
                 const checked = event.currentTarget.checked;
                 setShowAutoApproved(checked);
-                load(checked);
+                filterRef.current = checked;
+                // A different filter is a different ledger slice, so its pages replace rather than
+                // merge with the ones already loaded.
+                void refresh(true);
               }}
             />
-            <Button size="xs" variant="light" loading={loading} onClick={() => load(showAutoApproved)}>
+            <Button size="xs" variant="light" loading={refreshing} onClick={() => void refresh(true)}>
               Refresh
             </Button>
           </Group>
@@ -142,10 +223,12 @@ export function ToolCallsPage() {
               onDeny={(reason) => void decisions.deny(record, reason)}
             />
           ))}
-          {records && records.length === HISTORY_LIMIT && (
-            <Text size="xs" c="dimmed" ta="center">
-              Showing the {HISTORY_LIMIT} most recent tool calls.
-            </Text>
+          {hasMore && (
+            <Group justify="center">
+              <Button size="xs" variant="light" loading={loadingMore} onClick={() => void loadMore()}>
+                Load older calls
+              </Button>
+            </Group>
           )}
         </div>
       </div>

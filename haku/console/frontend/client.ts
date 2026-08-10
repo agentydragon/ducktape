@@ -175,16 +175,35 @@ export async function fetchPendingApprovals(): Promise<ToolCallRecord[]> {
   return data.approvals ?? [];
 }
 
-// The full tool-call audit ledger for the history view: newest first, so `limit` keeps
-// the most recent calls when the ledger has grown past it. `showAutoApproved` false asks the
-// server to filter out auto-approved calls (rather than over-fetching and discarding client-side,
-// which would starve the page of older manual calls once auto-approved traffic fills the window).
-export async function fetchToolCalls(limit: number, showAutoApproved: boolean): Promise<ToolCallRecord[]> {
+/** One page of the ledger, plus the position to resume from (null once the page is the last). */
+export interface ToolCallPage {
+  records: ToolCallRecord[];
+  nextCursor: string | null;
+}
+
+// The tool-call audit ledger for the history view: newest first, one page at a time. A record
+// carries its whole arguments and result payload — megabytes for a few hundred of them — so the
+// page follows `next_cursor` instead of asking for the ledger's cap up front.
+// `showAutoApproved` false asks the server to filter out auto-approved calls (rather than
+// over-fetching and discarding client-side, which would starve the page of older manual calls
+// once auto-approved traffic fills the window).
+export async function fetchToolCalls(
+  limit: number,
+  showAutoApproved: boolean,
+  cursor: string | null = null
+): Promise<ToolCallPage> {
   const { data, error } = await api.GET("/api/tool-calls", {
-    params: { query: { newest_first: true, limit, auto_approved: showAutoApproved ? undefined : false } },
+    params: {
+      query: {
+        newest_first: true,
+        limit,
+        auto_approved: showAutoApproved ? undefined : false,
+        cursor: cursor ?? undefined,
+      },
+    },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load tool calls"));
-  return data.tool_calls ?? [];
+  return { records: data.tool_calls ?? [], nextCursor: data.next_cursor ?? null };
 }
 
 export async function connectMcpOperatorAuth(serverId: string): Promise<McpOperatorAuthConnectResponse> {

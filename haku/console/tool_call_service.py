@@ -13,6 +13,7 @@ import contextlib
 import datetime
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -45,6 +46,41 @@ logger = logging.getLogger(__name__)
 
 TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED, ToolCallStatus.WITHDRAWN}
 
+_CURSOR_SEPARATOR = "~"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallPageCursor:
+    """A keyset position in the ledger's `(created_at, tool_call_id)` order.
+
+    The ledger pages by this rather than by offset: the history view refetches its first page on
+    every live event, and an offset would skip or duplicate rows whenever a call was submitted in
+    between. `tool_call_id` is the tiebreak that makes the order total, since a burst of calls can
+    share a `created_at`.
+
+    Its wire form is deliberately one opaque string: a client only ever echoes back the
+    `next_cursor` it was handed, so the pagination key can change without a wire contract change.
+    """
+
+    created_at: datetime.datetime
+    tool_call_id: str
+
+    @classmethod
+    def of(cls, record: ToolCallRecord) -> ToolCallPageCursor:
+        return cls(created_at=record.created_at, tool_call_id=record.tool_call_id)
+
+    @classmethod
+    def parse(cls, value: str) -> ToolCallPageCursor:
+        """Decode a `next_cursor` handed out by `encode`, raising `ValueError` on anything else."""
+        timestamp, separator, tool_call_id = value.partition(_CURSOR_SEPARATOR)
+        if not separator or not tool_call_id:
+            raise ValueError(f"malformed tool-call cursor: {value!r}")
+        return cls(created_at=datetime.datetime.fromisoformat(timestamp), tool_call_id=tool_call_id)
+
+    def encode(self) -> str:
+        # A tool_call_id is `tc_<hex>`, so it can never contain the separator.
+        return f"{self.created_at.isoformat()}{_CURSOR_SEPARATOR}{self.tool_call_id}"
+
 
 class ToolCallRepository(Protocol):
     async def submit(
@@ -69,6 +105,7 @@ class ToolCallRepository(Protocol):
         auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = False,
+        cursor: ToolCallPageCursor | None = None,
     ) -> list[ToolCallRecord]: ...
 
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
@@ -338,6 +375,7 @@ class ToolCallApplicationService:
         auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = False,
+        cursor: ToolCallPageCursor | None = None,
     ) -> list[ToolCallRecord]:
         actor = self._require_actor(actor)
         return await self._repository.list_tool_calls(
@@ -347,6 +385,7 @@ class ToolCallApplicationService:
             auto_approved=auto_approved,
             limit=limit,
             newest_first=newest_first,
+            cursor=cursor,
         )
 
     async def pending_approvals(self, *, actor: ToolCallActor) -> list[ToolCallRecord]:

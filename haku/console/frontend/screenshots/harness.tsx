@@ -130,6 +130,7 @@ function sceneElement(scene: string) {
       return <ConsoleScene view="agentEnrollment" reconnect />;
     case "history":
     case "history-auto-approved":
+    case "history-paged":
       return <ConsoleScene view="toolCalls" />;
     case "sync-current":
       return <IndicatorScene state="current" />;

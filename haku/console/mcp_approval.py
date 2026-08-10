@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastmcp.client import Client
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, literal, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import Select
 
@@ -60,6 +60,7 @@ from haku.console.tool_call_service import (
     ProviderConnectionTokenStore,
     ToolCallApplicationService,
     ToolCallNotFoundError,
+    ToolCallPageCursor,
     ToolCallStateConflictError,
     backend_auth_for_operator,
 )
@@ -188,6 +189,13 @@ class PendingApprovalsResponse(BaseModel):
 
 class ToolCallListResponse(BaseModel):
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
+    next_cursor: str | None = Field(
+        default=None,
+        description=(
+            "Opaque position to pass back as `cursor` for the next page, or null once this page is "
+            "the last one. Its encoding is the server's; a client only echoes it back."
+        ),
+    )
 
 
 class ApprovalDecisionResponse(BaseModel):
@@ -297,6 +305,7 @@ class PostgresToolCallLedger:
         auto_approved: bool | None = None,
         limit: int = 100,
         newest_first: bool = False,
+        cursor: ToolCallPageCursor | None = None,
     ) -> list[ToolCallRecord]:
         async with self._sessions.begin() as session:
             stmt = self._record_projection_stmt(actor)
@@ -312,9 +321,18 @@ class PostgresToolCallLedger:
                 stmt = stmt.where(condition if auto_approved else ~condition)
             # `newest_first` makes `limit` keep the most recent calls (the audit/history
             # view wants those); the default ascending order stays the queue-friendly
-            # oldest-first for pending-approval reads.
-            order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
-            result = await session.execute(stmt.order_by(order).limit(limit))
+            # oldest-first for pending-approval reads. `tool_call_id` makes either order total,
+            # so a keyset page boundary can't fall inside a group of same-instant calls.
+            position = tuple_(McpToolCall.created_at, McpToolCall.tool_call_id)
+            order = (
+                (McpToolCall.created_at.desc(), McpToolCall.tool_call_id.desc())
+                if newest_first
+                else (McpToolCall.created_at, McpToolCall.tool_call_id)
+            )
+            if cursor is not None:
+                boundary = tuple_(literal(cursor.created_at), literal(cursor.tool_call_id))
+                stmt = stmt.where(position < boundary if newest_first else position > boundary)
+            result = await session.execute(stmt.order_by(*order).limit(limit))
             projections = result.tuples().all()
             return [self._record_from_projection(*projection) for projection in projections]
 
@@ -842,17 +860,28 @@ async def list_tool_calls(
     auto_approved: bool | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     newest_first: bool = False,
+    cursor: Annotated[str | None, Query(description="A `next_cursor` from a previous page.")] = None,
 ) -> ToolCallListResponse:
-    return ToolCallListResponse(
-        tool_calls=await service.list_tool_calls(
-            actor=actor,
-            statuses=status,
-            since=since,
-            auto_approved=auto_approved,
-            limit=limit,
-            newest_first=newest_first,
-        )
+    # A record carries its whole arguments and result payload, so a page is worth megabytes at the
+    # limit's cap. The history view therefore reads small pages and follows `next_cursor` instead of
+    # asking for the maximum up front.
+    try:
+        page_cursor = ToolCallPageCursor.parse(cursor) if cursor is not None else None
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    tool_calls = await service.list_tool_calls(
+        actor=actor,
+        statuses=status,
+        since=since,
+        auto_approved=auto_approved,
+        limit=limit,
+        newest_first=newest_first,
+        cursor=page_cursor,
     )
+    # A short page is the last one; a full page may or may not be, and offering a cursor for the
+    # empty page after it costs one request instead of a wrong "no more results".
+    next_cursor = ToolCallPageCursor.of(tool_calls[-1]).encode() if len(tool_calls) == limit else None
+    return ToolCallListResponse(tool_calls=tool_calls, next_cursor=next_cursor)
 
 
 @router.get("/api/tool-calls/{tool_call_id}")

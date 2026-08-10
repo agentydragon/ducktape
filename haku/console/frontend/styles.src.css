@@ -543,6 +543,14 @@
   margin: 0;
 }
 
+/* Stands in for a code block whose editor has not been built yet (code_block.tsx): the same
+   chrome, holding the space the editor will take, so scrolling into it is not a layout jump. */
+.haku-codeblock-placeholder {
+  background-color: var(--haku-code-bg);
+  border: 1px solid var(--haku-border);
+  border-radius: 6px;
+}
+
 .haku-shell-disclosure {
   border-top: 1px solid var(--haku-border);
   padding-top: 0.55rem;
