@@ -157,6 +157,13 @@ make the purpose obvious. Skip for obvious cases.
 
 See <docs/container-images.md> for build/push/tag guide and Flux image automation.
 
+**Gotcha — no YAML flow mappings (`{a: 1, b: 2}`) in a manifest carrying an
+`$imagepolicy` marker.** `ImageUpdateAutomation` re-serialises the whole document
+when it rewrites a tag, and its emitter writes `{a: 1}` where prettier writes
+`{ a: 1 }`. Since that rewrite lands on `devel` as `chore: update images
+[skip ci]` — no PR, no CI — the branch goes red _after_ your green PR merged, and
+re-reds on every image update. Use block style in those files.
+
 ## Agent RBAC Architecture
 
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
