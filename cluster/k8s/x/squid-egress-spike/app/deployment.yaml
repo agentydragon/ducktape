@@ -50,7 +50,11 @@ spec:
               # Squid wants one file containing both halves; cert-manager emits
               # them separately. Same combine step the production fences do.
               cat /run/squid-ca-src/tls.crt /run/squid-ca-src/tls.key > /run/squid-ca/bump-ca.pem
-              /usr/lib/squid/security_file_certgen -c -s /var/cache/squid/ssl_db -M 8MB
+              # Guarded because init containers re-run when the pod sandbox is
+              # recreated while the emptyDir survives, and -c on an existing db
+              # is an error -- unguarded, that wedges the pod at init.
+              [ -d /var/cache/squid/ssl_db ] \
+                || /usr/lib/squid/security_file_certgen -c -s /var/cache/squid/ssl_db -M 8MB
               envsubst < /etc/squid-template/credentials.conf.tmpl > /run/squid-secrets/credentials.conf
               echo "rendered credential rules:"; grep -c request_header_add /run/squid-secrets/credentials.conf
           volumeMounts:
