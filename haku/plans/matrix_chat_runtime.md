@@ -624,10 +624,15 @@ without an identity, its state, or a guard against losing work is not worth surv
    and no `system_prompt`, so the agent receives the raw batch and nothing else. That is why
    the first live turn answered as a generic assistant. It needs its identity, its room and
    session ID (R7.3), the harness contract (R8.1–R8.5), the recent conversational messages
-   (R3.3a), and the standing instructions from haku-state. **Open:** whether standing
-   instructions arrive by pointing `setting_sources` at the clone's own `CLAUDE.md`, or are
-   rendered into the prompt by the console — the first keeps haku-state authoritative over
-   its own conventions, the second keeps the console in control of context size.
+   (R3.3a), and the standing instructions. **Where those instructions live is now its own
+   question** — they are in ducktape's `haku/base/` today, so a sandbox that has only the
+   haku-state clone cannot reach them without a second repo and a second credential path.
+   <instructions_ownership.md> proposes splitting them by writability, which would answer
+   this cleanly: a small authority core rendered into the system prompt (stronger than a
+   read-only file — the agent cannot edit a system prompt at all), and the craft read from
+   the clone that has to exist anyway. **Open** until that proposal is settled; the
+   alternatives if it is declined are pointing `setting_sources` at a ducktape clone as
+   well, or having the console render all 52 KB.
 
 2. **haku-state is cloned into the sandbox.** `cwd` is `/workspace` and it is empty; Haku
    confirmed as much when asked. **No new credential is needed** — Haku's Forgejo token
