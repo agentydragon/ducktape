@@ -11,6 +11,8 @@ resources:
   - codex-pod-image-policy.yaml
   - iron-proxy-image-repository.yaml
   - iron-proxy-image-policy.yaml
+  - squid-ssl-image-repository.yaml
+  - squid-ssl-image-policy.yaml
   - grocy-user-perms-provisioner-image-repository.yaml
   - grocy-user-perms-provisioner-image-policy.yaml
   - osm-mcp-image-repository.yaml

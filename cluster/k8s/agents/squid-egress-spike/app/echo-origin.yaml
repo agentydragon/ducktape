@@ -1,0 +1,58 @@
+# Header-echoing TLS origin. The spike needs to see exactly what Squid sends
+# upstream; an origin that reflects its request headers answers that directly
+# rather than inferring it from Squid's own debug log.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo-origin
+  namespace: squid-egress-spike
+  labels:
+    app.kubernetes.io/name: echo-origin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: echo-origin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: echo-origin
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: echo
+          # Serves HTTPS on 8443 with a self-signed cert and returns the request
+          # headers as JSON, which is exactly the observation the spike needs.
+          image: mendhak/http-https-echo:37
+          env:
+            - name: HTTPS_PORT
+              value: "8443"
+          ports:
+            - name: https
+              containerPort: 8443
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo-origin
+  namespace: squid-egress-spike
+spec:
+  selector:
+    app.kubernetes.io/name: echo-origin
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443

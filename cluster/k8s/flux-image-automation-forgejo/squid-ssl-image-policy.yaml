@@ -1,0 +1,15 @@
+# CLEANUP(added 2026-08-10): delete with cluster/images/squid-ssl when the
+#   egress-proxy spike concludes.
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: squid-ssl
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: squid-ssl
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

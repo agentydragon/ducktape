@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid-spike
+  namespace: squid-egress-spike
+  labels:
+    app.kubernetes.io/name: squid-spike
+  annotations:
+    reloader.stakater.com/auto: "true"
+    description: Squid with ssl_bump, exercising destination-scoped credential substitution and memory caching.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: squid-spike
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: squid-spike
+    spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 31
+        runAsGroup: 31
+        fsGroup: 31
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Three jobs, all of which must happen before squid starts: mint the
+        # bump CA, initialise the certificate store, and render the credential
+        # rules. The render exists because squid.conf cannot read environment
+        # variables -- its ${...} covers only process_name/process_number/
+        # service_name.
+        - name: prepare
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:squid-ssl"}
+          envFrom:
+            - configMapRef:
+                name: squid-spike-fake-credentials
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
+                -subj "/CN=squid-spike-bump-ca" \
+                -addext "keyUsage=critical,keyCertSign,cRLSign" \
+                -keyout /run/squid-ca/bump-ca.key -out /run/squid-ca/bump-ca.crt
+              cat /run/squid-ca/bump-ca.crt /run/squid-ca/bump-ca.key > /run/squid-ca/bump-ca.pem
+              /usr/lib/squid/security_file_certgen -c -s /var/cache/squid/ssl_db -M 8MB
+              envsubst < /etc/squid-template/credentials.conf.tmpl > /run/squid-secrets/credentials.conf
+              echo "rendered credential rules:"; grep -c request_header_add /run/squid-secrets/credentials.conf
+          volumeMounts:
+            - { name: ca, mountPath: /run/squid-ca }
+            - { name: cache, mountPath: /var/cache/squid }
+            - { name: secrets, mountPath: /run/squid-secrets }
+            - { name: template, mountPath: /etc/squid-template, readOnly: true }
+      containers:
+        - name: squid
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:squid-ssl"}
+          args: ["-f", "/etc/squid/squid.conf", "-N"]
+          ports:
+            - name: proxy
+              containerPort: 3128
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/squid/squid.conf, subPath: squid.conf, readOnly: true }
+            - { name: ca, mountPath: /run/squid-ca }
+            - { name: cache, mountPath: /var/cache/squid }
+            - { name: secrets, mountPath: /run/squid-secrets, readOnly: true }
+            - { name: run, mountPath: /run/squid }
+            # Squid dies at startup on shm_open without this; a musl/container
+            # interaction rather than a config error.
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        - name: config
+          configMap:
+            name: squid-spike-config
+        - name: template
+          configMap:
+            name: squid-spike-config
+        # The rendered credential rules and the CA private key live on tmpfs,
+        # never on disk and never in a ConfigMap.
+        - name: secrets
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: ca
+          emptyDir: { medium: Memory, sizeLimit: 4Mi }
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Mi }
+        - name: run
+          emptyDir: { sizeLimit: 8Mi }
+        # Certificate store only; the HTTP cache is cache_mem, so nothing here
+        # can outlive the pod.
+        - name: cache
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid-spike
+  namespace: squid-egress-spike
+spec:
+  selector:
+    app.kubernetes.io/name: squid-spike
+  ports:
+    - name: proxy
+      port: 3128
+      targetPort: 3128

@@ -1,0 +1,69 @@
+# Squid with ssl_bump for the egress-proxy spike. Alpine-based because it is the
+# only mainstream distro whose squid package is built --with-openssl; Ubuntu's is
+# gnutls and refuses ssl-bump.
+#
+# CLEANUP(added 2026-08-10): delete alongside cluster/images/squid-ssl and
+#   cluster/k8s/agents/squid-egress-spike when the spike concludes.
+name: Squid SSL Image
+
+on:
+  pull_request:
+    branches: [devel]
+    paths:
+      - "cluster/images/squid-ssl/**"
+      - ".github/workflows/squid-ssl-image.yml"
+  push:
+    branches: [devel]
+    paths:
+      - "cluster/images/squid-ssl/**"
+      - ".github/workflows/squid-ssl-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: squid-ssl-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAGE: git.allegedly.works/ducktape-ci/squid-ssl
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: |
+          TS=$(date -u +%Y%m%d%H%M%S)
+          TAG_REF=${GITHUB_REF_NAME//\//-}
+          REF="$IMAGE:${TAG_REF}-${TS}-${GITHUB_SHA:0:7}"
+          echo "REF=$REF" >> "$GITHUB_ENV"
+          docker build -f cluster/images/squid-ssl/Dockerfile -t "$REF" cluster/images/squid-ssl
+
+      - name: Verify ssl_bump support is compiled in
+        run: |
+          docker run --rm --entrypoint sh "$REF" -c 'squid -v' | tee /tmp/v
+          grep -q -- '--with-openssl' /tmp/v || { echo "::error::squid not built --with-openssl"; exit 1; }
+          docker run --rm --entrypoint sh "$REF" -c 'ls /usr/lib/squid/security_file_certgen' \
+            || { echo "::error::security_file_certgen helper missing"; exit 1; }
+
+      - uses: ./.github/actions/setup-ci-secrets
+        if: github.event_name == 'push'
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Log in to Forgejo registry
+        if: github.event_name == 'push'
+        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Push image
+        if: github.event_name == 'push'
+        run: |
+          docker push "$REF"
+          echo "pushed \`$REF\`" >> "$GITHUB_STEP_SUMMARY"

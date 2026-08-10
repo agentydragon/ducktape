@@ -1,0 +1,23 @@
+# The spike talks to its own echo origin and to DNS, and nothing else. It is
+# deciding the shape of a fence, so it should not itself be unfenced.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: squid-egress-spike-egress
+  namespace: squid-egress-spike
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: ANY }
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: squid-egress-spike
