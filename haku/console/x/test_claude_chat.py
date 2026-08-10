@@ -14,7 +14,9 @@ from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUse
 from kubernetes_asyncio import client as k8s_client
 from pydantic import SecretStr
 
-from haku.console.claude_chat import (
+from haku.console.config import ClaudeRuntimeConfig
+from haku.console.database_schema import ClaudeChatSession
+from haku.console.x.claude_chat import (
     ClaudeChatService,
     ClaudeChatSessionView,
     ClaudeChatStore,
@@ -22,8 +24,6 @@ from haku.console.claude_chat import (
     _provisioning_view,
     _text_delta,
 )
-from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ClaudeChatSession
 
 
 class RecordingCustomObjectsApi:
@@ -441,7 +441,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     websocket = _LifecycleWebSocket()
 
     session = await service.create(uuid4())
-    with patch("haku.console.claude_chat.ClaudeSDKClient", _LifecycleClaudeClient):
+    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _LifecycleClaudeClient):
         await service.handle_runner(cast(Any, websocket), session_id, "bridge-token")
 
     assert session.session_id == session_id

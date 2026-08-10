@@ -3,6 +3,42 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "claude_chat",
+    srcs = ["claude_chat.py"],
+    deps = [
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "//haku/console:operator_auth",
+        "//haku/runtime/agent_sdk_transport:options",
+        "//haku/runtime/agent_sdk_transport:protocol",
+        "//haku/runtime/agent_sdk_transport:transport",
+        "@pypi//asyncpg",  # async driver for SQLAlchemy AsyncEngine (LISTEN/NOTIFY, pool)
+        "@pypi//claude_agent_sdk",
+        "@pypi//fastapi",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//psycopg",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_claude_chat",
+    srcs = ["test_claude_chat.py"],
+    deps = [
+        ":claude_chat",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "@pypi//claude_agent_sdk",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "matrix_client",
     srcs = ["matrix_client.py"],
     deps = ["@pypi//matrix_nio"],
@@ -24,8 +60,8 @@ py_library(
     name = "matrix_session",
     srcs = ["matrix_session.py"],
     deps = [
+        ":claude_chat",
         ":matrix_client",
-        "//haku/console:claude_chat",
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",

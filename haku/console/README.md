@@ -531,6 +531,7 @@ Two operational notes:
 | `export_schema.py`                 | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                                                              |
 | `export_mcp_tool_schemas.py`       | Reflects the real in-process servers through MCP `tools/list` and prints their exact input schemas for generated frontend validators and types.                                                                                                                              |
 | `frontend/`                        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                                                                       |
+| `x/`                               | Experimental surfaces the console runs but does not promise: the Matrix chat surface and the SPA chat surface's session/sandbox machinery — see `x/README.md`.                                                                                                               |
 
 ## Perimeter / deploy
 

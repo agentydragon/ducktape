@@ -25,10 +25,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.x.matrix_client import InboundMessage
 
 logger = logging.getLogger(__name__)

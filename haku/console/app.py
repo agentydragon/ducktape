@@ -29,7 +29,6 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
     capabilities,
-    claude_chat,
     connection_metrics,
     console_events,
     mcp_agent_auth,
@@ -70,7 +69,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
-from haku.console.x import matrix_session, matrix_sync
+from haku.console.x import claude_chat, matrix_session, matrix_sync
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"

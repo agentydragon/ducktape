@@ -34,42 +34,6 @@ py_library(
 )
 
 py_library(
-    name = "claude_chat",
-    srcs = ["claude_chat.py"],
-    deps = [
-        ":config",
-        ":database_schema",
-        ":operator_auth",
-        "//haku/runtime/agent_sdk_transport:options",
-        "//haku/runtime/agent_sdk_transport:protocol",
-        "//haku/runtime/agent_sdk_transport:transport",
-        "@pypi//asyncpg",  # async driver for SQLAlchemy AsyncEngine (LISTEN/NOTIFY, pool)
-        "@pypi//claude_agent_sdk",
-        "@pypi//fastapi",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//psycopg",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_claude_chat",
-    srcs = ["test_claude_chat.py"],
-    deps = [
-        ":claude_chat",
-        ":config",
-        ":conftest",
-        "//:conftest",
-        "@pypi//claude_agent_sdk",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "deployment",
     srcs = ["deployment.py"],
     deps = [
@@ -889,7 +853,6 @@ py_library(
     deps = [
         ":authentik_operator_token",
         ":capabilities",
-        ":claude_chat",
         ":config",
         ":connection_metrics",
         ":console_events",
@@ -919,6 +882,7 @@ py_library(
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:routine",
+        "//haku/console/x:claude_chat",
         "//haku/console/x:matrix_session",
         "//haku/console/x:matrix_sync",
         "//mcp_infra/authentik_auth:config",
