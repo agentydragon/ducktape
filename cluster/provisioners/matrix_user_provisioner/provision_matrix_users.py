@@ -197,12 +197,12 @@ def write_token(v1: SecretStore, token: str) -> None:
     )
     try:
         v1.patch_namespaced_secret(TOKEN_SECRET_NAME, MATRIX_NS, body)
-        logger.info("Phase 3: Patched Secret %s/%s", MATRIX_NS, TOKEN_SECRET_NAME)
+        logger.info("Phase 3: Patched the bot token Secret")
     except ApiException as error:
         if error.status != 404:
             raise
         v1.create_namespaced_secret(MATRIX_NS, body)
-        logger.info("Phase 3: Created Secret %s/%s", MATRIX_NS, TOKEN_SECRET_NAME)
+        logger.info("Phase 3: Created the bot token Secret")
 
 
 def ensure_bot_token(client: SynapseClient, v1: SecretStore, admin_token: str) -> None:
