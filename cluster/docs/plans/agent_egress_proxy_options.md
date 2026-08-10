@@ -853,10 +853,18 @@ Haku reaches the console at `haku.allegedly.works` **through this proxy**. If th
 gate can deny that host, then a console outage — or a bad policy entry — leaves
 the agent unable to reach the console that would fix it.
 
-**The console's own host must be statically allowed, ahead of the gate**, as
-break-glass. The same probably applies to whatever the agent needs to be useful
-during an incident. That is a small deliberate exception to "everything goes
-through the console", not a retreat from it.
+**Decided (operator, 2026-08-10): `haku.allegedly.works` is statically allowed,
+ahead of the gate.**
+
+The exception costs nothing, because the egress fence was never what protected
+the console: it authenticates its own callers, and an agent reaching it can only
+do what its bearer already permits under the console's own approval policy. This
+is the same reasoning that justifies the existing `toEntities: cluster` carve-out
+in the haku CCNPs — per `haku/docs/security.md`, in-cluster services authenticate
+their own callers, so reachability is not where that boundary is drawn.
+
+Keep the static set minimal and justified by that test: a host belongs there only
+if something other than the fence is already authorising access to it.
 
 #### Return `ERR`, not `BH`, when the console is unreachable
 
