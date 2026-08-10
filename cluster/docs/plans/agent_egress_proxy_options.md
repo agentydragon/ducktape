@@ -386,139 +386,64 @@ hit rate, no cross-fence reuse of the same PyPI wheel.
 | Substitution quality        | **rule engine, secret backends** | strip + add, config-rendered |
 | Credential exposure         | cache sees it (accepted)         | **stays in one process**     |
 
-### The single experiment that decides it
+### SPIKE RESULT (2026-08-10): both questions answered YES
 
-Two things, both cheap to answer at once. First, whether `request_header_access` / `request_header_add` apply to
-**`ssl_bump`-decrypted** requests. `plans/personal_agents/credential_proxy_options.md`
-already flagged this as undocumented in both directions and untestable with the
-image available then (`ubuntu/squid` is gnutls and rejects `ssl-bump`).
+Run in `haku-sandbox` against `alatas/squid-alpine-ssl` (Squid 3.5.27, built
+`--with-openssl --enable-ssl-crtd`), bumping a local `openssl s_server` origin,
+with the exact strip-and-add-gated-by-`req_header` config from above. Outgoing
+headers observed from inside Squid via `debug_options ALL,1 11,2`, which logs
+the literal request sent to the origin.
 
-So the spike is: build an OpenSSL Squid image (same
-GitHub-Actions-plus-`cluster/images/` pattern as iron), bump one host, inject a
-header, and observe whether the origin sees it. A day at most, and it decides
-between a one-layer and a two-layer architecture — worth doing **before**
-committing to either.
+Squid bumped the connection — the access log shows the inner request, which only
+exists after decryption:
 
-## Cache storage: no S3, anywhere
+```text
+TAG_NONE/200   CONNECT origin.test:8443
+TCP_MISS/200   GET https://origin.test:8443/
+```
 
-Squid's `cache_dir` types are `ufs`, `aufs`, `diskd` and `rock` — local
-filesystem directories, or a single database file. There is no object-store
-backend, and no plugin interface that would add one.
+Three client requests through the bumped tunnel, and what reached the origin:
 
-Nor is this a Squid gap. **Souin**, the leading Go RFC 9111 cache and the
-library option B would most likely vendor, supports Badger, Nuts, Otter, Olric,
-Redis, Etcd and Nats — **no S3**. Varnish caches to memory or file, ATS to raw
-disk volumes. The S3-plus-cache projects that do exist are the _inverse_ shape:
-caching proxies that sit in front of S3 **as an origin**, not caches that store
-their objects in S3.
+| Client sent                             | Squid sent to origin                                |
+| --------------------------------------- | --------------------------------------------------- |
+| `Authorization: Bearer PLACEHOLDER`     | `Authorization: Bearer REAL-SECRET-INJECTED`        |
+| `Authorization: Bearer AGENT-OWN-TOKEN` | `Authorization: Bearer AGENT-OWN-TOKEN` — untouched |
+| _(no Authorization)_                    | _(none)_ — stays anonymous                          |
 
-The reason is structural. An HTTP cache does many small random reads under a
-tight latency budget, with atomic overwrite and prompt eviction. S3 gives tens
-of milliseconds per GET, no partial writes, and lazy delete semantics. The
-industry answer to "durable, shared cache" is Redis or etcd, not object storage.
+All three also received `X-Proxy-Stamped-Client: 127.0.0.1` from the `%>a`
+format code.
 
-### What to actually use here
+So, confirmed:
 
-- **Memory-only for the first iteration** (`cache_mem`, no `cache_dir`). No PVC,
-  no node pinning, the pod reschedules freely, and nothing persists to disk —
-  which also settles the credential-at-rest concern above for free. For a
-  workload that re-pulls the same wheels within a build window, a few GiB of RAM
-  captures most of the available win.
-- **`local-path-ovh-ssd` if disk is wanted.** Not `seaweedfs-ovh`: a cache needs
-  worst-case random IO and `fsync` semantics, and this repo already records
-  SeaweedFS flakiness under Bazel's project-file scan. A cache on a network
-  filesystem is the wrong trade.
-- Node pinning is the real objection to `local-path-*`, and it is cheap here: a
-  cache is disposable, so losing it to a reschedule costs hit rate, not data.
+1. **`request_header_access` / `request_header_add` do apply to `ssl_bump`-
+   decrypted requests.** This was the open question from
+   `credential_proxy_options.md`, undocumented in both directions until now.
+2. **The `add` ACL still matches after `access` denied the header**, so
+   strip-then-add is a working substitution primitive, not just injection.
+3. **Substitution semantics hold**: the placeholder gates the swap, an
+   agent-supplied token passes through, and no header stays no header. This is
+   the property that makes it equivalent to iron's `secrets` transform rather
+   than a cruder "always attach the credential".
+4. **Proxy-asserted identity works**, unforgeable and available to
+   `external_acl_type` — the thing iron cannot do without an upstream feature.
+   Squid also adds `X-Forwarded-For` of its own accord.
 
-**This is a point for option B over Squid, and the cluster already has the
-backend.** Valkey runs here, and Souin speaks go-redis — so a Go cache inside
-iron has a shared, durable, node-independent cache available with no new
-component, while Squid can only ever cache to its own local disk. Sequence it
-as: memory or `emptyDir` first (operator preference, 2026-08-10), Valkey later
-if and when cross-fence sharing or restart survival is worth wanting.
+**Option E is therefore live**, and it is the only route that satisfies all four
+requirements in a single layer with no upstream dependency.
 
-## Are there better-matched proxies? No — and the reason is worth knowing
+#### Caveats on this result
 
-The eliminating constraint is **dynamic per-host certificate minting in forward
-proxy mode**. Caching HTTPS requires decrypting it, which requires forging a
-cert for an arbitrary origin on the fly. Almost nothing does this:
-
-| Candidate                               | Why it is out                                                                                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Apache Traffic Server                   | Caching forward proxy with a real plugin API, but no per-host cert mimicry; its TLS Bridge plugin tunnels between two ATS instances, which is not MITM |
-| nginx + `ngx_http_proxy_connect_module` | Does `CONNECT` and `proxy_cache`, but no dynamic cert generation, so HTTPS stays an opaque tunnel and is uncacheable                                   |
-| Varnish / nuster                        | Reverse-proxy shaped; no forward `CONNECT`, no MITM                                                                                                    |
-| Envoy / agentgateway                    | Already tested and rejected here for exactly this — no dynamic-certificate machinery inside `CONNECT`                                                  |
-| mitmproxy                               | MITMs, but no cache, and substitution means the bespoke addon already rejected                                                                         |
-| Caddy + forwardproxy + Souin            | The one plausible assemble-from-Go-parts route, but it is a stack to build, not a product to run                                                       |
-
-So the field really is Squid and iron, which is why the survey found no product
-at the intersection. Everything mature either MITMs without caching, or caches
-without MITM.
-
-That makes the choice narrower than "pick the best tool": either teach the
-MITM-capable Go proxy to cache (B), or teach the caching MITM proxy to
-substitute (E). No third product is waiting to be found.
-
-## Routes, and what gates each
-
-Three end-states are reachable. Each satisfies the four requirements to a
-different degree, and each is gated on something cheap that has not been done
-yet — so **the next step is an experiment, not a build**.
-
-|                               | 1. Cache     | 2. Substitution | 3. Allowlist | 4. Console hook | Identity at the gate |
-| ----------------------------- | ------------ | --------------- | ------------ | --------------- | -------------------- |
-| **R1** iron → central Squid   | ✅ shared    | ✅ full         | ✅           | ⚠️ at Squid     | ⚠️ fence-level only  |
-| **R2** Squid alone, per fence | ✅ per fence | ⚠️ spike        | ✅           | ✅              | ✅ native `%>a`      |
-| **R3** iron alone, per fence  | ⚠️ build     | ✅ full         | ✅           | ⚠️ upstream     | ⚠️ upstream          |
-
-**R1 — two layers, buildable now.** iron keeps substitution and allowlisting;
-one shared Squid behind it caches. Needs no new code: `upstream_proxy` is
-verified working, and the only missing artifact is an OpenSSL-built Squid image.
-Weakest on requirement 4 — the hook sees which fence, not which workload.
-
-**R2 — one layer, everything in Squid.** Collapses the stack, and uniquely gets
-unforgeable caller identity for free (format codes in `request_header_add`).
-Gated on the `ssl_bump` spike. Costs iron's structured audit and secret
-backends, and gives each fence its own cache.
-
-**R3 — one layer, everything in iron.** Keeps every property currently liked,
-and Valkey is already available as a Souin backend. Gated on upstream appetite
-for two features (RFC 9111 caching, a generic decision hook with caller
-identity) or on carrying a fork — which is less exotic here than elsewhere,
-since a commit-pinned build is already maintained.
-
-**Identity is separable.** Per-agent iron _sidecars_ make the pod IP the
-identity and fix requirement 4 for R1 or R3 without any upstream change. Costs a
-proxy per agent pod; gives per-agent credential scoping as a bonus.
-
-### The two experiments that decide it
-
-Both are ~a day, independent, and can run before committing to anything:
-
-1. **The Squid spike** — build an OpenSSL Squid image (same
-   `cluster/images/` + GitHub Actions pattern as iron), then answer: do
-   `request_header_access` / `request_header_add` apply to `ssl_bump`-decrypted
-   requests, and does the `add` ACL still match after `access` denied the
-   header? **Yes → R2 is live and probably wins.** No → R2 is dead and the
-   choice is R1 versus R3.
-2. **The upstream conversation** — one iron issue covering caching, a generic
-   decision hook, and forwarded caller identity. **Receptive → R3.** Silence →
-   R3 means a fork.
-
-Measuring the actual cache hit rate (via `annotate` + the existing OTLP audit
-export) is worth doing alongside, since caching is the secondary requirement and
-some heavy traffic redirects to signed CDN URLs that will not cache at all.
-
-### What does not depend on any of this
-
-The gap that started this thread — `haku-sandbox` and `haku-ci` having **no L7
-allowlist**, only the Cilium `toFQDNs` layer — is real but not urgent, and it is
-already the standing TODO in `test_egress_allowlists`: _"enforce at two layers,
-not one."_ Every route above ends with row 1 behind a proxy that has an L7
-allowlist, so closing it early only risks moving it twice. Worth doing now only
-if the single-layer posture is judged unacceptable before the routes resolve.
+- **Squid 3.5.27 (2017)**, because it is what pulled cleanly;
+  `eraa/squid-ssl` (6.9) 404s. These directives are ancient and stable and the
+  feature has not been removed, but a 6.x/7.x re-run before committing is cheap
+  insurance.
+- **Container needs `/dev/shm`** (emptyDir, `medium: Memory`) and
+  `sslproxy_session_cache_size 0`; without them Squid dies at startup with
+  `shm_open(/squid-ssl_session_cache.shm)` — a musl/container interaction, not a
+  config error.
+- **Not yet tested**: more than one credential per fence (several `req_header`
+  ACLs on the same header), the base64 `Basic` form for git-over-HTTPS, and
+  anything about caching behaviour. None look risky, but none are proven.
 
 ## Options, ranked
 
