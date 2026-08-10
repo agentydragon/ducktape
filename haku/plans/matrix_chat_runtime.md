@@ -188,9 +188,16 @@ for whenever this is picked up:
   exactly one joined room is serviced. A further invite, even from the operator, is not
   joined while a room is live — it is declined or left pending, and the operator is told
   which room is the live one. Silently joining a room nothing services is the one outcome
-  ruled out: it looks like Haku is listening when it is not. **[later]** Something better
-  than refusal — moving the conversation, or several rooms onto one session — is
-  deliberately deferred, not designed here.
+  ruled out: it looks like Haku is listening when it is not.
+
+  **[later] The shape this generalizes to is one room per `(operator, agent)` pair**, with
+  one bot account per agent. Today's rule is the single-operator, single-agent case of that,
+  not a different rule — which is why the binding is keyed by bot user rather than by room:
+  widening the key is the whole migration, and the "one room per key" property survives
+  unchanged. Refusal is then the right answer only for a second room on a pair that already
+  has one; a room for a _different_ operator or a _different_ agent would simply be its own
+  binding. What that needs first is more than one of either, which is also what makes it
+  premature to design now.
   This is harness behaviour, not an agent capability, so R5.4's exclusion of a join tool
   stands — the agent still cannot reach a room the operator did not put it in.
 
