@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixSyncState
-from haku.console.matrix_client import InboundMessage, Invite, MatrixAuthError, MatrixClient
+from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, MatrixClient
 
 logger = logging.getLogger(__name__)
 

@@ -32,7 +32,6 @@ from haku.console import (
     claude_chat,
     connection_metrics,
     console_events,
-    matrix_sync,
     mcp_agent_auth,
     mcp_approval,
     mcp_mount,
@@ -71,6 +70,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
+from haku.console.x import matrix_sync
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"

@@ -1,0 +1,46 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "matrix_client",
+    srcs = ["matrix_client.py"],
+    deps = ["@pypi//matrix_nio"],
+)
+
+py_test(
+    name = "test_matrix_client",
+    srcs = ["test_matrix_client.py"],
+    deps = [
+        ":matrix_client",
+        "//:conftest",
+        "@pypi//matrix_nio",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "matrix_sync",
+    srcs = ["matrix_sync.py"],
+    deps = [
+        ":matrix_client",
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_matrix_sync",
+    srcs = ["test_matrix_sync.py"],
+    deps = [
+        ":matrix_client",
+        ":matrix_sync",
+        "//:conftest",
+        "//haku/console:config",
+        "@pypi//pydantic",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)

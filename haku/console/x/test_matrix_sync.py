@@ -8,8 +8,8 @@ import pytest_bazel
 from pydantic import SecretStr
 
 from haku.console.config import MatrixConfig
-from haku.console.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
-from haku.console.matrix_sync import MatrixSyncService
+from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
+from haku.console.x.matrix_sync import MatrixSyncService
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"

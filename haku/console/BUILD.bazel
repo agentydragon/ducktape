@@ -33,51 +33,6 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
-py_test(
-    name = "test_matrix_client",
-    srcs = ["test_matrix_client.py"],
-    deps = [
-        ":conftest",
-        ":matrix_client",
-        "//:conftest",
-        "@pypi//matrix_nio",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_matrix_sync",
-    srcs = ["test_matrix_sync.py"],
-    deps = [
-        ":config",
-        ":conftest",
-        ":matrix_client",
-        ":matrix_sync",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "matrix_client",
-    srcs = ["matrix_client.py"],
-    deps = ["@pypi//matrix_nio"],
-)
-
-py_library(
-    name = "matrix_sync",
-    srcs = ["matrix_sync.py"],
-    deps = [
-        ":config",
-        ":database_schema",
-        ":matrix_client",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_library(
     name = "claude_chat",
     srcs = ["claude_chat.py"],
@@ -941,7 +896,6 @@ py_library(
         ":database_migrate",
         ":deployment",
         ":in_process_servers",
-        ":matrix_sync",
         ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",
@@ -965,6 +919,7 @@ py_library(
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:routine",
+        "//haku/console/x:matrix_sync",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",

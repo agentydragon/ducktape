@@ -8,8 +8,8 @@ from typing import Any
 import pytest_bazel
 from nio.responses import RoomMessagesResponse, SyncResponse
 
-from haku.console import matrix_client
-from haku.console.matrix_client import MatrixClient
+from haku.console.x import matrix_client
+from haku.console.x.matrix_client import MatrixClient
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
