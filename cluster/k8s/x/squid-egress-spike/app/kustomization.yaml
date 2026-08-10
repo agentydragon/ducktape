@@ -6,7 +6,6 @@ resources:
   - echo-origin.yaml
   - deployment.yaml
   - networkpolicy.yaml
-  - forgejo-images-creds-eso.yaml
 
 configMapGenerator:
   - name: squid-spike-config

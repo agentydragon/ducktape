@@ -55,6 +55,23 @@ Expected, and the point of the exercise:
 The second row is the security property. If a placeholder is substituted at a
 destination its rule does not name, the design is wrong, not the config.
 
+## Pull credential
+
+The image is private, and the `forgejo-images-creds` pull secret reaches this
+namespace by **reflector mirroring** — `squid-egress-spike` must appear in both
+`reflection-allowed-namespaces` and `reflection-auto-namespaces` on
+<../../forgejo-images/registry-creds.sops.yaml>. That is a grant of one
+dockerconfigjson and nothing else, and it is the mechanism
+<../../../docs/container-images.md> § Forgejo-hosted images prescribes.
+
+The first cut of this spike instead copied the `ExternalSecret` that
+`haku-egress-proxy` uses. That failed closed — `denied by spec.condition` — and
+the fix would have been to add this namespace to
+`kubernetes-flux-system-secret-store`, which grants read access to _every_
+secret in `flux-system` (the GitHub App, four PATs, the Route 53 credentials,
+`ci-age-key`). Wrong trade for a directory whose own README opens by saying it
+holds no real credentials.
+
 ## Ordering when this first lands
 
 The image does not exist until `.github/workflows/squid-ssl-image.yml` runs on
