@@ -6,11 +6,14 @@ written against psycopg3's API while running on an asyncpg engine — it raised 
 in production, killing every Matrix session about four seconds in, and the only test
 covering it passed against a fake engine.
 
-**Deviation from what it replaces:** one long-lived connection for all three channels with a
-reconnect loop, rather than borrowing a pooled connection per wait. That matches
-<../console_events.py>, which is the console's other LISTEN/NOTIFY consumer and had already
-solved both problems this one had — a listener that dies takes its waiters with it, and a
+**Deviation from a pooled connection:** one long-lived connection for all three channels with
+a reconnect loop, rather than borrowing from the SQLAlchemy pool per wait. Two problems go
+with the pooled shape — a listener that dies takes its waiters with it, and a
 session-lifetime watcher holds a pool connection for as long as it lives.
+
+The driver is asyncpg, the same one the application's engine uses, so nothing in the console's
+async path speaks two dialects. (psycopg remains for synchronous Alembic; see
+<../database_migrate.py>.)
 
 The notify half stays inside the caller's transaction (see `notify`), because `pg_notify`
 delivers on commit: emitting it anywhere else would announce work that a rollback then
@@ -21,13 +24,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
-import psycopg
+import asyncpg
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -39,6 +44,7 @@ ABORT_CHANNEL = "claude_chat_abort"
 _CHANNELS = (PROMPT_CHANNEL, UPDATE_CHANNEL, ABORT_CHANNEL)
 _RECONNECT_DELAY = timedelta(seconds=2)
 _CONNECT_TIMEOUT_SECONDS = 10
+_CLOSE_TIMEOUT_SECONDS = 2
 
 
 async def notify(db: AsyncSession, channel: str, session_id: UUID) -> None:
@@ -46,18 +52,21 @@ async def notify(db: AsyncSession, channel: str, session_id: UUID) -> None:
     await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": str(session_id)})
 
 
-def psycopg_dsn(database_url: str) -> str:
-    """Strip the SQLAlchemy driver suffix that psycopg does not understand."""
-    return database_url.replace("postgresql+asyncpg://", "postgresql://").replace(
-        "postgresql+psycopg://", "postgresql://"
-    )
+def _terminator(terminated: asyncio.Event) -> Callable[[object], None]:
+    """Bind the event per connection; a bare lambda in the loop would close over the last one."""
+    return lambda _connection: terminated.set()
+
+
+def libpq_dsn(database_url: str) -> str:
+    """Drop the SQLAlchemy driver suffix, which a direct driver connection does not take."""
+    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 class ChatNotifications:
     """One LISTEN connection over the chat channels, fanned out to per-session waiters."""
 
     def __init__(self, database_url: str):
-        self._dsn = psycopg_dsn(database_url)
+        self._dsn = libpq_dsn(database_url)
         self._waiters: dict[tuple[str, UUID], set[asyncio.Event]] = {}
         self._task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
@@ -128,23 +137,36 @@ class ChatNotifications:
             for event in events:
                 event.set()
 
+    def _on_notification(self, _connection: object, _pid: int, channel: str, payload: object) -> None:
+        """asyncpg dispatches on its reader task, so this must not block or await.
+
+        The parameter types are asyncpg's, not ours: its `_Listener` protocol declares the
+        payload as `object` and the connection as a union with the pool proxy, so narrowing
+        either here would stop matching.
+        """
+        self._wake(channel, str(payload))
+
     async def _listen_loop(self) -> None:
         while True:
+            connection: asyncpg.Connection[Any] | None = None
             try:
-                async with await psycopg.AsyncConnection.connect(
-                    self._dsn, autocommit=True, connect_timeout=_CONNECT_TIMEOUT_SECONDS
-                ) as conn:
-                    for channel in _CHANNELS:
-                        await conn.execute(f"LISTEN {channel}")
-                    self._listening.set()
-                    self._wake_everyone()
-                    async for note in conn.notifies():
-                        self._wake(note.channel, note.payload)
+                connection = await asyncpg.connect(self._dsn, timeout=_CONNECT_TIMEOUT_SECONDS)
+                terminated = asyncio.Event()
+                connection.add_termination_listener(_terminator(terminated))
+                for channel in _CHANNELS:
+                    await connection.add_listener(channel, self._on_notification)
+                self._listening.set()
+                self._wake_everyone()
+                await terminated.wait()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 # Logged rather than raised: a dropped listener must not end the loop, or
                 # every waiter in the process silently stops being woken.
                 logger.exception("chat notification listener failed; reconnecting")
-            self._listening.clear()
+            finally:
+                self._listening.clear()
+                if connection is not None:
+                    with suppress(Exception):
+                        await connection.close(timeout=_CLOSE_TIMEOUT_SECONDS)
             await asyncio.sleep(_RECONNECT_DELAY.total_seconds())

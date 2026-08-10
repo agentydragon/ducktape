@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Iterable
-from typing import Annotated, ClassVar, Literal, cast
+from collections.abc import AsyncIterator, Callable, Iterable
+from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import UUID
 
-import psycopg
+import asyncpg
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy.engine import make_url
@@ -66,7 +66,12 @@ class _RoutedConsoleEvent(BaseModel):
     event: ConsoleEvent
 
 
-def _psycopg_dsn(database_url: str) -> str:
+def _terminator(terminated: asyncio.Event) -> Callable[[object], None]:
+    """Bind the event per connection; a bare lambda in the loop would close over the last one."""
+    return lambda _connection: terminated.set()
+
+
+def _libpq_dsn(database_url: str) -> str:
     return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
@@ -83,14 +88,18 @@ class ConsoleEventHub:
     def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
         self._connections: dict[WebSocket, UUID] = {}
         self._tool_call_waiters: dict[tuple[UUID, str], set[asyncio.Event]] = {}
-        self._dsn = _psycopg_dsn(database_url)
+        self._dsn = _libpq_dsn(database_url)
         self._operator_identity_store = operator_identity_store
         self._listen_task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
-        self._publisher: psycopg.AsyncConnection | None = None
+        self._publisher: asyncpg.Connection[Any] | None = None
+        self._inbound: asyncio.Queue[str] = asyncio.Queue()
+        self._deliver_task: asyncio.Task[None] | None = None
         self._publish_lock = asyncio.Lock()
 
     async def start(self) -> None:
+        if self._deliver_task is None:
+            self._deliver_task = asyncio.create_task(self._deliver_loop())
         if self._listen_task is None:
             self._listen_task = asyncio.create_task(self._listen_loop())
         # A caller may publish immediately after app startup. Do not report the app ready until its
@@ -109,9 +118,14 @@ class ConsoleEventHub:
             listen_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await listen_task
+        if self._deliver_task is not None:
+            deliver_task, self._deliver_task = self._deliver_task, None
+            deliver_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await deliver_task
         if self._publisher is not None:
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._publisher.close(), timeout=self._SOCKET_TIMEOUT_SECONDS)
+                await self._publisher.close(timeout=self._SOCKET_TIMEOUT_SECONDS)
             self._publisher = None
         await self._close_connections(code=1001, reason="console event hub stopped")
         self._wake_all_tool_call_waiters()
@@ -166,12 +180,10 @@ class ConsoleEventHub:
                 async with self._publish_lock:
                     publisher = self._publisher
                     if publisher is None:
-                        publisher = await psycopg.AsyncConnection.connect(
-                            self._dsn, autocommit=True, connect_timeout=self._CONNECT_TIMEOUT_SECONDS
-                        )
+                        publisher = await asyncpg.connect(self._dsn, timeout=self._CONNECT_TIMEOUT_SECONDS)
                         self._publisher = publisher
                     for envelope in envelopes:
-                        await publisher.execute("SELECT pg_notify(%s, %s)", (self._CHANNEL, envelope.model_dump_json()))
+                        await publisher.execute("SELECT pg_notify($1, $2)", self._CHANNEL, envelope.model_dump_json())
         except Exception:
             # The ledger/OAuth row is authoritative and may already be committed. A lossy UI
             # invalidation must never turn that successful mutation into a false 500 or strand a
@@ -180,7 +192,7 @@ class ConsoleEventHub:
             logger.exception("failed to publish console events")
             if self._publisher is not None:
                 with contextlib.suppress(Exception):
-                    await asyncio.wait_for(self._publisher.close(), timeout=self._SOCKET_TIMEOUT_SECONDS)
+                    await self._publisher.close(timeout=self._SOCKET_TIMEOUT_SECONDS)
                 self._publisher = None
             self._wake_all_tool_call_waiters()
             await self._close_connections(code=1012, reason="console event publish failed")
@@ -241,42 +253,58 @@ class ConsoleEventHub:
             return_exceptions=True,
         )
 
+    def _on_notification(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
+        """asyncpg dispatches on its reader task, so this may neither block nor await.
+
+        Payloads are queued rather than delivered here, which also preserves the ordering the
+        previous `notifies()` iterator gave: one consumer, in arrival order.
+        """
+        self._inbound.put_nowait(str(payload))
+
+    async def _deliver_loop(self) -> None:
+        while True:
+            payload = await self._inbound.get()
+            try:
+                envelope = _RoutedConsoleEvent.model_validate_json(payload)
+            except ValidationError:
+                logger.exception("failed to parse console event notification payload")
+                continue
+            try:
+                await self._deliver_locally(envelope.operator_id, envelope.event)
+            except Exception:
+                # One bad delivery must not stop the consumer; the socket layer already
+                # drops connections it cannot write to.
+                logger.exception("failed to deliver a console event locally")
+
     async def _listen_loop(self) -> None:
         while True:
+            connection: asyncpg.Connection[Any] | None = None
             try:
-                async with await psycopg.AsyncConnection.connect(
-                    self._dsn, autocommit=True, connect_timeout=self._CONNECT_TIMEOUT_SECONDS
-                ) as conn:
-                    await conn.execute(f"LISTEN {self._CHANNEL}")
-                    self._listening.set()
-                    # Notifications committed while this replica was reconnecting are gone. Wake
-                    # every waiter after each successful LISTEN so it re-reads the durable ledger.
-                    self._wake_all_tool_call_waiters()
-                    try:
-                        async for note in conn.notifies():
-                            try:
-                                envelope = _RoutedConsoleEvent.model_validate_json(note.payload)
-                            except ValidationError:
-                                logger.exception("failed to parse console event notification payload")
-                                continue
-                            await self._deliver_locally(envelope.operator_id, envelope.event)
-                    finally:
-                        self._listening.clear()
-                await self._close_connections(code=1012, reason="console event relay reconnecting")
+                connection = await asyncpg.connect(self._dsn, timeout=self._CONNECT_TIMEOUT_SECONDS)
+                terminated = asyncio.Event()
+                connection.add_termination_listener(_terminator(terminated))
+                await connection.add_listener(self._CHANNEL, self._on_notification)
+                self._listening.set()
+                # Notifications committed while this replica was reconnecting are gone. Wake
+                # every waiter after each successful LISTEN so it re-reads the durable ledger.
                 self._wake_all_tool_call_waiters()
+                await terminated.wait()
                 logger.warning("console event listen stream ended; reconnecting")
-                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 self._listening.clear()
                 raise
             except Exception:
-                self._listening.clear()
-                # An open browser socket would otherwise look healthy while notifications are being
-                # missed. Force reconnect + REST sync; attempts during the outage are rejected above.
-                await self._close_connections(code=1012, reason="console event relay reconnecting")
-                self._wake_all_tool_call_waiters()
                 logger.exception("console event listen loop failed; reconnecting")
-                await asyncio.sleep(1)
+            finally:
+                self._listening.clear()
+                if connection is not None:
+                    with contextlib.suppress(Exception):
+                        await connection.close(timeout=self._SOCKET_TIMEOUT_SECONDS)
+            # An open browser socket would otherwise look healthy while notifications are being
+            # missed. Force reconnect + REST sync; attempts during the outage are rejected above.
+            await self._close_connections(code=1012, reason="console event relay reconnecting")
+            self._wake_all_tool_call_waiters()
+            await asyncio.sleep(1)
 
 
 def _event_hub(request: Request) -> ConsoleEventHub:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
@@ -51,33 +51,38 @@ class HangingPublisher:
     def __init__(self) -> None:
         self.closed = False
 
-    async def execute(self, query: str, params: Any) -> None:
+    async def execute(self, query: str, *args: object) -> None:
+        del query, args
         await asyncio.Event().wait()
 
-    async def close(self) -> None:
+    async def close(self, **_: object) -> None:
         self.closed = True
 
 
 class ListenConnection:
+    """An asyncpg connection far enough along to drive the hub's reconnect path.
+
+    `end_notifications` terminates the connection as soon as it is listening, which is how a
+    dropped listener looks from the loop's side.
+    """
+
     def __init__(self, *, end_notifications: bool) -> None:
         self.end_notifications = end_notifications
         self.listened = asyncio.Event()
+        self._terminate: Callable[[object], None] | None = None
 
-    async def __aenter__(self) -> ListenConnection:
-        return self
+    def add_termination_listener(self, callback: Callable[[object], None]) -> None:
+        self._terminate = callback
 
-    async def __aexit__(self, *_: Any) -> None:
-        pass
-
-    async def execute(self, query: str) -> None:
-        assert query == "LISTEN haku_console_events"
+    async def add_listener(self, channel: str, callback: object) -> None:
+        assert channel == "haku_console_events"
+        del callback
         self.listened.set()
+        if self.end_notifications and self._terminate is not None:
+            self._terminate(self)
 
-    async def notifies(self) -> AsyncIterator[Any]:
-        if self.end_notifications:
-            return
-        await asyncio.Event().wait()
-        yield
+    async def close(self, **_: object) -> None:
+        """asyncpg's `close` takes a `timeout`; swallowing kwargs keeps ASYNC109 out of a fake."""
 
 
 def _identity_store(*, active: bool = True) -> PostgresOperatorIdentityStore:
@@ -161,7 +166,7 @@ async def test_successful_relisten_wakes_waiter_registered_during_reconnect_gap(
         reconnect_gap.set()
         await resume_reconnect.wait()
 
-    monkeypatch.setattr(console_events.psycopg.AsyncConnection, "connect", connect)
+    monkeypatch.setattr(console_events.asyncpg, "connect", connect)
     monkeypatch.setattr(console_events.asyncio, "sleep", pause_in_reconnect_gap)
     hub = ConsoleEventHub("postgresql+psycopg://unused.invalid/db", operator_identity_store=_identity_store())
     listen_task = asyncio.create_task(hub._listen_loop())
@@ -180,7 +185,7 @@ async def test_successful_relisten_wakes_waiter_registered_during_reconnect_gap(
 
 async def test_event_hub_start_fails_bounded_when_postgres_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
     connect = AsyncMock(side_effect=OSError("postgres unavailable"))
-    monkeypatch.setattr(console_events.psycopg.AsyncConnection, "connect", connect)
+    monkeypatch.setattr(console_events.asyncpg, "connect", connect)
     monkeypatch.setattr(ConsoleEventHub, "_START_TIMEOUT_SECONDS", 0.02)
     hub = ConsoleEventHub("postgresql+psycopg://unreachable.invalid/db", operator_identity_store=_identity_store())
 

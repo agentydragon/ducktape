@@ -702,9 +702,10 @@ py_library(
         ":operator_identity_store",
         ":provider_connection_registry",
         "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//asyncpg",
         "@pypi//fastapi",
-        "@pypi//psycopg",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 

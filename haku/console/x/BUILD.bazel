@@ -13,11 +13,9 @@ py_library(
         "//haku/runtime/x/agent_sdk_transport:options",
         "//haku/runtime/x/agent_sdk_transport:protocol",
         "//haku/runtime/x/agent_sdk_transport:transport",
-        "@pypi//asyncpg",  # async driver for SQLAlchemy AsyncEngine (LISTEN/NOTIFY, pool)
         "@pypi//claude_agent_sdk",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
-        "@pypi//psycopg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -27,7 +25,7 @@ py_library(
     name = "chat_notifications",
     srcs = ["chat_notifications.py"],
     deps = [
-        "@pypi//psycopg",
+        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )
