@@ -53,7 +53,7 @@ Expected, and the point of the exercise:
 | Request                                                 | Origin should see                    |
 | ------------------------------------------------------- | ------------------------------------ |
 | `Bearer spike-bearer-placeholder` to the echo origin    | `Bearer fake-real-bearer-do-not-use` |
-| `Bearer spike-bearer-placeholder` to **any other host** | placeholder **not** substituted      |
+| `Bearer spike-bearer-placeholder` to **any other host** | the placeholder, unmodified          |
 | `Bearer something-else`                                 | passed through untouched             |
 | no `Authorization`                                      | stays absent                         |
 
@@ -99,8 +99,8 @@ answered.** Squid started clean on the new base, so the `/dev/shm` workaround an
 the `security_file_certgen` init both survived the OpenSSL/musl move.
 
 Verdict per question: (1) 7.x port — **yes**, with the `DONT_VERIFY_PEER` trap
-above; (2) destination scoping — **security property holds**, though the strip
-semantics need a decision; (3) several credentials — **yes**; (4) base64 `Basic`
+above; (2) destination scoping — **security property holds**, and the strip
+semantics have since been settled below; (3) several credentials — **yes**; (4) base64 `Basic`
 — **yes**; (5) caching — `cache deny has_auth` **works**, hit path not
 demonstrated.
 
@@ -120,7 +120,7 @@ Observed:
 - Authenticated responses were not cached (`Cache-Status: …;detail=no-cache`),
   so `cache deny has_auth` does what it says.
 
-### The one thing that needs a decision
+### Decided and fixed: a placeholder at an allowed host passes through
 
 Case (b) did not arrive _unchanged_ — the `Authorization` header arrived
 **absent**. That is because each rule's two halves are scoped differently:
@@ -134,14 +134,28 @@ The `deny` strips the header wherever the placeholder matches; only the `add` is
 destination-scoped. So a placeholder presented to the wrong host is deleted
 rather than forwarded.
 
-This **fails safe** — no real credential leaks, and it is arguably better, since
-the placeholder itself never reaches an unintended host. But it is not the
-"substitute, else leave alone" semantic the design assumes, and today it is an
-accident of how the rules are written rather than a decision. Adding the
-destination ACL to the `deny` line (`deny ph_other to_elsewhere`) would give
-passthrough instead. Worth settling before this shape holds a real credential,
-because it decides what an agent observes when it aims a placeholder somewhere
-unexpected: a silently unauthenticated request, or its own header back.
+It **fails safe** — no real credential leaks — but it is a different contract
+from the one this design wants, and it was an accident of how the rules were
+written rather than a decision.
+
+**Resolved: pass it through.** Substitution is meant to be a swap the caller can
+opt out of by sending something else; silently eating an unrelated header is not
+that. A placeholder aimed at a host that is otherwise allowed should reach it
+unmodified, and a host that is _not_ allowed is already refused by the allowlist,
+so nothing rests on the strip. The destination ACL now appears on both lines of
+every rule — Squid ANDs the ACLs on a directive line:
+
+```squid
+request_header_access Authorization deny ph_other to_elsewhere
+request_header_add    Authorization "Bearer …" ph_other to_elsewhere
+```
+
+Leaking the placeholder string to an allowed host costs nothing: the agent
+already holds it, and redeeming it still requires the destination its rule names.
+`credentials.conf.tmpl` carries this as an invariant, since scoping only the
+`add` is the easy mistake and it is invisible until someone tests the negative
+case. **Not yet re-run** — case (b) should now echo `Bearer
+spike-other-placeholder` instead of nothing.
 
 ### Two things this run could not show
 
