@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import patch
@@ -14,6 +15,7 @@ import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from kubernetes_asyncio import client as k8s_client
 from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatSession
@@ -306,6 +308,10 @@ class _LifecycleStore:
         assert session_id == self.session_id
         return self.status_value
 
+    async def watch_aborts(self, session_id: UUID, on_abort: Callable[[], None]) -> None:
+        del session_id, on_abort
+        await asyncio.Event().wait()  # no aborts in this test; just never return
+
     async def complete_claim_cleanup(self, session_id: UUID) -> None:
         self.cleanup_completed.append(session_id)
 
@@ -518,13 +524,6 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup() -> None:
     assert store.completed == session_ids
 
 
-def test_request_abort_returns_false_without_connected_runner() -> None:
-    service = ClaudeChatService(
-        _runtime_config(), cast(Any, _ReconcileStore([])), cast(Any, _LifecycleClaims()), mcp_token=SecretStr("unused")
-    )
-    assert service.request_abort(uuid4()) is False
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
 
@@ -595,3 +594,64 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(
 
     [answer] = [m for m in (await store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
     assert answer.content == "pong"
+
+
+async def test_abort_is_refused_when_no_turn_is_in_flight(
+    migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    """An idle session has nothing to interrupt, and saying so is the point of the 409.
+
+    The old check asked "is this session's abort event registered in *this* process", which
+    is true for the whole life of the runner bridge — so aborting an idle session set the
+    event, and the next turn aborted the instant it started.
+    """
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-abort-idle")
+    store = ClaudeChatStore(migrated_sessions, migrated_engine)
+    view, token = await store.create(operator_id)
+    # The bridge handshake is what takes a session from provisioning to ready, and only a
+    # ready session accepts a prompt.
+    assert await store.authenticate_bridge(view.session_id, token) == "accepted"
+
+    assert await store.request_abort(view.session_id) is False
+
+    await store.enqueue_prompt(operator_id, view.session_id, "work")
+    assert await store.request_abort(view.session_id) is True
+
+
+async def test_abort_reaches_the_replica_running_the_turn(
+    migrated_db_url, migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    """The two ends of an abort are on different pods, so it has to cross the database.
+
+    The abort event belongs to whichever replica holds the runner's bridge websocket, while
+    `POST .../abort` is balanced across all of them — at `replicas: 2` the operator's abort
+    button therefore failed with a spurious 409 about half the time. Two stores over two
+    engines is what reproduces that; a single store would pass on the in-process path this
+    change removes.
+    """
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-abort-cross")
+    running = ClaudeChatStore(migrated_sessions, migrated_engine)
+    view, token = await running.create(operator_id)
+    assert await running.authenticate_bridge(view.session_id, token) == "accepted"
+    await running.enqueue_prompt(operator_id, view.session_id, "work")
+
+    other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
+    try:
+        requesting = ClaudeChatStore(async_sessionmaker(other_engine, expire_on_commit=False), other_engine)
+        aborted = asyncio.Event()
+        watcher = asyncio.create_task(running.watch_aborts(view.session_id, aborted.set))
+        try:
+            # Retry rather than sleep a magic interval: the LISTEN registers asynchronously,
+            # and re-notifying is harmless, so this waits for readiness without guessing it.
+            async with asyncio.timeout(30):
+                while not aborted.is_set():
+                    assert await requesting.request_abort(view.session_id) is True
+                    with contextlib.suppress(TimeoutError):
+                        async with asyncio.timeout(0.5):
+                            await aborted.wait()
+        finally:
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
+    finally:
+        await other_engine.dispose()

@@ -9,7 +9,8 @@ import hashlib
 import json
 import logging
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 _PROMPT_CHANNEL = "claude_chat_prompt"
 _UPDATE_CHANNEL = "claude_chat_update"
+_ABORT_CHANNEL = "claude_chat_abort"
 
 SessionStatus = Literal["provisioning", "ready", "responding", "closing", "closed", "failed"]
 MessageRole = Literal["user", "assistant"]
@@ -551,8 +553,9 @@ class ClaudeChatStore:
                 is not None
             )
 
-    async def _listen(self, channel: str, session_id: UUID, *, timeout_seconds: float) -> bool:
-        """Block until a Postgres NOTIFY on *channel* fires for *session_id*.
+    @asynccontextmanager
+    async def _listener(self, channel: str) -> AsyncIterator[asyncio.Queue[str]]:
+        """Hold a raw asyncpg connection with a LISTEN on *channel*, yielding its payloads.
 
         Uses a raw asyncpg connection from the engine's pool for LISTEN/NOTIFY, through
         asyncpg's `add_listener` — the engine is `postgresql+asyncpg`, so `driver_connection`
@@ -577,15 +580,21 @@ class ClaudeChatStore:
 
             await pg_conn.add_listener(channel, _on_notify)
             try:
+                yield payloads
+            finally:
+                # The connection returns to the pool, so the listener must come off it.
+                await pg_conn.remove_listener(channel, _on_notify)
+
+    async def _listen(self, channel: str, session_id: UUID, *, timeout_seconds: float) -> bool:
+        """Block until a Postgres NOTIFY on *channel* fires for *session_id*."""
+        async with self._listener(channel) as payloads:
+            try:
                 async with asyncio.timeout(timeout_seconds):
                     while True:
                         if await payloads.get() == str(session_id):
                             return True
             except TimeoutError:
                 return False
-            finally:
-                # The connection returns to the pool, so the listener must come off it.
-                await pg_conn.remove_listener(channel, _on_notify)
 
     async def listen_for_update(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> None:
         """Wait for a LISTEN/NOTIFY on the update channel for this session."""
@@ -594,6 +603,34 @@ class ClaudeChatStore:
     async def wait_for_prompt(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> bool:
         """Wait for a prompt NOTIFY. Returns True if a prompt notification arrived."""
         return await self._listen(_PROMPT_CHANNEL, session_id, timeout_seconds=timeout_seconds)
+
+    async def request_abort(self, session_id: UUID) -> bool:
+        """Ask whichever replica is running this session's turn to interrupt it.
+
+        Returns False when no turn is in flight. This goes through NOTIFY rather than an
+        in-process registry because the two ends land on different replicas: the abort event
+        belongs to the pod holding the runner's bridge websocket, while the operator's HTTP
+        request is balanced across all of them.
+        """
+        async with self._sessions.begin() as db:
+            status = await db.scalar(select(ClaudeChatSession.status).where(ClaudeChatSession.session_id == session_id))
+            if status != "responding":
+                return False
+            await self._notify(db, _ABORT_CHANNEL, session_id)
+            return True
+
+    async def watch_aborts(self, session_id: UUID, on_abort: Callable[[], None]) -> None:
+        """Call *on_abort* for each abort NOTIFY for this session, until cancelled.
+
+        Holds one connection for the session's lifetime rather than re-LISTENing per turn: a
+        notify landing between an UNLISTEN and the next LISTEN is lost outright, and an abort
+        the operator pressed is not something to drop on a race. The cost is a pooled
+        connection per live runner, on top of the one an idle `wait_for_prompt` holds.
+        """
+        async with self._listener(_ABORT_CHANNEL) as payloads:
+            while True:
+                if await payloads.get() == str(session_id):
+                    on_abort()
 
 
 class StarletteTextWebSocket(TextWebSocket):
@@ -632,14 +669,9 @@ class ClaudeChatService:
         self._claims = claims
         self._mcp_token = mcp_token
         self._reply_sink = reply_sink
-        self._abort_events: dict[UUID, asyncio.Event] = {}
 
-    def request_abort(self, session_id: UUID) -> bool:
-        event = self._abort_events.get(session_id)
-        if event is not None:
-            event.set()
-            return True
-        return False
+    async def request_abort(self, session_id: UUID) -> bool:
+        return await self._store.request_abort(session_id)
 
     async def create(self, operator_id: UUID) -> ClaudeChatSessionView:
         view, token = await self._store.create(operator_id)
@@ -724,7 +756,10 @@ class ClaudeChatService:
         )
         client = ClaudeSDKClient(options=options, transport=WebSocketTransport(adapter, build_claude_launch(options)))
         abort_event = asyncio.Event()
-        self._abort_events[session_id] = abort_event
+        # The operator's abort lands on whichever replica the Service picks, which is rarely
+        # the one holding this websocket — so the event is driven by NOTIFY, not by a caller
+        # reaching into this process.
+        abort_watch = asyncio.create_task(self._store.watch_aborts(session_id, abort_event.set))
         try:
             await client.connect()
             while True:
@@ -737,13 +772,17 @@ class ClaudeChatService:
                     await self._store.wait_for_prompt(session_id, timeout_seconds=30.0)
                     continue
                 _, text = prompt
+                # Cleared here rather than after the turn: an abort notified just as the
+                # previous turn ended would otherwise sit set through the idle wait and kill
+                # the next turn on arrival. A notify racing the next few statements can still
+                # do that, which needs the abort to name a turn rather than a session.
+                abort_event.clear()
                 try:
                     await self._run_turn(client, session_id, text, abort_event=abort_event)
                 except Exception as error:
                     logger.exception("Claude chat turn failed for session %s", session_id)
                     await self._store.fail(session_id, str(error))
                     break
-                abort_event.clear()
         except WebSocketDisconnect:
             await self._store.fail(session_id, "sandbox runner disconnected")
         except Exception as error:
@@ -752,7 +791,15 @@ class ClaudeChatService:
             logger.exception("Claude runtime failed for session %s", session_id)
             await self._store.fail(session_id, f"Claude runtime failed: {error}")
         finally:
-            self._abort_events.pop(session_id, None)
+            abort_watch.cancel()
+            try:
+                await abort_watch
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                # Logged rather than raised: this is cleanup, and re-raising here would skip
+                # the disconnect and claim teardown below and mask whatever ended the session.
+                logger.exception("Abort listener failed for session %s", session_id)
             await client.disconnect()
             await self._cleanup_terminal_claim(session_id)
             await self._store.closed(session_id)
@@ -1049,7 +1096,7 @@ async def stream_session(session_id: UUID, actor: OperatorActorDep, store: Claud
 async def abort_session(session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep) -> dict[str, str]:
     if not await service._store.session_exists(actor.operator_id, session_id):
         raise HTTPException(status_code=404, detail="Claude chat session not found")
-    if not service.request_abort(session_id):
+    if not await service.request_abort(session_id):
         raise HTTPException(status_code=409, detail="no active turn to abort")
     return {"status": "aborted"}
 

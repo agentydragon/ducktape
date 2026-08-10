@@ -37,10 +37,21 @@ Two behaviours worth knowing before reading the code:
   with nothing pending, so when it refuses, the sync watermark is simply not advanced and
   the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
   dropped" (R1.6) come out of that, with no second durable queue.
-- **One replica syncs.** The loop holds a Postgres advisory lock for its lifetime — `/sync`
-  is a long poll, so releasing between passes would let two replicas double-process a batch.
-  The supervisor is a sibling task under that same lock, so provisioning is single too,
-  while a stalled claim cannot wedge ingress (R1.4).
+- **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
+  `/sync` is a long poll, so releasing between passes would let two replicas double-process a
+  batch. The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning
+  is single too, while a stalled claim cannot wedge ingress (R1.4). Two locks, not one: they
+  are elected independently and can land on different replicas.
+
+## Cross-replica state, and the trap it sets
+
+`replicas: 2` means any given HTTP request reaches an arbitrary pod, while a session's live
+objects — the runner's bridge websocket, its `ClaudeSDKClient`, its abort event — belong to
+exactly one. **Anything that has to reach a running turn therefore goes through Postgres
+`NOTIFY`, never an in-process registry**; a dict keyed by session id looks correct in tests
+and single-replica dev, and silently answers "no such session" in production about half the
+time. That is what `_ABORT_CHANNEL` is for, and it is the same mistake the supervisor's
+missing lock was.
 
 ## What necessarily lives outside this directory
 
