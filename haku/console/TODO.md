@@ -162,13 +162,27 @@ From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #351
 - **No sign-out affordance** (audit F6). `/auth/logout` exists and is exact-Origin gated, but
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
-- **Tests still fake the store.** `x/test_claude_chat.py`'s `_LifecycleStore` stands in for
-  `ClaudeChatStore`, and that is what hid the LISTEN/NOTIFY driver mismatch that broke every
-  Matrix session: `_listen` talks to `driver_connection` directly, so a fake store means the
-  driver is never exercised. `conftest.py` already provides a real Postgres testcontainer and
-  `SandboxClaims` is a Protocol, so the right shape is real store + faked Kubernetes — which
-  is what `test_runner_survives_an_idle_wait_against_a_real_database` now does. Converting the
-  remaining lifecycle test needs one product change first: `request_close` notifies only the
-  update channel, so a closing session does not wake its runner out of `wait_for_prompt` and
-  the test would sit through the 30s timeout. Notifying the prompt channel on close fixes both
-  the test and a real 30-second lag in session teardown.
+
+## `request_close` wakes nobody
+
+`request_close` (`x/claude_chat.py`) sets `status = "closing"` and notifies nothing — it is the
+only status mutation on that path that does not. A closing session's runner therefore stays in
+`wait(ChatEventKind.PROMPT, …)` until its own 30-second timeout before it notices, which is a real
+30-second lag in session teardown.
+
+Since the channel merge (#3938, #3941) the event kind is an argument rather than a channel name, so
+the fix is one `await notify(db, ChatEventKind.PROMPT, session_id)` alongside the status write. It
+must stay **inside** that transaction: `pg_notify` delivers on commit.
+
+## No `startupProbe` on the console containers
+
+Both containers in <../../cluster/k8s/haku/console/deployment.yaml> carry a `livenessProbe`
+(`initialDelaySeconds: 10`, `periodSeconds: 30`) and no `startupProbe`. The API container applies the
+Alembic baseline at startup before it serves, so slow startup work competes with the liveness budget
+and a start that overruns it is killed and retried — worst exactly when a migration has the most to
+do.
+
+A `startupProbe` on the same endpoint with a generous `failureThreshold` separates "still starting"
+from "wedged" and lets the liveness budget stay tight for steady state. Deliberately not solved by
+loosening `livenessProbe`, which would blunt detection for the whole life of the pod to buy slack
+that is only needed once.

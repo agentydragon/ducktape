@@ -1,12 +1,14 @@
 # Matrix as Haku's chat surface — requirements
 
-Status: **Phases 0 and 1 are live.** The homeserver, the `@haku` bot, the sync loop, the
-room binding and the session supervisor all run in production: a message typed in Element
-drives a real Agent SDK turn and the answer comes back into the room. Phase 2 gives that
-session an identity. This is a requirements document, not a design: it fixes what the
-system must do so the design can be argued about separately. Requirements marked **[v1]** are the first cut; **[later]**
-marks something deliberately deferred with its shape recorded so it is not redesigned from
-scratch.
+Status: **Phases 0 and 1 are live, and the wake path under them is now hardened.** The
+homeserver, the `@haku` bot, the sync loop, the room binding and the session supervisor all
+run in production: a message typed in Element drives a real Agent SDK turn and the answer
+comes back into the room. What followed Phase 1 was a run of reliability work in the
+session substrate rather than in the Matrix ends (Build order → Phase 1). Phase 2 gives
+that session an identity. This is a requirements document, not a design: it fixes what the
+system must do so the design can be argued about separately. Requirements marked **[v1]**
+are the first cut; **[later]** marks something deliberately deferred with its shape
+recorded so it is not redesigned from scratch.
 
 Companion to <agent_sdk_sandbox_runtime.md>, which owns the Agent SDK runtime this
 plugs into. That runtime is not re-specified here.
@@ -633,6 +635,32 @@ bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends
   ingress (R9.3).
 
 Stopping here yields a working system.
+
+**What it actually cost.** The four bullets above landed in #3906, with room adoption
+(#3913) and the supervisor's missing lock (#3926) close behind. Eight further PRs then went
+into the wake path and its observability — none of them anticipated here, and none of them
+in the Matrix ends:
+
+- The listener was written against psycopg3's API while running on an asyncpg engine, so it
+  raised on **every** call and killed every session (#3929). The tests passed throughout,
+  because a fake store stood in for the real one.
+- Aborts went through an in-process registry, which is correct on one replica and wrong
+  about half the time on two (#3933).
+- `LISTEN`/`NOTIFY` was lifted out of `ClaudeChatStore` into its own module (#3936), both
+  listeners moved onto one async driver (#3937), and the three per-kind channels became one
+  `claude_chat` channel carrying a typed event (#3938, #3940, #3941). Session transitions
+  became observable as they happen rather than only in aggregate (#3930).
+
+The lesson is not any one of those. This phase was scoped as "most of this exists" — and
+the part that existed had never run cross-replica, on the real driver, or with the fake
+removed. **A substrate that has only ever served one browser session is not evidence for
+anything the plan assumes of it.** Phase 3 inherits exactly that question about the sandbox
+lifecycle, which has likewise only ever been exercised the short way.
+
+Two consequences later phases should budget for, both documented where the code is
+(<../console/x/README.md>): anything that must reach a running turn goes through Postgres
+`NOTIFY` rather than process memory, and renaming a wake channel is a two-release
+expand/contract gated on the roll having converged — not a single merge.
 
 ### Phase 2 — Be Haku
 
