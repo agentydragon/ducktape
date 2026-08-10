@@ -580,7 +580,42 @@ bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends
 
 Stopping here yields a working system.
 
-### Phase 2 — Survive
+### Phase 2 — Be Haku
+
+**The operator's actual minimum for using this**, which is not survival — it is being able
+to do real work in one session. Ahead of Phase 3 because a session that survives for days
+without an identity, its state, or a guard against losing work is not worth surviving.
+
+1. **The session starts as Haku.** Today it does not start as anything: `setting_sources=[]`
+   and no `system_prompt`, so the agent receives the raw batch and nothing else. That is why
+   the first live turn answered as a generic assistant. It needs its identity, its room and
+   session ID (R7.3), the harness contract (R8.1–R8.5), the recent conversational messages
+   (R3.3a), and the standing instructions from haku-state. **Open:** whether standing
+   instructions arrive by pointing `setting_sources` at the clone's own `CLAUDE.md`, or are
+   rendered into the prompt by the console — the first keeps haku-state authoritative over
+   its own conventions, the second keeps the console in control of context size.
+
+2. **haku-state is cloned into the sandbox.** `cwd` is `/workspace` and it is empty; Haku
+   confirmed as much when asked. Its credential must be produced by the in-cluster GitOps
+   Terraform controller and never minted by hand (root `AGENTS.md`), and should reach the
+   sandbox as a placeholder under substitution (R5.1a) rather than raw. **Open:** clone at
+   provisioning (SandboxTemplate) or at session start (the runner). **Also flagged:** this
+   needs git in the sandbox, which contradicts the "MCP-only tool surface" decision in
+   <agent_sdk_sandbox_runtime.md>. That decision is already not what ships — no
+   `disallowed_tools` is set, so the built-ins are live — so it wants revisiting explicitly
+   rather than being quietly outgrown.
+
+3. **A Stop hook against unpushed work in haku-state**, in the shape the ducktape agent
+   sandboxes already use. **The gap:** SDK hooks are in-process in the _console_, and the
+   console's service account deliberately has no `exec` into `haku-claude-sandbox` — so the
+   hook cannot inspect the sandbox's git state itself. Two ways out: widen the console's SA,
+   which moves a boundary that was drawn on purpose; or route the check through
+   `haku-sandbox-mcp`, which already has that capability and is already in the console's
+   catalog. Prefer the second — the console keeps its narrow authority and nothing new is
+   granted. **Open:** whether that call goes through the approval queue or executes directly
+   as console-internal work.
+
+### Phase 3 — Survive
 
 Always-up sandbox (R3.2) — the claim's `shutdownTime` and `session_ttl_seconds` both exist
 to expire it, so both must change. Reconnect rather than terminal failure: `handle_runner`
@@ -588,12 +623,12 @@ today calls `store.fail()` on `WebSocketDisconnect` and closes the session, whic
 precisely wrong once the sandbox is meant to outlive a connection (R3.4). Then `event_id`
 dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
 
-### Phase 3 — Make it pleasant
+### Phase 4 — Make it pleasant
 
 Debounce and batch rendering with provenance (R2.1, R2.4, R2.7); typing indicator (R6.1);
 `m.notice` lifecycle messages carrying the session ID (R7).
 
-### Phase 4 — Reads
+### Phase 5 — Reads
 
 The SDK-hosted in-process MCP server and its read tools (R5.2, R11.3). A new pattern for
 this repo, and independent of everything above — which is why it comes last despite being
@@ -609,7 +644,7 @@ for after Matrix has proven itself, not before.
 
 ### Risks, in the order they will be met
 
-1. **Always-up contradicts the current sandbox lifecycle.** Phase 2 is a change of shape,
+1. **Always-up contradicts the current sandbox lifecycle.** Phase 3 is a change of shape,
    not a config value.
 2. **Subscription OAuth over a genuinely long-lived session.** The compatibility smoke
    test ran for 11 seconds, and <agent_sdk_sandbox_runtime.md> lists expiry, revocation
