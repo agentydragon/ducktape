@@ -98,6 +98,14 @@ spec:
               value: "@haku:allegedly.works"
             - name: HAKU_CONSOLE_MATRIX__OPERATOR_USER_ID
               value: "@agentydragon:allegedly.works"
+            # The Authentik sub for the MXID above; Matrix has no OIDC identity of its own,
+            # so this pair is the whole sender-to-Operator mapping (R9.3). Same value the
+            # static Haku Agent already uses to find its Operator.
+            - name: HAKU_CONSOLE_MATRIX__OPERATOR_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_subject
             - name: HAKU_CONSOLE_MATRIX__PASSWORD
               valueFrom:
                 secretKeyRef:

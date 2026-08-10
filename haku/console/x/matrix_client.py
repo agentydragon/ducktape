@@ -162,10 +162,21 @@ class MatrixClient:
         `txn_id` makes the send idempotent: a retry with the same value is deduplicated by
         the homeserver rather than posting twice.
         """
+        return await self._send(token, room_id, "m.text", body, txn_id)
+
+    async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
+        """Send an `m.notice`, returning its event ID.
+
+        Lifecycle and status messages are notices rather than plain text (R7) so clients
+        style them apart from Haku's answers and bots ignore them by convention.
+        """
+        return await self._send(token, room_id, "m.notice", body, txn_id)
+
+    async def _send(self, token: str, room_id: str, msgtype: str, body: str, txn_id: str) -> str:
         self._client.access_token = token
         response = _unwrap(
             await self._client.room_send(
-                room_id, message_type="m.room.message", content={"msgtype": "m.text", "body": body}, tx_id=txn_id
+                room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}, tx_id=txn_id
             ),
             RoomSendResponse,
         )

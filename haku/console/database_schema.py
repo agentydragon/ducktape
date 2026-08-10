@@ -926,3 +926,28 @@ class MatrixSyncState(Base):
     user_id: Mapped[str] = mapped_column(Text, primary_key=True)
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_batch: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MatrixConversation(Base):
+    """The one room Haku services, and the chat session bound to it.
+
+    Keyed by bot user rather than by room, which is what makes "one room at a time"
+    (R3.6a) a property of the schema instead of a rule the code has to remember: a second
+    room cannot be recorded without displacing the first.
+
+    Deliberately separate from `matrix_sync_state` even though both are singletons keyed
+    the same way. The sync loop and the session supervisor run as independent tasks under
+    one advisory lock, and giving them separate rows keeps a slow session claim from
+    contending with the watermark write on every pass.
+    """
+
+    __tablename__ = "matrix_conversation"
+
+    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    room_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # The chat session currently serving the room. Null between a session dying and the
+    # supervisor replacing it — an expected state, not a broken one.
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="SET NULL"), nullable=True
+    )
+    joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

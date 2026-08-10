@@ -182,6 +182,14 @@ class MatrixConfig(BaseModel):
     homeserver: str
     user_id: str
     operator_user_id: str = Field(description="The only MXID whose room invitations are joined (R3.6).")
+    operator_subject: str = Field(
+        description=(
+            "The Authentik `sub_mode=user_id` value for `operator_user_id`, resolved once to a "
+            "canonical Operator UUID. Matrix has no OIDC identity of its own, so this deploy-time "
+            "pair is the whole sender-to-Operator mapping (R9.3); the MXID never carries authority "
+            "on its own."
+        )
+    )
     device_id: str = Field(
         default="haku-console",
         description="Pinned so repeated logins reuse one device instead of leaving a new one per restart.",

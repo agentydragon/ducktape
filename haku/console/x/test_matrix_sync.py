@@ -15,7 +15,12 @@ USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
 ROOM = "!room:allegedly.works"
 
-CONFIG = MatrixConfig(homeserver="https://matrix.allegedly.works", user_id=USER, operator_user_id=OPERATOR)
+CONFIG = MatrixConfig(
+    homeserver="https://matrix.allegedly.works",
+    user_id=USER,
+    operator_user_id=OPERATOR,
+    operator_subject="authentik-user-id",
+)
 
 
 @dataclass
@@ -48,6 +53,7 @@ class _FakeMatrix:
     result: SyncResult
     joined: list[str] = field(default_factory=list)
     sent: list[tuple[str, str, str]] = field(default_factory=list)
+    notices: list[tuple[str, str]] = field(default_factory=list)
     token_valid: bool = True
     logins: int = 0
 
@@ -69,10 +75,42 @@ class _FakeMatrix:
         self.sent.append((room_id, body, txn_id))
         return f"$sent-{len(self.sent)}"
 
+    async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
+        self.notices.append((room_id, body))
+        return f"$notice-{len(self.notices)}"
 
-def _service(result: SyncResult, store: _FakeStore | None = None) -> tuple[MatrixSyncService, _FakeMatrix, _FakeStore]:
+
+@dataclass
+class _FakeConversations:
+    """The bound room, or None before any invite has been accepted."""
+
+    room: str | None = None
+
+    async def load(self, user_id: str):
+        return _Bound(self.room) if self.room is not None else None
+
+    async def claim_room(self, user_id: str, room_id: str) -> str:
+        if self.room is None:
+            self.room = room_id
+        return self.room
+
+
+@dataclass
+class _Bound:
+    room_id: str
+
+
+def _service(
+    result: SyncResult, store: _FakeStore | None = None, room: str | None = ROOM
+) -> tuple[MatrixSyncService, _FakeMatrix, _FakeStore]:
     store = store or _FakeStore()
-    service = MatrixSyncService(CONFIG, SecretStr("pw"), engine=None, store=store)  # type: ignore[arg-type]
+    service = MatrixSyncService(
+        CONFIG,
+        SecretStr("pw"),
+        engine=None,  # type: ignore[arg-type]
+        store=store,  # type: ignore[arg-type]
+        conversations=_FakeConversations(room),  # type: ignore[arg-type]
+    )
     matrix = _FakeMatrix(result)
     service._client = matrix  # type: ignore[assignment]
     return service, matrix, store
@@ -91,17 +129,57 @@ async def test_echoes_an_operator_message():
 
 
 async def test_joins_an_invite_from_the_operator():
-    service, matrix, _ = _service(SyncResult("s2", (), (Invite(room_id=ROOM, inviter=OPERATOR),)))
+    service, matrix, _ = _service(SyncResult("s2", (), (Invite(room_id=ROOM, inviter=OPERATOR),)), room=None)
 
     await service.sync_once("tok")
 
     assert matrix.joined == [ROOM]
 
 
+async def test_refuses_a_second_room_and_says_so_in_the_first():
+    """R3.6a — joining would put Haku in a room nothing services, which reads as listening."""
+    other = "!other:allegedly.works"
+    service, matrix, _ = _service(SyncResult("s2", (), (Invite(room_id=other, inviter=OPERATOR),)))
+
+    await service.sync_once("tok")
+
+    assert matrix.joined == []
+    [(room_id, body)] = matrix.notices
+    assert room_id == ROOM
+    assert "still serving" in body
+
+
+async def test_ignores_messages_from_a_room_that_is_not_the_live_one():
+    service, matrix, _ = _service(
+        SyncResult("s2", (InboundMessage("!stray:allegedly.works", "$e", OPERATOR, "hi", 1),), ())
+    )
+
+    await service.sync_once("tok")
+
+    assert matrix.sent == []
+
+
+async def test_announce_posts_into_the_live_room():
+    service, matrix, _ = _service(SyncResult("s2", (), ()), store=_FakeStore(token="cached"))
+
+    await service.announce("provisioning a sandbox")
+
+    assert matrix.notices == [(ROOM, "provisioning a sandbox")]
+
+
+async def test_announce_is_a_no_op_with_no_room_bound():
+    service, matrix, _ = _service(SyncResult("s2", (), ()), room=None)
+
+    await service.announce("provisioning a sandbox")
+
+    assert matrix.notices == []
+
+
 async def test_leaves_an_invite_from_anybody_else_pending():
     """R3.6 — only the operator's invites are joined; others are surfaced, not acted on."""
     service, matrix, _ = _service(
-        SyncResult("s2", (), (Invite(room_id="!other:allegedly.works", inviter="@stranger:allegedly.works"),))
+        SyncResult("s2", (), (Invite(room_id="!other:allegedly.works", inviter="@stranger:allegedly.works"),)),
+        room=None,
     )
 
     await service.sync_once("tok")

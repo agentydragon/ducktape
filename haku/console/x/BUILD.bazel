@@ -21,10 +21,36 @@ py_test(
 )
 
 py_library(
+    name = "matrix_session",
+    srcs = ["matrix_session.py"],
+    deps = [
+        "//haku/console:claude_chat",
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity_store",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_matrix_session",
+    srcs = ["test_matrix_session.py"],
+    deps = [
+        ":matrix_session",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "matrix_sync",
     srcs = ["matrix_sync.py"],
     deps = [
         ":matrix_client",
+        ":matrix_session",
         "//haku/console:config",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
