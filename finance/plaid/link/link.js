@@ -122,12 +122,15 @@ async function selectInstitution(institutionId) {
     .join("");
   box.classList.toggle("visible", detail.syncable_products.length > 0);
   const hint = document.getElementById("institution-hint");
-  // Name the subject in both sentences. "Also offered but not synced here" read as either "not
-  // synced by this institution" or "not synced by this app", which are opposite meanings.
+  // Two things this sentence has to get right. "Also offered but not synced here" read as either
+  // "not synced by this institution" or "not synced by this app" — opposite claims. And it is
+  // about products this app does not *request*, not data it lacks: `balance` and
+  // `transactions_refresh` are on-demand re-pull products, while balances and transactions are
+  // already mirrored from /accounts/get and /transactions/get.
   if (detail.syncable_products.length === 0) {
-    hint.textContent = `${detail.name} offers nothing this app can mirror.`;
+    hint.textContent = `${detail.name} offers no Plaid product this app knows how to sync.`;
   } else if (detail.unsupported_products.length > 0) {
-    hint.textContent = `${detail.name} also offers products this app does not mirror: ${detail.unsupported_products.join(", ")}.`;
+    hint.textContent = `${detail.name} also offers Plaid products this app does not request: ${detail.unsupported_products.join(", ")}.`;
   } else {
     hint.textContent = "";
   }
