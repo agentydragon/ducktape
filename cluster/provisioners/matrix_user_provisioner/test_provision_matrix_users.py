@@ -13,10 +13,12 @@ from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import 
     ADMIN_USERNAME,
     BOT_DISPLAYNAME,
     BOT_USERNAME,
+    RETIRED_BOT_USERNAME,
     SERVER_NAME,
     SYNAPSE_URL,
     _bot_exists,
     admin_login,
+    deactivate_retired_bot,
     register_admin,
     upsert_bot,
 )
@@ -150,6 +152,39 @@ def test_admin_login_pins_the_device_id():
     [(_, _, body)] = client.calls
     assert body is not None
     assert body["device_id"] == ADMIN_DEVICE_ID
+
+
+def test_deactivate_retired_bot_erases_the_account():
+    client = _FakeClient(
+        [
+            _response(200, {"name": f"@{RETIRED_BOT_USERNAME}:{SERVER_NAME}", "deactivated": False}),
+            _response(200, {}),  # deactivate
+        ]
+    )
+
+    deactivate_retired_bot(client, "admin-token")
+
+    [(method, url, body)] = [c for c in client.calls if c[0] == "POST"]
+    assert method == "POST"
+    assert url.endswith(f"/_synapse/admin/v1/deactivate/%40{RETIRED_BOT_USERNAME}%3A{SERVER_NAME}")
+    assert body == {"erase": True}
+
+
+def test_deactivate_retired_bot_is_a_noop_once_deactivated():
+    """Otherwise every reconcile would re-POST a deactivation that already happened."""
+    client = _FakeClient([_response(200, {"name": f"@{RETIRED_BOT_USERNAME}:{SERVER_NAME}", "deactivated": True})])
+
+    deactivate_retired_bot(client, "admin-token")
+
+    assert [c for c in client.calls if c[0] == "POST"] == []
+
+
+def test_deactivate_retired_bot_is_a_noop_when_absent():
+    client = _FakeClient([_response(404, {"errcode": "M_NOT_FOUND"})])
+
+    deactivate_retired_bot(client, "admin-token")
+
+    assert [c for c in client.calls if c[0] == "POST"] == []
 
 
 if __name__ == "__main__":

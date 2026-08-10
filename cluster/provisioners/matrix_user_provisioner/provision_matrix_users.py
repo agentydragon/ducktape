@@ -41,7 +41,7 @@ class SynapseClient(Protocol):
     inject a lightweight fake without subclassing httpx.Client."""
 
     def get(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response: ...
-    def post(self, url: str, *, json: dict | None = None) -> httpx.Response: ...
+    def post(self, url: str, *, json: dict | None = None, headers: dict[str, str] | None = None) -> httpx.Response: ...
     def put(self, url: str, *, json: dict | None = None, headers: dict[str, str] | None = None) -> httpx.Response: ...
 
 
@@ -89,15 +89,54 @@ def _admin_user_url(encoded_mxid: str) -> str:
     return f"{SYNAPSE_URL}/_synapse/admin/v2/users/{encoded_mxid}"
 
 
-def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> bool:
-    """Check if bot user already exists in Synapse."""
+def _get_user(client: SynapseClient, access_token: str, encoded_mxid: str) -> dict | None:
+    """The admin API's view of a user, or None if there is no such user."""
     resp = client.get(_admin_user_url(encoded_mxid), headers={"Authorization": f"Bearer {access_token}"})
     if resp.status_code == 404:
-        return False
+        return None
     resp.raise_for_status()
     # Synapse returns the user object even for non-existent users but with
     # no "name" field. A real user always has "name".
-    return "name" in resp.json()
+    body = resp.json()
+    return body if "name" in body else None
+
+
+def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> bool:
+    """Check if bot user already exists in Synapse."""
+    return _get_user(client, access_token, encoded_mxid) is not None
+
+
+# CLEANUP(added 2026-08-10): Delete deactivate_retired_bot, RETIRED_BOT_USERNAME
+#   and their tests once @openclaw is deactivated on the live homeserver —
+#   verify with GET /_synapse/admin/v2/users/%40openclaw%3Aallegedly.works
+#   reporting `deactivated: true`.
+RETIRED_BOT_USERNAME = "openclaw"
+
+
+def deactivate_retired_bot(client: SynapseClient, admin_token: str) -> None:
+    """Deactivate the account this provisioner's bot slot used to hold.
+
+    @openclaw is an artifact of the rename to @haku: OpenClaw was retired, but a
+    provisioner run between un-parking the homeserver and the rename landing
+    created the account anyway. Its password left git with the rename, so nobody
+    can log in as it and nothing manages it. Deactivation is irreversible, which
+    is fine — the account has no rooms and no history.
+    """
+    encoded_mxid = urllib.parse.quote(f"@{RETIRED_BOT_USERNAME}:{SERVER_NAME}")
+    user = _get_user(client, admin_token, encoded_mxid)
+    if user is None:
+        logger.info("Cleanup: @%s:%s does not exist", RETIRED_BOT_USERNAME, SERVER_NAME)
+        return
+    if user.get("deactivated"):
+        logger.info("Cleanup: @%s:%s already deactivated", RETIRED_BOT_USERNAME, SERVER_NAME)
+        return
+    resp = client.post(
+        f"{SYNAPSE_URL}/_synapse/admin/v1/deactivate/{encoded_mxid}",
+        json={"erase": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    resp.raise_for_status()
+    logger.info("Cleanup: Deactivated @%s:%s", RETIRED_BOT_USERNAME, SERVER_NAME)
 
 
 def upsert_bot(client: SynapseClient, admin_token: str, bot_password: str) -> None:
@@ -134,6 +173,7 @@ def main() -> None:
         admin_token = admin_login(client, admin_password)
         logger.info("Logged in as @%s:%s", ADMIN_USERNAME, SERVER_NAME)
         upsert_bot(client, admin_token, bot_password)
+        deactivate_retired_bot(client, admin_token)
     logger.info("Done: all Matrix users provisioned")
 
 
