@@ -9,10 +9,11 @@ the request builder and the response parser. That is stronger evidence than a tr
 code that builds the request rather than one sample of it.
 
 **Langfuse holds none of this**, and cannot: it sees what passes through LiteLLM, and auto mode
-talks to `api.anthropic.com` directly (the gap <litellm*oauth_passthrough.md> is about). Not an
-instrumentation problem — `llm.request.type` across a 150-observation sample is
+talks to `api.anthropic.com` directly — the gap the
+[traffic-path note](litellm_oauth_passthrough.md) is about. Not an instrumentation problem:
+`llm.request.type` across a 150-observation sample is
 `anthropic_messages` 129 / `acompletion` 18 / `aembedding` 3, so the Messages API is the
-\_dominant* traced path there. What a trace would still add is real token counts and latency, and
+dominant traced path there. What a trace would still add is real token counts and latency, and
 that stays unavailable until some auto-mode traffic goes through the proxy.
 
 ## Shape
