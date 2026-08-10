@@ -22,8 +22,8 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 
-from finance.plaid.db.link_profiles import Product
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
+from finance.plaid.db.products import Product
 from finance.plaid.db.secret_store import SecretStore
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,6 @@ async def _sync_link_inner(
     await storage.upsert_link(
         item_id=link.item_id,
         access_token_secret=link.access_token_secret,
-        link_profile=link.link_profile,
         products_requested=link.products_requested,
         transaction_days_requested=link.transaction_days_requested,
         products_authorized=item_payload.get("products") or link.products_authorized,

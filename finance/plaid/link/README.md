@@ -32,12 +32,13 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
 
 `/` and `/link` both serve the management UI for active Plaid Items. It can:
 
-- create a new Item from a product profile or advanced product checklist;
+- search institutions, show what the chosen one supports, and create an Item for the
+  products it offers that this app can sync (all preselected);
 - choose the Transactions history depth for new Items and show the recorded or
   observed history window for active Items;
 - show active Items, requested/authorized/billed products, sync time, and Secret name;
 - launch Plaid update mode to repair or renew an Item;
-- request additional consented products for an existing Item, then sync it;
+- widen an existing Item to every product its institution supports, then sync it;
 - run a manual sync for one Item;
 - remove an Item through `/item/remove`, delete its access-token Secret, and
   purge its mirrored link/account/transaction rows. Append-only `sync_runs` and

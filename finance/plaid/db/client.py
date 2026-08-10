@@ -13,6 +13,9 @@ from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
+from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
+from plaid.model.institutions_search_request import InstitutionsSearchRequest
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.item_get_request import ItemGetRequest
@@ -26,7 +29,7 @@ from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCr
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from finance.plaid.db.link_profiles import LinkProfile, Product, products_for_profile
+from finance.plaid.db.products import Product
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
 PLAID_HOSTS = {"sandbox": plaid.Environment.Sandbox, "production": plaid.Environment.Production}
@@ -51,6 +54,23 @@ class LinkTokenResult:
 class PublicTokenExchange:
     access_token: str
     item_id: str
+
+
+@dataclass(frozen=True)
+class InstitutionSummary:
+    institution_id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class InstitutionDetail:
+    institution_id: str
+    name: str
+    # Everything Plaid says this institution offers, including products this app cannot sync. The
+    # caller narrows it; the raw list is kept so the UI can say "supported but not synced here"
+    # rather than silently omitting.
+    products: list[str]
+    url: str | None
 
 
 class PlaidClientError(RuntimeError):
@@ -133,6 +153,8 @@ class PlaidSdkApiLike(Protocol):
     def sandbox_public_token_create(
         self, request: SandboxPublicTokenCreateRequest, /
     ) -> SandboxPublicTokenCreateResponse: ...
+    def institutions_search(self, request: InstitutionsSearchRequest, /) -> DictResponse: ...
+    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest, /) -> DictResponse: ...
 
 
 class PlaidClient:
@@ -157,17 +179,54 @@ class PlaidClient:
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
         self.close()
 
+    def search_institutions(self, query: str, *, count: int = 10) -> list[InstitutionSummary]:
+        """Institutions matching a typeahead query, unfiltered by product.
+
+        Plaid's `products` filter would return only institutions supporting *all* of them, which
+        inverts the flow this serves: the user names their bank, and the products follow from it.
+        """
+        # `products` and `options` are omitted rather than passed as None: the generated SDK
+        # type-checks every kwarg it receives and rejects None for both.
+        request = InstitutionsSearchRequest(query=query, country_codes=[CountryCode("US")])
+        try:
+            response = self._api.institutions_search(request).to_dict()
+        except PlaidApiException as exc:
+            raise _plaid_api_error("/institutions/search", exc) from exc
+        institutions = cast(list[dict[str, object]], response.get("institutions") or [])
+        return [
+            InstitutionSummary(institution_id=str(item["institution_id"]), name=str(item["name"]))
+            for item in institutions[:count]
+        ]
+
+    def get_institution(self, institution_id: str) -> InstitutionDetail:
+        request = InstitutionsGetByIdRequest(
+            institution_id=institution_id,
+            country_codes=[CountryCode("US")],
+            options=InstitutionsGetByIdRequestOptions(include_optional_metadata=True),
+        )
+        try:
+            response = self._api.institutions_get_by_id(request).to_dict()
+        except PlaidApiException as exc:
+            raise _plaid_api_error("/institutions/get_by_id", exc) from exc
+        institution = cast(dict[str, object], response["institution"])
+        url = institution.get("url")
+        return InstitutionDetail(
+            institution_id=str(institution["institution_id"]),
+            name=str(institution["name"]),
+            products=[str(product) for product in cast(list[object], institution.get("products") or [])],
+            url=str(url) if url else None,
+        )
+
     def create_link_token(
         self,
         *,
-        profile: LinkProfile,
+        products: list[str],
         redirect_uri: str,
         client_user_id: str,
-        advanced_products: list[str] | None = None,
+        institution_id: str | None = None,
         transaction_days_requested: int = 730,
         client_name: str = "Plaid MCP",
     ) -> LinkTokenResult:
-        products = products_for_profile(profile, advanced_products)
         request_args: dict[str, object] = {
             "client_name": client_name,
             "user": LinkTokenCreateRequestUser(client_user_id=client_user_id),
@@ -176,6 +235,10 @@ class PlaidClient:
             "language": "en",
             "redirect_uri": redirect_uri,
         }
+        # Skips Link's own institution picker: the caller already chose one, and picking twice is
+        # how a token's products end up describing a different bank than the user lands on.
+        if institution_id is not None:
+            request_args["institution_id"] = institution_id
         if Product.TRANSACTIONS.value in products:
             request_args["transactions"] = {"days_requested": transaction_days_requested}
         request = LinkTokenCreateRequest(**request_args)

@@ -14,7 +14,6 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 
-from finance.plaid.db.link_profiles import LinkProfile
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
 from finance.plaid.db.sync import redact_payload, sync_all, sync_link
 
@@ -36,15 +35,12 @@ def test_redact_payload_returns_json_serializable_dates() -> None:
     json.dumps(payload)
 
 
-def _stored_link(
-    item_id: str, products: list[str], *, profile: LinkProfile = LinkProfile.CREDIT_CARD_DETAIL
-) -> StoredLink:
+def _stored_link(item_id: str, products: list[str]) -> StoredLink:
     return StoredLink(
         item_id=item_id,
         label=None,
         institution_id="ins_1",
         institution_name="Testbank",
-        link_profile=profile,
         products_requested=products,
         transaction_days_requested=None,
         products_authorized=products,
@@ -160,11 +156,10 @@ class _FakeSecrets:
         raise NotImplementedError
 
 
-async def test_investment_transactions_follow_the_product_not_the_profile() -> None:
-    """The profile used to gate this call, so a link whose products grew through update mode kept
-    the sync behaviour its original profile implied — the live Merrill link requests investments
-    while still labelled `cashflow`, and its investment transactions were silently never pulled."""
-    link = _stored_link("item-merrill", ["investments"], profile=LinkProfile.CASHFLOW)
+async def test_investment_transactions_follow_the_requested_products() -> None:
+    """This used to be gated on the link's profile name, which drifted from the products actually
+    requested; the profile is gone and products_requested is the only signal."""
+    link = _stored_link("item-merrill", ["investments"])
     storage = _FakeStorage(links=[link])
     api = _FakeApi()
 

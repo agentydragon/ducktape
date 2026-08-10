@@ -15,7 +15,6 @@ from sqlalchemy import delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from finance.plaid.db.link_profiles import LinkProfile
 from finance.plaid.db.schema import (
     AccountRow,
     BalanceSnapshotRow,
@@ -51,7 +50,6 @@ class StoredLink:
     label: str | None
     institution_id: str | None
     institution_name: str | None
-    link_profile: LinkProfile
     products_requested: list[str]
     transaction_days_requested: int | None
     products_authorized: list[str]
@@ -101,7 +99,6 @@ class PlaidLinkStorage:
         *,
         item_id: str,
         access_token_secret: str,
-        link_profile: LinkProfile,
         products_requested: list[str],
         institution_id: str | None,
         institution_name: str | None,
@@ -117,7 +114,6 @@ class PlaidLinkStorage:
             "institution_id": institution_id,
             "institution_name": institution_name,
             "label": label,
-            "link_profile": link_profile.value,
             "products_requested": products_requested,
             "products_authorized": products_authorized or products_requested,
             "products_billed": products_billed or [],
@@ -182,14 +178,11 @@ class PlaidLinkStorage:
                 )
             await session.commit()
 
-    async def mark_link_update_succeeded(
-        self, *, item_id: str, link_profile: LinkProfile, products_requested: list[str]
-    ) -> StoredLink | None:
+    async def mark_link_update_succeeded(self, *, item_id: str, products_requested: list[str]) -> StoredLink | None:
         async with self._session_factory() as session:
             row = await session.get(LinkRow, item_id)
             if row is None:
                 return None
-            row.link_profile = link_profile.value
             row.products_requested = products_requested
             row.products_authorized = _merge_products(list(row.products_authorized), products_requested)
             row.status = "active"
@@ -486,7 +479,6 @@ def _stored_link(
         label=row.label,
         institution_id=row.institution_id,
         institution_name=row.institution_name,
-        link_profile=LinkProfile(row.link_profile),
         products_requested=list(row.products_requested),
         transaction_days_requested=row.transaction_days_requested,
         products_authorized=list(row.products_authorized),

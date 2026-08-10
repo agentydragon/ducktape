@@ -5,6 +5,8 @@ from typing import cast
 import pytest_bazel
 from fastapi.testclient import TestClient
 from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.institutions_search_request import InstitutionsSearchRequest
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
 from plaid.model.item_get_request import ItemGetRequest
@@ -16,7 +18,6 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 
 from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
-from finance.plaid.db.link_profiles import LinkProfile
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
 from finance.plaid.link.app import PlaidWebClient, create_app
 
@@ -31,7 +32,6 @@ class _FakeStorage:
             label="Chase personal",
             institution_id="ins_3",
             institution_name="Chase",
-            link_profile=LinkProfile.CREDIT_CARD_DETAIL,
             products_requested=["transactions", "liabilities"],
             transaction_days_requested=90,
             products_authorized=["transactions"],
@@ -108,6 +108,21 @@ class _FakePlaidApi:
     def liabilities_get(self, request: LiabilitiesGetRequest) -> object:
         raise AssertionError("unexpected sync call in smoke test")
 
+    def institutions_search(self, request: InstitutionsSearchRequest) -> SimpleNamespace:
+        return SimpleNamespace(to_dict=lambda: {"institutions": [{"institution_id": "ins_3", "name": "Chase"}]})
+
+    def institutions_get_by_id(self, request: InstitutionsGetByIdRequest) -> SimpleNamespace:
+        return SimpleNamespace(
+            to_dict=lambda: {
+                "institution": {
+                    "institution_id": "ins_3",
+                    "name": "Chase",
+                    "url": "https://chase.example",
+                    "products": ["auth", "transactions", "identity", "liabilities"],
+                }
+            }
+        )
+
 
 def _client(
     *, storage: _FakeStorage | None = None, secrets: _FakeSecrets | None = None, api: _FakePlaidApi | None = None
@@ -171,7 +186,6 @@ def test_list_links_exposes_product_and_secret_state() -> None:
             "label": "Chase personal",
             "institution_id": "ins_3",
             "institution_name": "Chase",
-            "link_profile": "credit_card_detail",
             "products_requested": ["transactions", "liabilities"],
             "transaction_days_requested": 90,
             "earliest_transaction_date": "2026-03-02",
@@ -202,20 +216,57 @@ def test_get_link_state_unknown_item_returns_404() -> None:
     assert response.status_code == 404
 
 
-def test_web_config_exposes_default_history_depth_and_the_profile_catalog() -> None:
+def test_web_config_exposes_default_history_depth() -> None:
     with _client() as client:
         response = client.get("/api/config")
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["transaction_days"] == 730
-    assert body["max_transaction_days"] == 730
-    # The dropdown is built from this, so a profile the backend knows must reach the UI with the
-    # products it actually requests attached.
-    assert [entry["value"] for entry in body["profiles"]] == [p.value for p in LinkProfile]
-    by_value = {entry["value"]: entry for entry in body["profiles"]}
-    assert by_value["credit_card_detail"]["products"] == ["transactions", "liabilities"]
-    assert by_value["advanced"]["products"] == []
+    assert response.json() == {"transaction_days": 730, "max_transaction_days": 730}
+
+
+def test_institution_search_returns_typeahead_candidates() -> None:
+    with _client() as client:
+        response = client.get("/api/institutions", params={"q": "cha"})
+
+    assert response.status_code == 200
+    assert response.json() == [{"institution_id": "ins_3", "name": "Chase"}]
+
+
+def test_institution_products_split_into_syncable_and_merely_offered() -> None:
+    """The UI preselects what this app can mirror and names the rest, so a short checkbox list reads
+    as a deliberate narrowing rather than an institution that offers little."""
+    with _client() as client:
+        response = client.get("/api/institutions/ins_3")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "institution_id": "ins_3",
+        "name": "Chase",
+        "url": "https://chase.example",
+        "syncable_products": ["transactions", "liabilities"],
+        "unsupported_products": ["auth", "identity"],
+    }
+
+
+def test_link_token_is_pinned_to_the_chosen_institution() -> None:
+    """Link would otherwise show its own institution picker, and a token minted for one bank's
+    products could be spent on another."""
+    api = _FakePlaidApi()
+    with _client(api=api) as client:
+        response = client.post(
+            "/api/link-token", json={"institution_id": "ins_3", "products": ["transactions", "liabilities"]}
+        )
+
+    assert response.status_code == 200
+    assert api.link_token_requests[0]["institution_id"] == "ins_3"
+    assert api.link_token_requests[0]["products"] == ["transactions", "liabilities"]
+
+
+def test_link_token_rejects_an_empty_product_set() -> None:
+    with _client() as client:
+        response = client.post("/api/link-token", json={"institution_id": "ins_3", "products": []})
+
+    assert response.status_code == 422
 
 
 def test_create_link_token_initializes_requested_products() -> None:
@@ -223,7 +274,7 @@ def test_create_link_token_initializes_requested_products() -> None:
     client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
     result = client.create_link_token(
-        profile=LinkProfile.CREDIT_CARD_DETAIL,
+        products=["transactions", "liabilities"],
         redirect_uri="https://example.test/link/callback",
         client_user_id="owner",
     )
@@ -249,7 +300,7 @@ def test_create_link_token_allows_custom_transaction_history_depth() -> None:
     client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
     result = client.create_link_token(
-        profile=LinkProfile.CASHFLOW,
+        products=["transactions"],
         redirect_uri="https://example.test/link/callback",
         client_user_id="owner",
         transaction_days_requested=180,
@@ -264,7 +315,7 @@ def test_create_link_token_omits_transactions_config_without_transactions_produc
     client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
     result = client.create_link_token(
-        profile=LinkProfile.INVESTMENTS, redirect_uri="https://example.test/link/callback", client_user_id="owner"
+        products=["investments"], redirect_uri="https://example.test/link/callback", client_user_id="owner"
     )
 
     assert result.products == ["investments"]

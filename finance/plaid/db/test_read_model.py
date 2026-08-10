@@ -12,7 +12,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from finance.plaid.db.link_profiles import LinkProfile
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
 from finance.plaid.db.schema import async_session_factory
@@ -62,7 +61,6 @@ async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investmen
     await storage.upsert_link(
         item_id=item_id,
         access_token_secret=f"{item_id}-token",
-        link_profile=LinkProfile.INVESTMENTS,
         products_requested=["investments"],
         institution_id="ins_investments",
         institution_name="Investment Test",

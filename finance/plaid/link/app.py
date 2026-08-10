@@ -13,14 +13,22 @@ from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Path as ApiPath
+from fastapi import FastAPI, HTTPException, Path as ApiPath, Query
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-from finance.plaid.db.client import LinkTokenResult, PlaidClient, PlaidClientError, PlaidCreds, PublicTokenExchange
+from finance.plaid.db.client import (
+    InstitutionDetail,
+    InstitutionSummary,
+    LinkTokenResult,
+    PlaidClient,
+    PlaidClientError,
+    PlaidCreds,
+    PublicTokenExchange,
+)
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_profiles import LinkProfile, Product, ProfileInfo, products_for_profile, profile_catalog
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
+from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link
 
@@ -36,8 +44,8 @@ _LINK_JS = _ASSETS.joinpath("link.js").read_text("utf-8")
 
 
 class LinkTokenRequest(BaseModel):
-    profile: LinkProfile
-    advanced_products: list[str] | None = None
+    institution_id: str
+    products: list[Product] = Field(min_length=1)
     transaction_days_requested: int | None = Field(default=None, ge=1, le=MAX_TRANSACTION_DAYS)
 
 
@@ -50,13 +58,27 @@ class LinkTokenResponse(BaseModel):
 class WebConfigResponse(BaseModel):
     transaction_days: int
     max_transaction_days: int = MAX_TRANSACTION_DAYS
-    profiles: list[ProfileInfo] = Field(default_factory=list)
+
+
+class InstitutionSearchResult(BaseModel):
+    institution_id: str
+    name: str
+
+
+class InstitutionProductsResponse(BaseModel):
+    institution_id: str
+    name: str
+    url: str | None
+    # What the institution offers and this app can mirror; preselected in the UI.
+    syncable_products: list[Product]
+    # Offered but not mirrored here (auth, identity, ...). Shown so the list reads as a deliberate
+    # narrowing rather than a gap.
+    unsupported_products: list[str]
 
 
 class LinkUpdateTokenRequest(BaseModel):
     reason: Literal["repair", "add_scope"] = "repair"
-    profile: LinkProfile | None = None
-    advanced_products: list[str] | None = None
+    products: list[Product] | None = None
 
 
 class LinkUpdateTokenResponse(BaseModel):
@@ -66,7 +88,6 @@ class LinkUpdateTokenResponse(BaseModel):
 
 
 class CompleteLinkUpdateRequest(BaseModel):
-    profile: LinkProfile | None = None
     products: list[str] = Field(default_factory=list)
     sync: bool = True
 
@@ -77,8 +98,7 @@ class SyncResponse(BaseModel):
 
 class ExchangePublicTokenRequest(BaseModel):
     public_token: str
-    profile: LinkProfile
-    products: list[str]
+    products: list[str] = Field(min_length=1)
     transaction_days_requested: int | None = Field(default=None, ge=1, le=MAX_TRANSACTION_DAYS)
     label: str | None = None
     institution_id: str | None = None
@@ -90,7 +110,6 @@ class LinkSummary(BaseModel):
     label: str | None
     institution_id: str | None
     institution_name: str | None
-    link_profile: LinkProfile
     products_requested: list[str]
     transaction_days_requested: int | None
     earliest_transaction_date: str | None
@@ -111,13 +130,15 @@ class PlaidWebClient(PlaidApiLike, Protocol):
     def create_link_token(
         self,
         *,
-        profile: LinkProfile,
+        products: list[str],
         redirect_uri: str,
         client_user_id: str,
-        advanced_products: list[str] | None = None,
+        institution_id: str | None = None,
         transaction_days_requested: int = 730,
         client_name: str = "Plaid MCP",
     ) -> LinkTokenResult: ...
+    def search_institutions(self, query: str, *, count: int = 10) -> list[InstitutionSummary]: ...
+    def get_institution(self, institution_id: str) -> InstitutionDetail: ...
     def create_update_link_token(
         self,
         *,
@@ -235,16 +256,43 @@ def create_app(
 
     @app.get("/api/config")
     async def web_config() -> WebConfigResponse:
-        return WebConfigResponse(transaction_days=settings.transaction_days, profiles=profile_catalog())
+        return WebConfigResponse(transaction_days=settings.transaction_days)
+
+    @app.get("/api/institutions")
+    async def search_institutions(
+        q: Annotated[str, Query(min_length=2, description="Institution name typeahead")],
+    ) -> list[InstitutionSearchResult]:
+        try:
+            found = require_client().search_institutions(q)
+        except PlaidClientError as exc:
+            raise HTTPException(502, exc.public_detail()) from exc
+        return [InstitutionSearchResult(institution_id=i.institution_id, name=i.name) for i in found]
+
+    @app.get("/api/institutions/{institution_id}")
+    async def get_institution(
+        institution_id: Annotated[str, ApiPath(description="Plaid institution_id")],
+    ) -> InstitutionProductsResponse:
+        try:
+            institution = require_client().get_institution(institution_id)
+        except PlaidClientError as exc:
+            raise HTTPException(502, exc.public_detail()) from exc
+        syncable = syncable_products(institution.products)
+        return InstitutionProductsResponse(
+            institution_id=institution.institution_id,
+            name=institution.name,
+            url=institution.url,
+            syncable_products=syncable,
+            unsupported_products=sorted(set(institution.products) - {p.value for p in syncable}),
+        )
 
     @app.post("/api/link-token")
     async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
         try:
             result = require_client().create_link_token(
-                profile=body.profile,
+                products=[product.value for product in body.products],
+                institution_id=body.institution_id,
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
-                advanced_products=body.advanced_products,
                 transaction_days_requested=body.transaction_days_requested or settings.transaction_days,
             )
         except PlaidClientError as exc:
@@ -263,11 +311,10 @@ def create_app(
             raise HTTPException(502, exc.public_detail()) from exc
         secret_name = _secret_name_for_item(exchange.item_id)
         await require_secrets().write_access_token(secret_name, exchange.access_token)
-        requested = body.products or products_for_profile(body.profile)
+        requested = body.products
         link = await require_storage().upsert_link(
             item_id=exchange.item_id,
             access_token_secret=secret_name,
-            link_profile=body.profile,
             products_requested=requested,
             products_authorized=requested,
             products_billed=[],
@@ -323,10 +370,7 @@ def create_app(
         if current is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         products = _merge_products(current.products_requested, body.products)
-        profile = body.profile or current.link_profile
-        link = await require_storage().mark_link_update_succeeded(
-            item_id=item_id, link_profile=profile, products_requested=products
-        )
+        link = await require_storage().mark_link_update_succeeded(item_id=item_id, products_requested=products)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         if body.sync:
@@ -386,9 +430,9 @@ def _secret_name_for_item(item_id: str) -> str:
 
 
 def _requested_products_for_update(link: StoredLink, body: LinkUpdateTokenRequest) -> list[str]:
-    if body.reason == "repair" or body.profile is None:
+    if body.reason == "repair" or body.products is None:
         return link.products_requested
-    return products_for_profile(body.profile, body.advanced_products)
+    return [product.value for product in body.products]
 
 
 def _merge_products(*groups: list[str]) -> list[str]:
@@ -409,7 +453,6 @@ def _link_summary(link: StoredLink) -> LinkSummary:
         label=link.label,
         institution_id=link.institution_id,
         institution_name=link.institution_name,
-        link_profile=link.link_profile,
         products_requested=link.products_requested,
         transaction_days_requested=link.transaction_days_requested,
         earliest_transaction_date=link.earliest_transaction_date.isoformat()

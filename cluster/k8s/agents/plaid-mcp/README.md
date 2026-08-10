@@ -9,7 +9,7 @@ The deployment has two public surfaces:
 ```text
 Browser -> https://plaid-mcp.allegedly.works/link
   Gateway -> Authentik embedded proxy outpost -> plaid-mcp web UI (:8080)
-    - creates Plaid Link tokens from product profiles
+    - creates Plaid Link tokens for a chosen institution's supported products
     - exchanges public_tokens
     - writes per-Item access-token Secrets in the plaid-mcp namespace
     - runs initial sync into CNPG Postgres
@@ -38,9 +38,10 @@ There are no bespoke Plaid MCP tools. Agents read `links`, `accounts`,
 
 ## Link And Sync
 
-Use `https://plaid-mcp.allegedly.works/link` to add or remove links. The UI asks for a
-product profile before opening Plaid Link so each institution is initialized only for
-the data surfaces it needs.
+Use `https://plaid-mcp.allegedly.works/link` to add or remove links. Pick the institution
+in the typeahead; the UI looks up what that institution supports and offers exactly the
+products this app can mirror, so Link is never opened requesting a product the bank
+lacks — which would fail the whole session.
 
 `plaid-mcp-sync` runs every 12 hours and performs the full-refresh mirror. It
 uses date-window `/transactions/get` and `/investments/transactions/get`, not

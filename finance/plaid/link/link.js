@@ -1,16 +1,11 @@
 const pendingKey = "plaid-link-pending";
 let webConfig = { transaction_days: 730, max_transaction_days: 730 };
-// Profiles come from /api/config, which derives them from link_profiles.py. They used to be
-// duplicated here by hand and could disagree with what the backend actually requested.
-let profileInfo = [];
-function profileLabel(p) {
-  if (p.value === "advanced") return p.label + " — choose products";
-  return p.label + " — " + p.products.join(" + ");
-}
-function profileProductsFor(value) {
-  const found = profileInfo.find((p) => p.value === value);
-  return found ? found.products : [];
-}
+// The institution drives everything: pick it, ask Plaid what it offers, request that. Requesting a
+// product an institution does not support fails the whole Link, so a fixed product set chosen
+// before knowing the bank was the one thing guaranteed to break on some of them.
+let selectedInstitution = null;
+let searchSeq = 0;
+
 const statusEl = document.getElementById("status");
 
 function setStatus(message) {
@@ -26,20 +21,8 @@ function pills(products) {
   if (!products || products.length === 0) return '<span class="muted">none recorded</span>';
   return `<div class="pill-row">${products.map((product) => `<span class="pill">${escapeHtml(product)}</span>`).join("")}</div>`;
 }
-function profileSelect(link) {
-  const current = link.link_profile || "cashflow";
-  return `<select data-role="scope-profile">${profileInfo
-    .filter((p) => p.value !== "advanced")
-    .map(
-      (p) =>
-        `<option value="${p.value}" ${p.value === current ? "selected" : ""}>${escapeHtml(profileLabel(p))}</option>`
-    )
-    .join("")}</select>`;
-}
 function selectedProducts() {
-  const profile = document.getElementById("profile").value;
-  if (profile === "advanced") return advancedProducts();
-  return profileProductsFor(profile);
+  return Array.from(document.querySelectorAll("#products input:checked")).map((input) => input.value);
 }
 function historySummary(link) {
   const hasTransactions =
@@ -103,16 +86,53 @@ async function loadConfig() {
   const input = document.getElementById("transaction-days");
   input.max = String(webConfig.max_transaction_days);
   input.value = String(webConfig.transaction_days);
-  profileInfo = webConfig.profiles || [];
-  const select = document.getElementById("profile");
-  select.innerHTML = profileInfo
-    .map((p) => `<option value="${p.value}">${escapeHtml(profileLabel(p))}</option>`)
+  setFormEnabled();
+}
+
+async function searchInstitutions(query) {
+  const seq = ++searchSeq;
+  const results = await apiFetch(`/api/institutions?q=${encodeURIComponent(query)}`);
+  // Keystrokes race; a slow earlier request must not overwrite a newer result set.
+  if (seq !== searchSeq) return;
+  const box = document.getElementById("institution-results");
+  box.innerHTML = results
+    .map(
+      (i) => `<button type="button" data-institution="${escapeHtml(i.institution_id)}">${escapeHtml(i.name)}</button>`
+    )
     .join("");
-  document.getElementById("profile-hint").textContent =
-    "Plaid fails the whole Link if the institution does not support every product listed, " +
-    "so a wider surface is more likely to fail, not more complete. Pick the narrowest that " +
-    "covers what you need.";
-  setAdvancedVisibility();
+  box.classList.toggle("hidden", results.length === 0);
+}
+
+async function selectInstitution(institutionId) {
+  document.getElementById("institution-results").classList.add("hidden");
+  const detail = await apiFetch(`/api/institutions/${encodeURIComponent(institutionId)}`);
+  selectedInstitution = detail;
+  document.getElementById("institution").value = detail.name;
+  const box = document.getElementById("products");
+  // Everything this institution offers and this app syncs, all checked: the common intent is "link
+  // everything from this bank", and unchecking is the exception.
+  box.innerHTML = detail.syncable_products
+    .map(
+      (product) =>
+        `<label class="check"><input type="checkbox" value="${escapeHtml(product)}" checked />${escapeHtml(product)}</label>`
+    )
+    .join("");
+  box.classList.toggle("visible", detail.syncable_products.length > 0);
+  const hint = document.getElementById("institution-hint");
+  if (detail.syncable_products.length === 0) {
+    hint.textContent = `${detail.name} offers nothing this app can sync.`;
+  } else if (detail.unsupported_products.length > 0) {
+    hint.textContent = `Also offered but not synced here: ${detail.unsupported_products.join(", ")}.`;
+  } else {
+    hint.textContent = "";
+  }
+  setFormEnabled();
+}
+
+function setFormEnabled() {
+  const products = selectedProducts();
+  document.getElementById("connect").disabled = selectedInstitution === null || products.length === 0;
+  document.getElementById("transaction-days-wrap").classList.toggle("hidden", !products.includes("transactions"));
 }
 
 async function refreshLinks() {
@@ -126,6 +146,7 @@ async function refreshLinks() {
   for (const link of links) {
     const tr = document.createElement("tr");
     tr.dataset.item = link.item_id;
+    if (link.institution_id) tr.dataset.institution = link.institution_id;
     tr.innerHTML = `
       <td>
         <div class="name">${escapeHtml(link.label || link.institution_name || link.item_id)}</div>
@@ -145,7 +166,6 @@ async function refreshLinks() {
       </td>
       <td>
         <div class="actions">
-          ${profileSelect(link)}
           <button class="secondary" data-action="update">Add scopes</button>
           <button class="secondary" data-action="repair">Repair</button>
           <button class="secondary" data-action="sync">Sync</button>
@@ -155,16 +175,6 @@ async function refreshLinks() {
     tbody.appendChild(tr);
   }
 }
-function advancedProducts() {
-  return Array.from(document.querySelectorAll("#advanced-products input:checked")).map((input) => input.value);
-}
-function setAdvancedVisibility() {
-  const isAdvanced = document.getElementById("profile").value === "advanced";
-  document.getElementById("advanced-products").classList.toggle("visible", isAdvanced);
-  document
-    .getElementById("transaction-days-wrap")
-    .classList.toggle("hidden", !selectedProducts().includes("transactions"));
-}
 async function exchangePublicToken(public_token, metadata, pending) {
   try {
     await apiFetch("/api/exchange-public-token", {
@@ -172,12 +182,13 @@ async function exchangePublicToken(public_token, metadata, pending) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         public_token,
-        profile: pending.profile,
         products: pending.products,
         transaction_days_requested: pending.transaction_days_requested || null,
         label: pending.label,
-        institution_id: metadata.institution?.institution_id || null,
-        institution_name: metadata.institution?.name || null,
+        // Prefer what Link reports; fall back to the typeahead selection, which is what the token
+        // was minted for.
+        institution_id: metadata.institution?.institution_id || pending.institution_id || null,
+        institution_name: metadata.institution?.name || pending.institution_name || null,
       }),
     });
     setStatus("Link connected and synced.");
@@ -195,7 +206,7 @@ async function completeUpdate(metadata, pending) {
     await apiFetch(`/api/links/${encodeURIComponent(pending.item_id)}/complete-update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile: pending.profile, products: pending.products, sync: true }),
+      body: JSON.stringify({ products: pending.products, sync: true }),
     });
     setStatus(metadata?.institution?.name ? `Updated ${metadata.institution.name}.` : "Link updated and synced.");
   } catch (error) {
@@ -246,10 +257,18 @@ document.getElementById("links").addEventListener("click", async (event) => {
     });
     return;
   }
-  const body =
-    action === "repair"
-      ? { reason: "repair" }
-      : { reason: "add_scope", profile: row.querySelector('[data-role="scope-profile"]').value };
+  // "Add scopes" widens an existing link to everything its institution offers and this app syncs —
+  // the same intent as a new link, applied to one that already exists.
+  let body = { reason: "repair" };
+  if (action === "update") {
+    const institutionId = row.dataset.institution;
+    if (!institutionId) {
+      setStatus("This link has no recorded institution_id, so its available products cannot be looked up.");
+      return;
+    }
+    const detail = await apiFetch(`/api/institutions/${encodeURIComponent(institutionId)}`);
+    body = { reason: "add_scope", products: detail.syncable_products };
+  }
   await withStatus(
     action === "repair" ? "Opening Plaid repair flow..." : "Opening Plaid scope request...",
     async () => {
@@ -261,7 +280,6 @@ document.getElementById("links").addEventListener("click", async (event) => {
       const pending = {
         mode: "update",
         item_id: item,
-        profile: body.profile || null,
         products: token.products,
         link_token: token.link_token,
       };
@@ -270,14 +288,28 @@ document.getElementById("links").addEventListener("click", async (event) => {
     }
   );
 });
-document.getElementById("profile").addEventListener("change", setAdvancedVisibility);
-document.getElementById("advanced-products").addEventListener("change", setAdvancedVisibility);
+document.getElementById("products").addEventListener("change", setFormEnabled);
+document.getElementById("institution-results").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-institution]");
+  if (button) await withStatus("Loading institution products...", () => selectInstitution(button.dataset.institution));
+});
+document.getElementById("institution").addEventListener("input", async (event) => {
+  // Typing after a selection invalidates it; the products shown belong to the old institution.
+  selectedInstitution = null;
+  document.getElementById("products").classList.remove("visible");
+  document.getElementById("institution-hint").textContent = "";
+  setFormEnabled();
+  const query = event.target.value.trim();
+  if (query.length < 2) {
+    document.getElementById("institution-results").classList.add("hidden");
+    return;
+  }
+  await searchInstitutions(query);
+});
 document.getElementById("link-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   await withStatus("Creating Plaid Link session...", async () => {
-    const profile = document.getElementById("profile").value;
     const label = document.getElementById("label").value || null;
-    const advanced_products = profile === "advanced" ? advancedProducts() : null;
     const selected_products = selectedProducts();
     const transaction_days_requested = selected_products.includes("transactions")
       ? Number(document.getElementById("transaction-days").value)
@@ -285,12 +317,17 @@ document.getElementById("link-form").addEventListener("submit", async (event) =>
     const token = await apiFetch("/api/link-token", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile, advanced_products, transaction_days_requested }),
+      body: JSON.stringify({
+        institution_id: selectedInstitution.institution_id,
+        products: selected_products,
+        transaction_days_requested,
+      }),
     });
     const pending = {
       mode: "new",
-      profile,
       products: token.products,
+      institution_id: selectedInstitution.institution_id,
+      institution_name: selectedInstitution.name,
       transaction_days_requested: token.transaction_days_requested,
       label,
       link_token: token.link_token,
@@ -301,7 +338,6 @@ document.getElementById("link-form").addEventListener("submit", async (event) =>
 });
 async function init() {
   await loadConfig();
-  setAdvancedVisibility();
   await refreshLinks();
   const pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null");
   if (pending && new URLSearchParams(window.location.search).has("oauth_state_id")) {

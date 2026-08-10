@@ -1,8 +1,8 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "link_profiles",
-    srcs = ["link_profiles.py"],
+    name = "products",
+    srcs = ["products.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -12,7 +12,7 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
-        ":link_profiles",
+        ":products",
         "@pypi//certifi",
         "@pypi//plaid_python",
     ],
@@ -23,7 +23,7 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
-        ":link_profiles",
+        ":products",
         "@pypi//certifi",
         "@pypi//plaid_python",
         "@pypi//pytest_bazel",
@@ -31,10 +31,10 @@ py_test(
 )
 
 py_test(
-    name = "test_link_profiles",
-    srcs = ["test_link_profiles.py"],
+    name = "test_products",
+    srcs = ["test_products.py"],
     deps = [
-        ":link_profiles",
+        ":products",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -81,8 +81,8 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":link_profiles",
         ":link_store",
+        ":products",
         "//:conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
@@ -106,8 +106,8 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":link_profiles",
         ":link_store",
+        ":products",
         ":read_model",
         "//:conftest",
         "//third_party/containers:rlocations",
@@ -126,8 +126,8 @@ py_test(
     name = "test_sync",
     srcs = ["test_sync.py"],
     deps = [
-        ":link_profiles",
         ":link_store",
+        ":products",
         ":sync",
         "//:conftest",
         "@pypi//plaid_python",
@@ -152,7 +152,7 @@ py_library(
     data = glob(["migrations/**"]),
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
-        ":link_profiles",
+        ":products",
         ":schema",
         "@pypi//alembic",
         "@pypi//asyncpg",
@@ -172,8 +172,8 @@ py_library(
     srcs = ["sync.py"],
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
-        ":link_profiles",
         ":link_store",
+        ":products",
         ":secret_store",
         "@pypi//plaid_python",
     ],

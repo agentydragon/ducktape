@@ -41,7 +41,6 @@ class LinkRow(Base):
     institution_id: Mapped[str | None] = mapped_column(String, nullable=True)
     institution_name: Mapped[str | None] = mapped_column(String, nullable=True)
     label: Mapped[str | None] = mapped_column(String, nullable=True)
-    link_profile: Mapped[str] = mapped_column(String, nullable=False)
     products_requested: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     transaction_days_requested: Mapped[int | None] = mapped_column(Integer, nullable=True)
     products_authorized: Mapped[list[str]] = mapped_column(JSON, nullable=False)

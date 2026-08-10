@@ -11,7 +11,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from finance.plaid.db.link_profiles import LinkProfile
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage
 from util.testing.postgres import force_drop_database
 from util.testing.postgres_fixtures import postgres_container  # noqa: F401
@@ -50,7 +49,6 @@ async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investmen
     await storage.upsert_link(
         item_id=item_id,
         access_token_secret=f"{item_id}-token",
-        link_profile=LinkProfile.INVESTMENTS,
         products_requested=["investments"],
         institution_id="ins_investments",
         institution_name="Investment Test",
@@ -86,7 +84,6 @@ async def test_transaction_reconciliation_does_not_mark_partial_sync_success(sto
     await storage.upsert_link(
         item_id="item-transactions",
         access_token_secret="item-transactions-token",
-        link_profile=LinkProfile.CASHFLOW,
         products_requested=["transactions"],
         institution_id="ins_transactions",
         institution_name="Transactions Test",

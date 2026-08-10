@@ -19,20 +19,17 @@
         <h2>Connect Institution</h2>
         <form id="link-form">
           <label>Label <input id="label" placeholder="Chase personal" /></label>
-          <label
-            >Data surface
-            <select id="profile"></select>
+          <label class="typeahead-wrap"
+            >Institution
+            <input id="institution" autocomplete="off" placeholder="Start typing a bank name" />
+            <div id="institution-results" class="typeahead hidden" role="listbox"></div>
           </label>
-          <div class="muted" id="profile-hint"></div>
           <label id="transaction-days-wrap"
             >History days <input id="transaction-days" type="number" min="1" max="730" step="1"
           /></label>
-          <div id="advanced-products" class="advanced">
-            <label class="check"><input type="checkbox" value="transactions" checked />Transactions</label>
-            <label class="check"><input type="checkbox" value="investments" />Investments</label>
-            <label class="check"><input type="checkbox" value="liabilities" />Liabilities</label>
-          </div>
-          <button type="submit">Connect</button>
+          <button id="connect" type="submit" disabled>Connect</button>
+          <div id="products" class="advanced"></div>
+          <div class="muted" id="institution-hint"></div>
         </form>
         <div id="status" class="status" role="status"></div>
       </section>
