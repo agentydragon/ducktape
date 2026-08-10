@@ -32,12 +32,42 @@ string" — no placeholder matching, no per-destination scoping beyond ACL
 gymnastics, no secret sourcing, and no base64 `Basic` rewriting (the shape git
 over HTTPS uses, and the reason iron beat our own mitmproxy addon).
 
-Envoy was already tested here and rejected: its `credential_injector` works in
-reverse-proxy mode but never sees requests inside a `CONNECT` tunnel, because it
-has no dynamic-certificate machinery. See
-<../../../plans/personal_agents/credential_proxy_options.md>. agentgateway is
-the same shape — a gateway, not a transparent forward proxy for arbitrary
-hostnames — so unmodified `git`/`pip`/`npm` against real hosts is out.
+### Why Envoy and agentgateway are out
+
+Both fail the same way, but the evidence is much stronger for one than the other.
+
+**Envoy — rejected empirically**, in
+<../../../plans/personal_agents/credential_proxy_options.md>. Same Envoy, same
+credential, same `credential_injector` filter, two listeners. The reverse-proxy
+leg worked (`GET /user` → 200 as the bot account, `PATCH` → 403 from the RBAC
+filter). The forward-proxy leg:
+
+```text
+curl -x envoy:8081 https://api.github.com/user  ->  401 "Requires authentication"
+```
+
+The 401 is the whole answer: Envoy sees an opaque TLS tunnel and has no
+dynamic-certificate machinery, so the filter never receives a request to act on.
+Because the reverse leg proves the filter and credential were configured
+correctly, the forward failure is structural rather than a misconfiguration.
+
+**agentgateway — rejected on architecture**, not on a test. Its model is
+`bind → listener → route → backend`, where a bind is a TCP port, a listener does
+hostname matching and **TLS termination**, and a backend is a _configured
+upstream_ (an MCP server, an A2A agent, an HTTP service, an AI provider). A
+forward proxy has no configured upstream — the client chooses the host at
+request time — and TLS termination is not per-host certificate generation. So it
+is a gateway, which puts it in camp 1 of the taxonomy in that same document:
+fine when the client's endpoint is a knob (an SDK `base_url`), useless when the
+agent runs `git clone https://github.com/owner/repo`, because the hostname is
+baked into remotes, into `gh`'s API host, and into every URL in every README it
+reads.
+
+Worth being fair to it: agentgateway is aimed at a genuinely different traffic
+shape, and is strong at MCP/A2A proxying with tool-level policy. If Haku ever
+wants MCP tool gating enforced at the network layer rather than in the console,
+it is a real candidate for **that** — just not for the egress fence. (iron has
+`mcp` / `mcp_gateway` transforms covering similar ground.)
 
 ## Finding: chaining works, in one direction
 
@@ -401,10 +431,12 @@ industry answer to "durable, shared cache" is Redis or etcd, not object storage.
 - Node pinning is the real objection to `local-path-*`, and it is cheap here: a
   cache is disposable, so losing it to a reschedule costs hit rate, not data.
 
-**This is a point for option B over Squid.** If a durable or shared cache is
-ever wanted, a Go cache inside iron can use a Redis or etcd backend; Squid can
-only ever cache to its own local disk. The storage question favours the option
-that keeps caching in-process.
+**This is a point for option B over Squid, and the cluster already has the
+backend.** Valkey runs here, and Souin speaks go-redis — so a Go cache inside
+iron has a shared, durable, node-independent cache available with no new
+component, while Squid can only ever cache to its own local disk. Sequence it
+as: memory or `emptyDir` first (operator preference, 2026-08-10), Valkey later
+if and when cross-fence sharing or restart survival is worth wanting.
 
 ## Are there better-matched proxies? No — and the reason is worth knowing
 
