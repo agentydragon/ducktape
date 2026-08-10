@@ -122,9 +122,9 @@ conversation being gated, so the transcript prefix is warm.
 
 ### The classifier does not need the OAuth question answered at all
 
-Worth separating, because the two problems have been running together: **the subscription-OAuth
-work in <litellm*oauth_passthrough.md> is about the \_main agent* traffic, and the classifier does
-not need it.**
+Worth separating, because the two problems are easily run together. **The subscription-OAuth work
+in the [traffic-path note](litellm_oauth_passthrough.md) is about the main agent's traffic; the
+classifier does not need it.**
 
 The classifier is a prompt plus one XML tag. That makes it provider-portable — but it does not
 have to leave Anthropic to get Langfuse, because **the main LiteLLM already has real Anthropic
