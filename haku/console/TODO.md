@@ -107,6 +107,41 @@ is specified in <../../plans/oauth_architecture.md>. The next product slices are
   `tool_calls_page.tsx`) that opens/highlights the specific call the promise `url` points at
   (today the URL loads the console but not that exact call).
 
+## Serve a last-known tool catalog for a degraded server
+
+A degraded server reports no tools at all, so an agent can see that `home-assistant` exists, see
+exactly why it is unreachable, and still not learn a single tool name — even though the console
+reflected that catalog successfully minutes earlier. Connection state and catalog knowledge are
+orthogonal: a tool list is _what this server has_, not _may this caller reach it right now_.
+Operator decisions already taken (2026-08-10):
+
+- **Status reads only.** `get_mcp_server_status` may serve a stale catalog, explicitly marked with
+  when it was reflected. `tools/list` must keep contributing nothing for a degraded server —
+  discovery deliberately fails closed once an Operator disconnects, and handing back
+  callable-looking proxy tools would reverse that. Knowing a name is not authorization: execution
+  re-resolves credentials and still fails.
+- **Persisted in Postgres**, not in the reflection cache. Two reasons, both load-bearing:
+  - The cache key is `(server_id, config_fingerprint, credential_fingerprint)` and that third
+    component _is_ the fail-closed property (see `mcp_reflection_cache`'s module docstring). A
+    last-known lookup cannot use it, so this needs its own key — scope it per
+    `(operator_id, server_id, config_fingerprint)` so one Operator's tool list never surfaces for
+    another, since upstreams may vary tools by account.
+  - The cache is per-replica, in-memory, and `_prune` drops entries at expiry (60s default), so
+    there is no long-term memory to serve and a rollout would empty it anyway. The outage that
+    motivated this ran three days.
+
+Two traps for whoever picks this up:
+
+- **The failure that motivated this never reaches the cache.** `home-assistant` was
+  `failure_stage: credential_resolution`, and `metadata_for_operator` returns `DegradedReflection`
+  before it ever calls the dispatcher. Only `tool_discovery` failures get that far, so the
+  last-known lookup belongs in `get_mcp_server_status`, above the dispatcher — not inside
+  `McpServerDispatcher.metadata`.
+- **`_exposed_metadata` early-returns on `DegradedServerState`.** Stale tools must go through the
+  same projection, or a caller gets raw upstream schemas with no `approval_mode` and sends the
+  wrong payload shape to `call_mcp_tool` — the exact failure the exposed reflection exists to
+  prevent.
+
 ## Approvals drawer
 
 - **A withdrawn call vanishes from the drawer with no explanation.** An agent withdrawal removes
