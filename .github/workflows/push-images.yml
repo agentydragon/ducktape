@@ -75,11 +75,6 @@ jobs:
           - { image: "//finance/scraper:image", image_name: augur-evidence, test_target: "//finance/scraper/..." }
           - { image: "//haku/dispatch:image", image_name: haku-dispatcher, test_target: "//haku/dispatch/..." }
           - {
-              image: "//haku/runtime/agent_sdk_smoke:image",
-              image_name: haku-agent-sdk-smoke,
-              test_target: "//haku/runtime/agent_sdk_smoke/...",
-            }
-          - {
               image: "//haku/runtime/agent_sdk_transport:runner_image",
               image_name: haku-claude-runner,
               test_target: "//haku/runtime/agent_sdk_transport/...",

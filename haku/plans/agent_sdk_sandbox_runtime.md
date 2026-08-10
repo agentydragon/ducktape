@@ -130,8 +130,17 @@ project complete tool inputs/results from final messages and `PreToolUse`/`PostT
 
 ## Compatibility result — 2026-07-31
 
-The one-shot `haku-agent-sdk-smoke` Job from PR #3632 completed successfully in `haku-sandbox`
-against source commit `da578377`. The pod exited 0 with no restart, and the Job reached
+The probe itself is gone (removed 2026-08-10); this section is the record of what it
+established, which is the part worth keeping. It was a spike, its question is answered, and
+the console's own long-lived session now exercises the same authentication path
+continuously — with a louder symptom, since a broken token means the chat surface stops
+answering. What was lost with it is isolation: an SDK or CLI bump that breaks subscription
+OAuth will now show up as "the room went quiet" rather than as a named 18-second failure.
+Worth rebuilding as a deliberate scheduled check if that trade turns out to bite; it should
+not come back as a Job that re-runs whenever an unrelated image tag moves.
+
+The one-shot `haku-agent-sdk-smoke` Job from PR #3632 completed successfully in
+`haku-claude-sandbox` against source commit `da578377`. The pod exited 0 with no restart, and the Job reached
 `Complete` in 11 seconds. It ran Agent SDK 0.1.48 with its bundled Claude CLI 2.1.71; transcript
 inspection showed the CLI selected `claude-sonnet-4-6` under the subscription credential.
 

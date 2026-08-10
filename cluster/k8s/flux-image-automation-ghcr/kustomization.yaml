@@ -59,8 +59,6 @@ resources:
   - haku-console-static-image-policy.yaml
   - haku-dispatcher-image-repository.yaml
   - haku-dispatcher-image-policy.yaml
-  - haku-agent-sdk-smoke-image-repository.yaml
-  - haku-agent-sdk-smoke-image-policy.yaml
   - haku-claude-runner-image-repository.yaml
   - haku-claude-runner-image-policy.yaml
   - haku-managed-agent-image-repository.yaml

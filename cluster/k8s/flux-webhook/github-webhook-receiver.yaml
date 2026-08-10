@@ -72,9 +72,6 @@ spec:
       name: haku-dispatcher
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-agent-sdk-smoke
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: haku-claude-runner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
