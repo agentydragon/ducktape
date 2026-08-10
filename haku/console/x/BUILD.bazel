@@ -74,12 +74,16 @@ py_test(
     name = "test_matrix_session",
     srcs = ["test_matrix_session.py"],
     deps = [
+        ":claude_chat",
         ":matrix_session",
         "//:conftest",
         "//haku/console:config",
+        "//haku/console:conftest",
         "//haku/console:database_schema",
+        "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -100,9 +104,11 @@ py_test(
     srcs = ["test_matrix_sync.py"],
     deps = [
         ":matrix_client",
+        ":matrix_session",
         ":matrix_sync",
         "//:conftest",
         "//haku/console:config",
+        "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
