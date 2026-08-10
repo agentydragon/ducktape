@@ -264,6 +264,16 @@ for whenever this is picked up:
 - **R5.3 [v1]** Matrix tools do not accept a room identifier. The console resolves the room
   from the calling session, so reaching another room is not expressible rather than merely
   denied.
+- **R5.1a** _Scope note, because R5.1 is easy to over-read._ It constrains the **Matrix**
+  credential specifically, and says there is one holder of it. It is not a rule that the
+  sandbox may hold no credentials — this deployment has two established shapes for that,
+  and both put something in the sandbox. **Substitution:** the sandbox holds
+  `sk-ant-oat01-proxy-haku-claude-placeholder` and `haku-claude-oauth-proxy` swaps in the
+  real token only for `api.anthropic.com`, so the agent never sees it. **Per-session
+  minting:** the bridge token is already a console-minted credential injected into the
+  sandbox. Future credential decisions should pick one of those rather than assume a
+  prohibition. Note the substitution proxy is HTTP-shaped — it rewrites a header for a known
+  host — so it does not transfer to a different wire protocol for free.
 - **R5.4 [v1] Reading only.** The surface is read: fetch by event ID, fetch around an
   event, paginate history. There is no send, edit, react, redact, join, invite, leave, or
   room-state tool. Speaking happens by auto-forward (R11.1) and needs no tool.
@@ -532,6 +542,14 @@ chart with no support for one — is gone with the appservice itself.
 ## Open questions
 
 - **Batch cap** (R2.6): what value, and does an overflow split get told it is a split?
+- **How does the agent reach past traces?** Settled: whatever the transport, it is an **API
+  the agent queries**, not a tool that pours history into context — the useful operations
+  are search and slice, and a dump is both expensive and worse than reading the room. Two
+  candidate shapes, genuinely open: an SDK-hosted in-process tool the console backs with its
+  own query (R5.2's mechanism, room-scoping structural), or an **RLS-scoped Postgres role**
+  minted per session (R5.1a's second shape), which buys a real query language and pushes
+  scoping into the database instead of into a closure. Deferred until there is history worth
+  querying — which is also the argument for keeping the session/room link now (R3.3a).
 - ~~**A second invite**~~ — settled as R3.6a: one room at a time, refuse the rest for now.
   Phase 0 joins every operator invite, which is harmless only because nothing is bound to a
   room yet; Phase 1 has to implement the restriction.
