@@ -256,7 +256,26 @@ class MatrixSessionSupervisor:
                 logger.exception("Matrix: session supervision failed")
                 await asyncio.sleep(PROVISION_BACKOFF.total_seconds())
                 continue
+            await self._wait_for_change()
+
+    async def _wait_for_change(self) -> None:
+        """Wait until the session's status may have changed, or the interval elapses.
+
+        Polling alone made every status notice up to a full interval late: the room said
+        "responding" about five seconds after the turn had actually started, and "ready"
+        about five seconds after the answer had already arrived. The chat store notifies on
+        every status transition, so waiting on that channel reports them as they happen.
+
+        The interval stays as the backstop for what no transition announces — a room bound
+        for the first time, or a session row disappearing underneath us.
+        """
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None or conversation.session_id is None:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
+            return
+        await self._chat_store.listen_for_update(
+            conversation.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
+        )
 
     async def _run(self) -> None:
         """Contend for leadership, and supervise for as long as we hold it.

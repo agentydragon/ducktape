@@ -412,6 +412,7 @@ class ClaudeChatStore:
             chat.status = "responding"
             chat.updated_at = now
             await self._notify(db, _PROMPT_CHANNEL, session_id)
+            await self._notify(db, _UPDATE_CHANNEL, session_id)
         return _message_view(message)
 
     async def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
@@ -490,8 +491,15 @@ class ClaudeChatStore:
                 return
             chat.status = "ready"
             chat.updated_at = now
+            await self._notify(db, _UPDATE_CHANNEL, session_id)
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
+        # Logged as well as persisted. The column is the operator-facing record, but it is not
+        # reachable from `kubectl logs`, and a Matrix session that dies leaves no other trace —
+        # the room just stops answering. Diagnosing the asyncpg/psycopg listener mismatch that
+        # killed every session meant querying this column out of Postgres by hand, purely
+        # because the reason was written where logs are not.
+        logger.error("Claude chat session %s failed: %s", session_id, error)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id)
@@ -499,6 +507,7 @@ class ClaudeChatStore:
                 chat.status = "failed"
                 chat.error = error
                 chat.updated_at = now
+                await self._notify(db, _UPDATE_CHANNEL, session_id)
             if message_id is not None:
                 message = await db.get(ClaudeChatMessage, message_id)
                 if message is not None:
@@ -731,12 +740,16 @@ class ClaudeChatService:
                 try:
                     await self._run_turn(client, session_id, text, abort_event=abort_event)
                 except Exception as error:
+                    logger.exception("Claude chat turn failed for session %s", session_id)
                     await self._store.fail(session_id, str(error))
                     break
                 abort_event.clear()
         except WebSocketDisconnect:
             await self._store.fail(session_id, "sandbox runner disconnected")
         except Exception as error:
+            # `fail` records the message; the traceback is what says which call produced it,
+            # and the listener mismatch was three frames below anything the message named.
+            logger.exception("Claude runtime failed for session %s", session_id)
             await self._store.fail(session_id, f"Claude runtime failed: {error}")
         finally:
             self._abort_events.pop(session_id, None)
