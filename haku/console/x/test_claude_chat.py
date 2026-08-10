@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import patch
@@ -526,3 +527,71 @@ def test_request_abort_returns_false_without_connected_runner() -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+class _RealDbClaudeClient(_LifecycleClaudeClient):
+    """Answers one prompt, then behaves like an idle client."""
+
+    async def query(self, prompt: str) -> None:
+        self.prompt = prompt
+
+    def receive_response(self):
+        async def _messages():
+            yield AssistantMessage(content=[TextBlock(text="pong")], model="test")
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="s",
+                result="pong",
+            )
+
+        return _messages()
+
+
+async def test_runner_survives_an_idle_wait_against_a_real_database(
+    migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    """The idle wait is a raw-driver call, so only a real engine exercises it.
+
+    `handle_runner` loops: consume a prompt, then block in `wait_for_prompt` until the next
+    one. That wait talks to `driver_connection` directly, and the existing lifecycle test
+    fakes the store, so a driver-API mismatch there was invisible — it shipped, and every
+    Matrix session died about four seconds after being created with "Claude runtime failed:
+    'Connection' object has no attribute 'set_autocommit'". Faking Kubernetes is right;
+    faking the store hid the bug.
+    """
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-listen-test")
+    store = ClaudeChatStore(migrated_sessions, migrated_engine)
+    service = ClaudeChatService(
+        _runtime_config(), store, cast(Any, _LifecycleClaims()), mcp_token=SecretStr("haku-static-bearer")
+    )
+    # The store mints the real bridge token; no claim is created because handle_runner only
+    # ever deletes one on the way out, and Kubernetes is not what this test is about.
+    view, token = await store.create(operator_id)
+
+    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
+        runner = asyncio.create_task(service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token))
+        try:
+            # Long enough to reach the idle wait, which is where the crash used to happen.
+            await asyncio.sleep(2)
+            assert await store.status(view.session_id) == "ready", "the runner failed while waiting for a prompt"
+
+            # And the wait must actually wake on NOTIFY rather than only time out. A bounded
+            # poll rather than an Event: the thing under test is the runner's own wake, so the
+            # test must observe it from outside instead of being handed a signal by it.
+            await store.enqueue_prompt(operator_id, view.session_id, "ping")
+            for _ in range(75):
+                if await store.status(view.session_id) == "ready":
+                    break
+                await asyncio.sleep(0.2)
+            assert await store.status(view.session_id) == "ready", "the turn never completed"
+        finally:
+            runner.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await runner
+
+    [answer] = [m for m in (await store.get(operator_id, view.session_id)).messages if m.role == "assistant"]
+    assert answer.content == "pong"
