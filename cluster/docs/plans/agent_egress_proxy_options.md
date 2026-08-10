@@ -200,10 +200,34 @@ therefore _which fence_, not which workload:
 So the granularity is worst exactly where it matters most: the busiest fence,
 the one with many distinct agents behind a single proxy.
 
-No existing transform closes this. The documented set is `allowlist`, `secrets`,
-`body_capture`, `annotate`, `header_allowlist`, `judge`, `mcp`, `mcp_gateway` —
-`annotate` _captures_ headers into the audit record and `secrets` _replaces_ a
-placeholder it finds; neither injects a new header of iron's own.
+**iron forwards no client identity at all** — confirmed in
+`internal/proxy/proxy.go`, not inferred from docs. It builds the upstream
+request by hand rather than using `httputil.ReverseProxy`, which would have
+added `X-Forwarded-For` for free:
+
+```go
+upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, ...)
+copyHeaders(upstreamReq.Header, r.Header)
+sanitizeUpstreamHeaders(upstreamReq.Header)
+```
+
+No `X-Forwarded-For`, `X-Real-IP`, `Via` or `Forwarded` is set;
+`sanitizeUpstreamHeaders` only strips hop-by-hop headers. `RemoteAddr` reaches
+the audit `PipelineResult` and nothing else.
+
+Nor does any transform close the gap: the documented set is `allowlist`,
+`secrets`, `body_capture`, `annotate`, `header_allowlist`, `judge`, `mcp`,
+`mcp_gateway` — `annotate` _captures_ headers into the audit record and
+`secrets` _replaces_ a placeholder it finds; neither injects a header of iron's
+own.
+
+**The trap**: `copyHeaders` passes the client's own headers through verbatim, so
+a workload setting `X-Agent-Id: whoever` will see it arrive at the cache. That
+identity is asserted by the very thing being gated, so it is forgeable —
+worthless for an authorization decision, and worse than nothing if a helper
+trusts it, since a prompt-injected agent could impersonate a more privileged
+one. Identity for this gate has to be stamped by the proxy, which is exactly
+what iron does not do today.
 
 Four ways to get identity to the gate:
 
