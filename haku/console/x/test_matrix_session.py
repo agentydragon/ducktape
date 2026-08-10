@@ -10,6 +10,7 @@ import pytest_bazel
 from sqlalchemy import delete
 
 from haku.console.database_schema import ClaudeChatSession
+from haku.console.x.chat_notifications import ChatNotifications
 from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor
@@ -32,6 +33,7 @@ def supervisor(
     conversations: MatrixConversationStore,
     chat_store: ClaudeChatStore,
     chat_service: ClaudeChatService,
+    notifications: ChatNotifications,
     migrated_identity_store,
     announced: list[str],
 ) -> MatrixSessionSupervisor:
@@ -45,6 +47,7 @@ def supervisor(
         conversations,
         chat_service,
         chat_store,
+        notifications,
         migrated_identity_store,
         _announce,
         engine=cast(Any, None),  # only `run()` takes the advisory lock; these drive `supervise_once`

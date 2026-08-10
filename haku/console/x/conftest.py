@@ -7,16 +7,18 @@ against a real database.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 import pytest
 from pydantic import SecretStr
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.chat_notifications import ChatNotifications
 from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore, _provisioning_view
 from haku.console.x.matrix_session import MatrixConversationStore
 
@@ -84,13 +86,26 @@ def recording_claims() -> RecordingClaims:
 
 
 @pytest.fixture
-def chat_store(migrated_sessions: async_sessionmaker[AsyncSession], migrated_engine: AsyncEngine) -> ClaudeChatStore:
-    return ClaudeChatStore(migrated_sessions, migrated_engine)
+def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> ClaudeChatStore:
+    return ClaudeChatStore(migrated_sessions)
 
 
 @pytest.fixture
-def chat_service(chat_store: ClaudeChatStore, recording_claims: RecordingClaims) -> ClaudeChatService:
-    return ClaudeChatService(runtime_config(), chat_store, recording_claims, mcp_token=MCP_TOKEN)
+async def notifications(migrated_db_url: str) -> AsyncIterator[ChatNotifications]:
+    """A real listener against the test database — the plumbing is the thing under test."""
+    channel = ChatNotifications(migrated_db_url)
+    await channel.start()
+    try:
+        yield channel
+    finally:
+        await channel.aclose()
+
+
+@pytest.fixture
+def chat_service(
+    chat_store: ClaudeChatStore, recording_claims: RecordingClaims, notifications: ChatNotifications
+) -> ClaudeChatService:
+    return ClaudeChatService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
 
 
 @pytest.fixture

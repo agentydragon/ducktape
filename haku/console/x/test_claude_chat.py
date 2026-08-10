@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import patch
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatSession
+from haku.console.x.chat_notifications import ABORT_CHANNEL
 from haku.console.x.claude_chat import ClaudeChatStore, KubernetesSandboxClaims, _text_delta
 from haku.console.x.conftest import runtime_config
 
@@ -44,11 +45,6 @@ class RecordingCoreV1Api:
     async def read_namespaced_pod(self, name: str, namespace: str) -> k8s_client.V1Pod:
         del namespace
         return self.pods[name]
-
-
-class FailingEngine:
-    def connect(self) -> Any:
-        raise RuntimeError("LISTEN unavailable")
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
@@ -224,13 +220,6 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
     await chat_store.fail(session_id, "runner failed")
     assert await chat_store.authenticate_bridge(session_id, token) == "terminal"
     assert await chat_store.authenticate_bridge(session_id, "wrong") == "rejected"
-
-
-async def test_listen_failure_is_not_reclassified_as_a_timeout() -> None:
-    store = ClaudeChatStore(cast(Any, object()), cast(Any, FailingEngine()))
-
-    with pytest.raises(RuntimeError, match="LISTEN unavailable"):
-        await store.wait_for_prompt(uuid4(), timeout_seconds=0.01)
 
 
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
@@ -496,7 +485,7 @@ async def test_abort_is_refused_when_no_turn_is_in_flight(chat_store, operator_i
 
 
 async def test_abort_reaches_the_replica_running_the_turn(
-    migrated_db_url, migrated_sessions, chat_store, operator_id
+    migrated_db_url, chat_store, notifications, operator_id
 ) -> None:
     """The two ends of an abort are on different pods, so it has to cross the database.
 
@@ -512,21 +501,10 @@ async def test_abort_reaches_the_replica_running_the_turn(
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
-        requesting = ClaudeChatStore(async_sessionmaker(other_engine, expire_on_commit=False), other_engine)
-        aborted = asyncio.Event()
-        watcher = asyncio.create_task(chat_store.watch_aborts(view.session_id, aborted.set))
-        try:
-            # Retry rather than sleep a magic interval: the LISTEN registers asynchronously,
-            # and re-notifying is harmless, so this waits for readiness without guessing it.
+        requesting = ClaudeChatStore(async_sessionmaker(other_engine, expire_on_commit=False))
+        async with notifications.subscribe(ABORT_CHANNEL, view.session_id) as aborted:
+            assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
-                while not aborted.is_set():
-                    assert await requesting.request_abort(view.session_id) is True
-                    with contextlib.suppress(TimeoutError):
-                        async with asyncio.timeout(0.5):
-                            await aborted.wait()
-        finally:
-            watcher.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await watcher
+                await aborted.wait()
     finally:
         await other_engine.dispose()

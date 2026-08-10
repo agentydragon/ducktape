@@ -69,7 +69,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
-from haku.console.x import claude_chat, matrix_session, matrix_sync
+from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -159,7 +159,8 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions, db_engine)
+    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions)
+    claude_chat_notifications = chat_notifications.ChatNotifications(database_url)
     claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -289,6 +290,7 @@ def create_app(
             claude_runtime,
             claude_chat_store,
             claude_chat.KubernetesSandboxClaims(claude_runtime),
+            claude_chat_notifications,
             mcp_token=mcp_agent.token,
             reply_sink=matrix_reply_sink.deliver if matrix_reply_sink is not None else None,
         )
@@ -307,6 +309,7 @@ def create_app(
             matrix_conversations,
             claude_chat_service,
             claude_chat_store,
+            claude_chat_notifications,
             operator_identity_store,
             matrix_sync_service.announce,
             db_engine,
@@ -421,6 +424,7 @@ def create_app(
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising:
             await console_event_hub.start()
+            await claude_chat_notifications.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
                 # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
@@ -435,6 +439,7 @@ def create_app(
                 await tool_calls.aclose()
                 if claude_chat_service is not None:
                     await claude_chat_service.aclose()
+                await claude_chat_notifications.aclose()
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 
@@ -463,6 +468,7 @@ def create_app(
     app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
     app.state.claude_chat_store = claude_chat_store
+    app.state.claude_chat_notifications = claude_chat_notifications
     app.state.claude_chat_service = claude_chat_service
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher

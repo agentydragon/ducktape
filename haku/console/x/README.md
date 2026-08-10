@@ -59,6 +59,22 @@ the shape the test author imagined, so it agrees with whatever the code does:
 The one deliberate exception is `FailingEngine`, which exists to make a connection fail —
 there is no way to ask a healthy Postgres for that.
 
+## `chat_notifications.py` — the wake channel
+
+`LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `ClaudeChatStore`: a
+repository answers questions about rows, and this wakes tasks. Merging the two is what let
+the listener be written against psycopg3's API while running on an asyncpg engine.
+
+One long-lived connection covers all three channels with a reconnect loop, matching
+<../console_events.py>, the console's other LISTEN consumer. The notify half stays inside
+the caller's transaction, because `pg_notify` delivers on commit.
+
+**Gotcha for anyone changing the channel names or payloads:** the Deployment rolls with
+`maxUnavailable: 0`, so old and new replicas run together for the length of a roll. A
+renamed channel means the new replica notifies where the old one is not listening, and the
+wakes are lost for that window — the same expand/contract discipline a destructive
+migration needs. Notify on both names for one release, then drop the old.
+
 ## Cross-replica state, and the trap it sets
 
 `replicas: 2` means any given HTTP request reaches an arbitrary pod, while a session's live

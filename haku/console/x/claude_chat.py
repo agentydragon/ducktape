@@ -9,8 +9,7 @@ import hashlib
 import json
 import logging
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
@@ -30,12 +29,13 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
+from haku.console.x.chat_notifications import ABORT_CHANNEL, PROMPT_CHANNEL, UPDATE_CHANNEL, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
 from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
 from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
@@ -44,9 +44,6 @@ router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
 
-_PROMPT_CHANNEL = "claude_chat_prompt"
-_UPDATE_CHANNEL = "claude_chat_update"
-_ABORT_CHANNEL = "claude_chat_abort"
 
 SessionStatus = Literal["provisioning", "ready", "responding", "closing", "closed", "failed"]
 MessageRole = Literal["user", "assistant"]
@@ -291,18 +288,12 @@ class KubernetesSandboxClaims:
 class ClaudeChatStore:
     """Async Postgres store for Claude chat sessions."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine):
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
-        self._engine = engine
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
-
-    @staticmethod
-    async def _notify(db: AsyncSession, channel: str, session_id: UUID) -> None:
-        """Emit ``pg_notify`` inside an active session transaction."""
-        await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": str(session_id)})
 
     async def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
         now = datetime.now(UTC)
@@ -413,8 +404,8 @@ class ClaudeChatStore:
             db.add(message)
             chat.status = "responding"
             chat.updated_at = now
-            await self._notify(db, _PROMPT_CHANNEL, session_id)
-            await self._notify(db, _UPDATE_CHANNEL, session_id)
+            await notify(db, PROMPT_CHANNEL, session_id)
+            await notify(db, UPDATE_CHANNEL, session_id)
         return _message_view(message)
 
     async def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
@@ -483,7 +474,7 @@ class ClaudeChatStore:
             if chat.status not in {"closing", "closed", "failed"}:
                 chat.status = "responding"
             chat.updated_at = now
-            await self._notify(db, _UPDATE_CHANNEL, session_id)
+            await notify(db, UPDATE_CHANNEL, session_id)
 
     async def complete_turn(self, session_id: UUID) -> None:
         now = datetime.now(UTC)
@@ -493,7 +484,7 @@ class ClaudeChatStore:
                 return
             chat.status = "ready"
             chat.updated_at = now
-            await self._notify(db, _UPDATE_CHANNEL, session_id)
+            await notify(db, UPDATE_CHANNEL, session_id)
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
@@ -509,7 +500,7 @@ class ClaudeChatStore:
                 chat.status = "failed"
                 chat.error = error
                 chat.updated_at = now
-                await self._notify(db, _UPDATE_CHANNEL, session_id)
+                await notify(db, UPDATE_CHANNEL, session_id)
             if message_id is not None:
                 message = await db.get(ClaudeChatMessage, message_id)
                 if message is not None:
@@ -540,7 +531,7 @@ class ClaudeChatStore:
             if chat is not None and chat.status != "failed":
                 chat.status = "closed"
                 chat.updated_at = datetime.now(UTC)
-                await self._notify(db, _UPDATE_CHANNEL, session_id)
+                await notify(db, UPDATE_CHANNEL, session_id)
 
     async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
         async with self._sessions() as db:
@@ -552,57 +543,6 @@ class ClaudeChatStore:
                 )
                 is not None
             )
-
-    @asynccontextmanager
-    async def _listener(self, channel: str) -> AsyncIterator[asyncio.Queue[str]]:
-        """Hold a raw asyncpg connection with a LISTEN on *channel*, yielding its payloads.
-
-        Uses a raw asyncpg connection from the engine's pool for LISTEN/NOTIFY, through
-        asyncpg's `add_listener` — the engine is `postgresql+asyncpg`, so `driver_connection`
-        is an `asyncpg.Connection`. This was written against psycopg3's `set_autocommit` /
-        `notifies()` instead and therefore raised on every call in production while the only
-        test covering it passed against a fake engine.
-
-        Listener failures propagate: this path is deliberately notification-only, so silently
-        falling back to polling would hide a broken cross-replica update channel.
-        """
-        async with self._engine.connect() as conn:
-            # AUTOCOMMIT so the LISTEN is not registered inside a transaction that the
-            # connection's teardown rolls back.
-            await conn.execution_options(isolation_level="AUTOCOMMIT")
-            raw = await conn.get_raw_connection()
-            assert raw.dbapi_connection is not None
-            pg_conn = raw.dbapi_connection.driver_connection
-            payloads: asyncio.Queue[str] = asyncio.Queue()
-
-            def _on_notify(_connection: Any, _pid: int, _channel: str, payload: str) -> None:
-                payloads.put_nowait(payload)
-
-            await pg_conn.add_listener(channel, _on_notify)
-            try:
-                yield payloads
-            finally:
-                # The connection returns to the pool, so the listener must come off it.
-                await pg_conn.remove_listener(channel, _on_notify)
-
-    async def _listen(self, channel: str, session_id: UUID, *, timeout_seconds: float) -> bool:
-        """Block until a Postgres NOTIFY on *channel* fires for *session_id*."""
-        async with self._listener(channel) as payloads:
-            try:
-                async with asyncio.timeout(timeout_seconds):
-                    while True:
-                        if await payloads.get() == str(session_id):
-                            return True
-            except TimeoutError:
-                return False
-
-    async def listen_for_update(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> None:
-        """Wait for a LISTEN/NOTIFY on the update channel for this session."""
-        await self._listen(_UPDATE_CHANNEL, session_id, timeout_seconds=timeout_seconds)
-
-    async def wait_for_prompt(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> bool:
-        """Wait for a prompt NOTIFY. Returns True if a prompt notification arrived."""
-        return await self._listen(_PROMPT_CHANNEL, session_id, timeout_seconds=timeout_seconds)
 
     async def request_abort(self, session_id: UUID) -> bool:
         """Ask whichever replica is running this session's turn to interrupt it.
@@ -616,21 +556,8 @@ class ClaudeChatStore:
             status = await db.scalar(select(ClaudeChatSession.status).where(ClaudeChatSession.session_id == session_id))
             if status != "responding":
                 return False
-            await self._notify(db, _ABORT_CHANNEL, session_id)
+            await notify(db, ABORT_CHANNEL, session_id)
             return True
-
-    async def watch_aborts(self, session_id: UUID, on_abort: Callable[[], None]) -> None:
-        """Call *on_abort* for each abort NOTIFY for this session, until cancelled.
-
-        Holds one connection for the session's lifetime rather than re-LISTENing per turn: a
-        notify landing between an UNLISTEN and the next LISTEN is lost outright, and an abort
-        the operator pressed is not something to drop on a race. The cost is a pooled
-        connection per live runner, on top of the one an idle `wait_for_prompt` holds.
-        """
-        async with self._listener(_ABORT_CHANNEL) as payloads:
-            while True:
-                if await payloads.get() == str(session_id):
-                    on_abort()
 
 
 class StarletteTextWebSocket(TextWebSocket):
@@ -660,6 +587,7 @@ class ClaudeChatService:
         config: ClaudeRuntimeConfig,
         store: ClaudeChatStore,
         claims: SandboxClaims,
+        notifications: ChatNotifications,
         *,
         mcp_token: SecretStr,
         reply_sink: ReplySink | None = None,
@@ -667,6 +595,7 @@ class ClaudeChatService:
         self._config = config
         self._store = store
         self._claims = claims
+        self._notifications = notifications
         self._mcp_token = mcp_token
         self._reply_sink = reply_sink
 
@@ -759,7 +688,7 @@ class ClaudeChatService:
         # The operator's abort lands on whichever replica the Service picks, which is rarely
         # the one holding this websocket — so the event is driven by NOTIFY, not by a caller
         # reaching into this process.
-        abort_watch = asyncio.create_task(self._store.watch_aborts(session_id, abort_event.set))
+        abort_watch = asyncio.create_task(self._watch_aborts(session_id, abort_event))
         try:
             await client.connect()
             while True:
@@ -769,7 +698,7 @@ class ClaudeChatService:
                 prompt = await self._store.next_prompt(session_id)
                 if prompt is None:
                     # Wait for a LISTEN/NOTIFY instead of polling.
-                    await self._store.wait_for_prompt(session_id, timeout_seconds=30.0)
+                    await self._notifications.wait(PROMPT_CHANNEL, session_id, timeout_seconds=30.0)
                     continue
                 _, text = prompt
                 # Cleared here rather than after the turn: an abort notified just as the
@@ -803,6 +732,19 @@ class ClaudeChatService:
             await client.disconnect()
             await self._cleanup_terminal_claim(session_id)
             await self._store.closed(session_id)
+
+    async def _watch_aborts(self, session_id: UUID, abort_event: asyncio.Event) -> None:
+        """Set *abort_event* every time this session is told to abort, until cancelled.
+
+        The operator's abort lands on whichever replica the Service picks, which is rarely
+        the one holding this session's websocket, so it arrives over NOTIFY rather than by a
+        caller reaching into this process.
+        """
+        async with self._notifications.subscribe(ABORT_CHANNEL, session_id) as notified:
+            while True:
+                await notified.wait()
+                notified.clear()
+                abort_event.set()
 
     async def _run_turn(
         self, client: ClaudeSDKClient, session_id: UUID, prompt: str, *, abort_event: asyncio.Event
@@ -1033,6 +975,14 @@ def _store(request: Request) -> ClaudeChatStore:
     return store
 
 
+def _notifications(request: Request) -> ChatNotifications:
+    notifications = cast(ChatNotifications | None, request.app.state.claude_chat_notifications)
+    if notifications is None:
+        raise HTTPException(status_code=503, detail="Claude chat runtime is not configured")
+    return notifications
+
+
+ChatNotificationsDep = Annotated[ChatNotifications, Depends(_notifications)]
 ClaudeChatServiceDep = Annotated[ClaudeChatService, Depends(_service)]
 ClaudeChatStoreDep = Annotated[ClaudeChatStore, Depends(_store)]
 
@@ -1056,7 +1006,7 @@ async def get_session(
 
 
 async def _sse_stream(
-    store: ClaudeChatStore, operator_id: UUID, session_id: UUID
+    store: ClaudeChatStore, notifications: ChatNotifications, operator_id: UUID, session_id: UUID
 ) -> collections.abc.AsyncIterator[str]:
     """Server-Sent Events stream delivering real-time session updates via LISTEN/NOTIFY."""
     yield f"data: {json.dumps({'type': 'connected'})}\n\n"
@@ -1070,7 +1020,7 @@ async def _sse_stream(
         if last_view.status in {"closed", "failed"}:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
-        await store.listen_for_update(session_id, timeout_seconds=30.0)
+        await notifications.wait(UPDATE_CHANNEL, session_id, timeout_seconds=30.0)
         try:
             next_view = await store.get(operator_id, session_id)
         except KeyError:
@@ -1082,11 +1032,13 @@ async def _sse_stream(
 
 
 @router.get("/api/claude/sessions/{session_id}/stream")
-async def stream_session(session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep) -> StreamingResponse:
+async def stream_session(
+    session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep, notifications: ChatNotificationsDep
+) -> StreamingResponse:
     if not await store.session_exists(actor.operator_id, session_id):
         raise HTTPException(status_code=404, detail="Claude chat session not found")
     return StreamingResponse(
-        _sse_stream(store, actor.operator_id, session_id),
+        _sse_stream(store, notifications, actor.operator_id, session_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
