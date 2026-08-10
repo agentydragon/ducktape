@@ -79,3 +79,13 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_server_bin",
+    srcs = ["test_server_bin.py"],
+    data = [":server_bin"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)

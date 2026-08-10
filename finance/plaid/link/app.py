@@ -37,7 +37,11 @@ logger = logging.getLogger(__name__)
 # The Link UI is HTML, CSS and JS, and gets prettier, editor syntax highlighting and diffs that
 # mean something only while it lives in files with those extensions. Read once at import; these
 # are static assets, not templates.
-_ASSETS = resources.files(__package__)
+#
+# Named explicitly rather than via `__package__`: the container entrypoint (`server_bin`) runs this
+# file as `__main__` with an empty `__package__`, which resolves to no spec at all and crashes on
+# import. Tests and `app_cli` import it as a module and never see that.
+_ASSETS = resources.files("finance.plaid.link")
 _LINK_HTML = _ASSETS.joinpath("link.html").read_text("utf-8")
 _LINK_CSS = _ASSETS.joinpath("link.css").read_text("utf-8")
 _LINK_JS = _ASSETS.joinpath("link.js").read_text("utf-8")
