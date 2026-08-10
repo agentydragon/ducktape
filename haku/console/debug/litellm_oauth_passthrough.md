@@ -115,6 +115,40 @@ solve a problem we do not have.
 So the CLIProxyAPI template does **not** carry over to the Claude side, and the recommendation
 below stands more firmly than when it was written as a fallback.
 
+### Is there a private inference API the binary has and the SDK does not expose?
+
+**No.** Every endpoint CLIProxyAPI posts inference to is `https://api.anthropic.com/v1/messages` —
+the same public Messages API an API key uses. Its only other host is
+`https://platform.claude.com/v1/oauth/token` for the token lifecycle. There is no hidden
+inference route; the subscription is reached over the ordinary endpoint, and everything special
+is in **how the request is dressed** (auth scheme, betas, system-prompt shape, TLS/header
+fingerprint), not in _where it is sent_.
+
+The binary does have a **wider private surface** than the SDK exposes, but it is account
+machinery rather than inference. Enumerating the endpoint strings in
+`claude_agent_sdk/_bundled/claude`:
+
+| Family                                | Examples                                                                                                                                                                                |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public inference                      | `/v1/messages`, `/v1/messages/count_tokens`, `/v1/messages/batches`, `/v1/models`, `/v1/files`, `/v1/complete`                                                                          |
+| Private account/OAuth (`api/oauth/*`) | `/api/oauth/organizations/…` (37 refs), `/api/oauth/validate`, `/api/oauth/usage`, `/api/oauth/account/settings`, `/api/oauth/claude_cli/roles`, `/api/oauth/claude_cli/create_api_key` |
+| Other private                         | `/api/hello`, `/api/claude_cli_feedback`, `/v1/sessions/…`, `/v1/deployments`, `/api/web/domain_info`                                                                                   |
+
+CLIProxyAPI touches only a sliver of that — profile and roles, to identify the account. Nothing in
+the private set is needed to make an inference call.
+
+One of them answers a question worth asking out loud: **`/api/oauth/claude_cli/create_api_key`**
+does exist, and it is the supported "create an API key from your Claude account" flow — the
+neighbouring strings are `platform.claude.com/oauth/code/success?app=claude-code` and
+`buy_credits`. So it mints an ordinary **console API key**, billed as API usage. It is not a way
+to bill inference to the subscription, which is what would have made the LiteLLM route trivial.
+
+**And the framing matters more than any of this:** the SDK _ships the same binary_
+(`claude_agent_sdk/_bundled/claude`). "The SDK does not expose it" is a statement about the Python
+surface, not about capability — anything the binary can do is reachable by running the binary,
+which is exactly what `ClaudeSDKClient` does. The gap is a programmatic way to make one raw
+request, not a missing endpoint.
+
 ## On the "same HTTP requests in as out" requirement
 
 The user's constraint — the shim should forward what it receives so the traffic looks the same —
