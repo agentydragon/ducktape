@@ -8,6 +8,27 @@ Survey, 2026-08-10. Wanted, on one fence:
 4. Later: a hook letting haku-console decide, at request time, whether an
    _undecided_ domain is allowed — holding the request while an operator answers
 
+## Where this landed (read this first)
+
+This note was written as the investigation ran, so several sections record
+decisions that later ones supersede. Current position:
+
+- **Route: option E / R2 — one Squid per fence doing all four jobs.** Proven by
+  the spike below: header substitution works on `ssl_bump`-decrypted requests,
+  with real placeholder semantics, plus proxy-stamped caller identity. Single
+  layer, nothing needed from upstream.
+- **Cache: per-fence `emptyDir`, not shared.** Memory-only first. No PVC, no
+  sibling mesh, no Valkey.
+- **Secrets may transit the cache** — accepted; the cache is trusted for that
+  role. Storage of authenticated responses is still denied.
+- **Superseded**: the two-layer "iron in front of a central shared cache" target
+  architecture, and the earlier "Decision: option B". Both are kept below for
+  their reasoning and are labelled.
+
+Still open before building: re-run the spike on Squid 6.x/7.x (it ran on
+3.5.27), several credentials per fence, and the base64 `Basic` form for
+git-over-HTTPS.
+
 ## Finding: nothing on the market does 1 + 2 together
 
 The two capabilities come from different lineages and no project spans them.
@@ -119,7 +140,11 @@ Note the ordering constraint is the opposite of what security would prefer:
 Squid-first would keep credentials away from the cache, and that is the order
 Squid cannot do.
 
-## Target architecture (operator, 2026-08-10)
+## Superseded: two-layer target architecture (iron → central cache)
+
+> **Superseded** by option E after the spike. Kept because the credential-flow
+> reasoning below still applies, and because it is the fallback if a Squid 6.x
+> re-run contradicts the spike. The cache is no longer central or shared.
 
 **One central caching proxy, with the per-consumer iron-proxies in front of it**,
 and possibly a haku-console decision hook later:
@@ -134,7 +159,7 @@ sharing one cache across every fence amortises it while each iron keeps its own
 credential set and host list. It also gives row 1 a path to an L7 allowlist and
 caching at once, which is what started this.
 
-### Decided: secrets may transit the shared cache
+### Decided: secrets may transit the cache (still current)
 
 A central cache behind every iron sees post-substitution credentials from **all**
 fences, aggregating in one component what the separate listeners and per-proxy
@@ -179,7 +204,7 @@ overriding it:
 Worth an explicit test, since a wrong `refresh_pattern` fails silently and looks
 like a cache-tuning win.
 
-### Requirement 4 lands at the cache, and the decision above is what allows it
+### Requirement 4 lands at the cache (still current, and easier under option E)
 
 With every fence's traffic transiting the shared cache — credentialed included —
 one `external_acl_type` helper there sees **every** domain access attempt in the
@@ -602,7 +627,12 @@ than RFC 9111 would. Costs: more components, none of them novel. Also shrinks
 the allowlists, since the fence then permits one internal host instead of five
 external ones.
 
-## Decision (operator, 2026-08-10): B
+## Superseded decision: option B
+
+> **Superseded** by the option E spike result. The priority ordering below —
+> substitution first, caching secondary, HTTP-layer over artifact-layer — is
+> still the operator's, and still rules out options A, C and D. What changed is
+> that E turned out to satisfy the same ordering in one layer, which B cannot.
 
 The requirements are **not equal in weight**. Credential substitution is the
 hard one; caching is wanted but secondary. And where caching happens it should
