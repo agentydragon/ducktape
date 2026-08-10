@@ -32,6 +32,39 @@ PROFILE_PRODUCTS: dict[LinkProfile, tuple[Product, ...]] = {
 }
 
 
+# What each profile is called in the UI. Kept next to the product map so a new profile cannot be
+# added without deciding how it presents — the two used to live in hand-written JS in the link app,
+# free to drift from the products actually requested.
+PROFILE_LABELS: dict[LinkProfile, str] = {
+    LinkProfile.CASHFLOW: "Cashflow",
+    LinkProfile.CREDIT_CARD_DETAIL: "Credit card detail",
+    LinkProfile.INVESTMENTS_HOLDINGS: "Investment holdings",
+    LinkProfile.INVESTMENTS_FULL: "Investments full",
+    LinkProfile.FULL_PICTURE: "Full picture",
+    LinkProfile.ADVANCED: "Advanced",
+}
+
+
+def profile_catalog() -> list[dict[str, object]]:
+    """Every profile as the UI needs it: value, label, the products it requests, and whether sync
+    pulls investment transactions.
+
+    The products belong in the label because Plaid fails the *whole* Link when the institution does
+    not support every requested product — so a profile named for an intent ("Full picture") reads as
+    a richer choice while actually being the most fragile one. Naming the scopes makes the trade
+    visible at the point of choosing. `advanced` has no fixed products; the caller supplies them.
+    """
+    return [
+        {
+            "value": profile.value,
+            "label": PROFILE_LABELS[profile],
+            "products": [p.value for p in PROFILE_PRODUCTS.get(profile, ())],
+            "syncs_investment_transactions": syncs_investment_transactions(profile),
+        }
+        for profile in LinkProfile
+    ]
+
+
 def products_for_profile(profile: LinkProfile, advanced_products: list[str] | None = None) -> list[str]:
     """Return Plaid product names for a UI profile."""
     if profile is LinkProfile.ADVANCED:

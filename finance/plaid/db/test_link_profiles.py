@@ -1,7 +1,12 @@
 import pytest
 import pytest_bazel
 
-from finance.plaid.db.link_profiles import LinkProfile, products_for_profile, syncs_investment_transactions
+from finance.plaid.db.link_profiles import (
+    LinkProfile,
+    products_for_profile,
+    profile_catalog,
+    syncs_investment_transactions,
+)
 
 
 def test_profiles_map_to_minimal_plaid_products() -> None:
@@ -25,6 +30,36 @@ def test_investment_transaction_sync_is_profile_gated() -> None:
     assert not syncs_investment_transactions(LinkProfile.INVESTMENTS_HOLDINGS)
     assert syncs_investment_transactions(LinkProfile.INVESTMENTS_FULL)
     assert syncs_investment_transactions(LinkProfile.FULL_PICTURE)
+
+
+def test_catalog_covers_every_profile_and_matches_the_product_map() -> None:
+    """The catalog is what the link UI renders, so a profile missing from it is a dropdown entry
+    that silently disappears, and a products list that disagrees is the drift this replaced."""
+    catalog = profile_catalog()
+    assert [entry["value"] for entry in catalog] == [p.value for p in LinkProfile]
+    for entry in catalog:
+        profile = LinkProfile(entry["value"])
+        assert entry["label"], f"{profile} has no label"
+        if profile is not LinkProfile.ADVANCED:
+            assert entry["products"] == products_for_profile(profile)
+        assert entry["syncs_investment_transactions"] == syncs_investment_transactions(profile)
+
+
+def test_advanced_declares_no_fixed_products() -> None:
+    """It cannot: the caller supplies them. The UI keys off the empty list to show the checkboxes."""
+    advanced = next(e for e in profile_catalog() if e["value"] == LinkProfile.ADVANCED.value)
+    assert advanced["products"] == []
+
+
+def test_full_picture_is_the_widest_and_therefore_the_most_fragile() -> None:
+    """Plaid fails the whole Link when the institution lacks any requested product, so the profile
+    whose name promises the most is the one most likely to fail — the reason labels name scopes."""
+    catalog = {e["value"]: e for e in profile_catalog()}
+    full = catalog[LinkProfile.FULL_PICTURE.value]["products"]
+    assert set(full) == {"transactions", "investments", "liabilities"}
+    for value, entry in catalog.items():
+        if value != LinkProfile.FULL_PICTURE.value:
+            assert set(entry["products"]) <= set(full)
 
 
 if __name__ == "__main__":

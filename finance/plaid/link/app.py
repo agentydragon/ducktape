@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from finance.plaid.db.client import LinkTokenResult, PlaidClient, PlaidClientError, PlaidCreds, PublicTokenExchange
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_profiles import LinkProfile, Product, products_for_profile
+from finance.plaid.db.link_profiles import LinkProfile, Product, products_for_profile, profile_catalog
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link
@@ -38,9 +38,20 @@ class LinkTokenResponse(BaseModel):
     transaction_days_requested: int | None
 
 
+class ProfileInfo(BaseModel):
+    """One data-surface choice as the UI renders it. `products` is the authoritative list from
+    `link_profiles`, so the dropdown cannot promise a surface the backend does not request."""
+
+    value: str
+    label: str
+    products: list[str]
+    syncs_investment_transactions: bool
+
+
 class WebConfigResponse(BaseModel):
     transaction_days: int
     max_transaction_days: int = MAX_TRANSACTION_DAYS
+    profiles: list[ProfileInfo] = Field(default_factory=list)
 
 
 class LinkUpdateTokenRequest(BaseModel):
@@ -215,7 +226,10 @@ def create_app(
 
     @app.get("/api/config")
     async def web_config() -> WebConfigResponse:
-        return WebConfigResponse(transaction_days=settings.transaction_days)
+        return WebConfigResponse(
+            transaction_days=settings.transaction_days,
+            profiles=[ProfileInfo.model_validate(entry) for entry in profile_catalog()],
+        )
 
     @app.post("/api/link-token")
     async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
@@ -469,15 +483,9 @@ _LINK_HTML = """<!doctype html>
         <form id="link-form">
           <label>Label <input id="label" placeholder="Chase personal" /></label>
           <label>Data surface
-            <select id="profile">
-              <option value="cashflow">Cashflow</option>
-              <option value="credit_card_detail">Credit card detail</option>
-              <option value="investments_holdings">Investment holdings</option>
-              <option value="investments_full">Investments full</option>
-              <option value="full_picture">Full picture</option>
-              <option value="advanced">Advanced</option>
-            </select>
+            <select id="profile"></select>
           </label>
+          <div class="muted" id="profile-hint"></div>
           <label id="transaction-days-wrap">History days <input id="transaction-days" type="number" min="1" max="730" step="1" /></label>
           <div id="advanced-products" class="advanced">
             <label class="check"><input type="checkbox" value="transactions" checked />Transactions</label>
@@ -501,20 +509,22 @@ _LINK_HTML = """<!doctype html>
     <script>
       const pendingKey = 'plaid-link-pending';
       let webConfig = {transaction_days: 730, max_transaction_days: 730};
-      const profiles = [
-        ['cashflow', 'Cashflow'],
-        ['credit_card_detail', 'Credit card detail'],
-        ['investments_holdings', 'Investment holdings'],
-        ['investments_full', 'Investments full'],
-        ['full_picture', 'Full picture']
-      ];
-      const profileProducts = {
-        cashflow: ['transactions'],
-        credit_card_detail: ['transactions', 'liabilities'],
-        investments_holdings: ['investments'],
-        investments_full: ['investments'],
-        full_picture: ['transactions', 'investments', 'liabilities']
-      };
+      // Profiles come from /api/config, which derives them from link_profiles.py. They used to be
+      // duplicated here by hand and could disagree with what the backend actually requested.
+      let profileInfo = [];
+      function profileLabel(p) {
+        if (p.value === 'advanced') return p.label + ' — choose products';
+        const scopes = p.products.join(' + ');
+        // Two profiles request the same product and differ only in sync behaviour, so the scope
+        // list alone would render them identical.
+        const extra = p.syncs_investment_transactions && !p.products.includes('transactions')
+          ? ' + investment transactions on sync' : '';
+        return p.label + ' — ' + scopes + extra;
+      }
+      function profileProductsFor(value) {
+        const found = profileInfo.find(p => p.value === value);
+        return found ? found.products : [];
+      }
       const statusEl = document.getElementById('status');
 
       function setStatus(message) {
@@ -529,12 +539,12 @@ _LINK_HTML = """<!doctype html>
       }
       function profileSelect(link) {
         const current = link.link_profile || 'cashflow';
-        return `<select data-role="scope-profile">${profiles.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
+        return `<select data-role="scope-profile">${profileInfo.filter(p => p.value !== 'advanced').map(p => `<option value="${p.value}" ${p.value === current ? 'selected' : ''}>${escapeHtml(profileLabel(p))}</option>`).join('')}</select>`;
       }
       function selectedProducts() {
         const profile = document.getElementById('profile').value;
         if (profile === 'advanced') return advancedProducts();
-        return profileProducts[profile] || [];
+        return profileProductsFor(profile);
       }
       function historySummary(link) {
         const hasTransactions = (link.products_requested || []).includes('transactions') || (link.products_authorized || []).includes('transactions');
@@ -590,6 +600,16 @@ _LINK_HTML = """<!doctype html>
         const input = document.getElementById('transaction-days');
         input.max = String(webConfig.max_transaction_days);
         input.value = String(webConfig.transaction_days);
+        profileInfo = webConfig.profiles || [];
+        const select = document.getElementById('profile');
+        select.innerHTML = profileInfo
+          .map(p => `<option value="${p.value}">${escapeHtml(profileLabel(p))}</option>`)
+          .join('');
+        document.getElementById('profile-hint').textContent =
+          'Plaid fails the whole Link if the institution does not support every product listed, '
+          + 'so a wider surface is more likely to fail, not more complete. Pick the narrowest that '
+          + 'covers what you need.';
+        setAdvancedVisibility();
       }
 
       async function refreshLinks() {
