@@ -428,10 +428,17 @@ Most of this exists. `claude_chat.py` already has the store (sessions, messages,
 bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends:
 
 - **Ingress**: the sync loop calls `enqueue_prompt` instead of echoing.
-- **Egress**: `_run_turn`'s `final_text` goes to a Matrix send instead of a DB row and SSE
-  (R11.1).
-- **Delete**: the `StreamEvent` branch of `_run_turn`. With no streaming (R11.1) most of
-  that function goes, including the `asyncio.wait` abort dance.
+- **Egress**: `_run_turn`'s `final_text` goes to a Matrix send **as well as** the DB row.
+  Not instead of: the SPA chat view is staying as its own experiment (Open questions), so
+  the rows still have a reader, and the Matrix path is a delivery port on the service
+  rather than Matrix knowledge inside it. Streaming (R11.1) is off for Matrix only — the
+  `StreamEvent` branch and its `asyncio.wait` abort dance survive for the SPA, and the
+  simplification the original plan expected here is deferred with that decision.
+- **Add**: a supervisor. Every existing path into the chat machinery starts from a browser
+  gesture — the `POST` creates the session, mints the bridge token, and provisions the
+  claim. Matrix has none, so something must own "there is one session and it has a live
+  sandbox" and replace it when it dies. This was the largest missing piece and the plan
+  originally left it implicit.
 - **Change**: a singleton session row rather than `create()`-per-operator (R3.1).
   `enqueue_prompt` needs an `operator_id`, which the sender mapping supplies once at
   ingress (R9.3).
@@ -493,9 +500,10 @@ chart with no support for one — is gone with the appservice itself.
 - **What does a rotation look like from the room?** (R3.3) Compaction is seamless, but the
   failure path that forces a fresh session ID is not — does the new session get told what
   the old one was doing, or does it start from the room?
-- **Does the console chat surface stay?** These requirements do not delete
-  `claude_chat.py`; whether Matrix replaces it or sits beside it is unresolved, and keeping
-  both means maintaining two ingress paths into the same session machinery.
+- ~~**Does the console chat surface stay?**~~ — settled: it stays for now, as its own
+  experiment rather than as the surface Matrix is replacing. So there are deliberately two
+  ingress paths into the same session machinery, and the streaming path lives on. Revisit
+  once Matrix has run long enough to say whether the SPA view is still earning its keep.
 
 ## Non-goals, stated so they are not re-litigated
 
