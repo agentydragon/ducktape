@@ -318,15 +318,24 @@ for whenever this is picked up:
   and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is
   reimplementation, and it also fences the agent out of anything not anticipated — threads,
   relations, redactions. Three shapes, and the deciding factor is not convenience:
-  - **A second read-only Matrix account, reached through credential substitution** — the
-    preferred shape. A `@haku-reader`-style member with sending blocked by power levels,
-    whose token the sandbox never holds: it carries a placeholder, and the egress proxy
-    substitutes the real value only for the homeserver host, exactly as
-    `haku-claude-oauth-proxy` already does for `api.anthropic.com` (R5.1a). The agent then
-    uses the real client-server API with ordinary Matrix tooling — nothing reimplemented,
-    nothing fenced off — while an exfiltrated placeholder is worth nothing anywhere, so the
-    capability still dies with the sandbox. The proxy can additionally restrict method and
-    path, making read-only belt-and-braces rather than resting on power levels alone.
+  - **Credential substitution on `@haku`'s own token** — the chosen shape. The sandbox
+    carries a placeholder and the egress proxy substitutes the real value only for the
+    homeserver host, exactly as `haku-claude-oauth-proxy` already does for
+    `api.anthropic.com` (R5.1a). The agent uses the real client-server API with ordinary
+    Matrix tooling — nothing reimplemented, nothing fenced off — and an exfiltrated
+    placeholder is worth nothing anywhere, so the capability dies with the sandbox. Still
+    one Matrix credential, still none of it in the sandbox, so R5.1 holds.
+  - **A second read-only account** (`@haku-reader`, sending blocked by power levels) was
+    preferred until the membership cost showed up: a reader can only read rooms it has
+    joined, so every conversation becomes a **three-member room**. That is not a DM any
+    more — Element stops presenting it as one, it contradicts R3.5, and "just start a DM
+    with Haku" grows a step. The console could auto-invite on binding, but the third member
+    is permanent and visible. What it would have bought is a server-side backstop: Synapse
+    refusing a send regardless of proxy bugs. That is worth less than it sounds, because
+    **the agent can already cause messages in this room** — its turn output is auto-forwarded
+    (R11.1) — so a proxy that wrongly permitted a send would grant something it effectively
+    has. The allowlist's real job is everything else: other rooms, admin endpoints, account
+    management, joins.
   - **A read route on the console, authenticated by the bridge token.** Needs no new
     credential, no new account, and no proxy configuration, and the room resolves from the
     session — R5.3's "another room is not expressible" comes out structurally. The cost is
