@@ -52,26 +52,21 @@ Matrix as a store of record for anything.
   filter is on both the sender MXID and the set of event IDs the console posted.
 - **R1.6 [v1]** No inbound message is silently dropped. An event that cannot be mapped, or
   that fails processing, surfaces to the operator rather than vanishing.
-- **R1.7 [v1] Downtime recovery.** Messages that arrive while the console is down must
-  still be processed once it returns, in order, exactly as if it had been up. Resuming
-  `/sync` from the persisted `next_batch` token is that mechanism: the homeserver returns
-  everything since, in stream order, however long the gap. The token is durable state,
-  written only **after** the events it covers have been acted on — persisting it early is
-  what turns an outage into silent loss rather than a replay.
-- **R1.7a [v1] The token alone is not sufficient.** A resumed `/sync` returns each room's
-  timeline **truncated** to the filter's limit, flagged `limited: true` with a `prev_batch`
-  token, and the events above that limit are simply absent from the response. Advancing the
-  watermark on such a batch drops the middle of the conversation without any error — the
-  exact failure R1.7 exists to prevent, and one that only appears after an outage long
-  enough to matter. A truncated timeline must therefore be paginated backwards from
-  `prev_batch` to the stored watermark before its events are handled. Recovery is bounded,
-  since an unbounded backfill would stall the loop, and reaching that bound is a **loud**
-  log naming the lost range — never a silent truncation.
-- **R1.7b [v1] The first sync takes a position, it does not replay.** With no stored
-  watermark there is no missed range, so the initial sync must establish a position without
-  pulling room backlog; otherwise the console's first act after a fresh deploy is answering
-  messages that predate it. Invites arrive in `invite_state` rather than the timeline, so a
-  pending invite is still seen (R3.6).
+- **R1.7 [v1] Downtime recovery — no message is lost.** Messages that arrive while the
+  console is down must still be processed once it returns, in order, exactly as if it had
+  been up, however long the gap. If recovery cannot close a gap it must say so loudly; it
+  must never skip one silently.
+
+  **Gotcha:** a persisted stream position is necessary but not sufficient. The homeserver
+  answers a resumed sync with a **truncated** view of a long gap — it flags the truncation
+  rather than erroring, so the missing span is only visible to a reader that checks. That
+  is the shape of the loss this requirement is guarding against, and it appears only after
+  an outage long enough to matter.
+
+- **R1.7a [v1] A first run has no missed range.** With no stored position there is nothing
+  to recover, so the console must take a position rather than treat existing room history
+  as a backlog to answer — otherwise its first act after a fresh deploy is replying to
+  messages that predate it. A pending invite must still be seen (R3.6).
 - **R1.8 [v1]** A resumed sync after a long gap can return a very large batch. It is
   subject to the same cap and splitting as any other (R2.6) and the same age fence
   (R2.8) — recovery must not deliver a day of backlog as one turn.
@@ -102,17 +97,13 @@ read-marker semantics, which is moot in a single DM. Revisit if either stops bei
 **Design note — `matrix-nio`, with the state kept outside it.** The client is
 `matrix-nio`, already a repo dependency and already used by `x/ember`. A hand-rolled httpx
 client was tried first and was wrong: the surface looks tiny until protocol subtleties bite,
-and R1.7a is exactly one of those — `limited`/`prev_batch` were dict keys nobody thought to
-read. nio parses events into types (`RoomMessageText` subsumes both the event-type and
-`msgtype` checks) and surfaces the truncation flags, so the gap is visible rather than
-inferred.
+and R1.7's gotcha is exactly one of those — the truncation flags were dict keys nobody
+thought to read.
 
-Two things it is deliberately not allowed to own, both because the console is a
-leader-elected replica set rather than one long-lived process: the **sync position**, which
-lives in Postgres so it survives a handoff to another pod (nio's on-disk store cannot), and
-**error signalling** — nio returns failures as result-union values, which the loop converts
-to exceptions so a rejected token stays distinguishable from a transport failure and can
-trigger a re-login (R10.3a).
+One thing nio is deliberately not allowed to own: the **sync position**, which lives in
+Postgres because the console is a leader-elected replica set and the position must survive
+a handoff to another pod. How the gap is actually closed lives in
+`haku/console/x/matrix_client.py`, not here.
 
 ### R2 — Batching
 
@@ -389,8 +380,8 @@ That proves the credential, the sync loop, the watermark, and the outbound send 
 no Agent SDK anywhere near it. Three things it does **not** prove, all cheap to check
 against the running system and worth doing before they are load-bearing: that exactly one
 of the two console replicas holds the sync lock, that a message sent during a restart is
-answered afterwards (R1.7), and the truncated-timeline backfill (R1.7a), which only fires
-above the timeline limit.
+answered afterwards, and that a gap too large for one sync response is still recovered
+whole (both R1.7).
 
 The code lives under `haku/console/x/` — experimental, no stable API. Three pieces
 necessarily sit outside it because the stable modules own them: `MatrixConfig` on
