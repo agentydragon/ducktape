@@ -50,7 +50,7 @@ from haku.console.mcp_config import (
     _transport,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.mcp_reflection_cache import ReflectionCache, ReflectionCacheKey
+from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -89,11 +89,11 @@ class DegradedReflection:
     degraded_reason: str
 
 
-# What one reflection attempt actually produced: the real upstream `mcp.types.Tool` objects
-# (already validated by the MCP client), or why there aren't any. Internal consumers building
-# proxy tools (`_build_proxy_tool`) read the real upstream type directly — no separate mirror to
+# What one reflection attempt actually produced: the upstream tools and the server's own
+# `initialize` instructions, or why there aren't any. Internal consumers building proxy tools
+# (`_build_proxy_tool`) read the real upstream `mcp.types.Tool` directly — no separate mirror to
 # keep in sync as the proxy needs more of what the upstream tool declares.
-type ServerReflection = list[mcp_types.Tool] | DegradedReflection
+type ServerReflection = ReflectedCatalog | DegradedReflection
 
 
 class ToolMetadata(BaseModel):
@@ -106,8 +106,22 @@ class ToolMetadata(BaseModel):
     name: str
     title: str | None = None
     description: str | None = None
-    input_schema: dict[str, Any] | None = None
+    input_schema: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The schema this proxy accepts for the tool, not the upstream tool's own schema: "
+            "enveloped when `approval_mode` is `approval_required`, in which case the upstream "
+            "schema is nested under `input`. This is the shape to send to `call_mcp_tool`."
+        ),
+    )
     output_schema: dict[str, Any] | None = None
+    approval_mode: Literal["passthrough", "approval_required"] | None = Field(
+        default=None,
+        description=(
+            "Which payload shape `input_schema` is, for the caller this reflection was performed "
+            "for. Null only where the reflection did not resolve a caller (a degraded projection)."
+        ),
+    )
     annotations: mcp_types.ToolAnnotations | None = None
     icons: list[mcp_types.Icon] | None = None
 
@@ -115,6 +129,13 @@ class ToolMetadata(BaseModel):
 class AliveServerState(BaseModel):
     status: Literal["alive"] = "alive"
     tools: list[ToolMetadata] = Field(default_factory=list)
+    instructions: str | None = Field(
+        default=None,
+        description=(
+            "The server's own guidance on how to use it, from its MCP `initialize` result. Null "
+            "when the server declares none. This proxy passes it through rather than restating it."
+        ),
+    )
 
 
 class DegradedServerState(BaseModel):
@@ -154,7 +175,9 @@ def server_metadata_response(server_id: str, reflection: ServerReflection) -> Se
     state: ServerState = (
         DegradedServerState(failure_stage=reflection.failure_stage, degraded_reason=reflection.degraded_reason)
         if isinstance(reflection, DegradedReflection)
-        else AliveServerState(tools=[_tool_metadata(tool) for tool in reflection])
+        else AliveServerState(
+            tools=[_tool_metadata(tool) for tool in reflection.tools], instructions=reflection.instructions
+        )
     )
     return ServerMetadata(server_id=server_id, title=server_id, state=state)
 
@@ -663,11 +686,13 @@ class McpServerDispatcher:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
             return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))
 
-    async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> list[mcp_types.Tool]:
+    async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> ReflectedCatalog:
         transport, transport_auth = _transport(server, self._in_process, auth_token)
         async with Client(transport, auth=transport_auth) as client:
             tools: list[mcp_types.Tool] = await client.list_tools()
-            return tools
+            # The handshake already happened on enter, so its result costs nothing extra here — the
+            # instructions were previously fetched and dropped on every single reflection.
+            return ReflectedCatalog(tools=tools, instructions=client.initialize_result.instructions)
 
 
 def _reflection_cache_key(server: McpServerEntry, auth_token: str | None) -> ReflectionCacheKey:

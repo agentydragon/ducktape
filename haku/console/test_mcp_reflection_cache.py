@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from mcp import types as mcp_types
 
-from haku.console.mcp_reflection_cache import ReflectionCache, ReflectionCacheKey
+from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 
 # Long enough that nothing expires mid-test; expiry itself is covered by the zero-TTL cases.
 NEVER_EXPIRES = 3600.0
@@ -27,9 +27,9 @@ class _CountingReflector:
         self.calls = 0
         self._tools = tools if tools is not None else _tools("stock_add")
 
-    async def __call__(self) -> list[mcp_types.Tool]:
+    async def __call__(self) -> ReflectedCatalog:
         self.calls += 1
-        return self._tools
+        return ReflectedCatalog(tools=self._tools, instructions="how to use me")
 
 
 async def test_second_reflection_within_ttl_reuses_the_first() -> None:
@@ -39,7 +39,7 @@ async def test_second_reflection_within_ttl_reuses_the_first() -> None:
     first = await cache.reflect(_key(), reflect)
     second = await cache.reflect(_key(), reflect)
 
-    assert [tool.name for tool in second] == [tool.name for tool in first]
+    assert [tool.name for tool in second.tools] == [tool.name for tool in first.tools]
     assert reflect.calls == 1
 
 
@@ -61,12 +61,12 @@ async def test_concurrent_reflections_of_one_server_collapse_into_a_single_upstr
     release = asyncio.Event()
     calls = 0
 
-    async def reflect() -> list[mcp_types.Tool]:
+    async def reflect() -> ReflectedCatalog:
         nonlocal calls
         calls += 1
         started.set()
         await release.wait()
-        return _tools("stock_add")
+        return ReflectedCatalog(tools=_tools("stock_add"))
 
     waiters = [asyncio.create_task(cache.reflect(_key(), reflect)) for _ in range(4)]
     await started.wait()
@@ -74,7 +74,7 @@ async def test_concurrent_reflections_of_one_server_collapse_into_a_single_upstr
     results = await asyncio.gather(*waiters)
 
     assert calls == 1
-    assert all([tool.name for tool in result] == ["stock_add"] for result in results)
+    assert all([tool.name for tool in result.tools] == ["stock_add"] for result in results)
 
 
 async def test_a_caller_mutating_the_returned_catalog_cannot_corrupt_the_cache() -> None:
@@ -84,10 +84,10 @@ async def test_a_caller_mutating_the_returned_catalog_cannot_corrupt_the_cache()
     reflect = _CountingReflector(_tools("stock_add", "echo"))
 
     first = await cache.reflect(_key(), reflect)
-    first.clear()
+    first.tools.clear()
     second = await cache.reflect(_key(), reflect)
 
-    assert [tool.name for tool in second] == ["stock_add", "echo"]
+    assert [tool.name for tool in second.tools] == ["stock_add", "echo"]
     assert reflect.calls == 1
 
 
@@ -97,10 +97,10 @@ async def test_a_caller_mutating_a_returned_tool_cannot_corrupt_the_cache() -> N
     cache = ReflectionCache(NEVER_EXPIRES)
     reflect = _CountingReflector()
 
-    (borrowed,) = await cache.reflect(_key(), reflect)
+    (borrowed,) = (await cache.reflect(_key(), reflect)).tools
     borrowed.name = "renamed"
     borrowed.inputSchema["properties"] = {"injected": {"type": "string"}}
-    (fresh,) = await cache.reflect(_key(), reflect)
+    (fresh,) = (await cache.reflect(_key(), reflect)).tools
 
     assert fresh.name == "stock_add"
     assert fresh.inputSchema == {"type": "object"}
@@ -118,7 +118,7 @@ async def test_a_different_credential_does_not_reuse_the_cached_catalog() -> Non
     await cache.reflect(_key(credential="token-a"), first)
     other = await cache.reflect(_key(credential="token-b"), second)
 
-    assert [tool.name for tool in other] == ["operator_b_tool"]
+    assert [tool.name for tool in other.tools] == ["operator_b_tool"]
     assert second.calls == 1
 
 
@@ -140,18 +140,18 @@ async def test_a_failed_reflection_is_not_cached_so_a_recovered_server_is_retrie
     cache = ReflectionCache(NEVER_EXPIRES)
     attempts = 0
 
-    async def reflect() -> list[mcp_types.Tool]:
+    async def reflect() -> ReflectedCatalog:
         nonlocal attempts
         attempts += 1
         if attempts == 1:
             raise RuntimeError("upstream unreachable")
-        return _tools("stock_add")
+        return ReflectedCatalog(tools=_tools("stock_add"))
 
     with pytest.raises(RuntimeError, match="upstream unreachable"):
         await cache.reflect(_key(), reflect)
     recovered = await cache.reflect(_key(), reflect)
 
-    assert [tool.name for tool in recovered] == ["stock_add"]
+    assert [tool.name for tool in recovered.tools] == ["stock_add"]
     assert attempts == 2
 
 
@@ -161,10 +161,10 @@ async def test_one_caller_giving_up_does_not_cancel_the_shared_reflection() -> N
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def reflect() -> list[mcp_types.Tool]:
+    async def reflect() -> ReflectedCatalog:
         started.set()
         await release.wait()
-        return _tools("stock_add")
+        return ReflectedCatalog(tools=_tools("stock_add"))
 
     abandoned = asyncio.create_task(cache.reflect(_key(), reflect))
     patient = asyncio.create_task(cache.reflect(_key(), reflect))
@@ -174,7 +174,7 @@ async def test_one_caller_giving_up_does_not_cancel_the_shared_reflection() -> N
         await abandoned
     release.set()
 
-    assert [tool.name for tool in await patient] == ["stock_add"]
+    assert [tool.name for tool in (await patient).tools] == ["stock_add"]
 
 
 if __name__ == "__main__":

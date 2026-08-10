@@ -47,21 +47,37 @@ class ReflectionCacheKey:
 
 
 @dataclass(frozen=True, slots=True)
-class _CachedCatalog:
+class ReflectedCatalog:
+    """One successful reflection: the upstream tools, plus what the server said about itself.
+
+    `instructions` is the server's own `initialize` guidance on how to use it. It lives here rather
+    than in `mcp_approval` because this module owns what a cache entry holds, and defining it there
+    would make the two import each other.
+    """
+
     tools: list[mcp_types.Tool]
+    instructions: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _CachedCatalog:
+    catalog: ReflectedCatalog
     expires_at: float
 
 
-def _detached(tools: list[mcp_types.Tool]) -> list[mcp_types.Tool]:
+def _detached(catalog: ReflectedCatalog) -> ReflectedCatalog:
     """A catalog sharing no mutable state with the retained one.
 
     A new list is not enough: `mcp_types.Tool` is a mutable model whose `inputSchema` is a plain
     dict, and `_build_proxy_tool` passes that dict straight through as a passthrough tool's
     parameters. Before caching, every reflection produced fresh objects and that aliasing was
     harmless — caching is what turns one caller's in-place edit into every later caller's catalog,
-    across Operators. The copy is cheap next to the MCP connect it replaces.
+    across Operators. The copy is cheap next to the MCP connect it replaces. (`instructions` is an
+    immutable str, so it needs no copy.)
     """
-    return [tool.model_copy(deep=True) for tool in tools]
+    return ReflectedCatalog(
+        tools=[tool.model_copy(deep=True) for tool in catalog.tools], instructions=catalog.instructions
+    )
 
 
 class ReflectionCache:
@@ -75,32 +91,30 @@ class ReflectionCache:
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
         self._catalogs: dict[ReflectionCacheKey, _CachedCatalog] = {}
-        self._in_flight: dict[ReflectionCacheKey, asyncio.Task[list[mcp_types.Tool]]] = {}
+        self._in_flight: dict[ReflectionCacheKey, asyncio.Task[ReflectedCatalog]] = {}
 
     async def reflect(
-        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[list[mcp_types.Tool]]]
-    ) -> list[mcp_types.Tool]:
+        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]]
+    ) -> ReflectedCatalog:
         """Return a fresh cached catalog, join an in-flight reflection, or start one."""
         cached = self._catalogs.get(key)
         if cached is not None and cached.expires_at > time.monotonic():
-            return _detached(cached.tools)
+            return _detached(cached.catalog)
         task = self._in_flight.get(key)
         if task is None:
             task = asyncio.create_task(self._load(key, load))
             self._in_flight[key] = task
         # Shielded so one caller giving up (client disconnect, an outer timeout) does not cancel
         # the reflection every other caller is waiting on.
-        tools = await asyncio.shield(task)
-        return _detached(tools)
+        catalog = await asyncio.shield(task)
+        return _detached(catalog)
 
-    async def _load(
-        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[list[mcp_types.Tool]]]
-    ) -> list[mcp_types.Tool]:
+    async def _load(self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]]) -> ReflectedCatalog:
         try:
-            tools = list(await load())
+            catalog = await load()
             self._prune()
-            self._catalogs[key] = _CachedCatalog(tools=tools, expires_at=time.monotonic() + self._ttl_seconds)
-            return tools
+            self._catalogs[key] = _CachedCatalog(catalog=catalog, expires_at=time.monotonic() + self._ttl_seconds)
+            return catalog
         finally:
             # Also on failure: a raise must not wedge the key into permanent single-flight.
             self._in_flight.pop(key, None)

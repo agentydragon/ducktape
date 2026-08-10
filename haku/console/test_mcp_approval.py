@@ -68,6 +68,7 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.operator_identity import OperatorStatus
@@ -1757,8 +1758,8 @@ async def test_dispatcher_reflects_in_process_server_tools() -> None:
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
     metadata = await dispatcher.metadata(server, auth_token=None)
-    assert isinstance(metadata, list)
-    assert {tool.name for tool in metadata} == {
+    assert isinstance(metadata, ReflectedCatalog)
+    assert {tool.name for tool in metadata.tools} == {
         "stock_add",
         "echo",
         "products_list",
@@ -1792,7 +1793,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
         operator_id=operator, server=server, dispatcher=dispatcher, oauth_store=Mock(), provider_store=provider_store
     )
 
-    assert isinstance(metadata, list)
+    assert isinstance(metadata, ReflectedCatalog)
     builder.assert_called_once_with(None)
     provider_store.is_provisioned.assert_awaited_once_with(connection="google_workspace")
     provider_store.is_connected.assert_awaited_once_with(connection="google_workspace", operator_id=operator)
@@ -1812,9 +1813,9 @@ async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
     first = await dispatcher.metadata(server, auth_token=None)
     second = await dispatcher.metadata(server, auth_token=None)
 
-    assert isinstance(first, list)
-    assert isinstance(second, list)
-    assert {tool.name for tool in second} == {tool.name for tool in first}
+    assert isinstance(first, ReflectedCatalog)
+    assert isinstance(second, ReflectedCatalog)
+    assert {tool.name for tool in second.tools} == {tool.name for tool in first.tools}
     builder.assert_called_once_with(None)
 
 
@@ -1836,7 +1837,7 @@ async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
         },
         catalog_cache_ttl_seconds=3600.0,
     )
-    assert isinstance(await registered.metadata(server, auth_token=None), list)
+    assert isinstance(await registered.metadata(server, auth_token=None), ReflectedCatalog)
 
 
 async def test_dispatcher_does_not_serve_one_credentials_catalog_to_another() -> None:

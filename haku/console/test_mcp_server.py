@@ -40,6 +40,7 @@ from haku.console.mcp_operator_oauth import (
     McpOperatorAuthStatusResponse,
     McpOperatorAuthUnconnected,
 )
+from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.operator_identity import ResolvedOperatorIdentity
 from haku.console.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, ToolCallActor
@@ -1224,15 +1225,18 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     )
     app = create_app(console_settings(migrated_db_url, config_file=config_file))
 
-    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
-        return [
-            Tool(
-                name="echo",
-                description="Echo input",
-                inputSchema={"type": "object"},
-                outputSchema={"type": "object", "properties": {"echoed": {"type": "string"}}},
-            )
-        ]
+    async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
+        return ReflectedCatalog(
+            tools=[
+                Tool(
+                    name="echo",
+                    description="Echo input",
+                    inputSchema={"type": "object"},
+                    outputSchema={"type": "object", "properties": {"echoed": {"type": "string"}}},
+                )
+            ],
+            instructions="Echo server: send text, get it back.",
+        )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1250,10 +1254,17 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
         "description": "Echo input",
         "input_schema": None,
         "output_schema": None,
+        # No policy auto-approves `standin`, so this tool is reported as taking the envelope even
+        # though its own schema is bare — that is the shape a caller must actually send.
+        "approval_mode": "approval_required",
         "annotations": None,
         "icons": None,
     }
-    assert detailed.structured_content["server"]["state"]["tools"][0]["input_schema"] == {"type": "object"}
+    # The server's own `initialize` guidance passes through instead of being dropped at the proxy.
+    assert summary.structured_content["server"]["state"]["instructions"] == "Echo server: send text, get it back."
+    exposed = detailed.structured_content["server"]["state"]["tools"][0]["input_schema"]
+    assert exposed["properties"]["input"] == {"type": "object"}
+    assert set(exposed["required"]) == {"input", "rationale"}
     assert detailed.structured_content["server"]["state"]["tools"][0]["output_schema"] == {
         "type": "object",
         "properties": {"echoed": {"type": "string"}},
@@ -1279,7 +1290,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     started: set[str] = set()
     both_started = asyncio.Event()
 
-    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+    async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         server_id = str(kwargs["server"].id)
         started.add(server_id)
         if len(started) == 2:
@@ -1287,7 +1298,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
         await asyncio.wait_for(both_started.wait(), timeout=1)
         if server_id == "beta":
             await asyncio.sleep(0.01)
-        return [Tool(name="echo", inputSchema={"type": "object"})]
+        return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1314,11 +1325,11 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
     )
     app = create_app(console_settings(migrated_db_url, config_file=config_file))
 
-    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+    async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         server_id = str(kwargs["server"].id)
         if server_id == "broken":
             raise RuntimeError("unexpected reflection failure")
-        return [Tool(name="echo", inputSchema={"type": "object"})]
+        return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1349,10 +1360,10 @@ async def test_tool_dispatch_reflects_only_target_server(
     app = create_app(settings)
     reflected: list[str] = []
 
-    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+    async def metadata_for_operator(**kwargs: Any) -> ReflectedCatalog:
         server_id = str(kwargs["server"].id)
         reflected.append(server_id)
-        return [Tool(name="echo", inputSchema={"type": "object"})]
+        return ReflectedCatalog(tools=[Tool(name="echo", inputSchema={"type": "object"})])
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     actor = AgentActor(

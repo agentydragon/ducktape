@@ -54,6 +54,7 @@ from haku.console.mcp_approval import (
     McpServerDispatcher,
     ServerMetadata,
     ServerReflection,
+    ToolMetadata,
     metadata_for_operator,
     server_metadata_response,
 )
@@ -113,7 +114,7 @@ INSTRUCTIONS = (
     "`withdraw_tool_call(tool_call_id, reason)` to retract one you no longer want before an operator "
     "decides it. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
     "by the console Operator's browser session execute directly and create no approval record. Call "
-    "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials."
+    "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials. "
 )
 
 _REQUEST_PREAMBLE = (
@@ -309,11 +310,41 @@ async def _passive_server_connection_statuses(
     return McpServerConnectionStatusResponse(servers=result)
 
 
-def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
-    """Keep the reflected catalog useful while omitting its potentially large schemas."""
+def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
+    return policies.tool_mode(actor, server_id, tool_name) is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+
+
+def _exposed_metadata(
+    metadata: ServerMetadata, *, policies: AutoApprovalPolicyRegistry, actor: ToolCallActor, include_schemas: bool
+) -> ServerMetadata:
+    """Report each tool as *this proxy* exposes it to this caller, not as the upstream declares it.
+
+    ``input_schema`` is therefore the schema a caller actually sends — enveloped where the policy
+    requires approval — and ``approval_mode`` names which of the two shapes that is. The upstream
+    schema is not reported separately: for an enveloped tool it is already nested under ``input``,
+    so returning both would be the same schema twice.
+
+    A caller whose tool list lacks the generated proxy — a session that connected while this server
+    was degraded, say — otherwise has no way to learn whether a tool takes raw arguments or an
+    envelope, since the only thing that ever said so was the proxy's own schema.
+    """
     if isinstance(metadata.state, DegradedServerState):
         return metadata
-    tools = [tool.model_copy(update={"input_schema": None, "output_schema": None}) for tool in metadata.state.tools]
+
+    def exposed(tool: ToolMetadata) -> ToolMetadata:
+        passthrough = _is_passthrough(policies, actor, metadata.server_id, tool.name)
+        # Mirror `_build_proxy_tool`'s treatment of a missing/degenerate upstream schema, so the
+        # reported envelope is exactly the one the generated tool would advertise.
+        schema = tool.input_schema if passthrough else _envelope_schema(tool.input_schema or {"type": "object"})
+        return tool.model_copy(
+            update={
+                "approval_mode": "passthrough" if passthrough else "approval_required",
+                "input_schema": schema if include_schemas else None,
+                "output_schema": tool.output_schema if include_schemas else None,
+            }
+        )
+
+    tools = [exposed(tool) for tool in metadata.state.tools]
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
@@ -564,18 +595,16 @@ class OperatorToolProvider(Provider):
         context: ConsoleMcpContext,
         actor_resolver: HakuMcpActorResolver,
         catalog: OperatorServerCatalog | None = None,
+        policies: AutoApprovalPolicyRegistry | None = None,
     ) -> None:
         super().__init__()
         self._context = context
         self._actor_resolver = actor_resolver
         self._catalog = catalog or OperatorServerCatalog(context)
-        self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(context.settings))
+        self._auto_approval_policies = policies or AutoApprovalPolicyRegistry(load_console_config(context.settings))
 
     def _is_passthrough(self, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
-        return (
-            self._auto_approval_policies.tool_mode(actor, server_id, tool_name)
-            is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
-        )
+        return _is_passthrough(self._auto_approval_policies, actor, server_id, tool_name)
 
     async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
         try:
@@ -601,7 +630,7 @@ class OperatorToolProvider(Provider):
                 passthrough=self._is_passthrough(actor, server.id, tool.name),
                 actor=actor,
             )
-            for tool in meta
+            for tool in meta.tools
         ]
 
     async def _list_tools(self) -> Sequence[Tool]:
@@ -620,7 +649,7 @@ class OperatorToolProvider(Provider):
         meta = await self._catalog.metadata(server, actor)
         if isinstance(meta, DegradedReflection):
             return None
-        for upstream_tool in meta:
+        for upstream_tool in meta.tools:
             tool = _build_proxy_tool(
                 self._context,
                 server.id,
@@ -674,7 +703,10 @@ def build_console_mcp(
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
     catalog = OperatorServerCatalog(context)
-    mcp.add_provider(OperatorToolProvider(context, actor_resolver, catalog))
+    # One registry for both the generated proxies and the exposed reflection, so what a tool's
+    # schema says about its payload shape can never disagree with what dispatch actually accepts.
+    policies = AutoApprovalPolicyRegistry(load_console_config(context.settings))
+    mcp.add_provider(OperatorToolProvider(context, actor_resolver, catalog, policies))
     mcp.add_middleware(OperatorToolAvailabilityMiddleware(catalog, actor_resolver))
 
     current_actor_dependency = Depends(actor_resolver.resolve)
@@ -737,9 +769,14 @@ def build_console_mcp(
             oauth_store=context.oauth_store,
             provider_store=context.provider_store,
         )
-        metadata = server_metadata_response(server_id, reflection)
         return McpServerProbeResponse(
-            connection=connection, server=metadata if include_tool_schemas else _without_tool_schemas(metadata)
+            connection=connection,
+            server=_exposed_metadata(
+                server_metadata_response(server_id, reflection),
+                policies=policies,
+                actor=actor,
+                include_schemas=include_tool_schemas,
+            ),
         )
 
     @mcp.tool(annotations=_READ_ONLY_META)

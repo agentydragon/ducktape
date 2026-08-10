@@ -162,7 +162,27 @@ not approve or deny before the requested wait ended; it is not an expiry or canc
 remains in the queue, may be approved or denied later, and executes if later approved. A `running`
 stub means approval happened within the wait but downstream execution is still in progress. The
 agent can retract a still-pending stub via `withdraw_tool_call(tool_call_id, reason)` — the one console-native
-mutation, annotated `readOnlyHint=False`. `list_mcp_servers` passively reports the
+ledger mutation, annotated `readOnlyHint=False`.
+
+**Reflection reports the exposed view, not the upstream one.** `get_mcp_server_status` describes each
+tool as _this proxy_ presents it to the asking caller: `input_schema` is the schema the console
+accepts — already enveloped where the policy requires approval — and `approval_mode` names which of
+the two shapes that is. The upstream schema is not returned alongside it; for an enveloped tool it is
+already nested under `input`, so reporting both would be the same schema twice. Both fields are
+per-caller, since the policy is per-Agent, and both come from the one `AutoApprovalPolicyRegistry`
+the generated proxies use, so what reflection says about a tool's payload shape cannot disagree with
+what dispatch accepts.
+
+**Gotcha this closes:** the proxy's generated tools were the only thing that ever stated a tool's
+payload shape, so a caller that lacks them could not act on a server it could plainly see. Discovery
+is request-local but a connected client enumerates once, so a server that was `degraded` at connect
+time contributes no tools for the life of that session even after it recovers.
+
+The reflected `instructions` are the upstream server's own `initialize` guidance, passed through
+rather than restated. The handshake happens on every reflection anyway, so this was already being
+fetched and discarded.
+
+`list_mcp_servers` passively reports the
 configured catalog plus each persisted per-Operator OAuth/provider status object. Each server's
 discriminated `backend` object mirrors the safe configuration shape (`remote_mcp` with URL/auth or
 `in_process` with credential kind); static-bearer secret references are deliberately omitted. These status objects
