@@ -36,7 +36,7 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
   ones the chosen institution doesn't offer greyed out and unchecked (clearing the box re-enables
   everything). Link tokens deliberately do **not** pin `institution_id` — the generated SDK model
   carries that attribute but Plaid answers `INVALID_INSTITUTION`, since it is a response field, not
-  a request one;
+  a request one. Only one product goes in `products`; see _Products vs accounts_ below;
 - choose the Transactions history depth for new Items and show the recorded or
   observed history window for active Items;
 - show active Items, requested/authorized/billed products, sync time, and Secret name;
@@ -47,6 +47,20 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
 - remove an Item through `/item/remove`, delete its access-token Secret, and
   purge its mirrored link/account/transaction rows. Append-only `sync_runs` and
   `plaid_api_events` rows are retained for synchronization audit history.
+
+### Products vs accounts
+
+Institution support and account support are different gates, and only the second one is checked
+after the user has already authenticated at their bank. `products` is hard-required against **the
+accounts the user selects** — so requesting `liabilities` at a brokerage that offers them
+institution-wide, on an account set with no loan or card, fails Link _after_ bank-side consent with
+a "no liability accounts" error inside the Plaid iframe.
+
+The client therefore anchors on a single product and sends the rest as
+`required_if_supported_products`, which activates per selected account and never fails the flow.
+The anchor is the earliest in `Product` declaration order — transactions, then investments, then
+liabilities — which is also broadest-to-narrowest, so the one product that _can_ fail is the one
+least likely to.
 
 Plaid fixes `transactions.days_requested` when Transactions is first added to an
 Item. Existing Items cannot be expanded by sending a larger value later; the UI
