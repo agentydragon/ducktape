@@ -139,6 +139,10 @@ button:disabled {
   color: color-mix(in srgb, CanvasText 70%, Canvas);
   font-size: 14px;
 }
+.status.error {
+  color: #b42318;
+  font-weight: 600;
+}
 .table-wrap {
   overflow-x: auto;
 }

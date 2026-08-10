@@ -44,6 +44,18 @@ def _run_alembic_migrations(conn: Any) -> None:
     alembic_command.upgrade(cfg, "head")
 
 
+class SyncAlreadyRunningError(RuntimeError):
+    """A sync is already in flight for this Item.
+
+    A distinct type rather than a message the caller matches on: the web app answers 409 for this
+    and only this, and a reworded string must not silently turn that into a 500.
+    """
+
+    def __init__(self, item_id: str) -> None:
+        self.item_id = item_id
+        super().__init__(f"sync already running for Plaid item {item_id}")
+
+
 @dataclass(frozen=True)
 class StoredLink:
     item_id: str
@@ -231,6 +243,15 @@ class PlaidLinkStorage:
             row = await session.get(LinkRow, item_id)
             return _stored_link(row) if row is not None else None
 
+    async def running_sync_item_ids(self) -> set[str]:
+        """Items with a sync in flight. The UI disables their sync button rather than letting a
+        click become a guaranteed SyncAlreadyRunningError."""
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                select(SyncRunRow.item_id).where(SyncRunRow.status == "running", SyncRunRow.item_id.isnot(None))
+            )
+            return {item_id for (item_id,) in rows if item_id is not None}
+
     async def begin_sync_run(self, *, trigger: str, item_id: str | None, configured_windows: dict[str, Any]) -> UUID:
         run_id = uuid4()
         async with self._session_factory() as session:
@@ -241,7 +262,7 @@ class PlaidLinkStorage:
                     .where(SyncRunRow.item_id == item_id, SyncRunRow.status == "running")
                 )
                 if running.scalar_one() > 0:
-                    raise RuntimeError(f"sync already running for Plaid item {item_id}")
+                    raise SyncAlreadyRunningError(item_id)
             session.add(
                 SyncRunRow(
                     run_id=run_id,

@@ -8,8 +8,9 @@ let searchSeq = 0;
 
 const statusEl = document.getElementById("status");
 
-function setStatus(message) {
+function setStatus(message, { error = false } = {}) {
   statusEl.textContent = message || "";
+  statusEl.classList.toggle("error", Boolean(message) && error);
 }
 function escapeHtml(value) {
   return String(value || "").replace(
@@ -81,7 +82,7 @@ async function withStatus(message, work) {
     const result = await work();
     return result;
   } catch (error) {
-    setStatus(error.message || String(error));
+    setStatus(error.message || String(error), { error: true });
     throw error;
   } finally {
     document.querySelectorAll("button").forEach((button) => {
@@ -89,7 +90,11 @@ async function withStatus(message, work) {
     });
     // Connect's disabled state is derived, not a spinner: blanket re-enabling would arm it with no
     // institution chosen or no product checked, and submitting then dereferences a null selection.
+    // Same for a row whose sync is still in flight -- re-arming it just buys a 409.
     setFormEnabled();
+    document.querySelectorAll('#links button[data-action="sync"]').forEach((sync) => {
+      sync.disabled = sync.textContent.trim() !== "Sync data";
+    });
   }
 }
 async function loadConfig() {
@@ -194,14 +199,16 @@ async function refreshLinks() {
         <div class="meta muted">Billed ${pills(link.products_billed)}</div>
       </td>
       <td>
-        <div>${escapeHtml(link.last_synced_at || "not synced yet")}</div>
+        <div>${link.sync_running ? "sync in progress…" : escapeHtml(link.last_synced_at || "not synced yet")}</div>
         <div class="meta muted">Secret: ${escapeHtml(link.access_token_secret)}</div>
       </td>
       <td>
         <div class="actions">
           ${addProductsButton(link)}
           <button class="secondary" data-action="repair">Repair link</button>
-          <button class="secondary" data-action="sync">Sync data</button>
+          <button class="secondary" data-action="sync" ${link.sync_running ? "disabled" : ""}>${
+            link.sync_running ? "Syncing…" : "Sync data"
+          }</button>
           <button class="danger" data-action="remove">Remove link</button>
         </div>
       </td>`;

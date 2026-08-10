@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import cast
+from uuid import UUID
 
 import pytest_bazel
 from fastapi.testclient import TestClient
@@ -18,7 +19,7 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 
 from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
 from finance.plaid.db.config import PlaidWebSettings
-from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
+from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.link.app import PlaidWebClient, create_app
 
 
@@ -52,6 +53,9 @@ class _FakeStorage:
 
     async def purge_link_data(self, item_id: str) -> None:
         self.purged_item_ids.append(item_id)
+
+    async def running_sync_item_ids(self) -> set[str]:
+        return set()
 
 
 class _FakeSecrets:
@@ -174,6 +178,27 @@ def test_static_assets_are_served_with_their_own_content_types() -> None:
         assert action in js.text
 
 
+def test_sync_conflict_is_a_sentence_not_an_item_id() -> None:
+    """A link's own post-link sync runs for minutes, and clicking Sync during it hits this. It has
+    to read as an explanation; the raw guard message is an opaque Plaid item id."""
+
+    class _BusyStorage(_FakeStorage):
+        async def running_sync_item_ids(self) -> set[str]:
+            return {"item_123"}
+
+        async def begin_sync_run(self, *, trigger: str, item_id: str | None, configured_windows: object) -> UUID:
+            raise SyncAlreadyRunningError(str(item_id))
+
+    with _client(storage=_BusyStorage()) as client:
+        listed = client.get("/api/links").json()
+        response = client.post("/api/links/item_123/sync")
+
+    assert listed[0]["sync_running"] is True
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "SYNC_ALREADY_RUNNING"
+    assert "already running" in response.json()["detail"]["error_message"]
+
+
 def test_list_links_exposes_product_and_secret_state() -> None:
     with _client() as client:
         response = client.get("/api/links")
@@ -200,6 +225,7 @@ def test_list_links_exposes_product_and_secret_state() -> None:
             # Chase offers transactions + liabilities of what this app syncs; the Item is authorized
             # for transactions only, so liabilities is the one thing "Add ..." could still request.
             "addable_products": ["liabilities"],
+            "sync_running": False,
         }
     ]
 

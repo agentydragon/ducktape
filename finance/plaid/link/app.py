@@ -27,7 +27,7 @@ from finance.plaid.db.client import (
     PublicTokenExchange,
 )
 from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
-from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
+from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.db.products import Product, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import PlaidApiLike, sync_link
@@ -137,6 +137,7 @@ class LinkSummary(BaseModel):
     # failed, which is distinct from "nothing to add": the button is hidden either way, but only
     # one of them is a problem.
     addable_products: list[Product] | None
+    sync_running: bool
 
 
 class PlaidWebClient(PlaidApiLike, Protocol):
@@ -261,8 +262,11 @@ def create_app(
     @app.get("/api/links")
     async def list_links() -> list[LinkSummary]:
         client = require_client()
+        storage = require_storage()
+        running = await storage.running_sync_item_ids()
         return [
-            _link_summary(link, _addable_products(client, link)) for link in await require_storage().list_active_links()
+            _link_summary(link, _addable_products(client, link), sync_running=link.item_id in running)
+            for link in await storage.list_active_links()
         ]
 
     @app.get("/api/links/{item_id}")
@@ -429,10 +433,16 @@ async def _sync_one_link(
 ) -> UUID:
     try:
         return await sync_link(api=api, storage=storage, secrets=secrets, link=link, trigger="manual")
-    except RuntimeError as exc:
-        if "sync already running" in str(exc):
-            raise HTTPException(409, str(exc)) from exc
-        raise
+    except SyncAlreadyRunningError as exc:
+        # Structured so the UI renders a sentence rather than an opaque item id. A link's own
+        # post-link sync can run for minutes, and clicking Sync during it landed here.
+        raise HTTPException(
+            409,
+            {
+                "error_code": "SYNC_ALREADY_RUNNING",
+                "error_message": "A sync is already running for this link. Wait for it to finish, then try again.",
+            },
+        ) from exc
 
 
 def main() -> None:
@@ -489,7 +499,7 @@ def _addable_products(client: PlaidWebClient, link: StoredLink) -> list[Product]
     return [p for p in syncable_products(institution.products) if p.value not in link.products_authorized]
 
 
-def _link_summary(link: StoredLink, addable: list[Product] | None) -> LinkSummary:
+def _link_summary(link: StoredLink, addable: list[Product] | None, *, sync_running: bool = False) -> LinkSummary:
     observed_days = None
     if link.earliest_transaction_date is not None:
         observed_days = (datetime.now(UTC).date() - link.earliest_transaction_date).days
@@ -514,6 +524,7 @@ def _link_summary(link: StoredLink, addable: list[Product] | None) -> LinkSummar
         access_token_secret=link.access_token_secret,
         last_synced_at=link.last_synced_at.isoformat() if link.last_synced_at else None,
         addable_products=addable,
+        sync_running=sync_running,
     )
 
 
