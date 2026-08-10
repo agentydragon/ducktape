@@ -1,0 +1,50 @@
+# Upkeep run. job.yaml provisions immediately on deploy; this keeps the bot's
+# access token healthy afterwards.
+#
+# The token itself does not expire, so this is not a renewal schedule — it is
+# the repair loop. Synapse revokes the token if @provisioner calls /logout/all,
+# if @haku's password is ever set again, or if the homeserver is restored from a
+# backup taken before it was minted. In every case Haku is mute until the next
+# run notices `whoami` failing and mints a replacement, so the schedule is the
+# bound on that outage rather than a cost/benefit tradeoff about renewal.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: matrix-user-provisioner
+  namespace: matrix
+spec:
+  schedule: "17 * * * *" # Hourly, off the hour to avoid the reconcile stampede
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: matrix-user-provisioner
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: matrix-user-provisioner
+          containers:
+            - name: provision
+              # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
+              image: ghcr.io/agentydragon/matrix-user-provisioner:devel-20260717000402-6162a72 # {"$imagepolicy": "flux-system:matrix-user-provisioner"}
+              imagePullPolicy: Always
+              env:
+                - name: REGISTRATION_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: synapse-registration-secret
+                      key: registration_shared_secret
+                - name: ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: synapse-admin-credentials
+                      key: password
+                - name: BOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: haku-matrix-bot-password
+                      key: password
