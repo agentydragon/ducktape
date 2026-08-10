@@ -170,6 +170,27 @@ for whenever this is picked up:
   compacts in place and its ID survives, so the runtime does nothing and the operator sees
   no seam. Rotation to a fresh session ID remains possible (R3.4) but is a **failure and
   manual path**, not a routine one — the room stays continuous across it either way.
+- **R3.3a [v1] A replacement session is re-awakened, not started blank.** Rotation will
+  happen eventually however long-lived the sandbox is, and a fresh session with no context
+  is not a rotation — it is amnesia, announced as a notice. So the first prompt of a
+  replacement session tells it: that it lives in this room, which session it now is (R7.3),
+  enough recent messages to pick the thread back up, and how to read further back itself.
+
+  **The room is the primary source, not the database.** Matrix already holds the
+  conversation, it is what the operator sees, and the recovery path is `/messages`
+  pagination the console already runs for gap recovery (R1.7). The console's own tables hold
+  something different and complementary — the _trace_: tool calls, results, timings, the
+  things the room never showed. Reading the room reconstructs the conversation; reading the
+  trace reconstructs the work.
+
+  **[later] Reading the trace needs a link that is currently discarded.** Rotation
+  overwrites the conversation's `session_id`, and `claude_chat_sessions` carries no room
+  reference, so nothing connects a room to the sessions that served it — "what happened
+  before" is unanswerable from the database today, by construction. Preserving that chain
+  (a room-scoped session history, or a conversation reference on the session) is the
+  prerequisite for any trace-reading tool, and it is cheap to do before the history that
+  would have populated it is thrown away.
+
 - **R3.4 [v1]** Losing the sandbox is survivable, not merely fatal-with-a-restart: pending
   work causes it to be re-provisioned without an operator HTTP request, and the session
   resumes or rotates (R3.3).
@@ -522,9 +543,10 @@ chart with no support for one — is gone with the appservice itself.
   the room a live narration, at the cost of no clean "the answer" to point at.
 - **Status message lifetime** (R6.5): redact on answer, or edit the status into the answer
   so a turn is one message?
-- **What does a rotation look like from the room?** (R3.3) Compaction is seamless, but the
-  failure path that forces a fresh session ID is not — does the new session get told what
-  the old one was doing, or does it start from the room?
+- ~~**What does a rotation look like from the room?**~~ — settled as R3.3a: the replacement
+  is re-awakened with its room, its identity, recent context, and the means to read further
+  back. Primarily from the room, since that is where the conversation already lives; the
+  database holds the trace and needs a link that rotation currently discards.
 - ~~**Does the console chat surface stay?**~~ — settled: it stays for now, as its own
   experiment rather than as the surface Matrix is replacing. So there are deliberately two
   ingress paths into the same session machinery, and the streaming path lives on. Revisit
