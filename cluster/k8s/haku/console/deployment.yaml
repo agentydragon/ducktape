@@ -87,6 +87,23 @@ spec:
                 secretKeyRef:
                   name: haku-routine-launch-token
                   key: token
+            # Matrix chat surface. The password is reflected in from the matrix
+            # namespace, so it is legitimately absent before that reflection lands —
+            # optional:true keeps the console serving its approval queue meanwhile, and
+            # the sync loop simply does not start (haku/plans/matrix_chat_runtime.md
+            # R10.3b). The console mints and caches its own access token from it.
+            - name: HAKU_CONSOLE_MATRIX__HOMESERVER
+              value: http://matrix-synapse.matrix.svc.cluster.local:8008
+            - name: HAKU_CONSOLE_MATRIX__USER_ID
+              value: "@haku:allegedly.works"
+            - name: HAKU_CONSOLE_MATRIX__OPERATOR_USER_ID
+              value: "@agentydragon:allegedly.works"
+            - name: HAKU_CONSOLE_MATRIX__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-matrix-bot-password
+                  key: password
+                  optional: true
             # Web Push: the VAPID key the console signs approval notifications with. Its
             # public half is derived at startup and handed to each browser at subscribe
             # time, so rotating this key makes every enrolled device re-subscribe from

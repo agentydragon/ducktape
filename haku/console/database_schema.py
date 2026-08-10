@@ -912,3 +912,17 @@ class PushSubscription(Base):
 
 
 metadata = Base.metadata
+
+
+class MatrixSyncState(Base):
+    """Where the Matrix sync loop got to, and the token it got there with.
+
+    One row per bot user. `next_batch` is the watermark that makes an outage replay
+    rather than skip; `access_token` is cached because Synapse rate-limits `/login`.
+    """
+
+    __tablename__ = "matrix_sync_state"
+
+    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_batch: Mapped[str | None] = mapped_column(Text, nullable=True)

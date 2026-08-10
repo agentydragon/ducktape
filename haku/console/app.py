@@ -11,6 +11,7 @@ configured for a direct local/dev fallback.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +33,7 @@ from haku.console import (
     claude_chat,
     connection_metrics,
     console_events,
+    matrix_sync,
     mcp_agent_auth,
     mcp_approval,
     mcp_mount,
@@ -213,6 +216,18 @@ def create_app(
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
     )
+    # Matrix chat surface. Absent config is a supported state, not a failure: the bot
+    # password is reflected in from the matrix namespace and is legitimately missing on a
+    # first deploy, and the console must serve its approval queue regardless (R10.3b).
+    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
+    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
+        matrix_sync_service = matrix_sync.MatrixSyncService(
+            matrix_config,
+            matrix_config.password,
+            db_engine,
+            matrix_sync.MatrixSyncStore(db_sessions),
+            httpx.AsyncClient(),
+        )
     node_daemon_service = (
         node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
         if console_config.node_daemons is not None
@@ -370,7 +385,8 @@ def create_app(
         await agent_authority.reconcile_static_agents(static_definitions)
         if claude_chat_service is not None:
             await claude_chat_service.reconcile_terminal_claims()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run():
+        matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running:
             await console_event_hub.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
