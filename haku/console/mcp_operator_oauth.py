@@ -396,6 +396,35 @@ class PostgresMcpOperatorOAuthStore:
             if row is not None:
                 await session.delete(row)
 
+    async def forget_unconfigured_servers(self, servers: list[McpServerEntry]) -> None:
+        """Drop associations for servers the catalog no longer lists.
+
+        Removing a server from the catalog is the same intent as the operator pressing
+        Disconnect, so the association goes the same way. Left behind it is dead data — a
+        refresh token for a server nothing can call — that the background sweep rediscovers
+        and fails on every 30 seconds, forever.
+
+        Deleting through the ORM is load-bearing: the `token_state` relationship cascades
+        `delete-orphan` in Python, while the database's `ON DELETE CASCADE` runs the other
+        way (token state → association). A bulk `delete()` would leave the token row, and
+        its refresh token, behind.
+        """
+        configured = {server.id for server in servers}
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.scalars(
+                    select(McpOperatorOAuthAssociation).where(McpOperatorOAuthAssociation.server_id.not_in(configured))
+                )
+            ).all()
+            for row in rows:
+                # Logged rather than silent: this discards a credential the operator granted.
+                logger.info(
+                    "Forgetting OAuth association for unconfigured MCP server %r (operator %s)",
+                    row.server_id,
+                    row.operator_id,
+                )
+                await session.delete(row)
+
     async def access_token_for(self, *, server: McpServerEntry, operator_id: UUID) -> str | None:
         if not _operator_oauth_enabled(server):
             return None

@@ -415,6 +415,7 @@ def create_app(
             else await _resolve_static_agent_definitions()
         )
         await agent_authority.reconcile_static_agents(static_definitions)
+        await mcp_operator_oauth_store.forget_unconfigured_servers(console_config.mcp.servers)
         if claude_chat_service is not None:
             await claude_chat_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()

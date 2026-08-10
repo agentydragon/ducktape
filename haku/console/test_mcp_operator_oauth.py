@@ -13,7 +13,7 @@ import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
+from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, OAuthTokenState, Operator
 from haku.console.mcp_config import (
     DynamicOAuthClientRegistration,
     McpServerEntry,
@@ -510,6 +510,95 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
     ).associations[0]
     assert isinstance(status.state, McpOperatorAuthConnected)
     assert attempts == 2
+
+
+async def test_forget_unconfigured_servers_drops_the_association_and_its_token(
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
+    dynamic_remote_oauth_server: McpServerEntry,
+) -> None:
+    """A server leaving the catalog takes its per-Operator grant with it.
+
+    Left behind, the row is a refresh token for a server nothing can call, and the
+    background sweep rediscovers and fails on it every 30 seconds forever.
+    """
+    oauth_store, operator_id = await oauth_store_for("forget-unconfigured-operator")
+    removed = dynamic_remote_oauth_server
+    kept = McpServerEntry(
+        id="tana",
+        backend=RemoteMcpBackend(
+            url="https://tana.test/mcp",
+            auth=RemoteServerOAuthAuth(client_registration=DynamicOAuthClientRegistration()),
+        ),
+    )
+    now = datetime.datetime.now(datetime.UTC)
+    async with async_sessionmaker(migrated_engine)() as session, session.begin():
+        for server in (removed, kept):
+            session.add(
+                McpOperatorOAuthAssociation(
+                    server_id=server.id,
+                    operator_id=operator_id,
+                    created_at=now,
+                    client_id="client-id",
+                    token_endpoint="https://auth.test/token",
+                    token_state=new_oauth_token_state(
+                        operator_id=operator_id,
+                        access_token=f"{server.id}-access",
+                        refresh_token=f"{server.id}-refresh",
+                        token_type="Bearer",
+                        scope=None,
+                        expires_at=now + datetime.timedelta(hours=1),
+                        now=now,
+                    ),
+                )
+            )
+    async with async_sessionmaker(migrated_engine)() as session:
+        association = await session.get(McpOperatorOAuthAssociation, (removed.id, operator_id))
+        assert association is not None
+        token_state_id = association.token_state_id
+
+    await oauth_store.forget_unconfigured_servers([kept])
+
+    async with async_sessionmaker(migrated_engine)() as session:
+        assert await session.get(McpOperatorOAuthAssociation, (removed.id, operator_id)) is None
+        assert await session.get(McpOperatorOAuthAssociation, (kept.id, operator_id)) is not None
+        # The token row must go too, or the refresh token outlives the association holding it.
+        assert await session.get(OAuthTokenState, token_state_id) is None
+
+
+async def test_forget_unconfigured_servers_keeps_everything_when_nothing_was_removed(
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
+    dynamic_remote_oauth_server: McpServerEntry,
+) -> None:
+    """It runs on every startup, so the ordinary case must be a no-op."""
+    oauth_store, operator_id = await oauth_store_for("forget-unconfigured-noop-operator")
+    server = dynamic_remote_oauth_server
+    now = datetime.datetime.now(datetime.UTC)
+    async with async_sessionmaker(migrated_engine)() as session, session.begin():
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id=server.id,
+                operator_id=operator_id,
+                created_at=now,
+                client_id="client-id",
+                token_endpoint="https://auth.test/token",
+                token_state=new_oauth_token_state(
+                    operator_id=operator_id,
+                    access_token="access",
+                    refresh_token="refresh",
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now + datetime.timedelta(hours=1),
+                    now=now,
+                ),
+            )
+        )
+
+    await oauth_store.forget_unconfigured_servers([server])
+
+    async with async_sessionmaker(migrated_engine)() as session:
+        assert await session.get(McpOperatorOAuthAssociation, (server.id, operator_id)) is not None
 
 
 if __name__ == "__main__":
