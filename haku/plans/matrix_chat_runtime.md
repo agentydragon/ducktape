@@ -184,6 +184,13 @@ for whenever this is picked up:
   and surfaced, never joined: federation is off so the possible senders are local accounts
   only, but "some local account can make Haku join a room" is not a property to concede by
   default.
+- **R3.6a [v1] One room at a time.** The session is bound to a single room (R3.1), so
+  exactly one joined room is serviced. A further invite, even from the operator, is not
+  joined while a room is live — it is declined or left pending, and the operator is told
+  which room is the live one. Silently joining a room nothing services is the one outcome
+  ruled out: it looks like Haku is listening when it is not. **[later]** Something better
+  than refusal — moving the conversation, or several rooms onto one session — is
+  deliberately deferred, not designed here.
   This is harness behaviour, not an agent capability, so R5.4's exclusion of a join tool
   stands — the agent still cannot reach a room the operator did not put it in.
 
@@ -464,12 +471,9 @@ chart with no support for one — is gone with the appservice itself.
 ## Open questions
 
 - **Batch cap** (R2.6): what value, and does an overflow split get told it is a split?
-- **A second invite** (R3.6): the session is bound to one room (R3.1), so what should
-  happen when the operator invites Haku to another — refuse the invite, join but ignore
-  the room, or move the conversation? Any answer is fine; silently joining a room nothing
-  services is not. As built in Phase 0 the loop joins every operator invite and echoes in
-  each, which is harmless only because nothing is bound to a room yet. Phase 1 is where
-  this has to be answered.
+- ~~**A second invite**~~ — settled as R3.6a: one room at a time, refuse the rest for now.
+  Phase 0 joins every operator invite, which is harmless only because nothing is bound to a
+  room yet; Phase 1 has to implement the restriction.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
