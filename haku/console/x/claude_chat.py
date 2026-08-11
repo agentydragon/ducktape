@@ -33,7 +33,13 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ENDED_SESSION_STATUSES, ChatMessageRole, ChatMessageStatus, ChatSessionStatus
+from haku.console.chat_models import (
+    ENDED_SESSION_STATUSES,
+    LIVE_SESSION_STATUSES,
+    ChatMessageRole,
+    ChatMessageStatus,
+    ChatSessionStatus,
+)
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
@@ -45,6 +51,29 @@ from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
+
+# How long a live session stays believed-in after its holder last spoke, and how often that
+# holder speaks. The gap absorbs a slow database round trip or a paused event loop without
+# anyone reclaiming a session that is merely busy; the TTL bounds how long a room waits
+# before being told the truth. A turn itself may run far longer than the TTL — the renewal
+# is a separate task precisely so a long answer does not read as a dead replica.
+LEASE_TTL = timedelta(seconds=90)
+LEASE_RENEW_INTERVAL = timedelta(seconds=30)
+# The creator's grant, covering the gap before a runner attaches and starts renewing. Longer
+# than `LEASE_TTL` because it has to cover an image pull onto a cold node.
+PROVISION_LEASE = timedelta(minutes=10)
+
+
+def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
+    """The message of the first leaf in *errors*, for the operator-facing `error` column.
+
+    `except*` hands back a group even when one thing failed, and a group's own `str` is a
+    count ("1 sub-exception"), which says nothing about what broke.
+    """
+    leaves = errors.exceptions
+    while leaves and isinstance(leaves[0], BaseExceptionGroup):
+        leaves = leaves[0].exceptions
+    return str(leaves[0]) if leaves else str(errors)
 
 
 class BridgeAuthentication(StrEnum):
@@ -318,6 +347,12 @@ class ClaudeChatStore:
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
                     error=None,
+                    # Granted by the creator, not by an owner: until a runner attaches there is
+                    # no replica holding this session, and a sandbox that never comes up would
+                    # otherwise sit in `provisioning` — a live status — with no lease to expire
+                    # and so nothing to reclaim it. The window is the provisioning budget, and
+                    # the owning replica takes over renewing it once the bridge connects.
+                    lease_expires_at=now + PROVISION_LEASE,
                     created_at=now,
                     updated_at=now,
                 )
@@ -534,6 +569,50 @@ class ClaudeChatStore:
         async with self._sessions() as db:
             chat = await db.get(ClaudeChatSession, session_id)
             return chat.status if chat is not None else None
+
+    async def renew_lease(self, session_id: UUID) -> None:
+        """Assert that this replica still holds *session_id* and is still working on it."""
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id)
+            if chat is not None and chat.status in LIVE_SESSION_STATUSES:
+                chat.lease_expires_at = datetime.now(UTC) + LEASE_TTL
+
+    async def expire_stale_leases(self) -> int:
+        """Fail every live session whose holder stopped renewing, and report how many.
+
+        A live status is written by the replica holding the runner websocket and only ever
+        corrected by that same replica. When it dies without running its finalizer — SIGKILL,
+        OOM, node loss, or a cancellation that raced the event loop's shutdown — the row keeps
+        claiming a turn is in flight, `supervise_once` treats it as healthy, and the room is
+        never answered again. Nothing in the previous design could observe that, because every
+        observer was the process that had gone away.
+
+        Set-based and idempotent, in the shape `node_daemons._expire` already uses: any replica
+        may run it, concurrent runners converge, and a session whose owner is merely slow gets
+        its lease back on the next renewal well before the TTL.
+        """
+        async with self._sessions.begin() as db:
+            expired = (
+                await db.scalars(
+                    select(ClaudeChatSession.session_id).where(
+                        ClaudeChatSession.status.in_(LIVE_SESSION_STATUSES),
+                        ClaudeChatSession.lease_expires_at.is_not(None),
+                        ClaudeChatSession.lease_expires_at <= datetime.now(UTC),
+                    )
+                )
+            ).all()
+            for session_id in expired:
+                # Row-at-a-time rather than one UPDATE: `notify` is per session, and a room
+                # that is not told its session died is exactly the silence being fixed here.
+                chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+                if chat is None or chat.status not in LIVE_SESSION_STATUSES:
+                    continue
+                logger.error("Claude chat session %s lease expired; its console replica is gone", session_id)
+                chat.status = ChatSessionStatus.FAILED
+                chat.error = "console replica holding this session went away mid-turn"
+                chat.updated_at = datetime.now(UTC)
+                await notify(db, ChatEventKind.UPDATE, session_id)
+            return len(expired)
 
     async def closed(self, session_id: UUID) -> None:
         async with self._sessions.begin() as db:
@@ -752,53 +831,86 @@ class ClaudeChatService:
             transport=WebSocketTransport(adapter, build_claude_launch(options), self._progress_reporter(session_id)),
         )
         abort_event = asyncio.Event()
-        # The operator's abort lands on whichever replica the Service picks, which is rarely
-        # the one holding this websocket — so the event is driven by NOTIFY, not by a caller
-        # reaching into this process.
-        abort_watch = asyncio.create_task(self._watch_aborts(session_id, abort_event))
+        # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
+        # the two are about different things: the inner one unwraps whatever the task group
+        # failed with, the outer one is this whole activity being cancelled.
         try:
-            await client.connect()
-            while True:
-                status = await self._store.status(session_id)
-                if status is None or status in ENDED_SESSION_STATUSES:
-                    break
-                prompt = await self._store.next_prompt(session_id)
-                if prompt is None:
-                    # Wait for a LISTEN/NOTIFY instead of polling.
-                    await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
-                    continue
-                _, text = prompt
-                # Cleared here rather than after the turn: an abort notified just as the
-                # previous turn ended would otherwise sit set through the idle wait and kill
-                # the next turn on arrival. A notify racing the next few statements can still
-                # do that, which needs the abort to name a turn rather than a session.
-                abort_event.clear()
-                try:
-                    await self._run_turn(client, session_id, text, abort_event=abort_event)
-                except Exception as error:
-                    logger.exception("Claude chat turn failed for session %s", session_id)
-                    await self._store.fail(session_id, str(error))
-                    break
-        except WebSocketDisconnect:
-            await self._store.fail(session_id, "sandbox runner disconnected")
-        except Exception as error:
-            # `fail` records the message; the traceback is what says which call produced it,
-            # and the listener mismatch was three frames below anything the message named.
-            logger.exception("Claude runtime failed for session %s", session_id)
-            await self._store.fail(session_id, f"Claude runtime failed: {error}")
-        finally:
-            abort_watch.cancel()
             try:
-                await abort_watch
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                # Logged rather than raised: this is cleanup, and re-raising here would skip
-                # the disconnect and claim teardown below and mask whatever ended the session.
-                logger.exception("Abort listener failed for session %s", session_id)
-            await client.disconnect()
-            await self._cleanup_terminal_claim(session_id)
-            await self._store.closed(session_id)
+                # `TaskGroup` rather than bare `create_task`: both helpers run for exactly
+                # this block's lifetime, and it owns awaiting and cancelling them. The
+                # previous hand-rolled cancel/await/suppress dance had to remember to swallow
+                # `CancelledError` and to log rather than raise, or cleanup was skipped.
+                async with asyncio.TaskGroup() as helpers:
+                    # The operator's abort lands on whichever replica the Service picks, which
+                    # is rarely the one holding this websocket — so the event is driven by
+                    # NOTIFY, not by a caller reaching into this process.
+                    abort_watch = helpers.create_task(self._watch_aborts(session_id, abort_event))
+                    # Says "this replica is still here" for as long as it is. Its absence is
+                    # what another replica reclaims the session by; see `expire_stale_leases`.
+                    renewal = helpers.create_task(self._renew_lease(session_id))
+                    try:
+                        await client.connect()
+                        while True:
+                            status = await self._store.status(session_id)
+                            if status is None or status in ENDED_SESSION_STATUSES:
+                                break
+                            prompt = await self._store.next_prompt(session_id)
+                            if prompt is None:
+                                # Wait for a LISTEN/NOTIFY instead of polling.
+                                await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
+                                continue
+                            _, text = prompt
+                            # Cleared here rather than after the turn: an abort notified just
+                            # as the previous turn ended would otherwise sit set through the
+                            # idle wait and kill the next turn on arrival. A notify racing the
+                            # next few statements can still do that, which needs the abort to
+                            # name a turn rather than a session.
+                            abort_event.clear()
+                            try:
+                                await self._run_turn(client, session_id, text, abort_event=abort_event)
+                            except Exception as error:
+                                logger.exception("Claude chat turn failed for session %s", session_id)
+                                await self._store.fail(session_id, str(error))
+                                break
+                    finally:
+                        # The helpers outlive the loop by construction, so ending it is what
+                        # ends them; the group then awaits both before leaving this block.
+                        abort_watch.cancel()
+                        renewal.cancel()
+            except* WebSocketDisconnect:
+                await self._store.fail(session_id, "sandbox runner disconnected")
+            except* Exception as errors:
+                # `fail` records the message; the traceback is what says which call produced
+                # it, and the listener mismatch was three frames below anything it named.
+                logger.exception("Claude runtime failed for session %s", session_id)
+                await self._store.fail(session_id, f"Claude runtime failed: {_first_message(errors)}")
+        except asyncio.CancelledError:
+            # `CancelledError` is a `BaseException`, so neither clause above sees it. This is
+            # the shutdown path — a rolling update, an evicted pod — and leaving it unrecorded
+            # is what let a room sit on "responding" forever: the status stayed live, and the
+            # only process that could correct it was the one going away. Record, then re-raise;
+            # cancellation is never swallowed.
+            await self._store.fail(session_id, "console replica shut down mid-session")
+            raise
+        finally:
+            # Shielded because everything here is an `await` and this task may already be
+            # cancelled, in which case the first one would re-raise and the rest would silently
+            # not happen — which is how `closed()` came to be skipped. Best effort even so: a
+            # SIGKILL runs no finalizer at all, which is why the lease, not this block, is what
+            # actually guarantees the session stops looking alive.
+            with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+                await asyncio.shield(asyncio.wait_for(self._finalize(session_id, client), timeout=10))
+
+    async def _finalize(self, session_id: UUID, client: ClaudeSDKClient) -> None:
+        await client.disconnect()
+        await self._cleanup_terminal_claim(session_id)
+        await self._store.closed(session_id)
+
+    async def _renew_lease(self, session_id: UUID) -> None:
+        """Hold *session_id*'s lease for as long as this replica is running it."""
+        while True:
+            await self._store.renew_lease(session_id)
+            await asyncio.sleep(LEASE_RENEW_INTERVAL.total_seconds())
 
     async def _watch_aborts(self, session_id: UUID, abort_event: asyncio.Event) -> None:
         """Set *abort_event* every time this session is told to abort, until cancelled.

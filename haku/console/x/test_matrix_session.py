@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -105,6 +106,32 @@ async def test_replaces_a_failed_session(supervisor, conversations, chat_store, 
     assert len(recording_claims.created) == 2
     assert await bound_session(conversations) not in (None, dead)
     assert dead in recording_claims.deleted, "the dead session's claim must be swept before a new one is made"
+    assert any("ended" in line for line in announced)
+
+
+async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
+    supervisor, conversations, chat_store, recording_claims, migrated_sessions, announced
+) -> None:
+    """The failure that took the room down on 2026-08-11.
+
+    The session stayed `responding` because the replica running it went away without
+    recording anything, and a live status was taken at face value here — so this method kept
+    reporting "is responding" at a session that no longer existed anywhere but in a row.
+    Supervision has to reclaim it, not believe it.
+    """
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await supervisor.supervise_once()
+    [orphan] = recording_claims.created
+    async with migrated_sessions.begin() as db:
+        chat = await db.get(ClaudeChatSession, orphan)
+        assert chat is not None
+        chat.status = ChatSessionStatus.RESPONDING
+        chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+
+    await supervisor.supervise_once()
+
+    assert len(recording_claims.created) == 2, "the orphaned session was believed rather than replaced"
+    assert await bound_session(conversations) not in (None, orphan)
     assert any("ended" in line for line in announced)
 
 

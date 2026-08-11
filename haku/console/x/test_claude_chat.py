@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import patch
 from uuid import UUID
@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
 from haku.console.config import ClaudeRuntimeConfig
@@ -515,3 +515,73 @@ async def test_abort_reaches_the_replica_running_the_turn(
                 await aborted.wait()
     finally:
         await other_engine.dispose()
+
+
+async def _age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID, *, seconds_ago: int) -> None:
+    async with sessions.begin() as db:
+        chat = await db.get(ClaudeChatSession, session_id)
+        assert chat is not None
+        chat.lease_expires_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
+
+
+async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The wedge this exists for: a live status nobody is working on.
+
+    A replica that dies without running its finalizer leaves `responding` behind, and every
+    other observer used to treat that as healthy — so the room was never answered and never
+    told why. The expired lease is the evidence that makes it reclaimable by anyone.
+    """
+    view, _ = await chat_store.create(operator_id)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.expire_stale_leases() == 1
+    assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
+    assert "went away" in (await chat_store.get(operator_id, view.session_id)).error
+
+
+async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """A busy replica must not have its session reclaimed out from under it."""
+    view, _ = await chat_store.create(operator_id)
+    await chat_store.renew_lease(view.session_id)
+
+    assert await chat_store.expire_stale_leases() == 0
+    assert await chat_store.status(view.session_id) == ChatSessionStatus.PROVISIONING
+
+
+async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, migrated_sessions, operator_id) -> None:
+    """Only a *live* status is a lie worth correcting; a terminal one is already the truth."""
+    view, _ = await chat_store.create(operator_id)
+    await chat_store.fail(view.session_id, "something else went wrong first")
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.expire_stale_leases() == 0
+    assert (await chat_store.get(operator_id, view.session_id)).error == "something else went wrong first"
+
+
+async def test_a_cancelled_runner_records_the_shutdown_instead_of_going_quiet(
+    chat_store, chat_service, operator_id
+) -> None:
+    """Pod termination cancels this task, and `CancelledError` is not an `Exception`.
+
+    So neither `except` clause saw it: the session kept its live status, the replica went
+    away, and the room waited forever. The status must end terminal, and say so.
+    """
+    view, token = await chat_store.create(operator_id)
+
+    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
+        runner = asyncio.create_task(
+            chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
+        )
+        await asyncio.sleep(2)  # Long enough to reach the idle wait, as the sibling test does.
+        assert await chat_store.status(view.session_id) == ChatSessionStatus.READY
+
+        runner.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await runner
+
+    assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
+    assert "shut down" in (await chat_store.get(operator_id, view.session_id)).error

@@ -845,6 +845,12 @@ class ClaudeChatSession(Base):
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Renewed by whichever replica currently holds this session's runner websocket. A live
+    # status is otherwise only ever corrected in-process, so a replica that dies mid-turn
+    # leaves the row claiming a turn is in flight forever; the lease is what lets any other
+    # replica notice. NULL means unheld — a session written by a pre-lease replica, or one
+    # whose owner has not renewed yet.
+    lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -854,6 +860,11 @@ class ClaudeChatSession(Base):
             name="ck_claude_chat_sessions_status",
         ),
         Index("idx_claude_chat_sessions_operator", "operator_id", "created_at"),
+        Index(
+            "idx_claude_chat_sessions_expired_lease",
+            "lease_expires_at",
+            postgresql_where=text("lease_expires_at IS NOT NULL AND status IN ('provisioning','ready','responding')"),
+        ),
     )
 
 
