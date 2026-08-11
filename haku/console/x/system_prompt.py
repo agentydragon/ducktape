@@ -5,7 +5,8 @@ console's ConfigMap and named by an absolute path in `claude_runtime.system_prom
 That placement is the point. A system prompt is the one instruction surface the agent cannot
 edit at all — not a read-only file it could rewrite in its own workspace — so the facts whose
 whole value is that Haku did not choose them belong here, and everything Haku authors for
-itself stays in haku-state (`haku/plans/instructions_ownership.md`).
+itself stays in haku-state (see <../../base/README.md>, which records that the manual moved
+there and what deliberately did not).
 
 Rendering is Jinja2 rather than `str.format` because the interesting parts are conditional:
 a fresh room has no recent messages, and "here is where the conversation was" has to
