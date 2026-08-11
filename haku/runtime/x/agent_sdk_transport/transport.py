@@ -62,11 +62,11 @@ class WebSocketTransport(Transport):
                 match decode_frame(await self._websocket.receive_text()):
                     case ClaudeMessage(payload=payload):
                         yield payload
-                    case Progress(detail=detail):
+                    case Progress(line=line):
                         # Narration about the sandbox, not part of the conversation: it must
                         # not reach the SDK, which would see an unknown message shape.
                         if self._on_progress is not None:
-                            await self._on_progress(detail)
+                            await self._on_progress(line)
                     case other:
                         # `start` and `end_input` only ever travel console → runner, so a
                         # runner sending one is a protocol bug rather than something to route.

@@ -38,13 +38,6 @@ class FrameKind(StrEnum):
     PROGRESS = "progress"
 
 
-# What the sandbox bootstrap prints to say it has reached a step worth reporting. A line
-# prefixed with this becomes a `Progress` frame; everything else it prints is just log.
-# The bootstrap is bash and cannot import this, so the two spellings are pinned together by
-# //cluster/validation:test_haku_manifest_contracts.
-PROGRESS_MARKER = "haku-progress:"
-
-
 @dataclass(frozen=True)
 class ClaudeLaunch:
     """Console → runner, once, first: the CLI process to run.
@@ -72,14 +65,22 @@ class EndInput:
 
 @dataclass(frozen=True)
 class Progress:
-    """Runner → console: what the sandbox is doing before the conversation can start.
+    """Runner → console: one line the sandbox bootstrap printed, verbatim.
 
     Setup runs after the socket is open precisely so this can be said out loud — a clone is
     the longest thing between "Haku is provisioning" and an answer, and without this the room
-    shows a silent gap and no way to tell a slow clone from a wedged one.
+    shows a silent gap with no way to tell a slow clone from a wedged one.
+
+    Verbatim, and every line, rather than lines the script marked as interesting. The
+    bootstrap's own output already *is* the human-readable account of what it did, it is three
+    lines on this box because git writes no progress bar to a pipe, and on a failure the error
+    text is the thing worth having in the room. A marker convention would be a second protocol
+    to keep in sync across a language boundary, buying a tidiness the plan explicitly does not
+    want yet: "while this is new, a room that over-explains itself is the debugging surface"
+    (`haku/plans/matrix_chat_runtime.md` R7.1).
     """
 
-    detail: str
+    line: str
 
 
 BridgeFrame = ClaudeLaunch | ClaudeMessage | EndInput | Progress
@@ -112,7 +113,7 @@ def encode_frame(frame: BridgeFrame) -> str:
             payload = {}
             kind = FrameKind.END_INPUT
         case Progress():
-            payload = {"detail": frame.detail}
+            payload = {"line": frame.line}
             kind = FrameKind.PROGRESS
     return encode_object({"kind": kind, "payload": payload})
 
@@ -127,9 +128,9 @@ def decode_frame(data: str) -> BridgeFrame:
         case FrameKind.END_INPUT:
             return EndInput()
         case FrameKind.PROGRESS:
-            if not isinstance(detail := _payload_of(envelope).get("detail"), str):
-                raise ValueError("bridge progress frame needs a string detail")
-            return Progress(detail=detail)
+            if not isinstance(line := _payload_of(envelope).get("line"), str):
+                raise ValueError("bridge progress frame needs a string line")
+            return Progress(line=line)
         case unknown:
             raise ValueError(f"unsupported bridge frame kind {unknown!r}")
 

@@ -152,11 +152,12 @@ async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> N
     assert (workspace / "marker").read_text().strip() == str(workspace)
 
 
-async def test_workspace_setup_forwards_only_its_progress_markers(tmp_path: Path) -> None:
+async def test_workspace_setup_streams_its_output(tmp_path: Path) -> None:
+    """Every line, verbatim — including whatever the tools it drives print, and stderr."""
     console_socket, runner_socket = memory_websocket_pair()
     setup = executable(
         tmp_path / "setup.sh",
-        "echo 'haku-progress: checking out haku-state'\necho 'ordinary log line'\necho 'haku-progress: workspace ready'",
+        "echo \"Cloning into 'haku-state'...\"\necho\necho 'trouble' >&2\nprintf 'no trailing newline'",
     )
 
     await prepare_workspace(setup, cwd=str(tmp_path), websocket=runner_socket)
@@ -166,7 +167,12 @@ async def test_workspace_setup_forwards_only_its_progress_markers(tmp_path: Path
     with contextlib.suppress(EOFError):
         while True:
             reported.append(decode_frame(await console_socket.receive_text()))
-    assert reported == [Progress(detail="checking out haku-state"), Progress(detail="workspace ready")]
+    # The blank line is dropped; the unterminated last line is not.
+    assert reported == [
+        Progress(line="Cloning into 'haku-state'..."),
+        Progress(line="trouble"),
+        Progress(line="no trailing newline"),
+    ]
 
 
 async def test_workspace_setup_failure_is_fatal(tmp_path: Path) -> None:

@@ -158,8 +158,8 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     reported: list[str] = []
 
-    async def on_progress(detail: str) -> None:
-        reported.append(detail)
+    async def on_progress(line: str) -> None:
+        reported.append(line)
 
     transport = WebSocketTransport(
         console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
@@ -168,14 +168,14 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
     assert decode_frame(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(encode_frame(Progress(detail="checking out haku-state")))
+    await runner_socket.send_text(encode_frame(Progress(line="Cloning into '/workspace/haku-state'...")))
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     await runner_socket.send_text(encode_frame(ClaudeMessage(payload=answer)))
 
     with anyio.fail_after(1):
         # The progress frame is consumed on the way to this, not yielded before it.
         assert await anext(messages) == answer
-    assert reported == ["checking out haku-state"]
+    assert reported == ["Cloning into '/workspace/haku-state'..."]
 
     await transport.close()
 
@@ -187,7 +187,7 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     assert decode_frame(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(encode_frame(Progress(detail="ignored")))
+    await runner_socket.send_text(encode_frame(Progress(line="ignored")))
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     await runner_socket.send_text(encode_frame(ClaudeMessage(payload=answer)))
 

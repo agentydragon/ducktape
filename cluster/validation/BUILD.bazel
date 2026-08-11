@@ -382,10 +382,7 @@ py_test(
 py_test(
     name = "test_haku_manifest_contracts",
     srcs = ["test_haku_manifest_contracts.py"],
-    data = [
-        "//cluster/k8s:haku_manifest_contract_files",
-        "//haku/runtime/x/agent_sdk_transport:protocol_source",
-    ],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
     deps = [
         "//util/bazel:runfiles",
         "@pypi//more_itertools",

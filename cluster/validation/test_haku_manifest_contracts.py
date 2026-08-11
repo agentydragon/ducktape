@@ -13,7 +13,6 @@ from more_itertools import one
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
-_TRANSPORT_PROTOCOL = "_main/haku/runtime/x/agent_sdk_transport/protocol.py"
 
 
 @pytest.fixture(scope="session")
@@ -135,23 +134,6 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
         for ports in entry["ports"]
     }
     assert (namespace, port) in allowed
-
-
-def test_the_bootstrap_and_the_runner_agree_on_the_progress_prefix(k8s_dir: Path) -> None:
-    """The bash that prints progress and the Python that parses it cannot import each other.
-
-    A drifted prefix is silent in the worst way: the bootstrap still succeeds, the room just
-    goes quiet during the longest part of a cold start, which reads as a hang.
-    """
-    marker = one(
-        re.findall(r'^PROGRESS_MARKER = "([^"]+)"$', get_required_path(_TRANSPORT_PROTOCOL).read_text(), re.MULTILINE)
-    )
-    script = (k8s_dir / "haku/workspaces/image/haku-sandbox-setup.sh").read_text()
-    emitter = one(re.findall(r'^progress\(\) \{ echo "([^ ]+) \$\*"; \}$', script, re.MULTILINE))
-
-    assert emitter == marker
-    # And the helper is actually used, or the agreement is about nothing.
-    assert re.search(r'^\s*progress "', script, re.MULTILINE)
 
 
 def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:

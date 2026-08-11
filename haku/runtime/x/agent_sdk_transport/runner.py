@@ -12,7 +12,6 @@ import anyio
 from websockets.asyncio.client import ClientConnection, connect
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
-    PROGRESS_MARKER,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
@@ -152,9 +151,9 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
     exists to narrate it: a clone is the longest thing between "provisioning" and an answer,
     and the console cannot report a step it cannot see.
 
-    Everything the script prints is echoed to this process's own stdout, so the pod log stays
-    the whole record; only `PROGRESS_MARKER` lines are additionally forwarded. Which steps are
-    worth announcing is the script's to decide, because that is where the steps are.
+    Every line it prints is forwarded and also echoed to this process's own stdout, so the pod
+    log keeps the same record the room gets. Streaming the whole thing rather than a marked
+    subset is deliberate — see `Progress`.
 
     **Fatal on failure.** Without the checkout the session has no manual, and a Claude Code
     that starts anyway is the generic-assistant failure the system prompt exists to prevent —
@@ -166,8 +165,10 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
     assert process.stdout is not None
     async for line in _lines(process.stdout):
         print(line, flush=True)
-        if websocket is not None and (detail := line.removeprefix(PROGRESS_MARKER)) != line:
-            await websocket.send_text(encode_frame(Progress(detail=detail.strip())))
+        # Skipping blanks only: a script that spaces its output would otherwise post empty
+        # notices into the room.
+        if websocket is not None and line.strip():
+            await websocket.send_text(encode_frame(Progress(line=line.rstrip())))
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
 
