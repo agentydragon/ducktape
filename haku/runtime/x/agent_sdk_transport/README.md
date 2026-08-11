@@ -8,14 +8,32 @@ which bundles Claude Code 2.1.220 and types the required `dontAsk` permission mo
 `WebSocketTransport` is the Console-side custom Agent SDK transport. The sandbox runs the
 `//haku/runtime/x/agent_sdk_transport:runner_bin` Python executable, which opens the WebSocket, starts a
 configured local Claude Code executable, and copies newline-delimited JSON between the socket and
-Claude's stdin/stdout. The runner imports no Agent SDK code. On connect, the trusted Console process
-sends a versioned `haku_transport/start` frame containing the CLI arguments, working directory, and
-explicit environment produced from its `ClaudeAgentOptions`; this preserves dynamic options such as
-resume, system prompts, and SDK MCP configuration without moving SDK orchestration into the sandbox.
-A compatibility test locates the real Claude executable bundled in the pinned SDK wheel and verifies
-that the launch command matches `SubprocessCLITransport` exactly. Subsequent WebSocket frames are the
-unmodified JSON objects exchanged by the SDK and CLI; the reserved `haku_transport/end_input` frame
-represents the one transport operation that is not itself a JSON protocol message.
+Claude's stdin/stdout. The runner imports no Agent SDK code.
+
+## Framing
+
+Every WebSocket frame is a **Haku envelope** — `{"kind": ..., "payload": {...}}` — and an SDK
+stream-JSON message travels as one envelope's payload. Three kinds today: `start` (Console → runner,
+once, first), `claude` (either direction), and `end_input` (Console → runner). `protocol.py` is the
+whole definition.
+
+The envelope exists so that Haku's control protocol and the SDK's conversation protocol do not share
+a key namespace. They used to: Haku's frames were marked by `"type": "haku_transport"`, a reserved
+value inside the _SDK's_ own `type` key, which holds only for as long as the SDK never emits that
+value — and leaves nowhere to put a frame belonging to neither protocol.
+
+The `start` payload carries the CLI arguments, working directory, and explicit environment produced
+from Console's `ClaudeAgentOptions`, preserving dynamic options such as resume, system prompts, and
+SDK MCP configuration without moving SDK orchestration into the sandbox. A compatibility test locates
+the real Claude executable bundled in the pinned SDK wheel and verifies that the launch command
+matches `SubprocessCLITransport` exactly.
+
+**Gotcha: the two ends are separate images that roll independently.** Console ships in
+`haku-console`; the runner ships in `haku-claude-runner`, whose tag the SandboxTemplate carries under
+its own Flux image policy. A `PROTOCOL_VERSION` bump is therefore not atomic in production — for the
+minutes between the two rollouts, sessions fail their first frame. That is loud and self-healing (the
+supervisor replaces the session and announces it in the room), not silent, but it is the cost of
+changing this file.
 
 The runtime enables both partial messages and fine-grained tool streaming. Console therefore receives
 incremental text and `input_json_delta` tool-argument events, followed by complete `ToolUseBlock` and

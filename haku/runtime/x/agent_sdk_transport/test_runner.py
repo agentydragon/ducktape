@@ -13,10 +13,12 @@ from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITra
 
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
 from haku.runtime.x.agent_sdk_transport.protocol import (
-    END_INPUT_FRAME,
     FINE_GRAINED_TOOL_STREAMING_ENV,
     ClaudeLaunch,
-    encode_object,
+    ClaudeMessage,
+    EndInput,
+    decode_frame,
+    encode_frame,
 )
 from haku.runtime.x.agent_sdk_transport.runner import (
     bridge_websocket_to_claude,
@@ -121,10 +123,12 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(partial(bridge_websocket_to_claude, runner_socket, claude_path=fake_claude, launch=launch))
         message = {"type": "user", "message": {"role": "user", "content": "hello"}}
-        await console_socket.send_text(encode_object(message))
+        await console_socket.send_text(encode_frame(ClaudeMessage(payload=message)))
         with anyio.fail_after(5):
-            assert await console_socket.receive_text() == encode_object(message)
-        await console_socket.send_text(encode_object(END_INPUT_FRAME))
+            # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo
+            # proves the runner strips and restores the envelope rather than passing it through.
+            assert decode_frame(await console_socket.receive_text()) == ClaudeMessage(payload=message)
+        await console_socket.send_text(encode_frame(EndInput()))
 
     assert runner_socket.closed
 
