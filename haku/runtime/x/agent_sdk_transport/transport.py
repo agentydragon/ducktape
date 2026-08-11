@@ -15,14 +15,13 @@ import anyio
 from claude_agent_sdk import Transport
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
+    RUNNER_TO_CONSOLE,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
     Progress,
     TextWebSocket,
-    decode_from_runner,
     decode_object,
-    encode_to_runner,
 )
 
 # Called for each sandbox progress report. Unset drops them, which is what a caller with
@@ -43,13 +42,13 @@ class WebSocketTransport(Transport):
     async def connect(self) -> None:
         if self._closed:
             raise RuntimeError("WebSocket transport is closed")
-        await self._websocket.send_text(encode_to_runner(self._launch))
+        await self._websocket.send_text(self._launch.model_dump_json())
         self._ready = True
 
     async def write(self, data: str) -> None:
         if not self._ready:
             raise RuntimeError("WebSocket transport is not connected")
-        await self._websocket.send_text(encode_to_runner(ClaudeMessage(payload=decode_object(data.strip()))))
+        await self._websocket.send_text(ClaudeMessage(payload=decode_object(data.strip())).model_dump_json())
 
     def read_messages(self) -> AsyncIterator[dict[str, Any]]:
         return self._read_messages()
@@ -61,7 +60,7 @@ class WebSocketTransport(Transport):
             while self._ready:
                 # Exhaustive: `RunnerToConsole` is these two. A `start` or `end_input` coming
                 # back the wrong way never reaches here — the decoder refuses it.
-                match decode_from_runner(await self._websocket.receive_text()):
+                match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
                     case ClaudeMessage(payload=payload):
                         yield payload
                     case Progress(line=line):
@@ -74,7 +73,7 @@ class WebSocketTransport(Transport):
 
     async def end_input(self) -> None:
         if self._ready:
-            await self._websocket.send_text(encode_to_runner(EndInput()))
+            await self._websocket.send_text(EndInput().model_dump_json())
 
     async def close(self) -> None:
         if self._closed:

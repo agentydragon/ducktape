@@ -18,7 +18,6 @@ demultiplex explicit, so its payload can be anything at all without colliding.
 from __future__ import annotations
 
 import json
-from enum import StrEnum
 from typing import Annotated, Any, Final, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -29,15 +28,6 @@ FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMIN
 # Carried on the ``start`` frame only, because the version is a property of the connection
 # that its first frame settles — repeating it on every SDK payload would be noise.
 PROTOCOL_VERSION: Final = 2
-
-
-class FrameKind(StrEnum):
-    """What one frame carries. The discriminator of `BridgeFrame`."""
-
-    START = "start"
-    CLAUDE = "claude"
-    END_INPUT = "end_input"
-    PROGRESS = "progress"
 
 
 class _Frame(BaseModel):
@@ -56,7 +46,7 @@ class ClaudeLaunch(_Frame):
     the arguments `SubprocessCLITransport` would have assembled.
     """
 
-    kind: Literal[FrameKind.START] = FrameKind.START
+    kind: Literal["start"] = "start"
     # `Literal[2]` rather than a plain int, so a peer on another version fails validation
     # here rather than somewhere further in with a stranger symptom. The default keeps the
     # two spellings of the number checked against each other by the type checker.
@@ -69,7 +59,7 @@ class ClaudeLaunch(_Frame):
 class ClaudeMessage(_Frame):
     """One Agent SDK stream-JSON object, in either direction, passed through untouched."""
 
-    kind: Literal[FrameKind.CLAUDE] = FrameKind.CLAUDE
+    kind: Literal["claude"] = "claude"
     # The one field this module does not model: it is the SDK's vocabulary, not ours, and
     # the whole point of nesting it is that it may contain anything — including keys named
     # after our own.
@@ -79,7 +69,7 @@ class ClaudeMessage(_Frame):
 class EndInput(_Frame):
     """Console → runner: `Transport.end_input()`, i.e. close the CLI's stdin."""
 
-    kind: Literal[FrameKind.END_INPUT] = FrameKind.END_INPUT
+    kind: Literal["end_input"] = "end_input"
 
 
 class Progress(_Frame):
@@ -98,7 +88,7 @@ class Progress(_Frame):
     (`haku/plans/matrix_chat_runtime.md` R7.1).
     """
 
-    kind: Literal[FrameKind.PROGRESS] = FrameKind.PROGRESS
+    kind: Literal["progress"] = "progress"
     line: str
 
 
@@ -110,11 +100,12 @@ class Progress(_Frame):
 ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
 RunnerToConsole = ClaudeMessage | Progress
 
-# A `TypeAdapter` rather than a model's own `model_validate`, because the thing being parsed
-# is a union and there is no outer model to hang it on — adding one would put a wrapper on
-# the wire that carries nothing.
-_TO_RUNNER: TypeAdapter[ConsoleToRunner] = TypeAdapter(Annotated[ConsoleToRunner, Field(discriminator="kind")])
-_TO_CONSOLE: TypeAdapter[RunnerToConsole] = TypeAdapter(Annotated[RunnerToConsole, Field(discriminator="kind")])
+# Read with the adapter for the direction you are reading; write with the model's own
+# `model_dump_json`. A `TypeAdapter` rather than a model's `model_validate` because the parsed
+# thing is a union with no outer model to hang it on — wrapping it in one would put a carrier
+# on the wire that means nothing.
+CONSOLE_TO_RUNNER: TypeAdapter[ConsoleToRunner] = TypeAdapter(Annotated[ConsoleToRunner, Field(discriminator="kind")])
+RUNNER_TO_CONSOLE: TypeAdapter[RunnerToConsole] = TypeAdapter(Annotated[RunnerToConsole, Field(discriminator="kind")])
 
 
 class TextWebSocket(Protocol):
@@ -125,32 +116,6 @@ class TextWebSocket(Protocol):
     async def receive_text(self) -> str: ...
 
     async def close(self) -> None: ...
-
-
-# Serializing is direction-agnostic — a model writes the same bytes whoever holds it — so the
-# two encoders exist for their signatures. That is the point: they make "the console tried to
-# send a Progress" a type error at the call site, where nothing else would catch it.
-def encode_to_runner(frame: ConsoleToRunner) -> str:
-    return frame.model_dump_json()
-
-
-def encode_to_console(frame: RunnerToConsole) -> str:
-    return frame.model_dump_json()
-
-
-def decode_from_console(data: str) -> ConsoleToRunner:
-    """Read one frame the console sent, as the runner. Raises `ValidationError` on anything else."""
-    return _TO_RUNNER.validate_json(data)
-
-
-def decode_from_runner(data: str) -> RunnerToConsole:
-    """Read one frame the runner sent, as the console.
-
-    A `start` or `end_input` arriving here is refused by the discriminator rather than by a
-    hand-written check further in — the direction is a property of the type, not something
-    each reader has to remember to assert.
-    """
-    return _TO_CONSOLE.validate_json(data)
 
 
 def decode_object(data: str) -> dict[str, Any]:

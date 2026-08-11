@@ -12,15 +12,14 @@ import anyio
 from websockets.asyncio.client import ClientConnection, connect
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
+    CONSOLE_TO_RUNNER,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
     Progress,
     TextWebSocket,
-    decode_from_console,
     decode_object,
     encode_object,
-    encode_to_console,
 )
 
 
@@ -61,7 +60,7 @@ async def _forward_cli_line(websocket: TextWebSocket, line: bytes) -> None:
     """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
-    await websocket.send_text(encode_to_console(ClaudeMessage(payload=decode_object(stripped.decode()))))
+    await websocket.send_text(ClaudeMessage(payload=decode_object(stripped.decode())).model_dump_json())
 
 
 async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteReceiveStream) -> None:
@@ -77,7 +76,7 @@ async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteRecei
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
     while True:
-        match decode_from_console(await websocket.receive_text()):
+        match CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()):
             case EndInput():
                 await stdin.aclose()
                 return
@@ -168,7 +167,7 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
         # Skipping blanks only: a script that spaces its output would otherwise post empty
         # notices into the room.
         if websocket is not None and line.strip():
-            await websocket.send_text(encode_to_console(Progress(line=line.rstrip())))
+            await websocket.send_text(Progress(line=line.rstrip()).model_dump_json())
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
 
@@ -193,7 +192,7 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
 
     async with connect(websocket_url, additional_headers=headers) as connection:
         websocket = ClientWebSocketAdapter(connection)
-        if not isinstance(launch := decode_from_console(await websocket.receive_text()), ClaudeLaunch):
+        if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), ClaudeLaunch):
             raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
         if setup_path is not None:
             await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)

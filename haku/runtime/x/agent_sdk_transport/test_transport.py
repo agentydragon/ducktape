@@ -10,15 +10,13 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
+    CONSOLE_TO_RUNNER,
+    RUNNER_TO_CONSOLE,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
     Progress,
-    decode_from_console,
-    decode_from_runner,
     encode_object,
-    encode_to_console,
-    encode_to_runner,
 )
 from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 
@@ -59,57 +57,57 @@ def test_every_frame_kind_round_trips() -> None:
     message = ClaudeMessage(payload={"type": "user", "message": {"role": "user", "content": "hi"}})
 
     for outbound in (ClaudeLaunch(arguments=("-v",), cwd="/workspace", environment={"SAFE": "v"}), message, EndInput()):
-        assert decode_from_console(encode_to_runner(outbound)) == outbound
+        assert CONSOLE_TO_RUNNER.validate_json(outbound.model_dump_json()) == outbound
     for inbound in (message, Progress(line="Cloning into 'haku-state'...")):
-        assert decode_from_runner(encode_to_console(inbound)) == inbound
+        assert RUNNER_TO_CONSOLE.validate_json(inbound.model_dump_json()) == inbound
 
 
 def test_each_direction_refuses_the_other_direction_only_frames() -> None:
     """The direction is a property of the type, not a check each reader has to remember."""
     for wrong_way in (ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), EndInput()):
         with pytest.raises(ValidationError, match="union_tag_invalid"):
-            decode_from_runner(encode_to_runner(wrong_way))
+            RUNNER_TO_CONSOLE.validate_json(wrong_way.model_dump_json())
 
     with pytest.raises(ValidationError, match="union_tag_invalid"):
-        decode_from_console(encode_to_console(Progress(line="not the console's to send")))
+        CONSOLE_TO_RUNNER.validate_json(Progress(line="not the console's to send").model_dump_json())
 
 
 def test_an_sdk_payload_naming_our_control_frames_is_still_a_conversation_frame() -> None:
     """The whole point of the envelope: the SDK's vocabulary cannot collide with ours."""
     impostor = ClaudeMessage(payload={"kind": "end_input", "type": "haku_transport", "subtype": "start"})
 
-    assert decode_from_runner(encode_to_console(impostor)) == impostor
+    assert RUNNER_TO_CONSOLE.validate_json(impostor.model_dump_json()) == impostor
 
 
 def test_launch_rejects_another_protocol_version() -> None:
     launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={})
-    older = {**json.loads(encode_to_runner(launch)), "protocol_version": 1}
+    older = {**json.loads(launch.model_dump_json()), "protocol_version": 1}
 
     with pytest.raises(ValidationError, match="protocol_version"):
-        decode_from_console(encode_object(older))
+        CONSOLE_TO_RUNNER.validate_json(encode_object(older))
 
 
 def test_an_unknown_frame_kind_is_refused() -> None:
     """A kind from a newer peer is an error, not something to route somewhere plausible."""
     with pytest.raises(ValidationError, match="union_tag_invalid"):
-        decode_from_console(encode_object({"kind": "a-kind-from-the-future"}))
+        CONSOLE_TO_RUNNER.validate_json(encode_object({"kind": "a-kind-from-the-future"}))
 
 
 def test_a_frame_missing_its_kind_is_refused() -> None:
     """What a pre-envelope peer sends: no discriminator at all, rather than a wrong one."""
     with pytest.raises(ValidationError, match="union_tag_not_found"):
-        decode_from_console(encode_object({"type": "haku_transport", "subtype": "end_input"}))
+        CONSOLE_TO_RUNNER.validate_json(encode_object({"type": "haku_transport", "subtype": "end_input"}))
 
 
 def test_a_frame_carrying_an_unknown_field_is_refused() -> None:
     """`extra=forbid`: a field this end does not understand is a version mismatch, not noise."""
     with pytest.raises(ValidationError, match="extra_forbidden"):
-        decode_from_runner(encode_object({"kind": "progress", "line": "hi", "severity": "warning"}))
+        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "progress", "line": "hi", "severity": "warning"}))
 
 
 def test_a_frame_missing_a_required_field_is_refused() -> None:
     with pytest.raises(ValidationError, match="line"):
-        decode_from_runner(encode_object({"kind": "progress"}))
+        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "progress"}))
 
 
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
@@ -117,11 +115,11 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
     launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={"SAFE": "value"})
     transport = WebSocketTransport(console_socket, launch)
     await transport.connect()
-    assert decode_from_console(await runner_socket.receive_text()) == launch
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
 
     prompt = {"type": "user", "message": {"role": "user", "content": "search"}}
     await transport.write(encode_object(prompt) + "\n")
-    assert decode_from_console(await runner_socket.receive_text()) == ClaudeMessage(payload=prompt)
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == ClaudeMessage(payload=prompt)
 
     partial_events = [
         {
@@ -158,12 +156,12 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
 
     messages = transport.read_messages()
     for event in partial_events:
-        await runner_socket.send_text(encode_to_console(ClaudeMessage(payload=event)))
+        await runner_socket.send_text(ClaudeMessage(payload=event).model_dump_json())
         with anyio.fail_after(1):
             assert await anext(messages) == event
 
     await transport.end_input()
-    assert decode_from_console(await runner_socket.receive_text()) == EndInput()
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == EndInput()
     await transport.close()
 
     assert not transport.is_ready()
@@ -175,7 +173,7 @@ async def test_transport_rejects_non_object_frames() -> None:
     launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={})
     transport = WebSocketTransport(console_socket, launch)
     await transport.connect()
-    assert decode_from_console(await runner_socket.receive_text()) == launch
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
     await runner_socket.send_text("[]")
 
     with pytest.raises(ValidationError, match="dict_type"):
@@ -196,12 +194,12 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
         console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
     )
     await transport.connect()
-    assert decode_from_console(await runner_socket.receive_text())
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(encode_to_console(Progress(line="Cloning into '/workspace/haku-state'...")))
+    await runner_socket.send_text(Progress(line="Cloning into '/workspace/haku-state'...").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(encode_to_console(ClaudeMessage(payload=answer)))
+    await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 
     with anyio.fail_after(1):
         # The progress frame is consumed on the way to this, not yielded before it.
@@ -215,12 +213,12 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
     await transport.connect()
-    assert decode_from_console(await runner_socket.receive_text())
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(encode_to_console(Progress(line="ignored")))
+    await runner_socket.send_text(Progress(line="ignored").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(encode_to_console(ClaudeMessage(payload=answer)))
+    await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 
     with anyio.fail_after(1):
         assert await anext(messages) == answer
@@ -238,8 +236,8 @@ async def test_transport_refuses_a_control_frame_from_the_runner() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
     await transport.connect()
-    assert decode_from_console(await runner_socket.receive_text())
-    await runner_socket.send_text(encode_to_runner(EndInput()))
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
+    await runner_socket.send_text(EndInput().model_dump_json())
 
     with pytest.raises(ValidationError, match="union_tag_invalid"):
         await anext(transport.read_messages())
