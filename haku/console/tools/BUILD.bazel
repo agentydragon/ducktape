@@ -2,6 +2,18 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//haku/console:__subpackages__"])
 
+# Deliberately no `//haku/console:conftest` on the tests below. These are leaf MCP servers and
+# their clients: every one builds its own `FastMCP` over a mock and uses none of the parent
+# conftest's fixtures. Shipping that file into the runfiles is not free even so — pytest imports
+# every ancestor-directory conftest at collection, and `haku/console/conftest.py` imports
+# `create_app`, i.e. the whole console composition root (kubernetes_asyncio, nio, sqlalchemy,
+# the FastMCP stack), which roughly doubled these targets' wall time for fixtures nobody asked
+# for. The fixtures themselves are lazy; a module-level import is not.
+#
+# A test here that later does want a shared fixture just adds the dep back — the failure without
+# it is a loud `fixture 'x' not found`, and the parent conftest defines no autouse fixtures or
+# hooks, so its absence changes nothing else.
+
 py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
@@ -99,7 +111,6 @@ py_test(
     deps = [
         ":hostexec_token",
         "//:conftest",
-        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -130,7 +141,6 @@ py_test(
     deps = [
         ":hostexec_client",
         "//:conftest",
-        "//haku/console:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
@@ -148,7 +158,6 @@ py_test(
     deps = [
         ":hostexec",
         "//:conftest",
-        "//haku/console:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
@@ -161,9 +170,10 @@ py_test(
 py_test(
     name = "test_gmail",
     # Imports, not tests: the 14 cases here drive mocks and take about a second all told
-    # (`--durations` puts every one at ~0.03s). The rest of the wall time is interpreter
-    # start plus this package's import graph, which the 60s `small` default left no room
-    # for once CI was loaded — it timed out twice in three runs while passing at 29s here.
+    # (`--durations` puts every one at ~0.03s). The rest of the wall time is interpreter start
+    # plus this package's import graph — still ~8s of it, four fifths under `fastmcp`, once the
+    # parent conftest is out of the runfiles (it was ~13s with). The 60s `small` default left no
+    # room for that once CI was loaded: it timed out twice in three runs while passing at 29s here.
     size = "medium",
     srcs = ["test_gmail.py"],
     deps = [
@@ -173,7 +183,6 @@ py_test(
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
-        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -193,7 +202,6 @@ py_test(
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
-        "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -207,7 +215,6 @@ py_test(
         ":google_calendar",
         ":google_calendar_client",
         "//:conftest",
-        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
         # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
@@ -222,7 +229,6 @@ py_test(
     deps = [
         ":google_calendar_client",
         "//:conftest",
-        "//haku/console:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -234,7 +240,6 @@ py_test(
     deps = [
         ":routine",
         "//:conftest",
-        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
         # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
@@ -250,7 +255,6 @@ py_test(
         ":routine",
         "//:conftest",
         "//haku/console:config",
-        "//haku/console:conftest",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
