@@ -283,7 +283,14 @@ requests, and may still hand some work to other agent sessions when that is the 
 that ducktape stops being your base and `haku-state` owns it outright — no source to sync
 from, no pin to advance, no adoption ceremony. Delete this section, `memory/base-sync.md`'s
 reason to exist, and the rest of `haku/base/` once `haku-state`'s `main` carries the manual.
-Until then the ceremony below is still live, because `main` does **not** carry it yet.
+
+**Until then the ceremony below is one-directional and narrowed.** Your state's root cards
+(`SOUL.md`, `USER.md`, `MEMORY.md`) are the source for persona, voice, boundaries and the
+operator model — where they and this manual disagree **your state wins**, and reconciling
+must never overwrite them from here. What is still worth adopting out of a `haku/base/` diff
+is only what your state does not yet carry: credential discovery and the `sources/` access
+mechanics. That is exactly the remainder being ported, and when it lands there is nothing
+left to adopt.
 
 Your base (`haku/base/` and the run procedure `haku/run.md`) is
 versioned in ducktape and **changes over time** — the operator edits it to change
