@@ -212,6 +212,17 @@ oci.pull(
     tag = "18",
 )
 
+# Test infrastructure: PostgreSQL with pgvector, for //haku/state_index tests. The stock
+# postgres image ships no `vector` extension, and the index's core invariant (the tip join is
+# the only thing that makes content searchable) is only testable against the real operator.
+oci.pull(
+    name = "pgvector_pg18",
+    digest = "sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62",
+    image = "mirror.gcr.io/pgvector/pgvector",
+    platforms = ["linux/amd64"],
+    tag = "pg18",
+)
+
 # Test infrastructure: Docker registry for e2e tests
 oci.pull(
     name = "registry_2",
@@ -309,7 +320,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.11",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -849,6 +860,25 @@ http_file(
     executable = True,
     sha256 = "9860da9c9386bbc023feed8f43af3105d338727d77b644fa6aeca45a4a11957c",
     urls = ["https://releases.bazel.build/8.6.0/release/bazel-8.6.0-linux-x86_64"],
+)
+
+# BAAI/bge-small-en-v1.5 in ONNX form — the CPU embedding model for the haku-state index
+# (//haku/state_index). Pinned rather than fetched at runtime: the sync job runs behind a
+# force-proxy egress fence, and search embeds its query, so a model that downloads itself on
+# first use turns an egress hiccup into "search is down". Bump both files together — the
+# tokenizer and the graph are one artifact.
+http_file(
+    name = "bge_small_en_v15_model",
+    downloaded_file_path = "model.onnx",
+    sha256 = "828e1496d7fabb79cfa4dcd84fa38625c0d3d21da474a00f08db0f559940cf35",
+    urls = ["https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/onnx/model.onnx"],
+)
+
+http_file(
+    name = "bge_small_en_v15_tokenizer",
+    downloaded_file_path = "tokenizer.json",
+    sha256 = "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+    urls = ["https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/tokenizer.json"],
 )
 
 # Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.

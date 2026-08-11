@@ -22,7 +22,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.oci import load_oci_image
+from util.oci import OciImage, load_oci_image
 
 
 def _daemon_has_image(tag: str) -> bool:
@@ -30,13 +30,17 @@ def _daemon_has_image(tag: str) -> bool:
     return subprocess.run(["docker", "image", "inspect", tag], capture_output=True, check=False).returncode == 0
 
 
-def start_postgres_container() -> PostgresContainer:
-    """Preload Ryuk + Postgres 18 (skipping any the daemon already has), then start the container."""
+def start_postgres_container(image: OciImage = POSTGRES_18) -> PostgresContainer:
+    """Preload Ryuk + the Postgres image (skipping any the daemon already has), then start it.
+
+    `image` selects a different Postgres build — e.g. `PGVECTOR_PG18` for packages whose schema
+    needs the `vector` extension, which the stock image does not ship.
+    """
     if not _daemon_has_image(RYUK.tag):
         load_oci_image(RYUK)
-    if not _daemon_has_image(POSTGRES_18.tag):
-        load_oci_image(POSTGRES_18)
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
+    if not _daemon_has_image(image.tag):
+        load_oci_image(image)
+    container = PostgresContainer(image=image.tag, username="postgres", password="postgres", dbname="postgres")
     container.start()
     return container
 

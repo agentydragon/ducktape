@@ -1,0 +1,114 @@
+"""Bring the index up to a branch tip.
+
+The unit of work is a blob, not a file: the same content at two paths (or moved between
+them) is embedded once, and content already embedded under this (chunker, model) regime is
+never embedded again. Everything the sync writes lands in the caller's transaction, so a
+failed run — an embedder that died halfway, a lost connection — leaves the previous tip
+searchable rather than a half-swapped one.
+"""
+
+from __future__ import annotations
+
+import datetime
+import logging
+from dataclasses import dataclass
+
+import pygit2
+from more_itertools import batched
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from haku.state_index.chunking import CHUNKER_VERSION, Chunk, chunk_text
+from haku.state_index.embedder import Embedder
+from haku.state_index.git_tree import list_tip, read_blob
+from haku.state_index.store import ChunkRow, cached_blobs, insert_chunks, replace_tip, touch_blobs
+
+logger = logging.getLogger(__name__)
+
+# Above this, a blob is data rather than prose: a checked-in binary, a lockfile, a dump. It
+# stays in `tip` (the tip is the tree, honestly reported) but is never chunked, so it simply
+# never matches.
+MAX_BLOB_BYTES = 1 << 20
+
+_EMBED_BATCH = 32
+
+
+@dataclass(frozen=True, slots=True)
+class SyncReport:
+    commit_sha: str
+    tip_files: int
+    blobs_embedded: int
+    blobs_reused: int
+    chunks_written: int
+    skipped_binary: int
+    skipped_large: int
+
+
+async def sync(
+    session: AsyncSession,
+    repo: pygit2.Repository,
+    commit_sha: str,
+    *,
+    branch: str,
+    embedder: Embedder,
+    now: datetime.datetime,
+) -> SyncReport:
+    entries = list_tip(repo, commit_sha)
+    blob_shas = {entry.blob_sha for entry in entries}
+    cached = await cached_blobs(
+        session, sorted(blob_shas), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key
+    )
+
+    pending: list[tuple[str, Chunk]] = []
+    skipped_binary = 0
+    skipped_large = 0
+    for blob_sha in sorted(blob_shas - cached):
+        data = read_blob(repo, blob_sha)
+        if len(data) > MAX_BLOB_BYTES:
+            skipped_large += 1
+            continue
+        try:
+            blob_text = data.decode()
+        except UnicodeDecodeError:
+            skipped_binary += 1
+            continue
+        pending.extend((blob_sha, chunk) for chunk in chunk_text(blob_text))
+
+    rows: list[ChunkRow] = []
+    for batch in batched(pending, _EMBED_BATCH):
+        vectors = embedder.embed_documents([chunk.text for _, chunk in batch])
+        rows.extend(
+            ChunkRow(
+                blob_sha=blob_sha,
+                chunk_no=chunk.chunk_no,
+                chunker_version=CHUNKER_VERSION,
+                model_key=embedder.model_key,
+                byte_start=chunk.byte_start,
+                byte_end=chunk.byte_end,
+                text=chunk.text,
+                embedding=vector,
+            )
+            for (blob_sha, chunk), vector in zip(batch, vectors, strict=True)
+        )
+
+    await insert_chunks(session, rows, now=now)
+    await touch_blobs(session, sorted(cached), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key, now=now)
+    await replace_tip(
+        session,
+        entries,
+        commit_sha=commit_sha,
+        branch=branch,
+        chunker_version=CHUNKER_VERSION,
+        model_key=embedder.model_key,
+        now=now,
+    )
+    report = SyncReport(
+        commit_sha=commit_sha,
+        tip_files=len(entries),
+        blobs_embedded=len({blob_sha for blob_sha, _ in pending}),
+        blobs_reused=len(cached),
+        chunks_written=len(rows),
+        skipped_binary=skipped_binary,
+        skipped_large=skipped_large,
+    )
+    logger.info("synced haku-state index: %s", report)
+    return report

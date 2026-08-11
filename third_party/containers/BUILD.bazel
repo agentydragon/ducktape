@@ -36,6 +36,13 @@ oci_layout_rloc(
 )
 
 oci_layout_rloc(
+    name = "pgvector_pg18",
+    testonly = True,
+    image = "@pgvector_pg18_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_rloc(
     name = "registry_2",
     testonly = True,
     image = "@registry_2_linux_amd64",

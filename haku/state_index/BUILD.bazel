@@ -1,0 +1,169 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "chunking",
+    srcs = ["chunking.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "git_tree",
+    srcs = ["git_tree.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "embedder",
+    srcs = ["embedder.py"],
+    data = [
+        "@bge_small_en_v15_model//file",
+        "@bge_small_en_v15_tokenizer//file",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+        "@pypi//onnxruntime",
+        "@pypi//tokenizers",
+    ],
+)
+
+py_library(
+    name = "vector_type",
+    srcs = ["vector_type.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "schema",
+    srcs = ["schema.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":vector_type",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":git_tree",
+        ":schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sync",
+    srcs = ["sync.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":chunking",
+        ":embedder",
+        ":git_tree",
+        ":store",
+        "@pypi//more_itertools",
+        "@pypi//pygit2",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":chunking",
+        ":embedder",
+        ":git_tree",
+        ":store",
+        ":sync",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "main",
+    main_module = "haku.state_index.main",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":store",
+        "//third_party/containers:rlocations",
+        "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_chunking",
+    srcs = ["test_chunking.py"],
+    deps = [
+        ":chunking",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_embedder",
+    size = "medium",
+    srcs = ["test_embedder.py"],
+    deps = [
+        ":embedder",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_git_tree",
+    srcs = ["test_git_tree.py"],
+    deps = [
+        ":git_tree",
+        "//:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sync",
+    size = "medium",
+    srcs = ["test_sync.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":chunking",
+        ":conftest",
+        ":git_tree",
+        ":schema",
+        ":store",
+        ":sync",
+        "//:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
