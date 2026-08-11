@@ -8,20 +8,37 @@
 # environment contract hash never covered the image tag either way
 # (haku/sandbox_mcp/config.py), so no drift detection is lost.
 #
+# TWO IMAGES RUN THIS, and a change here lands in both:
+#   - the haku-sandbox exec target (this directory's Dockerfile), via the MCP bootstrap;
+#   - the Console-owned Claude runner (//haku/runtime/x/agent_sdk_transport:runner_image),
+#     which runs it itself before launching Claude Code, so that session comes up with
+#     Haku's manual and its git credential rather than an empty /workspace.
+# The steps a given box does not want are switched off by env, below — never by a second
+# copy of this file, because "similar setup to the haku sandbox" is the whole requirement
+# and two copies would drift out of it.
+#
 # Idempotent: safe to re-run against an already-set-up box.
 set -euo pipefail
+
+bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
 
 # ── 1. Egress CA at the JVM level ────────────────────────────────────────────
 # Bazel's downloader runs in the server JVM, which validates against a Java KeyStore and
 # ignores SSL_CERT_FILE. The proxy bumps every host, so a store holding only the egress CA
 # validates bcr.bazel.build / GitHub / npm / PyPI alike. The CA bundle is mounted by the
 # Kyverno egress injection at $EGRESS_CA. (Adapted from haku-state tools/ci/trust_egress_ca.sh.)
-bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
+#
+# HAKU_SETUP_BAZEL_TRUST=0 for a box with no JVM and no Bazel — the Claude runner image is
+# python + git + the claude CLI, and `keytool` is not in it. An explicit switch rather than
+# `command -v keytool`, so a haku-sandbox image that lost its JVM still fails loudly here
+# instead of silently shipping Bazel fetches that cannot verify TLS.
 store="$HOME/egress-truststore.p12"
 pass="changeit"
 egress_cn="haku-egress-proxy-root-ca"
 
-if [ -r "$bundle" ]; then
+if [ "${HAKU_SETUP_BAZEL_TRUST:-1}" != "1" ]; then
+  echo "haku-sandbox-setup: skipping Bazel JVM truststore (HAKU_SETUP_BAZEL_TRUST=0)"
+elif [ -r "$bundle" ]; then
   tmp="$(mktemp -d)"
   csplit -sz -f "$tmp/c" -b '%02d.pem' "$bundle" '/-----BEGIN CERTIFICATE-----/' '{*}'
   rm -f "$store"

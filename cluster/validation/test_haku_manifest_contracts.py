@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path, PurePosixPath
 
 import pytest
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from util.bazel.runfiles import get_required_path
 
@@ -68,7 +70,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "oauth_placeholder": "sk-ant-oat01-proxy-haku-claude-placeholder",
         "https_proxy": "http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
-        "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
+        "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local",
         "mcp_url": "http://haku-console.haku-console.svc.cluster.local:9090/mcp",
         "mcp_static_agent_id": "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2",
         "system_prompt_template": "/etc/haku-console/config/matrix_system_prompt.md.j2",
@@ -93,6 +95,45 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert mcp_agent["auto_approval_policy"] == "haku_v1"
     env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
+
+
+def sandbox_env(template: dict[str, object]) -> dict[str, object]:
+    container = template["spec"]["podTemplate"]["spec"]["containers"][0]  # type: ignore[index]
+    return {entry["name"]: entry for entry in container.get("env", [])}
+
+
+def test_both_sandbox_images_satisfy_the_shared_bootstrap(k8s_dir: Path) -> None:
+    """One bootstrap script runs in two images, so each must supply what it hard-requires.
+
+    `haku-sandbox-setup.sh` writes ~/.netrc from `${HAKU_GIT_USERNAME:?}` / `${HAKU_GIT_PASSWORD:?}`
+    and aborts the whole claim when either is unset. That is the right behaviour and exactly why
+    it wants a test: the failure lands at claim time on whichever image forgot, which for the
+    Claude runner means a session that never comes up.
+    """
+    script = (k8s_dir / "haku/workspaces/image/haku-sandbox-setup.sh").read_text()
+    required = set(re.findall(r"\$\{([A-Z_]+):\?", script))
+    assert required, "the bootstrap declares no required variables — did the ${VAR:?} form change?"
+
+    for name in ("sandboxtemplate-haku.yaml", "sandboxtemplate-haku-claude.yaml"):
+        template = yaml.safe_load((k8s_dir / "haku/workspaces/app" / name).read_text())
+        assert required <= set(sandbox_env(template)), f"{name} does not satisfy the bootstrap"
+
+
+def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir: Path) -> None:
+    """The clone target and the egress policy that permits it must not drift apart."""
+    script = (k8s_dir / "haku/workspaces/image/haku-sandbox-setup.sh").read_text()
+    url = one(re.findall(r"HAKU_STATE_URL:-http://([a-z0-9-]+)\.([a-z0-9-]+):(\d+)/", script))
+    _, namespace, port = url
+
+    egress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml").read_text())
+    allowed = {
+        (rule["toEndpoints"][0]["matchLabels"]["k8s:io.kubernetes.pod.namespace"], ports["port"])
+        for rule in egress["spec"]["egress"]
+        if "toEndpoints" in rule
+        for entry in rule.get("toPorts", [])
+        for ports in entry["ports"]
+    }
+    assert (namespace, port) in allowed
 
 
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:

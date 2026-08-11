@@ -24,6 +24,7 @@ from haku.runtime.x.agent_sdk_transport.runner import (
     bridge_websocket_to_claude,
     build_claude_command,
     build_claude_environment,
+    prepare_workspace,
 )
 
 
@@ -131,6 +132,30 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
         await console_socket.send_text(encode_frame(EndInput()))
 
     assert runner_socket.closed
+
+
+def executable(path: Path, body: str) -> Path:
+    path.write_text(f"#!/usr/bin/env bash\n{body}\n")
+    path.chmod(0o755)
+    return path
+
+
+async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    setup = executable(tmp_path / "setup.sh", "pwd > marker")
+
+    await prepare_workspace(setup, cwd=str(workspace))
+
+    assert (workspace / "marker").read_text().strip() == str(workspace)
+
+
+async def test_workspace_setup_failure_is_fatal(tmp_path: Path) -> None:
+    """No checkout means no manual, and a Claude that starts anyway is a generic assistant."""
+    setup = executable(tmp_path / "setup.sh", "echo 'no credential' >&2; exit 3")
+
+    with pytest.raises(RuntimeError, match="exited with status 3"):
+        await prepare_workspace(setup, cwd=str(tmp_path))
 
 
 if __name__ == "__main__":

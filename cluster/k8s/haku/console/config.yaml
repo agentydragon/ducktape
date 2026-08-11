@@ -11,7 +11,11 @@ claude_runtime:
   oauth_placeholder: sk-ant-oat01-proxy-haku-claude-placeholder
   https_proxy: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
   ca_bundle: /egress-proxy-ca/ca-certificates.crt
-  no_proxy: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8
+  # forgejo-http.forgejo is spelled out because the bare service name does not end in `.svc`,
+  # so the suffix entries above do not cover it — and a git fetch from the agent's own shell
+  # would be routed at the OAuth proxy, which is FQDN-pinned to api.anthropic.com and would
+  # drop it. The bootstrap itself is unaffected (it runs with pod env, which has no proxy).
+  no_proxy: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local
   # Claude Code connects directly to Console's existing streamable-HTTP MCP endpoint using the
   # shared static Haku Agent below. The bearer is loaded from that Agent's existing env-backed
   # secret; this ConfigMap names only the endpoint and durable Agent identity.

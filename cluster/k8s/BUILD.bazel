@@ -74,7 +74,9 @@ filegroup(
         "haku/console/matrix_system_prompt.md.j2",
         "haku/console/service.yaml",
         "haku/managed-agent/haku-forgejo-tea.sops.yaml",
+        "haku/workspaces/app/sandboxtemplate-haku.yaml",
         "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",
+        "haku/workspaces/image/haku-sandbox-setup.sh",
         "keda/helmrelease.yaml",
         "kustomization.yaml",
         "kyverno/policies/inject-haku-egress-proxy.yaml",
@@ -150,4 +152,12 @@ filegroup(
     name = "haku_console_system_prompt",
     srcs = ["haku/console/matrix_system_prompt.md.j2"],
     visibility = ["//haku/console/x:__pkg__"],
+)
+
+# The per-claim sandbox bootstrap, shared with the Console-owned Claude runner image so the
+# two boxes get the same git credentials and checkouts from one reviewed script.
+filegroup(
+    name = "haku_sandbox_setup",
+    srcs = ["haku/workspaces/image/haku-sandbox-setup.sh"],
+    visibility = ["//haku/runtime/x/agent_sdk_transport:__pkg__"],
 )

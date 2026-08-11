@@ -1,6 +1,7 @@
 # Console-owned Claude runners are isolated from Haku's general sandbox namespace.
-# They can reach Haku Console's runner bridge and the OAuth-substituting proxy,
-# but have no direct internet, general cluster access, or general-purpose proxy.
+# They can reach Haku Console's runner bridge, the OAuth-substituting proxy, and the
+# in-cluster Forgejo they check haku-state out of, but have no direct internet, general
+# cluster access, or general-purpose proxy.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -40,4 +41,18 @@ spec:
       toPorts:
         - ports:
             - port: "8180"
+              protocol: TCP
+    # haku-state, so the session starts with Haku's manual rather than an empty workspace.
+    # In-cluster and plaintext, the way the haku-sandbox exec target already clones it — so no
+    # credential passes through the OAuth-substituting proxy, which knows one host and one
+    # header and has no business rewriting git auth. The runner writes the same haku Forgejo
+    # account into ~/.netrc; a public git.allegedly.works route is deliberately NOT opened,
+    # since it would hairpin out through the Gateway for a service one hop away.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: forgejo
+            k8s:app.kubernetes.io/name: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
               protocol: TCP
