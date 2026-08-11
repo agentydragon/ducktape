@@ -70,6 +70,7 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
+from haku.console.x.system_prompt import SystemPromptTemplate
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -262,6 +263,7 @@ def create_app(
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversations: matrix_session.MatrixConversationStore | None = None
     matrix_reply_sink: matrix_session.MatrixReplySink | None = None
+    matrix_system_prompt: matrix_session.MatrixSystemPrompt | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
@@ -275,6 +277,16 @@ def create_app(
         matrix_reply_sink = matrix_session.MatrixReplySink(
             matrix_config, matrix_conversations, matrix_sync_service.reply
         )
+        if claude_runtime is not None:
+            # Parsed here, at construction, so a broken template is a pod that never becomes
+            # Ready rather than a turn that fails hours later.
+            matrix_system_prompt = matrix_session.MatrixSystemPrompt(
+                matrix_config,
+                claude_runtime,
+                matrix_conversations,
+                SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+                matrix_sync_service.recent_history,
+            )
 
     # Resolving configured external identities is database I/O. Keep app construction pure and do
     # this during the async lifespan, after the event loop exists.
@@ -293,6 +305,7 @@ def create_app(
             claude_chat_notifications,
             mcp_token=mcp_agent.token,
             reply_sink=matrix_reply_sink.deliver if matrix_reply_sink is not None else None,
+            system_prompt=matrix_system_prompt.render if matrix_system_prompt is not None else None,
         )
     # The supervisor comes after the Claude runtime it provisions through, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,

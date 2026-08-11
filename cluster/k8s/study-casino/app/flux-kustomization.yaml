@@ -26,4 +26,4 @@ spec:
     - name: study-casino-namespace
       namespace: ducktape-flux
     - name: study-casino-db
-      namespace: flux-system
+      namespace: ducktape-flux

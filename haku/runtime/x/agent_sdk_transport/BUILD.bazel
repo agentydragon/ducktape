@@ -98,6 +98,24 @@ pkg_tar(
     srcs = [":claude_files"],
 )
 
+# The same bootstrap the haku-sandbox exec target runs, so this box gets Haku's manual and
+# git credential the same way rather than by a second, drifting copy.
+pkg_files(
+    name = "setup_files",
+    srcs = ["//cluster/k8s:haku_sandbox_setup"],
+    attributes = pkg_attributes(
+        group = "1000",
+        mode = "0755",
+        user = "1000",
+    ),
+    prefix = "/usr/local/bin",
+)
+
+pkg_tar(
+    name = "setup_layer",
+    srcs = [":setup_files"],
+)
+
 oci_image(
     name = "runner_image",
     base = "@debian_trixie_slim_linux_amd64",
@@ -106,6 +124,7 @@ oci_image(
         binary_name = "runner_image_bin",
         extra_env = {
             "HAKU_CLAUDE_PATH": "/usr/local/bin/claude",
+            "HAKU_CLAUDE_SETUP": "/usr/local/bin/haku-sandbox-setup.sh",
             "HOME": "/home/runner",
             "CLAUDE_CONFIG_DIR": "/claude-config",
         },
@@ -114,6 +133,9 @@ oci_image(
     tars = [
         ":runner_layers",
         ":claude_layer",
+        ":setup_layer",
+        # git, for checking haku-state out into the workspace before Claude starts.
+        "@trixie_haku_claude_runner//:flat",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],

@@ -34,4 +34,4 @@ spec:
     # the pod's build_authentik_auth does a synchronous OIDC discovery fetch at startup, so
     # the provider must exist first.
     - name: agent-machine-access-tf
-      namespace: flux-system
+      namespace: ducktape-flux

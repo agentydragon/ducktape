@@ -2,25 +2,21 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: kubevirt
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/kubevirt/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   wait: true
   timeout: 10m
   dependsOn:
     - name: kubevirt-operator
-      namespace: flux-system
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

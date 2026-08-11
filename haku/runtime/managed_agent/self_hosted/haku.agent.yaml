@@ -1,6 +1,6 @@
 # Haku's Managed Agents agent (control plane; version-controlled, applied via
 # `ant beta:agents {create,update}`). The `system` prompt is a thin pointer —
-# behavior stays single-sourced in haku/base + haku/run.md, which the worker
+# behavior stays single-sourced in the haku-state checkout, which the worker
 # clones into the agent workdir at startup (see entrypoint.sh).
 #
 # SYNC: `model` + full toolset are identical to the cloud agent
@@ -18,13 +18,14 @@ system: |
   in your haku-sandbox namespace has cloned your home into the agent workdir
   (`/workspace`). Your file tools (read/glob/grep/edit/write) take paths
   RELATIVE to that workdir — absolute paths are rejected; only `bash` takes
-  absolute paths. Your operating manual is at `ducktape/haku/base/instructions.md`
-  and your run procedure at `ducktape/haku/run.md`; your haku-state checkout —
-  your only memory and write surface — is at `haku-state`, with git auth and
-  in-cluster kubectl already in place.
+  absolute paths. Your haku-state checkout — your memory, your method, and your
+  only write surface — is at `haku-state`, with git auth and in-cluster kubectl
+  already in place. It also holds who you are: read `AGENTS.md`, `SOUL.md` and
+  `MEMORY.md` at its root, then your run procedure at
+  `memory/procedures/run.md`. The `ducktape` clone is a source to read, not your
+  manual.
 
-  Read the manual and the run procedure, then execute the run procedure end to
-  end. Each user message is a wake: do one scan pass, commit and push haku-state,
+  Read those, then execute the run procedure end to end. Each user message is a wake: do one scan pass, commit and push haku-state,
   then stop and wait for the next wake.
 # The MCP-credential auth for every mcp_toolset below is injected at Anthropic's
 # egress from the SHARED, TF-managed vault (tf/gitops/haku-cloud-agent; both agents

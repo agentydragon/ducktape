@@ -218,6 +218,10 @@ class ClaudeRuntimeConfig(BaseModel):
     no_proxy: str
     mcp_url: str
     mcp_static_agent_id: UUID
+    # Absolute, like every other path here: mounted beside this config file in the console's
+    # ConfigMap. Rendered by `haku.console.x.system_prompt`, which says why it is deploy
+    # config rather than code or haku-state.
+    system_prompt_template: Path
 
     def claude_environment(self) -> dict[str, str]:
         return {

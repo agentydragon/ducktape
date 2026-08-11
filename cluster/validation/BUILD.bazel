@@ -385,6 +385,7 @@ py_test(
     data = ["//cluster/k8s:haku_manifest_contract_files"],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

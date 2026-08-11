@@ -1,0 +1,20 @@
+# Deb packages for the haku-claude-runner image.
+# `git` on debian:trixie-slim, so the runner can check out haku-state into the
+# sandbox workspace before launching Claude Code. The Python interpreter, the app,
+# and the `claude` CLI come from the image's own layers, not from apt.
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_haku_claude_runner//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "git"

@@ -17,4 +17,4 @@ spec:
   wait: true
   dependsOn:
     - name: nix-cache
-      namespace: flux-system
+      namespace: ducktape-flux

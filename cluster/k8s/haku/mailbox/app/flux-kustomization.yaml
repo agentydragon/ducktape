@@ -26,7 +26,7 @@ spec:
     - name: cert-manager # Certificate CRD + controller
       namespace: ducktape-flux
     - name: agent-machine-access-tf # Authentik provider + Haku mailbox identity
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: gateway # HTTPRoute parent for the JMAP/management API
       namespace: ducktape-flux
     - name: external-secrets-config # ClusterSecretStore + CRDs (token mirror)

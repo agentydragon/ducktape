@@ -8,20 +8,37 @@
 # environment contract hash never covered the image tag either way
 # (haku/sandbox_mcp/config.py), so no drift detection is lost.
 #
+# TWO IMAGES RUN THIS, and a change here lands in both:
+#   - the haku-sandbox exec target (this directory's Dockerfile), via the MCP bootstrap;
+#   - the Console-owned Claude runner (//haku/runtime/x/agent_sdk_transport:runner_image),
+#     which runs it itself before launching Claude Code, so that session comes up with
+#     Haku's manual and its git credential rather than an empty /workspace.
+# The steps a given box does not want are switched off by env, below — never by a second
+# copy of this file, because "similar setup to the haku sandbox" is the whole requirement
+# and two copies would drift out of it.
+#
 # Idempotent: safe to re-run against an already-set-up box.
 set -euo pipefail
+
+bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
 
 # ── 1. Egress CA at the JVM level ────────────────────────────────────────────
 # Bazel's downloader runs in the server JVM, which validates against a Java KeyStore and
 # ignores SSL_CERT_FILE. The proxy bumps every host, so a store holding only the egress CA
 # validates bcr.bazel.build / GitHub / npm / PyPI alike. The CA bundle is mounted by the
 # Kyverno egress injection at $EGRESS_CA. (Adapted from haku-state tools/ci/trust_egress_ca.sh.)
-bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
+#
+# HAKU_SETUP_BAZEL_TRUST=0 for a box with no JVM and no Bazel — the Claude runner image is
+# python + git + the claude CLI, and `keytool` is not in it. An explicit switch rather than
+# `command -v keytool`, so a haku-sandbox image that lost its JVM still fails loudly here
+# instead of silently shipping Bazel fetches that cannot verify TLS.
 store="$HOME/egress-truststore.p12"
 pass="changeit"
 egress_cn="haku-egress-proxy-root-ca"
 
-if [ -r "$bundle" ]; then
+if [ "${HAKU_SETUP_BAZEL_TRUST:-1}" != "1" ]; then
+  echo "haku-sandbox-setup: skipping Bazel JVM truststore (HAKU_SETUP_BAZEL_TRUST=0)"
+elif [ -r "$bundle" ]; then
   tmp="$(mktemp -d)"
   csplit -sz -f "$tmp/c" -b '%02d.pem' "$bundle" '/-----BEGIN CERTIFICATE-----/' '{*}'
   rm -f "$store"
@@ -96,35 +113,33 @@ else
   git clone --depth 1 --branch main --single-branch "$url" "$repo"
 fi
 
-# ── 5. ducktape checkout (Haku's read-only base) ─────────────────────────────
-# `haku/run.md` step 2 (base-sync) diffs `haku/base` + `haku/run.md` between the pin in
-# haku-state's memory/base-sync.md and ducktape HEAD. Until 2026-07-25 no ducktape existed
-# here at all, so a sandbox-hosted run was structurally incapable of that step and had to
-# borrow the harness's checkout. Cloning it closes that, and doubles as the way an ad-hoc
-# claude.ai chat (which has no ducktape) can read Haku's manual at all.
+# ── 5. ducktape checkout (one of Haku's information sources) ─────────────────
+# Haku's manual is not here — it lives in the haku-state checkout above. ducktape is cloned
+# because its recent history is a source Haku reads for follow-up work the operator may want
+# surfaced (haku-state `sources/ducktape.md`), and because the runtime entrypoints live here.
 #
 # From GitHub, not the in-cluster Forgejo mirror: the mirror is not yet auto-synced and was
-# measured 3 commits behind devel (97a23895 vs a4c497f7) on 2026-07-25, and base-sync against
-# a stale HEAD silently under-reports contract changes. Public repo, so no credential — the
-# egress proxy allows github.com and §2b just taught git to trust it.
+# measured 3 commits behind devel (97a23895 vs a4c497f7) on 2026-07-25, so it under-reports
+# recent work. Public repo, so no credential — the egress proxy allows github.com and §2b
+# just taught git to trust it.
 #
-# --filter=blob:none, NOT --depth 1: base-sync needs real history to resolve `<pin>..HEAD`,
+# --filter=blob:none, NOT --depth 1: that history read spans weeks,
 # which a shallow clone cannot do. A partial clone keeps every commit and fetches blobs on
 # demand — measured 11s / ~102 MB, against minutes for a full clone.
 if [ "${HAKU_DUCKTAPE_SKIP:-}" != "1" ]; then
   dt_repo="${HAKU_DUCKTAPE_DIR:-/workspace/ducktape}"
   dt_url="${HAKU_DUCKTAPE_URL:-https://github.com/agentydragon/ducktape.git}"
   dt_branch="${HAKU_DUCKTAPE_BRANCH:-devel}"
-  # Non-fatal: ducktape is read-only reference. A run whose base-sync is unavailable should
+  # Non-fatal: ducktape is read-only reference. A run that loses this source should
   # degrade to "surface a finding and carry on", not fail to get a sandbox at all.
   if [ -d "$dt_repo/.git" ]; then
     git -C "$dt_repo" fetch --prune origin "$dt_branch" \
       && git -C "$dt_repo" checkout -B "$dt_branch" "origin/$dt_branch" \
       && git -C "$dt_repo" reset --hard "origin/$dt_branch" \
-      || echo "haku-sandbox-setup: ducktape refresh failed — base-sync unavailable this claim" >&2
+      || echo "haku-sandbox-setup: ducktape refresh failed — that source unavailable this claim" >&2
   else
     git clone --filter=blob:none --single-branch --branch "$dt_branch" "$dt_url" "$dt_repo" \
-      || echo "haku-sandbox-setup: ducktape clone failed — base-sync unavailable this claim" >&2
+      || echo "haku-sandbox-setup: ducktape clone failed — that source unavailable this claim" >&2
   fi
 fi
 

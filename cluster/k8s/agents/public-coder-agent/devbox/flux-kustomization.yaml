@@ -28,7 +28,9 @@ spec:
     # The VM does not consume the agent's LiteLLM Secret or Deployment. The
     # main agent app retains its own dependency on litellm-keys-tf.
     - name: kubevirt
+      namespace: ducktape-flux
     - name: cdi
+      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-public-s3

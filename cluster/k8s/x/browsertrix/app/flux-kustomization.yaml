@@ -2,16 +2,13 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: browsertrix
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 25m
   path: ./cluster/k8s/x/browsertrix/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   decryption:
     provider: sops

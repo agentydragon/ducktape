@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import json
+
 import anyio
 import pytest
 import pytest_bazel
 
-from haku.runtime.x.agent_sdk_transport.protocol import END_INPUT_FRAME, ClaudeLaunch, encode_object
+from haku.runtime.x.agent_sdk_transport.protocol import (
+    ClaudeLaunch,
+    ClaudeMessage,
+    EndInput,
+    decode_frame,
+    encode_frame,
+    encode_object,
+)
 from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 
 
@@ -42,14 +51,32 @@ def memory_websocket_pair() -> tuple[MemoryWebSocket, MemoryWebSocket]:
     )
 
 
-def test_launch_frame_round_trips_and_rejects_unknown_versions() -> None:
+def test_every_frame_kind_round_trips() -> None:
     launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={"SAFE": "value"})
+    message = ClaudeMessage(payload={"type": "user", "message": {"role": "user", "content": "hi"}})
 
-    assert ClaudeLaunch.from_frame(launch.to_frame()) == launch
+    for frame in (launch, message, EndInput()):
+        assert decode_frame(encode_frame(frame)) == frame
 
-    unsupported = {**launch.to_frame(), "protocol_version": 2}
+
+def test_an_sdk_payload_naming_our_control_frames_is_still_a_conversation_frame() -> None:
+    """The whole point of the envelope: the SDK's vocabulary cannot collide with ours."""
+    impostor = ClaudeMessage(payload={"kind": "end_input", "type": "haku_transport", "subtype": "start"})
+
+    assert decode_frame(encode_frame(impostor)) == impostor
+
+
+def test_launch_rejects_another_protocol_version() -> None:
+    launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={})
+    older = {"kind": "start", "payload": {**json.loads(encode_frame(launch))["payload"], "protocol_version": 1}}
+
     with pytest.raises(ValueError, match="protocol version"):
-        ClaudeLaunch.from_frame(unsupported)
+        decode_frame(encode_object(older))
+
+
+def test_an_unknown_frame_kind_is_refused() -> None:
+    with pytest.raises(ValueError, match="unsupported bridge frame kind"):
+        decode_frame(encode_object({"kind": "progress", "payload": {}}))
 
 
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
@@ -57,11 +84,11 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
     launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={"SAFE": "value"})
     transport = WebSocketTransport(console_socket, launch)
     await transport.connect()
-    assert await runner_socket.receive_text() == encode_object(launch.to_frame())
+    assert decode_frame(await runner_socket.receive_text()) == launch
 
     prompt = {"type": "user", "message": {"role": "user", "content": "search"}}
     await transport.write(encode_object(prompt) + "\n")
-    assert await runner_socket.receive_text() == encode_object(prompt)
+    assert decode_frame(await runner_socket.receive_text()) == ClaudeMessage(payload=prompt)
 
     partial_events = [
         {
@@ -98,12 +125,12 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
 
     messages = transport.read_messages()
     for event in partial_events:
-        await runner_socket.send_text(encode_object(event))
+        await runner_socket.send_text(encode_frame(ClaudeMessage(payload=event)))
         with anyio.fail_after(1):
             assert await anext(messages) == event
 
     await transport.end_input()
-    assert await runner_socket.receive_text() == encode_object(END_INPUT_FRAME)
+    assert decode_frame(await runner_socket.receive_text()) == EndInput()
     await transport.close()
 
     assert not transport.is_ready()
@@ -115,10 +142,24 @@ async def test_transport_rejects_non_object_frames() -> None:
     launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={})
     transport = WebSocketTransport(console_socket, launch)
     await transport.connect()
-    assert await runner_socket.receive_text() == encode_object(launch.to_frame())
+    assert decode_frame(await runner_socket.receive_text()) == launch
     await runner_socket.send_text("[]")
 
     with pytest.raises(ValueError, match="one JSON object"):
+        await anext(transport.read_messages())
+
+    await transport.close()
+
+
+async def test_transport_refuses_a_control_frame_from_the_runner() -> None:
+    """`start` and `end_input` only travel console -> runner; one coming back is a bug."""
+    console_socket, runner_socket = memory_websocket_pair()
+    transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
+    await transport.connect()
+    assert decode_frame(await runner_socket.receive_text())
+    await runner_socket.send_text(encode_frame(EndInput()))
+
+    with pytest.raises(ValueError, match="not a conversation frame"):
         await anext(transport.read_messages())
 
     await transport.close()

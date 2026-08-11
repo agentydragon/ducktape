@@ -15,7 +15,7 @@ spec:
   dependsOn:
     # nix-cache provides the attic deployment that the rotators kubectl-exec into.
     - name: nix-cache
-      namespace: flux-system
+      namespace: ducktape-flux
     # github-secrets-sync provides the GitHub PAT (reflected from flux-system to
     # nix-cache by emberstack reflector via reflection-auto-namespaces).
     - name: github-secrets-sync-secrets

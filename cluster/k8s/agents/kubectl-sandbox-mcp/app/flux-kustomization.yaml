@@ -27,4 +27,4 @@ spec:
     - name: kubectl-sandbox-mcp-namespace
       namespace: ducktape-flux
     - name: agent-machine-access-tf
-      namespace: flux-system
+      namespace: ducktape-flux

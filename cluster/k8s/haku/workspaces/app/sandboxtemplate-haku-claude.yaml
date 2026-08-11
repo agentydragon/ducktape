@@ -17,12 +17,17 @@ spec:
         app.kubernetes.io/name: haku-claude-runner
     spec:
       dnsPolicy: ClusterFirst
-      automountServiceAccountToken: false
+      # Haku's own Kubernetes identity, so `kubectl` works from the session the way it does
+      # from a haku-sandbox exec target. A second SA object only because a ServiceAccount is
+      # namespaced; the permissions are the haku SA's own binding, shared
+      # (cluster/k8s/haku/rbac/rolebinding-haku.yaml).
+      serviceAccountName: haku-claude
+      automountServiceAccountToken: true
       enableServiceLinks: false
       # Deliberately outside haku-sandbox: Haku's general compute authority must not
-      # inherit access to the Claude OAuth-substituting proxy. Also defer the Haku
-      # Console agent bearer, Kubernetes identity, Forgejo/workspace bootstrap, MCP
-      # configuration, and every other general sandbox integration.
+      # inherit access to the Claude OAuth-substituting proxy — the CCNP that admits this
+      # namespace to it keys on the namespace, so the split is the fence. Still deferred:
+      # the Haku Console agent bearer and the general sandbox MCP integrations.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -32,12 +37,38 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: ghcr.io/agentydragon/haku-claude-runner:devel-20260810050514-8060d58 # {"$imagepolicy": "flux-system:haku-claude-runner"}
+          image: ghcr.io/agentydragon/haku-claude-runner:devel-20260811044730-1a926e3 # {"$imagepolicy": "flux-system:haku-claude-runner"}
           imagePullPolicy: Always
           workingDir: /workspace
           env:
             - name: HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL
               value: ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner
+            # The shared per-claim bootstrap (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh,
+            # baked into the runner image) writes ~/.netrc and checks haku-state out into /workspace,
+            # so this session starts with Haku's manual instead of an empty directory. Same haku
+            # Forgejo account the haku-sandbox exec target uses; minted by tf/gitops/haku-state and
+            # reflected into this namespace, never hand-minted.
+            - name: HAKU_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: username
+            - name: HAKU_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
+            # No JVM in this image and no Bazel on this box, so the truststore step has nothing
+            # to do. Explicit rather than probed, so a haku-sandbox image that lost its JVM still
+            # fails loudly there.
+            - name: HAKU_SETUP_BAZEL_TRUST
+              value: "0"
+            # ducktape is a read-only source Haku consults, and reaching it means github.com —
+            # which this namespace's egress does not allow (the only external host is
+            # api.anthropic.com, through the OAuth-substituting proxy). Skipped rather than left
+            # to fail so the bootstrap's exit status keeps meaning "the workspace is ready".
+            - name: HAKU_DUCKTAPE_SKIP
+              value: "1"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

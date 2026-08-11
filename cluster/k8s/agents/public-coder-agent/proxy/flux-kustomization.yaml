@@ -26,6 +26,6 @@ spec:
       namespace: ducktape-flux
     # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.
     - name: agent-machine-access-tf
-      namespace: flux-system
+      namespace: ducktape-flux
     # The KUBERNETES_READER_TOKEN env comes from the reader SA's token Secret.
     - name: public-coder-agent-k8s-reader

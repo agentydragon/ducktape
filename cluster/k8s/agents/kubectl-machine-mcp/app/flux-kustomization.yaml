@@ -27,4 +27,4 @@ spec:
     # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
     # discovery + JWKS this server validates against) is created by this TF.
     - name: agent-machine-access-tf
-      namespace: flux-system
+      namespace: ducktape-flux

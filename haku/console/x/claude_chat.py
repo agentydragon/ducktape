@@ -23,7 +23,7 @@ from claude_agent_sdk import (
     TextBlock,
     ToolUseBlock,
 )
-from claude_agent_sdk.types import StreamEvent
+from claude_agent_sdk.types import StreamEvent, SystemPromptPreset
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -590,6 +590,13 @@ class StarletteTextWebSocket(TextWebSocket):
 # session it owns. Unset means the rows are the only output, which is the console SPA.
 ReplySink = Callable[[UUID, str], Awaitable[None]]
 
+# Supplies the system prompt a session starts with, or `None` for a session this source does
+# not speak for. Same shape and same reason as `ReplySink`: one service serves both the
+# Matrix room and the console SPA, and only the Matrix surface has a room to describe — see
+# `haku.console.x.matrix_session.MatrixSystemPrompt`. Unset, or `None` for a given session,
+# leaves the Claude Code preset alone, which is what the SPA has always run with.
+SystemPromptSource = Callable[[UUID], Awaitable[str | None]]
+
 
 class ClaudeChatService:
     def __init__(
@@ -601,6 +608,7 @@ class ClaudeChatService:
         *,
         mcp_token: SecretStr,
         reply_sink: ReplySink | None = None,
+        system_prompt: SystemPromptSource | None = None,
     ):
         self._config = config
         self._store = store
@@ -608,6 +616,7 @@ class ClaudeChatService:
         self._notifications = notifications
         self._mcp_token = mcp_token
         self._reply_sink = reply_sink
+        self._system_prompt = system_prompt
 
     async def request_abort(self, session_id: UUID) -> bool:
         return await self._store.request_abort(session_id)
@@ -666,6 +675,20 @@ class ClaudeChatService:
         await self._store.complete_claim_cleanup(session_id)
         return True
 
+    async def _preset_with(self, session_id: UUID) -> SystemPromptPreset | None:
+        """Claude Code's own system prompt, plus who this session is.
+
+        `append` rather than a bare string, which would *replace* the preset: the built-ins
+        (Read, Bash, Edit) are live in the sandbox and the preset is what tells the model how
+        to drive them. Haku's identity is an addition to that, not a substitute for it.
+
+        The literal is the SDK's own `SystemPromptPreset` TypedDict, so mypy checks its keys
+        and the two `Literal` values against the pinned SDK rather than trusting this spelling.
+        """
+        if self._system_prompt is None or (rendered := await self._system_prompt(session_id)) is None:
+            return None
+        return {"type": "preset", "preset": "claude_code", "append": rendered}
+
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == BridgeAuthentication.TERMINAL:
@@ -675,10 +698,24 @@ class ClaudeChatService:
         if authentication == BridgeAuthentication.REJECTED:
             await websocket.close(code=1008, reason="invalid or consumed runner credential")
             return
+        # Rendered before the socket is accepted, alongside the other admission failures, so a
+        # broken prompt ends the session where the supervisor can see it (and say so in the
+        # room) instead of raising past the cleanup below and leaving the claim stranded.
+        # Failing is deliberate: a session that silently started without its identity is the
+        # generic-assistant bug this prompt exists to fix, and it would be invisible.
+        try:
+            preset = await self._preset_with(session_id)
+        except Exception as error:
+            logger.exception("Claude system prompt failed to render for session %s", session_id)
+            await self._store.fail(session_id, f"system prompt failed to render: {error}")
+            await self._cleanup_terminal_claim(session_id)
+            await websocket.close(code=1011, reason="system prompt failed to render")
+            return
         await websocket.accept()
         adapter = StarletteTextWebSocket(websocket)
         options = enable_fine_grained_streaming(
             ClaudeAgentOptions(
+                system_prompt=preset,
                 cwd=self._config.cwd,
                 env=self._config.claude_environment(),
                 mcp_servers={

@@ -6,7 +6,7 @@ and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
 is the trust boundary — see <../../PLAN.md>) plus haku-console's aggregated MCP
 catalog (Tana reads to start).
-Behavior is `haku/base/` + `haku/run.md` from the ducktape clone (bootstrap.py clones it
+Behavior is the haku-state checkout's root cards + `memory/procedures/run.md` (bootstrap.py clones it
 at startup), read at runtime, so it stays single-sourced and live-editable. Session
 history persists in Valkey/Redis
 (`RedisHistoryProvider`) when `HAKU_REDIS_URL` is set, else in-memory;
@@ -67,12 +67,12 @@ def _run_command_tool(settings: Settings) -> FunctionTool:
 
 def _instructions(settings: Settings) -> str:
     return (
-        "You are Haku, the operator's tireless background executive assistant. The ducktape repo "
-        f"is checked out at {settings.ducktape_dir}: your operating manual is at "
-        f"{settings.ducktape_dir}/haku/base/instructions.md and your run procedure at "
-        f"{settings.ducktape_dir}/haku/run.md. Your haku-state checkout — your only memory and "
-        f"write surface — is at {settings.state_dir}, with git auth already in place. Read the "
-        "manual and the run procedure with your tools, then execute the run procedure end to end: "
+        "You are Haku, the operator's tireless background executive assistant. Your haku-state "
+        f"checkout — your memory, your method, and your only write surface — is at "
+        f"{settings.state_dir}, with git auth already in place. It also holds who you are: read "
+        "AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at "
+        f"memory/procedures/run.md. The ducktape repo at {settings.ducktape_dir} is a source to "
+        "read, not your manual. Execute the run procedure end to end: "
         "orient, process intake, scan your sources, write and curate items, append to the log, "
         "then commit and push. Each user message is a wake."
     )

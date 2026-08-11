@@ -50,6 +50,7 @@ py_library(
 
 py_test(
     name = "test_handlers",
+    size = "medium",
     srcs = ["test_handlers.py"],
     requires_docker = True,
     deps = [
@@ -65,6 +66,7 @@ py_test(
 
 py_test(
     name = "test_key_auth",
+    size = "medium",
     srcs = ["test_key_auth.py"],
     requires_docker = True,
     deps = [
@@ -80,6 +82,7 @@ py_test(
 
 py_test(
     name = "test_key_path_auth",
+    size = "medium",
     srcs = ["test_key_path_auth.py"],
     requires_docker = True,
     deps = [
@@ -95,6 +98,7 @@ py_test(
 
 py_test(
     name = "test_webhook_auth",
+    size = "medium",
     srcs = ["test_webhook_auth.py"],
     requires_docker = True,
     deps = [

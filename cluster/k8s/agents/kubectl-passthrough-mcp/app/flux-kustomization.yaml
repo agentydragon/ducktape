@@ -27,4 +27,4 @@ spec:
       namespace: ducktape-flux
     # TF writes the kubectl-passthrough-mcp secret (with config.toml) into the namespace.
     - name: agent-machine-access-tf
-      namespace: flux-system
+      namespace: ducktape-flux

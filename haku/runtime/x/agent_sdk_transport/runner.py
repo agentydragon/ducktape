@@ -11,10 +11,13 @@ import anyio
 from websockets.asyncio.client import ClientConnection, connect
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
-    END_INPUT_FRAME,
     ClaudeLaunch,
+    ClaudeMessage,
+    EndInput,
     TextWebSocket,
+    decode_frame,
     decode_object,
+    encode_frame,
     encode_object,
 )
 
@@ -52,29 +55,36 @@ def build_claude_environment(launch: ClaudeLaunch) -> dict[str, str]:
     return environment
 
 
+async def _forward_cli_line(websocket: TextWebSocket, line: bytes) -> None:
+    """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
+    if not (stripped := line.strip()).startswith(b"{"):
+        return
+    await websocket.send_text(encode_frame(ClaudeMessage(payload=decode_object(stripped.decode()))))
+
+
 async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteReceiveStream) -> None:
     pending = b""
     async for chunk in stdout:
         pending += chunk
         while b"\n" in pending:
             line, pending = pending.split(b"\n", 1)
-            stripped = line.strip()
-            if not stripped or not stripped.startswith(b"{"):
-                continue
-            await websocket.send_text(encode_object(decode_object(stripped.decode())))
+            await _forward_cli_line(websocket, line)
 
-    stripped = pending.strip()
-    if stripped.startswith(b"{"):
-        await websocket.send_text(encode_object(decode_object(stripped.decode())))
+    await _forward_cli_line(websocket, pending)
 
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
     while True:
-        frame = decode_object(await websocket.receive_text())
-        if frame == END_INPUT_FRAME:
-            await stdin.aclose()
-            return
-        await stdin.send((encode_object(frame) + "\n").encode())
+        match decode_frame(await websocket.receive_text()):
+            case EndInput():
+                await stdin.aclose()
+                return
+            case ClaudeMessage(payload=payload):
+                await stdin.send((encode_object(payload) + "\n").encode())
+            case ClaudeLaunch():
+                # Sent once, before this loop starts; a second one mid-conversation would
+                # mean the console thinks it is talking to a runner that has not launched.
+                raise ValueError("console sent a second launch frame mid-conversation")
 
 
 async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
@@ -125,7 +135,27 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
         await websocket.close()
 
 
-async def run(websocket_url: str, claude_path: Path, bearer_token: str | None) -> None:
+async def prepare_workspace(setup_path: Path, *, cwd: str) -> None:
+    """Run the shared sandbox bootstrap: git credentials and Haku's own checkouts.
+
+    The same script the haku-sandbox exec target runs — see
+    <../../../../cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh> — so this box gets
+    the same `.netrc` and the same haku-state working copy rather than a second
+    implementation that drifts from it.
+
+    Run here, in the runner, rather than as an image entrypoint wrapper, because the socket
+    has to be open for the console to be able to narrate what is happening.
+
+    **Fatal on failure.** Without the checkout the session has no manual, and a Claude Code
+    that starts anyway is the generic-assistant failure the system prompt exists to prevent —
+    silent, and indistinguishable from Haku having a bad day.
+    """
+    process = await anyio.open_process([str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=None, stderr=None)
+    if (status := await process.wait()) != 0:
+        raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
+
+
+async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:
     """Connect to Console and proxy its native SDK protocol to Claude Code."""
     headers: dict[str, str] | None = None
     if bearer_token:
@@ -133,8 +163,15 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None) -
 
     async with connect(websocket_url, additional_headers=headers) as connection:
         websocket = ClientWebSocketAdapter(connection)
-        launch = ClaudeLaunch.from_frame(decode_object(await websocket.receive_text()))
+        if not isinstance(launch := decode_frame(await websocket.receive_text()), ClaudeLaunch):
+            raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
+        if setup_path is not None:
+            await prepare_workspace(setup_path, cwd=launch.cwd)
         await bridge_websocket_to_claude(websocket, claude_path=claude_path, launch=launch)
+
+
+def _optional_path(value: str | None) -> Path | None:
+    return Path(value) if value else None
 
 
 def parse_args() -> argparse.Namespace:
@@ -142,6 +179,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--websocket-url", default=os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"))
     parser.add_argument("--session-id", default=os.environ.get("HAKU_CLAUDE_SESSION_ID"))
     parser.add_argument("--claude-path", type=Path, default=Path(os.environ.get("HAKU_CLAUDE_PATH", "claude")))
+    # Unset means "no bootstrap", which is what the transport's own tests and any bare
+    # local run want; the image sets it.
+    parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get("HAKU_CLAUDE_SETUP")))
     args = parser.parse_args()
     if not args.websocket_url:
         parser.error("--websocket-url or HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL is required")
@@ -153,7 +193,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     bearer_token = os.environ.get("HAKU_AGENT_SDK_RUNNER_TOKEN")
-    anyio.run(run, args.websocket_url, args.claude_path, bearer_token)
+    anyio.run(run, args.websocket_url, args.claude_path, bearer_token, args.setup_path)
 
 
 if __name__ == "__main__":

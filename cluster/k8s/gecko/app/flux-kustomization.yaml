@@ -2,19 +2,20 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: gecko
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
+  # Keep this controller inactive while the unschedulable legacy VM is retired.
+  # Its VM and local disk remain untouched until explicitly deleted.
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 30m
   path: ./cluster/k8s/gecko/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -23,7 +24,9 @@ spec:
     - name: gecko-namespace
       namespace: ducktape-flux
     - name: kubevirt
+      namespace: ducktape-flux
     - name: cdi
+      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-public-s3

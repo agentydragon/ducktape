@@ -67,12 +67,22 @@ filegroup(
         "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml",
         "agents/haku-egress-proxy/claude-networkpolicy.yaml",
         "haku-ci/scaledjob.yaml",
+        "haku/claude-namespace/limitrange.yaml",
+        "haku/claude-namespace/namespace.yaml",
+        "haku/claude-namespace/networkpolicy.yaml",
+        "haku/claude-namespace/resourcequota.yaml",
+        "haku/claude-namespace/serviceaccount.yaml",
         "haku/console/config.yaml",
         "haku/console/deployment.yaml",
         "haku/console/httproute.yaml",
+        "haku/console/kustomization.yaml",
+        "haku/console/matrix_system_prompt.md.j2",
         "haku/console/service.yaml",
         "haku/managed-agent/haku-forgejo-tea.sops.yaml",
+        "haku/rbac/rolebinding-haku.yaml",
+        "haku/workspaces/app/sandboxtemplate-haku.yaml",
         "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",
+        "haku/workspaces/image/haku-sandbox-setup.sh",
         "keda/helmrelease.yaml",
         "kustomization.yaml",
         "kyverno/policies/inject-haku-egress-proxy.yaml",
@@ -140,4 +150,20 @@ filegroup(
     name = "market_roster_yaml",
     srcs = ["evidence/market-roster/market-roster.yaml"],
     visibility = ["//loom/gym:__pkg__"],
+)
+
+# Haku's Matrix system prompt, so the test that renders it exercises the file the
+# console actually mounts rather than a fixture that can drift from it.
+filegroup(
+    name = "haku_console_system_prompt",
+    srcs = ["haku/console/matrix_system_prompt.md.j2"],
+    visibility = ["//haku/console/x:__pkg__"],
+)
+
+# The per-claim sandbox bootstrap, shared with the Console-owned Claude runner image so the
+# two boxes get the same git credentials and checkouts from one reviewed script.
+filegroup(
+    name = "haku_sandbox_setup",
+    srcs = ["haku/workspaces/image/haku-sandbox-setup.sh"],
+    visibility = ["//haku/runtime/x/agent_sdk_transport:__pkg__"],
 )

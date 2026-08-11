@@ -22,10 +22,11 @@ clone_or_pull() { # <url> <dest> [extra git clone flags...]
   fi
 }
 
-# Behavior: ducktape's haku/base + haku/run.md, read at runtime (live-editable —
-# no image rebuild to change the manual). NOT --depth 1: the run procedure's
-# base-sync diffs HEAD against the last-reconciled commit (`git log <pin>..HEAD`),
-# which needs that commit present. A generous fixed depth covers the wake cadence
+# Behavior lives in the haku-state checkout, not here; ducktape is cloned because
+# it is one of Haku's information sources — its recent history is read for
+# follow-up work (haku-state `sources/ducktape.md`). NOT --depth 1: that read
+# spans roughly the last two weeks, which a shallow clone cannot serve. A generous
+# fixed depth covers the wake cadence
 # (~25 commits/day on devel, so 500 is weeks of headroom).
 # (A `git log` that reaches past the pin errors with empty output; the Python
 # worker turns empty tool output into "(no output)" rather than deadlocking on

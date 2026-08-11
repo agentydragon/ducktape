@@ -28,12 +28,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatSessionStatus
-from haku.console.config import MatrixConfig
+from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.x.matrix_client import InboundMessage
+from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,15 @@ PROVISION_BACKOFF = datetime.timedelta(seconds=60)
 # access token and the send path — the supervisor never gets a Matrix credential of its own,
 # so there is still exactly one login and one device (R10.3a).
 Announce = Callable[[str], Awaitable[None]]
+
+# Reads the tail of the live room's conversation, newest `limit` messages, oldest first.
+# Supplied by the sync service for the same reason `Announce` is: it holds the credential.
+RecentHistory = Callable[[int], Awaitable[Sequence[InboundMessage]]]
+
+# How much of the conversation a replacement session is handed. Enough to pick up a thread
+# mid-topic, not enough to be a transcript — anything older is in the room, which the agent
+# can be pointed at (R3.3a, [v1] "start without the summary").
+RE_AWAKENING_MESSAGES = 20
 
 
 class MatrixConversationStore:
@@ -155,6 +165,71 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
     yet, but referring to what it was told does not need them.
     """
     return "\n".join(f"[{message.event_id}] {message.body}" for message in messages)
+
+
+class MatrixSystemPrompt:
+    """Renders the system prompt for the session bound to the live room.
+
+    Filters by session the same way `MatrixReplySink` does, and for the same reason: one
+    `ClaudeChatService` serves both surfaces, and a console SPA session must not be told it
+    is speaking into a Matrix room.
+
+    History is read here rather than carried forward from the previous session, because by
+    the time a replacement session starts, the one that held the context is gone. The room is
+    the source (R3.3a) — it is also what Rai sees, so what the prompt claims was said and
+    what the room shows cannot disagree.
+    """
+
+    def __init__(
+        self,
+        config: MatrixConfig,
+        runtime: ClaudeRuntimeConfig,
+        conversations: MatrixConversationStore,
+        template: SystemPromptTemplate,
+        history: RecentHistory,
+    ):
+        self._config = config
+        self._runtime = runtime
+        self._conversations = conversations
+        self._template = template
+        self._history = history
+
+    async def render(self, session_id: UUID) -> str | None:
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None or conversation.session_id != session_id:
+            return None
+        return self._template.render(
+            SessionIntroduction(
+                session_id=session_id,
+                room_id=conversation.room_id,
+                operator_user_id=self._config.operator_user_id,
+                workspace=self._runtime.cwd,
+                recent_messages=await self._recent(),
+            )
+        )
+
+    async def _recent(self) -> list[HistoryMessage]:
+        """The tail of the conversation, or none of it if the homeserver would not say.
+
+        The one degradation in this path that is worth taking rather than failing the
+        session over: a session that starts without its last twenty messages is still Haku
+        and can be told what it missed, where a session that never starts is a room that
+        goes quiet. Loud, though — this is a homeserver problem and should be visible.
+        """
+        try:
+            messages = await self._history(RE_AWAKENING_MESSAGES)
+        except Exception:
+            logger.exception("Matrix: could not read room history; starting the session without it")
+            return []
+        return [
+            HistoryMessage(
+                sender=message.sender,
+                body=message.body,
+                event_id=message.event_id,
+                sent_at=datetime.datetime.fromtimestamp(message.origin_server_ts / 1000, datetime.UTC),
+            )
+            for message in messages
+        ]
 
 
 class MatrixReplySink:

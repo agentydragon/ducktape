@@ -16,5 +16,5 @@ spec:
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
     - name: agent-machine-access-tf
-      namespace: flux-system
+      namespace: ducktape-flux
   timeout: 2m
