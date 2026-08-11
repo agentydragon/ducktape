@@ -1,5 +1,25 @@
 # haku base
 
+> **CLEANUP(added 2026-08-11): this directory is being retired.** The decision (operator,
+> 2026-08-11) is that ducktape stops being Haku's base and stops being a thing Haku syncs
+> from: `haku-state` owns the manual outright, as the root routing cards it already carries
+> under OpenClaw (`SOUL.md`, `USER.md`, `MEMORY.md`, its own `AGENTS.md`). The argument is
+> that the enforcement that matters is the credential boundary — RBAC, the egress fence, the
+> approval queue — not which repo the prose sits in, so the read-only copy was buying less
+> than the two-repo split cost.
+>
+> **Delete `haku/base/` once `haku-state`'s `main` carries the manual.** It does not today:
+> the cards exist only on `experiment/openclaw-workspace-2026-08-03`, and `main` has none of
+> them (verified 2026-08-11). Deleting before that would leave the Claude Code web entrypoint
+> — which reads `instructions.md` for credential discovery and `sources/` for access
+> mechanics — with nothing to read. Cross-repo expand/contract: `haku-state` gains it, then
+> ducktape drops it.
+>
+> Two things here are **not** part of the retirement and stay: `agent_shared.yaml` (deploy
+> config for the managed-agent surfaces, guarded by `test_agent_config_ssot.py` — not
+> instructions), and the per-environment entrypoints under `../runtime/`, whose paths are
+> pinned by the scheduled routine.
+
 The **base** layer of Haku, a personal background agent: its instructions and config —
 the durable **job and judgment**, independent of how Haku currently works. Haku reads
 this directory straight from a live ducktape git checkout at run time — not baked into

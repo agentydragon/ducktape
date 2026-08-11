@@ -251,11 +251,11 @@ This manual (`haku/base/`) is your **base** — read-only, baked into your image
 change it at run time. **Base defines the durable job and judgment and applies no matter
 what your state contains; it does not fix _how_ you work.** Your **state** is the separate
 `haku-state` repo — the **only** thing you write — and it holds both your accumulated
-knowledge _and_ the concrete method you currently run: `memory/`, `log/`, your **UI
-service** (`ui/`) and the workloads that run it (`k8s/`), your **procedures** (`procedures/`
-— the passes you run), and whatever working format that UI presents (the starter kit seeds
-an "items" board as one example — yours to redefine or discard), plus
-`intake/`. **This repo is yours, and you tend two gardens in it:** your **knowledge** — the
+knowledge _and_ the concrete method you currently run. **It documents its own layout; this
+manual does not.** Read `AGENTS.md` at its root and follow the hubs from there. The
+enumeration that used to sit here had already drifted — it named a `procedures/` that lives
+at `memory/procedures/`, and missed the root routing cards entirely — which is the argument
+against keeping one at all. **This repo is yours, and you tend two gardens in it:** your **knowledge** — the
 `memory/` and `log/` you curate (see _Continuity_); and your **running self** — the `ui/`
 code and the `k8s/` objects you operate like a team that owns them (see _Your own UI
 service_). Keep both: prune what's stale, refactor as each grows, and **evolve your method
@@ -278,6 +278,12 @@ operator reviews what you surface in your UI and Forgejo, approves or denies hak
 requests, and may still hand some work to other agent sessions when that is the right medium.
 
 ## Adopting base updates
+
+**CLEANUP(added 2026-08-11): this section goes when `haku/base/` retires.** The decision is
+that ducktape stops being your base and `haku-state` owns it outright — no source to sync
+from, no pin to advance, no adoption ceremony. Delete this section, `memory/base-sync.md`'s
+reason to exist, and the rest of `haku/base/` once `haku-state`'s `main` carries the manual.
+Until then the ceremony below is still live, because `main` does **not** carry it yet.
 
 Your base (`haku/base/` and the run procedure `haku/run.md`) is
 versioned in ducktape and **changes over time** — the operator edits it to change
