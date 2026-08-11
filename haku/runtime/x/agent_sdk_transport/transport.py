@@ -19,13 +19,14 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
-    Progress,
+    SetupOutput,
     TextWebSocket,
     decode_object,
 )
 
-# Called for each sandbox progress report. Unset drops them, which is what a caller with
-# nowhere to show them should do — they are narration, and the conversation is unaffected.
+# Called for each complete line the sandbox bootstrap printed. Unset drops them, which is what
+# a caller with nowhere to show them should do — they are narration, and the conversation is
+# unaffected.
 ProgressSink = Callable[[str], Awaitable[None]]
 
 
@@ -36,6 +37,10 @@ class WebSocketTransport(Transport):
         self._websocket = websocket
         self._launch = launch
         self._on_progress = on_progress
+        # The runner ships bootstrap output as it arrives, so a line can span chunks and a
+        # chunk can hold several. Reassembly is here because this is the end that knows what
+        # a line is for.
+        self._setup_output = b""
         self._ready = False
         self._closed = False
 
@@ -63,13 +68,31 @@ class WebSocketTransport(Transport):
                 match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
                     case ClaudeMessage(payload=payload):
                         yield payload
-                    case Progress(line=line):
+                    case SetupOutput(data=data):
                         # Narration about the sandbox, not part of the conversation: it must
                         # not reach the SDK, which would see an unknown message shape.
-                        if self._on_progress is not None:
-                            await self._on_progress(line)
+                        await self._report_setup_output(data)
         except (EOFError, anyio.EndOfStream):
             self._ready = False
+
+    async def _report_setup_output(self, data: bytes) -> None:
+        """Emit whatever complete lines `data` finished, holding any partial one back.
+
+        Decoding happens here, on a whole line, and only to hand the sink a `str` — errors are
+        replaced rather than raised because a mangled byte in a progress notice is not worth
+        ending a session over, and the runner's own log still has the original.
+
+        A trailing line with no newline is held until one arrives. In practice none does not:
+        the bootstrap's every line comes from `echo`. If a script ever ends without one, that
+        last line is the cost, which beats guessing that every chunk boundary ends a line.
+        """
+        self._setup_output += data
+        while b"\n" in self._setup_output:
+            line, self._setup_output = self._setup_output.split(b"\n", 1)
+            # Blank lines are not reports; a script that spaces its output would otherwise
+            # post empty notices into the room.
+            if self._on_progress is not None and (text := line.decode(errors="replace").strip()):
+                await self._on_progress(text)
 
     async def end_input(self) -> None:
         if self._ready:

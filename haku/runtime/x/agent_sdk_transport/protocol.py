@@ -11,7 +11,7 @@ Haku's frames marked by ``"type": "haku_transport"`` — a reserved value inside
 own ``type`` key. That holds only for as long as the SDK never emits that value, which is a
 promise nobody made; it makes "is this ours?" a guess about someone else's vocabulary rather
 than a property of the frame; and it leaves nowhere to put a frame that is neither side's
-conversation — which ``Progress`` is. Nesting the SDK's blob in a named field makes the
+conversation — which ``SetupOutput`` is. Nesting the SDK's blob in a named field makes the
 demultiplex explicit, so its payload can be anything at all without colliding.
 """
 
@@ -36,7 +36,10 @@ class _Frame(BaseModel):
     # field would let the two ends disagree about what was said. Additive evolution therefore
     # costs a version bump, which is honest: the console and the runner are separate images
     # that roll independently, so no frame change is ever atomic in production anyway.
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # base64 for `bytes` fields, so raw program output crosses a JSON text frame without a
+    # decode step that could mangle it. Only `SetupOutput` carries bytes, and it is a handful
+    # of short lines per session, so the ~33% is nothing here.
+    model_config = ConfigDict(extra="forbid", frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
 
 
 class ClaudeLaunch(_Frame):
@@ -72,24 +75,28 @@ class EndInput(_Frame):
     kind: Literal["end_input"] = "end_input"
 
 
-class Progress(_Frame):
-    """Runner → console: one line the sandbox bootstrap printed, verbatim.
+class SetupOutput(_Frame):
+    """Runner → console: bytes the sandbox bootstrap wrote, as they arrived.
 
-    Setup runs after the socket is open precisely so this can be said out loud — a clone is
-    the longest thing between "Haku is provisioning" and an answer, and without this the room
-    shows a silent gap with no way to tell a slow clone from a wedged one.
+    Setup runs after the socket is open precisely so it can be said out loud — a clone is the
+    longest thing between "Haku is provisioning" and an answer, and without this the room shows
+    a silent gap with no way to tell a slow clone from a wedged one.
 
-    Verbatim, and every line, rather than lines the script marked as interesting. The
-    bootstrap's own output already *is* the human-readable account of what it did, it is three
-    lines on this box because git writes no progress bar to a pipe, and on a failure the error
-    text is the thing worth having in the room. A marker convention would be a second protocol
-    to keep in sync across a language boundary, buying a tidiness the plan explicitly does not
-    want yet: "while this is new, a room that over-explains itself is the debugging surface"
-    (`haku/plans/matrix_chat_runtime.md` R7.1).
+    **Raw, and unsplit.** The runner is a pipe: it does not decode this, does not divide it into
+    lines, and does not judge which of them are interesting. That is all the console's, which
+    is the only end that knows what it wants to do with it — and it means the transport cannot
+    mangle a byte it did not understand. Contrast `ClaudeMessage`, which stays parsed: that
+    stream is stream-JSON by contract and the SDK needs objects anyway.
+
+    Every line rather than a marked subset, because the bootstrap's own output already *is* the
+    account of what it did — three lines on this box, since git writes no progress bar to a
+    pipe — and on a failure the error text is the thing worth having in the room. Curation
+    would buy a tidiness the plan explicitly does not want yet: "while this is new, a room that
+    over-explains itself is the debugging surface" (`haku/plans/matrix_chat_runtime.md` R7.1).
     """
 
-    kind: Literal["progress"] = "progress"
-    line: str
+    kind: Literal["setup_output"] = "setup_output"
+    data: bytes
 
 
 # The two directions carry different frames, and saying so in the types is what keeps the
@@ -98,7 +105,7 @@ class Progress(_Frame):
 # control_request/control_response do correlate, by an id inside `ClaudeMessage.payload`,
 # which is the SDK's business and deliberately opaque here.)
 ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
-RunnerToConsole = ClaudeMessage | Progress
+RunnerToConsole = ClaudeMessage | SetupOutput
 
 # Read with the adapter for the direction you are reading; write with the model's own
 # `model_dump_json`. A `TypeAdapter` rather than a model's `model_validate` because the parsed

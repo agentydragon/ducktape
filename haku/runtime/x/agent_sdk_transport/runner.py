@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
-from collections.abc import AsyncIterator
+import sys
 from pathlib import Path
 
 import anyio
@@ -16,7 +16,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
-    Progress,
+    SetupOutput,
     TextWebSocket,
     decode_object,
     encode_object,
@@ -150,9 +150,10 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
     exists to narrate it: a clone is the longest thing between "provisioning" and an answer,
     and the console cannot report a step it cannot see.
 
-    Every line it prints is forwarded and also echoed to this process's own stdout, so the pod
-    log keeps the same record the room gets. Streaming the whole thing rather than a marked
-    subset is deliberate — see `Progress`.
+    Its output is forwarded verbatim, in whatever chunks it arrives in, and written unchanged
+    to this process's own stdout so the pod log keeps the same record the room gets. No
+    decoding, no line-splitting, no filtering here — see `SetupOutput` for why that is the
+    console's job.
 
     **Fatal on failure.** Without the checkout the session has no manual, and a Claude Code
     that starts anyway is the generic-assistant failure the system prompt exists to prevent —
@@ -162,26 +163,15 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
         [str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
     assert process.stdout is not None
-    async for line in _lines(process.stdout):
-        print(line, flush=True)
-        # Skipping blanks only: a script that spaces its output would otherwise post empty
-        # notices into the room.
-        if websocket is not None and line.strip():
-            await websocket.send_text(Progress(line=line.rstrip()).model_dump_json())
+    async for chunk in process.stdout:
+        # `sys.stdout.buffer`, not `print`: the local log gets the same bytes the console does,
+        # rather than a decoded-and-maybe-replaced rendering of them.
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+        if websocket is not None:
+            await websocket.send_text(SetupOutput(data=chunk).model_dump_json())
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
-
-
-async def _lines(stream: anyio.abc.ByteReceiveStream) -> AsyncIterator[str]:
-    """Decoded, newline-delimited output, including a final unterminated line."""
-    pending = b""
-    async for chunk in stream:
-        pending += chunk
-        while b"\n" in pending:
-            line, pending = pending.split(b"\n", 1)
-            yield line.decode(errors="replace")
-    if pending:
-        yield pending.decode(errors="replace")
 
 
 async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:

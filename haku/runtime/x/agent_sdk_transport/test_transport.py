@@ -15,7 +15,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
-    Progress,
+    SetupOutput,
     encode_object,
 )
 from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
@@ -58,7 +58,7 @@ def test_every_frame_kind_round_trips() -> None:
 
     for outbound in (ClaudeLaunch(arguments=("-v",), cwd="/workspace", environment={"SAFE": "v"}), message, EndInput()):
         assert CONSOLE_TO_RUNNER.validate_json(outbound.model_dump_json()) == outbound
-    for inbound in (message, Progress(line="Cloning into 'haku-state'...")):
+    for inbound in (message, SetupOutput(data=b"Cloning into 'haku-state'...\n")):
         assert RUNNER_TO_CONSOLE.validate_json(inbound.model_dump_json()) == inbound
 
 
@@ -69,7 +69,7 @@ def test_each_direction_refuses_the_other_direction_only_frames() -> None:
             RUNNER_TO_CONSOLE.validate_json(wrong_way.model_dump_json())
 
     with pytest.raises(ValidationError, match="union_tag_invalid"):
-        CONSOLE_TO_RUNNER.validate_json(Progress(line="not the console's to send").model_dump_json())
+        CONSOLE_TO_RUNNER.validate_json(SetupOutput(data=b"not the console's to send").model_dump_json())
 
 
 def test_an_sdk_payload_naming_our_control_frames_is_still_a_conversation_frame() -> None:
@@ -102,12 +102,12 @@ def test_a_frame_missing_its_kind_is_refused() -> None:
 def test_a_frame_carrying_an_unknown_field_is_refused() -> None:
     """`extra=forbid`: a field this end does not understand is a version mismatch, not noise."""
     with pytest.raises(ValidationError, match="extra_forbidden"):
-        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "progress", "line": "hi", "severity": "warning"}))
+        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "setup_output", "data": "aGk=", "severity": "warning"}))
 
 
 def test_a_frame_missing_a_required_field_is_refused() -> None:
-    with pytest.raises(ValidationError, match="line"):
-        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "progress"}))
+    with pytest.raises(ValidationError, match="data"):
+        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "setup_output"}))
 
 
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
@@ -197,7 +197,7 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(Progress(line="Cloning into '/workspace/haku-state'...").model_dump_json())
+    await runner_socket.send_text(SetupOutput(data=b"Cloning into '/workspace/haku-state'...\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 
@@ -209,6 +209,35 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
     await transport.close()
 
 
+async def test_setup_output_is_reassembled_across_chunks() -> None:
+    """The runner ships bytes as they arrive; a line can span chunks and a chunk hold several."""
+    console_socket, runner_socket = memory_websocket_pair()
+    reported: list[str] = []
+
+    async def on_progress(line: str) -> None:
+        reported.append(line)
+
+    transport = WebSocketTransport(
+        console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
+    )
+    await transport.connect()
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
+
+    messages = transport.read_messages()
+    # A line split mid-word, two lines in one chunk, a blank line, and — the case the raw bytes
+    # are for — a multi-byte character split across the chunk boundary.
+    for chunk in (b"Clon", b"ing into 'haku-state'...\nresolving \xc3", b"\xa9tape\n\nworkspace ready\n"):
+        await runner_socket.send_text(SetupOutput(data=chunk).model_dump_json())
+    answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
+    await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
+
+    with anyio.fail_after(1):
+        assert await anext(messages) == answer
+    assert reported == ["Cloning into 'haku-state'...", "resolving étape", "workspace ready"]
+
+    await transport.close()
+
+
 async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
@@ -216,7 +245,7 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(Progress(line="ignored").model_dump_json())
+    await runner_socket.send_text(SetupOutput(data=b"ignored\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
 

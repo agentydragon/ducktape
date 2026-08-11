@@ -19,7 +19,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
-    Progress,
+    SetupOutput,
 )
 from haku.runtime.x.agent_sdk_transport.runner import (
     bridge_websocket_to_claude,
@@ -153,27 +153,23 @@ async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> N
     assert (workspace / "marker").read_text().strip() == str(workspace)
 
 
-async def test_workspace_setup_streams_its_output(tmp_path: Path) -> None:
-    """Every line, verbatim — including whatever the tools it drives print, and stderr."""
+async def test_workspace_setup_streams_its_output_verbatim(tmp_path: Path) -> None:
+    """The runner is a pipe: raw bytes, stderr included, no decoding and no line-splitting."""
     console_socket, runner_socket = memory_websocket_pair()
-    setup = executable(
-        tmp_path / "setup.sh",
-        "echo \"Cloning into 'haku-state'...\"\necho\necho 'trouble' >&2\nprintf 'no trailing newline'",
-    )
+    # \xff is not valid UTF-8. The previous decode-in-the-runner design replaced it with
+    # U+FFFD before the console ever saw it; nothing here is allowed to touch it.
+    setup = executable(tmp_path / "setup.sh", r"printf 'cloning\n\xff\n'" + "\necho 'trouble' >&2")
 
     await prepare_workspace(setup, cwd=str(tmp_path), websocket=runner_socket)
     await runner_socket.close()
 
-    reported = []
+    forwarded = b""
     with contextlib.suppress(EOFError):
         while True:
-            reported.append(RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()))
-    # The blank line is dropped; the unterminated last line is not.
-    assert reported == [
-        Progress(line="Cloning into 'haku-state'..."),
-        Progress(line="trouble"),
-        Progress(line="no trailing newline"),
-    ]
+            frame = RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text())
+            assert isinstance(frame, SetupOutput)
+            forwarded += frame.data
+    assert forwarded == b"cloning\n\xff\ntrouble\n"
 
 
 async def test_workspace_setup_failure_is_fatal(tmp_path: Path) -> None:
