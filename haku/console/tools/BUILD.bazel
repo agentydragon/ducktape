@@ -143,7 +143,7 @@ py_test(
 
 py_test(
     name = "test_hostexec",
-    size = "medium",  # provisions a Postgres database per test
+    size = "medium",  # as test_gmail: startup and imports dominate, not the four tests
     srcs = ["test_hostexec.py"],
     deps = [
         ":hostexec",
@@ -160,8 +160,10 @@ py_test(
 
 py_test(
     name = "test_gmail",
-    # 14 tests, each of which creates a database and migrates it to head — see the sibling
-    # targets in //haku/console, which are medium for the same reason.
+    # Imports, not tests: the 14 cases here drive mocks and take about a second all told
+    # (`--durations` puts every one at ~0.03s). The rest of the wall time is interpreter
+    # start plus this package's import graph, which the 60s `small` default left no room
+    # for once CI was loaded — it timed out twice in three runs while passing at 29s here.
     size = "medium",
     srcs = ["test_gmail.py"],
     deps = [
