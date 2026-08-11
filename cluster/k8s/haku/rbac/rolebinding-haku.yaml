@@ -1,5 +1,12 @@
-# Bind Haku's shared compute identity (the `haku` SA) to haku-sandbox-admin — full CRUD in
-# haku-sandbox. Used by the sandbox exec-target pods and the managed-agent worker alike.
+# Bind Haku's shared compute identity to haku-sandbox-admin — full CRUD in haku-sandbox.
+# Used by the sandbox exec-target pods, the managed-agent worker, and the Console-owned
+# Claude runner alike.
+#
+# TWO SUBJECTS, ONE GRANT. Haku runs on more than one harness, and a ServiceAccount is
+# namespaced, so its identity has to exist once per namespace it runs a pod in. Its
+# *permissions* do not: both subjects sit on this binding rather than on parallel roles, so
+# "what can Haku do to the cluster" has one answer and one place to change it. A second
+# binding would be two answers that drift.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -13,3 +20,7 @@ subjects:
   - kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
+  # cluster/k8s/haku/claude-namespace/serviceaccount.yaml — same agent, Console-owned runtime.
+  - kind: ServiceAccount
+    name: haku-claude
+    namespace: haku-claude-sandbox

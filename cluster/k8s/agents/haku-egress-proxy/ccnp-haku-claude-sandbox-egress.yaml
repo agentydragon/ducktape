@@ -1,7 +1,7 @@
 # Console-owned Claude runners are isolated from Haku's general sandbox namespace.
-# They can reach Haku Console's runner bridge, the OAuth-substituting proxy, and the
-# in-cluster Forgejo they check haku-state out of, but have no direct internet, general
-# cluster access, or general-purpose proxy.
+# They can reach Haku Console's runner bridge, the OAuth-substituting proxy, the in-cluster
+# Forgejo they check haku-state out of, and the apiserver their ServiceAccount is bound
+# against — but have no direct internet, general cluster access, or general-purpose proxy.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -41,6 +41,17 @@ spec:
       toPorts:
         - ports:
             - port: "8180"
+              protocol: TCP
+    # kubectl. Haku's runtime already treats local kubectl as approval-free, because the
+    # apiserver's RBAC *is* the boundary — so the grant is haku-sandbox-admin, shared with the
+    # haku SA on one binding (cluster/k8s/haku/rbac/rolebinding-haku.yaml), and this is only the
+    # route to it. Deliberately not `toEntities: cluster`: reaching the API is not the same as
+    # reaching everything in the cluster, and the named destinations here stay the whole of it.
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
               protocol: TCP
     # haku-state, so the session starts with Haku's manual rather than an empty workspace.
     # In-cluster and plaintext, the way the haku-sandbox exec target already clones it — so no

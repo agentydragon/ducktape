@@ -136,6 +136,37 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     assert (namespace, port) in allowed
 
 
+def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
+    """Haku runs on two harnesses, and "what can Haku do to the cluster" must have one answer.
+
+    A ServiceAccount is namespaced, so the identity exists twice; the authority must not. Both
+    pods' SAs are subjects on the single haku-sandbox-admin binding, and neither namespace
+    grants anything of its own — a second binding would be a second answer, free to drift.
+    """
+    binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
+    assert binding["roleRef"]["name"] == "haku-sandbox-admin"
+    subjects = {(s["kind"], s["name"], s["namespace"]) for s in binding["subjects"]}
+
+    for template_name, namespace in (
+        ("sandboxtemplate-haku.yaml", "haku-sandbox"),
+        ("sandboxtemplate-haku-claude.yaml", "haku-claude-sandbox"),
+    ):
+        spec = yaml.safe_load((k8s_dir / "haku/workspaces/app" / template_name).read_text())
+        pod = spec["spec"]["podTemplate"]["spec"]
+        assert pod["automountServiceAccountToken"] is True, template_name
+        assert ("ServiceAccount", pod["serviceAccountName"], namespace) in subjects, template_name
+
+    # No grant inside the Claude namespace itself: full CRUD there would let a session create
+    # further pods behind the subscription-token proxy, which is what its isolation is for.
+    claude_ns = k8s_dir / "haku/claude-namespace"
+    kinds = {
+        yaml.safe_load(path.read_text())["kind"]
+        for path in claude_ns.glob("*.yaml")
+        if path.name != "kustomization.yaml"
+    }
+    assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
+
+
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     """The runtime commit stamp must track the actual images, and a bad release must not be an outage."""
     deployment_path = k8s_dir / "haku" / "console" / "deployment.yaml"

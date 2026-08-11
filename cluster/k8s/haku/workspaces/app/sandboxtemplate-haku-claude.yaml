@@ -17,12 +17,17 @@ spec:
         app.kubernetes.io/name: haku-claude-runner
     spec:
       dnsPolicy: ClusterFirst
-      automountServiceAccountToken: false
+      # Haku's own Kubernetes identity, so `kubectl` works from the session the way it does
+      # from a haku-sandbox exec target. A second SA object only because a ServiceAccount is
+      # namespaced; the permissions are the haku SA's own binding, shared
+      # (cluster/k8s/haku/rbac/rolebinding-haku.yaml).
+      serviceAccountName: haku-claude
+      automountServiceAccountToken: true
       enableServiceLinks: false
       # Deliberately outside haku-sandbox: Haku's general compute authority must not
-      # inherit access to the Claude OAuth-substituting proxy. Also defer the Haku
-      # Console agent bearer, Kubernetes identity, Forgejo/workspace bootstrap, MCP
-      # configuration, and every other general sandbox integration.
+      # inherit access to the Claude OAuth-substituting proxy — the CCNP that admits this
+      # namespace to it keys on the namespace, so the split is the fence. Still deferred:
+      # the Haku Console agent bearer and the general sandbox MCP integrations.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
