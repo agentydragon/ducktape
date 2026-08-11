@@ -17,7 +17,7 @@ from haku.state_index.chunking import CHUNKER_VERSION
 from haku.state_index.git_tree import list_tip
 from haku.state_index.schema import Chunk
 from haku.state_index.store import current_state, read_indexed_text, search
-from haku.state_index.sync import sync
+from haku.state_index.sync import AlreadyCurrent, SyncOutcome, SyncReport, sync
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
@@ -31,8 +31,10 @@ _MARKERS = ("alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"
 class FakeEmbedder:
     """Deterministic marker-word embedder — no model weights in a database test."""
 
-    model_key = "fake-v1"
     dims = len(_MARKERS)
+
+    def __init__(self, model_key: str = "fake-v1") -> None:
+        self.model_key = model_key
 
     def _vector(self, text: str) -> list[float]:
         counts = [text.lower().count(marker) + 0.01 for marker in _MARKERS]
@@ -66,10 +68,18 @@ def commit(repo: pygit2.Repository, files: dict[str, str]) -> str:
     return str(repo.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "c", index.write_tree(repo), parents))
 
 
-async def run_sync(session: AsyncSession, repo: pygit2.Repository, commit_sha: str, embedder: FakeEmbedder):
-    report = await sync(session, repo, commit_sha, branch="main", embedder=embedder, now=_NOW)
+async def run_sync(
+    session: AsyncSession, repo: pygit2.Repository, commit_sha: str, embedder: FakeEmbedder
+) -> SyncOutcome:
+    outcome = await sync(session, repo, commit_sha, branch="main", embedder=embedder, now=_NOW)
     await session.commit()
-    return report
+    return outcome
+
+
+def as_report(outcome: SyncOutcome) -> SyncReport:
+    """Narrow to the did-work variant, failing the test if the sync took the early-out."""
+    assert isinstance(outcome, SyncReport)
+    return outcome
 
 
 async def find(session: AsyncSession, embedder: FakeEmbedder, query: str, **kwargs):
@@ -130,20 +140,36 @@ async def test_restoring_deleted_content_costs_no_embedding(session: AsyncSessio
     embedder = FakeEmbedder()
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "gone.md": "zeta zeta"}), embedder)
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
-    report = await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "back.md": "zeta zeta"}), embedder)
+    report = as_report(
+        await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "back.md": "zeta zeta"}), embedder)
+    )
 
     assert report.blobs_embedded == 0
     assert next(hit.path for hit in await find(session, embedder, "zeta")) == "back.md"
 
 
-async def test_resync_of_an_unchanged_tip_embeds_nothing(session: AsyncSession, repo: pygit2.Repository) -> None:
+async def test_resync_of_an_unchanged_tip_does_no_work(session: AsyncSession, repo: pygit2.Repository) -> None:
+    """The early-out is what lets a push trigger and a reconciling cron both fire freely."""
     embedder = FakeEmbedder()
     head = commit(repo, {"a.md": "alpha", "b.md": "beta"})
-    first = await run_sync(session, repo, head, embedder)
+    first = as_report(await run_sync(session, repo, head, embedder))
     second = await run_sync(session, repo, head, embedder)
 
     assert first.blobs_embedded == 2
-    assert (second.blobs_embedded, second.blobs_reused) == (0, 2)
+    assert second == AlreadyCurrent(commit_sha=head)
+    assert next(hit.path for hit in await find(session, embedder, "alpha")) == "a.md"
+
+
+async def test_a_changed_model_resyncs_the_same_commit(session: AsyncSession, repo: pygit2.Repository) -> None:
+    """Same tree, different regime: the stored vectors no longer answer for this content."""
+    head = commit(repo, {"a.md": "alpha", "b.md": "beta"})
+    await run_sync(session, repo, head, FakeEmbedder())
+
+    successor = FakeEmbedder(model_key="fake-v2")
+    report = as_report(await run_sync(session, repo, head, successor))
+
+    assert report.blobs_embedded == 2
+    assert next(hit.path for hit in await find(session, successor, "beta")) == "b.md"
 
 
 async def test_a_failed_sync_leaves_the_previous_tip_searchable(session: AsyncSession, repo: pygit2.Repository) -> None:
@@ -175,7 +201,7 @@ async def test_binary_and_oversized_blobs_stay_out_of_the_index(session: AsyncSe
     index.add(pygit2.IndexEntry("logo.png", repo.create_blob(b"\x89PNG\x00\xff\xfe"), pygit2.enums.FileMode.BLOB))
     head = str(repo.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "c", index.write_tree(repo), []))
 
-    report = await run_sync(session, repo, head, embedder)
+    report = as_report(await run_sync(session, repo, head, embedder))
 
     assert (report.tip_files, report.skipped_binary) == (2, 1)
     assert all(hit.path != "logo.png" for hit in await find(session, embedder, "alpha"))

@@ -27,6 +27,11 @@ computed over different text or by a different model.
 A sync is one transaction. A run that dies halfway — embedder gone, connection lost — leaves
 the previous tip searchable rather than a half-swapped one; `test_sync.py` asserts this.
 
+A sync whose commit and regime already match what `sync_state` records returns
+`AlreadyCurrent` without touching git or the tables, so it costs one `SELECT`. That is what
+lets a push-triggered sync and a slow reconciling cron both fire as often as they like —
+webhooks get dropped, so you want the belt as well as the braces.
+
 ### Two choices worth knowing
 
 **No ANN index.** Exact KNN over the joined set, which at this corpus size is a scan of a few
@@ -74,5 +79,16 @@ Deployment, deliberately — it depends on the evaluation above:
 - **The sync CronJob.** Image, Flux wiring, and the Forgejo credential — which must come from
   `tf/gitops/haku-state`, not a hand-minted token.
 - **Eviction.** `last_seen_at` is maintained but nothing sweeps it. At 384 dims a chunk's
-  vector is ~1.5 KB; add `DELETE FROM chunks WHERE last_seen_at < now() - interval '90 days'`
-  when it shows up on a disk graph, not before.
+  vector is ~1.5 KB, so wait until it shows up on a disk graph. When you do add a sweep, it
+  must exclude anything `tip` still references:
+
+  ```sql
+  DELETE FROM state_index.chunks c
+   WHERE NOT EXISTS (SELECT 1 FROM state_index.tip t WHERE t.blob_sha = c.blob_sha)
+     AND c.last_seen_at < now() - interval '90 days';
+  ```
+
+  Membership in `tip` is the liveness signal, not `last_seen_at`: a sync that takes the
+  `AlreadyCurrent` early-out touches nothing, so a long-unchanged tip's `last_seen_at` goes stale
+  while its content is still very much searchable. `last_seen_at` only governs how long
+  _unreferenced_ vectors are kept against a future revert.

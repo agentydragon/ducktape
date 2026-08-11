@@ -20,7 +20,7 @@ from haku.state_index.chunking import CHUNKER_VERSION
 from haku.state_index.embedder import build_bge_small
 from haku.state_index.git_tree import fetch_branch, open_mirror
 from haku.state_index.store import current_state, ensure_schema, search
-from haku.state_index.sync import sync
+from haku.state_index.sync import AlreadyCurrent, sync
 
 app = typer.Typer(help=__doc__)
 
@@ -37,7 +37,7 @@ async def _index(
         repository = open_mirror(mirror, repo_url, username=username, password=password)
         commit_sha = fetch_branch(repository, branch, username=username, password=password)
         async with async_sessionmaker(engine)() as session:
-            report = await sync(
+            outcome = await sync(
                 session,
                 repository,
                 commit_sha,
@@ -48,10 +48,13 @@ async def _index(
             await session.commit()
     finally:
         await engine.dispose()
+    if isinstance(outcome, AlreadyCurrent):
+        typer.echo(f"{outcome.commit_sha[:12]} already indexed — nothing to do")
+        return
     typer.echo(
-        f"{report.commit_sha[:12]} {report.tip_files} files, {report.chunks_written} chunks written "
-        f"({report.blobs_embedded} blobs embedded, {report.blobs_reused} reused, "
-        f"{report.skipped_binary} binary, {report.skipped_large} oversized)"
+        f"{outcome.commit_sha[:12]} {outcome.tip_files} files, {outcome.chunks_written} chunks written "
+        f"({outcome.blobs_embedded} blobs embedded, {outcome.blobs_reused} reused, "
+        f"{outcome.skipped_binary} binary, {outcome.skipped_large} oversized)"
     )
 
 

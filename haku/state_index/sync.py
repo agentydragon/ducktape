@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.state_index.chunking import CHUNKER_VERSION, Chunk, chunk_text
 from haku.state_index.embedder import Embedder
 from haku.state_index.git_tree import list_tip, read_blob
-from haku.state_index.store import ChunkRow, cached_blobs, insert_chunks, replace_tip, touch_blobs
+from haku.state_index.store import ChunkRow, cached_blobs, current_state, insert_chunks, replace_tip, touch_blobs
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,18 @@ class SyncReport:
     skipped_large: int
 
 
+@dataclass(frozen=True, slots=True)
+class AlreadyCurrent:
+    """The index already holds this commit under this regime, so the sync did nothing."""
+
+    commit_sha: str
+
+
+# A variant rather than a flag on SyncReport: the counts an early-out would report are all
+# absent, not zero, and callers should have to notice the difference.
+SyncOutcome = SyncReport | AlreadyCurrent
+
+
 async def sync(
     session: AsyncSession,
     repo: pygit2.Repository,
@@ -51,7 +63,23 @@ async def sync(
     branch: str,
     embedder: Embedder,
     now: datetime.datetime,
-) -> SyncReport:
+) -> SyncOutcome:
+    """Swap the searchable set to `commit_sha`, or do nothing if it is already there.
+
+    The early-out compares the whole regime, not just the commit: a different chunker or
+    embedding model means the stored vectors no longer answer for this content even though
+    the tree is identical. It exists so a push-triggered sync and a reconciling cron can both
+    fire as often as they like — the common case, where nothing moved, costs one SELECT.
+    """
+    if (state := await current_state(session)) is not None and (
+        state.commit_sha,
+        state.branch,
+        state.chunker_version,
+        state.model_key,
+    ) == (commit_sha, branch, CHUNKER_VERSION, embedder.model_key):
+        logger.info("haku-state index already at %s", commit_sha)
+        return AlreadyCurrent(commit_sha=commit_sha)
+
     entries = list_tip(repo, commit_sha)
     blob_shas = {entry.blob_sha for entry in entries}
     cached = await cached_blobs(
