@@ -102,12 +102,19 @@ class Progress(_Frame):
     line: str
 
 
-BridgeFrame = ClaudeLaunch | ClaudeMessage | EndInput | Progress
+# The two directions carry different frames, and saying so in the types is what keeps the
+# difference enforced. It is *not* request/response — this is a duplex stream where both ends
+# speak unprompted, and nothing at this layer pairs a reply with a call. (The SDK's own
+# control_request/control_response do correlate, by an id inside `ClaudeMessage.payload`,
+# which is the SDK's business and deliberately opaque here.)
+ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
+RunnerToConsole = ClaudeMessage | Progress
 
 # A `TypeAdapter` rather than a model's own `model_validate`, because the thing being parsed
 # is a union and there is no outer model to hang it on — adding one would put a wrapper on
 # the wire that carries nothing.
-_FRAMES: TypeAdapter[BridgeFrame] = TypeAdapter(Annotated[BridgeFrame, Field(discriminator="kind")])
+_TO_RUNNER: TypeAdapter[ConsoleToRunner] = TypeAdapter(Annotated[ConsoleToRunner, Field(discriminator="kind")])
+_TO_CONSOLE: TypeAdapter[RunnerToConsole] = TypeAdapter(Annotated[RunnerToConsole, Field(discriminator="kind")])
 
 
 class TextWebSocket(Protocol):
@@ -120,13 +127,30 @@ class TextWebSocket(Protocol):
     async def close(self) -> None: ...
 
 
-def encode_frame(frame: BridgeFrame) -> str:
+# Serializing is direction-agnostic — a model writes the same bytes whoever holds it — so the
+# two encoders exist for their signatures. That is the point: they make "the console tried to
+# send a Progress" a type error at the call site, where nothing else would catch it.
+def encode_to_runner(frame: ConsoleToRunner) -> str:
     return frame.model_dump_json()
 
 
-def decode_frame(data: str) -> BridgeFrame:
-    """Parse one frame, raising `pydantic.ValidationError` (a `ValueError`) on anything else."""
-    return _FRAMES.validate_json(data)
+def encode_to_console(frame: RunnerToConsole) -> str:
+    return frame.model_dump_json()
+
+
+def decode_from_console(data: str) -> ConsoleToRunner:
+    """Read one frame the console sent, as the runner. Raises `ValidationError` on anything else."""
+    return _TO_RUNNER.validate_json(data)
+
+
+def decode_from_runner(data: str) -> RunnerToConsole:
+    """Read one frame the runner sent, as the console.
+
+    A `start` or `end_input` arriving here is refused by the discriminator rather than by a
+    hand-written check further in — the direction is a property of the type, not something
+    each reader has to remember to assert.
+    """
+    return _TO_CONSOLE.validate_json(data)
 
 
 def decode_object(data: str) -> dict[str, Any]:

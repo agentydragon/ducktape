@@ -20,9 +20,9 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     EndInput,
     Progress,
     TextWebSocket,
-    decode_frame,
+    decode_from_runner,
     decode_object,
-    encode_frame,
+    encode_to_runner,
 )
 
 # Called for each sandbox progress report. Unset drops them, which is what a caller with
@@ -43,13 +43,13 @@ class WebSocketTransport(Transport):
     async def connect(self) -> None:
         if self._closed:
             raise RuntimeError("WebSocket transport is closed")
-        await self._websocket.send_text(encode_frame(self._launch))
+        await self._websocket.send_text(encode_to_runner(self._launch))
         self._ready = True
 
     async def write(self, data: str) -> None:
         if not self._ready:
             raise RuntimeError("WebSocket transport is not connected")
-        await self._websocket.send_text(encode_frame(ClaudeMessage(payload=decode_object(data.strip()))))
+        await self._websocket.send_text(encode_to_runner(ClaudeMessage(payload=decode_object(data.strip()))))
 
     def read_messages(self) -> AsyncIterator[dict[str, Any]]:
         return self._read_messages()
@@ -59,7 +59,9 @@ class WebSocketTransport(Transport):
             raise RuntimeError("WebSocket transport is not connected")
         try:
             while self._ready:
-                match decode_frame(await self._websocket.receive_text()):
+                # Exhaustive: `RunnerToConsole` is these two. A `start` or `end_input` coming
+                # back the wrong way never reaches here — the decoder refuses it.
+                match decode_from_runner(await self._websocket.receive_text()):
                     case ClaudeMessage(payload=payload):
                         yield payload
                     case Progress(line=line):
@@ -67,16 +69,12 @@ class WebSocketTransport(Transport):
                         # not reach the SDK, which would see an unknown message shape.
                         if self._on_progress is not None:
                             await self._on_progress(line)
-                    case other:
-                        # `start` and `end_input` only ever travel console → runner, so a
-                        # runner sending one is a protocol bug rather than something to route.
-                        raise ValueError(f"runner sent {type(other).__name__}, which is not a conversation frame")
         except (EOFError, anyio.EndOfStream):
             self._ready = False
 
     async def end_input(self) -> None:
         if self._ready:
-            await self._websocket.send_text(encode_frame(EndInput()))
+            await self._websocket.send_text(encode_to_runner(EndInput()))
 
     async def close(self) -> None:
         if self._closed:

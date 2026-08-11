@@ -17,10 +17,10 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     EndInput,
     Progress,
     TextWebSocket,
-    decode_frame,
+    decode_from_console,
     decode_object,
-    encode_frame,
     encode_object,
+    encode_to_console,
 )
 
 
@@ -61,7 +61,7 @@ async def _forward_cli_line(websocket: TextWebSocket, line: bytes) -> None:
     """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
-    await websocket.send_text(encode_frame(ClaudeMessage(payload=decode_object(stripped.decode()))))
+    await websocket.send_text(encode_to_console(ClaudeMessage(payload=decode_object(stripped.decode()))))
 
 
 async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteReceiveStream) -> None:
@@ -77,18 +77,18 @@ async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteRecei
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
     while True:
-        match decode_frame(await websocket.receive_text()):
+        match decode_from_console(await websocket.receive_text()):
             case EndInput():
                 await stdin.aclose()
                 return
             case ClaudeMessage(payload=payload):
                 await stdin.send((encode_object(payload) + "\n").encode())
             case ClaudeLaunch():
-                # Sent once, before this loop starts; a second one mid-conversation would
-                # mean the console thinks it is talking to a runner that has not launched.
+                # Not a direction error — `start` is the console's to send — but a sequencing
+                # one: it comes once, before this loop, so a second means the console thinks
+                # it is talking to a runner that has not launched. The types cannot say that,
+                # so this check stays where the two above went.
                 raise ValueError("console sent a second launch frame mid-conversation")
-            case Progress():
-                raise ValueError("progress is what the sandbox reports, not something it is told")
 
 
 async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
@@ -168,7 +168,7 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
         # Skipping blanks only: a script that spaces its output would otherwise post empty
         # notices into the room.
         if websocket is not None and line.strip():
-            await websocket.send_text(encode_frame(Progress(line=line.rstrip())))
+            await websocket.send_text(encode_to_console(Progress(line=line.rstrip())))
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
 
@@ -193,7 +193,7 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
 
     async with connect(websocket_url, additional_headers=headers) as connection:
         websocket = ClientWebSocketAdapter(connection)
-        if not isinstance(launch := decode_frame(await websocket.receive_text()), ClaudeLaunch):
+        if not isinstance(launch := decode_from_console(await websocket.receive_text()), ClaudeLaunch):
             raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
         if setup_path is not None:
             await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)

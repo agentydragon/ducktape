@@ -19,8 +19,8 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeMessage,
     EndInput,
     Progress,
-    decode_frame,
-    encode_frame,
+    decode_from_runner,
+    encode_to_runner,
 )
 from haku.runtime.x.agent_sdk_transport.runner import (
     bridge_websocket_to_claude,
@@ -126,12 +126,12 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(partial(bridge_websocket_to_claude, runner_socket, claude_path=fake_claude, launch=launch))
         message = {"type": "user", "message": {"role": "user", "content": "hello"}}
-        await console_socket.send_text(encode_frame(ClaudeMessage(payload=message)))
+        await console_socket.send_text(encode_to_runner(ClaudeMessage(payload=message)))
         with anyio.fail_after(5):
             # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo
             # proves the runner strips and restores the envelope rather than passing it through.
-            assert decode_frame(await console_socket.receive_text()) == ClaudeMessage(payload=message)
-        await console_socket.send_text(encode_frame(EndInput()))
+            assert decode_from_runner(await console_socket.receive_text()) == ClaudeMessage(payload=message)
+        await console_socket.send_text(encode_to_runner(EndInput()))
 
     assert runner_socket.closed
 
@@ -166,7 +166,7 @@ async def test_workspace_setup_streams_its_output(tmp_path: Path) -> None:
     reported = []
     with contextlib.suppress(EOFError):
         while True:
-            reported.append(decode_frame(await console_socket.receive_text()))
+            reported.append(decode_from_runner(await console_socket.receive_text()))
     # The blank line is dropped; the unterminated last line is not.
     assert reported == [
         Progress(line="Cloning into 'haku-state'..."),
