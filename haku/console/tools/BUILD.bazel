@@ -143,6 +143,7 @@ py_test(
 
 py_test(
     name = "test_hostexec",
+    size = "medium",  # provisions a Postgres database per test
     srcs = ["test_hostexec.py"],
     deps = [
         ":hostexec",
@@ -159,6 +160,9 @@ py_test(
 
 py_test(
     name = "test_gmail",
+    # 14 tests, each of which creates a database and migrates it to head — see the sibling
+    # targets in //haku/console, which are medium for the same reason.
+    size = "medium",
     srcs = ["test_gmail.py"],
     deps = [
         ":gmail",
