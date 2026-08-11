@@ -96,35 +96,33 @@ else
   git clone --depth 1 --branch main --single-branch "$url" "$repo"
 fi
 
-# ── 5. ducktape checkout (Haku's read-only base) ─────────────────────────────
-# `haku/run.md` step 2 (base-sync) diffs `haku/base` + `haku/run.md` between the pin in
-# haku-state's memory/base-sync.md and ducktape HEAD. Until 2026-07-25 no ducktape existed
-# here at all, so a sandbox-hosted run was structurally incapable of that step and had to
-# borrow the harness's checkout. Cloning it closes that, and doubles as the way an ad-hoc
-# claude.ai chat (which has no ducktape) can read Haku's manual at all.
+# ── 5. ducktape checkout (one of Haku's information sources) ─────────────────
+# Haku's manual is not here — it lives in the haku-state checkout above. ducktape is cloned
+# because its recent history is a source Haku reads for follow-up work the operator may want
+# surfaced (haku-state `sources/ducktape.md`), and because the runtime entrypoints live here.
 #
 # From GitHub, not the in-cluster Forgejo mirror: the mirror is not yet auto-synced and was
-# measured 3 commits behind devel (97a23895 vs a4c497f7) on 2026-07-25, and base-sync against
-# a stale HEAD silently under-reports contract changes. Public repo, so no credential — the
-# egress proxy allows github.com and §2b just taught git to trust it.
+# measured 3 commits behind devel (97a23895 vs a4c497f7) on 2026-07-25, so it under-reports
+# recent work. Public repo, so no credential — the egress proxy allows github.com and §2b
+# just taught git to trust it.
 #
-# --filter=blob:none, NOT --depth 1: base-sync needs real history to resolve `<pin>..HEAD`,
+# --filter=blob:none, NOT --depth 1: that history read spans weeks,
 # which a shallow clone cannot do. A partial clone keeps every commit and fetches blobs on
 # demand — measured 11s / ~102 MB, against minutes for a full clone.
 if [ "${HAKU_DUCKTAPE_SKIP:-}" != "1" ]; then
   dt_repo="${HAKU_DUCKTAPE_DIR:-/workspace/ducktape}"
   dt_url="${HAKU_DUCKTAPE_URL:-https://github.com/agentydragon/ducktape.git}"
   dt_branch="${HAKU_DUCKTAPE_BRANCH:-devel}"
-  # Non-fatal: ducktape is read-only reference. A run whose base-sync is unavailable should
+  # Non-fatal: ducktape is read-only reference. A run that loses this source should
   # degrade to "surface a finding and carry on", not fail to get a sandbox at all.
   if [ -d "$dt_repo/.git" ]; then
     git -C "$dt_repo" fetch --prune origin "$dt_branch" \
       && git -C "$dt_repo" checkout -B "$dt_branch" "origin/$dt_branch" \
       && git -C "$dt_repo" reset --hard "origin/$dt_branch" \
-      || echo "haku-sandbox-setup: ducktape refresh failed — base-sync unavailable this claim" >&2
+      || echo "haku-sandbox-setup: ducktape refresh failed — that source unavailable this claim" >&2
   else
     git clone --filter=blob:none --single-branch --branch "$dt_branch" "$dt_url" "$dt_repo" \
-      || echo "haku-sandbox-setup: ducktape clone failed — base-sync unavailable this claim" >&2
+      || echo "haku-sandbox-setup: ducktape clone failed — that source unavailable this claim" >&2
   fi
 fi
 

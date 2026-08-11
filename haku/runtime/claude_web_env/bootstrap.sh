@@ -56,7 +56,7 @@ else
   echo "haku warning: haku-forgejo-tea secret is absent; tea is installed but not logged in yet"
 fi
 
-# Canonical himalaya config recipe (haku/base/sources/mailbox.md points here).
+# Canonical himalaya config recipe (haku-state's sources/mailbox.md points here).
 # Verified against the live server (himalaya 1.1.0 + oauth2 feature): `pkce` and
 # `scope` are required by the config schema; auth-url/token-url are schema-
 # required but never contacted; the token is embedded as a `raw` secret because
