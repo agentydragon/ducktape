@@ -103,12 +103,19 @@ py_test(
 )
 
 py_library(
+    name = "system_prompt",
+    srcs = ["system_prompt.py"],
+    deps = ["@pypi//jinja2"],
+)
+
+py_library(
     name = "matrix_session",
     srcs = ["matrix_session.py"],
     deps = [
         ":chat_notifications",
         ":claude_chat",
         ":matrix_client",
+        ":system_prompt",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -124,7 +131,9 @@ py_test(
     deps = [
         ":claude_chat",
         ":conftest",
+        ":matrix_client",
         ":matrix_session",
+        ":system_prompt",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
@@ -163,6 +172,18 @@ py_test(
         "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_system_prompt",
+    srcs = ["test_system_prompt.py"],
+    data = ["//cluster/k8s:haku_console_system_prompt"],
+    deps = [
+        ":system_prompt",
+        "@pypi//jinja2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

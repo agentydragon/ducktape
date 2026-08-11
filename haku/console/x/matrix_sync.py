@@ -139,6 +139,20 @@ class MatrixSyncService:
         event_id = await self._client.send_text(await self._token(), conversation.room_id, body, txn_id=uuid4().hex)
         self._sent_event_ids.add(event_id)
 
+    async def recent_history(self, limit: int) -> tuple[InboundMessage, ...]:
+        """The tail of the live room's conversation, for re-awakening a replacement session.
+
+        Empty before the loop has ever synced: with no watermark there is no pagination token
+        to read back from, and a room nothing has synced has nothing in it that Haku said.
+        """
+        conversation = await self._conversations.load(self._config.user_id)
+        state = await self._store.load(self._config.user_id)
+        if conversation is None or state is None or state.next_batch is None:
+            return ()
+        return await self._client.recent_messages(
+            await self._token(), conversation.room_id, since=state.next_batch, limit=limit
+        )
+
     async def announce(self, body: str) -> None:
         """Post a lifecycle notice into the live room, if there is one.
 

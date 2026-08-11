@@ -70,6 +70,8 @@ filegroup(
         "haku/console/config.yaml",
         "haku/console/deployment.yaml",
         "haku/console/httproute.yaml",
+        "haku/console/kustomization.yaml",
+        "haku/console/matrix_system_prompt.md.j2",
         "haku/console/service.yaml",
         "haku/managed-agent/haku-forgejo-tea.sops.yaml",
         "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",
@@ -140,4 +142,12 @@ filegroup(
     name = "market_roster_yaml",
     srcs = ["evidence/market-roster/market-roster.yaml"],
     visibility = ["//loom/gym:__pkg__"],
+)
+
+# Haku's Matrix system prompt, so the test that renders it exercises the file the
+# console actually mounts rather than a fixture that can drift from it.
+filegroup(
+    name = "haku_console_system_prompt",
+    srcs = ["haku/console/matrix_system_prompt.md.j2"],
+    visibility = ["//haku/console/x:__pkg__"],
 )

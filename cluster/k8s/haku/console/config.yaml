@@ -17,6 +17,9 @@ claude_runtime:
   # secret; this ConfigMap names only the endpoint and durable Agent identity.
   mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
   mcp_static_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+  # Mounted from this same ConfigMap. Haku's identity and the Matrix harness contract;
+  # the craft it authors for itself lives in haku-state, which it can write and this it cannot.
+  system_prompt_template: /etc/haku-console/config/matrix_system_prompt.md.j2
 
 # Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing authority
 # only to the named tools; newly reflected tools remain manual-approval by default. Conditional

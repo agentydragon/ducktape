@@ -47,6 +47,7 @@ def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
         "mcp_url": "http://haku-console.test:9090/mcp",
         "mcp_static_agent_id": "00000000-0000-4000-8000-000000000001",
+        "system_prompt_template": "cluster/k8s/haku/console/matrix_system_prompt.md.j2",
     }
     values.update(overrides)
     return ClaudeRuntimeConfig.model_validate(values)

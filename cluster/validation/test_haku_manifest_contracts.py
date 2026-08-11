@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 import pytest_bazel
@@ -71,7 +71,19 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
         "mcp_url": "http://haku-console.haku-console.svc.cluster.local:9090/mcp",
         "mcp_static_agent_id": "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2",
+        "system_prompt_template": "/etc/haku-console/config/matrix_system_prompt.md.j2",
     }
+    # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
+    # is a pod that never becomes Ready. Tie the three places that must agree — the configured
+    # path, the mount point, and the generated file — together here rather than in a rollout.
+    kustomization = yaml.safe_load((k8s_dir / "haku/console/kustomization.yaml").read_text())
+    generated = next(entry for entry in kustomization["configMapGenerator"] if entry["name"] == "haku-console-config")
+    config_mount = next(mount for mount in server["volumeMounts"] if mount["name"] == "config")
+    template_path = PurePosixPath(console_config["claude_runtime"]["system_prompt_template"])
+    assert str(template_path.parent) == config_mount["mountPath"]
+    assert template_path.name in generated["files"]
+    assert (k8s_dir / "haku/console" / template_path.name).is_file()
+
     mcp_agent = next(
         agent
         for agent in console_config["static_agents"]

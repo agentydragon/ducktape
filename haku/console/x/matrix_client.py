@@ -156,6 +156,30 @@ class MatrixClient:
         self._client.access_token = token
         _unwrap(await self._client.join(room_id), JoinResponse)
 
+    async def recent_messages(self, token: str, room_id: str, since: str, limit: int) -> tuple[InboundMessage, ...]:
+        """The last `limit` conversational messages before `since`, oldest first.
+
+        **Filters the opposite way from `sync`.** Ingress drops Haku's own messages, because
+        answering yourself is a loop (R1.5); history must keep them, because half a
+        conversation is not context (R3.3a). Same room, same events, so the two read paths
+        cannot share a filter.
+
+        Lifecycle notices are excluded for free: the console sends them as `m.notice`, which
+        nio parses as `RoomMessageNotice`, a different class from the `RoomMessageText` this
+        keeps. Re-awakening a session with its own status chatter would be noise.
+
+        `since` is a `/sync` watermark, which is also a valid `/messages` pagination token —
+        so this reads back from wherever the loop has got to, with no second position to keep.
+        """
+        self._client.access_token = token
+        page = _unwrap(
+            await self._client.room_messages(room_id, start=since, direction=MessageDirection.back, limit=limit),
+            RoomMessagesResponse,
+        )
+        recent = [self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText)]
+        recent.reverse()
+        return tuple(recent)
+
     async def send_text(self, token: str, room_id: str, body: str, txn_id: str) -> str:
         """Send a plain-text message, returning its event ID.
 

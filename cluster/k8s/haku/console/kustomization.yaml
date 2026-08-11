@@ -18,3 +18,4 @@ configMapGenerator:
   - name: haku-console-config
     files:
       - config.yaml
+      - matrix_system_prompt.md.j2
