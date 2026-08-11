@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from third_party.containers.rlocations import POSTGRES_18
+from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from x.gatelet.server.app import app
 from x.gatelet.server.config import (
@@ -75,8 +75,14 @@ class PostgresConfig:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _preload_postgres() -> None:
+def _preload_images() -> None:
+    """Load both images testcontainers needs, so neither is fetched from a registry.
+
+    Ryuk is the reaper testcontainers starts alongside every container; without it bundled,
+    each cold Docker daemon pulls it over the network before the first test can run.
+    """
     load_oci_image(POSTGRES_18)
+    load_oci_image(RYUK)
 
 
 @pytest.fixture(scope="session")

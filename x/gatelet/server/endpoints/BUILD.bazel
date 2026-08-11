@@ -91,6 +91,7 @@ py_library(
 
 py_test(
     name = "test_activitywatch",
+    size = "medium",
     srcs = ["test_activitywatch.py"],
     requires_docker = True,
     deps = [
@@ -104,6 +105,7 @@ py_test(
 
 py_test(
     name = "test_admin_cr_sessions",
+    size = "medium",
     srcs = ["test_admin_cr_sessions.py"],
     requires_docker = True,
     deps = [
@@ -117,6 +119,7 @@ py_test(
 
 py_test(
     name = "test_admin_keys",
+    size = "medium",
     srcs = ["test_admin_keys.py"],
     requires_docker = True,
     deps = [
@@ -130,6 +133,7 @@ py_test(
 
 py_test(
     name = "test_admin_login",
+    size = "medium",
     srcs = ["test_admin_login.py"],
     requires_docker = True,
     deps = [
@@ -142,6 +146,7 @@ py_test(
 
 py_test(
     name = "test_admin_logs",
+    size = "medium",
     srcs = ["test_admin_logs.py"],
     requires_docker = True,
     deps = [
@@ -154,6 +159,7 @@ py_test(
 
 py_test(
     name = "test_admin_sessions",
+    size = "medium",
     srcs = ["test_admin_sessions.py"],
     requires_docker = True,
     deps = [
@@ -167,6 +173,7 @@ py_test(
 
 py_test(
     name = "test_challenge",
+    size = "medium",
     srcs = ["test_challenge.py"],
     requires_docker = True,
     deps = [
@@ -182,6 +189,7 @@ py_test(
 
 py_test(
     name = "test_compute_correct_option",
+    size = "medium",
     srcs = ["test_compute_correct_option.py"],
     requires_docker = True,
     deps = [
@@ -193,6 +201,7 @@ py_test(
 
 py_test(
     name = "test_homeassistant",
+    size = "medium",
     srcs = ["test_homeassistant.py"],
     requires_docker = True,
     deps = [
@@ -205,6 +214,7 @@ py_test(
 
 py_test(
     name = "test_webhook_receive",
+    size = "medium",
     srcs = ["test_webhook_receive.py"],
     requires_docker = True,
     deps = [
@@ -220,6 +230,7 @@ py_test(
 
 py_test(
     name = "test_webhook_view",
+    size = "medium",
     srcs = ["test_webhook_view.py"],
     requires_docker = True,
     deps = [
