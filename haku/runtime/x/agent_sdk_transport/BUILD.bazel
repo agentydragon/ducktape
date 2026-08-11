@@ -9,6 +9,7 @@ py_library(
     name = "protocol",
     srcs = ["protocol.py"],
     visibility = ["//haku:__subpackages__"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -182,6 +183,7 @@ py_test(
         ":transport",
         "//:conftest",
         "@pypi//anyio",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

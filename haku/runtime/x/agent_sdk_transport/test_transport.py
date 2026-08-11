@@ -7,6 +7,7 @@ import json
 import anyio
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
@@ -69,16 +70,33 @@ def test_an_sdk_payload_naming_our_control_frames_is_still_a_conversation_frame(
 
 def test_launch_rejects_another_protocol_version() -> None:
     launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={})
-    older = {"kind": "start", "payload": {**json.loads(encode_frame(launch))["payload"], "protocol_version": 1}}
+    older = {**json.loads(encode_frame(launch)), "protocol_version": 1}
 
-    with pytest.raises(ValueError, match="protocol version"):
+    with pytest.raises(ValidationError, match="protocol_version"):
         decode_frame(encode_object(older))
 
 
 def test_an_unknown_frame_kind_is_refused() -> None:
     """A kind from a newer peer is an error, not something to route somewhere plausible."""
-    with pytest.raises(ValueError, match="unsupported bridge frame kind"):
-        decode_frame(encode_object({"kind": "a-kind-from-the-future", "payload": {}}))
+    with pytest.raises(ValidationError, match="union_tag_invalid"):
+        decode_frame(encode_object({"kind": "a-kind-from-the-future"}))
+
+
+def test_a_frame_missing_its_kind_is_refused() -> None:
+    """What a pre-envelope peer sends: no discriminator at all, rather than a wrong one."""
+    with pytest.raises(ValidationError, match="union_tag_not_found"):
+        decode_frame(encode_object({"type": "haku_transport", "subtype": "end_input"}))
+
+
+def test_a_frame_carrying_an_unknown_field_is_refused() -> None:
+    """`extra=forbid`: a field this end does not understand is a version mismatch, not noise."""
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        decode_frame(encode_object({"kind": "progress", "line": "hi", "severity": "warning"}))
+
+
+def test_a_frame_missing_a_required_field_is_refused() -> None:
+    with pytest.raises(ValidationError, match="line"):
+        decode_frame(encode_object({"kind": "progress"}))
 
 
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
@@ -147,7 +165,7 @@ async def test_transport_rejects_non_object_frames() -> None:
     assert decode_frame(await runner_socket.receive_text()) == launch
     await runner_socket.send_text("[]")
 
-    with pytest.raises(ValueError, match="one JSON object"):
+    with pytest.raises(ValidationError, match="dict_type"):
         await anext(transport.read_messages())
 
     await transport.close()
