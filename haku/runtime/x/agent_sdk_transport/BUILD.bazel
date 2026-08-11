@@ -114,6 +114,8 @@ oci_image(
     tars = [
         ":runner_layers",
         ":claude_layer",
+        # git, for checking haku-state out into the workspace before Claude starts.
+        "@trixie_haku_claude_runner//:flat",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
