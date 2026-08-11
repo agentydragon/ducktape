@@ -563,10 +563,9 @@ leaves upstream responses alone otherwise), covering the ~1.8 MB SPA bundle and 
 
 The pods are pinned to the **`hil-ovh` zone**, where both their Postgres and the public ingress
 live. This is a latency constraint, not a preference: an operator API call opens a database session
-per read, and each session costs several round trips, so a replica a WAN hop away turns a 4.6ms
+per read and each session costs several round trips, so a replica a WAN hop away turned a 4.6ms
 query into a two-second request. It costs no availability — the console cannot serve without that
-node-pinned database anyway. Measurements:
-<debug/2026_08_11_approvals_pending_latency.md>.
+node-pinned database anyway.
 
 The Deployment rolls with **`maxUnavailable: 0`**, so a replacement that never becomes Ready leaves
 the running version serving and a bad release is a no-op instead of an outage. It replaced

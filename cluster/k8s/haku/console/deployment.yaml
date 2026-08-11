@@ -56,16 +56,9 @@ spec:
       labels:
         app.kubernetes.io/name: haku-console
     spec:
-      # Sit in the same zone as this console's Postgres (`db/postgres-cluster.yaml` pins the CNPG
-      # cluster here for `local-path-ovh`) and as the public ingress, whose A records are the OVH
-      # nodes. Unpinned, the two replicas landed on `optiplex` (home-lan) and `wyrm2` (atlas):
-      # 166ms RTT to the database, paid several times per request because every read opens a
-      # session, and paid again on the way in because ingress hairpins from OVH to the pod and
-      # back. Measured on 2026-08-11 from a pod's node: `/healthz` (no database) 0.7ms, `/metrics`
-      # (one session, one query) 1.17s, and `/api/approvals/pending` ~2s for what Postgres itself
-      # answers in 4.6ms. Nothing is traded away by co-locating: the console cannot serve at all
-      # without that node-pinned database, so spreading its replicas across zones bought
-      # availability it never had. Numbers: haku/console/debug/2026_08_11_approvals_pending_latency.md
+      # Same zone as this console's Postgres and the public ingress. Unpinned, a replica landed
+      # 166ms from the database, which every read pays several round trips of: 4.6ms of query
+      # took ~2s. Costs no availability — the database is node-pinned here anyway.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       # Narrow Claude-runtime identity: create/delete/get haku-claude SandboxClaims and read
