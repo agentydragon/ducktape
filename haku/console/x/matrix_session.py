@@ -232,6 +232,26 @@ class MatrixSystemPrompt:
         ]
 
 
+class MatrixProgressSink:
+    """Narrates the sandbox's setup into the live room (R7.1).
+
+    Filters by session like `MatrixReplySink`, and for the same reason. Unlike a reply, a
+    dropped progress line costs nothing but legibility, so a room that is not bound yet is
+    simply not told.
+    """
+
+    def __init__(self, config: MatrixConfig, conversations: MatrixConversationStore, announce: Announce):
+        self._config = config
+        self._conversations = conversations
+        self._announce = announce
+
+    async def report(self, session_id: UUID, detail: str) -> None:
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None or conversation.session_id != session_id:
+            return
+        await self._announce(detail)
+
+
 class MatrixReplySink:
     """Egress: forwards a finished turn's answer into the live room (R11.1).
 

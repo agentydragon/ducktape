@@ -8,7 +8,7 @@ without sharing its key namespace.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import anyio
@@ -18,19 +18,25 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Progress,
     TextWebSocket,
     decode_frame,
     decode_object,
     encode_frame,
 )
 
+# Called for each sandbox progress report. Unset drops them, which is what a caller with
+# nowhere to show them should do — they are narration, and the conversation is unaffected.
+ProgressSink = Callable[[str], Awaitable[None]]
+
 
 class WebSocketTransport(Transport):
     """Agent SDK ``Transport`` backed by an already-authenticated WebSocket."""
 
-    def __init__(self, websocket: TextWebSocket, launch: ClaudeLaunch):
+    def __init__(self, websocket: TextWebSocket, launch: ClaudeLaunch, on_progress: ProgressSink | None = None):
         self._websocket = websocket
         self._launch = launch
+        self._on_progress = on_progress
         self._ready = False
         self._closed = False
 
@@ -53,12 +59,18 @@ class WebSocketTransport(Transport):
             raise RuntimeError("WebSocket transport is not connected")
         try:
             while self._ready:
-                frame = decode_frame(await self._websocket.receive_text())
-                if not isinstance(frame, ClaudeMessage):
-                    # `start` and `end_input` only ever travel console → runner, so a runner
-                    # sending one is a protocol bug rather than something to route.
-                    raise ValueError(f"runner sent {type(frame).__name__}, which is not a conversation frame")
-                yield frame.payload
+                match decode_frame(await self._websocket.receive_text()):
+                    case ClaudeMessage(payload=payload):
+                        yield payload
+                    case Progress(detail=detail):
+                        # Narration about the sandbox, not part of the conversation: it must
+                        # not reach the SDK, which would see an unknown message shape.
+                        if self._on_progress is not None:
+                            await self._on_progress(detail)
+                    case other:
+                        # `start` and `end_input` only ever travel console → runner, so a
+                        # runner sending one is a protocol bug rather than something to route.
+                        raise ValueError(f"runner sent {type(other).__name__}, which is not a conversation frame")
         except (EOFError, anyio.EndOfStream):
             self._ready = False
 

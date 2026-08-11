@@ -5,15 +5,18 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import anyio
 from websockets.asyncio.client import ClientConnection, connect
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
+    PROGRESS_MARKER,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Progress,
     TextWebSocket,
     decode_frame,
     decode_object,
@@ -85,6 +88,8 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
                 # Sent once, before this loop starts; a second one mid-conversation would
                 # mean the console thinks it is talking to a runner that has not launched.
                 raise ValueError("console sent a second launch frame mid-conversation")
+            case Progress():
+                raise ValueError("progress is what the sandbox reports, not something it is told")
 
 
 async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
@@ -135,7 +140,7 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
         await websocket.close()
 
 
-async def prepare_workspace(setup_path: Path, *, cwd: str) -> None:
+async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSocket | None = None) -> None:
     """Run the shared sandbox bootstrap: git credentials and Haku's own checkouts.
 
     The same script the haku-sandbox exec target runs — see
@@ -143,16 +148,40 @@ async def prepare_workspace(setup_path: Path, *, cwd: str) -> None:
     the same `.netrc` and the same haku-state working copy rather than a second
     implementation that drifts from it.
 
-    Run here, in the runner, rather than as an image entrypoint wrapper, because the socket
-    has to be open for the console to be able to narrate what is happening.
+    Run here, in the runner, rather than as an image entrypoint wrapper, so that `websocket`
+    exists to narrate it: a clone is the longest thing between "provisioning" and an answer,
+    and the console cannot report a step it cannot see.
+
+    Everything the script prints is echoed to this process's own stdout, so the pod log stays
+    the whole record; only `PROGRESS_MARKER` lines are additionally forwarded. Which steps are
+    worth announcing is the script's to decide, because that is where the steps are.
 
     **Fatal on failure.** Without the checkout the session has no manual, and a Claude Code
     that starts anyway is the generic-assistant failure the system prompt exists to prevent —
     silent, and indistinguishable from Haku having a bad day.
     """
-    process = await anyio.open_process([str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=None, stderr=None)
+    process = await anyio.open_process(
+        [str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
+    assert process.stdout is not None
+    async for line in _lines(process.stdout):
+        print(line, flush=True)
+        if websocket is not None and (detail := line.removeprefix(PROGRESS_MARKER)) != line:
+            await websocket.send_text(encode_frame(Progress(detail=detail.strip())))
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
+
+
+async def _lines(stream: anyio.abc.ByteReceiveStream) -> AsyncIterator[str]:
+    """Decoded, newline-delimited output, including a final unterminated line."""
+    pending = b""
+    async for chunk in stream:
+        pending += chunk
+        while b"\n" in pending:
+            line, pending = pending.split(b"\n", 1)
+            yield line.decode(errors="replace")
+    if pending:
+        yield pending.decode(errors="replace")
 
 
 async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:
@@ -166,7 +195,7 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
         if not isinstance(launch := decode_frame(await websocket.receive_text()), ClaudeLaunch):
             raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
         if setup_path is not None:
-            await prepare_workspace(setup_path, cwd=launch.cwd)
+            await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
         await bridge_websocket_to_claude(websocket, claude_path=claude_path, launch=launch)
 
 

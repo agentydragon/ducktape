@@ -597,6 +597,11 @@ ReplySink = Callable[[UUID, str], Awaitable[None]]
 # leaves the Claude Code preset alone, which is what the SPA has always run with.
 SystemPromptSource = Callable[[UUID], Awaitable[str | None]]
 
+# Receives one sandbox progress report for a session. Same shape and same filtering duty as
+# `ReplySink` — see `haku.console.x.matrix_session.MatrixProgressSink`. Unset means the
+# reports are logged and go no further, which is the console SPA's behaviour.
+ProgressSink = Callable[[UUID, str], Awaitable[None]]
+
 
 class ClaudeChatService:
     def __init__(
@@ -609,6 +614,7 @@ class ClaudeChatService:
         mcp_token: SecretStr,
         reply_sink: ReplySink | None = None,
         system_prompt: SystemPromptSource | None = None,
+        progress_sink: ProgressSink | None = None,
     ):
         self._config = config
         self._store = store
@@ -617,6 +623,7 @@ class ClaudeChatService:
         self._mcp_token = mcp_token
         self._reply_sink = reply_sink
         self._system_prompt = system_prompt
+        self._progress_sink = progress_sink
 
     async def request_abort(self, session_id: UUID) -> bool:
         return await self._store.request_abort(session_id)
@@ -689,6 +696,16 @@ class ClaudeChatService:
             return None
         return {"type": "preset", "preset": "claude_code", "append": rendered}
 
+    def _progress_reporter(self, session_id: UUID) -> Callable[[str], Awaitable[None]]:
+        """Log every sandbox progress report, and pass it on if anything is listening."""
+
+        async def report(detail: str) -> None:
+            logger.info("Claude sandbox %s: %s", session_id, detail)
+            if self._progress_sink is not None:
+                await self._progress_sink(session_id, detail)
+
+        return report
+
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == BridgeAuthentication.TERMINAL:
@@ -730,7 +747,10 @@ class ClaudeChatService:
                 setting_sources=[],
             )
         )
-        client = ClaudeSDKClient(options=options, transport=WebSocketTransport(adapter, build_claude_launch(options)))
+        client = ClaudeSDKClient(
+            options=options,
+            transport=WebSocketTransport(adapter, build_claude_launch(options), self._progress_reporter(session_id)),
+        )
         abort_event = asyncio.Event()
         # The operator's abort lands on whichever replica the Service picks, which is rarely
         # the one holding this websocket — so the event is driven by NOTIFY, not by a caller

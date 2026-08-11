@@ -17,8 +17,15 @@
 # copy of this file, because "similar setup to the haku sandbox" is the whole requirement
 # and two copies would drift out of it.
 #
+# `progress` lines are forwarded by the Claude runner into the Matrix room, so the operator
+# can see a slow clone rather than a silent gap; on the haku-sandbox path they are ordinary
+# bootstrap output. The prefix is pinned to the runner's PROGRESS_MARKER by
+# //cluster/validation:test_haku_manifest_contracts, since bash cannot import it.
+#
 # Idempotent: safe to re-run against an already-set-up box.
 set -euo pipefail
+
+progress() { echo "haku-progress: $*"; }
 
 bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
 
@@ -63,6 +70,7 @@ fi
 
 # ── 2. Git identity ──────────────────────────────────────────────────────────
 # Without this the first `git commit` of a run dies "Author identity unknown".
+progress "configuring git"
 git config --global user.name haku
 git config --global user.email haku@allegedly.works
 
@@ -103,6 +111,7 @@ NETRC
 # minutes even with the egress proxy bypassed; a shallow clone is ~9s), and the sandbox only
 # builds/runs the HEAD checkout — it needs no history. Deviation: if a build step ever needs
 # git history/tags (e.g. `git describe` version stamping), deepen the fetch here.
+progress "checking out haku-state"
 repo="${HAKU_STATE_DIR:-/workspace/haku-state}"
 url="${HAKU_STATE_URL:-http://forgejo-http.forgejo:3000/haku/haku-state.git}"
 if [ -d "$repo/.git" ]; then
@@ -127,6 +136,7 @@ fi
 # which a shallow clone cannot do. A partial clone keeps every commit and fetches blobs on
 # demand — measured 11s / ~102 MB, against minutes for a full clone.
 if [ "${HAKU_DUCKTAPE_SKIP:-}" != "1" ]; then
+  progress "checking out ducktape"
   dt_repo="${HAKU_DUCKTAPE_DIR:-/workspace/ducktape}"
   dt_url="${HAKU_DUCKTAPE_URL:-https://github.com/agentydragon/ducktape.git}"
   dt_branch="${HAKU_DUCKTAPE_BRANCH:-devel}"
@@ -143,4 +153,5 @@ if [ "${HAKU_DUCKTAPE_SKIP:-}" != "1" ]; then
   fi
 fi
 
+progress "workspace ready"
 echo "haku-sandbox-setup: egress CA trusted, git identity + credentials written, haku-state + ducktape synced"

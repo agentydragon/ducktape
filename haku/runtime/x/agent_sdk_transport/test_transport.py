@@ -12,6 +12,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Progress,
     decode_frame,
     encode_frame,
     encode_object,
@@ -75,8 +76,9 @@ def test_launch_rejects_another_protocol_version() -> None:
 
 
 def test_an_unknown_frame_kind_is_refused() -> None:
+    """A kind from a newer peer is an error, not something to route somewhere plausible."""
     with pytest.raises(ValueError, match="unsupported bridge frame kind"):
-        decode_frame(encode_object({"kind": "progress", "payload": {}}))
+        decode_frame(encode_object({"kind": "a-kind-from-the-future", "payload": {}}))
 
 
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
@@ -147,6 +149,50 @@ async def test_transport_rejects_non_object_frames() -> None:
 
     with pytest.raises(ValueError, match="one JSON object"):
         await anext(transport.read_messages())
+
+    await transport.close()
+
+
+async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
+    """Sandbox narration must not reach the SDK, which would see an unknown message shape."""
+    console_socket, runner_socket = memory_websocket_pair()
+    reported: list[str] = []
+
+    async def on_progress(detail: str) -> None:
+        reported.append(detail)
+
+    transport = WebSocketTransport(
+        console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
+    )
+    await transport.connect()
+    assert decode_frame(await runner_socket.receive_text())
+
+    messages = transport.read_messages()
+    await runner_socket.send_text(encode_frame(Progress(detail="checking out haku-state")))
+    answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
+    await runner_socket.send_text(encode_frame(ClaudeMessage(payload=answer)))
+
+    with anyio.fail_after(1):
+        # The progress frame is consumed on the way to this, not yielded before it.
+        assert await anext(messages) == answer
+    assert reported == ["checking out haku-state"]
+
+    await transport.close()
+
+
+async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
+    console_socket, runner_socket = memory_websocket_pair()
+    transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
+    await transport.connect()
+    assert decode_frame(await runner_socket.receive_text())
+
+    messages = transport.read_messages()
+    await runner_socket.send_text(encode_frame(Progress(detail="ignored")))
+    answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
+    await runner_socket.send_text(encode_frame(ClaudeMessage(payload=answer)))
+
+    with anyio.fail_after(1):
+        assert await anext(messages) == answer
 
     await transport.close()
 

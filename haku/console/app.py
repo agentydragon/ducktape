@@ -263,6 +263,7 @@ def create_app(
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversations: matrix_session.MatrixConversationStore | None = None
     matrix_reply_sink: matrix_session.MatrixReplySink | None = None
+    matrix_progress_sink: matrix_session.MatrixProgressSink | None = None
     matrix_system_prompt: matrix_session.MatrixSystemPrompt | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
@@ -276,6 +277,9 @@ def create_app(
         )
         matrix_reply_sink = matrix_session.MatrixReplySink(
             matrix_config, matrix_conversations, matrix_sync_service.reply
+        )
+        matrix_progress_sink = matrix_session.MatrixProgressSink(
+            matrix_config, matrix_conversations, matrix_sync_service.announce
         )
         if claude_runtime is not None:
             # Parsed here, at construction, so a broken template is a pod that never becomes
@@ -306,6 +310,7 @@ def create_app(
             mcp_token=mcp_agent.token,
             reply_sink=matrix_reply_sink.deliver if matrix_reply_sink is not None else None,
             system_prompt=matrix_system_prompt.render if matrix_system_prompt is not None else None,
+            progress_sink=matrix_progress_sink.report if matrix_progress_sink is not None else None,
         )
     # The supervisor comes after the Claude runtime it provisions through, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,

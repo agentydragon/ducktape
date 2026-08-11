@@ -111,6 +111,14 @@ pkg_files(
     prefix = "/usr/local/bin",
 )
 
+# The bootstrap that prints progress lines is bash and cannot import PROGRESS_MARKER, so a
+# contract test reads both spellings; this is how it reaches this one.
+filegroup(
+    name = "protocol_source",
+    srcs = ["protocol.py"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 pkg_tar(
     name = "setup_layer",
     srcs = [":setup_files"],

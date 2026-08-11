@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from functools import partial
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Progress,
     decode_frame,
     encode_frame,
 )
@@ -148,6 +150,23 @@ async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> N
     await prepare_workspace(setup, cwd=str(workspace))
 
     assert (workspace / "marker").read_text().strip() == str(workspace)
+
+
+async def test_workspace_setup_forwards_only_its_progress_markers(tmp_path: Path) -> None:
+    console_socket, runner_socket = memory_websocket_pair()
+    setup = executable(
+        tmp_path / "setup.sh",
+        "echo 'haku-progress: checking out haku-state'\necho 'ordinary log line'\necho 'haku-progress: workspace ready'",
+    )
+
+    await prepare_workspace(setup, cwd=str(tmp_path), websocket=runner_socket)
+    await runner_socket.close()
+
+    reported = []
+    with contextlib.suppress(EOFError):
+        while True:
+            reported.append(decode_frame(await console_socket.receive_text()))
+    assert reported == [Progress(detail="checking out haku-state"), Progress(detail="workspace ready")]
 
 
 async def test_workspace_setup_failure_is_fatal(tmp_path: Path) -> None:
