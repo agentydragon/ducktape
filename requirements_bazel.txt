@@ -6267,9 +6267,8 @@ rfc3986-validator==0.1.1 \
     # via
     #   jsonschema
     #   jupyter-events
-rfc3987-syntax==1.1.0 \
-    --hash=sha256:6c3d97604e4c5ce9f714898e05401a0445a641cfa276432b0a648c80856f6a3f \
-    --hash=sha256:717a62cbf33cffdd16dfa3a497d81ce48a660ea691b1ddd7be710c22f00b4a0d
+rfc3987-syntax @ https://github.com/agentydragon/rfc3987-syntax/archive/048b953.tar.gz \
+    --hash=sha256:5cfaa27af79862c0bd258c9c95d7649333848ddaadb8f19f3d5f5498aeb1f1fb
     # via
     #   --override (workspace)
     #   jsonschema

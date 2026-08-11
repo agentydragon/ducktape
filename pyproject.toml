@@ -313,14 +313,22 @@ dependencies = [
     "nest-asyncio>=1.5.0",
 ]
 
-# 2025-12-29: Override rfc3987-syntax with fork that precompiles the Lark parser.
-# Replaced N Lark parsers with one precompiled, ~9x smaller import time (0.8s → 0.09s).
+# Override rfc3987-syntax with a fork that precompiles the Lark parser: one shared parser
+# instead of N, ~9x faster to import (0.8s -> 0.09s). It arrives transitively via jsonschema
+# under mcp/fastmcp, so most Python processes in this repo pay that import.
 # Pending upstream merge: https://github.com/willynilly/rfc3987-syntax/pull/11
+#
+# Gotcha, worth the paragraph because it cost eight months of the optimisation silently not
+# happening: this must be an archive URL pinned to a commit, and the fork must carry a version
+# PyPI does not serve. The lock is generated with hashes; uv cannot hash a git ref, and for a
+# URL whose name+version match a registry release it emits the *registry's* hashes, so the
+# download fails its checksum. A `[tool.uv.sources]` git entry plus a bare override therefore
+# resolved to plain PyPI 1.1.0 from 57d94a89c (2025-12-30, the commit that turned hashes on)
+# until this was fixed -- inert config that read as if the fork were in use.
 [tool.uv]
-override-dependencies = ["rfc3987-syntax"]
-
-[tool.uv.sources]
-rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branch = "adgn/one-parser" }
+override-dependencies = [
+    "rfc3987-syntax @ https://github.com/agentydragon/rfc3987-syntax/archive/048b953.tar.gz",
+]
 
 # Tell setuptools this is not a package (just uv config)
 # Without this, setuptools discovers all 40+ top-level dirs as packages
