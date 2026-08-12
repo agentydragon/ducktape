@@ -81,6 +81,14 @@ This removes the hardest part of B before it starts — and it is a property tha
 accident. **Adding a hook, a `can_use_tool` callback, or an SDK-hosted MCP server makes
 re-adoption qualitatively harder**, and whoever adds one should come back to this note.
 
+**Called in once, and the property held.** The Matrix read tools were designed against an
+SDK-hosted server — the SDK client runs in the console, so its handlers would execute right
+where the session and the Matrix credential are. This note is why they are plain entries on
+the console's HTTP `/mcp` instead: <matrix_chat_runtime.md> R5.2a records the rejection, and
+R5.5a takes the same reasoning the other way, persisting the rollout as **wire frames** rather
+than SDK objects precisely so design B's "read the stream directly for an adopted turn" does
+not turn the store into a migration.
+
 ## What B needs
 
 - **The runner owns the `initialize` handshake.** It is per-connection state in the SDK, but

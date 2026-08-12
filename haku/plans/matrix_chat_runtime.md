@@ -347,15 +347,45 @@ input to a running turn**. Interrupt exists; steer does not.
 
 - **R5.1 [v1]** **No Matrix access token is present in the sandbox.** The console holds the
   single Matrix credential.
-- **R5.2 [v1]** The agent's Matrix tools are **session-scoped**, so they cannot be plain
-  entries on the shared console MCP server the way `gmail` or `hostexec` are — those are
-  stateless with respect to which conversation is calling. They are registered with the SDK
-  client as an in-process, SDK-hosted MCP server, which runs inside haku-console where the
-  session, its room binding, and the credential already live. This is the mechanism
-  <agent_sdk_sandbox_runtime.md> already anticipates for console-side handlers.
+- **R5.2 [v1]** The read tools are **plain entries on the console's existing `/mcp`**, the way
+  `gmail` and `hostexec` are, reached over the HTTP server the CLI already dials with the
+  bearer it already carries. No new credential, no new mount, no session-derived closure.
+  _This requirement used to say the opposite_ — that Matrix tools are session-scoped and
+  therefore cannot be shared entries. What made that true was R5.3, and R5.3a relaxes it.
+- **R5.2a** _Rejected: SDK-hosted in-process tools_, which is what this requirement said until
+  the read design was worked through. It is the obvious mechanism — the `ClaudeSDKClient` runs
+  in haku-console (`claude_chat.py`), so a `type: "sdk"` server's handlers execute where the
+  session, its room binding and the credential already are, and scoping is a closure rather
+  than a lookup. It is rejected because of what it costs elsewhere:
+  <session_readoption.md> observes that this deployment's control channel is **outbound-only**
+  — no hooks, no `can_use_tool`, MCP reached as an external HTTP server the CLI contacts
+  itself — and that this is precisely what makes re-adoption across a console roll tractable,
+  with the standing request that "whoever adds one should come back to this note". SDK-hosted
+  tools are CLI → SDK control traffic, so they would reintroduce inbound requests that a dying
+  console leaves unanswered and an adopting one cannot know about. Paying for read tools with
+  session survivability is the wrong trade. The scoping it was going to buy is no longer
+  wanted anyway (R5.3a), so what is left is cost with nothing on the other side.
 - **R5.3 [v1]** Matrix tools do not accept a room identifier. The console resolves the room
   from the calling session, so reaching another room is not expressible rather than merely
-  denied.
+  denied. **Superseded for reads by R5.3a**; still the rule for anything that acts.
+- **R5.3a Reads are not room-scoped, for now — deliberately.** Operator decision, 2026-08-12:
+  leave reading open across rooms and across past conversations, Matrix and SPA alike, rather
+  than fencing each session to its own. There is one operator, one Haku and one room, so the
+  fence would separate Haku from its own history and nothing else.
+
+  It is a **policy** deferral, not an architectural one, and the distinction is what keeps it
+  cheap to revisit. Every read goes through the console, which knows the calling Agent, the
+  calling session and each conversation's owner — so "which Haku instances may read which past
+  conversations" becomes a decision function at one call site, in the shape the approval policy
+  already has. What it must not become is scoping smeared across the transport: that is the
+  version that is expensive to change, and it is a second reason to keep the tools plain HTTP
+  entries (R5.2) rather than closures over a session (R5.2a).
+
+  Consequences, so they are not surprises: `room_id` and `session_id` become **parameters**,
+  optional where a current-session default is the obvious one; a read tool can name a
+  conversation the caller was never part of; and R11.3a's `surface`/`room_id` columns stop
+  being merely nice for listing and become how a cross-conversation read says what it read.
+
 - **R5.1a** _Scope note, because R5.1 is easy to over-read._ It constrains the **Matrix**
   credential specifically, and says there is one holder of it. It is not a rule that the
   sandbox may hold no credentials — this deployment has two established shapes for that,
@@ -370,17 +400,25 @@ input to a running turn**. Interrupt exists; steer does not.
   event, paginate history. There is no send, edit, react, redact, join, invite, leave, or
   room-state capability. Speaking happens by auto-forward (R11.1) and needs nothing.
 
-- **R5.4a [open] Reads should not be a reimplemented Matrix API.** `/messages`, `/context`
+- **R5.4a [settled] Reads should not be a reimplemented Matrix API.** `/messages`, `/context`
   and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is
   reimplementation, and it also fences the agent out of anything not anticipated — threads,
-  relations, redactions. Three shapes, and the deciding factor is not convenience:
-  - **Credential substitution on `@haku`'s own token** — the chosen shape. The sandbox
-    carries a placeholder and the egress proxy substitutes the real value only for the
-    homeserver host, exactly as `haku-claude-oauth-proxy` already does for
-    `api.anthropic.com` (R5.1a). The agent uses the real client-server API with ordinary
+  relations, redactions. Four shapes were weighed:
+  - **A console read surface** — **the chosen shape**, for the reason under "What settled it"
+    below. Three read tools on the console's existing `/mcp`, backed by the `matrix_client.py`
+    calls that already exist (R5.2).
+  - **Credential substitution on `@haku`'s own token** — preferred until the corpus turned out
+    to be two corpora. The sandbox carries a placeholder and the egress proxy substitutes the
+    real value only for the homeserver host, exactly as `haku-claude-oauth-proxy` already does
+    for `api.anthropic.com` (R5.1a). The agent uses the real client-server API with ordinary
     Matrix tooling — nothing reimplemented, nothing fenced off — and an exfiltrated
-    placeholder is worth nothing anywhere, so the capability dies with the sandbox. Still
-    one Matrix credential, still none of it in the sandbox, so R5.1 holds.
+    placeholder is worth nothing anywhere, so the capability dies with the sandbox. Still one
+    Matrix credential, still none of it in the sandbox, so R5.1 holds. **Kept as the escape
+    hatch**: if the three read tools prove too narrow — threads, relations, reactions — this
+    is how the agent gets the whole CS API without the console growing an endpoint per idea.
+    One cost to settle first, and it is no longer the scoping one (R5.3a): iron's secrets
+    transform is **host**-scoped, so fencing off send, join and admin needs a path allowlist it
+    may not have.
   - **A second read-only account** (`@haku-reader`, sending blocked by power levels) was
     preferred until the membership cost showed up: a reader can only read rooms it has
     joined, so every conversation becomes a **three-member room**. That is not a DM any
@@ -392,26 +430,69 @@ input to a running turn**. Interrupt exists; steer does not.
     (R11.1) — so a proxy that wrongly permitted a send would grant something it effectively
     has. The allowlist's real job is everything else: other rooms, admin endpoints, account
     management, joins.
-  - **A read route on the console, authenticated by the bridge token.** Needs no new
-    credential, no new account, and no proxy configuration, and the room resolves from the
-    session — R5.3's "another room is not expressible" comes out structurally. The cost is
-    that it _is_ the reimplementation this requirement is trying to avoid: every endpoint
-    worth having has to be re-exposed by hand.
   - **A standalone read-only proxy** in front of Synapse. Same containment as substitution
-    but a new deployment and a path allowlist to get right; no advantage over the first
-    option, which reuses a proxy that already exists.
+    but a new deployment and a path allowlist to get right; no advantage over substitution,
+    which reuses a proxy that already exists.
 
-  What still has to be decided: how much of the CS API to expose, and whether responses come
-  back verbatim (nothing to build, verbose in context) or trimmed. Worth checking before
-  choosing — `/messages` accepts a `filter` with `types`/`not_types`, so Matrix's own filter
-  may do the trimming server-side, including dropping lifecycle notices once they carry the
-  namespaced key (R3.3a). If it can, verbatim and cheap-in-context stop being in tension.
+  **What settled it: the room is not the only corpus, and it is the smaller one.** The room
+  holds prompts and forwarded replies. What Haku _did_ — tool calls and their results — is in
+  the console's database and nowhere else (R5.5), and no Matrix credential of any shape
+  reaches it. Since a console-side read surface has to exist for the rollout regardless, the
+  question stopped being "console or Matrix credential" and became "one surface or two". One.
 
-  **Scoping is the real difference between the top two.** Substitution scopes by _account
-  membership_ — the reader can reach any room it is in — while a console route scopes by
-  _session_. Equivalent today with one room and one agent, divergent under R3.6a's
-  `(operator, agent)` generalization, where a shared reader account would see every
-  conversation. Whichever is chosen should be revisited there.
+  That also disposes of the reimplementation objection, which was aimed at re-exposing the CS
+  API endpoint by endpoint. Three tools is not an API port: `/messages`'s own pagination token
+  is passed back verbatim as the cursor, so history paging stays Matrix's, and `/messages`
+  accepts a `filter` with `types`/`not_types`, so dropping lifecycle notices is a server-side
+  parameter rather than a filter we maintain. Events come back **trimmed** to
+  `{event_id, sender, sent_at, body, permalink}` — the permalink being what makes R11.5's
+  citation clickable.
+
+  **Scoping used to be the deciding difference and no longer is.** The argument was that
+  substitution scopes by _account membership_ while a console surface scopes by _session_ —
+  equivalent with one room, divergent under R3.6a. R5.3a makes reads open on purpose, so both
+  shapes are equally unscoped today and the corpus argument above carries the decision alone.
+  Recorded because it comes back: when read policy is wanted, the console surface is where a
+  decision function can live, and membership on a substituted token is not.
+
+- **R5.5 [v1] The rollout is readable, not just the conversation.** The agent can read what a
+  past session _did_ — tool calls with their results, in order — and not only what it said.
+  The room cannot answer this and neither can `claude_chat_messages`: the turn loop stores an
+  assistant message's `ToolUseBlock`s (id, name, input) and drops the `UserMessage` frames
+  carrying the results, so today's tables record every question and no answer. Reading them as
+  a transcript would produce something plausible with every observation missing, which is
+  worse than having nothing. **So the store comes before the tool.**
+
+- **R5.5a Persist the wire, not our parse of it.** Rollout rows are the CLI's own
+  newline-delimited JSON frames, captured at the transport boundary where they already cross
+  as `ClaudeMessage.payload`, rather than re-serialized from the SDK dataclasses the turn loop
+  unpacks. Three reasons, in increasing order of how much they cost to fix later:
+  - **It is the only lossless option.** `_run_turn` reads `TextBlock` and `ToolUseBlock` out of
+    an `AssistantMessage` and ignores the rest of the union — `ThinkingBlock` is in it
+    (`claude_agent_sdk.types`, `ContentBlock`), so thinking is on the wire and is lost by our
+    extraction, not by the protocol. Likewise `ResultMessage`'s cost, usage and duration,
+    which are read for the error check and discarded. Storing frames gets all of it for free
+    and cannot fall behind a block type we have not heard of.
+  - **It survives the SDK.** <session_readoption.md>'s design B has the console reading the
+    CLI's jsonl directly for an adopted turn, because `receive_response()` is request-scoped
+    and assumes this process issued the turn. A rollout stored as frames is unchanged by that;
+    one stored as SDK objects is a migration.
+  - **It is one write in one place**, rather than a persistence concern threaded through a
+    control-flow loop that is already the most delicate code in the file.
+
+- **R5.5b Exclude partial frames only.** `stream_event` deltas are thousands per turn and say
+  nothing the completed frame does not, so they are dropped — but **being streamed is not the
+  reason**: the CLI emits the completed `assistant` frame as well, and that is stored like any
+  other. The one gap is a turn that ends mid-stream (abort, crash) with no completed frame to
+  close it; there the console writes the coalesced text it already has as a synthetic frame,
+  marked as such, so work that was produced is never absent from the record.
+
+- **R5.5c Bound a frame, not the transcript.** A tool result can be megabytes; a stored frame
+  is capped (~256KB) with a truncation marker rather than the row being skipped. The reader is
+  where the real budget lives — see the drilldown in Phase 5. The ledger learned this already:
+  the past-tool-calls page is 25 rows precisely because a record carries its whole arguments
+  and result, and asking for the endpoint's cap meant a multi-megabyte response
+  (<../console/README.md> § Past tool calls).
 
 ### R6 — Status and presence
 
@@ -545,6 +626,16 @@ that.
 - **R11.3 [v1] Read by ID.** The agent can fetch a message by its event ID, fetch the
   messages around one, and paginate history. Resolving an ID the operator pasted must not
   require having seen the message in context first.
+- **R11.3a Past sessions are reachable, not just past messages.** A conversation the agent is
+  not currently in — an earlier Matrix session, or one of the SPA surface's — is findable and
+  readable, with its rollout (R5.5) behind it. Which ones it may reach is open by choice
+  (R5.3a). **Prerequisite, and it is losing data now:**
+  `matrix_conversation` holds a single `session_id`, the current one, so when the supervisor
+  replaces a session the link to the room is gone and a past Matrix session is
+  indistinguishable from an SPA one. `claude_chat_sessions` needs `surface` and `room_id` of
+  its own. Additive, nullable, backfillable for the one session bound today, and safe under
+  `maxUnavailable: 0` — but every session created before it lands loses its attribution
+  permanently, which is not recoverable afterwards.
 - **R11.4 [v1] IDs are given, not guessed.** Every message the agent sees — in a batch
   (R2.4), in injected context, or from a read tool — carries its event ID in the form the
   read tools accept. A permalink is also accepted as input, since that is what a client
@@ -737,9 +828,33 @@ Debounce and batch rendering with provenance (R2.1, R2.4, R2.7); typing indicato
 
 ### Phase 5 — Reads
 
-The SDK-hosted in-process MCP server and its read tools (R5.2, R11.3). A new pattern for
-this repo, and independent of everything above — which is why it comes last despite being
-a headline requirement.
+Read tools on the console's existing `/mcp` (R5.2, R5.4a, R11.3), over two corpora — the room,
+and the rollout the console already sees go past — unscoped for now by R5.3a.
+
+Ordered so the write side lands first, because a reader over today's tables would show a
+transcript with every tool result missing (R5.5):
+
+1. **`surface` + `room_id` on `claude_chat_sessions`** (R11.3a). Additive, standalone, and the
+   only item here that is losing data every day it is not done.
+2. **The rollout frame store** (R5.5a–c). One write at the transport boundary; nothing reads
+   it yet. Also independent of how the tools end up being hosted, so it can land while that is
+   still being proven.
+3. **`room_read_event` / `room_read_around` / `room_read_history`** — thin over the
+   `matrix_client.py` calls that already exist, with `room_id` optional and defaulting to the
+   calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
+   TODO: it tells the agent event IDs are citable while the harness can only resolve one it
+   was already shown.
+4. **`list_conversations` / `read_conversation` / `read_turn`** (R11.3a). A **drilldown, not a
+   dump** — find the conversation, skim its turns, open the one turn that matters — so no tool
+   can return a whole session's rollout and each call's payload stays bounded. Context is the
+   scarce resource here, not rows.
+
+**Search is deliberately not in this phase.** When it comes back it is embeddings over the
+same frame rows, which is why the frames are the granularity to store.
+
+The payoff worth naming: this is what makes R3.3's "compaction that crossed a process
+boundary" reachable. A replacement session today gets the last N room messages (R3.3a) and
+nothing else; with the rollout readable it can consult what its predecessor actually did.
 
 ### The decision that gates Phase 1
 
@@ -760,14 +875,15 @@ for after Matrix has proven itself, not before.
 ## Open questions
 
 - **Batch cap** (R2.6): what value, and does an overflow split get told it is a split?
-- **How does the agent reach past traces?** Settled: whatever the transport, it is an **API
-  the agent queries**, not a tool that pours history into context — the useful operations
-  are search and slice, and a dump is both expensive and worse than reading the room. Two
-  candidate shapes, genuinely open: an SDK-hosted in-process tool the console backs with its
-  own query (R5.2's mechanism, room-scoping structural), or an **RLS-scoped Postgres role**
-  minted per session (R5.1a's second shape), which buys a real query language and pushes
-  scoping into the database instead of into a closure. Deferred until there is history worth
-  querying — which is also the argument for keeping the session/room link now (R3.3a).
+- ~~**How does the agent reach past traces?**~~ Settled, and moved into the requirements it
+  became: an **API the agent queries** rather than a tool that pours history into context
+  (R5.4a, Phase 5's drilldown), over frames the console persists as they cross the transport
+  (R5.5). Of the two shapes left open here, SDK-hosted tools were rejected outright (R5.2a)
+  and the **RLS-scoped Postgres role** was not: it still buys a real query language and pushes
+  scoping into the database, and it is the thing to revisit if three fixed tools turn out to
+  be the wrong shape. It is not the thing to build first — a per-session Postgres role plus
+  row-level policies is a lot of machinery to discover that what was wanted was
+  `read_turn`.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
