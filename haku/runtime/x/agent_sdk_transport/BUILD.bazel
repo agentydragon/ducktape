@@ -70,8 +70,15 @@ py_binary(
     srcs = ["extract_claude.py"],
 )
 
-# The wheel is kept for exactly one thing: it ships a pinned `claude` binary, which the runner
-# image needs and which Anthropic does not publish standalone. No Python here imports the SDK.
+# The wheel is kept for one thing only: it bundles a `claude` binary the runner image needs. No
+# Python here imports the SDK.
+#
+# **This should move to npm.** Anthropic publishes the CLI as `@anthropic-ai/claude-code` with
+# per-platform binaries (`@anthropic-ai/claude-code-linux-x64`), which is its actual distribution
+# channel and which this repo already has a mechanism for (`@aspect_rules_js` + pnpm). Extracting
+# it from a Python wheel means reaching into another package's `_bundled/` for a file it happens
+# to ship, and it pins the CLI only as a side effect of the SDK version rather than directly.
+# See <../../../plans/cli_protocol_ownership.md>.
 genrule(
     name = "claude_executable",
     srcs = ["@pypi//claude_agent_sdk:whl"],

@@ -37,8 +37,19 @@ assigning `_cli_path` from outside to make it work. `options.py` now builds the 
 frozen `ClaudeSession` of those seven, `test_options.py` pins the exact result, and the pinned
 result was run against a real CLI.
 
-The wheel remains a **build** dependency for one reason: it ships a pinned `claude` binary that
-Anthropic does not publish standalone, and the runner image needs one. No Python imports it.
+The wheel remains a **build** dependency for one reason: it bundles the `claude` binary the
+runner image needs. No Python imports it.
+
+**That last thread should be pulled too — [later].** Anthropic publishes the CLI as
+`@anthropic-ai/claude-code` (481 versions, per-platform binaries such as
+`@anthropic-ai/claude-code-linux-x64`), so sourcing it from a Python wheel is not necessity but
+habit, and a worse habit than it looks: `extract_claude.py` reaches into another package's
+`_bundled/` for a file it happens to ship, and the CLI version is then pinned only as a side
+effect of the SDK's. npm is the real distribution channel, this repo already manages npm through
+`@aspect_rules_js` and pnpm, and pinning the CLI directly is what the version-pinning discipline
+in <../cli_protocol/README.md> actually asks for. Cost is a `package.json` entry, a
+`js_binary`-or-`filegroup` in place of the `claude_executable` genrule, and deleting
+`extract_claude.py`.
 
 **What it costs.** Owning protocol breakage across CLI upgrades. Two things make that
 affordable rather than reckless: the CLI ships _bundled with_ the SDK, so the pairing is pinned
