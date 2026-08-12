@@ -1,4 +1,4 @@
-"""A chat session records which surface it served, and which room if it was Matrix.
+"""A chat session records the surface it served, and its agent's protocol frames are kept.
 
 Revision ID: 0030
 Revises: 0029
@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0030"
 down_revision: str | None = "0029"
@@ -18,8 +19,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Nullable and undefaulted, so this is additive across a roll: a replica on the previous
-    # image keeps inserting rows without either column and those read as "predates
+    # Both halves are additive, so this is safe for the length of a roll: a replica on the
+    # previous image keeps inserting sessions without the new columns and records no frames at
+    # all, and neither is a schema disagreement.
+    _add_session_surface()
+    _create_frames()
+
+
+def _add_session_surface() -> None:
+    # Nullable and undefaulted, so rows written by the previous image read as "predates
     # attribution". Defaulting `surface` to 'spa' would have been the tidier-looking choice and
     # is the wrong one — it would label those rows confidently and wrongly, and nothing
     # downstream could tell an assumption from an observation afterwards.
@@ -49,7 +57,39 @@ def upgrade() -> None:
     )
 
 
+def _create_frames() -> None:
+    op.create_table(
+        "claude_chat_frames",
+        sa.Column("frame_seq", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        sa.Column(
+            "session_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("direction", sa.Text(), nullable=False),
+        sa.Column("kind", sa.Text(), nullable=False),
+        sa.Column("payload", postgresql.JSONB(), nullable=False),
+        sa.Column("partial", sa.Boolean(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
+    )
+    op.create_index("idx_claude_chat_frames_session", "claude_chat_frames", ["session_id", "frame_seq"])
+    # At most one in-flight reconstruction per session; see the model's `partial` column.
+    op.create_index(
+        "uq_claude_chat_frames_partial",
+        "claude_chat_frames",
+        ["session_id"],
+        unique=True,
+        postgresql_where=sa.text("partial"),
+    )
+
+
 def downgrade() -> None:
+    op.drop_index("uq_claude_chat_frames_partial", table_name="claude_chat_frames")
+    op.drop_index("idx_claude_chat_frames_session", table_name="claude_chat_frames")
+    op.drop_table("claude_chat_frames")
     op.drop_constraint("ck_claude_chat_sessions_matrix_has_room", "claude_chat_sessions", type_="check")
     op.drop_constraint("ck_claude_chat_sessions_room_is_matrix", "claude_chat_sessions", type_="check")
     op.drop_constraint("ck_claude_chat_sessions_surface", "claude_chat_sessions", type_="check")
