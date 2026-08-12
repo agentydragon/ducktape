@@ -13,6 +13,14 @@ subscription token, or any box with a logged-in CLI:
     python3 mid_turn_steering_probe.py           # steer during a multi-step turn
     PROBE_CONTROL=1 python3 …                    # control: both prompts written up front
 
+**Every frame is printed, both directions, verbatim** — `>>` for what we write to the CLI,
+`<<` for what it writes back — with a headline above each line for readability and a tally at
+the end that names the frame types it saw *zero* of. Nothing is filtered: partial messages are
+simply not requested (no `--include-partial-messages`), so what is printed is the whole
+conversation on the wire rather than a selection from it. Earlier versions printed a curated
+subset, which is how two runs in a row managed to be inconclusive — a frame missing from the
+output could not be told apart from a frame missing from the wire.
+
 ## Answer (2026-08-12): **it folds, at a tool boundary**
 
 Run 2, first prompt spending its time in `Bash sleep 4` calls, steer written at 8.0s while the
@@ -82,6 +90,7 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 
 # Explicitly separate steps, each with a real wait in it, so the turn has boundaries rather
 # than being one long generated message. `sleep` in Bash rather than a prompt asking for
@@ -103,8 +112,10 @@ TOTAL_SECONDS = 180.0
 # never produces a second one, so any "wait for two results" exit condition hangs.
 QUIET_AFTER_RESULT = 5.0
 
-# Frames worth seeing in full: the boundaries, the lifecycle events, and the turn's end.
-_INTERESTING = ("assistant", "user", "result", "command_lifecycle")
+# Named so their *absence* is reported rather than inferred. `command_lifecycle` is the one
+# the bundled CLI's schema promises for folding; a run that shows `command_lifecycle=0` has
+# said something, where a run that simply never mentions it has not.
+_ALWAYS_TALLIED = ("assistant", "user", "system", "result", "command_lifecycle", "stream_event")
 
 
 def _frame(text: str) -> bytes:
@@ -112,26 +123,40 @@ def _frame(text: str) -> bytes:
     return (json.dumps(message) + "\n").encode()
 
 
-def _summarize(frame: dict[str, object]) -> str:
-    """One line per frame, keeping what marks a boundary rather than the prose around it."""
-    kind = frame.get("type")
+def _headline(frame: dict[str, object]) -> str:
+    """A short label for a frame, above the verbatim JSON that follows it."""
+    kind = str(frame.get("type"))
+    if subtype := frame.get("subtype"):
+        kind = f"{kind}/{subtype}"
     message = frame.get("message")
-    if kind in {"assistant", "user"} and isinstance(message, dict):
-        parts = []
-        for block in message.get("content", []):
-            if not isinstance(block, dict):
-                continue
-            match block.get("type"):
-                case "text":
-                    parts.append(f"text({str(block.get('text', ''))[:120]!r})")
-                case "tool_use":
-                    parts.append(f"tool_use({block.get('name')} {json.dumps(block.get('input'))[:80]})")
-                case "tool_result":
-                    parts.append("tool_result")
-                case other:
-                    parts.append(str(other))
-        return f"{kind}: {' | '.join(parts)}"
-    return json.dumps(frame)[:400]
+    if not isinstance(message, dict):
+        return kind
+    parts = []
+    for block in message.get("content", []):
+        if not isinstance(block, dict):
+            continue
+        match block.get("type"):
+            case "text":
+                parts.append(f"text({str(block.get('text', ''))[:120]!r})")
+            case "tool_use":
+                parts.append(f"tool_use({block.get('name')} {json.dumps(block.get('input'))[:80]})")
+            case "tool_result":
+                parts.append("tool_result")
+            case other:
+                parts.append(str(other))
+    return f"{kind}  {' | '.join(parts)}" if parts else kind
+
+
+def _log(started: float, arrow: str, raw: str) -> None:
+    """Every frame, both directions, headline then the line exactly as it crossed.
+
+    Verbatim and unfiltered on purpose. The first run of this probe printed a curated subset,
+    which is how it managed to be inconclusive twice: what was missing from the output could
+    not be distinguished from what was missing from the wire.
+    """
+    frame = json.loads(raw)
+    print(f"[{time.monotonic() - started:6.2f}s] {arrow} {_headline(frame)}", flush=True)
+    print(f"           {raw.strip()}", flush=True)
 
 
 async def main() -> int:
@@ -154,25 +179,34 @@ async def main() -> int:
     assert process.stdout is not None
     started = time.monotonic()
 
+    async def write(text: str) -> None:
+        assert process.stdin is not None
+        raw = _frame(text)
+        process.stdin.write(raw)
+        await process.stdin.drain()
+        _log(started, ">>", raw.decode())
+
+    steered_at: float | None = None
+
     async def steer() -> None:
+        nonlocal steered_at
         if control:
             return
         await asyncio.sleep(STEER_AFTER_SECONDS)
-        print(f"--- [{time.monotonic() - started:6.2f}s] writing the second prompt ---", flush=True)
-        assert process.stdin is not None
-        process.stdin.write(_frame(STEER))
-        await process.stdin.drain()
+        steered_at = time.monotonic() - started
+        await write(STEER)
 
-    process.stdin.write(_frame(FIRST))
+    await write(FIRST)
     if control:
         # Both up front: if this also produces two turns, the queue is unconditional and no
         # arrival time would have changed the outcome.
-        process.stdin.write(_frame(STEER))
-    await process.stdin.drain()
+        await write(STEER)
 
     results = 0
+    first_result_at: float | None = None
+    seen: Counter[str] = Counter()
     async with asyncio.TaskGroup() as group:
-        group.create_task(steer())
+        steering = group.create_task(steer())
         while time.monotonic() - started < TOTAL_SECONDS:
             # After a `result`, wait only a short grace period: a folded prompt produces no
             # second result, so waiting for one is waiting forever. (It did — the first version
@@ -185,15 +219,28 @@ async def main() -> int:
                 break
             if not line:
                 break
-            frame = json.loads(line)
-            if frame.get("type") not in _INTERESTING:
-                continue
-            if frame.get("type") == "result":
+            raw = line.decode()
+            kind = str(json.loads(raw).get("type"))
+            seen[kind] += 1
+            if kind == "result":
                 results += 1
-            print(f"[{time.monotonic() - started:6.2f}s] {_summarize(frame)}", flush=True)
+                first_result_at = first_result_at if first_result_at is not None else time.monotonic() - started
+            _log(started, "<<", raw)
+        # Otherwise it writes into a finished conversation and the run reports a verdict about
+        # a steer that was never in flight.
+        steering.cancel()
 
     process.stdin.close()
     process.terminate()
+    tally = " ".join(f"{kind}={seen[kind]}" for kind in dict.fromkeys((*_ALWAYS_TALLIED, *seen)))
+    print(f"--- frames in: {tally}")
+
+    # A steer that went in after the turn already ended tests nothing, and the frame counts
+    # would read exactly like a real result. Say so instead of reporting a verdict: the first
+    # smoke run of this script did precisely that against a CLI that answered in 1.6s.
+    if not control and (steered_at is None or (first_result_at is not None and steered_at > first_result_at)):
+        print("--- VOID: the turn ended before the second prompt went in; nothing was steered ---")
+        return 1
     folded = "folded into the running turn" if results == 1 else "answered as its own turn"
     print(f"--- {results} result frame(s): the second prompt was {folded} ---")
     return 0
