@@ -63,7 +63,8 @@ Each step is useful on its own and none of them is a rewrite.
 
 1. **Read the frame stream ourselves**, dispatching by frame type instead of calling
    `receive_response()`. Unblocks mid-turn folding (R2.2a) and is a prerequisite for adoption.
-   The frames already pass through `RecordingWebSocket`; this is about who routes them.
+   The frames already pass through the client's own reader, which is also where they are
+   recorded (§5); this is about who routes them.
 2. **Own `initialize`.** Request/response correlation is a dict of futures, a counter and a
    timeout. Done with step 1, since the blocking buffer makes them one change.
 3. **Own `interrupt`**, which is then a few lines on step 2's machinery — and lets abort

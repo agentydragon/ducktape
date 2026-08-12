@@ -15,6 +15,12 @@ Two channels are multiplexed on one stream, distinguished by the top-level `type
 - **Control** — `control_request` / `control_response` correlated by `request_id`, carrying
   `initialize`, `interrupt` and the rest.
 
+**The record is taken here** when a caller passes a `FrameSink`, because this is where each
+frame is already parsed and where both channels are still visible. It used to be taken by a
+decorator around the socket, one layer down, which re-decoded every frame's envelope to see what
+had crossed — a second `json.loads` of the whole session, and a place that had to know the
+envelope in order to look inside it.
+
 **Gotcha this exists to avoid.** The SDK's message channel is a *blocking* 100-slot buffer, and
 its reader routes control responses. A consumer that stops draining conversation frames
 therefore stalls the reader and takes `interrupt` down with it — which also means the stream
@@ -68,6 +74,22 @@ class FrameChannel(Protocol):
     async def close(self) -> None: ...
 
 
+class FrameSink(Protocol):
+    """Where a session's frames are kept, if anywhere.
+
+    Two methods rather than one plus a direction enum, because the only direction vocabulary
+    that exists lives in the console's own schema and this package must not depend on it.
+
+    Called from the client's write path and from its reader, so an implementation that raises
+    takes the session down — which is the intent where the sink is the rollout: a record with
+    quiet holes is the one that looks complete while being wrong.
+    """
+
+    async def sent(self, payload: dict[str, Any]) -> None: ...
+
+    async def received(self, payload: dict[str, Any]) -> None: ...
+
+
 class ClaudeCliError(Exception):
     """The CLI answered a control request with an error, or never answered it."""
 
@@ -75,9 +97,16 @@ class ClaudeCliError(Exception):
 class ClaudeCli:
     """One CLI process, addressed over an already-authenticated transport."""
 
-    def __init__(self, channel: FrameChannel, *, control_timeout: float = CONTROL_TIMEOUT_SECONDS):
+    def __init__(
+        self,
+        channel: FrameChannel,
+        *,
+        control_timeout: float = CONTROL_TIMEOUT_SECONDS,
+        frames_to: FrameSink | None = None,
+    ):
         self._channel = channel
         self._control_timeout = control_timeout
+        self._frames_to = frames_to
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._conversation: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._reader: asyncio.Task[None] | None = None
@@ -158,11 +187,18 @@ class ClaudeCli:
 
     async def _write(self, payload: dict[str, Any]) -> None:
         await self._channel.write(json.dumps(payload) + "\n")
+        if self._frames_to is not None:
+            await self._frames_to.sent(payload)
 
     async def _read(self) -> None:
         """Route the stream: control responses to their waiter, everything else to the queue."""
         try:
             async for frame in self._channel.read_messages():
+                # Before the routing, deliberately: control frames never reach `frames()`, so a
+                # recorder hung off the conversation queue would silently drop the control
+                # channel from the record — invisible until someone tried to debug an interrupt.
+                if self._frames_to is not None:
+                    await self._frames_to.received(frame)
                 match frame.get("type"):
                     case "control_response":
                         self._resolve(frame)
@@ -211,7 +247,10 @@ class ClaudeCli:
 
 
 def cli_over_websocket(
-    websocket: TextWebSocket, launch: ClaudeLaunch, on_progress: ProgressSink | None = None
+    websocket: TextWebSocket,
+    launch: ClaudeLaunch,
+    on_progress: ProgressSink | None = None,
+    frames_to: FrameSink | None = None,
 ) -> ClaudeCli:
     """The console's composition: a CLI client over the runner's bridge socket."""
-    return ClaudeCli(WebSocketTransport(websocket, launch, on_progress))
+    return ClaudeCli(WebSocketTransport(websocket, launch, on_progress), frames_to=frames_to)

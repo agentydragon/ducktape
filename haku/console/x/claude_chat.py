@@ -52,14 +52,7 @@ from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRec
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.agent_sdk_transport.protocol import (
-    CONSOLE_TO_RUNNER,
-    RUNNER_TO_CONSOLE,
-    ClaudeMessage,
-    ConsoleToRunner,
-    RunnerToConsole,
-    TextWebSocket,
-)
+from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
@@ -946,35 +939,30 @@ def _frame_kind(payload: dict[str, Any]) -> str:
     return kind
 
 
-class RecordingWebSocket(TextWebSocket):
-    """Persists the rollout by watching the socket the transport already talks over.
+class RolloutRecorder:
+    """One session's `FrameSink`: every protocol frame either way, into `claude_chat_frames`.
 
-    A decorator rather than a hook inside `WebSocketTransport`, because which frames crossed
-    is visible from here and the transport is shared code that should not learn about the
-    console's database. The cost is re-decoding each frame's envelope, which is one `json.loads`
-    against a turn's worth of model inference.
+    This is the whole of what the console asks of the record, and both decisions in it are the
+    console's rather than the protocol client's. **Deltas are skipped** because the store keeps a
+    single rewritten `partial` row for the answer in flight instead — thousands of
+    `content_block_delta` frames would bury the log for a reader and say nothing the completed
+    `assistant` frame does not. Everything else is kept verbatim, control frames included, since
+    an interrupt that did not take is only diagnosable from them.
     """
 
-    def __init__(self, inner: TextWebSocket, store: ClaudeChatStore, session_id: UUID):
-        self._inner = inner
+    def __init__(self, store: ClaudeChatStore, session_id: UUID):
         self._store = store
         self._session_id = session_id
 
-    async def send_text(self, data: str) -> None:
-        await self._inner.send_text(data)
-        await self._record(CONSOLE_TO_RUNNER.validate_json(data), FrameDirection.TO_AGENT)
+    async def sent(self, payload: dict[str, Any]) -> None:
+        await self._record(FrameDirection.TO_AGENT, payload)
 
-    async def receive_text(self) -> str:
-        data = await self._inner.receive_text()
-        await self._record(RUNNER_TO_CONSOLE.validate_json(data), FrameDirection.FROM_AGENT)
-        return data
+    async def received(self, payload: dict[str, Any]) -> None:
+        await self._record(FrameDirection.FROM_AGENT, payload)
 
-    async def close(self) -> None:
-        await self._inner.close()
-
-    async def _record(self, frame: ConsoleToRunner | RunnerToConsole, direction: FrameDirection) -> None:
-        if isinstance(frame, ClaudeMessage) and _frame_kind(frame.payload) != _PARTIAL_FRAME_KIND:
-            await self._store.record_frame(self._session_id, direction, frame.payload)
+    async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> None:
+        if _frame_kind(payload) != _PARTIAL_FRAME_KIND:
+            await self._store.record_frame(self._session_id, direction, payload)
 
 
 # How long a turn runs before the room is told anything about it (R6.2). Below this the
@@ -1228,7 +1216,6 @@ class ClaudeChatService:
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
         await websocket.accept()
-        adapter = RecordingWebSocket(StarletteTextWebSocket(websocket), self._store, session_id)
         session = ClaudeSession(
             append_system_prompt=appended,
             cwd=Path(self._config.cwd),
@@ -1239,7 +1226,12 @@ class ClaudeChatService:
                 )
             },
         )
-        client = cli_over_websocket(adapter, build_claude_launch(session), self._progress_reporter(session_id, room_id))
+        client = cli_over_websocket(
+            StarletteTextWebSocket(websocket),
+            build_claude_launch(session),
+            self._progress_reporter(session_id, room_id),
+            RolloutRecorder(self._store, session_id),
+        )
         abort_event = asyncio.Event()
         # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
         # the two are about different things: the inner one unwraps whatever the task group

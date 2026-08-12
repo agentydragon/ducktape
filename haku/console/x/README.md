@@ -22,6 +22,12 @@ SPA is shown `responding` — which the session view now derives rather than rea
 So an open turn on a session nothing is renewing is not a leak; it is the record of an exchange
 whose replica went away before anything could close it.
 
+**The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
+frame either way, both channels, verbatim — the control channel included, since an interrupt that
+did not take is diagnosable from nothing else. The one thing skipped is `stream_event`, because the
+store keeps a single rewritten `partial` row for the answer in flight instead; that is a decision
+about the record and so lives here rather than in the client.
+
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one

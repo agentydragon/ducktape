@@ -120,15 +120,19 @@ tool _results_ it cannot show today, after which the column goes.
 
 ## 5. Frame recording belongs on the protocol client
 
-`RecordingWebSocket` decorates the socket, below the transport, and re-decodes each frame's
-envelope to see what crossed — a second `json.loads` of every frame.
+**Done.** `RecordingWebSocket` decorated the socket, below the transport, and re-decoded each
+frame's envelope to see what had crossed — a second `json.loads` of every frame in a session, and a
+second place that had to know the envelope. `ClaudeCli` already has each frame parsed (§0), so it
+takes an optional `FrameSink` and the console passes a `RolloutRecorder`: one parse, and the
+envelope known in one place, without the shared transport learning about the console's database —
+which is what the decorator existed to avoid.
 
-This item used to propose an `on_frame` callback on `WebSocketTransport`, beside the
-`on_progress: ProgressSink` it already takes. That is no longer the best shape. `ClaudeCli` now
-owns the reader and **already has each frame parsed** (§0), so recording there is one parse
-instead of two and one place that knows the envelope instead of two — without the shared
-transport learning about the console's database, which is what the decorator was written to
-avoid in the first place.
+Two things the move had to get right. The sink is called from **the reader, before it routes** —
+control frames never reach `frames()`, so a recorder hung off the conversation queue would have
+silently dropped `interrupt` and its answer from the record, invisible until someone tried to debug
+an interrupt that did not take. And the "no deltas" rule stayed in the console's sink rather than
+moving into the client: it is a consequence of the store keeping one rewritten `partial` row
+instead, which is not the protocol client's business.
 
 ## 6. The lease means two things and never says who holds it
 

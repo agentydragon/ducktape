@@ -38,7 +38,7 @@ from haku.console.x.claude_chat import (
     ClaudeChatStore,
     KubernetesSandboxClaims,
     MatrixSession,
-    RecordingWebSocket,
+    RolloutRecorder,
     SpaSession,
     _coarse_status,
     _text_delta,
@@ -55,7 +55,7 @@ from haku.console.x.conftest import (
 )
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
-from haku.runtime.x.agent_sdk_transport.protocol import ClaudeMessage, SetupOutput
+from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli
 
 
 class RecordingCustomObjectsApi:
@@ -379,7 +379,7 @@ class _LifecycleWebSocket:
 class _LifecycleClaudeClient(_FakeCli):
     last_launch: object | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None):
+    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
         super().__init__()
         type(self).last_launch = launch
         self.connected = False
@@ -874,7 +874,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 class _RealDbClaudeClient(_LifecycleClaudeClient):
     """Answers every prompt with "pong", then goes quiet like an idle CLI."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None):
+    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
         super().__init__(adapter, launch, on_progress)
         self.script = [_assistant({"type": "text", "text": "pong"}), _result("pong")]
 
@@ -1021,21 +1021,28 @@ async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_ses
             await db.flush()
 
 
-class _ReplayingWebSocket:
-    """An inner socket that hands back a scripted sequence of already-encoded frames."""
+class _ScriptedChannel:
+    """A `FrameChannel` whose far end is a queue of the CLI's own frames."""
 
-    def __init__(self, inbound: list[str]):
-        self._inbound = list(inbound)
-        self.sent: list[str] = []
+    def __init__(self) -> None:
+        self.written: list[dict[str, Any]] = []
+        self._inbound: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
-    async def send_text(self, data: str) -> None:
-        self.sent.append(data)
+    def deliver(self, frame: dict[str, Any]) -> None:
+        self._inbound.put_nowait(frame)
 
-    async def receive_text(self) -> str:
-        return self._inbound.pop(0)
+    async def connect(self) -> None:
+        pass
+
+    async def write(self, data: str) -> None:
+        self.written.append(json.loads(data))
+
+    async def read_messages(self):
+        while (frame := await self._inbound.get()) is not None:
+            yield frame
 
     async def close(self) -> None:
-        pass
+        self._inbound.put_nowait(None)
 
 
 async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[ClaudeChatFrame]:
@@ -1049,37 +1056,48 @@ async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) 
         )
 
 
-async def test_the_rollout_records_both_directions_and_skips_only_partials(
+async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas(
     chat_store, migrated_sessions, operator_id
 ) -> None:
     """What the agent did is only recoverable from the wire.
 
     Tool results arrive as `user` frames, which the turn loop drops entirely — it keeps the
-    `tool_use` blocks that asked and nothing that answered. So the record has to be taken here,
-    where every frame passes, rather than from the SDK objects the loop unpacks.
+    `tool_use` blocks that asked and nothing that answered — so the record is taken where every
+    frame passes rather than from what the loop unpacks. **The control channel counts.** It never
+    reaches `frames()`, so recording off the conversation queue would drop `interrupt` and its
+    answer from the log, and an interrupt that did not take is diagnosable from nothing else.
     """
     view, _ = await chat_store.create(operator_id, SpaSession())
     tool_result = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "42"}]}}
-    inner = _ReplayingWebSocket(
-        [
-            ClaudeMessage(payload={"type": "stream_event", "event": {"type": "content_block_delta"}}).model_dump_json(),
-            ClaudeMessage(payload=tool_result).model_dump_json(),
-            SetupOutput(data=b"cloning haku-state\n").model_dump_json(),
-        ]
-    )
-    socket = RecordingWebSocket(cast(Any, inner), chat_store, view.session_id)
+    channel = _ScriptedChannel()
+    cli = ClaudeCli(channel, control_timeout=5, frames_to=RolloutRecorder(chat_store, view.session_id))
 
-    await socket.send_text(ClaudeMessage(payload={"type": "user", "message": {"role": "user"}}).model_dump_json())
-    for _ in range(3):
-        await socket.receive_text()
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    initialize = channel.written[0]
+    channel.deliver(
+        {"type": "control_response", "response": {"subtype": "success", "request_id": initialize["request_id"]}}
+    )
+    await connecting
+    await cli.query("what did that return?")
+    channel.deliver({"type": "stream_event", "event": {"type": "content_block_delta"}})
+    channel.deliver(tool_result)
+    # Reading is what proves the reader got that far; the recorder runs inside it. Deltas do
+    # reach a reader — only the record skips them.
+    frames = cli.frames()
+    assert (await anext(frames))["type"] == "stream_event"
+    assert await anext(frames) == tool_result
+    await cli.aclose()
 
     recorded = await _frames(migrated_sessions, view.session_id)
     assert [(frame.direction, frame.kind) for frame in recorded] == [
+        (FrameDirection.TO_AGENT, "control_request"),
+        (FrameDirection.FROM_AGENT, "control_response"),
         (FrameDirection.TO_AGENT, "user"),
         (FrameDirection.FROM_AGENT, "user"),
     ]
-    # Verbatim: a reader gets the tool result the SDK dataclasses never carried.
-    assert recorded[1].payload == tool_result
+    # Verbatim: a reader gets the tool result the turn loop never kept.
+    assert recorded[3].payload == tool_result
     assert all(frame.partial is False for frame in recorded)
 
 
@@ -1093,7 +1111,7 @@ def _text_delta_frame(text: str) -> dict[str, Any]:
 class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
     """Streams two deltas, then ends the turn without ever completing the message."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object = None):
+    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
         super().__init__(adapter, launch, on_progress)
         self.script = [_text_delta_frame("half an "), _text_delta_frame("answer"), _result()]
 
