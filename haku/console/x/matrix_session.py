@@ -33,7 +33,7 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
-from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
+from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore, MatrixSession
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
@@ -349,7 +349,7 @@ class MatrixSessionSupervisor:
             await self._conversations.set_session(self._config.user_id, None)
             await self._chat.reconcile_terminal_claims()
 
-        session = await self._chat.create(await self._operator_id())
+        session = await self._chat.create(await self._operator_id(), MatrixSession(room_id=conversation.room_id))
         await self._conversations.set_session(self._config.user_id, session.session_id)
         self._last_announced = ChatSessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")

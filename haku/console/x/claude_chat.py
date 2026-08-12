@@ -10,6 +10,7 @@ import json
 import logging
 import secrets
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any, Protocol, cast
@@ -39,13 +40,22 @@ from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
     ChatSessionStatus,
+    ChatSurface,
+    FrameDirection,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
+from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
-from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
+from haku.runtime.x.agent_sdk_transport.protocol import (
+    CONSOLE_TO_RUNNER,
+    RUNNER_TO_CONSOLE,
+    ClaudeMessage,
+    ConsoleToRunner,
+    RunnerToConsole,
+    TextWebSocket,
+)
 from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 
 router = APIRouter(tags=["claude-chat"])
@@ -324,6 +334,27 @@ class KubernetesSandboxClaims:
             self._core_v1 = None
 
 
+@dataclass(frozen=True)
+class SpaSession:
+    """A session created by the browser chat view, which has no room."""
+
+
+@dataclass(frozen=True)
+class MatrixSession:
+    """A session created to serve one Matrix room, which it records for good.
+
+    Carried as a variant rather than a `surface` enum beside an optional `room_id`, because
+    the two combinations that pair would also admit — a Matrix session with no room, a room on
+    an SPA session — are states no caller could act on. The table repeats the rule as a pair of
+    check constraints, since the columns outlive this call signature.
+    """
+
+    room_id: str
+
+
+SessionSurface = SpaSession | MatrixSession
+
+
 class ClaudeChatStore:
     """Async Postgres store for Claude chat sessions."""
 
@@ -334,7 +365,7 @@ class ClaudeChatStore:
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
 
-    async def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
+    async def create(self, operator_id: UUID, surface: SessionSurface) -> tuple[ClaudeChatSessionView, str]:
         now = datetime.now(UTC)
         session_id = uuid4()
         bridge_token = secrets.token_urlsafe(32)
@@ -343,6 +374,8 @@ class ClaudeChatStore:
                 ClaudeChatSession(
                     session_id=session_id,
                     operator_id=operator_id,
+                    surface=ChatSurface.MATRIX if isinstance(surface, MatrixSession) else ChatSurface.SPA,
+                    room_id=surface.room_id if isinstance(surface, MatrixSession) else None,
                     status=ChatSessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
@@ -476,6 +509,28 @@ class ClaudeChatStore:
             chat.status = ChatSessionStatus.RESPONDING
             chat.updated_at = now
             return message.message_id, message.content
+
+    async def record_frame(
+        self, session_id: UUID, direction: FrameDirection, payload: dict[str, Any], *, synthetic: bool = False
+    ) -> None:
+        """Append one protocol frame to the session's rollout.
+
+        Failures are not swallowed. Every other write in a turn reaches the same database, so
+        one that cannot record has already lost the session — and a rollout with quiet holes is
+        exactly the record that looks complete while being wrong, which is what this table
+        exists to stop.
+        """
+        async with self._sessions.begin() as db:
+            db.add(
+                ClaudeChatFrame(
+                    session_id=session_id,
+                    direction=direction,
+                    kind=_frame_kind(payload),
+                    payload=payload,
+                    synthetic=synthetic,
+                    created_at=datetime.now(UTC),
+                )
+            )
 
     async def begin_assistant(self, session_id: UUID) -> UUID:
         now = datetime.now(UTC)
@@ -666,6 +721,60 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
+# The agent's protocol frames only, so a `SetupOutput` carrying bootstrap narration is not
+# mistaken for one. `stream_event` is the one exclusion: it is a partial of a frame that also
+# arrives complete, thousands of times a turn (R5.5b) — being streamed is not the reason, and
+# the completed `assistant` frame beside it is recorded like anything else.
+_PARTIAL_FRAME_KIND = "stream_event"
+
+
+def _assistant_frame(text: str) -> dict[str, Any]:
+    """The frame shape the agent would have sent, for the one the console has to stand in for.
+
+    Same shape as the wire's, so a reader needs no second case; the row's `synthetic` column is
+    what says it was not observed.
+    """
+    return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+def _frame_kind(payload: dict[str, Any]) -> str:
+    kind = payload.get("type")
+    if not isinstance(kind, str):
+        raise ValueError(f"protocol frame has no type: {payload=}")
+    return kind
+
+
+class RecordingWebSocket(TextWebSocket):
+    """Persists the rollout by watching the socket the transport already talks over.
+
+    A decorator rather than a hook inside `WebSocketTransport`, because which frames crossed
+    is visible from here and the transport is shared code that should not learn about the
+    console's database. The cost is re-decoding each frame's envelope, which is one `json.loads`
+    against a turn's worth of model inference.
+    """
+
+    def __init__(self, inner: TextWebSocket, store: ClaudeChatStore, session_id: UUID):
+        self._inner = inner
+        self._store = store
+        self._session_id = session_id
+
+    async def send_text(self, data: str) -> None:
+        await self._inner.send_text(data)
+        await self._record(CONSOLE_TO_RUNNER.validate_json(data), FrameDirection.TO_AGENT)
+
+    async def receive_text(self) -> str:
+        data = await self._inner.receive_text()
+        await self._record(RUNNER_TO_CONSOLE.validate_json(data), FrameDirection.FROM_AGENT)
+        return data
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    async def _record(self, frame: ConsoleToRunner | RunnerToConsole, direction: FrameDirection) -> None:
+        if isinstance(frame, ClaudeMessage) and _frame_kind(frame.payload) != _PARTIAL_FRAME_KIND:
+            await self._store.record_frame(self._session_id, direction, frame.payload)
+
+
 # Receives a finished turn's answer, in addition to the message row the SPA reads. The
 # Matrix surface has no SSE stream to read from, so a completed turn has to be pushed
 # somewhere; see `haku.console.x.matrix_session.MatrixReplySink`, which filters to the one
@@ -710,8 +819,8 @@ class ClaudeChatService:
     async def request_abort(self, session_id: UUID) -> bool:
         return await self._store.request_abort(session_id)
 
-    async def create(self, operator_id: UUID) -> ClaudeChatSessionView:
-        view, token = await self._store.create(operator_id)
+    async def create(self, operator_id: UUID, surface: SessionSurface) -> ClaudeChatSessionView:
+        view, token = await self._store.create(operator_id, surface)
         try:
             await self._claims.create(
                 session_id=view.session_id,
@@ -811,7 +920,7 @@ class ClaudeChatService:
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
         await websocket.accept()
-        adapter = StarletteTextWebSocket(websocket)
+        adapter = RecordingWebSocket(StarletteTextWebSocket(websocket), self._store, session_id)
         options = enable_fine_grained_streaming(
             ClaudeAgentOptions(
                 system_prompt=preset,
@@ -998,6 +1107,14 @@ class ClaudeChatService:
             if abort_event.is_set():
                 final_text += "\n\n[aborted by operator]"
             if assistant_id is not None:
+                # An open stream that no completed frame closed — the turn was interrupted
+                # mid-answer. The text exists only in the deltas the rollout deliberately does
+                # not keep, so the console contributes the one frame the agent never sent
+                # (R5.5b). Its own `[aborted by operator]` note is not part of it: that is the
+                # harness talking, and the frame is a record of what the agent produced.
+                await self._store.record_frame(
+                    session_id, FrameDirection.FROM_AGENT, _assistant_frame(streamed.strip()), synthetic=True
+                )
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             elif not saw_assistant_message:
@@ -1172,7 +1289,7 @@ ClaudeChatStoreDep = Annotated[ClaudeChatStore, Depends(_store)]
 @router.post("/api/claude/sessions")
 async def create_session(actor: OperatorActorDep, service: ClaudeChatServiceDep) -> ClaudeChatSessionView:
     try:
-        return await service.create(actor.operator_id)
+        return await service.create(actor.operator_id, SpaSession())
     except Exception as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 

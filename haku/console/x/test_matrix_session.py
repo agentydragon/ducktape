@@ -13,7 +13,7 @@ from sqlalchemy import delete
 from haku.console.chat_models import ChatSessionStatus
 from haku.console.database_schema import ClaudeChatSession
 from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore
+from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import InboundMessage, MatrixError
 from haku.console.x.matrix_session import (
@@ -184,7 +184,7 @@ async def test_does_not_repeat_an_unchanged_status(
 async def bound(conversations: MatrixConversationStore, chat_store: ClaudeChatStore, operator_id: UUID) -> UUID:
     """A room bound to a real session row — `session_id` is a foreign key, not a free UUID."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    view, _ = await chat_store.create(operator_id)
+    view, _ = await chat_store.create(operator_id, SpaSession())
     await conversations.set_session(MATRIX_USER, view.session_id)
     return view.session_id
 

@@ -497,12 +497,13 @@ input to a running turn**. Interrupt exists; steer does not.
   close it; there the console writes the coalesced text it already has as a synthetic frame,
   marked as such, so work that was produced is never absent from the record.
 
-- **R5.5c Bound a frame, not the transcript.** A tool result can be megabytes; a stored frame
-  is capped (~256KB) with a truncation marker rather than the row being skipped. The reader is
-  where the real budget lives — see the drilldown in Phase 5. The ledger learned this already:
-  the past-tool-calls page is 25 rows precisely because a record carries its whole arguments
-  and result, and asking for the endpoint's cap meant a multi-megabyte response
-  (<../console/README.md> § Past tool calls).
+- **R5.5c Bound the reader, not the record.** A tool result can be megabytes, and the frame
+  stores it whole: truncating at write time discards the one copy of what happened, to save
+  space in a table Postgres will TOAST without complaint. The budget belongs at the read
+  side, where a caller can ask for less — see the drilldown in Phase 5. The ledger is the
+  precedent and the warning together: it stores whole arguments and results, and its page is
+  25 rows precisely because of that (<../console/README.md> § Past tool calls). Revisit if
+  row sizes actually bite, which is a measurement, not a guess.
 
 ### R6 — Status and presence
 
