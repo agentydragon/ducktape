@@ -87,7 +87,29 @@ py_test(
 py_library(
     name = "matrix_client",
     srcs = ["matrix_client.py"],
-    deps = ["@pypi//matrix_nio"],
+    deps = [
+        ":matrix_markdown",
+        "@pypi//matrix_nio",
+    ],
+)
+
+py_library(
+    name = "matrix_markdown",
+    srcs = ["matrix_markdown.py"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//markdown",
+    ],
+)
+
+py_test(
+    name = "test_matrix_markdown",
+    srcs = ["test_matrix_markdown.py"],
+    deps = [
+        ":matrix_markdown",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
