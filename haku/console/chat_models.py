@@ -41,6 +41,20 @@ class FrameDirection(StrEnum):
     FROM_AGENT = "from_agent"
 
 
+class TurnOutcome(StrEnum):
+    """How one exchange ended. Absent while it is still running.
+
+    A turn is one exchange — the harness handing the agent a prompt through to a final answer
+    or a failure — containing many assistant messages, many tool uses and many model round
+    trips. It is deliberately not the CLI's own `num_turns`, which counts those round trips and
+    so lives *inside* one of these.
+    """
+
+    ANSWERED = "answered"
+    ABORTED = "aborted"
+    FAILED = "failed"
+
+
 class ChatMessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"

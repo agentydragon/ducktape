@@ -10,11 +10,12 @@ frames, and a `kinds` filter is how you skim before reading. Context is the scar
 both the page size and each frame's payload are capped, and a clipped frame says so rather than
 silently returning less than the record holds.
 
-**Shaped as a cursor over the log, not as turns.** `frame_seq` already totally orders a
-session, and a turn is the console's interpretation rather than the record: the CLI folds a
-mid-turn prompt into the running turn, so one `result` can answer two prompts and a
-turn-shaped read would have to pick which prompt an exchange belonged to. Turn brackets are a
-separate, runtime-motivated concern (`haku/plans/chat_runtime_cleanup.md` §1).
+**Reading is a cursor over the log; turns are an index into it.** `frame_seq` already totally
+orders a session, so `read_rollout` needs no notion of a turn — and a turn is the console's
+interpretation rather than the record, since the CLI folds a mid-turn prompt into the running
+turn and one `result` can then answer two prompts. `list_turns` therefore reports each exchange
+as a *range* over the same log, with what it cost and how it ended: enough to pick the exchange
+worth reading, without the frames themselves being reshaped around it.
 
 **Reads are unscoped** (R5.3a): any session, whichever room it served. Deliberate for now —
 the eventual policy about which Haku may read which past conversation is not settled, and
@@ -77,6 +78,23 @@ class RolloutPage(BaseModel):
     )
 
 
+class TurnRecord(BaseModel):
+    """One exchange of a session, as a range over that session's frames."""
+
+    turn_id: str
+    first_frame_seq: int = Field(description="Pass as `after_seq` minus one to `read_rollout` to read this exchange.")
+    last_frame_seq: int | None = Field(
+        description="Inclusive end of the range. Absent while the exchange is still running, "
+        "and on a finished one that recorded no frames at all."
+    )
+    started_at: datetime.datetime
+    ended_at: datetime.datetime | None = Field(description="Absent while the exchange is still running.")
+    outcome: str | None = Field(description="`answered`, `aborted` or `failed`; absent while it is still running.")
+    cost_usd: float | None = None
+    duration_ms: int | None = None
+    usage: dict[str, Any] | None = Field(default=None, description="The model's own token accounting for the exchange.")
+
+
 class RolloutReader(Protocol):
     """The console's rollout store, as this server needs it.
 
@@ -91,6 +109,8 @@ class RolloutReader(Protocol):
     async def read_frames(
         self, session_id: str, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]: ...
+
+    async def list_turns(self, session_id: str, *, limit: int) -> list[TurnRecord]: ...
 
 
 def clip(frame: RolloutFrame) -> RolloutFrame:
@@ -146,5 +166,19 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         # A short page is the last one. Cheaper than a second count query, and the caller only
         # needs to know whether to ask again.
         return RolloutPage(frames=frames, next_after_seq=frames[-1].frame_seq if len(frames) == limit else None)
+
+    @mcp.tool
+    async def list_turns(
+        session_id: Annotated[str, Field(description="From `list_conversations`.")],
+        limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE, description="Newest exchange first.")] = (
+            DEFAULT_PAGE
+        ),
+    ) -> list[TurnRecord]:
+        """List a session's exchanges — what it cost, how long it took, how each one ended.
+
+        Each carries the frame range it produced, so this is the cheap way to find the exchange
+        worth reading before paging its frames.
+        """
+        return await reader.list_turns(session_id, limit=limit)
 
     return mcp

@@ -13,6 +13,7 @@ from haku.console.tools.conversations import (
     MAX_FRAME_BYTES,
     Conversation,
     RolloutFrame,
+    TurnRecord,
     build_mcp,
 )
 
@@ -57,12 +58,27 @@ class _Reader:
             selected = [frame for frame in selected if frame.frame_seq > after_seq]
         return selected[:limit]
 
+    async def list_turns(self, session_id: str, *, limit: int) -> list[TurnRecord]:
+        return [
+            TurnRecord(
+                turn_id="22222222-2222-2222-2222-222222222222",
+                first_frame_seq=1,
+                last_frame_seq=4,
+                started_at=NOW,
+                ended_at=NOW,
+                outcome="answered",
+                cost_usd=0.0125,
+                duration_ms=4200,
+                usage={"output_tokens": 91},
+            )
+        ][:limit]
+
 
 async def test_tool_surface() -> None:
     async with Client(build_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_conversations", "read_rollout"}
+    assert tools == {"list_conversations", "read_rollout", "list_turns"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
@@ -117,6 +133,18 @@ async def test_an_oversized_frame_is_clipped_and_says_so() -> None:
     assert clipped.payload is None
     assert clipped.clipped_bytes > MAX_FRAME_BYTES
     assert kept.payload == {"type": "assistant"}
+
+
+async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
+    """The point of listing exchanges is to pick one and then read its frames, so the bracket has
+    to come back with the accounting rather than instead of it."""
+    async with Client(build_mcp(_Reader())) as client:
+        result = await client.call_tool("list_turns", {"session_id": "s"})
+
+    [turn] = result.data
+    assert (turn.first_frame_seq, turn.last_frame_seq) == (1, 4)
+    assert turn.outcome == "answered"
+    assert turn.cost_usd == 0.0125
 
 
 async def test_a_page_size_above_the_cap_is_refused() -> None:

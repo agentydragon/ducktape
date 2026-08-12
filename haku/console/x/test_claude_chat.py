@@ -18,7 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSurface, FrameDirection
+from haku.console.chat_models import (
+    ChatMessageRole,
+    ChatMessageStatus,
+    ChatSessionStatus,
+    ChatSurface,
+    FrameDirection,
+    TurnOutcome,
+)
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatSession
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
@@ -37,7 +44,17 @@ from haku.console.x.claude_chat import (
     _text_delta,
     _TurnStatus,
 )
-from haku.console.x.conftest import MCP_TOKEN, RecordingClaims, runtime_config
+from haku.console.x.conftest import (
+    MATRIX_CONFIG,
+    MATRIX_OPERATOR,
+    MATRIX_ROOM,
+    MATRIX_USER,
+    MCP_TOKEN,
+    RecordingClaims,
+    runtime_config,
+)
+from haku.console.x.matrix_client import InboundMessage
+from haku.console.x.matrix_session import MatrixTurns
 from haku.runtime.x.agent_sdk_transport.protocol import ClaudeMessage, SetupOutput
 
 
@@ -318,13 +335,17 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     """A tool-use block and the text after it are two messages, not one merged row."""
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "Check the Haku MCP catalog")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
 
     client = _FakeCli(_TOOL_USE_SCRIPT)
     await chat_service._run_turn(
         cast(Any, client),
         client.frames().__aiter__(),
         view.session_id,
-        "Check the Haku MCP catalog",
+        turn.prompt,
+        turn_id=turn.turn_id,
         room_id=None,
         abort_event=asyncio.Event(),
     )
@@ -653,13 +674,18 @@ async def _turn_into_a_room(
     service = ClaudeChatService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
     )
-    view, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
     async with asyncio.timeout(30):
         await service._run_turn(
             cast(Any, client),
             client.frames().__aiter__(),
             view.session_id,
-            "why did it fail?",
+            turn.prompt,
+            turn_id=turn.turn_id,
             room_id=ROOM,
             abort_event=abort_event or asyncio.Event(),
         )
@@ -723,6 +749,128 @@ async def test_an_aborted_turn_says_so_on_its_own(chat_store, recording_claims, 
     assert delivered == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
 
 
+async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
+    chat_store, chat_service, operator_id
+) -> None:
+    """The `result` frame's cost, usage and duration exist nowhere else — they were read for the
+    error check and dropped — and the bracket is what makes them findable afterwards."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    # A frame from before this turn, so a bracket that started at the log's beginning would show.
+    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, {"type": "system"})
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    client = _FakeCli(
+        [
+            _assistant({"type": "text", "text": "a bad config"}),
+            _result("a bad config", total_cost_usd=0.0125, duration_ms=4200, usage={"output_tokens": 91}),
+        ]
+    )
+
+    await chat_service._run_turn(
+        cast(Any, client),
+        client.frames().__aiter__(),
+        view.session_id,
+        turn.prompt,
+        turn_id=turn.turn_id,
+        room_id=None,
+        abort_event=asyncio.Event(),
+    )
+    # Recorded by the real socket wrapper in production; here the turn wrote none of its own, so
+    # the upper bound is the frame that predates it and the range is honestly empty.
+    [record] = await chat_store.list_turns(str(view.session_id), limit=10)
+
+    assert record.outcome == TurnOutcome.ANSWERED
+    assert record.cost_usd == 0.0125
+    assert record.duration_ms == 4200
+    assert record.usage == {"output_tokens": 91}
+    assert record.first_frame_seq > record.last_frame_seq if record.last_frame_seq else True
+    assert record.ended_at is not None
+
+
+async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
+    """The gate `enqueue_prompt` used to keep was `status == READY`, which doubled as "not
+    mid-turn" only because `enqueue_prompt` itself had written `responding`. Asking the turn
+    directly is what keeps R2.2 — hold a batch until the turn ends — from silently becoming
+    fold-into-turn with no fold path wired.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+
+    with pytest.raises(RuntimeError, match="turn is already in flight"):
+        await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+
+
+async def test_a_matrix_batch_offered_mid_turn_is_still_held(
+    chat_store, conversations, migrated_identity_store, operator_id
+) -> None:
+    """The homeserver re-delivers what `offer` refuses, so refusing is how a message sent while
+    Haku is working waits for the next turn instead of being answered a turn late."""
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+    await conversations.set_session(MATRIX_USER, view.session_id)
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+    assert await chat_store.next_prompt(view.session_id) is not None
+    turns = MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
+
+    offered = await turns.offer(
+        [
+            InboundMessage(
+                room_id=MATRIX_ROOM, event_id="$2", sender=MATRIX_OPERATOR, body="and another thing", origin_server_ts=2
+            )
+        ]
+    )
+
+    assert offered is False
+
+
+async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_store, operator_id) -> None:
+    """`status` is the SPA's contract, so the column underneath can stop carrying turn state
+    without a frontend release — the view derives it from the open turn instead."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.READY, (
+        "a queued prompt is not a turn in flight"
+    )
+
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.RESPONDING
+    assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, (
+        "the column itself no longer carries turn state"
+    )
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.READY
+
+
+async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """A replica losing its pod mid-turn closes nothing, so the open row is exactly the record of
+    an abandoned exchange — and must not make a failed session read as still working."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    assert await chat_store.next_prompt(view.session_id) is not None
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.expire_stale_leases() == 1
+
+    [record] = await chat_store.list_turns(str(view.session_id), limit=10)
+    assert record.ended_at is None, "nothing ran to close it, and the record should say so"
+    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.FAILED
+
+
 class _RealDbClaudeClient(_LifecycleClaudeClient):
     """Answers every prompt with "pong", then goes quiet like an idle CLI."""
 
@@ -758,13 +906,16 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
 
             # And the wait must actually wake on NOTIFY rather than only time out. A bounded
             # poll rather than an Event: the thing under test is the runner's own wake, so the
-            # test must observe it from outside instead of being handed a signal by it.
+            # test must observe it from outside instead of being handed a signal by it. What it
+            # polls for is the closed turn — the session's status stays `ready` throughout now,
+            # so waiting on that would be a wait for something already true.
             await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
             for _ in range(75):
-                if await chat_store.status(view.session_id) == ChatSessionStatus.READY:
+                if [turn for turn in await chat_store.list_turns(str(view.session_id), limit=2) if turn.ended_at]:
                     break
                 await asyncio.sleep(0.2)
-            assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, "the turn never completed"
+            [turn] = await chat_store.list_turns(str(view.session_id), limit=2)
+            assert turn.outcome == TurnOutcome.ANSWERED, "the turn never completed"
         finally:
             runner.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -776,12 +927,16 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
     assert answer.content == "pong"
 
 
-async def test_abort_is_refused_when_no_turn_is_in_flight(chat_store, operator_id) -> None:
+async def test_abort_is_refused_until_a_turn_is_actually_running(chat_store, operator_id) -> None:
     """An idle session has nothing to interrupt, and saying so is the point of the 409.
 
-    The old check asked "is this session's abort event registered in *this* process", which
-    is true for the whole life of the runner bridge — so aborting an idle session set the
-    event, and the next turn aborted the instant it started.
+    A *queued* prompt is not a turn either, and this is where that used to go wrong twice over:
+    the first check asked "is this session's abort event registered in this process", true for
+    the whole life of the runner bridge; the second asked whether the session's status was
+    `responding`, which `enqueue_prompt` set before any turn started. Both accepted an abort
+    with nothing to abort, and the event then sat set until the next turn, killing it on
+    arrival. The abort now names the open turn, which does not exist until the prompt is handed
+    to the model.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
     # The bridge handshake is what takes a session from provisioning to ready, and only a
@@ -791,7 +946,14 @@ async def test_abort_is_refused_when_no_turn_is_in_flight(chat_store, operator_i
     assert await chat_store.request_abort(view.session_id) is False
 
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    assert await chat_store.request_abort(view.session_id) is False, "a queued prompt is not a turn"
+
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
     assert await chat_store.request_abort(view.session_id) is True
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    assert await chat_store.request_abort(view.session_id) is False
 
 
 async def test_abort_reaches_the_replica_running_the_turn(
@@ -808,6 +970,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
+    assert await chat_store.next_prompt(view.session_id) is not None, "the turn the abort names"
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:

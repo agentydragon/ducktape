@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import collections.abc
 import contextlib
+import decimal
 import hashlib
 import json
 import logging
@@ -25,7 +26,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
@@ -36,11 +37,18 @@ from haku.console.chat_models import (
     ChatSessionStatus,
     ChatSurface,
     FrameDirection,
+    TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatSession
+from haku.console.database_schema import (
+    ClaudeChatFrame,
+    ClaudeChatMessage,
+    ClaudeChatSession,
+    ClaudeChatTurn,
+    ClaudeChatTurnPrompt,
+)
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.tools.conversations import Conversation, RolloutFrame
+from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
@@ -358,6 +366,15 @@ class MatrixSession:
 SessionSurface = SpaSession | MatrixSession
 
 
+@dataclass(frozen=True, slots=True)
+class TurnStart:
+    """A prompt taken off the queue together with the turn opened to answer it."""
+
+    turn_id: UUID
+    message_id: UUID
+    prompt: str
+
+
 class ClaudeChatStore:
     """Async Postgres store for Claude chat sessions."""
 
@@ -414,7 +431,8 @@ class ClaudeChatStore:
                     )
                 ).all()
             )
-            return _session_view(record, messages)
+            responding = await _open_turn(db, session_id) is not None
+            return _session_view(record, messages, responding=responding)
 
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         now = datetime.now(UTC)
@@ -464,6 +482,13 @@ class ClaudeChatStore:
                 raise KeyError(session_id)
             if chat.status != ChatSessionStatus.READY:
                 raise RuntimeError(f"session is not ready (status={chat.status})")
+            # Admission asks about the turn, not the session's status. It used to ask for
+            # `READY`, which was also how "not mid-turn" was expressed — so the moment the
+            # column stopped carrying `responding` this gate would have started accepting
+            # prompts during a turn, which is the fold-into-turn feature arriving by accident
+            # with no fold path wired (R2.2 holds a batch until the turn ends).
+            if await _open_turn(db, session_id) is not None:
+                raise RuntimeError("a turn is already in flight")
             existing = await db.scalar(
                 select(ClaudeChatMessage).where(
                     ClaudeChatMessage.session_id == session_id, ClaudeChatMessage.status == ChatMessageStatus.PENDING
@@ -483,13 +508,21 @@ class ClaudeChatStore:
                 updated_at=now,
             )
             db.add(message)
-            chat.status = ChatSessionStatus.RESPONDING
+            # No status write: a queued prompt is not a turn in flight. Setting `responding`
+            # here is what let `request_abort` accept an abort for a turn that did not exist.
             chat.updated_at = now
             await notify(db, ChatEventKind.PROMPT, session_id)
             await notify(db, ChatEventKind.UPDATE, session_id)
         return _message_view(message)
 
-    async def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
+    async def next_prompt(self, session_id: UUID) -> TurnStart | None:
+        """Take the queued prompt and open the turn that will answer it, or None if there is none.
+
+        Dequeue and open are one transaction on purpose: they are the same event — the harness
+        handing the agent a prompt — and splitting them would leave a window in which the prompt
+        is claimed with no turn to name it, which is exactly what admission and abort now ask
+        about.
+        """
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if chat is None or chat.status in ENDED_SESSION_STATUSES:
@@ -509,9 +542,84 @@ class ClaudeChatStore:
             now = datetime.now(UTC)
             message.status = ChatMessageStatus.COMPLETE
             message.updated_at = now
-            chat.status = ChatSessionStatus.RESPONDING
             chat.updated_at = now
-            return message.message_id, message.content
+            # The bracket's lower bound, taken before the prompt reaches the CLI so every frame
+            # the exchange produces falls inside it.
+            highest = await db.scalar(
+                select(func.max(ClaudeChatFrame.frame_seq)).where(ClaudeChatFrame.session_id == session_id)
+            )
+            turn_id = uuid4()
+            db.add(
+                ClaudeChatTurn(
+                    turn_id=turn_id, session_id=session_id, first_frame_seq=(highest or 0) + 1, started_at=now
+                )
+            )
+            db.add(ClaudeChatTurnPrompt(turn_id=turn_id, message_id=message.message_id))
+            await notify(db, ChatEventKind.UPDATE, session_id)
+            return TurnStart(turn_id=turn_id, message_id=message.message_id, prompt=message.content)
+
+    async def end_turn(self, turn_id: UUID, outcome: TurnOutcome, result: dict[str, Any] | None = None) -> None:
+        """Close *turn_id*, taking the bracket's upper bound and what the `result` frame reported.
+
+        Idempotent on an already-closed turn: a second close must not overwrite the first
+        outcome, because the first one is the one that happened.
+        """
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            turn = await db.get(ClaudeChatTurn, turn_id, with_for_update=True)
+            if turn is None or turn.ended_at is not None:
+                return
+            turn.last_frame_seq = await db.scalar(
+                select(func.max(ClaudeChatFrame.frame_seq)).where(ClaudeChatFrame.session_id == turn.session_id)
+            )
+            turn.ended_at = now
+            turn.outcome = outcome
+            if result is not None:
+                # `total_cost_usd` is a float on the wire; through `Decimal(str(...))` rather than
+                # `Decimal(float)`, which would carry the binary representation's noise into a
+                # column that is exact on purpose.
+                if isinstance(cost := result.get("total_cost_usd"), int | float):
+                    turn.cost_usd = decimal.Decimal(str(cost))
+                if isinstance(usage := result.get("usage"), dict):
+                    turn.usage = usage
+                if isinstance(duration := result.get("duration_ms"), int):
+                    turn.duration_ms = duration
+            chat = await db.get(ClaudeChatSession, turn.session_id)
+            if chat is not None:
+                # `responding` is derived from this turn being open, so closing it is what
+                # retires the state — and what the SPA has to be told about. The column is only
+                # written back when it still carries the old meaning, which a replica on the
+                # previous image is what would have put there.
+                if chat.status == ChatSessionStatus.RESPONDING:
+                    chat.status = ChatSessionStatus.READY
+                chat.updated_at = now
+                await notify(db, ChatEventKind.UPDATE, turn.session_id)
+
+    async def list_turns(self, session_id: str, *, limit: int) -> list[TurnRecord]:
+        """A session's exchanges, newest first, for the `haku_conversations` read tools."""
+        async with self._sessions() as db:
+            rows = (
+                await db.scalars(
+                    select(ClaudeChatTurn)
+                    .where(ClaudeChatTurn.session_id == UUID(session_id))
+                    .order_by(ClaudeChatTurn.started_at.desc())
+                    .limit(limit)
+                )
+            ).all()
+        return [
+            TurnRecord(
+                turn_id=str(row.turn_id),
+                first_frame_seq=row.first_frame_seq,
+                last_frame_seq=row.last_frame_seq,
+                started_at=row.started_at,
+                ended_at=row.ended_at,
+                outcome=row.outcome,
+                cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
+                duration_ms=row.duration_ms,
+                usage=row.usage,
+            )
+            for row in rows
+        ]
 
     async def record_frame(self, session_id: UUID, direction: FrameDirection, payload: dict[str, Any]) -> None:
         """Append one protocol frame to the session's rollout.
@@ -656,18 +764,8 @@ class ClaudeChatStore:
                 message.tool_uses = tool_uses
             message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
             message.updated_at = now
-            if chat.status not in ENDED_SESSION_STATUSES:
-                chat.status = ChatSessionStatus.RESPONDING
-            chat.updated_at = now
-            await notify(db, ChatEventKind.UPDATE, session_id)
-
-    async def complete_turn(self, session_id: UUID) -> None:
-        now = datetime.now(UTC)
-        async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id)
-            if chat is None or chat.status in ENDED_SESSION_STATUSES:
-                return
-            chat.status = ChatSessionStatus.READY
+            # No `chat.status = RESPONDING` here. This runs per stream delta, so it was a
+            # session-row write per delta to hold a flag true that the open turn already states.
             chat.updated_at = now
             await notify(db, ChatEventKind.UPDATE, session_id)
 
@@ -805,8 +903,7 @@ class ClaudeChatStore:
         request is balanced across all of them.
         """
         async with self._sessions.begin() as db:
-            status = await db.scalar(select(ClaudeChatSession.status).where(ClaudeChatSession.session_id == session_id))
-            if status != ChatSessionStatus.RESPONDING:
+            if await _open_turn(db, session_id) is None:
                 return False
             await notify(db, ChatEventKind.ABORT, session_id)
             return True
@@ -1000,7 +1097,15 @@ class ClaudeChatService:
         self._mcp_token = mcp_token
         self._room_surface = room_surface
 
-    async def request_abort(self, session_id: UUID) -> bool:
+    async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
+        """Interrupt this session's turn, or answer False when it has none.
+
+        Raises `KeyError` for a session this Operator does not own, so the route asks one
+        question instead of reaching through `service._store` for an ownership check and then
+        asking the service for the abort.
+        """
+        if not await self._store.session_exists(operator_id, session_id):
+            raise KeyError(session_id)
         return await self._store.request_abort(session_id)
 
     async def create(self, operator_id: UUID, surface: SessionSurface) -> ClaudeChatSessionView:
@@ -1169,21 +1274,27 @@ class ClaudeChatService:
                             status = await self._store.status(session_id)
                             if status is None or status in ENDED_SESSION_STATUSES:
                                 break
-                            prompt = await self._store.next_prompt(session_id)
-                            if prompt is None:
+                            turn = await self._store.next_prompt(session_id)
+                            if turn is None:
                                 # Wait for a LISTEN/NOTIFY instead of polling.
                                 await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
                                 continue
-                            _, text = prompt
-                            # Cleared here rather than after the turn: an abort notified just
-                            # as the previous turn ended would otherwise sit set through the
-                            # idle wait and kill the next turn on arrival. A notify racing the
-                            # next few statements can still do that, which needs the abort to
-                            # name a turn rather than a session.
+                            # Cleared before the turn rather than after it: an abort notified
+                            # just as the previous turn ended would otherwise sit set through
+                            # the idle wait and kill the next turn on arrival. The remaining
+                            # window is a notify racing these few statements, and `request_abort`
+                            # no longer opens it from the other side — an abort is refused
+                            # unless a turn is actually open.
                             abort_event.clear()
                             try:
                                 await self._run_turn(
-                                    client, frames, session_id, text, room_id=room_id, abort_event=abort_event
+                                    client,
+                                    frames,
+                                    session_id,
+                                    turn.prompt,
+                                    turn_id=turn.turn_id,
+                                    room_id=room_id,
+                                    abort_event=abort_event,
                                 )
                             except Exception as error:
                                 logger.exception("Claude chat turn failed for session %s", session_id)
@@ -1249,12 +1360,17 @@ class ClaudeChatService:
         session_id: UUID,
         prompt: str,
         *,
+        turn_id: UUID,
         room_id: str | None,
         abort_event: asyncio.Event,
     ) -> None:
         """Send *prompt* and consume the session's stream until this turn's `result`.
 
-        *frames* belongs to the session, not to this call — see `handle_runner`.
+        *frames* belongs to the session, not to this call — see `handle_runner`. *turn_id* is the
+        turn `next_prompt` opened for this prompt: this call is its span, so it closes it on
+        every exit and is the only thing that does. A turn left open is therefore not a
+        bookkeeping leak — it means no code got to close it, which is what a replica losing its
+        pod mid-exchange looks like from outside.
         """
         await client.query(prompt)
         assistant_id: UUID | None = None
@@ -1358,7 +1474,12 @@ class ClaudeChatService:
                 assistant_id = await self._store.begin_assistant(session_id)
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
-            await self._store.complete_turn(session_id)
+            # Closed with what the `result` frame reported, which is the only place a turn's
+            # cost, usage and duration exist — the console used to read `is_error` off that frame
+            # and drop the rest for want of anywhere to put it.
+            await self._store.end_turn(
+                turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result
+            )
             # Only what the room has not already heard. Each assistant message was spoken as it
             # finished, and `result.result` normally repeats the last of them — so delivering
             # `final_text` unconditionally would post the answer twice. Two cases still need it:
@@ -1369,6 +1490,7 @@ class ClaudeChatService:
             elif abort_event.is_set():
                 await self._deliver_reply(session_id, room_id, ABORTED_NOTICE)
         except Exception as error:
+            await self._store.end_turn(turn_id, TurnOutcome.FAILED)
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
@@ -1439,10 +1561,43 @@ def _message_view(message: ClaudeChatMessage) -> ClaudeChatMessageView:
     )
 
 
-def _session_view(record: ClaudeChatSession, messages: list[ClaudeChatMessage]) -> ClaudeChatSessionView:
+async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
+    """The turn *session_id* is in the middle of, if it is in the middle of one.
+
+    The one question three things used to ask of `status == 'responding'`: whether a prompt may
+    be accepted, whether there is anything to abort, and what the SPA should be told. A partial
+    unique index makes "at most one" a schema property, so this is a lookup rather than a scan
+    with a rule attached.
+    """
+    turn_id: UUID | None = await db.scalar(
+        select(ClaudeChatTurn.turn_id).where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
+    )
+    return turn_id
+
+
+def _session_view(
+    record: ClaudeChatSession, messages: list[ClaudeChatMessage], *, responding: bool
+) -> ClaudeChatSessionView:
+    """The session as the SPA reads it, with `responding` derived from an open turn.
+
+    `status` is the frontend's contract (`frontend/x/claude_chat_page.tsx` switches on it), so
+    the column underneath can stop carrying turn state without a frontend release. A live
+    session with a turn in flight reports `responding`; the session's own lifecycle —
+    provisioning, closing, closed, failed — always wins, because a turn left open by a replica
+    that died says nothing about a session the sweep has since failed.
+
+    The `record.status == RESPONDING` arm is the roll's other half: a replica on the previous
+    image still writes that column, and its sessions have no turn rows to derive from.
+    """
+    live = record.status in {ChatSessionStatus.READY, ChatSessionStatus.RESPONDING}
+    status = (
+        ChatSessionStatus.RESPONDING
+        if live and (responding or record.status == ChatSessionStatus.RESPONDING)
+        else record.status
+    )
     return ClaudeChatSessionView(
         session_id=record.session_id,
-        status=record.status,
+        status=status,
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -1581,9 +1736,10 @@ async def _sse_stream(
     except KeyError:
         yield f"data: {json.dumps({'type': 'end'})}\n\n"
         return
-    yield f"data: {last_view.model_dump_json()}\n\n"
+    last_status, last_payload = last_view.status, last_view.model_dump_json()
+    yield f"data: {last_payload}\n\n"
     while True:
-        if last_view.status in {ChatSessionStatus.CLOSED, ChatSessionStatus.FAILED}:
+        if last_status in {ChatSessionStatus.CLOSED, ChatSessionStatus.FAILED}:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
         await notifications.wait(ChatEventKind.UPDATE, session_id, timeout_seconds=30.0)
@@ -1592,9 +1748,13 @@ async def _sse_stream(
         except KeyError:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
-        if next_view.model_dump_json() != last_view.model_dump_json():
-            last_view = next_view
-            yield f"data: {next_view.model_dump_json()}\n\n"
+        # Serialized once and compared against what was last sent, rather than three times per
+        # wake: the view embeds the whole transcript, so each of those was the entire
+        # conversation. It suppresses little during a turn — every delta really does change the
+        # view — which is the reason not to pay for the comparison twice more.
+        if (payload := next_view.model_dump_json()) != last_payload:
+            last_status, last_payload = next_view.status, payload
+            yield f"data: {payload}\n\n"
 
 
 @router.get("/api/claude/sessions/{session_id}/stream")
@@ -1612,9 +1772,11 @@ async def stream_session(
 
 @router.post("/api/claude/sessions/{session_id}/abort", status_code=202)
 async def abort_session(session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep) -> dict[str, str]:
-    if not await service._store.session_exists(actor.operator_id, session_id):
-        raise HTTPException(status_code=404, detail="Claude chat session not found")
-    if not await service.request_abort(session_id):
+    try:
+        aborted = await service.request_abort(actor.operator_id, session_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Claude chat session not found") from error
+    if not aborted:
         raise HTTPException(status_code=409, detail="no active turn to abort")
     return {"status": "aborted"}
 

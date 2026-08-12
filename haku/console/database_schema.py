@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Identity,
     Index,
     LargeBinary,
+    Numeric,
     Text,
     UniqueConstraint,
     text,
@@ -32,7 +34,14 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSurface, FrameDirection
+from haku.console.chat_models import (
+    ChatMessageRole,
+    ChatMessageStatus,
+    ChatSessionStatus,
+    ChatSurface,
+    FrameDirection,
+    TurnOutcome,
+)
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -913,6 +922,78 @@ class ClaudeChatMessage(Base):
         CheckConstraint("role IN ('user','assistant')", name="ck_claude_chat_messages_role"),
         CheckConstraint("status IN ('pending','streaming','complete','failed')", name="ck_claude_chat_messages_status"),
         Index("idx_claude_chat_messages_session_created", "session_id", "created_at"),
+    )
+
+
+class ClaudeChatTurn(Base):
+    """One exchange, recorded as a range over the session's frame log.
+
+    `_run_turn`'s stack frame used to be the only place a turn existed, so everything that
+    needed to name one named something else instead: session `status` carried `responding`
+    beside the session's own lifecycle, an abort was addressed to a session and so could be
+    accepted when no turn was running, and a `result` frame's cost and usage were read for an
+    error check and dropped because nothing owned them.
+
+    **A range, not a `turn_id` stamped on each frame.** The frame log is the record of the wire
+    and the wire does not agree with our bracketing: the CLI folds a prompt sent mid-turn into
+    the running one, so a single `result` can answer two prompts (measured,
+    <../cli_protocol/probes/steering.py>). Keeping the bracket here means re-bracketing later is
+    an update to this table rather than a rewrite of the record.
+    """
+
+    __tablename__ = "claude_chat_turns"
+
+    turn_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    # Lower bound, taken when the turn opens: every frame of this turn has
+    # `frame_seq >= first_frame_seq`. Not the seq of an actual frame — `Identity` leaves gaps and
+    # the turn is opened before its first frame is written — which is why it is a bound rather
+    # than a pointer.
+    first_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Inclusive upper bound, taken when the turn closes. NULL on an open turn, and also on a
+    # closed one that recorded nothing at all; `ended_at` is what says which.
+    last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
+    # From the turn's `result` frame, which is the only place they exist: the CLI reports them
+    # once per turn and the console used to read `is_error` off that frame and discard the rest.
+    cost_usd: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IS NULL OR outcome IN ('answered','aborted','failed')", name="ck_claude_chat_turns_outcome"
+        ),
+        # Open and un-outcomed are the same state, so neither can be reached without the other.
+        CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_claude_chat_turns_ended_has_outcome"),
+        Index("idx_claude_chat_turns_session", "session_id", "started_at"),
+        # One open turn per session, as a schema property rather than a rule the turn loop has to
+        # keep. It is also what `responding` is derived from, and what makes "an abort names a
+        # turn" a lookup rather than a guess.
+        Index("uq_claude_chat_turns_open", "session_id", unique=True, postgresql_where=text("ended_at IS NULL")),
+    )
+
+
+class ClaudeChatTurnPrompt(Base):
+    """Which prompts a turn answered.
+
+    Many-to-one on purpose: a prompt written to the CLI while a turn is running is absorbed at
+    the next tool boundary, and one `result` then covers both. Nothing sends a second prompt
+    mid-turn yet; the shape is here so that when it does, the record does not have to lie about
+    which exchange answered what.
+    """
+
+    __tablename__ = "claude_chat_turn_prompts"
+
+    turn_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_turns.turn_id", ondelete="CASCADE"), primary_key=True
+    )
+    message_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_messages.message_id", ondelete="CASCADE"), primary_key=True
     )
 
 
