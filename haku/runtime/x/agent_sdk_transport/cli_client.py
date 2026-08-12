@@ -113,14 +113,16 @@ class ClaudeCli:
         )
         return command_uuid
 
-    async def interrupt(self, *, cancel_queued: bool = False) -> None:
-        """Abort the running turn.
+    async def interrupt(self) -> None:
+        """Abort the running turn **and** anything queued behind it.
 
-        Without `cancel_queued` the CLI starts the next prompt in its queue the moment this one
-        dies (<../../../cli_protocol/probes/steering.py>), which is not what an operator saying
-        "stop" means when they have already typed the next thing.
+        `cancel_queued` is not optional here because the console has one abort, and an operator
+        saying "stop" does not mean "stop this and start the next thing I typed" — which is what
+        a bare interrupt does: the CLI begins the next queued prompt the moment this one dies
+        (<../../../cli_protocol/probes/steering.py>). Nothing is queued today, since the console
+        writes one prompt per turn; this is what keeps that true once folding lands.
         """
-        await self.control(InterruptRequest(reason="user-cancel", cancel_queued=cancel_queued or None))
+        await self.control(InterruptRequest(reason="user-cancel", cancel_queued=True))
 
     async def control(self, request: BaseModel) -> dict[str, Any]:
         """One control request, awaited until the CLI answers it or the timeout passes."""

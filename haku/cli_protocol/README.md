@@ -21,7 +21,9 @@ The client that uses all this is `haku/runtime/x/agent_sdk_transport/cli_client.
 
 A probe needs a real Claude credential and makes real model calls, so none of them is a Bazel
 test. Run one wherever a credential exists — a `haku-claude` sandbox pod, or any box with a
-logged-in CLI:
+logged-in CLI. **The calls are billed to whichever account that CLI is logged in as** and come
+out of its rate-limit window; the suite is a few dollars and a dozen turns, which is worth
+knowing before re-running it on a laptop that happens to be logged in as you.
 
 ```bash
 python3 -m haku.cli_protocol.probes.initialize_fields

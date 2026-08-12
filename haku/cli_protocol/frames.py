@@ -10,8 +10,10 @@ wire, a model that dropped an unrecognised field would make the record a parse o
 frames it will eventually act on (`command_lifecycle`, `system/task_*`, `result` cost and usage)
 get models when the code that reads them exists.
 
-The control channel is camelCase, which is why these carry aliases and the rest of the codebase
-does not.
+**The control channel is camelCase, but not uniformly**: the `initialize` request is, while the
+envelope's `request_id` and `interrupt`'s `cancel_queued` are snake_case. So the alias generator
+goes on the one model whose wire form is camel rather than on a shared base, and a field added to
+any other model here is named exactly as it goes out.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 
 class ControlSubtype(StrEnum):
@@ -31,19 +34,18 @@ class ControlSubtype(StrEnum):
 class InitializeRequest(BaseModel):
     """The handshake's `request` object — only the fields the console has a use for."""
 
-    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, serialize_by_alias=True)
 
     subtype: Literal["initialize"] = "initialize"
-    system_prompt: list[str] | None = Field(default=None, alias="systemPrompt")
-    append_system_prompt: str | None = Field(default=None, alias="appendSystemPrompt")
+    system_prompt: list[str] | None = None
+    append_system_prompt: str | None = None
     hooks: dict[str, list[dict[str, Any]]] | None = None
-    sdk_mcp_servers: list[str] | None = Field(default=None, alias="sdkMcpServers")
+    sdk_mcp_servers: list[str] | None = None
     agents: dict[str, dict[str, Any]] | None = None
     skills: list[str] | None = None
-    forward_subagent_text: bool | None = Field(default=None, alias="forwardSubagentText")
+    forward_subagent_text: bool | None = None
     json_schema: dict[str, Any] | None = Field(
         default=None,
-        alias="jsonSchema",
         description=(
             "A bare JSON Schema. The `{type: json_schema, schema: ...}` wrapper the SDK's "
             "output-format option takes is accepted here and silently ignored."

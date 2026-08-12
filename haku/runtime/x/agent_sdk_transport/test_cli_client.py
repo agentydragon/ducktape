@@ -98,8 +98,9 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
     await cli.aclose()
 
 
-async def test_an_abort_can_drop_the_prompts_queued_behind_the_turn() -> None:
-    """A bare `interrupt` cancels the running turn and the CLI starts the next queued prompt."""
+async def test_an_abort_also_drops_the_prompts_queued_behind_the_turn() -> None:
+    """A bare `interrupt` cancels the running turn and the CLI starts the next queued prompt,
+    which is not what an operator saying "stop" means."""
     channel = ScriptedChannel()
     cli = ClaudeCli(channel, control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
@@ -107,7 +108,7 @@ async def test_an_abort_can_drop_the_prompts_queued_behind_the_turn() -> None:
     channel.deliver(_answer(channel.written[0]))
     await connecting
 
-    aborting = asyncio.create_task(cli.interrupt(cancel_queued=True))
+    aborting = asyncio.create_task(cli.interrupt())
     await asyncio.sleep(0)
     channel.deliver(_answer(channel.written[-1]))
     await aborting
