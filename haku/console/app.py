@@ -280,9 +280,6 @@ def create_app(
                 matrix_config,
                 claude_runtime,
                 SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
-                matrix_sync_service.recent_history,
-                matrix_sync_service.announce,
-                matrix_sync_service.reply,
                 matrix_sync_service,
             )
 

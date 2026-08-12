@@ -62,19 +62,25 @@ PROVISION_BACKOFF = datetime.timedelta(seconds=60)
 Announce = Callable[[str], Awaitable[None]]
 
 
-# Reads the tail of the live room's conversation, newest `limit` messages, oldest first.
-# Supplied by the sync service for the same reason `Announce` is: it holds the credential.
-RecentHistory = Callable[[int], Awaitable[Sequence[InboundMessage]]]
+class RoomChannel(Protocol):
+    """Everything `MatrixSurface` needs said to, or read from, the live room.
 
+    One port rather than the four separate dependencies this used to take — a history callable,
+    an announce callable, a reply callable, and a status object — all of which were bound to the
+    same sync service at composition. The callables were narrow because the *supervisor* must
+    never hold a Matrix credential (`Announce` above, still one function for exactly that
+    reason); passing three of them plus the whole service to one collaborator bought nothing and
+    hid that they were one thing.
 
-class StatusLine(Protocol):
-    """The room's single in-turn status message.
-
-    Implemented by the sync loop, which is the only holder of a Matrix credential — so the
-    same reason `Announce` is a callable from there rather than a client of its own. A
-    protocol rather than two more callables because the two verbs share a piece of state,
-    the id of the live line, and splitting them would put it on the caller.
+    Implemented by the sync loop, the only holder of the credential and the only object that
+    knows which room is bound.
     """
+
+    async def recent_history(self, limit: int) -> Sequence[InboundMessage]: ...
+
+    async def announce(self, body: str) -> None: ...
+
+    async def reply(self, body: str) -> None: ...
 
     async def show_status(self, body: str) -> None: ...
 
@@ -202,28 +208,18 @@ class MatrixSurface:
     the source (R3.3a) — it is also what Rai sees, so what the prompt claims was said and
     what the room shows cannot disagree.
 
-    The `announce`/`reply` callables come from the sync service, which holds the only Matrix
-    credential and services one room (R3.6a) — so `room_id` names the room they already speak
-    to rather than choosing between rooms.
+    The `RoomChannel` is the sync service, which holds the only Matrix credential and services
+    one room (R3.6a) — so `room_id` names the room it already speaks to rather than choosing
+    between rooms.
     """
 
     def __init__(
-        self,
-        config: MatrixConfig,
-        runtime: ClaudeRuntimeConfig,
-        template: SystemPromptTemplate,
-        history: RecentHistory,
-        announce: Announce,
-        reply: Announce,
-        status: StatusLine,
+        self, config: MatrixConfig, runtime: ClaudeRuntimeConfig, template: SystemPromptTemplate, room: RoomChannel
     ):
         self._config = config
         self._runtime = runtime
         self._template = template
-        self._history = history
-        self._announce = announce
-        self._reply = reply
-        self._status = status
+        self._room = room
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return self._template.render(
@@ -242,22 +238,22 @@ class MatrixSurface:
         if not (body := text.strip()):
             logger.warning("Matrix: a turn finished with no text to send")
             return
-        await self._reply(body)
+        await self._room.reply(body)
 
     async def report(self, room_id: str, detail: str) -> None:
         """Narrate the sandbox's setup into the room (R7.1)."""
         del room_id
-        await self._announce(detail)
+        await self._room.announce(detail)
 
     async def show_status(self, room_id: str, text: str) -> None:
         """Say what the turn is doing now, on the room's one status line (R6.2)."""
         del room_id
-        await self._status.show_status(text)
+        await self._room.show_status(text)
 
     async def clear_status(self, room_id: str) -> None:
         """Retire that line once the turn is over, however it ended (R6.5)."""
         del room_id
-        await self._status.clear_status()
+        await self._room.clear_status()
 
     async def _recent(self) -> list[HistoryMessage]:
         """The tail of the conversation, or none of it if the homeserver would not say.
@@ -268,7 +264,7 @@ class MatrixSurface:
         goes quiet. Loud, though — this is a homeserver problem and should be visible.
         """
         try:
-            messages = await self._history(RE_AWAKENING_MESSAGES)
+            messages = await self._room.recent_history(RE_AWAKENING_MESSAGES)
         except Exception:
             logger.exception("Matrix: could not read room history; starting the session without it")
             return []
