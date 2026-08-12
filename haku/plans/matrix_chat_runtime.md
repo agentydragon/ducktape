@@ -15,7 +15,7 @@ plugs into. That runtime is not re-specified here.
 
 ## Why
 
-The operator chat surface today is `haku/console/claude_chat.py` (~1000 lines: sessions,
+The operator chat surface today is `haku/console/x/claude_chat.py` (~1100 lines: sessions,
 message rows, WebSocket streaming, sandbox claims, reconciliation) plus
 `console/frontend/claude_chat_page.tsx` and the markdown / scroll / code-block modules
 around it. Routing chat through Matrix buys an existing client ecosystem instead: mobile
@@ -662,63 +662,73 @@ Two consequences later phases should budget for, both documented where the code 
 `NOTIFY` rather than process memory, and renaming a wake channel is a two-release
 expand/contract gated on the roll having converged — not a single merge.
 
-### Phase 2 — Be Haku
+### Phase 2 — Be Haku — **done, except the Stop hook**
 
-**The operator's actual minimum for using this**, which is not survival — it is being able
-to do real work in one session. Ahead of Phase 3 because a session that survives for days
-without an identity, its state, or a guard against losing work is not worth surviving.
+Proven live on 2026-08-12: a message in Element reaches a session that answers as Haku, with
+its manual checked out beside it.
 
-1. **The session starts as Haku.** Today it does not start as anything: `setting_sources=[]`
-   and no `system_prompt`, so the agent receives the raw batch and nothing else. That is why
-   the first live turn answered as a generic assistant. It needs its identity, its room and
-   session ID (R7.3), the harness contract (R8.1–R8.5), the recent conversational messages
-   (R3.3a), and the standing instructions. **Where those instructions live is settled**: the
-   manual moved wholesale to haku-state's root cards, so the clone the sandbox already makes
-   is enough and no second repo or credential path is needed. What ducktape kept is
-   `agent_shared.yaml` — model and tool grants — because that is the part a Haku-writable
-   repo must not hold; <../base/README.md> records the outcome, and
-   <../archive/2026_08_instructions_ownership.md> the proposal it overtook. The non-negotiable
-   facts ride in the system prompt, which is the one surface the agent cannot edit at all.
+- **The session starts as Haku** — #3954. A Jinja2 template rendered by the console
+  (`haku/console/x/system_prompt.py`, `cluster/k8s/haku/console/matrix_system_prompt.md.j2`)
+  carries identity, room and session ID (R7.3), the harness contract (R8.1–R8.5), and the
+  recent conversational messages (R3.3a). It is **deploy config, not code and not
+  haku-state**: a system prompt is the one instruction surface the agent cannot edit at all,
+  so the facts whose whole value is that Haku did not choose them belong there. Appended to
+  the `claude_code` preset rather than replacing it, so the built-ins keep working.
+- **Where the standing instructions live is settled** — the manual moved wholesale to
+  haku-state's root cards (#3951), so the clone below is enough and no second repo or
+  credential path is needed. What ducktape kept is `agent_shared.yaml`, model and tool
+  grants, because that is the part a Haku-writable repo must not hold. <../base/README.md>
+  records the outcome and <../archive/2026_08_instructions_ownership.md> the proposal it
+  overtook.
+- **haku-state is cloned into the sandbox** — #3953 put git and CA certificates in the runner
+  image; #3957 gave the sandbox the same bootstrap the haku sandbox already runs (`.netrc`,
+  kubeconfig, checkouts) plus the ServiceAccount, RBAC subject and apiserver egress that make
+  kubectl work there. Both open questions closed by building it: the clone happens **at
+  session start in the runner**, not at provisioning, because the socket has to be open for
+  the console to narrate it; and the credential is Haku's existing Forgejo token, wired
+  rather than minted.
+- **The room is told what is happening before Claude exists** — #3955 gave the bridge an
+  envelope, so a frame that is neither the SDK's conversation nor a transport control op has
+  somewhere to live; #3959 streams the bootstrap's stdout through it into the room.
+- **Decided by shipping rather than by argument: the sandbox has git, so the "MCP-only tool
+  surface" line in <agent_sdk_sandbox_runtime.md> is not what runs.** No `disallowed_tools`
+  is set, so the built-ins were always live and the clone only made it explicit. That
+  document is the one to correct; this one is not the place to re-litigate it.
 
-2. **haku-state is cloned into the sandbox.** `cwd` is `/workspace` and it is empty; Haku
-   confirmed as much when asked. **No new credential is needed** — Haku's Forgejo token
-   already exists, produced by the GitOps controller as root `AGENTS.md` requires, and the
-   creds proxy already substitutes placeholders per host (`claude-iron.yaml`'s `proxy_value`
-   plus host rules; the OpenClaw spike does this for a GitHub token alongside the Anthropic
-   one). So this is wiring an existing credential, not minting one. **Open:** clone at
-   provisioning (SandboxTemplate) or at session start (the runner). **Wrinkle:** the
-   substitutions in place today inject a bearer, while git-over-HTTPS authenticates with
-   `Authorization: Basic` or a credential helper — so the rule is not a copy of the
-   Anthropic one, and `git.allegedly.works` also has to be in the egress allowlist. **Also flagged:** this
-   needs git in the sandbox, which contradicts the "MCP-only tool surface" decision in
-   <agent_sdk_sandbox_runtime.md>. That decision is already not what ships — no
-   `disallowed_tools` is set, so the built-ins are live — so it wants revisiting explicitly
-   rather than being quietly outgrown.
-
-3. **A Stop hook against unpushed work in haku-state**, in the shape the ducktape agent
-   sandboxes already use. **The gap:** SDK hooks are in-process in the _console_, and the
-   console's service account deliberately has no `exec` into `haku-claude-sandbox` — so the
-   hook cannot inspect the sandbox's git state itself. Two ways out: widen the console's SA,
-   which moves a boundary that was drawn on purpose; or route the check through
-   `haku-sandbox-mcp`, which already has that capability and is already in the console's
-   catalog. Prefer the second — the console keeps its narrow authority and nothing new is
-   granted. **Open:** whether that call goes through the approval queue or executes directly
-   as console-internal work.
+**Remaining: a Stop hook against unpushed work in haku-state**, in the shape the ducktape
+agent sandboxes already use. **The gap:** SDK hooks are in-process in the _console_, and the
+console's service account deliberately has no `exec` into `haku-claude-sandbox` — so the hook
+cannot inspect the sandbox's git state itself. Prefer routing the check through
+`haku-sandbox-mcp`, which already has that capability and is already in the console's
+catalog, over widening the console's SA and moving a boundary drawn on purpose. **Wrinkle
+found since:** that server's Role is bound in `haku-sandbox`, not `haku-claude-sandbox`, so
+the capability is not simply there for the asking. **Open:** whether the call goes through
+the approval queue or executes directly as console-internal work.
 
 ### Phase 3 — Survive
 
-Always-up sandbox (R3.2) — but the ordering inside this phase is decided by which reaper
-binds. `session_ttl_seconds` (7200 in the deployed config) is the one that fires today; the
-Kyverno janitor at 24h (R3.2b) is the one that fires next and is the real ceiling. **Do the
-janitor first**: raising the TTL without it buys 22 hours and leaves rotation daily, whereas
-moving the fence from age to lease (R3.2a) is what makes "always up" mean anything. The
-order is then janitor fence → `patch` on the console's Role → renewal in the supervisor →
-drop `session_ttl_seconds`, and only the last of those is a config value.
+Partly landed, and from the opposite direction to the one planned. **A session no longer
+wedges when the replica running it dies** — #3971 gave every live session a lease its holder
+renews, #3974 backfilled the rows that predated the column, #3975 made it required. Any
+replica can now observe that a holder stopped renewing, which is what the previous design
+could not do: every observer was the process that had gone away. `handle_runner` also records
+cancellation instead of dying silently, since `CancelledError` is a `BaseException` and had
+been escaping both handlers on every pod termination.
 
-Reconnect rather than terminal failure: `handle_runner`
-today calls `store.fail()` on `WebSocketDisconnect` and closes the session, which is
-precisely wrong once the sandbox is meant to outlive a connection (R3.4). Then `event_id`
-dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
+That is **reclamation, not survival**: the session is failed and replaced, so the room
+recovers rather than going quiet. It is the floor this phase builds on, not the goal.
+
+Still Phase 3:
+
+- **Always-up sandbox** (R3.2). Ordering unchanged, and decided by which reaper binds:
+  janitor fence (R3.2b) → `patch` on the console's Role → renewal in the supervisor → drop
+  `session_ttl_seconds`. Only the last is a config value.
+- **Re-adoption rather than replacement** (R3.4). `bridge_websocket_to_claude` still kills the
+  CLI when the socket closes, so a console roll ends the conversation even though the sandbox
+  outlives it. <session_readoption.md> records the SDK/CLI protocol this needs, what the
+  runner and console each have to change, and the property of this deployment that makes it
+  tractable — no inbound control traffic to strand.
+- `event_id` dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
 
 ### Phase 4 — Make it pleasant
 
