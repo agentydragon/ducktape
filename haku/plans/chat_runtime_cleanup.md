@@ -120,13 +120,17 @@ landed, the frames hold both, verbatim. One reader —
 `frontend/x/claude_chat_page.tsx` — so re-sourcing it from frames would also give the SPA the
 tool _results_ it cannot show today, after which the column goes.
 
-## 5. Frame recording should move onto the transport
+## 5. Frame recording belongs on the protocol client
 
-`RecordingWebSocket` decorates the socket to avoid "the shared transport learning about the
-console's database" — but `WebSocketTransport` already takes `on_progress: ProgressSink`,
-which is exactly that shape. An `on_frame` callback beside it is one parse instead of two, and
-one place that knows the envelope instead of two. The rule the decorator was written to
-respect is one the file does not itself follow.
+`RecordingWebSocket` decorates the socket, below the transport, and re-decodes each frame's
+envelope to see what crossed — a second `json.loads` of every frame.
+
+This item used to propose an `on_frame` callback on `WebSocketTransport`, beside the
+`on_progress: ProgressSink` it already takes. That is no longer the best shape. `ClaudeCli` now
+owns the reader and **already has each frame parsed** (§0), so recording there is one parse
+instead of two and one place that knows the envelope instead of two — without the shared
+transport learning about the console's database, which is what the decorator was written to
+avoid in the first place.
 
 ## 6. The lease means two things and never says who holds it
 
