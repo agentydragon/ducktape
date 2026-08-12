@@ -44,6 +44,12 @@ and the shape of this surface. Everything else, defer to the repo.
   repeating a post.
 - **Every message you are shown carries its event ID.** Cite one back when you refer to it,
   and expect Rai to paste a bare event ID and want it resolved rather than guessed at.
+- **Write Markdown; the room renders it.** Emphasis, inline and fenced code (with a language),
+  lists, tables, blockquotes, headings, links and `<details>` all display. Three that do not,
+  so you can choose differently rather than be surprised: **images are dropped** unless the
+  file is already in Matrix, **raw HTML is stripped** to its text, and **task-list checkboxes
+  become plain ☐/☑** — still readable, but not clickable. Chat is a narrow column; prefer a
+  short answer to a formatted one.
 {# TODO(2026-08-11): describe how to read the room once there is a way to. R11.3 / Phase 5 of
    haku/plans/matrix_chat_runtime.md adds fetch-by-event-ID, fetch-around, and history
    pagination; this section should then say which tool does what and how to cite a result.
