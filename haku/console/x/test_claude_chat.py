@@ -527,6 +527,54 @@ async def _noop() -> None:
     pass
 
 
+async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_store, operator_id) -> None:
+    """Keyset, not offset: the log is append-only, so new frames landing between pages would
+    make an offset skip or repeat a row."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    for kind in ("user", "assistant", "result"):
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, {"type": kind})
+
+    first = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=2, kinds=None)
+    rest = await chat_store.read_frames(str(session.session_id), after_seq=first[-1].frame_seq, limit=2, kinds=None)
+
+    assert [frame.kind for frame in first] == ["user", "assistant"]
+    assert [frame.kind for frame in rest] == ["result"]
+
+
+async def test_the_kinds_filter_skims_without_paging_through_everything(chat_store, operator_id) -> None:
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    for kind in ("user", "system", "assistant", "system", "result"):
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, {"type": kind})
+
+    frames = await chat_store.read_frames(
+        str(session.session_id), after_seq=None, limit=25, kinds=["assistant", "result"]
+    )
+
+    assert [frame.kind for frame in frames] == ["assistant", "result"]
+
+
+async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
+    mine, _ = await chat_store.create(operator_id, SpaSession())
+    theirs, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, {"type": "assistant"})
+    await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, {"type": "result"})
+
+    frames = await chat_store.read_frames(str(mine.session_id), after_seq=None, limit=25, kinds=None)
+
+    assert [frame.kind for frame in frames] == ["assistant"]
+
+
+async def test_conversations_come_back_newest_first_with_the_room_they_served(chat_store, operator_id) -> None:
+    await chat_store.create(operator_id, SpaSession())
+    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+
+    conversations = await chat_store.list_conversations(limit=10)
+
+    assert conversations[0].session_id == str(matrix.session_id)
+    assert conversations[0].room_id == "!room:example.org"
+    assert conversations[1].room_id is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
 

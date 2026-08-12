@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import haku.console.tools.conversations as conversations_tools
 import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
@@ -40,11 +41,16 @@ class InProcessServerDependencies:
     """Runtime collaborators for the in-process servers.
 
     gmail/google_calendar need none (built per call from the acting Operator's token); routine is
-    registered only when its launcher is configured; hostexec only when its config is set.
+    registered only when its launcher is configured; hostexec only when its config is set; the
+    conversations reader only when the Claude runtime is.
     """
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
     hostexec: HostexecServerConfig | None = None
+    # The chat runtime's rollout store, satisfying `conversations_tools.RolloutReader`
+    # structurally — set only when the Claude runtime is configured, since without it there are
+    # no sessions to read.
+    rollout: conversations_tools.RolloutReader | None = None
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
@@ -65,6 +71,10 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
     if dependencies.routine_launcher is not None:
         servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = const_in_process_server(
             routine_tools.build_mcp(dependencies.routine_launcher)
+        )
+    if dependencies.rollout is not None:
+        servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = const_in_process_server(
+            conversations_tools.build_mcp(dependencies.rollout)
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}

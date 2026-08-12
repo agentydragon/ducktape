@@ -10,7 +10,7 @@ import json
 import logging
 import secrets
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -40,6 +40,7 @@ from haku.console.chat_models import (
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
+from haku.console.tools.conversations import Conversation, RolloutFrame
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
@@ -525,6 +526,54 @@ class ClaudeChatStore:
                     updated_at=now,
                 )
             )
+
+    async def list_conversations(self, *, limit: int) -> list[Conversation]:
+        """Past sessions, newest first, for the `haku_conversations` read tools.
+
+        Unscoped by R5.3a: every session, whichever room it served.
+        """
+        async with self._sessions() as db:
+            rows = (
+                await db.scalars(select(ClaudeChatSession).order_by(ClaudeChatSession.created_at.desc()).limit(limit))
+            ).all()
+        return [
+            Conversation(
+                session_id=str(row.session_id),
+                surface=row.surface,
+                room_id=row.room_id,
+                status=row.status,
+                created_at=row.created_at,
+                error=row.error,
+            )
+            for row in rows
+        ]
+
+    async def read_frames(
+        self, session_id: str, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
+    ) -> list[RolloutFrame]:
+        """One page of a session's rollout, in wire order.
+
+        Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
+        cannot skip or repeat a row the way an offset would once new frames land between pages.
+        """
+        query = select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == UUID(session_id))
+        if after_seq is not None:
+            query = query.where(ClaudeChatFrame.frame_seq > after_seq)
+        if kinds:
+            query = query.where(ClaudeChatFrame.kind.in_(kinds))
+        async with self._sessions() as db:
+            rows = (await db.scalars(query.order_by(ClaudeChatFrame.frame_seq).limit(limit))).all()
+        return [
+            RolloutFrame(
+                frame_seq=row.frame_seq,
+                direction=row.direction,
+                kind=row.kind,
+                created_at=row.created_at,
+                payload=row.payload,
+                partial=row.partial,
+            )
+            for row in rows
+        ]
 
     async def update_partial_frame(self, session_id: UUID, text: str) -> None:
         """Record the assistant message streaming right now, replacing any earlier state of it.

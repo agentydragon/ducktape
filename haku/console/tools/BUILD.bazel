@@ -73,6 +73,28 @@ py_library(
 )
 
 py_library(
+    name = "conversations",
+    srcs = ["conversations.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_conversations",
+    srcs = ["test_conversations.py"],
+    deps = [
+        ":conversations",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "routine",
     srcs = ["routine.py"],
     visibility = ["//haku/console:__subpackages__"],

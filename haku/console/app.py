@@ -366,7 +366,13 @@ def create_app(
                 broker=node_daemon_service,
             )
         in_process_servers = build_in_process_servers(
-            InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
+            InProcessServerDependencies(
+                routine_launcher=routine_launcher,
+                hostexec=hostexec_server,
+                # Only when the Claude runtime is configured: without it nothing writes sessions,
+                # so the read tools would reflect an always-empty corpus.
+                rollout=claude_chat_store if claude_runtime is not None else None,
+            )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
     # The console's one path out to its configured MCP servers. Executing a tool and reflecting a

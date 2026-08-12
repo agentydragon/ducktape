@@ -932,7 +932,7 @@ transcript with every tool result missing (R5.5):
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
-4. **`list_conversations` / `read_rollout`** (R11.3a). A **drilldown, not a dump** — find the
+4. **`list_conversations` / `read_rollout`** (R11.3a) — **built**. A **drilldown, not a dump** — find the
    conversation, skim it, read the part that matters — so no tool can return a whole session's
    rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
 
@@ -947,6 +947,13 @@ limit, kinds)` pages `claude_chat_frames` by its `frame_seq`, and skimming is a 
    belonged to. Turns still get a table (<chat_runtime_cleanup.md> §1) — for the abort race, for
    cost and usage, for re-adoption — and a `read_turn` can be added over that later as a range
    query. It is not a prerequisite for reading.
+
+   Hosted as an in-process MCP server on the console's existing `/mcp` (`haku_conversations`),
+   the same pattern as `gmail` and `haku_routine`: credential-free, since the corpus is the
+   console's own database, and both tools in the Haku agent's unconditional auto-approval set
+   so a read is a pass-through rather than an approval prompt. `sdkMcpServers` would have
+   worked and was the other candidate; `/mcp` reuses the audit ledger and the policy that
+   already governs every other read tool.
 
 **Search is deliberately not in this phase.** When it comes back it is embeddings over the
 same frame rows, which is why the frames are the granularity to store.
