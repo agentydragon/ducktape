@@ -590,13 +590,16 @@ class ClaudeChatStore:
         Set-based and idempotent, in the shape `node_daemons._expire` already uses: any replica
         may run it, concurrent runners converge, and a session whose owner is merely slow gets
         its lease back on the next renewal well before the TTL.
+
+        No null check: the column is required (0029), so "has no lease" is unrepresentable
+        rather than a case to filter for. It used to be both representable and invisible here,
+        which is how a session predating the column stayed wedged after the lease shipped.
         """
         async with self._sessions.begin() as db:
             expired = (
                 await db.scalars(
                     select(ClaudeChatSession.session_id).where(
                         ClaudeChatSession.status.in_(LIVE_SESSION_STATUSES),
-                        ClaudeChatSession.lease_expires_at.is_not(None),
                         ClaudeChatSession.lease_expires_at <= datetime.now(UTC),
                     )
                 )

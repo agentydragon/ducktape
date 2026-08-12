@@ -848,9 +848,9 @@ class ClaudeChatSession(Base):
     # Renewed by whichever replica currently holds this session's runner websocket. A live
     # status is otherwise only ever corrected in-process, so a replica that dies mid-turn
     # leaves the row claiming a turn is in flight forever; the lease is what lets any other
-    # replica notice. NULL means unheld — a session written by a pre-lease replica, or one
-    # whose owner has not renewed yet.
-    lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # replica notice. Required, because a live session without one is unreclaimable: the sweep
+    # looks for a lease that has passed, and an absent lease never does.
+    lease_expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -863,7 +863,7 @@ class ClaudeChatSession(Base):
         Index(
             "idx_claude_chat_sessions_expired_lease",
             "lease_expires_at",
-            postgresql_where=text("lease_expires_at IS NOT NULL AND status IN ('provisioning','ready','responding')"),
+            postgresql_where=text("status IN ('provisioning','ready','responding')"),
         ),
     )
 
