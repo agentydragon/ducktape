@@ -32,6 +32,8 @@ from nio.responses import (
     WhoamiResponse,
 )
 
+from haku.console.x.matrix_markdown import to_formatted_body
+
 logger = logging.getLogger(__name__)
 
 # Long-poll ceiling. Synapse returns as soon as anything arrives, so this only bounds how
@@ -181,12 +183,15 @@ class MatrixClient:
         return tuple(recent)
 
     async def send_text(self, token: str, room_id: str, body: str, txn_id: str) -> str:
-        """Send a plain-text message, returning its event ID.
+        """Send Haku's reply, rendering its Markdown for clients that display HTML.
+
+        `body` stays the Markdown source: it is the spec's fallback for clients that show no
+        formatting, and it is what a plain-text reader should see (R11.7).
 
         `txn_id` makes the send idempotent: a retry with the same value is deduplicated by
         the homeserver rather than posting twice.
         """
-        return await self._send(token, room_id, "m.text", body, txn_id)
+        return await self._send(token, room_id, "m.text", body, txn_id, formatted=to_formatted_body(body))
 
     async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
         """Send an `m.notice`, returning its event ID.
@@ -196,12 +201,15 @@ class MatrixClient:
         """
         return await self._send(token, room_id, "m.notice", body, txn_id)
 
-    async def _send(self, token: str, room_id: str, msgtype: str, body: str, txn_id: str) -> str:
+    async def _send(
+        self, token: str, room_id: str, msgtype: str, body: str, txn_id: str, formatted: str | None = None
+    ) -> str:
         self._client.access_token = token
+        content: dict[str, str] = {"msgtype": msgtype, "body": body}
+        if formatted is not None:
+            content |= {"format": "org.matrix.custom.html", "formatted_body": formatted}
         response = _unwrap(
-            await self._client.room_send(
-                room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}, tx_id=txn_id
-            ),
+            await self._client.room_send(room_id, message_type="m.room.message", content=content, tx_id=txn_id),
             RoomSendResponse,
         )
         return response.event_id
