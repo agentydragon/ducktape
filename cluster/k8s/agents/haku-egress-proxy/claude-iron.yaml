@@ -25,6 +25,19 @@ transforms:
             match_headers: ["Authorization"]
           rules:
             - host: "api.anthropic.com"
+        - source:
+            type: env
+            var: GITHUB_TOKEN
+          replace:
+            # The placeholder may appear as a Bearer token for API requests or
+            # inside base64 Basic auth for Git over HTTPS — the same rule the OpenClaw
+            # spike already runs, where both shapes are exercised.
+            proxy_value: "proxy-haku-claude-github-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "api.github.com"
+            - host: "github.com"
+            - host: "codeload.github.com"
 
 log:
   level: "info"

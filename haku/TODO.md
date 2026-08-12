@@ -296,3 +296,14 @@ the runtimes differ in where the sandbox runs — see
   per-run token/$ accounting (e.g. from LiteLLM/Langfuse), a real estimate of model
   cost (e.g. Opus 4.8 per-token), and a defensible mapping from "agent effort" to
   "value of the operator's time" so Haku can decide research depth on more than a vibe.
+- **Narrow the sandbox's GitHub grant, and make it steerable at runtime** — the Claude
+  sandbox now reaches GitHub as `agentydragon-agent`, and that grant is all-or-nothing: the
+  egress proxy substitutes the PAT for any request to `github.com` / `api.github.com` /
+  `codeload.github.com`, so every repo the account can touch is in scope for the whole
+  session. Two wants, roughly independent. **Per-repo scoping:** the proxy already sees the
+  request path, so a rule could allow `agentydragon/ducktape` and refuse the rest — the
+  cheaper half, and it turns a standing grant into a reviewable list. A GitHub App
+  installation token scoped to selected repositories would enforce it at the far end instead,
+  which is stronger and more work. **Runtime control:** being able to widen or revoke what
+  the proxy permits mid-session, rather than only by editing a manifest and rolling the pod —
+  the same shape as the approval queue, applied to egress rather than to tool calls.

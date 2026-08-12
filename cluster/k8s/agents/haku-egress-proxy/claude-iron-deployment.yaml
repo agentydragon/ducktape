@@ -41,6 +41,11 @@ spec:
                 secretKeyRef:
                   name: haku-claude-oauth-token
                   key: CLAUDE_CODE_OAUTH_TOKEN
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-claude-github-token
+                  key: GITHUB_TOKEN
           ports:
             - name: proxy
               containerPort: 8180

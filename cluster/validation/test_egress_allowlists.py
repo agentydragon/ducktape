@@ -142,18 +142,26 @@ def hosts(*names: str) -> frozenset[str]:
     return frozenset(names)
 
 
-# The shared build-registry bucket: public package, source and toolchain
-# registries. Every fence that builds code carries the whole set — see
-# `test_build_registries_are_all_or_none`. They share one trust level (public,
-# read-only, credential-gated to publish to), so splitting them into nine groups
-# bought a precision nobody used while letting the fences quietly drift apart.
-BUILD_REGISTRIES = hosts(
-    # Source and release artifacts
+# GitHub's source and release-artifact hosts. Split out of the build bucket because
+# "reads source, builds nothing" is a real posture — the Claude runner pool holds these
+# and no package registry — and that is a decision rather than the drift the all-or-none
+# rule exists to catch. Still one trust level internally, so it is all-or-none in its own
+# right. Anonymous these are read-only; a fence that also substitutes a credential for
+# them (see haku-claude) turns them into a push surface.
+GITHUB_GIT = hosts(
     "github.com",
     "codeload.github.com",
     "objects.githubusercontent.com",
     "raw.githubusercontent.com",
     "release-assets.githubusercontent.com",
+)
+
+# The shared build-registry bucket: public package, source and toolchain
+# registries. Every fence that builds code carries the whole set — see
+# `test_build_registries_are_all_or_none`. They share one trust level (public,
+# read-only, credential-gated to publish to), so splitting them into nine groups
+# bought a precision nobody used while letting the fences quietly drift apart.
+BUILD_REGISTRIES = GITHUB_GIT | hosts(
     "ftp.gnu.org",
     # Language package registries and toolchains
     "pypi.org",
@@ -249,6 +257,7 @@ class Unconfined:
 # themselves, so the assertion and the entry cannot drift apart.
 OPERATOR_DATA_FENCE = "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml"
 GITHUB_API_FENCE = "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml"
+HAKU_CLAUDE_FENCE = "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml"
 HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
 
 # Keyed by manifest path: the file is the fence's only real identifier, so there
@@ -269,11 +278,13 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
         | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
         dns_manifest="agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
     ),
-    # The console-owned Claude runner pool (`haku-claude-sandbox`). Deliberately
-    # the tightest fence in the cluster — one host, no registries, because it
-    # builds nothing. Widening it is a security change. It reaches nothing
-    # in-cluster either, hence no cluster DNS.
-    "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml": Confined(allows=ANTHROPIC, resolves_also=frozenset()),
+    # The console-owned Claude runner pool (`haku-claude-sandbox`). Still among the
+    # tightest fences in the cluster — no registries, because it builds nothing — but no
+    # longer one host: it reaches GitHub as `agentydragon-agent`, with the PAT substituted
+    # at the proxy so the sandbox never holds it. That is a write grant to every repo the
+    # account can touch; narrowing it to named repos is tracked in `haku/TODO.md`.
+    # It reaches nothing in-cluster, hence no cluster DNS.
+    HAKU_CLAUDE_FENCE: Confined(allows=ANTHROPIC | GITHUB_API | GITHUB_GIT, resolves_also=frozenset()),
     # The `claude-sandbox` namespace, via the shared agents-mitmproxy.
     "agents/mitmproxy/cnp-cloud-api-egress.yaml": Confined(
         allows=BUILD_REGISTRIES
@@ -373,8 +384,11 @@ def test_build_registries_are_all_or_none() -> None:
     diverged before they were pinned.
     """
     for path, allowlist in ALLOWLISTS.items():
-        held = allowlist.allows & BUILD_REGISTRIES
-        assert held in (frozenset(), BUILD_REGISTRIES), path
+        # Per bucket: GITHUB_GIT is separable from the package registries (a fence may read
+        # source without building), but neither bucket may be held in part.
+        for bucket in (GITHUB_GIT, BUILD_REGISTRIES - GITHUB_GIT):
+            held = allowlist.allows & bucket
+            assert held in (frozenset(), bucket), path
 
 
 def test_operator_data_reaches_only_haku_sandbox() -> None:
@@ -392,7 +406,7 @@ def test_operator_data_reaches_only_haku_sandbox() -> None:
 def test_github_api_reaches_only_declared_holders() -> None:
     """`api.github.com` is a write surface, so every grant is named explicitly."""
     holders = {path for path, entry in ALLOWLISTS.items() if entry.allows & GITHUB_API}
-    assert holders == {GITHUB_API_FENCE, HAKU_OPENCLAW_FENCE}
+    assert holders == {GITHUB_API_FENCE, HAKU_OPENCLAW_FENCE, HAKU_CLAUDE_FENCE}
 
 
 if __name__ == "__main__":
