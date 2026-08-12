@@ -23,26 +23,40 @@ output could not be told apart from a frame missing from the wire.
 
 ## Answer (2026-08-12): **it folds, at a tool boundary**
 
-Run 2, first prompt spending its time in `Bash sleep 4` calls, steer written at 8.0s while the
-first sleep was running:
+Run 3, printing all traffic. First prompt spending its time in `Bash sleep 4` calls; steer
+written at 8.0s, while the step-1 sleep was running:
 
-    [  4.34s] assistant: tool_use(Bash {"command": "sleep 4"})
-    --- [  8.00s] writing the second prompt ---
-    [  9.69s] user: tool_result
-    [ 11.41s] assistant: text('PIVOT')
-    [ 11.45s] result   num_turns: 2
+    [  3.98s] << assistant       tool_use(Bash "sleep 4", "Sleep 4 seconds (step 1)")
+    [  7.18s] << system/task_started      task_id, tool_use_id, task_type: local_bash
+    [  8.00s] >> user            "Stop after the current step … reply with the word PIVOT."
+    [  8.32s] << system/task_notification status: completed
+    [  8.32s] << user            tool_result
+    [ 10.61s] << assistant       text('PIVOT')
+    [ 10.61s] << result/success  num_turns: 2, result: "PIVOT", terminal_reason: completed
 
-The agent never ran sleeps 2 through 5, and **there is no second `result`**: one turn answered
-both prompts. So a prompt written mid-turn is absorbed at the next step boundary and the model
-acts on it — which is exactly what R2.2a wants and what its design note says is impossible.
+Sleeps 2 through 5 never ran and **there is no second `result`**: one turn answered both
+prompts. A prompt written mid-turn is absorbed at the next step boundary and the model acts on
+it — exactly what R2.2a wants and what its design note says is impossible.
 
-Two qualifications, both load-bearing:
+Three things the full-traffic view added that a filtered one had hidden:
 
-- **The boundary is what makes it work** (see run 1 below). A turn generating continuous prose
-  has no step to absorb at, and the steer waits for the turn to end.
-- **No `command_lifecycle` frames appeared even here.** The folding is observable only by its
-  effect, not by the lifecycle events the bundled CLI's schema documents — so a harness cannot
-  currently tell "absorbed" from "queued" except by watching what the model does.
+- **`system/init` advertises `capabilities`:** `interrupt_receipt_v1`,
+  `interrupt_cancel_queued_v1`, **`msg_lifecycle_v1`**. So `command_lifecycle` is not missing,
+  it is **behind a capability nobody negotiated** — and the Python SDK's `initialize` request
+  sends hooks, agents and skills but no client capabilities at all, so there is currently no
+  way to ask for it. (In the CLI the emitter is installed conditionally on the input source's
+  type, so the gate may not be the capability alone.) Worth chasing before building anything
+  that needs to *confirm* a steer landed rather than infer it from behaviour.
+- **`interrupt_cancel_queued_v1` is a capability**, which means interrupt and queued messages
+  interact — relevant to our abort path, which today knows nothing about a prompt that may be
+  sitting in the CLI's queue.
+- **`system/task_started` / `task_notification` carry `tool_use_id`, a `task_type`, and a
+  human-readable `description`** ("Sleep 4 seconds (step 1)"). That is a ready-made "what is
+  Haku doing right now" signal for R6's status line, it is already in our frame store, and the
+  SDK's `Message` union has no variant for it — so the typed layer drops it.
+
+One qualification stands: **the boundary is what makes it work** (see run 1). A turn generating
+continuous prose has no step to absorb at, and there the steer waits for the turn to end.
 
 ## Run 1 (2026-08-12): inconclusive, and worth keeping as a lesson
 

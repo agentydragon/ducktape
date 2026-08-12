@@ -66,10 +66,28 @@ So `MatrixTurns.offer` can stop refusing batches during a turn (R2.2 becomes fol
 and "actually, skip the calendar part" reaches Haku while it is working.
 
 Three cautions. A turn with no tool call has no boundary to absorb at, so the fallback to
-next-turn delivery stays. **No `command_lifecycle` frames were emitted in either probe run**,
-so folding is observable only by its effect — a harness cannot read a queue state to confirm
-it. And the events the bundled CLI documents are `@internal`, so this wants the same
-version-pinning discipline as the FastMCP adapter.
+next-turn delivery stays. The events the bundled CLI documents are `@internal`, so this wants
+the same version-pinning discipline as the FastMCP adapter. And **folding is currently
+observable only by its effect**: no `command_lifecycle` frame was emitted in any probe run, so
+nothing acknowledges that a steer landed.
+
+That last one has a lead. `system/init` advertises
+`capabilities: [interrupt_receipt_v1, interrupt_cancel_queued_v1, msg_lifecycle_v1]`, which the
+console reads today for nothing — so the lifecycle events are behind a negotiation we never
+enter, and the Python SDK's `initialize` sends hooks, agents and skills but no client
+capabilities at all. Worth resolving before building anything that needs to confirm a steer
+rather than infer it. `interrupt_cancel_queued_v1` is on the same list and matters
+independently: interrupt and queued messages interact, and our abort path knows nothing about a
+prompt sitting in the CLI's queue.
+
+## 2a. `system/task_*` frames are a status line we already store and ignore
+
+The same run showed `system/task_started` and `system/task_notification` carrying
+`tool_use_id`, a `task_type`, and a human-readable `description` — "Sleep 4 seconds (step 1)".
+That is R6's "what is Haku doing right now" without inventing anything: the frames are already
+in `claude_chat_frames`, and the SDK's `Message` union has no variant for them, so the typed
+layer drops them and only the raw store has them. Today the room's only progress signal is the
+sandbox bootstrap's stdout, which stops the moment the session starts working.
 
 Folding is also what makes §1's `turn_prompt` many-to-one rather than a column.
 
