@@ -51,31 +51,27 @@ discarded; and re-adoption gets a durable handle for the in-flight exchange
 (<session_readoption.md> wants to route an adopted turn "by session", which is the wrong key
 when a session can outlive many turns).
 
-## 2. Mid-turn steering is available and we are not using it
+## 2. Mid-turn steering works and we are not using it
 
-<matrix_chat_runtime.md> R2.2a defers mid-turn delivery as having "no native mechanism". The
-bundled CLI says otherwise:
+Measured, not inferred (<../debug/mid_turn_steering_probe.py>, 2026-08-12): a prompt written
+to the CLI while a turn is running is **absorbed at the next tool boundary**, the model acts
+on it, and one `result` frame covers both prompts. <matrix_chat_runtime.md> R2.2a defers this
+as having "no native mechanism"; that is now corrected there.
 
-- Its `command_lifecycle` schema describes a command "folded into an already-in-flight turn",
-  distinguishing it from one that starts a fresh turn by where `completed` lands relative to
-  the `result` frame — and says these are emitted "on the stdout stream in **-p/SDK
-  sessions**".
-- The query engine has a `messageQueue` with a code path logging `abort during mid-turn
-absorption`.
-- A companion event, `interruptible_tool_in_progress`, exists so a surface can decide whether
-  a fresh submit should "interrupt the current turn (vs. queue)".
-- `ClaudeSDKClient.query()` is a bare `transport.write()` with no interlock, so nothing on our
-  side prevents a second prompt either. What prevents it is the shape of our loop:
-  `receive_response()` reads to `ResultMessage` before looking for the next prompt.
+Nothing on our side was preventing it either — `ClaudeSDKClient.query()` is a bare
+`transport.write()` with no interlock. What prevents it is the shape of our loop:
+`receive_response()` drains to `ResultMessage` before looking for the next prompt.
 
-<../debug/mid_turn_steering_probe.py> settles it by running it; it needs a real credential, so
-it runs in a sandbox pod rather than under Bazel. If it holds, `MatrixTurns.offer` stops
-refusing batches during a turn, R2.2's hold-until-turn-end becomes fold-into-turn, and
-"actually, skip the calendar part" reaches Haku while it is working.
+So `MatrixTurns.offer` can stop refusing batches during a turn (R2.2 becomes fold-into-turn)
+and "actually, skip the calendar part" reaches Haku while it is working.
 
-Two cautions. The events are marked `@internal`, so this wants the same version-pinning
-discipline as the FastMCP adapter. And folding is what makes §1's `turn_prompt` many-to-one
-rather than a column.
+Three cautions. A turn with no tool call has no boundary to absorb at, so the fallback to
+next-turn delivery stays. **No `command_lifecycle` frames were emitted in either probe run**,
+so folding is observable only by its effect — a harness cannot read a queue state to confirm
+it. And the events the bundled CLI documents are `@internal`, so this wants the same
+version-pinning discipline as the FastMCP adapter.
+
+Folding is also what makes §1's `turn_prompt` many-to-one rather than a column.
 
 ## 3. The user message row is a queue _and_ a transcript
 

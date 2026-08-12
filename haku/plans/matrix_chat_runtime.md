@@ -118,13 +118,24 @@ a handoff to another pod. How the gap is actually closed lives in
   together produce one turn, not three.
 - **R2.2 [v1]** Messages arriving while a turn is in flight are held and delivered as the
   next turn's prompt. Turns are serialized.
-- **R2.2a [later] Mid-turn delivery.** The intent is for a batch to reach the agent at the
-  earliest point at which delivery is valid, **including inside a running turn** — an
-  operator who adds "actually, skip the calendar part" while Haku is working should not
-  have to wait out the turn. When built, mid-turn delivery must be distinguishable from the
-  batch that started the turn, and must fall back to next-turn delivery when no boundary
-  occurs. Deferred for want of a mechanism — **which the CLI now appears to have**; see the
-  design note below, which is being re-tested rather than trusted.
+- **R2.2a [buildable] Mid-turn delivery.** A batch reaches the agent at the earliest point at
+  which delivery is valid, **including inside a running turn** — an operator who adds
+  "actually, skip the calendar part" while Haku is working should not have to wait out the
+  turn. Mid-turn delivery must be distinguishable from the batch that started the turn, and
+  must fall back to next-turn delivery when no boundary occurs.
+
+  **The mechanism exists and was measured** (<../debug/mid_turn_steering_probe.py>, 2026-08-12):
+  a prompt written to the CLI mid-turn is absorbed at the next **tool boundary** and the model
+  acts on it, in one turn with one `result` frame. The fallback clause above is not a nicety —
+  a turn generating continuous prose has no boundary to absorb at, and there the prompt waits
+  for the turn to end, which is today's behaviour anyway.
+
+  What it costs us: `MatrixTurns.offer` stops refusing batches while a turn runs (R2.2 becomes
+  fold-into-turn), `_run_turn` gains a way to write a prompt into a `receive_response()` it is
+  already draining, and **a turn stops owning exactly one prompt** — one `result` covered two
+  here, which is the concrete reason the turn model in <chat_runtime_cleanup.md> brackets a
+  frame range rather than labelling frames.
+
 - **R2.3 [v1]** Batch order follows the homeserver's stream order and is preserved in the
   rendered prompt.
 - **R2.4 [v1]** Each message in a batch carries its provenance into the prompt: sender,
@@ -163,13 +174,19 @@ absorption`.
   contract does not stop a second prompt either. What stops it is our loop reading to
   `ResultMessage` before it looks for the next prompt.
 
-Both readings cannot be right, and the CLI has moved since the first one. <../debug/mid_turn_steering_probe.py>
-settles it by sending a second prompt into a running turn and printing what comes back; it
-needs a real credential, so it runs in a sandbox pod rather than under Bazel. Note the events
-are marked `@internal`: if the probe agrees, this wants version pinning like the FastMCP
-adapter, not a load-bearing assumption.
+**Settled by measurement, 2026-08-12** (<../debug/mid_turn_steering_probe.py>): the prompt is
+absorbed at the next tool boundary and the model acts on it, within one turn. The old finding
+was not wrong so much as untested against a turn that had a boundary in it — a first probe
+against a prose-only turn reproduced "no steering", which is the same null result and a
+different cause.
 
-The three candidate workarounds, kept for the case where it does not:
+Two things to carry forward. The events are marked `@internal`, so this wants version pinning
+like the FastMCP adapter rather than being load-bearing. And **no `command_lifecycle` frames
+were emitted in either run**, so a harness can observe folding only by watching what the model
+does, not by reading a queue state — which is a reason to keep the fallback path below rather
+than assume absorption happened.
+
+The three candidate workarounds, now only needed for turns with no boundary to absorb at:
 
 - **Piggyback on MCP tool results.** Every tool the agent calls is brokered by the console,
   so the console can append pending messages to the tool result it is already returning.

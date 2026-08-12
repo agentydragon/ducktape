@@ -13,6 +13,29 @@ subscription token, or any box with a logged-in CLI:
     python3 mid_turn_steering_probe.py           # steer during a multi-step turn
     PROBE_CONTROL=1 python3 …                    # control: both prompts written up front
 
+## Answer (2026-08-12): **it folds, at a tool boundary**
+
+Run 2, first prompt spending its time in `Bash sleep 4` calls, steer written at 8.0s while the
+first sleep was running:
+
+    [  4.34s] assistant: tool_use(Bash {"command": "sleep 4"})
+    --- [  8.00s] writing the second prompt ---
+    [  9.69s] user: tool_result
+    [ 11.41s] assistant: text('PIVOT')
+    [ 11.45s] result   num_turns: 2
+
+The agent never ran sleeps 2 through 5, and **there is no second `result`**: one turn answered
+both prompts. So a prompt written mid-turn is absorbed at the next step boundary and the model
+acts on it — which is exactly what R2.2a wants and what its design note says is impossible.
+
+Two qualifications, both load-bearing:
+
+- **The boundary is what makes it work** (see run 1 below). A turn generating continuous prose
+  has no step to absorb at, and the steer waits for the turn to end.
+- **No `command_lifecycle` frames appeared even here.** The folding is observable only by its
+  effect, not by the lifecycle events the bundled CLI's schema documents — so a harness cannot
+  currently tell "absorbed" from "queued" except by watching what the model does.
+
 ## Run 1 (2026-08-12): inconclusive, and worth keeping as a lesson
 
 The first version asked the agent to "count slowly from 1 to 30". It got back one assistant
@@ -76,6 +99,9 @@ STEER = "Stop after the current step. Do not run any more sleeps. Just reply wit
 # enough that three boundaries are still ahead of it.
 STEER_AFTER_SECONDS = 8.0
 TOTAL_SECONDS = 180.0
+# How long to keep reading after a `result` before calling the stream done. A folded prompt
+# never produces a second one, so any "wait for two results" exit condition hangs.
+QUIET_AFTER_RESULT = 5.0
 
 # Frames worth seeing in full: the boundaries, the lifecycle events, and the turn's end.
 _INTERESTING = ("assistant", "user", "result", "command_lifecycle")
@@ -147,19 +173,29 @@ async def main() -> int:
     results = 0
     async with asyncio.TaskGroup() as group:
         group.create_task(steer())
-        while (line := await process.stdout.readline()) and time.monotonic() - started < TOTAL_SECONDS:
+        while time.monotonic() - started < TOTAL_SECONDS:
+            # After a `result`, wait only a short grace period: a folded prompt produces no
+            # second result, so waiting for one is waiting forever. (It did — the first version
+            # of this script hung here rather than reporting the finding.)
+            try:
+                line = await asyncio.wait_for(
+                    process.stdout.readline(), timeout=QUIET_AFTER_RESULT if results else None
+                )
+            except TimeoutError:
+                break
+            if not line:
+                break
             frame = json.loads(line)
             if frame.get("type") not in _INTERESTING:
                 continue
             if frame.get("type") == "result":
                 results += 1
             print(f"[{time.monotonic() - started:6.2f}s] {_summarize(frame)}", flush=True)
-            if results == 2:
-                break
 
     process.stdin.close()
     process.terminate()
-    print(f"--- {results} result frame(s): {'separate turns' if results > 1 else 'one shared turn'} ---")
+    folded = "folded into the running turn" if results == 1 else "answered as its own turn"
+    print(f"--- {results} result frame(s): the second prompt was {folded} ---")
     return 0
 
 
