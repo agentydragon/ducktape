@@ -552,6 +552,24 @@ that.
 - **R11.5 [v1] Citable like any other source.** Matrix is a source in the sense
   `haku/base/sources/` means it: a finding drawn from a room message cites the message, and
   the operator-facing form of that citation is clickable.
+- **R11.7 [v1] The harness formats; the agent writes Markdown.** Replies go out today as
+  `{"msgtype": "m.text", "body": ...}` with no `formatted_body`, so Element renders the
+  literal source. The fix is a conversion in the console, **not** an instruction telling the
+  agent to emit Matrix HTML: models write Markdown natively and would write a sanitised
+  subset worse, every reply would be a chance to emit tags that are silently stripped, and
+  the tag list would cost prompt budget on every turn. Formatting is a property of the
+  surface, not a choice the agent makes.
+
+  The target is `format: "org.matrix.custom.html"` plus `formatted_body`, with `body` kept
+  as the plaintext fallback. The spec's allowlist is small and worth knowing before writing
+  the converter: `del h1-h6 blockquote p a ul ol sup sub li b i u strong em s code hr br div
+table thead tbody tr th td caption pre span img details summary`, attributes allowlisted
+  per tag, `code` classes only `language-*`, `img src` only `mxc://`, nesting under 100 deep.
+  Two things a stock Markdown renderer gets wrong against it: task lists emit
+  `<input type="checkbox">`, which is stripped to a bare bullet — render `☐`/`☑` instead —
+  and external images are dropped, since `src` must be `mxc://`. Tables and `details` do
+  work. Applies to replies; `m.notice` lifecycle messages stay plain by design.
+
 - **R11.6 [v1] Forwarding failure is visible.** A reply that was produced but not delivered
   is retried and, if it lands late, marked as possibly duplicated. A produced reply must
   never be lost silently.
@@ -785,7 +803,27 @@ for after Matrix has proven itself, not before.
 - No streaming. Matrix has no streaming primitive, and R6 covers the affordance that
   actually matters.
 - Matrix is not an approval channel (R9.5).
-- No write surface for the agent beyond its own replies (R5.4).
+- No write surface for the agent beyond its own replies (R5.4) — **for now**. Reactions,
+  edits, threads and uploads are real Element affordances a future version may want, and an
+  edit in particular would suit progress reporting better than a stream of notices. They
+  would arrive as an in-process MCP server on the console (the `gmail` / `haku_routine`
+  shape), so the credential stays where R5.1 puts it and R5.3's no-room-argument rule holds.
+- **Not: give the agent a Matrix account and let it drive the API.** Considered and declined
+  2026-08-12. It is the simpler thing to describe — "here are credentials, process what the
+  operator sends" — and the simplicity is entirely in the prompt. The agent would own its own
+  read watermark, and an agent's read state lives in its context, which is lost on a schedule:
+  compaction, and rotation at 24h (R3.2b). It would also discard properties that are built and
+  tested rather than argued — the `/sync` watermark doubling as the `/messages` cursor, R1.7's
+  "no message is lost" (verified by the scale-to-zero test in Phase 0), the batching, and the
+  hold-until-ready behaviour. A durable guarantee would be traded for a judgment the model
+  makes with no memory across rotations.
+
+  The split that survives the argument, and the rule to apply if write tools are added later:
+  **the harness owns ingress and the reply channel; agent tools are write-side extras and
+  targeted reads, never the delivery path.** Ingress especially must stay single-owner — a
+  harness delivering user turns _and_ an agent calling `/sync` itself is double processing and
+  the answering-yourself loop R1.5 exists to prevent.
+
 - No mention gating, sender allowlists, or multi-bot loop protection. These matter in a
   shared room; this is a DM (R3.5).
 - Reusing `x/agent_server/`'s Matrix code is explicitly declined. Its design notes in

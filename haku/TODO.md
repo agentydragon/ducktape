@@ -317,3 +317,5 @@ the runtimes differ in where the sandbox runs — see
   `<pre><code>`); and the agent's text can itself contain HTML-looking fragments, which must
   be escaped on the way in rather than passed through. `markdown` is already a dependency.
   Applies to `send_text` only — the `m.notice` lifecycle messages are plain by design.
+  Why the console converts rather than the agent being told the syntax, plus the tag list
+  and the two cases a stock renderer gets wrong: `plans/matrix_chat_runtime.md` R11.7.
