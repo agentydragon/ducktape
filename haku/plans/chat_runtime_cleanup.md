@@ -27,7 +27,6 @@ that want to name a turn have to name something else instead:
   abort for a turn that does not exist and `MatrixTurns.offer` refuses batches on it.
 - The comment in `handle_runner` — "an abort notified just as the previous turn ended … needs
   the abort to name a turn rather than a session" — is a bug documented instead of fixed.
-- `claude_chat_frames` has nothing to slice on, so Phase 5's `read_turn` has no key.
 
 **What a turn is**: one exchange, from the harness handing the agent a prompt to the harness
 having a final answer or a failure — exactly `_run_turn`'s span. It contains many assistant
@@ -38,9 +37,9 @@ Matrix message (R2.1 coalesces a batch into one prompt).
 **Store it as a bracket, not a label.** A `turn_id` stamped on each frame would write our
 interpretation into the record of the wire, and the wire does not agree with it: the CLI can
 fold a second prompt into a running turn (§2), so one `result` frame can cover two prompts.
-The turn row records a **range** instead — `first_frame_seq`, `last_frame_seq | None` — so
-`read_turn` is a range query, the log stays verbatim, and re-bracketing later is an update to
-our table rather than a rewrite of the record.
+The turn row records a **range** instead — `first_frame_seq`, `last_frame_seq | None` — so the
+log stays verbatim, anything turn-scoped is a range query over it, and re-bracketing later is an
+update to our table rather than a rewrite of the record.
 
 ```text
 turn(turn_id, session_id, first_frame_seq, last_frame_seq | None,
@@ -57,6 +56,12 @@ cost/usage/duration gets somewhere to live instead of being read for the error c
 discarded; and re-adoption gets a durable handle for the in-flight exchange
 (<cli_protocol_ownership.md> wants to route an adopted turn "by session", which is the wrong key
 when a session can outlive many turns).
+
+**Not on that list: the reading API.** Phase 5 used to specify a `read_turn`, which made this a
+prerequisite for reading past conversations. It is not one — a cursor over `frame_seq` with a
+`kinds` filter gives the bounded drilldown that requirement wanted, needs no schema change, and
+does not have to decide which prompt a folded exchange belonged to. Every reason above is a
+runtime problem, and that is the whole case for a turn table.
 
 ## 2. Mid-turn steering works and we are not using it
 

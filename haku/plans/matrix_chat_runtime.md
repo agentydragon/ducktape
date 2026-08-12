@@ -932,10 +932,21 @@ transcript with every tool result missing (R5.5):
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
-4. **`list_conversations` / `read_conversation` / `read_turn`** (R11.3a). A **drilldown, not a
-   dump** — find the conversation, skim its turns, open the one turn that matters — so no tool
-   can return a whole session's rollout and each call's payload stays bounded. Context is the
-   scarce resource here, not rows.
+4. **`list_conversations` / `read_rollout`** (R11.3a). A **drilldown, not a dump** — find the
+   conversation, skim it, read the part that matters — so no tool can return a whole session's
+   rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
+
+   **Shaped as a cursor over the frame log, not as turns.** `read_rollout(session_id, after_seq,
+limit, kinds)` pages `claude_chat_frames` by its `frame_seq`, and skimming is a `kinds`
+   filter — assistant text and tool names — rather than a coarser unit. Three reasons it is
+   better than the turn-shaped version this used to specify. It needs no schema change, so it is
+   buildable today. Bounded payloads come from the page size, which is what the drilldown
+   requirement was actually asking for. And a turn is our interpretation where the log is the
+   record: the CLI folds a mid-turn prompt into a running turn, so one `result` can answer two
+   prompts, and a turn-shaped read would have to pick a lie about which prompt an exchange
+   belonged to. Turns still get a table (<chat_runtime_cleanup.md> §1) — for the abort race, for
+   cost and usage, for re-adoption — and a `read_turn` can be added over that later as a range
+   query. It is not a prerequisite for reading.
 
 **Search is deliberately not in this phase.** When it comes back it is embeddings over the
 same frame rows, which is why the frames are the granularity to store.
@@ -968,10 +979,10 @@ for after Matrix has proven itself, not before.
   (R5.4a, Phase 5's drilldown), over frames the console persists as they cross the transport
   (R5.5). Of the two shapes left open here, SDK-hosted tools were rejected outright (R5.2a)
   and the **RLS-scoped Postgres role** was not: it still buys a real query language and pushes
-  scoping into the database, and it is the thing to revisit if three fixed tools turn out to
-  be the wrong shape. It is not the thing to build first — a per-session Postgres role plus
-  row-level policies is a lot of machinery to discover that what was wanted was
-  `read_turn`.
+  scoping into the database, and it is the thing to revisit if a handful of fixed tools turn out
+  to be the wrong shape. It is not the thing to build first — a per-session Postgres role plus
+  row-level policies is a lot of machinery to discover that what was wanted was a paged read of
+  one session's frames.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
