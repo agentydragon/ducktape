@@ -1,33 +1,55 @@
-"""Does the CLI accept a second prompt while it is already answering one?
+"""Does a second prompt reach the agent while it is already working on the first?
 
-`haku/plans/matrix_chat_runtime.md` R2.2a defers mid-turn delivery as having "no native
-mechanism". Reading the bundled CLI says otherwise, so this settles it by running it.
+`haku/plans/matrix_chat_runtime.md` R2.2a defers mid-turn delivery, its design note claiming a
+running turn **drops** stdin input. The bundled CLI describes the opposite — a `messageQueue`
+with "mid-turn absorption" and a `command_lifecycle` state for a command "folded into an
+already-in-flight turn", emitted "on the stdout stream in -p/SDK sessions". This settles which
+is true by running it.
 
-**Not a Bazel test.** It needs a real Claude credential and makes a real model call, and the
-only place both exist is inside a `haku-claude` sandbox pod, where the egress proxy swaps the
-placeholder for the subscription token. Run it there:
+**Not a Bazel test.** It needs a real Claude credential and makes real model calls. Run it
+wherever one exists — a `haku-claude` sandbox pod, where the egress proxy substitutes the
+subscription token, or any box with a logged-in CLI:
 
-    kubectl -n haku-claude-sandbox cp mid_turn_steering_probe.py <pod>:/tmp/probe.py
-    kubectl -n haku-claude-sandbox exec <pod> -- python3 /tmp/probe.py
+    python3 mid_turn_steering_probe.py           # steer during a multi-step turn
+    PROBE_CONTROL=1 python3 …                    # control: both prompts written up front
 
-What it does: asks for a slow, clearly-structured answer, waits until the first text is
-streaming back, then writes a second `user` frame **without** waiting for `result`.
+## Run 1 (2026-08-12): inconclusive, and worth keeping as a lesson
 
-What to read off the output:
+The first version asked the agent to "count slowly from 1 to 30". It got back one assistant
+message with all thirty numbers, then `result`, then `PIVOT` as a second turn — so the steer
+was neither dropped nor honoured, just answered next.
 
-- `command_lifecycle` frames at all, and whether the second prompt's state goes
-  `queued` → `started`. The bundled CLI's schema says these are emitted "on the stdout stream
-  in -p/SDK sessions", and `claude_agent_sdk.types.Message` has no variant for them — so they
-  are invisible to the SDK's typed layer and only a raw reader sees them.
-- **Where `completed` lands relative to `result`.** The same schema says a command that starts
-  a fresh turn completes *after* that turn's result frame, and one "folded into an
-  already-in-flight turn" completes *before* it. That ordering is the answer: fold means the
-  running turn absorbed it, and R2.2's hold-until-turn-end can become fold-into-turn.
-- Whether the model's own answer reflects the steer, which is the part that actually matters
-  to an operator typing "actually, skip the calendar part".
-- How many `result` frames arrive. One means the prompts shared a turn — which is also the
-  case that breaks a turn model where each turn owns exactly one prompt (R5.5 / the turn
-  bracket discussion).
+That proves less than it looks. **"Slowly" does not create a boundary.** One prompt answered
+in continuous prose is a single generated message: no tool calls, no step boundaries, nothing
+between the first token and the last at which anything could be injected. Every candidate
+mechanism — the CLI's own folding, `PreToolUse`, appending to a tool result — lands at a step
+boundary, so a turn with no steps is the one shape where they are all guaranteed to do nothing.
+
+It also could not distinguish "the CLI received it during the turn and queued it" from "the
+CLI did not read stdin until the turn ended". A pipe write succeeds into the OS buffer either
+way, and the frames that would have separated them — a `command_lifecycle` with state
+`queued` — never appeared at all.
+
+## What this version does instead
+
+The first prompt asks for **explicitly separate steps with a real wait in each**: five `Bash`
+calls of `sleep 4`, one at a time, with a line of text between them. That produces four real
+step boundaries spread over ~20s, so a mechanism that only fires at one has somewhere to fire,
+and the tool-use and tool-result frames make the boundaries visible in the output.
+
+Read off the result:
+
+- **Does `PIVOT` appear before the first turn's `result` frame?** That is folding, and it means
+  R2.2's hold-until-turn-end can become fold-into-turn.
+- **Do the remaining `sleep` calls stop happening?** Folding that the model then acts on is the
+  thing an operator actually wants from "skip the calendar part".
+- **Any `command_lifecycle` frames, and in which state?** A `queued` state proves the CLI read
+  the message during the turn even if it does not act on it — which separates "queued" from
+  "not read yet", the ambiguity that made run 1 useless.
+- **How many `result` frames.** One means the prompts shared a turn, which is also the case
+  that breaks a turn model where a turn owns exactly one prompt.
+- **The control arm.** If writing both prompts up front *also* yields two turns, the queue is
+  unconditional and stdin is not a steering channel at all, whatever the boundaries look like.
 """
 
 from __future__ import annotations
@@ -38,13 +60,25 @@ import os
 import sys
 import time
 
-FIRST = "Count slowly from 1 to 30, one number per line, with a short sentence about each."
-STEER = "Actually, stop counting and just say the word PIVOT."
+# Explicitly separate steps, each with a real wait in it, so the turn has boundaries rather
+# than being one long generated message. `sleep` in Bash rather than a prompt asking for
+# slowness: the wait has to be real time inside a tool call, not a request for pacing.
+FIRST = (
+    "Do exactly this, one step at a time, without combining steps: "
+    "run `sleep 4` in Bash, then tell me 'step 1 done'; "
+    "run `sleep 4` again, then tell me 'step 2 done'; "
+    "and keep going the same way through step 5. "
+    "Use a separate Bash call for each sleep and do not run them in one command."
+)
+STEER = "Stop after the current step. Do not run any more sleeps. Just reply with the word PIVOT."
 
-# Long enough that the first answer is unmistakably still in flight, short enough that a probe
-# run stays interactive.
-STEER_AFTER_SECONDS = 6.0
-TOTAL_SECONDS = 120.0
+# Into the second step's wait: late enough that the turn is unambiguously in flight, early
+# enough that three boundaries are still ahead of it.
+STEER_AFTER_SECONDS = 8.0
+TOTAL_SECONDS = 180.0
+
+# Frames worth seeing in full: the boundaries, the lifecycle events, and the turn's end.
+_INTERESTING = ("assistant", "user", "result", "command_lifecycle")
 
 
 def _frame(text: str) -> bytes:
@@ -52,8 +86,31 @@ def _frame(text: str) -> bytes:
     return (json.dumps(message) + "\n").encode()
 
 
+def _summarize(frame: dict[str, object]) -> str:
+    """One line per frame, keeping what marks a boundary rather than the prose around it."""
+    kind = frame.get("type")
+    message = frame.get("message")
+    if kind in {"assistant", "user"} and isinstance(message, dict):
+        parts = []
+        for block in message.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            match block.get("type"):
+                case "text":
+                    parts.append(f"text({str(block.get('text', ''))[:120]!r})")
+                case "tool_use":
+                    parts.append(f"tool_use({block.get('name')} {json.dumps(block.get('input'))[:80]})")
+                case "tool_result":
+                    parts.append("tool_result")
+                case other:
+                    parts.append(str(other))
+        return f"{kind}: {' | '.join(parts)}"
+    return json.dumps(frame)[:400]
+
+
 async def main() -> int:
     claude = os.environ.get("CLAUDE_BIN", "claude")
+    control = os.environ.get("PROBE_CONTROL") == "1"
     process = await asyncio.create_subprocess_exec(
         claude,
         "--print",
@@ -62,7 +119,7 @@ async def main() -> int:
         "--output-format",
         "stream-json",
         "--verbose",
-        "--include-partial-messages",
+        "--dangerously-skip-permissions",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=sys.stderr,
@@ -72,6 +129,8 @@ async def main() -> int:
     started = time.monotonic()
 
     async def steer() -> None:
+        if control:
+            return
         await asyncio.sleep(STEER_AFTER_SECONDS)
         print(f"--- [{time.monotonic() - started:6.2f}s] writing the second prompt ---", flush=True)
         assert process.stdin is not None
@@ -79,6 +138,10 @@ async def main() -> int:
         await process.stdin.drain()
 
     process.stdin.write(_frame(FIRST))
+    if control:
+        # Both up front: if this also produces two turns, the queue is unconditional and no
+        # arrival time would have changed the outcome.
+        process.stdin.write(_frame(STEER))
     await process.stdin.drain()
 
     results = 0
@@ -86,15 +149,11 @@ async def main() -> int:
         group.create_task(steer())
         while (line := await process.stdout.readline()) and time.monotonic() - started < TOTAL_SECONDS:
             frame = json.loads(line)
-            kind = frame.get("type")
-            elapsed = time.monotonic() - started
-            # Deltas are the bulk of the stream and say nothing about ordering; everything else
-            # is printed whole, since the point of the probe is which frames exist at all.
-            if kind == "stream_event":
+            if frame.get("type") not in _INTERESTING:
                 continue
-            if kind == "result":
+            if frame.get("type") == "result":
                 results += 1
-            print(f"[{elapsed:6.2f}s] {json.dumps(frame)[:600]}", flush=True)
+            print(f"[{time.monotonic() - started:6.2f}s] {_summarize(frame)}", flush=True)
             if results == 2:
                 break
 
