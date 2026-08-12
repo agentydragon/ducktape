@@ -81,13 +81,26 @@ This removes the hardest part of B before it starts — and it is a property tha
 accident. **Adding a hook, a `can_use_tool` callback, or an SDK-hosted MCP server makes
 re-adoption qualitatively harder**, and whoever adds one should come back to this note.
 
-**Called in once, and the property held.** The Matrix read tools were designed against an
-SDK-hosted server — the SDK client runs in the console, so its handlers would execute right
-where the session and the Matrix credential are. This note is why they are plain entries on
-the console's HTTP `/mcp` instead: <matrix_chat_runtime.md> R5.2a records the rejection, and
-R5.5a takes the same reasoning the other way, persisting the rollout as **wire frames** rather
-than SDK objects precisely so design B's "read the stream directly for an adopted turn" does
-not turn the store into a migration.
+**Called in once, and the warning above turned out to be too broad.** The Matrix read tools
+were designed against an SDK-hosted server (<matrix_chat_runtime.md> R5.2a). Working through
+it sharpened what the hard part actually is:
+
+**The problem is not inbound control traffic. It is an unanswered inbound request whose
+replay has side effects.** The runner is already buffering and redialling for B, so it can
+equally hold the `control_request`s nobody answered and re-deliver them on adopt, along with
+everything else past the cursor — the adopting console answers them late and the CLI never
+knew. That works whenever answering twice is harmless, which covers a read-only MCP surface
+completely. It does **not** cover `can_use_tool` or a hook: those gate an action, a replayed
+approval is a second authorization, and a synthesized denial silently changes what the turn
+did. So read-only SDK-hosted tools cost buffering work; permission callbacks and hooks are
+the ones that are qualitatively harder, and they are what the paragraph above should be read
+as warning about.
+
+R5.2a still lands on plain HTTP entries, but on grounds that have nothing to do with this
+note: the scoping SDK hosting would have bought is explicitly not wanted (R5.3a), so it is
+buffering work against no benefit. R5.5a takes the same reasoning the other way, persisting
+the rollout as **wire frames** rather than SDK objects, precisely so design B's "read the
+stream directly for an adopted turn" does not turn the store into a migration.
 
 ## What B needs
 

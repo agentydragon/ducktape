@@ -356,15 +356,25 @@ input to a running turn**. Interrupt exists; steer does not.
   the read design was worked through. It is the obvious mechanism — the `ClaudeSDKClient` runs
   in haku-console (`claude_chat.py`), so a `type: "sdk"` server's handlers execute where the
   session, its room binding and the credential already are, and scoping is a closure rather
-  than a lookup. It is rejected because of what it costs elsewhere:
-  <session_readoption.md> observes that this deployment's control channel is **outbound-only**
-  — no hooks, no `can_use_tool`, MCP reached as an external HTTP server the CLI contacts
-  itself — and that this is precisely what makes re-adoption across a console roll tractable,
-  with the standing request that "whoever adds one should come back to this note". SDK-hosted
-  tools are CLI → SDK control traffic, so they would reintroduce inbound requests that a dying
-  console leaves unanswered and an adopting one cannot know about. Paying for read tools with
-  session survivability is the wrong trade. The scoping it was going to buy is no longer
-  wanted anyway (R5.3a), so what is left is cost with nothing on the other side.
+  than a lookup.
+
+  **Not now, and not because it is blocked.** The first draft of this said re-adoption
+  forbids it, leaning on <session_readoption.md>'s "adding a hook, a `can_use_tool` callback,
+  or an SDK-hosted MCP server makes re-adoption qualitatively harder". That is a cost, not a
+  wall, and the resolution is not exotic: the runner already has to buffer and redial for
+  design B, so it can also hold the inbound `control_request`s that went unanswered while the
+  console was away and re-deliver them on adopt with everything else since the cursor. What
+  makes that safe here is the **read-only** surface (R5.4) — replaying an unanswered request
+  is only dangerous when answering it twice does something, and a room read does nothing. So
+  the note's warning is really about `can_use_tool` and hooks, which gate side effects; that
+  distinction is now recorded there rather than a blanket prohibition.
+
+  What decides it instead is that there is nothing left to buy. The one thing SDK hosting
+  gave that HTTP does not is structural session scoping, and R5.3a says that is not wanted.
+  Plain entries on the `/mcp` the CLI already dials need no new mechanism at all, so the
+  choice is between zero work and a solved-but-unbuilt buffering problem. Revisit if scoping
+  comes back (R5.3a) or if a tool needs console-side state the HTTP surface cannot see.
+
 - **R5.3 [v1]** Matrix tools do not accept a room identifier. The console resolves the room
   from the calling session, so reaching another room is not expressible rather than merely
   denied. **Superseded for reads by R5.3a**; still the rule for anything that acts.
