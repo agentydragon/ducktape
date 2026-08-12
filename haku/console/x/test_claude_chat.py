@@ -286,7 +286,11 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     await chat_service._run_turn(
-        cast(Any, _ToolUseClaudeClient()), view.session_id, "Check the Haku MCP catalog", abort_event=asyncio.Event()
+        cast(Any, _ToolUseClaudeClient()),
+        view.session_id,
+        "Check the Haku MCP catalog",
+        room_id=None,
+        abort_event=asyncio.Event(),
     )
 
     messages = [

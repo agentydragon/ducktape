@@ -121,9 +121,10 @@ a handoff to another pod. How the gap is actually closed lives in
 - **R2.2a [later] Mid-turn delivery.** The intent is for a batch to reach the agent at the
   earliest point at which delivery is valid, **including inside a running turn** — an
   operator who adds "actually, skip the calendar part" while Haku is working should not
-  have to wait out the turn. Deferred because no native mechanism exists; see the design
-  note below. When built, mid-turn delivery must be distinguishable from the batch that
-  started the turn, and must fall back to next-turn delivery when no boundary occurs.
+  have to wait out the turn. When built, mid-turn delivery must be distinguishable from the
+  batch that started the turn, and must fall back to next-turn delivery when no boundary
+  occurs. Deferred for want of a mechanism — **which the CLI now appears to have**; see the
+  design note below, which is being re-tested rather than trusted.
 - **R2.3 [v1]** Batch order follows the homeserver's stream order and is preserved in the
   rendered prompt.
 - **R2.4 [v1]** Each message in a batch carries its provenance into the prompt: sender,
@@ -142,12 +143,33 @@ a handoff to another pod. How the gap is actually closed lives in
   as work to act on. Waking up and earnestly answering a three-day-old "you there?" is a
   failure mode; so is discarding it (R1.6). An age fence distinguishes the two.
 
-**Design note — R2.2a has no native mechanism.** The Agent SDK offers queue-until-turn-end
-and `interrupt()`, and nothing between them. Claude Code's running turn **drops** mid-turn
-input on `--input-format stream-json` (the protocol `WebSocketTransport` speaks), and
-`query()` during `receive_response()` violates the streaming contract. Codex exposes a
-`turn/steer` RPC for precisely this; Claude has no counterpart. Three candidate mechanisms,
-for whenever this is picked up:
+**Design note — the "no native mechanism" finding is contradicted by the shipped CLI.** This
+note used to say a running turn **drops** mid-turn input on `--input-format stream-json`, that
+`query()` during `receive_response()` violates the streaming contract, and that Codex's
+`turn/steer` has no Claude counterpart. Reading the bundled binary (2026-08-12) says
+otherwise, and the workarounds below are kept only in case the probe agrees with the old
+finding after all:
+
+- The CLI's `command_lifecycle` schema describes a command **"folded into an
+  already-in-flight turn"**, distinguished from one that starts a fresh turn by whether
+  `completed` lands before or after that turn's `result` frame — and says these frames are
+  emitted "on the stdout stream in **-p/SDK sessions**", which is what we speak.
+- The query engine carries a `messageQueue` whose abort path logs `abort during mid-turn
+absorption`.
+- `interruptible_tool_in_progress` exists so a surface can decide whether a fresh submit
+  should "interrupt the current turn (vs. queue)" — the steer-or-interrupt choice, published
+  as an event.
+- `ClaudeSDKClient.query()` is a bare `transport.write()` with no interlock, so the streaming
+  contract does not stop a second prompt either. What stops it is our loop reading to
+  `ResultMessage` before it looks for the next prompt.
+
+Both readings cannot be right, and the CLI has moved since the first one. <../debug/mid_turn_steering_probe.py>
+settles it by sending a second prompt into a running turn and printing what comes back; it
+needs a real credential, so it runs in a sandbox pod rather than under Bazel. Note the events
+are marked `@internal`: if the probe agrees, this wants version pinning like the FastMCP
+adapter, not a load-bearing assumption.
+
+The three candidate workarounds, kept for the case where it does not:
 
 - **Piggyback on MCP tool results.** Every tool the agent calls is brokered by the console,
   so the console can append pending messages to the tool result it is already returning.

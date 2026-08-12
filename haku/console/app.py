@@ -262,9 +262,7 @@ def create_app(
     # takes the reply sink, and the supervisor has to come after it.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversations: matrix_session.MatrixConversationStore | None = None
-    matrix_reply_sink: matrix_session.MatrixReplySink | None = None
-    matrix_progress_sink: matrix_session.MatrixProgressSink | None = None
-    matrix_system_prompt: matrix_session.MatrixSystemPrompt | None = None
+    matrix_surface: matrix_session.MatrixSurface | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
@@ -275,21 +273,16 @@ def create_app(
             matrix_conversations,
             matrix_session.MatrixTurns(matrix_config, matrix_conversations, claude_chat_store, operator_identity_store),
         )
-        matrix_reply_sink = matrix_session.MatrixReplySink(
-            matrix_config, matrix_conversations, matrix_sync_service.reply
-        )
-        matrix_progress_sink = matrix_session.MatrixProgressSink(
-            matrix_config, matrix_conversations, matrix_sync_service.announce
-        )
         if claude_runtime is not None:
-            # Parsed here, at construction, so a broken template is a pod that never becomes
-            # Ready rather than a turn that fails hours later.
-            matrix_system_prompt = matrix_session.MatrixSystemPrompt(
+            # The template is parsed here, at construction, so a broken one is a pod that never
+            # becomes Ready rather than a turn that fails hours later.
+            matrix_surface = matrix_session.MatrixSurface(
                 matrix_config,
                 claude_runtime,
-                matrix_conversations,
                 SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
                 matrix_sync_service.recent_history,
+                matrix_sync_service.announce,
+                matrix_sync_service.reply,
             )
 
     # Resolving configured external identities is database I/O. Keep app construction pure and do
@@ -308,9 +301,7 @@ def create_app(
             claude_chat.KubernetesSandboxClaims(claude_runtime),
             claude_chat_notifications,
             mcp_token=mcp_agent.token,
-            reply_sink=matrix_reply_sink.deliver if matrix_reply_sink is not None else None,
-            system_prompt=matrix_system_prompt.render if matrix_system_prompt is not None else None,
-            progress_sink=matrix_progress_sink.report if matrix_progress_sink is not None else None,
+            room_surface=matrix_surface,
         )
     # The supervisor comes after the Claude runtime it provisions through, and announces via
     # the sync service, which holds the only Matrix credential — one login, one device,

@@ -654,6 +654,16 @@ class ClaudeChatStore:
             chat.status = ChatSessionStatus.CLOSING
             chat.updated_at = datetime.now(UTC)
 
+    async def room_of(self, session_id: UUID) -> str | None:
+        """The room this session was created to serve, or None if it serves none.
+
+        The session's own record of it, not the current binding in `matrix_conversation`: that
+        one moves to the next session the moment this one is replaced, so asking it "is this
+        session mine?" answers about the room's present, not about the session.
+        """
+        async with self._sessions() as db:
+            return await db.scalar(select(ClaudeChatSession.room_id).where(ClaudeChatSession.session_id == session_id))
+
     async def status(self, session_id: UUID) -> ChatSessionStatus | None:
         async with self._sessions() as db:
             chat = await db.get(ClaudeChatSession, session_id)
@@ -809,23 +819,27 @@ class RecordingWebSocket(TextWebSocket):
             await self._store.record_frame(self._session_id, direction, frame.payload)
 
 
-# Receives a finished turn's answer, in addition to the message row the SPA reads. The
-# Matrix surface has no SSE stream to read from, so a completed turn has to be pushed
-# somewhere; see `haku.console.x.matrix_session.MatrixReplySink`, which filters to the one
-# session it owns. Unset means the rows are the only output, which is the console SPA.
-ReplySink = Callable[[UUID, str], Awaitable[None]]
+class RoomSurface(Protocol):
+    """The front end for sessions that serve a room, for the parts a turn cannot do itself.
 
-# Supplies the system prompt a session starts with, or `None` for a session this source does
-# not speak for. Same shape and same reason as `ReplySink`: one service serves both the
-# Matrix room and the console SPA, and only the Matrix surface has a room to describe — see
-# `haku.console.x.matrix_session.MatrixSystemPrompt`. Unset, or `None` for a given session,
-# leaves the Claude Code preset alone, which is what the SPA has always run with.
-SystemPromptSource = Callable[[UUID], Awaitable[str | None]]
+    The SPA needs none of this: its client reads the message rows over SSE, so a finished turn
+    is already delivered by being written down. A room has to be spoken to, and told who it is
+    talking to.
 
-# Receives one sandbox progress report for a session. Same shape and same filtering duty as
-# `ReplySink` — see `haku.console.x.matrix_session.MatrixProgressSink`. Unset means the
-# reports are logged and go no further, which is the console SPA's behaviour.
-ProgressSink = Callable[[UUID, str], Awaitable[None]]
+    **The service picks this by reading the session's `surface`, rather than offering every
+    session to every listener.** It used to be three optional callbacks fired for all sessions,
+    each implementation opening with the same four lines — load the current room binding,
+    compare its `session_id`, return if it did not match. That is the session row's own fact
+    (`surface`, `room_id`), so re-deriving it at three call sites was both a lookup per
+    delivery and a way for a mis-derived answer to fail silently: a surface that wrongly
+    decided a session was not its own simply said nothing.
+    """
+
+    async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
+
+    async def deliver(self, room_id: str, text: str) -> None: ...
+
+    async def report(self, room_id: str, detail: str) -> None: ...
 
 
 class ClaudeChatService:
@@ -837,18 +851,14 @@ class ClaudeChatService:
         notifications: ChatNotifications,
         *,
         mcp_token: SecretStr,
-        reply_sink: ReplySink | None = None,
-        system_prompt: SystemPromptSource | None = None,
-        progress_sink: ProgressSink | None = None,
+        room_surface: RoomSurface | None = None,
     ):
         self._config = config
         self._store = store
         self._claims = claims
         self._notifications = notifications
         self._mcp_token = mcp_token
-        self._reply_sink = reply_sink
-        self._system_prompt = system_prompt
-        self._progress_sink = progress_sink
+        self._room_surface = room_surface
 
     async def request_abort(self, session_id: UUID) -> bool:
         return await self._store.request_abort(session_id)
@@ -907,7 +917,15 @@ class ClaudeChatService:
         await self._store.complete_claim_cleanup(session_id)
         return True
 
-    async def _preset_with(self, session_id: UUID) -> SystemPromptPreset | None:
+    async def _room_of(self, session_id: UUID) -> str | None:
+        """The room this session serves, or None for one that serves no room.
+
+        Read once per runner connection and carried for the session's life: it is immutable on
+        the row, so re-reading it would only add round trips.
+        """
+        return None if self._room_surface is None else await self._store.room_of(session_id)
+
+    async def _preset_with(self, session_id: UUID, room_id: str | None) -> SystemPromptPreset | None:
         """Claude Code's own system prompt, plus who this session is.
 
         `append` rather than a bare string, which would *replace* the preset: the built-ins
@@ -917,17 +935,21 @@ class ClaudeChatService:
         The literal is the SDK's own `SystemPromptPreset` TypedDict, so mypy checks its keys
         and the two `Literal` values against the pinned SDK rather than trusting this spelling.
         """
-        if self._system_prompt is None or (rendered := await self._system_prompt(session_id)) is None:
+        if self._room_surface is None or room_id is None:
             return None
-        return {"type": "preset", "preset": "claude_code", "append": rendered}
+        return {
+            "type": "preset",
+            "preset": "claude_code",
+            "append": await self._room_surface.system_prompt(session_id, room_id),
+        }
 
-    def _progress_reporter(self, session_id: UUID) -> Callable[[str], Awaitable[None]]:
-        """Log every sandbox progress report, and pass it on if anything is listening."""
+    def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
+        """Log every sandbox progress report, and show it to the room if there is one."""
 
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
-            if self._progress_sink is not None:
-                await self._progress_sink(session_id, detail)
+            if self._room_surface is not None and room_id is not None:
+                await self._room_surface.report(room_id, detail)
 
         return report
 
@@ -946,7 +968,8 @@ class ClaudeChatService:
         # Failing is deliberate: a session that silently started without its identity is the
         # generic-assistant bug this prompt exists to fix, and it would be invisible.
         try:
-            preset = await self._preset_with(session_id)
+            room_id = await self._room_of(session_id)
+            preset = await self._preset_with(session_id, room_id)
         except Exception as error:
             logger.exception("Claude system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
@@ -974,7 +997,9 @@ class ClaudeChatService:
         )
         client = ClaudeSDKClient(
             options=options,
-            transport=WebSocketTransport(adapter, build_claude_launch(options), self._progress_reporter(session_id)),
+            transport=WebSocketTransport(
+                adapter, build_claude_launch(options), self._progress_reporter(session_id, room_id)
+            ),
         )
         abort_event = asyncio.Event()
         # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
@@ -1013,7 +1038,7 @@ class ClaudeChatService:
                             # name a turn rather than a session.
                             abort_event.clear()
                             try:
-                                await self._run_turn(client, session_id, text, abort_event=abort_event)
+                                await self._run_turn(client, session_id, text, room_id=room_id, abort_event=abort_event)
                             except Exception as error:
                                 logger.exception("Claude chat turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
@@ -1072,7 +1097,7 @@ class ClaudeChatService:
                 abort_event.set()
 
     async def _run_turn(
-        self, client: ClaudeSDKClient, session_id: UUID, prompt: str, *, abort_event: asyncio.Event
+        self, client: ClaudeSDKClient, session_id: UUID, prompt: str, *, room_id: str | None, abort_event: asyncio.Event
     ) -> None:
         await client.query(prompt)
         assistant_id: UUID | None = None
@@ -1160,14 +1185,17 @@ class ClaudeChatService:
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             await self._store.complete_turn(session_id)
-            await self._deliver_reply(session_id, final_text)
+            await self._deliver_reply(session_id, room_id, final_text)
         except Exception as error:
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
 
-    async def _deliver_reply(self, session_id: UUID, final_text: str) -> None:
-        """Push the answer to the reply sink, if one is attached.
+    async def _deliver_reply(self, session_id: UUID, room_id: str | None, final_text: str) -> None:
+        """Speak the answer into the room, if this session serves one.
+
+        A session with no room needs nothing here: the SPA's client reads the message rows the
+        turn already wrote.
 
         Deliberately after `complete_turn` and deliberately not fatal: the turn did happen
         and its row is written, so a failed push is a delivery problem, not a session
@@ -1176,10 +1204,10 @@ class ClaudeChatService:
         TODO(matrix): retry rather than only logging, once the Matrix surface is the only
         one — today the message row is still readable in the SPA.
         """
-        if self._reply_sink is None:
+        if self._room_surface is None or room_id is None:
             return
         try:
-            await self._reply_sink(session_id, final_text)
+            await self._room_surface.deliver(room_id, final_text)
         except Exception:
             logger.exception("Reply delivery failed for session %s", session_id)
 

@@ -171,46 +171,64 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
     return "\n".join(f"[{message.event_id}] {message.body}" for message in messages)
 
 
-class MatrixSystemPrompt:
-    """Renders the system prompt for the session bound to the live room.
+class MatrixSurface:
+    """Everything the turn loop does that is specific to a session serving a Matrix room.
 
-    Filters by session the same way `MatrixReplySink` does, and for the same reason: one
-    `ClaudeChatService` serves both surfaces, and a console SPA session must not be told it
-    is speaking into a Matrix room.
+    One class rather than three sinks, and no session filtering in any of them: the console
+    picks this by reading the session's own `surface` (R11.3a), so being called at all is the
+    statement that this session serves `room_id`. Each method used to begin by loading the
+    current room binding and comparing its `session_id` — the row's own fact, re-derived per
+    delivery, in a form where getting it wrong meant silently saying nothing.
 
     History is read here rather than carried forward from the previous session, because by
     the time a replacement session starts, the one that held the context is gone. The room is
     the source (R3.3a) — it is also what Rai sees, so what the prompt claims was said and
     what the room shows cannot disagree.
+
+    The `announce`/`reply` callables come from the sync service, which holds the only Matrix
+    credential and services one room (R3.6a) — so `room_id` names the room they already speak
+    to rather than choosing between rooms.
     """
 
     def __init__(
         self,
         config: MatrixConfig,
         runtime: ClaudeRuntimeConfig,
-        conversations: MatrixConversationStore,
         template: SystemPromptTemplate,
         history: RecentHistory,
+        announce: Announce,
+        reply: Announce,
     ):
         self._config = config
         self._runtime = runtime
-        self._conversations = conversations
         self._template = template
         self._history = history
+        self._announce = announce
+        self._reply = reply
 
-    async def render(self, session_id: UUID) -> str | None:
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None or conversation.session_id != session_id:
-            return None
+    async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return self._template.render(
             SessionIntroduction(
                 session_id=session_id,
-                room_id=conversation.room_id,
+                room_id=room_id,
                 operator_user_id=self._config.operator_user_id,
                 workspace=self._runtime.cwd,
                 recent_messages=await self._recent(),
             )
         )
+
+    async def deliver(self, room_id: str, text: str) -> None:
+        """Forward a finished turn's answer into the room (R11.1)."""
+        del room_id  # The reply channel is already bound to the one room this console services.
+        if not (body := text.strip()):
+            logger.warning("Matrix: a turn finished with no text to send")
+            return
+        await self._reply(body)
+
+    async def report(self, room_id: str, detail: str) -> None:
+        """Narrate the sandbox's setup into the room (R7.1)."""
+        del room_id
+        await self._announce(detail)
 
     async def _recent(self) -> list[HistoryMessage]:
         """The tail of the conversation, or none of it if the homeserver would not say.
@@ -234,49 +252,6 @@ class MatrixSystemPrompt:
             )
             for message in messages
         ]
-
-
-class MatrixProgressSink:
-    """Narrates the sandbox's setup into the live room (R7.1).
-
-    Filters by session like `MatrixReplySink`, and for the same reason. Unlike a reply, a
-    dropped progress line costs nothing but legibility, so a room that is not bound yet is
-    simply not told.
-    """
-
-    def __init__(self, config: MatrixConfig, conversations: MatrixConversationStore, announce: Announce):
-        self._config = config
-        self._conversations = conversations
-        self._announce = announce
-
-    async def report(self, session_id: UUID, detail: str) -> None:
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None or conversation.session_id != session_id:
-            return
-        await self._announce(detail)
-
-
-class MatrixReplySink:
-    """Egress: forwards a finished turn's answer into the live room (R11.1).
-
-    Attached to the shared `ClaudeChatService`, so it sees every session's turn and must
-    filter: only the session bound to the Matrix room is forwarded, and a console SPA
-    session on the same service is left alone.
-    """
-
-    def __init__(self, config: MatrixConfig, conversations: MatrixConversationStore, reply: Announce):
-        self._config = config
-        self._conversations = conversations
-        self._reply = reply
-
-    async def deliver(self, session_id: UUID, final_text: str) -> None:
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None or conversation.session_id != session_id:
-            return
-        if not (body := final_text.strip()):
-            logger.warning("Matrix: session %s finished a turn with no text to send", session_id)
-            return
-        await self._reply(body)
 
 
 class MatrixSessionSupervisor:

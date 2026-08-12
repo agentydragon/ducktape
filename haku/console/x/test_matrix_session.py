@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -16,12 +16,7 @@ from haku.console.x.chat_notifications import ChatNotifications
 from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import InboundMessage, MatrixError
-from haku.console.x.matrix_session import (
-    MatrixConversationStore,
-    MatrixSessionSupervisor,
-    MatrixSystemPrompt,
-    RecentHistory,
-)
+from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface, RecentHistory
 from haku.console.x.system_prompt import SystemPromptTemplate
 
 
@@ -189,13 +184,18 @@ async def bound(conversations: MatrixConversationStore, chat_store: ClaudeChatSt
     return view.session_id
 
 
-def system_prompt(conversations: MatrixConversationStore, history: RecentHistory) -> MatrixSystemPrompt:
-    return MatrixSystemPrompt(
+async def _unused(_: str) -> None:
+    raise AssertionError("the prompt path does not speak into the room")
+
+
+def surface(history: RecentHistory) -> MatrixSurface:
+    return MatrixSurface(
         MATRIX_CONFIG,
         runtime_config(),
-        conversations,
         SystemPromptTemplate("{{ room_id }} {{ session_id }} {{ recent_messages | length }}"),
         history,
+        _unused,
+        _unused,
     )
 
 
@@ -207,33 +207,31 @@ def served(*messages: InboundMessage) -> RecentHistory:
     return _history
 
 
-async def test_prompt_describes_the_bound_session(conversations: MatrixConversationStore, bound: UUID) -> None:
-    assert await system_prompt(conversations, served()).render(bound) == f"{MATRIX_ROOM} {bound} 0"
+async def test_prompt_describes_the_room_it_is_given(bound: UUID) -> None:
+    """No session filtering here any more: being called at all says this session serves it.
+
+    The console selects this surface from the session's own `surface` column, so the room is
+    an argument rather than something to look up and check.
+    """
+    assert await surface(served()).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 0"
 
 
-async def test_prompt_declines_a_session_it_does_not_own(conversations: MatrixConversationStore, bound: UUID) -> None:
-    """A console SPA session shares the service and must not be told it lives in a room."""
-    assert await system_prompt(conversations, served()).render(uuid4()) is None
-
-
-async def test_prompt_survives_an_unreadable_room(conversations: MatrixConversationStore, bound: UUID) -> None:
+async def test_prompt_survives_an_unreadable_room(bound: UUID) -> None:
     """A homeserver that will not serve history costs context, not the whole session."""
 
     async def unreadable(limit: int) -> tuple[InboundMessage, ...]:
         raise MatrixError("500: homeserver said no")
 
-    assert await system_prompt(conversations, unreadable).render(bound) == f"{MATRIX_ROOM} {bound} 0"
+    assert await surface(unreadable).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 0"
 
 
-async def test_prompt_carries_both_sides_of_the_room_history(
-    conversations: MatrixConversationStore, bound: UUID
-) -> None:
+async def test_prompt_carries_both_sides_of_the_room_history(bound: UUID) -> None:
     history = served(
         InboundMessage(room_id=MATRIX_ROOM, event_id="$a", sender=MATRIX_OPERATOR, body="hi", origin_server_ts=0),
         InboundMessage(room_id=MATRIX_ROOM, event_id="$b", sender=MATRIX_USER, body="hello", origin_server_ts=1),
     )
 
-    assert await system_prompt(conversations, history).render(bound) == f"{MATRIX_ROOM} {bound} 2"
+    assert await surface(history).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 2"
 
 
 if __name__ == "__main__":
