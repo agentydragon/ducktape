@@ -398,7 +398,7 @@ input to a running turn**. Interrupt exists; steer does not.
   than a lookup.
 
   **Not now, and not because it is blocked.** The first draft of this said re-adoption
-  forbids it, leaning on <session_readoption.md>'s "adding a hook, a `can_use_tool` callback,
+  forbids it, leaning on <cli_protocol_ownership.md>'s "adding a hook, a `can_use_tool` callback,
   or an SDK-hosted MCP server makes re-adoption qualitatively harder". That is a cost, not a
   wall, and the resolution is not exotic: the runner already has to buffer and redial for
   design B, so it can also hold the inbound `control_request`s that went unanswered while the
@@ -522,7 +522,7 @@ input to a running turn**. Interrupt exists; steer does not.
     extraction, not by the protocol. Likewise `ResultMessage`'s cost, usage and duration,
     which are read for the error check and discarded. Storing frames gets all of it for free
     and cannot fall behind a block type we have not heard of.
-  - **It survives the SDK.** <session_readoption.md>'s design B has the console reading the
+  - **It survives the SDK.** <cli_protocol_ownership.md>'s design B has the console reading the
     CLI's jsonl directly for an adopted turn, because `receive_response()` is request-scoped
     and assumes this process issued the turn. A rollout stored as frames is unchanged by that;
     one stored as SDK objects is a migration.
@@ -877,7 +877,7 @@ Still Phase 3:
   `session_ttl_seconds`. Only the last is a config value.
 - **Re-adoption rather than replacement** (R3.4). `bridge_websocket_to_claude` still kills the
   CLI when the socket closes, so a console roll ends the conversation even though the sandbox
-  outlives it. <session_readoption.md> records the SDK/CLI protocol this needs, what the
+  outlives it. <cli_protocol_ownership.md> records the SDK/CLI protocol this needs, what the
   runner and console each have to change, and the property of this deployment that makes it
   tractable — no inbound control traffic to strand.
 - `event_id` dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).

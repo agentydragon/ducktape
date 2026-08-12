@@ -919,7 +919,7 @@ class ClaudeChatFrame(Base):
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
     are dropped by the turn loop's extraction, as is a result's cost and usage — and it would
     have to be migrated when the console starts reading the CLI's jsonl directly for an adopted
-    turn (session_readoption.md, design B).
+    turn (cli_protocol_ownership.md, design B).
     """
 
     __tablename__ = "claude_chat_frames"

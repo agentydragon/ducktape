@@ -1,14 +1,72 @@
-# Session re-adoption across a console roll
+# Owning the CLI protocol
 
-**Status: not built.** Recorded while the protocol details were in hand.
+**Status: decided, not built** (2026-08-12). The console drives Claude Code's newline-delimited
+JSON protocol itself, keeping the Agent SDK only for launch-argument construction. This note
+holds that decision and the session re-adoption design it is a prerequisite for — one document
+because the two are the same seam seen from different sides.
+
+## Why stop going through the SDK
+
+The SDK earns its place when it is the thing that knows the protocol. Here it is increasingly
+the thing standing between us and it, and four separate needs now point at the same seam:
+
+- **Capability negotiation is shut.** `system/init` advertises
+  `capabilities: [interrupt_receipt_v1, interrupt_cancel_queued_v1, msg_lifecycle_v1]`. Its
+  `initialize` request sends hooks, agents and skills — and no client capabilities at all — so
+  `msg_lifecycle_v1` is unreachable through it. That is the difference between confirming a
+  mid-turn steer landed and inferring it from what the model then does
+  (<../debug/mid_turn_steering_probe.py>).
+- **Its typed layer is already not our source of truth.** `Message` has no variant for
+  `command_lifecycle`, `system/task_started`, `task_notification` or `transcript_mirror`;
+  `ThinkingBlock` is on the wire and dropped by our extraction; a result's cost and usage are
+  read for an error check and discarded. The rollout store keeps raw frames precisely because
+  of this, so the SDK is parsing into objects the record does not use.
+- **`receive_response()` is the wrong shape.** It is request-scoped and assumes this process
+  issued the turn. That blocks the fold path — writing a prompt into a response we are already
+  draining — and it is what design B below calls "the one place the SDK offers nothing".
+- **We already own everything around it**: the transport, the envelope, the runner, the frame
+  store. What is left is a thin protocol client.
+
+**What stays.** Launch-argument construction (`build_claude_launch`): flags, MCP configuration,
+the system-prompt preset shape. Dull, churn-prone, and genuinely someone else's problem.
+
+**What it costs.** Owning protocol breakage across CLI upgrades. Two things make that
+affordable rather than reckless: the CLI ships _bundled with_ the SDK, so the pairing is pinned
+either way, and this repo already runs that discipline for FastMCP (one exact version, adapter
+contract tests before a repin). Tests are cheap here — a fake CLI answering scripted frames is
+a few dozen lines, as the probe's smoke test showed.
+
+## Order of work
+
+Each step is useful on its own and none of them is a rewrite.
+
+1. **Read the frame stream ourselves**, dispatching by frame type instead of calling
+   `receive_response()`. Unblocks mid-turn folding (R2.2a) and is a prerequisite for adoption.
+   The frames already pass through `RecordingWebSocket`; this is about who routes them.
+2. **Own `initialize`.** Request/response correlation is a dict of futures, a counter and a
+   timeout. Once it is ours, capabilities can be negotiated and `command_lifecycle` becomes
+   observable rather than inferred.
+3. **Own `interrupt`**, which is then a few lines on step 2's machinery — and lets abort
+   reason about `interrupt_cancel_queued_v1` rather than assume interrupt and queued messages
+   do not interact.
+4. **Type only the frames we act on**, with our own models. Everything else is archived raw,
+   which is already the design (R5.5a).
+
+After step 4 the SDK is a launch-args helper, and removing it entirely is a separate small
+decision rather than the point of the exercise.
+
+## Session re-adoption across a console roll
+
+**Status: not built.** Recorded while the protocol details were in hand; step 1 above is its
+first prerequisite.
 
 Today a console replica that dies takes its Claude Code session with it. The lease
 (<../console/x/claude_chat.py>, `expire_stale_leases`) makes that **observable** — another
 replica notices the holder stopped renewing and fails the session instead of leaving the room
-waiting forever. This note is about the next step: making the session **survive** the roll
+waiting forever. This section is about the next step: making the session **survive** the roll
 rather than merely being cleaned up after it.
 
-## Why the sandbox is not the problem
+### Why the sandbox is not the problem
 
 The sandbox already outlives the console. It is a separate SandboxClaim with its own
 `shutdownTime` driven by `session_ttl_seconds`, on its own pod, and the runner dials **out** to
@@ -19,7 +77,7 @@ What dies is the CLI process. `bridge_websocket_to_claude`
 (<../runtime/x/agent_sdk_transport/runner.py>) terminates it in its `finally` when the socket
 closes. That single line is the difference between the two designs below.
 
-## Two designs
+### Two designs
 
 **A — resume in the surviving sandbox.** Let the CLI die with the console; a new replica starts
 a fresh CLI in the same pod with `--resume`. `CLAUDE_CONFIG_DIR=/claude-config` is already set
@@ -34,7 +92,7 @@ Resume restores the actual context rather than an approximation of it, and needs
 buffers, and redials; an adopting console picks the conversation up mid-flight. Preserves the
 in-flight turn. This is the target.
 
-## The protocol B has to survive
+### The protocol B has to survive
 
 Newline-delimited JSON over the CLI's stdin/stdout, which the bridge already carries verbatim
 as `ClaudeMessage.payload`. **Two channels are multiplexed on it**, distinguished by the
@@ -64,7 +122,7 @@ It is **bidirectional** — both ends originate requests. SDK → CLI covers `in
 `mcp_toggle`, `mcp_reconnect`, `rewind_files`, `stop_task`. CLI → SDK covers `can_use_tool`,
 hook callbacks, and calls into SDK-hosted MCP servers.
 
-## Gotcha: inbound control traffic is what normally makes this hard, and we have none
+### Gotcha: inbound control traffic is what normally makes this hard, and we have none
 
 `Query.pending_control_responses` is an in-memory `request_id` → Event map. If the CLI has an
 outstanding request to the SDK when the console dies, nobody answers it, the CLI blocks
@@ -102,7 +160,7 @@ buffering work against no benefit. R5.5a takes the same reasoning the other way,
 the rollout as **wire frames** rather than SDK objects, precisely so design B's "read the
 stream directly for an adopted turn" does not turn the store into a migration.
 
-## What B needs
+### What B needs
 
 - **The runner owns the `initialize` handshake.** It is per-connection state in the SDK, but
   the CLI now outlives the connection, so an adopting console must not re-handshake a process
@@ -117,12 +175,13 @@ stream directly for an adopted turn" does not turn the store into a migration.
   taking the lease — that is the arbitration that stops two replicas adopting one CLI.
 - **Reading the stream directly for an adopted turn.** `client.query()` + `receive_response()`
   is request-scoped and assumes this process issued the turn. An adopted mid-flight turn has to
-  be read off the transport and routed by session. This is the one place the SDK offers
-  nothing.
+  be read off the transport and routed by turn — this is step 1 of the ownership work above,
+  and the reason it is first. Routed by _turn_ rather than by session, since a session outlives
+  many of them (<chat_runtime_cleanup.md> §1).
 - **An idle timeout in the runner.** A CLI held open for a console that never returns trades a
   wedged room for a wedged sandbox.
 
-## The lease decision this revisits
+### The lease decision this revisits
 
 `expire_stale_leases` currently treats an expired lease as **dead**: fail the session, sweep the
 claim, provision a replacement. Re-adoption wants it to mean **unowned** — adoptable, with
@@ -131,7 +190,7 @@ failure only once adoption has not happened (or has been tried and failed).
 That is a semantic change to one method rather than a rewrite, but it is the part of the lease
 work that was decided before re-adoption existed, so it is where to start.
 
-## Open questions
+### Open questions
 
 - How large a ring buffer is enough, and what should the runner do when it overflows —
   drop the session, or drop frames and let the console reconcile from its own persisted

@@ -7,6 +7,14 @@ runtime works and is in production. This is the cruft that accumulated under it.
 
 Ordered by payoff, not by size.
 
+## 0. The console drives the CLI protocol itself
+
+Decided 2026-08-12 and written up separately, because it is a direction rather than a cleanup:
+<cli_protocol_ownership.md>. Four of the items below turn out to be the same seam — §2 needs
+a capability the SDK's `initialize` cannot send, §2a and §4 are about frames its typed layer
+drops, and §5 is about who parses them — so read that first and treat the rest as what remains
+once it lands.
+
 ## 1. There is no turn, and much of the awkwardness is that absence
 
 `_run_turn`'s stack frame is already the turn. Because it is only a stack frame, the things
@@ -48,7 +56,7 @@ Fixes, in order: the abort race; `responding` becomes derived; the partial frame
 becomes per-turn rather than a per-session index enforcing a per-turn fact; `ResultMessage`'s
 cost/usage/duration gets somewhere to live instead of being read for the error check and
 discarded; and re-adoption gets a durable handle for the in-flight exchange
-(<session_readoption.md> wants to route an adopted turn "by session", which is the wrong key
+(<cli_protocol_ownership.md> wants to route an adopted turn "by session", which is the wrong key
 when a session can outlive many turns).
 
 ## 2. Mid-turn steering works and we are not using it
@@ -124,7 +132,7 @@ respect is one the file does not itself follow.
 (`PROVISION_LEASE`, ten minutes) and an owner heartbeat afterwards (`LEASE_TTL`, ninety
 seconds). It records _when_ but never _who_: `_REPLICA` is already computed in
 `matrix_session.py` for room announcements, so writing it would make the failure say which pod
-died — and adoption arbitration will want it anyway. <session_readoption.md> separately wants
+died — and adoption arbitration will want it anyway. <cli_protocol_ownership.md> separately wants
 an expired lease to mean **unowned** (adoptable) rather than **dead**.
 
 ## 7. `ClaudeChatStore` is a god object
