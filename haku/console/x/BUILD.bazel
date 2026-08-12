@@ -77,9 +77,8 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/runtime/x/agent_sdk_transport:protocol",
-        "@pypi//claude_agent_sdk",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
