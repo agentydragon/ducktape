@@ -29,6 +29,7 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
@@ -80,14 +81,35 @@ class ClaudeCli:
         self._reader = asyncio.create_task(self._read())
         return await self.control("initialize", hooks=None)
 
-    async def query(self, text: str) -> None:
-        """Send one user message.
+    async def query(self, text: str) -> str:
+        """Send one user message, returning the id its lifecycle will be reported under.
 
         Deliberately writable at any time, including while a turn is running: the CLI folds a
         prompt that arrives mid-turn into that turn at the next tool boundary
         (<../../../debug/mid_turn_steering_probe.py>).
+
+        **The `uuid` is what turns `command_lifecycle` on.** The CLI reports `queued` →
+        `started` → `completed`/`discarded`/`cancelled` for a prompt only when the inbound
+        frame carries one, and the SDK never sent one — which is why those frames looked
+        unavailable rather than merely unasked-for. It is *not* gated on the `msg_lifecycle_v1`
+        capability that `system/init` advertises; `initialize` has no field for declaring
+        client capabilities at all, and that advertisement is the CLI saying it can, not
+        something to opt into.
+
+        Worth having because it is the only **confirmation** of a fold rather than an
+        inference from behaviour: a command that starts a fresh turn reports `completed` after
+        that turn's `result`, and one folded into a running turn reports it before.
         """
-        await self._write({"type": "user", "message": {"role": "user", "content": text}, "parent_tool_use_id": None})
+        command_uuid = str(uuid.uuid4())
+        await self._write(
+            {
+                "type": "user",
+                "message": {"role": "user", "content": text},
+                "parent_tool_use_id": None,
+                "uuid": command_uuid,
+            }
+        )
+        return command_uuid
 
     async def interrupt(self) -> None:
         await self.control("interrupt")

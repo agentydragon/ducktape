@@ -81,6 +81,23 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
     await cli.aclose()
 
 
+async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() -> None:
+    """Without a `uuid` the CLI reports no `command_lifecycle` at all — which is why those
+    frames looked unavailable rather than merely unasked-for."""
+    channel = ScriptedChannel()
+    cli = ClaudeCli(channel, control_timeout=5)
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    channel.deliver(_answer(channel.written[0]))
+    await connecting
+
+    command_uuid = await cli.query("hello")
+
+    assert channel.written[-1]["uuid"] == command_uuid
+    assert channel.written[-1]["message"] == {"role": "user", "content": "hello"}
+    await cli.aclose()
+
+
 async def test_the_stream_ending_ends_the_frames_rather_than_hanging() -> None:
     """A consumer waiting for this turn's `result` has to learn the CLI is gone."""
     channel = ScriptedChannel()

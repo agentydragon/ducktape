@@ -10,10 +10,9 @@ Ordered by payoff, not by size.
 ## 0. The console drives the CLI protocol itself
 
 Decided 2026-08-12 and written up separately, because it is a direction rather than a cleanup:
-<cli_protocol_ownership.md>. Four of the items below turn out to be the same seam — §2 needs
-a capability the SDK's `initialize` cannot send, §2a and §4 are about frames its typed layer
-drops, and §5 is about who parses them — so read that first and treat the rest as what remains
-once it lands.
+<cli_protocol_ownership.md>. Four of the items below turn out to be the same seam — §2 needs a
+frame field the SDK never sends, §2a and §4 are about frames its typed layer drops, and §5 is
+about who parses them — so read that first and treat the rest as what remains once it lands.
 
 ## 1. There is no turn, and much of the awkwardness is that absence
 
@@ -73,20 +72,21 @@ Nothing on our side was preventing it either — `ClaudeSDKClient.query()` is a 
 So `MatrixTurns.offer` can stop refusing batches during a turn (R2.2 becomes fold-into-turn)
 and "actually, skip the calendar part" reaches Haku while it is working.
 
-Three cautions. A turn with no tool call has no boundary to absorb at, so the fallback to
-next-turn delivery stays. The events the bundled CLI documents are `@internal`, so this wants
-the same version-pinning discipline as the FastMCP adapter. And **folding is currently
-observable only by its effect**: no `command_lifecycle` frame was emitted in any probe run, so
-nothing acknowledges that a steer landed.
+Two cautions. A turn with no tool call has no boundary to absorb at, so the fallback to
+next-turn delivery stays. And the events the bundled CLI documents are `@internal`, so this
+wants the same version-pinning discipline as the FastMCP adapter.
 
-That last one has a lead. `system/init` advertises
-`capabilities: [interrupt_receipt_v1, interrupt_cancel_queued_v1, msg_lifecycle_v1]`, which the
-console reads today for nothing — so the lifecycle events are behind a negotiation we never
-enter, and the Python SDK's `initialize` sends hooks, agents and skills but no client
-capabilities at all. Worth resolving before building anything that needs to confirm a steer
-rather than infer it. `interrupt_cancel_queued_v1` is on the same list and matters
-independently: interrupt and queued messages interact, and our abort path knows nothing about a
-prompt sitting in the CLI's queue.
+A third — that folding was observable only by its effect — no longer holds.
+
+**That last one is now solved.** `command_lifecycle` is emitted for any inbound user frame
+carrying a `uuid`, which the SDK never sent — not, as first read, gated behind the
+`msg_lifecycle_v1` capability `system/init` advertises (`initialize` has no field for declaring
+client capabilities at all). `ClaudeCli.query` mints one and returns it, so a fold is
+confirmable: `completed` before the turn's `result` means folded, after means it started a
+fresh turn.
+
+Still open from that list: `interrupt_cancel_queued_v1`. Interrupt and queued messages
+interact, and our abort path knows nothing about a prompt sitting in the CLI's queue.
 
 ## 2a. `system/task_*` frames are a status line we already store and ignore
 

@@ -10,12 +10,20 @@ because the two are the same seam seen from different sides.
 The SDK earns its place when it is the thing that knows the protocol. Here it is increasingly
 the thing standing between us and it, and four separate needs now point at the same seam:
 
-- **Capability negotiation is shut.** `system/init` advertises
-  `capabilities: [interrupt_receipt_v1, interrupt_cancel_queued_v1, msg_lifecycle_v1]`. Its
-  `initialize` request sends hooks, agents and skills — and no client capabilities at all — so
-  `msg_lifecycle_v1` is unreachable through it. That is the difference between confirming a
-  mid-turn steer landed and inferring it from what the model then does
+- **It cannot ask for the lifecycle events.** `command_lifecycle` — the difference between
+  confirming a mid-turn steer landed and inferring it from what the model then does — is
+  emitted only for an inbound user frame that carries a `uuid`, and the SDK never sends one.
+  Probed against the binary and then run: adding it produces `queued` → `started` →
+  `completed`, with the fold visible as `completed` arriving **before** the turn's `result`
   (<../debug/mid_turn_steering_probe.py>).
+
+  _Not a capability negotiation, though it looked like one._ `system/init` advertises
+  `capabilities: [interrupt_receipt_v1, interrupt_cancel_queued_v1, msg_lifecycle_v1]`, and
+  the first reading of that was that we had to opt in. The `initialize` schema has no field
+  for client capabilities at all — `hooks`, `sdkMcpServers`, `systemPrompt`, `agents`,
+  `skills`, `supportedDialogKinds` and no more — so the advertisement is the CLI saying what
+  it can do, not a handshake. The opt-in is the `uuid`.
+
 - **Its typed layer is already not our source of truth.** `Message` has no variant for
   `command_lifecycle`, `system/task_started`, `task_notification` or `transcript_mirror`;
   `ThinkingBlock` is on the wire and dropped by our extraction; a result's cost and usage are
@@ -44,8 +52,7 @@ Each step is useful on its own and none of them is a rewrite.
    `receive_response()`. Unblocks mid-turn folding (R2.2a) and is a prerequisite for adoption.
    The frames already pass through `RecordingWebSocket`; this is about who routes them.
 2. **Own `initialize`.** Request/response correlation is a dict of futures, a counter and a
-   timeout. Once it is ours, capabilities can be negotiated and `command_lifecycle` becomes
-   observable rather than inferred.
+   timeout. Done with step 1, since the blocking buffer makes them one change.
 3. **Own `interrupt`**, which is then a few lines on step 2's machinery — and lets abort
    reason about `interrupt_cancel_queued_v1` rather than assume interrupt and queued messages
    do not interact.
