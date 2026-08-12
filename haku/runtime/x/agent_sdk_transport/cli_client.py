@@ -1,11 +1,11 @@
 """A client for Claude Code's newline-delimited JSON protocol.
 
 Replaces `ClaudeSDKClient` for the console's session runtime. The reasoning is in
-<../../../plans/cli_protocol_ownership.md>; the short version is that the SDK's typed layer
-is not what the rollout records, its `receive_response()` is request-scoped in a runtime where
-turns are not requests, and its `initialize` cannot send the client capabilities the CLI
-advertises. What is left of it after those is a launch-argument builder, which `options.py`
-still uses.
+<../../../plans/cli_protocol_ownership.md>; the short version is that the SDK's typed layer is
+not what the rollout records, its `receive_response()` is request-scoped in a runtime where turns
+are not requests, and it never stamps a prompt with the `uuid` that makes the CLI report that
+prompt's lifecycle. What is left of it after those is a launch-argument builder, which
+`options.py` still uses. The protocol itself is described in <../../../cli_protocol/README.md>.
 
 Two channels are multiplexed on one stream, distinguished by the top-level `type`:
 
@@ -28,11 +28,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
+from pydantic import BaseModel
+
+from haku.cli_protocol.frames import (
+    ControlRequestFrame,
+    ControlResponse,
+    ControlSubtype,
+    InitializeRequest,
+    InterruptRequest,
+)
 from haku.runtime.x.agent_sdk_transport.protocol import ClaudeLaunch, TextWebSocket
 from haku.runtime.x.agent_sdk_transport.transport import ProgressSink, WebSocketTransport
 
@@ -73,32 +81,26 @@ class ClaudeCli:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._conversation: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._reader: asyncio.Task[None] | None = None
-        self._requests = 0
 
     async def connect(self) -> dict[str, Any]:
         """Launch the CLI, start reading, and complete the `initialize` handshake."""
         await self._channel.connect()
         self._reader = asyncio.create_task(self._read())
-        return await self.control("initialize", hooks=None)
+        return await self.control(InitializeRequest())
 
     async def query(self, text: str) -> str:
         """Send one user message, returning the id its lifecycle will be reported under.
 
         Deliberately writable at any time, including while a turn is running: the CLI folds a
         prompt that arrives mid-turn into that turn at the next tool boundary
-        (<../../../debug/mid_turn_steering_probe.py>).
+        (<../../../cli_protocol/probes/steering.py>).
 
-        **The `uuid` is what turns `command_lifecycle` on.** The CLI reports `queued` →
-        `started` → `completed`/`discarded`/`cancelled` for a prompt only when the inbound
-        frame carries one, and the SDK never sent one — which is why those frames looked
-        unavailable rather than merely unasked-for. It is *not* gated on the `msg_lifecycle_v1`
-        capability that `system/init` advertises; `initialize` has no field for declaring
-        client capabilities at all, and that advertisement is the CLI saying it can, not
-        something to opt into.
-
-        Worth having because it is the only **confirmation** of a fold rather than an
+        **The `uuid` is what turns `command_lifecycle` on**, and the SDK never sent one. The CLI
+        reports `queued` → `started` → `completed`/`cancelled` for a prompt only when the
+        inbound frame carries one, which is the only **confirmation** of a fold rather than an
         inference from behaviour: a command that starts a fresh turn reports `completed` after
-        that turn's `result`, and one folded into a running turn reports it before.
+        that turn's `result`, and one folded into a running turn reports it before. It is also
+        what makes the prompt reachable by `interrupt`'s `cancel_queued`.
         """
         command_uuid = str(uuid.uuid4())
         await self._write(
@@ -111,24 +113,27 @@ class ClaudeCli:
         )
         return command_uuid
 
-    async def interrupt(self) -> None:
-        await self.control("interrupt")
+    async def interrupt(self, *, cancel_queued: bool = False) -> None:
+        """Abort the running turn.
 
-    async def control(self, subtype: str, **fields: Any) -> dict[str, Any]:
+        Without `cancel_queued` the CLI starts the next prompt in its queue the moment this one
+        dies (<../../../cli_protocol/probes/steering.py>), which is not what an operator saying
+        "stop" means when they have already typed the next thing.
+        """
+        await self.control(InterruptRequest(reason="user-cancel", cancel_queued=cancel_queued or None))
+
+    async def control(self, request: BaseModel) -> dict[str, Any]:
         """One control request, awaited until the CLI answers it or the timeout passes."""
-        self._requests += 1
-        request_id = f"req_{self._requests}_{os.urandom(4).hex()}"
+        frame = ControlRequestFrame(request=request.model_dump(exclude_none=True))
         pending: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self._pending[request_id] = pending
+        self._pending[frame.request_id] = pending
         try:
-            await self._write(
-                {"type": "control_request", "request_id": request_id, "request": {"subtype": subtype, **fields}}
-            )
+            await self._write(frame.model_dump())
             return await asyncio.wait_for(pending, timeout=self._control_timeout)
         except TimeoutError as error:
-            raise ClaudeCliError(f"control request {subtype} was never answered") from error
+            raise ClaudeCliError(f"control request {frame.request['subtype']} was never answered") from error
         finally:
-            self._pending.pop(request_id, None)
+            self._pending.pop(frame.request_id, None)
 
     async def frames(self) -> AsyncIterator[dict[str, Any]]:
         """Every conversation frame, in order, until the CLI's stream ends.
@@ -175,38 +180,32 @@ class ClaudeCli:
             self._conversation.put_nowait(None)
 
     def _resolve(self, frame: dict[str, Any]) -> None:
-        # The CLI echoes the id *inside* `response`, not beside it — matching the SDK's own
-        # reader rather than the shape the control-protocol sketch suggests.
-        response: dict[str, Any] = frame["response"] if isinstance(frame.get("response"), dict) else {}
-        request_id = response.get("request_id") or frame.get("request_id")
-        pending = self._pending.get(str(request_id))
+        response = ControlResponse.model_validate(frame["response"])
+        pending = self._pending.get(response.request_id)
         if pending is None or pending.done():
-            logger.warning("Claude CLI answered unknown control request %s", request_id)
+            logger.warning("Claude CLI answered unknown control request %s", response.request_id)
             return
-        if response.get("subtype") == "error":
-            pending.set_exception(ClaudeCliError(str(response.get("error", "control request failed"))))
+        if response.subtype is ControlSubtype.ERROR:
+            pending.set_exception(ClaudeCliError(response.error or "control request failed"))
             return
-        pending.set_result(response)
+        pending.set_result(response.response or {})
 
     async def _refuse(self, frame: dict[str, Any]) -> None:
         """Answer an inbound control request we cannot serve, rather than leaving it hanging.
 
         This session registers no hooks, no `can_use_tool` and no SDK-hosted MCP server, so
         there is nothing the CLI should be asking us — but an unanswered request blocks it
-        forever, and a wedged CLI is a room that goes quiet with no reason recorded.
+        forever (measured: <../../../cli_protocol/probes/harness.py>), and a wedged CLI is a room
+        that goes quiet with no reason recorded.
         """
         subtype = (frame.get("request") or {}).get("subtype")
         logger.error("Claude CLI asked for %s, which this client does not serve", subtype)
-        await self._write(
-            {
-                "type": "control_response",
-                "response": {
-                    "subtype": "error",
-                    "request_id": frame.get("request_id"),
-                    "error": f"{subtype} is not supported by this client",
-                },
-            }
+        refusal = ControlResponse(
+            subtype=ControlSubtype.ERROR,
+            request_id=frame["request_id"],
+            error=f"{subtype} is not supported by this client",
         )
+        await self._write({"type": "control_response", "response": refusal.model_dump(exclude_none=True)})
 
 
 def cli_over_websocket(

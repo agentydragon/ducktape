@@ -1,0 +1,17 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_frames",
+    srcs = ["test_frames.py"],
+    deps = [
+        ":frames",
+        "@pypi//pytest_bazel",
+    ],
+)

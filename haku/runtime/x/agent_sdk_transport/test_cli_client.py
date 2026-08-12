@@ -58,7 +58,7 @@ async def test_a_control_request_is_answered_by_its_own_response() -> None:
     assert initialize["request"]["subtype"] == "initialize"
     channel.deliver(_answer(initialize, response={"commands": []}))
 
-    assert (await connecting)["response"] == {"commands": []}
+    assert await connecting == {"commands": []}
     await cli.aclose()
 
 
@@ -82,8 +82,8 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
 
 
 async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() -> None:
-    """Without a `uuid` the CLI reports no `command_lifecycle` at all — which is why those
-    frames looked unavailable rather than merely unasked-for."""
+    """Without a `uuid` the CLI reports no `command_lifecycle` for the prompt at all, and
+    `interrupt`'s `cancel_queued` cannot reach it."""
     channel = ScriptedChannel()
     cli = ClaudeCli(channel, control_timeout=5)
     connecting = asyncio.create_task(cli.connect())
@@ -95,6 +95,24 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
 
     assert channel.written[-1]["uuid"] == command_uuid
     assert channel.written[-1]["message"] == {"role": "user", "content": "hello"}
+    await cli.aclose()
+
+
+async def test_an_abort_can_drop_the_prompts_queued_behind_the_turn() -> None:
+    """A bare `interrupt` cancels the running turn and the CLI starts the next queued prompt."""
+    channel = ScriptedChannel()
+    cli = ClaudeCli(channel, control_timeout=5)
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    channel.deliver(_answer(channel.written[0]))
+    await connecting
+
+    aborting = asyncio.create_task(cli.interrupt(cancel_queued=True))
+    await asyncio.sleep(0)
+    channel.deliver(_answer(channel.written[-1]))
+    await aborting
+
+    assert channel.written[-1]["request"] == {"subtype": "interrupt", "reason": "user-cancel", "cancel_queued": True}
     await cli.aclose()
 
 

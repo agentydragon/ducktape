@@ -15,14 +15,7 @@ the thing standing between us and it, and four separate needs now point at the s
   emitted only for an inbound user frame that carries a `uuid`, and the SDK never sends one.
   Probed against the binary and then run: adding it produces `queued` → `started` →
   `completed`, with the fold visible as `completed` arriving **before** the turn's `result`
-  (<../debug/mid_turn_steering_probe.py>).
-
-  _Not a capability negotiation, though it looked like one._ `system/init` advertises
-  `capabilities: [interrupt_receipt_v1, interrupt_cancel_queued_v1, msg_lifecycle_v1]`, and
-  the first reading of that was that we had to opt in. The `initialize` schema has no field
-  for client capabilities at all — `hooks`, `sdkMcpServers`, `systemPrompt`, `agents`,
-  `skills`, `supportedDialogKinds` and no more — so the advertisement is the CLI saying what
-  it can do, not a handshake. The opt-in is the `uuid`.
+  (<../cli_protocol/probes/steering.py>).
 
 - **Its typed layer is already not our source of truth.** `Message` has no variant for
   `command_lifecycle`, `system/task_started`, `task_notification` or `transcript_mirror`;
@@ -61,6 +54,43 @@ Each step is useful on its own and none of them is a rewrite.
 
 After step 4 the SDK is a launch-args helper, and removing it entirely is a separate small
 decision rather than the point of the exercise.
+
+## What owning the handshake buys — [later]
+
+The protocol reference is <../cli_protocol/README.md>; field shapes, measured behaviour and the
+probes that establish them live there and are not repeated here. This is only the judgment about
+which of it Haku should take up, and it is [later] work — none of it blocks the steps above.
+
+Worth taking up, in rough order of value:
+
+- **`sdkMcpServers`** — the console hosts an MCP server itself, over the control channel, and
+  the CLI speaks JSON-RPC to it. No second process, no port, no credential on the wire, and the
+  tool implementation stays where the data already is. <matrix_chat_runtime.md> R5.2a passed on
+  this when it bought structural session scoping we then decided against (R5.3a); as a way to
+  give Haku console-side tools it stands on its own. This is the strongest candidate on the list
+  for the transcript-reading API.
+- **`jsonSchema`** — a bare JSON Schema the answer must satisfy, returned parsed on the `result`
+  frame. Anywhere the console today parses Haku's prose, this replaces it with a structure.
+- **`forwardSubagentText`** — a subagent's prose reaches the client only with this set; by
+  default the client sees its tool calls and nothing it said. Relevant to R6's status line, next
+  to `system/task_*` (<chat_runtime_cleanup.md> §2a), and it is a volume decision as much as a
+  capability one: a room does not want every subagent's narration.
+- **`skills`** — an allowlist for what loads into the system prompt. A prompt-budget lever for a
+  long-running session, and Haku's skill set is not small.
+- **`hooks`** — they work, and a `PreToolUse` deny is honoured before the permission check ever
+  runs, so this is a real policy seam. It is also inbound control traffic, which the re-adoption
+  section below warns about: the hazard is an unanswered request whose **replay has side
+  effects**, which a permission hook has and a read-only one does not. Read that first.
+
+Two to know about without acting on:
+
+- **`supportedDialogKinds`** fails closed, so we are already taking the degraded path silently —
+  for `refusal_fallback_prompt`, the classic refusal error. Whether that is wrong depends on
+  whether a Matrix room can host a blocking dialog at all, which is a surface question.
+- **`toolAliases`, `planModeInstructions`, `excludeDynamicSections`, `title`,
+  `agentProgressSummaries`** are accepted and unmeasured or inert here. `initialize` validates
+  almost nothing, so any of them can be set in the belief it did something; check for an effect
+  rather than for an error.
 
 ## Session re-adoption across a console roll
 

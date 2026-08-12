@@ -60,7 +60,7 @@ when a session can outlive many turns).
 
 ## 2. Mid-turn steering works and we are not using it
 
-Measured, not inferred (<../debug/mid_turn_steering_probe.py>, 2026-08-12): a prompt written
+Measured, not inferred (<../cli_protocol/probes/steering.py>, 2026-08-12): a prompt written
 to the CLI while a turn is running is **absorbed at the next tool boundary**, the model acts
 on it, and one `result` frame covers both prompts. <matrix_chat_runtime.md> R2.2a defers this
 as having "no native mechanism"; that is now corrected there.
@@ -72,21 +72,18 @@ Nothing on our side was preventing it either — `ClaudeSDKClient.query()` is a 
 So `MatrixTurns.offer` can stop refusing batches during a turn (R2.2 becomes fold-into-turn)
 and "actually, skip the calendar part" reaches Haku while it is working.
 
+A fold is confirmable rather than merely visible in what the model does next: `ClaudeCli.query`
+stamps a `uuid` on the prompt, which is what makes the CLI report `command_lifecycle`, and
+`completed` before the turn's `result` means folded.
+
 Two cautions. A turn with no tool call has no boundary to absorb at, so the fallback to
 next-turn delivery stays. And the events the bundled CLI documents are `@internal`, so this
 wants the same version-pinning discipline as the FastMCP adapter.
 
-A third — that folding was observable only by its effect — no longer holds.
-
-**That last one is now solved.** `command_lifecycle` is emitted for any inbound user frame
-carrying a `uuid`, which the SDK never sent — not, as first read, gated behind the
-`msg_lifecycle_v1` capability `system/init` advertises (`initialize` has no field for declaring
-client capabilities at all). `ClaudeCli.query` mints one and returns it, so a fold is
-confirmable: `completed` before the turn's `result` means folded, after means it started a
-fresh turn.
-
-Still open from that list: `interrupt_cancel_queued_v1`. Interrupt and queued messages
-interact, and our abort path knows nothing about a prompt sitting in the CLI's queue.
+**The abort path needs `cancel_queued`.** A bare `interrupt` cancels the running turn and the
+CLI then **starts the next queued prompt** — measured, <../cli_protocol/probes/steering.py>. Our
+abort means "stop, and drop what I asked for next", which is `interrupt` with
+`cancel_queued: true`; it reaches only uuid-stamped commands, which ours now are.
 
 ## 2a. `system/task_*` frames are a status line we already store and ignore
 

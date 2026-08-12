@@ -124,7 +124,7 @@ a handoff to another pod. How the gap is actually closed lives in
   turn. Mid-turn delivery must be distinguishable from the batch that started the turn, and
   must fall back to next-turn delivery when no boundary occurs.
 
-  **The mechanism exists and was measured** (<../debug/mid_turn_steering_probe.py>, 2026-08-12):
+  **The mechanism exists and was measured** (<../cli_protocol/probes/steering.py>, 2026-08-12):
   a prompt written to the CLI mid-turn is absorbed at the next **tool boundary** and the model
   acts on it, in one turn with one `result` frame. The fallback clause above is not a nicety —
   a turn generating continuous prose has no boundary to absorb at, and there the prompt waits
@@ -174,7 +174,7 @@ absorption`.
   contract does not stop a second prompt either. What stops it is our loop reading to
   `ResultMessage` before it looks for the next prompt.
 
-**Settled by measurement, 2026-08-12** (<../debug/mid_turn_steering_probe.py>): the prompt is
+**Settled by measurement, 2026-08-12** (<../cli_protocol/probes/steering.py>): the prompt is
 absorbed at the next tool boundary and the model acts on it, within one turn. The old finding
 was not wrong so much as untested against a turn that had a boundary in it — a first probe
 against a prose-only turn reproduced "no steering", which is the same null result and a
