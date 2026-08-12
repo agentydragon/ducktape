@@ -23,6 +23,7 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatSession
 from haku.console.x.chat_notifications import ChatEventKind
 from haku.console.x.claude_chat import (
+    REPLICA,
     STATUS_AFTER_SECONDS,
     BridgeAuthentication,
     ClaudeChatStore,
@@ -848,6 +849,40 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     assert await chat_store.expire_stale_leases() == 1
     assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
     assert "went away" in (await chat_store.get(operator_id, view.session_id)).error
+
+
+async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migrated_sessions, operator_id) -> None:
+    """The creator's provisioning grant has no holder, so a sandbox that never came up must not
+    blame a replica for going away."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.expire_stale_leases() == 1
+    assert "never attached" in (await chat_store.get(operator_id, view.session_id)).error
+
+
+async def test_a_failed_session_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:
+    """The whole reason to record a holder: this message used to be identical for every such
+    failure, so a room said a session died and nothing could say which process to go read."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.renew_lease(view.session_id)
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+
+    assert await chat_store.expire_stale_leases() == 1
+    assert REPLICA in (await chat_store.get(operator_id, view.session_id)).error
+
+
+async def test_renewing_is_what_claims_the_session(chat_store, migrated_sessions, operator_id) -> None:
+    """A session goes from budgeted to held the first time its replica renews, with nothing else
+    sequencing the handover."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    async with migrated_sessions() as db:
+        assert (await db.get(ClaudeChatSession, view.session_id)).lease_holder is None
+
+    await chat_store.renew_lease(view.session_id)
+
+    async with migrated_sessions() as db:
+        assert (await db.get(ClaudeChatSession, view.session_id)).lease_holder == REPLICA
 
 
 async def test_a_session_whose_holder_is_still_renewing_is_left_alone(

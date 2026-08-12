@@ -860,6 +860,15 @@ class ClaudeChatSession(Base):
     # replica notice. Required, because a live session without one is unreclaimable: the sweep
     # looks for a lease that has passed, and an absent lease never does.
     lease_expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Which replica is asserting the lease, and — by being NULL or not — which of the lease's two
+    # meanings is running. NULL is the creator's provisioning grant: nobody holds this session
+    # yet, it is merely budgeted until a runner attaches. Set means that pod's heartbeat, so an
+    # expired lease names the process to go read; `HOSTNAME` is the pod name, which is what
+    # `kubectl logs` takes as an argument.
+    #
+    # Stays nullable, and not just for the roll that adds it: "no holder yet" is a real state,
+    # so a NOT NULL here would have to be filled with a lie.
+    lease_holder: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

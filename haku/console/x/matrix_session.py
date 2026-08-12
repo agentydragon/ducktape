@@ -19,7 +19,6 @@ import asyncio
 import contextlib
 import datetime
 import logging
-import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Protocol
@@ -34,7 +33,7 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
-from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore, MatrixSession
+from haku.console.x.claude_chat import REPLICA, ClaudeChatService, ClaudeChatStore, MatrixSession
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
@@ -49,9 +48,6 @@ _SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
 SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
 # How long a replica that lost the election waits before contending again.
 LEADER_RETRY = datetime.timedelta(seconds=30)
-# Kubernetes sets HOSTNAME to the pod name, which is what `kubectl logs` wants as an argument —
-# so a handover notice in the room names the thing you would go read next.
-_REPLICA = os.environ.get("HOSTNAME", "unknown")
 # A failed provision should not be retried as fast as a healthy poll: claim creation talks
 # to Kubernetes, and a persistent failure would otherwise become a hot loop against it.
 PROVISION_BACKOFF = datetime.timedelta(seconds=60)
@@ -402,12 +398,12 @@ class MatrixSessionSupervisor:
                 if not locked:
                     await asyncio.sleep(LEADER_RETRY.total_seconds())
                     continue
-                logger.info("Matrix: this replica (%s) is the session supervisor", _REPLICA)
+                logger.info("Matrix: this replica (%s) is the session supervisor", REPLICA)
                 # Said in the room, not just logged. `_last_announced` is per-process, so a
                 # new leader re-announces whatever the current status is — which reads as the
                 # session having changed when only the supervisor did. Naming the replica
                 # makes a handover legible instead of looking like a duplicate notice.
-                await self._report(f"leader:{_REPLICA}", f"session supervisor is now {_REPLICA}")
+                await self._report(f"leader:{REPLICA}", f"session supervisor is now {REPLICA}")
                 try:
                     await self._supervise_as_leader()
                 except asyncio.CancelledError:

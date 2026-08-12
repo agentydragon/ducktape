@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import secrets
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -66,6 +67,10 @@ LEASE_RENEW_INTERVAL = timedelta(seconds=30)
 # The creator's grant, covering the gap before a runner attaches and starts renewing. Longer
 # than `LEASE_TTL` because it has to cover an image pull onto a cold node.
 PROVISION_LEASE = timedelta(minutes=10)
+
+# This process, as the lease records its holder. Kubernetes sets HOSTNAME to the pod name, which
+# is what `kubectl logs` wants as an argument — so a session that died names the thing to go read.
+REPLICA = os.environ.get("HOSTNAME", "unknown")
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -712,11 +717,17 @@ class ClaudeChatStore:
             return chat.status if chat is not None else None
 
     async def renew_lease(self, session_id: UUID) -> None:
-        """Assert that this replica still holds *session_id* and is still working on it."""
+        """Assert that this replica still holds *session_id* and is still working on it.
+
+        Writes the holder as well as the deadline, because the renewal *is* the claim: the row
+        goes from the creator's unheld provisioning grant to this pod's heartbeat the first time
+        the replica running the turn says so, and nothing else has to sequence that.
+        """
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id)
             if chat is not None and chat.status in LIVE_SESSION_STATUSES:
                 chat.lease_expires_at = datetime.now(UTC) + LEASE_TTL
+                chat.lease_holder = REPLICA
 
     async def expire_stale_leases(self) -> int:
         """Fail every live session whose holder stopped renewing, and report how many.
@@ -751,9 +762,13 @@ class ClaudeChatStore:
                 chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
                 if chat is None or chat.status not in LIVE_SESSION_STATUSES:
                     continue
-                logger.error("Claude chat session %s lease expired; its console replica is gone", session_id)
+                # Naming the holder is the whole point of recording it: this message and the
+                # `error` below were previously identical for every such failure, so the room
+                # said a session died and no query could say which process to go read.
+                held_by = chat.lease_holder or "no replica (never attached)"
+                logger.error("Claude chat session %s lease expired; holder was %s", session_id, held_by)
                 chat.status = ChatSessionStatus.FAILED
-                chat.error = "console replica holding this session went away mid-turn"
+                chat.error = f"console replica holding this session went away mid-turn ({held_by})"
                 chat.updated_at = datetime.now(UTC)
                 await notify(db, ChatEventKind.UPDATE, session_id)
             return len(expired)
