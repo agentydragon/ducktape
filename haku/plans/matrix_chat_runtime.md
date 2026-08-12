@@ -552,27 +552,34 @@ that.
 - **R11.5 [v1] Citable like any other source.** Matrix is a source in the sense
   `haku/base/sources/` means it: a finding drawn from a room message cites the message, and
   the operator-facing form of that citation is clickable.
-- **R11.7 [v1] The harness formats; the agent writes Markdown.** Replies go out today as
-  `{"msgtype": "m.text", "body": ...}` with no `formatted_body`, so Element renders the
-  literal source. The fix is a conversion in the console, **not** an instruction telling the
-  agent to emit Matrix HTML: models write Markdown natively and would write a sanitised
-  subset worse, every reply would be a chance to emit tags that are silently stripped, and
-  the tag list would cost prompt budget on every turn. Formatting is a property of the
-  surface, not a choice the agent makes.
-
-  The target is `format: "org.matrix.custom.html"` plus `formatted_body`, with `body` kept
-  as the plaintext fallback. The spec's allowlist is small and worth knowing before writing
-  the converter: `del h1-h6 blockquote p a ul ol sup sub li b i u strong em s code hr br div
-table thead tbody tr th td caption pre span img details summary`, attributes allowlisted
-  per tag, `code` classes only `language-*`, `img src` only `mxc://`, nesting under 100 deep.
-  Two things a stock Markdown renderer gets wrong against it: task lists emit
-  `<input type="checkbox">`, which is stripped to a bare bullet — render `☐`/`☑` instead —
-  and external images are dropped, since `src` must be `mxc://`. Tables and `details` do
-  work. Applies to replies; `m.notice` lifecycle messages stay plain by design.
-
 - **R11.6 [v1] Forwarding failure is visible.** A reply that was produced but not delivered
   is retried and, if it lands late, marked as possibly duplicated. A produced reply must
   never be lost silently.
+- **R11.7 [v1] A reply arrives formatted.** Emphasis, code, lists, tables and links display
+  as themselves in the room, not as their source. The event carries both forms — `body` stays
+  the Markdown, which is the spec's fallback and what a plain-text client should show, and
+  `format: "org.matrix.custom.html"` plus `formatted_body` carries the rendering. Lifecycle
+  `m.notice` messages stay plain; they are one line of status.
+- **R11.7a The harness formats, and the agent is not asked to.** The agent writes Markdown,
+  which is what models write natively; being told to emit Matrix's HTML subset instead would
+  make every reply a chance to emit a tag that is **silently** dropped, and would cost the tag
+  list in prompt budget on every turn. Formatting is a property of the surface, not a choice
+  the agent makes.
+
+  What the agent is told is the smaller, stable thing: which affordances exist. Matrix's
+  subset says several things Markdown has no syntax for — `<details>`, spoiler and colour
+  spans, `<u>`, `<sub>`/`<sup>`, a table `<caption>` — and those pass through to the room, so
+  an agent that reaches for one gets it.
+
+- **R11.7b Conversion is against the spec's allowlist, applied to the output.** Everything
+  outside it is unwrapped to its text here, where the fallback is deliberate, rather than at
+  the far end where it is silent. Applying it to the output rather than trusting the input is
+  what makes raw HTML the agent typed safe: Markdown passes it through, so it arrives as real
+  tags either way. Two cases a stock renderer gets wrong against the allowlist, both losing
+  content rather than styling: **task lists** emit `<input type="checkbox">`, which is not
+  allowlisted, so a checklist arrives as bare bullets with its state gone — Haku writes
+  checklists, so the state becomes `☐`/`☑` text; and **external images** are dropped, since
+  `src` must be `mxc://`, so an image becomes its alt text.
 
 ## Build order
 

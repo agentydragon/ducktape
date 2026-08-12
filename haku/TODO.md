@@ -307,15 +307,3 @@ the runtimes differ in where the sandbox runs — see
   which is stronger and more work. **Runtime control:** being able to widen or revoke what
   the proxy permits mid-session, rather than only by editing a manifest and rolling the pod —
   the same shape as the approval queue, applied to egress rather than to tool calls.
-- **Render Haku's Markdown for Element** — replies go out as
-  `{"msgtype": "m.text", "body": ...}` (`matrix_client._send`), so Element shows the literal
-  source: asterisks, backticks, `#`. Matrix carries formatting as a second field pair on the
-  same event — `format: "org.matrix.custom.html"` plus `formatted_body`, with `body` staying
-  the plaintext fallback — so the fix is to convert the reply and send both, not to change
-  what the agent writes. Two wrinkles: Element sanitizes `formatted_body` to an allowed tag
-  subset, so the converter's output has to land inside it (fenced code becomes
-  `<pre><code>`); and the agent's text can itself contain HTML-looking fragments, which must
-  be escaped on the way in rather than passed through. `markdown` is already a dependency.
-  Applies to `send_text` only — the `m.notice` lifecycle messages are plain by design.
-  Why the console converts rather than the agent being told the syntax, plus the tag list
-  and the two cases a stock renderer gets wrong: `plans/matrix_chat_runtime.md` R11.7.
