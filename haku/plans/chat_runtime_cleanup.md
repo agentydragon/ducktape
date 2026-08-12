@@ -87,14 +87,14 @@ abort means "stop, and drop what I asked for next", which is `interrupt` with
 
 ## 2a. `system/task_*` frames are a status line we already store and ignore
 
-The same run showed `system/task_started` and `system/task_notification` carrying
-`tool_use_id`, a `task_type`, and a human-readable `description` — "Sleep 4 seconds (step 1)".
-That is R6's "what is Haku doing right now" without inventing anything: the frames are already
-in `claude_chat_frames`, and the SDK's `Message` union has no variant for them, so the typed
-layer drops them and only the raw store has them. Today the room's only progress signal is the
-sandbox bootstrap's stdout, which stops the moment the session starts working.
+**Done.** `system/task_started` and `task_progress` carry `tool_use_id`, a `task_type` and a
+human-readable `description` — "Running Count regular files in the directory" — which is R6's
+"what is Haku doing right now" without inventing anything. The turn loop now derives a coarse
+state from those and from each `assistant` frame's `tool_use` names, and the room shows it on a
+single lazily-created, rate-limited, redacted-on-finish line.
 
-Folding is also what makes §1's `turn_prompt` many-to-one rather than a column.
+What remains of R6 is R6.1: typing notifications for the turn's duration, cleared on every
+terminal path.
 
 ## 3. The user message row is a queue _and_ a transcript
 

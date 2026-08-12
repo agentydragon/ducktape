@@ -283,6 +283,7 @@ def create_app(
                 matrix_sync_service.recent_history,
                 matrix_sync_service.announce,
                 matrix_sync_service.reply,
+                matrix_sync_service,
             )
 
     # Resolving configured external identities is database I/O. Keep app construction pure and do

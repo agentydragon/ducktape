@@ -12,7 +12,7 @@ from pydantic import SecretStr
 
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
-from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.matrix_sync import STATUS_EDIT_INTERVAL_SECONDS, MatrixSyncService, MatrixSyncStore
 
 
 @dataclass
@@ -23,6 +23,8 @@ class _FakeMatrix:
     joined: list[str] = field(default_factory=list)
     sent: list[tuple[str, str]] = field(default_factory=list)
     notices: list[tuple[str, str]] = field(default_factory=list)
+    edits: list[tuple[str, str]] = field(default_factory=list)
+    redacted: list[str] = field(default_factory=list)
     since: str | None = None
     token_valid: bool = True
     logins: int = 0
@@ -48,6 +50,12 @@ class _FakeMatrix:
     async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
         self.notices.append((room_id, body))
         return f"$notice-{len(self.notices)}"
+
+    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str) -> None:
+        self.edits.append((event_id, body))
+
+    async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
+        self.redacted.append(event_id)
 
 
 @dataclass
@@ -291,6 +299,49 @@ async def test_auth_error_surfaces_so_the_loop_can_re_login(service, matrix, bou
     except MatrixAuthError:
         return
     raise AssertionError("MatrixAuthError should propagate out of sync_once")
+
+
+async def test_the_turn_status_is_one_line_that_gets_edited(service, matrix, bound_room) -> None:
+    """R6.5. A notice per update would make a busy turn unreadable, which is the whole point
+    of having a status line rather than progress messages."""
+    await service.show_status("running Bash")
+    service._status_shown_at -= STATUS_EDIT_INTERVAL_SECONDS
+    await service.show_status("running Read")
+
+    assert matrix.notices == [(bound_room, "running Bash")]
+    assert matrix.edits == [("$notice-1", "running Read")]
+
+
+async def test_a_repeated_state_is_not_resent(service, matrix, bound_room) -> None:
+    await service.show_status("running Bash")
+    service._status_shown_at -= STATUS_EDIT_INTERVAL_SECONDS
+    await service.show_status("running Bash")
+
+    assert matrix.edits == []
+
+
+async def test_edits_are_rate_limited(service, matrix, bound_room) -> None:
+    """A turn that switches tools ten times a second still costs the room one line."""
+    await service.show_status("running Bash")
+    await service.show_status("running Read")
+    await service.show_status("running Grep")
+
+    assert matrix.edits == []
+
+
+async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_room) -> None:
+    await service.show_status("running Bash")
+
+    await service.clear_status()
+
+    assert matrix.redacted == ["$notice-1"]
+
+
+async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, matrix, bound_room) -> None:
+    """Short turns never create a line, and finishing one must not redact someone else's event."""
+    await service.clear_status()
+
+    assert matrix.redacted == []
 
 
 if __name__ == "__main__":

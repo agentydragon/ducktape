@@ -19,6 +19,7 @@ import datetime
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from time import monotonic
 from uuid import uuid4
 
 from pydantic import SecretStr
@@ -39,6 +40,9 @@ _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
 LEADER_RETRY = datetime.timedelta(seconds=30)
 # Backoff after a failed sync, so a homeserver outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
+# Floor on how often the turn's status line is edited (R6.5). Paced for a reader and for
+# Synapse's per-room rate limit, not for how fast the agent changes what it is doing.
+STATUS_EDIT_INTERVAL_SECONDS = 5.0
 
 
 class MatrixSyncStore:
@@ -98,6 +102,9 @@ class MatrixSyncService:
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         self._sent_event_ids: set[str] = set()
         self._holding = False
+        self._status_event_id: str | None = None
+        self._status_body: str | None = None
+        self._status_shown_at = 0.0
 
     async def _token(self) -> str:
         """A working access token, logging in only when the cached one is not.
@@ -138,6 +145,50 @@ class MatrixSyncService:
             return
         event_id = await self._client.send_text(await self._token(), conversation.room_id, body, txn_id=uuid4().hex)
         self._sent_event_ids.add(event_id)
+
+    async def show_status(self, body: str) -> None:
+        """Put *body* on the room's single status line, creating or editing it (R6.2, R6.5).
+
+        One line per turn rather than a notice per step: a room where every tool call is a
+        message is a room nobody reads. The event id of the live line is held here because
+        this is the only object that knows the room and the token; the turn loop says what
+        the state is and never learns how it is shown.
+
+        Rate-limited here for the same reason. Pacing is a property of the homeserver and of
+        what a person can read, not of how often the agent changes what it is doing, so a
+        turn that switches tools ten times in a second still costs one edit.
+        """
+        if body == self._status_body:
+            return
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            return
+        now = monotonic()
+        if self._status_event_id is not None and now - self._status_shown_at < STATUS_EDIT_INTERVAL_SECONDS:
+            return
+        self._status_body, self._status_shown_at = body, now
+        token = await self._token()
+        if self._status_event_id is None:
+            self._status_event_id = await self._client.send_notice(
+                token, conversation.room_id, body, txn_id=uuid4().hex
+            )
+            self._sent_event_ids.add(self._status_event_id)
+            return
+        await self._client.edit_notice(token, conversation.room_id, self._status_event_id, body, txn_id=uuid4().hex)
+
+    async def clear_status(self) -> None:
+        """Retire the status line, if one was ever created (R6.5).
+
+        Called on every terminal path, including failure — a status line left saying "running
+        Bash" after the turn died is the stuck-typing-indicator bug in another costume.
+        """
+        event_id, self._status_event_id, self._status_body = self._status_event_id, None, None
+        if event_id is None:
+            return
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            return
+        await self._client.redact(await self._token(), conversation.room_id, event_id, reason="turn finished")
 
     async def recent_history(self, limit: int) -> tuple[InboundMessage, ...]:
         """The tail of the live room's conversation, for re-awakening a replacement session.

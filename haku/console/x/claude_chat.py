@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import secrets
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -812,6 +813,81 @@ class RecordingWebSocket(TextWebSocket):
             await self._store.record_frame(self._session_id, direction, frame.payload)
 
 
+# How long a turn runs before the room is told anything about it (R6.2). Below this the
+# answer itself is the status, and a status/answer pair for a five-second exchange is
+# clutter.
+STATUS_AFTER_SECONDS = 8.0
+
+
+def _coarse_status(frame: dict[str, Any]) -> str | None:
+    """What the room should be told this frame means, or None if it means nothing to it.
+
+    Coarse by rule, not by taste (R6.3): where a tool is named, the CLI's own identifier is
+    passed through verbatim, and where the CLI wrote a human-readable description of a task
+    it is used as-is. There is deliberately no per-tool copy and no mapping table, because
+    both would need maintaining every time the tool surface grows.
+    """
+    match frame.get("type"):
+        case "assistant":
+            names = [block["name"] for block in _content_blocks(frame) if block.get("type") == "tool_use"]
+            return f"running {', '.join(names)}" if names else "writing"
+        case "system":
+            match frame.get("subtype"):
+                # `description` here is the CLI's own prose for the step in flight, e.g.
+                # "Running Count regular files in the directory" — better than anything the
+                # console could reconstruct from a tool name and its arguments.
+                case "task_started" | "task_progress":
+                    return str(frame.get("description") or "working")
+    return None
+
+
+class _TurnStatus:
+    """Drives the room's status line for one turn.
+
+    A polled driver rather than a write on every frame, because the two things that decide
+    whether to speak are both about elapsed time — the lazy-creation threshold and the edit
+    floor — and a turn can go a long while between frames. Frames set the state; the loop
+    decides when the room hears about it.
+    """
+
+    def __init__(self, show: Callable[[str], Awaitable[None]], clear: Callable[[], Awaitable[None]]):
+        self._show = show
+        self._clear = clear
+        self._state: str | None = None
+        self._started = time.monotonic()
+        self._task: asyncio.Task[None] | None = None
+
+    def note(self, frame: dict[str, Any]) -> None:
+        if (state := _coarse_status(frame)) is not None:
+            self._state = state
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        while True:
+            await asyncio.sleep(1.0)
+            if self._state is not None and time.monotonic() - self._started >= STATUS_AFTER_SECONDS:
+                await self._show(self._state)
+
+    async def finish(self) -> None:
+        """Stop driving and retire the line, on every path out of the turn including failure."""
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        await self._clear()
+
+
+async def _ignore_status(text: str) -> None:
+    del text
+
+
+async def _ignore_clear() -> None:
+    pass
+
+
 class RoomSurface(Protocol):
     """The front end for sessions that serve a room, for the parts a turn cannot do itself.
 
@@ -833,6 +909,10 @@ class RoomSurface(Protocol):
     async def deliver(self, room_id: str, text: str) -> None: ...
 
     async def report(self, room_id: str, detail: str) -> None: ...
+
+    async def show_status(self, room_id: str, text: str) -> None: ...
+
+    async def clear_status(self, room_id: str) -> None: ...
 
 
 class ClaudeChatService:
@@ -935,6 +1015,18 @@ class ClaudeChatService:
             "preset": "claude_code",
             "append": await self._room_surface.system_prompt(session_id, room_id),
         }
+
+    def _turn_status(self, room_id: str | None) -> _TurnStatus:
+        """A status driver for one turn, wired to the room if this session serves one.
+
+        A session with no room still gets a driver rather than a `None` to branch on: the SPA
+        reads the message rows, so there is simply nothing for its status to do, and the turn
+        loop should not have to know which surface it is on.
+        """
+        surface, room = self._room_surface, room_id
+        if surface is None or room is None:
+            return _TurnStatus(_ignore_status, _ignore_clear)
+        return _TurnStatus(lambda text: surface.show_status(room, text), lambda: surface.clear_status(room))
 
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
         """Log every sandbox progress report, and show it to the room if there is one."""
@@ -1115,6 +1207,8 @@ class ClaudeChatService:
         streamed = ""
         saw_assistant_message = False
         result: dict[str, Any] | None = None
+        status = self._turn_status(room_id)
+        status.start()
         try:
             while True:
                 done, pending = await asyncio.wait(
@@ -1143,6 +1237,7 @@ class ClaudeChatService:
                     if not isinstance(completed, dict):
                         continue
                     frame = completed
+                    status.note(frame)
                     match frame.get("type"):
                         case "stream_event":
                             if not (delta := _text_delta(frame.get("event", {}))):
@@ -1209,6 +1304,10 @@ class ClaudeChatService:
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
+        finally:
+            # Every terminal path, failure included: a line still saying "running Bash" after
+            # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
+            await status.finish()
 
     async def _deliver_reply(self, session_id: UUID, room_id: str | None, final_text: str) -> None:
         """Speak the answer into the room, if this session serves one.

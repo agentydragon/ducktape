@@ -188,7 +188,21 @@ async def _unused(_: str) -> None:
     raise AssertionError("the prompt path does not speak into the room")
 
 
-def surface(history: RecentHistory) -> MatrixSurface:
+class _RecordingStatusLine:
+    """A `StatusLine` that keeps what it was told instead of speaking to a homeserver."""
+
+    def __init__(self) -> None:
+        self.shown: list[str] = []
+        self.cleared = 0
+
+    async def show_status(self, body: str) -> None:
+        self.shown.append(body)
+
+    async def clear_status(self) -> None:
+        self.cleared += 1
+
+
+def surface(history: RecentHistory, status: _RecordingStatusLine | None = None) -> MatrixSurface:
     return MatrixSurface(
         MATRIX_CONFIG,
         runtime_config(),
@@ -196,6 +210,7 @@ def surface(history: RecentHistory) -> MatrixSurface:
         history,
         _unused,
         _unused,
+        status or _RecordingStatusLine(),
     )
 
 

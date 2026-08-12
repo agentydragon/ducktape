@@ -27,6 +27,7 @@ from nio.responses import (
     JoinResponse,
     LoginResponse,
     RoomMessagesResponse,
+    RoomRedactResponse,
     RoomSendResponse,
     SyncResponse,
     WhoamiResponse,
@@ -200,6 +201,42 @@ class MatrixClient:
         style them apart from Haku's answers and bots ignore them by convention.
         """
         return await self._send(token, room_id, "m.notice", body, txn_id)
+
+    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str) -> None:
+        """Replace an earlier notice in place, rather than posting a second one.
+
+        This is what lets a turn have **one** status line instead of a line per step (R6.5).
+        The edit is its own event carrying `m.replace`: clients that understand it re-render
+        the original, and clients that do not show the fallback body — which is why the
+        top-level `body` is the new text prefixed with `*`, per the spec's convention, rather
+        than the new text alone.
+        """
+        self._client.access_token = token
+        new_content = {"msgtype": "m.notice", "body": body}
+        _unwrap(
+            await self._client.room_send(
+                room_id,
+                message_type="m.room.message",
+                content=new_content
+                | {
+                    "body": f"* {body}",
+                    "m.new_content": new_content,
+                    "m.relates_to": {"rel_type": "m.replace", "event_id": event_id},
+                },
+                tx_id=txn_id,
+            ),
+            RoomSendResponse,
+        )
+
+    async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
+        """Remove an event. Used to retire a status line once its answer has posted (R6.5).
+
+        A redaction rather than a final edit: the status described work in progress, and once
+        the answer is in the room the line is not stale so much as spent — leaving one edited
+        to "done" behind on every turn is the clutter the single status line exists to avoid.
+        """
+        self._client.access_token = token
+        _unwrap(await self._client.room_redact(room_id, event_id, reason=reason), RoomRedactResponse)
 
     async def _send(
         self, token: str, room_id: str, msgtype: str, body: str, txn_id: str, formatted: str | None = None

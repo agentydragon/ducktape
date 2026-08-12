@@ -561,18 +561,20 @@ input to a running turn**. Interrupt exists; steer does not.
   Typing notifications are set by the harness around the turn and refreshed for its
   duration, and cleared on **every** terminal path including failure — a stuck typing
   indicator is a recurring bug in other harnesses.
-- **R6.2 [v1]** For slow turns, a status message reports what is happening now. It is
+- **R6.2 [built]** For slow turns, a status message reports what is happening now. It is
   created lazily, after a latency threshold, so short exchanges do not leave a
   status/answer pair behind.
-- **R6.3 [v1]** Status is a **coarse state**, not a description of the work. Where a tool
+- **R6.3 [built]** Status is a **coarse state**, not a description of the work. Where a tool
   is named, its identifier is passed through verbatim. There is no per-tool copy and no
   mapping table to maintain as the tool surface grows.
-- **R6.4 [v1]** Status is derived by the console from the SDK message stream it is already
-  consuming — **any** message to or from the agent, not specifically `PreToolUse`. A short
-  serialization of the latest message is an acceptable implementation; the point is that
-  the console never has to ask the model what it is doing.
-- **R6.5 [v1]** Status editing is rate-limited, and the status message is removed or
-  replaced when the answer posts.
+- **R6.4 [built]** Status is derived by the console from the frame stream it is already
+  consuming — **any** frame, not specifically `PreToolUse`. In the event it is derived from
+  two: the `tool_use` names on an `assistant` frame, and the `description` the CLI itself
+  writes on `system/task_started` and `task_progress`. The console never asks the model what
+  it is doing.
+- **R6.5 [built]** Status editing is rate-limited, and the status message is removed or
+  replaced when the answer posts. One `m.replace` edit at most every five seconds; redacted
+  on every terminal path, failure included.
 
 ### R7 — System-emitted messages
 

@@ -22,6 +22,7 @@ import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select, text
@@ -60,9 +61,25 @@ PROVISION_BACKOFF = datetime.timedelta(seconds=60)
 # so there is still exactly one login and one device (R10.3a).
 Announce = Callable[[str], Awaitable[None]]
 
+
 # Reads the tail of the live room's conversation, newest `limit` messages, oldest first.
 # Supplied by the sync service for the same reason `Announce` is: it holds the credential.
 RecentHistory = Callable[[int], Awaitable[Sequence[InboundMessage]]]
+
+
+class StatusLine(Protocol):
+    """The room's single in-turn status message.
+
+    Implemented by the sync loop, which is the only holder of a Matrix credential — so the
+    same reason `Announce` is a callable from there rather than a client of its own. A
+    protocol rather than two more callables because the two verbs share a piece of state,
+    the id of the live line, and splitting them would put it on the caller.
+    """
+
+    async def show_status(self, body: str) -> None: ...
+
+    async def clear_status(self) -> None: ...
+
 
 # How much of the conversation a replacement session is handed. Enough to pick up a thread
 # mid-topic, not enough to be a transcript — anything older is in the room, which the agent
@@ -198,6 +215,7 @@ class MatrixSurface:
         history: RecentHistory,
         announce: Announce,
         reply: Announce,
+        status: StatusLine,
     ):
         self._config = config
         self._runtime = runtime
@@ -205,6 +223,7 @@ class MatrixSurface:
         self._history = history
         self._announce = announce
         self._reply = reply
+        self._status = status
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return self._template.render(
@@ -229,6 +248,16 @@ class MatrixSurface:
         """Narrate the sandbox's setup into the room (R7.1)."""
         del room_id
         await self._announce(detail)
+
+    async def show_status(self, room_id: str, text: str) -> None:
+        """Say what the turn is doing now, on the room's one status line (R6.2)."""
+        del room_id
+        await self._status.show_status(text)
+
+    async def clear_status(self, room_id: str) -> None:
+        """Retire that line once the turn is over, however it ended (R6.5)."""
+        del room_id
+        await self._status.clear_status()
 
     async def _recent(self) -> list[HistoryMessage]:
         """The tail of the conversation, or none of it if the homeserver would not say.
