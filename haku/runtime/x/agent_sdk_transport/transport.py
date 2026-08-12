@@ -75,7 +75,7 @@ class WebSocketTransport:
                         yield payload
                     case SetupOutput(data=data):
                         # Narration about the sandbox, not part of the conversation: it must
-                        # not reach the SDK, which would see an unknown message shape.
+                        # not reach `ClaudeCli`, which would see an unknown frame type.
                         await self._report_setup_output(data)
         except (EOFError, anyio.EndOfStream):
             self._ready = False

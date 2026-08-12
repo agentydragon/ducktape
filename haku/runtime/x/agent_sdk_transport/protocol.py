@@ -1,17 +1,17 @@
 """Envelope framing for the bridge between Haku Console and the sandbox runner.
 
-Two protocols share this socket: the Claude Agent SDK's own stream-JSON, and the small
-control protocol Haku needs around it — what to launch, when input ends, and what the sandbox
-is doing before Claude exists to say anything. Every frame on the wire is one of the models
-below, discriminated on ``kind``; an SDK message travels as `ClaudeMessage.payload`, the one
-field whose contents this module does not interpret.
+Two protocols share this socket: the CLI's own newline-delimited JSON
+(<../../../cli_protocol/README.md>), and the small control protocol Haku needs around it — what
+to launch, when input ends, and what the sandbox is doing before Claude exists to say anything.
+Every frame on the wire is one of the models below, discriminated on ``kind``; a CLI frame
+travels as `ClaudeMessage.payload`, the one field whose contents this module does not interpret.
 
 **Deviation from what this used to be.** Both protocols shared one JSON namespace, with
-Haku's frames marked by ``"type": "haku_transport"`` — a reserved value inside the *SDK's*
-own ``type`` key. That holds only for as long as the SDK never emits that value, which is a
+Haku's frames marked by ``"type": "haku_transport"`` — a reserved value inside the *CLI's*
+own ``type`` key. That holds only for as long as the CLI never emits that value, which is a
 promise nobody made; it makes "is this ours?" a guess about someone else's vocabulary rather
 than a property of the frame; and it leaves nowhere to put a frame that is neither side's
-conversation — which ``SetupOutput`` is. Nesting the SDK's blob in a named field makes the
+conversation — which ``SetupOutput`` is. Nesting the CLI's blob in a named field makes the
 demultiplex explicit, so its payload can be anything at all without colliding.
 """
 
@@ -26,7 +26,7 @@ FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMIN
 
 # Bumped to 2 by the envelope: a v1 peer and a v2 peer cannot understand each other's frames.
 # Carried on the ``start`` frame only, because the version is a property of the connection
-# that its first frame settles — repeating it on every SDK payload would be noise.
+# that its first frame settles — repeating it on every CLI payload would be noise.
 PROTOCOL_VERSION: Final = 2
 
 
@@ -45,8 +45,9 @@ class _Frame(BaseModel):
 class ClaudeLaunch(_Frame):
     """Console → runner, once, first: the CLI process to run.
 
-    Built by the trusted process from SDK options, because a custom `Transport` never sees
-    the arguments `SubprocessCLITransport` would have assembled.
+    Built by the trusted process (`options.build_claude_launch`), never by the runner: the
+    argv decides the session's permissions and which MCP servers it reaches, so it is not the
+    sandbox's to choose.
     """
 
     kind: Literal["start"] = "start"
@@ -60,10 +61,10 @@ class ClaudeLaunch(_Frame):
 
 
 class ClaudeMessage(_Frame):
-    """One Agent SDK stream-JSON object, in either direction, passed through untouched."""
+    """One CLI protocol frame, in either direction, passed through untouched."""
 
     kind: Literal["claude"] = "claude"
-    # The one field this module does not model: it is the SDK's vocabulary, not ours, and
+    # The one field this module does not model: it is the CLI's vocabulary, not ours, and
     # the whole point of nesting it is that it may contain anything — including keys named
     # after our own.
     payload: dict[str, Any]
@@ -86,7 +87,7 @@ class SetupOutput(_Frame):
     lines, and does not judge which of them are interesting. That is all the console's, which
     is the only end that knows what it wants to do with it — and it means the transport cannot
     mangle a byte it did not understand. Contrast `ClaudeMessage`, which stays parsed: that
-    stream is stream-JSON by contract and the SDK needs objects anyway.
+    stream is newline-delimited JSON by contract and the client needs objects anyway.
 
     Every line rather than a marked subset, because the bootstrap's own output already *is* the
     account of what it did — three lines on this box, since git writes no progress bar to a
@@ -101,9 +102,9 @@ class SetupOutput(_Frame):
 
 # The two directions carry different frames, and saying so in the types is what keeps the
 # difference enforced. It is *not* request/response — this is a duplex stream where both ends
-# speak unprompted, and nothing at this layer pairs a reply with a call. (The SDK's own
+# speak unprompted, and nothing at this layer pairs a reply with a call. (The CLI's own
 # control_request/control_response do correlate, by an id inside `ClaudeMessage.payload`,
-# which is the SDK's business and deliberately opaque here.)
+# which rides inside `ClaudeMessage.payload` and is deliberately opaque here.)
 ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
 RunnerToConsole = ClaudeMessage | SetupOutput
 
@@ -128,13 +129,13 @@ class TextWebSocket(Protocol):
 def decode_object(data: str) -> dict[str, Any]:
     """One JSON object, or a `ValueError`.
 
-    The raw SDK stream-JSON lines either end reads — the CLI's stdout and the string the SDK
+    The raw protocol lines either end reads — the CLI's stdout and the string the client
     hands `Transport.write`. Same shape as a frame's `payload`, but not a frame: it arrives
     outside this protocol and is only ever wrapped into one.
     """
     value = json.loads(data)
     if not isinstance(value, dict):
-        raise ValueError("Agent SDK transport frames must contain one JSON object")
+        raise ValueError("bridge frames must contain one JSON object")
     return value
 
 

@@ -35,7 +35,7 @@ class ClientWebSocketAdapter(TextWebSocket):
     async def receive_text(self) -> str:
         data = await self._connection.recv()
         if not isinstance(data, str):
-            raise ValueError("Agent SDK transport requires text WebSocket frames")
+            raise ValueError("the bridge requires text WebSocket frames")
         return data
 
     async def close(self) -> None:
@@ -175,7 +175,7 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
 
 
 async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:
-    """Connect to Console and proxy its native SDK protocol to Claude Code."""
+    """Connect to Console and proxy the CLI's own protocol between it and Claude Code."""
     headers: dict[str, str] | None = None
     if bearer_token:
         headers = {"Authorization": f"Bearer {bearer_token}"}

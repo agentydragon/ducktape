@@ -147,6 +147,18 @@ Twenty-odd methods across session lifecycle, prompt queue, transcript, frames, l
 claim-cleanup bookkeeping. It splits along the seams §1 and §3 create: sessions/leases,
 prompts, transcript, rollout.
 
+## 7a. `agent_sdk_transport` is named after a dependency it no longer has
+
+The package holds the bridge envelope, the websocket channel, the CLI protocol client and the
+launch builder. None of it is an Agent SDK transport; the SDK is gone from the code, and what
+remains of the wheel is a build-time source for the `claude` binary (§0's note on moving that to
+npm). `runtime/x/claude_bridge` or similar would say what the package is.
+
+Mechanical but not free: imports across the console and the runner, the Bazel target paths, the
+`runner_image`/`runner_bin` labels, and whatever in `cluster/` names them. The same applies to
+`HAKU_AGENT_SDK_RUNNER_TOKEN`, which is a deploy contract — a Secret key and env var in eight
+places — so renaming that one wants a two-step expand/contract rather than a sweep.
+
 ## 8. Smaller, mechanical
 
 - `abort_session` reaches into `service._store`.
