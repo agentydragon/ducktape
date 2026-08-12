@@ -18,9 +18,9 @@ separate sandboxes — so a browser conversation and the Matrix conversation coe
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
 announces itself, so the browser one is the easy one to forget you are paying for.
 
-Streaming (`StreamEvent`, and the `asyncio.wait` abort dance around it) exists for the SPA
-alone. The Matrix path forwards only a finished turn (R11.1), so if the SPA view is ever
-retired that machinery goes with it.
+Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole
+assistant messages, each as it completes (R11.1), so if the SPA view is ever retired that
+machinery goes with it.
 
 ## Matrix chat surface
 

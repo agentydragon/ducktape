@@ -680,9 +680,16 @@ default to relaying the model's own reply rather than requiring a send tool. Thi
 that.
 
 - **R11.1 [v1] Auto-forward.** The agent's reply is forwarded to the room by the harness.
-  The agent does not call a tool to speak. The forwarded content is the **final** assistant
-  text of the turn; interim assistant text between tool calls feeds the status line (R6),
-  it does not become room messages.
+  The agent does not call a tool to speak. **Every** assistant message of the turn is
+  forwarded, as it finishes — not only the final one. A turn that says what it is about to
+  do, works, and reports back is three messages in the transcript, and forwarding only the
+  last made the room watch a long turn in silence and then see a conclusion with none of its
+  reasoning. The status line (R6) still names the tool in flight; it is a summary of
+  mechanics, not a substitute for what the agent said.
+  Two consequences of forwarding as it goes: the turn's `result` frame repeats its last
+  assistant text, so it is delivered only when nothing was said along the way (a turn whose
+  answer arrived only there), and the abort notice is spoken on its own rather than appended,
+  because the text it would have been appended to is already in the room.
 - **R11.2 [v1] Every turn speaks.** There is no silence token. A turn that found nothing
   says so. Deferred rather than rejected: both surveyed harnesses have one, and the reason
   to add it later is a chatty scheduled tick (R4.3) — which v1 does not have.
@@ -798,12 +805,12 @@ Most of this exists. `claude_chat.py` already has the store (sessions, messages,
 bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends:
 
 - **Ingress**: the sync loop calls `enqueue_prompt` instead of echoing.
-- **Egress**: `_run_turn`'s `final_text` goes to a Matrix send **as well as** the DB row.
-  Not instead of: the SPA chat view stays as its own experiment, so the rows still have a
-  reader, and the Matrix path is a delivery port on the service
-  rather than Matrix knowledge inside it. Streaming (R11.1) is off for Matrix only — the
-  `StreamEvent` branch and its `asyncio.wait` abort dance survive for the SPA, and the
-  simplification the original plan expected here is deferred with that decision.
+- **Egress**: each assistant message `_run_turn` completes goes to a Matrix send **as well
+  as** the DB row (R11.1). Not instead of: the SPA chat view stays as its own experiment, so
+  the rows still have a reader, and the Matrix path is a delivery port on the service rather
+  than Matrix knowledge inside it. Deltas are still not forwarded — a room gets whole
+  messages — so the `StreamEvent` branch and its `asyncio.wait` abort dance survive for the
+  SPA, and the simplification the original plan expected here is deferred with that decision.
 - **Add**: a supervisor. Every existing path into the chat machinery starts from a browser
   gesture — the `POST` creates the session, mints the bridge token, and provisions the
   claim. Matrix has none, so something must own "there is one session and it has a live

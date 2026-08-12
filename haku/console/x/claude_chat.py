@@ -72,6 +72,10 @@ PROVISION_LEASE = timedelta(minutes=10)
 # is what `kubectl logs` wants as an argument — so a session that died names the thing to go read.
 REPLICA = os.environ.get("HOSTNAME", "unknown")
 
+# Appended to a turn's stored answer when the operator stopped it, and sent on its own when the
+# room has already heard the turn's prose — so an abort is visible either way.
+ABORTED_NOTICE = "[aborted by operator]"
+
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     """The message of the first leaf in *errors*, for the operator-facing `error` column.
@@ -1257,76 +1261,82 @@ class ClaudeChatService:
         streamed = ""
         saw_assistant_message = False
         result: dict[str, Any] | None = None
+        # Whether anything has been said into the room yet, so the turn's final text is not
+        # posted a second time: `result.result` normally repeats the last assistant message.
+        spoke = False
         status = self._turn_status(room_id)
         status.start()
+        aborted = asyncio.ensure_future(abort_event.wait())
         try:
             while True:
-                done, pending = await asyncio.wait(
-                    [asyncio.ensure_future(anext(frames)), asyncio.ensure_future(abort_event.wait())],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
+                # Exactly one `anext` in flight at a time, and the abort path consumes the one it
+                # finds rather than starting another: `frames` is an async generator, which
+                # refuses to be advanced twice at once ("anext(): asynchronous generator is
+                # already running"), and an abort always arrives while this call is parked here.
+                # Draining through a fresh `async for` therefore raised, so every mid-turn abort
+                # failed the whole session instead of ending its turn.
+                next_frame = asyncio.ensure_future(anext(frames))
+                await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
                 if abort_event.is_set():
                     with contextlib.suppress(Exception):
                         await client.interrupt()
-                    # Drain to this turn's end. The stream stays open for the next one: it is
-                    # the session's, so an interrupt ends a turn rather than the conversation.
-                    async for remaining in frames:
+                    # Drain to this turn's end, beginning with the frame already asked for. The
+                    # stream stays open for the next turn: it is the session's, so an interrupt
+                    # ends a turn rather than the conversation.
+                    while True:
+                        remaining = await next_frame
                         if remaining.get("type") == "result":
                             result = remaining
                             break
+                        next_frame = asyncio.ensure_future(anext(frames))
                     break
-                for task in done:
-                    exc = task.exception()
-                    if exc is not None:
-                        for t in pending:
-                            t.cancel()
-                        raise exc
-                    # `asyncio.wait` erases the type: one task yields a frame, the other is
-                    # `abort_event.wait()` returning a bool.
-                    completed = task.result()
-                    if not isinstance(completed, dict):
-                        continue
-                    frame = completed
-                    status.note(frame)
-                    match frame.get("type"):
-                        case "stream_event":
-                            if not (delta := _text_delta(frame.get("event", {}))):
-                                continue
-                            if assistant_id is None:
-                                assistant_id = await self._store.begin_assistant(session_id)
-                            streamed += delta
-                            await self._store.update_assistant(session_id, assistant_id, streamed)
-                            # The rollout keeps no deltas, so without this the text an
-                            # interrupted turn produced would exist only in the message row and
-                            # the log would simply stop mid-answer (R5.5b).
-                            await self._store.update_partial_frame(session_id, streamed)
-                        case "assistant":
-                            saw_assistant_message = True
-                            if assistant_id is None:
-                                assistant_id = await self._store.begin_assistant(session_id)
-                            blocks = _content_blocks(frame)
-                            text = "".join(
-                                str(block.get("text", "")) for block in blocks if block.get("type") == "text"
-                            ).strip()
-                            tool_uses = [
-                                {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
-                                for block in blocks
-                                if block.get("type") == "tool_use"
-                            ]
-                            await self._store.update_assistant(
-                                session_id, assistant_id, text or streamed.strip(), tool_uses=tool_uses, complete=True
-                            )
-                            # The real frame is already in the log — the recorder wrote it when
-                            # the socket delivered it — so the stand-in has nothing to stand for.
-                            await self._store.clear_partial_frame(session_id)
-                            assistant_id = None
-                            streamed = ""
-                        case "result":
-                            result = frame
-                for task in pending:
-                    task.cancel()
-                if result is not None:
-                    break
+                # Not aborted, so `asyncio.wait` returned because the frame arrived.
+                frame = next_frame.result()
+                status.note(frame)
+                match frame.get("type"):
+                    case "stream_event":
+                        if not (delta := _text_delta(frame.get("event", {}))):
+                            continue
+                        if assistant_id is None:
+                            assistant_id = await self._store.begin_assistant(session_id)
+                        streamed += delta
+                        await self._store.update_assistant(session_id, assistant_id, streamed)
+                        # The rollout keeps no deltas, so without this the text an interrupted
+                        # turn produced would exist only in the message row and the log would
+                        # simply stop mid-answer (R5.5b).
+                        await self._store.update_partial_frame(session_id, streamed)
+                    case "assistant":
+                        saw_assistant_message = True
+                        if assistant_id is None:
+                            assistant_id = await self._store.begin_assistant(session_id)
+                        blocks = _content_blocks(frame)
+                        text = "".join(
+                            str(block.get("text", "")) for block in blocks if block.get("type") == "text"
+                        ).strip()
+                        tool_uses = [
+                            {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
+                            for block in blocks
+                            if block.get("type") == "tool_use"
+                        ]
+                        said = text or streamed.strip()
+                        await self._store.update_assistant(
+                            session_id, assistant_id, said, tool_uses=tool_uses, complete=True
+                        )
+                        # The real frame is already in the log — the recorder wrote it when
+                        # the socket delivered it — so the stand-in has nothing to stand for.
+                        await self._store.clear_partial_frame(session_id)
+                        assistant_id = None
+                        streamed = ""
+                        # Speak each message as it finishes rather than only the final answer
+                        # (R11.1). A turn that says what it is about to do, works, and then
+                        # reports back is three messages in the transcript and used to be one in
+                        # the room — so the room saw the conclusion and never the reasoning.
+                        if said:
+                            await self._deliver_reply(session_id, room_id, said)
+                            spoke = True
+                    case "result":
+                        result = frame
+                        break
             if result is None:
                 raise RuntimeError("the Claude stream ended without a result for this turn")
             if result.get("is_error") and not abort_event.is_set():
@@ -1335,7 +1345,7 @@ class ClaudeChatService:
                 )
             final_text = streamed.strip() or str(result.get("result") or "").strip()
             if abort_event.is_set():
-                final_text += "\n\n[aborted by operator]"
+                final_text += f"\n\n{ABORTED_NOTICE}"
             if assistant_id is not None:
                 # A stream no completed frame closed. Its `partial` frame stays exactly as the
                 # last delta left it: the rollout should show a turn that stopped mid-answer as
@@ -1349,33 +1359,43 @@ class ClaudeChatService:
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             await self._store.complete_turn(session_id)
-            await self._deliver_reply(session_id, room_id, final_text)
+            # Only what the room has not already heard. Each assistant message was spoken as it
+            # finished, and `result.result` normally repeats the last of them — so delivering
+            # `final_text` unconditionally would post the answer twice. Two cases still need it:
+            # a turn whose text arrived only on the `result` frame (no assistant message ever
+            # completed), and an abort, whose notice is on `final_text` and not on any message.
+            if not spoke:
+                await self._deliver_reply(session_id, room_id, final_text)
+            elif abort_event.is_set():
+                await self._deliver_reply(session_id, room_id, ABORTED_NOTICE)
         except Exception as error:
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
         finally:
+            # The event outlives the turn (it is the session's), so only this turn's waiter goes.
+            aborted.cancel()
             # Every terminal path, failure included: a line still saying "running Bash" after
             # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
             await status.finish()
 
-    async def _deliver_reply(self, session_id: UUID, room_id: str | None, final_text: str) -> None:
-        """Speak the answer into the room, if this session serves one.
+    async def _deliver_reply(self, session_id: UUID, room_id: str | None, text: str) -> None:
+        """Say *text* into the room, if this session serves one.
 
-        A session with no room needs nothing here: the SPA's client reads the message rows the
-        turn already wrote.
+        Called for each assistant message as it finishes and once more at the turn's end for
+        whatever the room has not heard yet. A session with no room needs nothing here: the
+        SPA's client reads the message rows the turn already wrote.
 
-        Deliberately after `complete_turn` and deliberately not fatal: the turn did happen
-        and its row is written, so a failed push is a delivery problem, not a session
-        problem. Failing here would mark the session dead and cost the whole conversation
-        over a transient send error.
+        Deliberately not fatal: the message row is written before this runs, so a failed push
+        is a delivery problem rather than a session problem. Failing here would mark the
+        session dead and cost the whole conversation over a transient send error.
         TODO(matrix): retry rather than only logging, once the Matrix surface is the only
         one — today the message row is still readable in the SPA.
         """
         if self._room_surface is None or room_id is None:
             return
         try:
-            await self._room_surface.deliver(room_id, final_text)
+            await self._room_surface.deliver(room_id, text)
         except Exception:
             logger.exception("Reply delivery failed for session %s", session_id)
 

@@ -21,11 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSurface, FrameDirection
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatSession
-from haku.console.x.chat_notifications import ChatEventKind
+from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import (
+    ABORTED_NOTICE,
     REPLICA,
     STATUS_AFTER_SECONDS,
     BridgeAuthentication,
+    ClaudeChatService,
     ClaudeChatStore,
     KubernetesSandboxClaims,
     MatrixSession,
@@ -35,7 +37,7 @@ from haku.console.x.claude_chat import (
     _text_delta,
     _TurnStatus,
 )
-from haku.console.x.conftest import runtime_config
+from haku.console.x.conftest import MCP_TOKEN, RecordingClaims, runtime_config
 from haku.runtime.x.agent_sdk_transport.protocol import ClaudeMessage, SetupOutput
 
 
@@ -576,8 +578,149 @@ async def test_conversations_come_back_newest_first_with_the_room_they_served(ch
     assert conversations[1].room_id is None
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+ROOM = "!room:example.org"
+
+_NARRATED_TURN = [
+    _assistant({"type": "text", "text": "Looking at the logs now."}),
+    _assistant({"type": "tool_use", "id": "toolu_01", "name": "Bash", "input": {"command": "true"}}),
+    _assistant({"type": "text", "text": "Found it: a bad config."}),
+    _result("Found it: a bad config."),
+]
+
+
+class _RecordingRoomSurface:
+    """A `RoomSurface` that keeps what was said instead of talking to a homeserver."""
+
+    def __init__(self) -> None:
+        self.delivered: list[str] = []
+
+    async def system_prompt(self, session_id: UUID, room_id: str) -> str:
+        return "you are Haku"
+
+    async def deliver(self, room_id: str, text: str) -> None:
+        assert room_id == ROOM
+        self.delivered.append(text)
+
+    async def report(self, room_id: str, detail: str) -> None:
+        return None
+
+    async def show_status(self, room_id: str, text: str) -> None:
+        return None
+
+    async def clear_status(self, room_id: str) -> None:
+        return None
+
+
+class _InterruptedCli(_FakeCli):
+    """Aborts once its script has run out, and answers `interrupt` with a `result` frame — which
+    is what a real CLI does and what the turn loop drains to.
+
+    **Where the abort lands is the point.** A real one arrives between frames, with the turn
+    parked on `anext`, so this fires it exactly there: when the loop asks for a frame that has
+    not been sent. Set before the turn it would be a different case (nothing is ever spoken),
+    and set from outside it would race the loop instead of landing at a known point — and one
+    that lands while a frame is already in hand does not exercise the drain at all.
+    """
+
+    def __init__(self, script: list[dict[str, Any]], *, abort_event: asyncio.Event):
+        super().__init__(script)
+        self._abort_event = abort_event
+
+    async def interrupt(self) -> None:
+        await super().interrupt()
+        self._queue.put_nowait(_result("stopped"))
+
+    async def frames(self):
+        source = super().frames()
+        for _ in self.script:
+            yield await anext(source)
+        self._abort_event.set()
+        async for frame in source:
+            yield frame
+
+
+async def _turn_into_a_room(
+    chat_store: ClaudeChatStore,
+    recording_claims: RecordingClaims,
+    notifications: ChatNotifications,
+    operator_id: UUID,
+    client: _FakeCli,
+    *,
+    abort_event: asyncio.Event | None = None,
+) -> list[str]:
+    """Run one turn against *client* for a room-backed session and return what the room heard."""
+    room = _RecordingRoomSurface()
+    service = ClaudeChatService(
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
+    )
+    view, _ = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    async with asyncio.timeout(30):
+        await service._run_turn(
+            cast(Any, client),
+            client.frames().__aiter__(),
+            view.session_id,
+            "why did it fail?",
+            room_id=ROOM,
+            abort_event=abort_event or asyncio.Event(),
+        )
+    return room.delivered
+
+
+async def test_the_room_hears_each_assistant_message_as_it_finishes(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """A turn that says what it is about to do, works, then reports back is three messages in
+    the transcript and used to be one in the room: it spoke only the final answer, so the room
+    watched a long turn in silence and then saw a conclusion with none of its reasoning."""
+    delivered = await _turn_into_a_room(
+        chat_store, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
+    )
+
+    assert delivered == ["Looking at the logs now.", "Found it: a bad config."]
+
+
+async def test_the_last_message_is_not_repeated_by_the_result_frame(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """`result.result` carries the same text as the turn's last assistant message, so speaking
+    both would post the answer twice."""
+    delivered = await _turn_into_a_room(
+        chat_store, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
+    )
+
+    assert delivered.count("Found it: a bad config.") == 1
+
+
+async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """No assistant message completed, so nothing was said along the way — the `result` frame is
+    the only thing that keeps the room from hearing silence."""
+    delivered = await _turn_into_a_room(
+        chat_store, recording_claims, notifications, operator_id, _FakeCli([_result("nothing streamed, but an answer")])
+    )
+
+    assert delivered == ["nothing streamed, but an answer"]
+
+
+async def test_an_aborted_turn_says_so_on_its_own(chat_store, recording_claims, notifications, operator_id) -> None:
+    """Two things this pins down. The abort notice rides on `final_text`, which a turn that has
+    already spoken no longer delivers, so it has to be said on its own or an operator's stop is
+    invisible in the room. And the turn has to *survive* the abort at all: draining to the
+    interrupt's `result` used to open a second `anext` on the session's generator, which an async
+    generator refuses — so an abort landing where they land, between frames, raised out of the
+    turn and failed the whole session instead of ending its turn.
+    """
+    abort_event = asyncio.Event()
+    client = _InterruptedCli(_NARRATED_TURN[:-1], abort_event=abort_event)
+
+    delivered = await _turn_into_a_room(
+        chat_store, recording_claims, notifications, operator_id, client, abort_event=abort_event
+    )
+
+    assert client.interrupted
+    # The notice on its own, and nothing from the interrupt's own `result` frame ("stopped").
+    assert delivered == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
 
 
 class _RealDbClaudeClient(_LifecycleClaudeClient):
@@ -929,3 +1072,7 @@ async def test_a_cancelled_runner_records_the_shutdown_instead_of_going_quiet(
 
     assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
     assert "shut down" in (await chat_store.get(operator_id, view.session_id)).error
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
