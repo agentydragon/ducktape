@@ -935,15 +935,26 @@ class ClaudeChatFrame(Base):
     # without scanning JSONB.
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # True for the one frame the console writes rather than observes: the coalesced text of a
-    # turn that ended mid-stream, which the agent never got to close with a frame of its own.
-    # Everything else is verbatim, and a reader that cares can tell them apart.
-    synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # The one row the console writes rather than observes: an assistant message still streaming,
+    # rebuilt from the deltas the log does not keep, rewritten in place as they arrive and
+    # deleted when the completed frame supersedes it. So a `partial` row that outlives its turn
+    # is not a bookkeeping leftover — it is the record of a turn that never finished, which is
+    # exactly the case a reader most wants explained.
+    #
+    # Written as it goes rather than reconstructed at the end, because the end does not always
+    # arrive: a replica losing its pod mid-turn raises `CancelledError` past any finalizer, and
+    # that is the turn worth having. It costs one extra write per delta, alongside the one
+    # `update_assistant` already does.
+    partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
         Index("idx_claude_chat_frames_session", "session_id", "frame_seq"),
+        # One in-flight reconstruction per session, as a schema property rather than a rule the
+        # turn loop has to keep: there is only ever one assistant message streaming at a time.
+        Index("uq_claude_chat_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),
     )
 
 

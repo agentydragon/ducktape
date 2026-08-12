@@ -490,12 +490,23 @@ input to a running turn**. Interrupt exists; steer does not.
   - **It is one write in one place**, rather than a persistence concern threaded through a
     control-flow loop that is already the most delicate code in the file.
 
-- **R5.5b Exclude partial frames only.** `stream_event` deltas are thousands per turn and say
-  nothing the completed frame does not, so they are dropped — but **being streamed is not the
-  reason**: the CLI emits the completed `assistant` frame as well, and that is stored like any
-  other. The one gap is a turn that ends mid-stream (abort, crash) with no completed frame to
-  close it; there the console writes the coalesced text it already has as a synthetic frame,
-  marked as such, so work that was produced is never absent from the record.
+- **R5.5b Exclude partial frames only, and keep the partial message.** `stream_event` deltas
+  are thousands per turn and say nothing the completed frame does not, so they are dropped —
+  but **being streamed is not the reason**: the CLI emits the completed `assistant` frame as
+  well, and that is stored like any other.
+
+  Dropping the deltas would still leave the log stopping mid-answer whenever a turn is
+  interrupted, so an assistant message that is still streaming is present as **one row rebuilt
+  from them**, rewritten in place as they arrive and deleted when the completed frame
+  supersedes it. A `partial` row that outlives its turn is therefore not leftover bookkeeping:
+  it is the record of a turn that never finished.
+
+  **Written as it goes, not reconstructed at the end**, because the end is exactly what an
+  interrupted turn does not reach: a replica losing its pod raises `CancelledError` past any
+  finalizer, and that is the turn most worth having. It costs one write per delta beside the
+  one the message row already does. The row is not overwritten with the harness's final text
+  either — that carries `[aborted by operator]`, and the frame records what the agent produced,
+  not what the room was told.
 
 - **R5.5c Bound the reader, not the record.** A tool result can be megabytes, and the frame
   stores it whole: truncating at write time discards the one copy of what happened, to save

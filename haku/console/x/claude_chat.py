@@ -31,7 +31,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
@@ -510,9 +510,7 @@ class ClaudeChatStore:
             chat.updated_at = now
             return message.message_id, message.content
 
-    async def record_frame(
-        self, session_id: UUID, direction: FrameDirection, payload: dict[str, Any], *, synthetic: bool = False
-    ) -> None:
+    async def record_frame(self, session_id: UUID, direction: FrameDirection, payload: dict[str, Any]) -> None:
         """Append one protocol frame to the session's rollout.
 
         Failures are not swallowed. Every other write in a turn reaches the same database, so
@@ -520,6 +518,7 @@ class ClaudeChatStore:
         exactly the record that looks complete while being wrong, which is what this table
         exists to stop.
         """
+        now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             db.add(
                 ClaudeChatFrame(
@@ -527,9 +526,44 @@ class ClaudeChatStore:
                     direction=direction,
                     kind=_frame_kind(payload),
                     payload=payload,
-                    synthetic=synthetic,
-                    created_at=datetime.now(UTC),
+                    partial=False,
+                    created_at=now,
+                    updated_at=now,
                 )
+            )
+
+    async def update_partial_frame(self, session_id: UUID, text: str) -> None:
+        """Record the assistant message streaming right now, replacing any earlier state of it.
+
+        Takes its `frame_seq` when the stream opens, so it sits where it belongs in the log
+        even though it is rewritten afterwards.
+        """
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            partial = await db.scalar(
+                select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.partial)
+            )
+            if partial is None:
+                db.add(
+                    ClaudeChatFrame(
+                        session_id=session_id,
+                        direction=FrameDirection.FROM_AGENT,
+                        kind="assistant",
+                        payload=_assistant_frame(text),
+                        partial=True,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                return
+            partial.payload = _assistant_frame(text)
+            partial.updated_at = now
+
+    async def clear_partial_frame(self, session_id: UUID) -> None:
+        """Drop the reconstruction, now that the frame it stood in for has arrived."""
+        async with self._sessions.begin() as db:
+            await db.execute(
+                delete(ClaudeChatFrame).where(ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.partial)
             )
 
     async def begin_assistant(self, session_id: UUID) -> UUID:
@@ -729,10 +763,10 @@ _PARTIAL_FRAME_KIND = "stream_event"
 
 
 def _assistant_frame(text: str) -> dict[str, Any]:
-    """The frame shape the agent would have sent, for the one the console has to stand in for.
+    """The frame shape the agent will send, for the one the console stands in for meanwhile.
 
-    Same shape as the wire's, so a reader needs no second case; the row's `synthetic` column is
-    what says it was not observed.
+    Same shape as the wire's, so a reader needs no second case; the row's `partial` column is
+    what says it was reconstructed rather than observed.
     """
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
 
@@ -1078,6 +1112,10 @@ class ClaudeChatService:
                             assistant_id = await self._store.begin_assistant(session_id)
                         streamed += delta
                         await self._store.update_assistant(session_id, assistant_id, streamed)
+                        # The rollout keeps no deltas, so without this the text an interrupted
+                        # turn produced would exist only in the message row and the log would
+                        # simply stop mid-answer (R5.5b).
+                        await self._store.update_partial_frame(session_id, streamed)
                     elif isinstance(msg, AssistantMessage):
                         saw_assistant_message = True
                         if assistant_id is None:
@@ -1091,6 +1129,9 @@ class ClaudeChatService:
                         await self._store.update_assistant(
                             session_id, assistant_id, text or streamed.strip(), tool_uses=tool_uses, complete=True
                         )
+                        # The real frame is already in the log — the recorder wrote it when the
+                        # socket delivered it — so the stand-in has nothing left to stand for.
+                        await self._store.clear_partial_frame(session_id)
                         assistant_id = None
                         streamed = ""
                     elif isinstance(msg, ResultMessage):
@@ -1107,14 +1148,11 @@ class ClaudeChatService:
             if abort_event.is_set():
                 final_text += "\n\n[aborted by operator]"
             if assistant_id is not None:
-                # An open stream that no completed frame closed — the turn was interrupted
-                # mid-answer. The text exists only in the deltas the rollout deliberately does
-                # not keep, so the console contributes the one frame the agent never sent
-                # (R5.5b). Its own `[aborted by operator]` note is not part of it: that is the
-                # harness talking, and the frame is a record of what the agent produced.
-                await self._store.record_frame(
-                    session_id, FrameDirection.FROM_AGENT, _assistant_frame(streamed.strip()), synthetic=True
-                )
+                # A stream no completed frame closed. Its `partial` frame stays exactly as the
+                # last delta left it: the rollout should show a turn that stopped mid-answer as
+                # having stopped mid-answer. `final_text` is not written over it, because the
+                # harness adds `[aborted by operator]` to that and the frame records what the
+                # agent produced, not what the room was told.
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             elif not saw_assistant_message:

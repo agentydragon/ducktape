@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
+from claude_agent_sdk.types import StreamEvent
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -625,7 +626,74 @@ async def test_the_rollout_records_both_directions_and_skips_only_partials(
     ]
     # Verbatim: a reader gets the tool result the SDK dataclasses never carried.
     assert recorded[1].payload == tool_result
-    assert all(frame.synthetic is False for frame in recorded)
+    assert all(frame.partial is False for frame in recorded)
+
+
+def _text_delta_frame(text: str) -> StreamEvent:
+    return StreamEvent(
+        uuid="u", session_id="s", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}
+    )
+
+
+class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
+    """Streams two deltas, then ends the turn without ever completing the message."""
+
+    def query(self, prompt: str):
+        async def _noop() -> None:
+            self.prompt = prompt
+
+        return _noop()
+
+    def receive_response(self):
+        async def _messages():
+            yield _text_delta_frame("half an ")
+            yield _text_delta_frame("answer")
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="s",
+                result="",
+            )
+
+        return _messages()
+
+
+async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
+    chat_store, chat_service, migrated_sessions, operator_id
+) -> None:
+    """Written as it streams, not reconstructed at the end, because the end may never come.
+
+    The deltas are not kept as frames, so an interrupted turn would otherwise stop mid-answer
+    in the log — and reconstructing it in a finalizer would miss the case worth having, since
+    a replica losing its pod raises `CancelledError` straight past one.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+
+    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _DyingMidStreamClaudeClient):
+        runner = asyncio.create_task(
+            chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
+        )
+        try:
+            for _ in range(75):
+                if await chat_store.status(view.session_id) == ChatSessionStatus.READY:
+                    break
+                await asyncio.sleep(0.2)
+            await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
+            for _ in range(75):
+                if [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]:
+                    break
+                await asyncio.sleep(0.2)
+        finally:
+            runner.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await runner
+
+    [reconstructed] = [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]
+    assert reconstructed.kind == "assistant"
+    assert reconstructed.payload["message"]["content"][0]["text"] == "half an answer"
 
 
 async def _age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID, *, seconds_ago: int) -> None:

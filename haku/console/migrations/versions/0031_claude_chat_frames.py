@@ -34,13 +34,23 @@ def upgrade() -> None:
         sa.Column("direction", sa.Text(), nullable=False),
         sa.Column("kind", sa.Text(), nullable=False),
         sa.Column("payload", postgresql.JSONB(), nullable=False),
-        sa.Column("synthetic", sa.Boolean(), nullable=False),
+        sa.Column("partial", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
     )
     op.create_index("idx_claude_chat_frames_session", "claude_chat_frames", ["session_id", "frame_seq"])
+    # At most one in-flight reconstruction per session; see the model's `partial` column.
+    op.create_index(
+        "uq_claude_chat_frames_partial",
+        "claude_chat_frames",
+        ["session_id"],
+        unique=True,
+        postgresql_where=sa.text("partial"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_claude_chat_frames_partial", table_name="claude_chat_frames")
     op.drop_index("idx_claude_chat_frames_session", table_name="claude_chat_frames")
     op.drop_table("claude_chat_frames")
