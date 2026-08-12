@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -12,8 +13,6 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
-from claude_agent_sdk.types import StreamEvent
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -255,27 +254,56 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
         assert record.bridge_token_fingerprint == b""
 
 
-class _ToolUseClaudeClient:
-    async def query(self, prompt: str) -> None:
-        assert prompt == "Check the Haku MCP catalog"
+def _assistant(*blocks: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "assistant", "message": {"role": "assistant", "content": list(blocks)}}
 
-    async def receive_response(self):
-        yield AssistantMessage(
-            content=[ToolUseBlock(id="toolu_01", name="mcp__haku-console__haku-console__list_mcp_servers", input={})],
-            model="claude-sonnet-5",
-        )
-        yield AssistantMessage(
-            content=[TextBlock(text="The Haku Console catalog is available.")], model="claude-sonnet-5"
-        )
-        yield ResultMessage(
-            subtype="success",
-            duration_ms=10,
-            duration_api_ms=8,
-            is_error=False,
-            num_turns=2,
-            session_id="sdk-session",
-            result="The Haku Console catalog is available.",
-        )
+
+def _result(text: str = "", **fields: Any) -> dict[str, Any]:
+    return {"type": "result", "subtype": "success", "is_error": False, "result": text, **fields}
+
+
+class _FakeCli:
+    """A `ClaudeCli` that replays scripted frames.
+
+    Frames rather than SDK objects, because that is what the runtime now consumes — so a test
+    double cannot drift from the wire by being easier to construct than the wire is.
+    """
+
+    def __init__(self, script: list[dict[str, Any]] | None = None):
+        self.script = list(script or [])
+        self.prompts: list[str] = []
+        self.interrupted = False
+        self.closed = False
+        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    async def connect(self) -> dict[str, Any]:
+        return {"subtype": "success"}
+
+    async def query(self, prompt: str) -> None:
+        self.prompts.append(prompt)
+        for frame in self.script:
+            self._queue.put_nowait(frame)
+
+    async def interrupt(self) -> None:
+        self.interrupted = True
+
+    async def frames(self):
+        # Never ends on its own: a real CLI stays open between turns, and a generator that
+        # stopped after the first `result` would make the second turn look like a dead stream.
+        while True:
+            yield await self._queue.get()
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+_TOOL_USE_SCRIPT = [
+    _assistant(
+        {"type": "tool_use", "id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}
+    ),
+    _assistant({"type": "text", "text": "The Haku Console catalog is available."}),
+    _result("The Haku Console catalog is available."),
+]
 
 
 async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
@@ -285,8 +313,10 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
+    client = _FakeCli(_TOOL_USE_SCRIPT)
     await chat_service._run_turn(
-        cast(Any, _ToolUseClaudeClient()),
+        cast(Any, client),
+        client.frames().__aiter__(),
         view.session_id,
         "Check the Haku MCP catalog",
         room_id=None,
@@ -319,19 +349,17 @@ class _LifecycleWebSocket:
         self.closed = (code, reason)
 
 
-class _LifecycleClaudeClient:
-    last_options: object | None = None
+class _LifecycleClaudeClient(_FakeCli):
+    last_launch: object | None = None
 
-    def __init__(self, **kwargs: object):
-        type(self).last_options = kwargs["options"]
+    def __init__(self, adapter: object, launch: object, on_progress: object = None):
+        super().__init__()
+        type(self).last_launch = launch
         self.connected = False
-        self.disconnected = False
 
-    async def connect(self) -> None:
+    async def connect(self) -> dict[str, Any]:
         self.connected = True
-
-    async def disconnect(self) -> None:
-        self.disconnected = True
+        return {"subtype": "success"}
 
 
 class _ClosingClaudeClient(_LifecycleClaudeClient):
@@ -344,11 +372,12 @@ class _ClosingClaudeClient(_LifecycleClaudeClient):
 
     on_connect: Callable[[], Awaitable[None]] | None = None
 
-    async def connect(self) -> None:
-        await super().connect()
+    async def connect(self) -> dict[str, Any]:
+        response = await super().connect()
         on_connect = type(self).on_connect
         assert on_connect is not None
         await on_connect()
+        return response
 
 
 async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim(
@@ -359,7 +388,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
-    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _ClosingClaudeClient):
+    with patch("haku.console.x.claude_chat.cli_over_websocket", _ClosingClaudeClient):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
     assert recording_claims.created == [session_id]
@@ -370,16 +399,20 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     # Cleanup is recorded by clearing the hashed rendezvous credential, which is what takes the
     # session back out of the reconciler's candidate set.
     assert await chat_store.claim_cleanup_candidates() == []
-    options = cast(Any, _ClosingClaudeClient.last_options)
-    assert options.mcp_servers == {
-        "haku-console": {
-            "type": "http",
-            "url": "http://haku-console.test:9090/mcp",
-            "headers": {"Authorization": "Bearer haku-static-bearer"},
+    # Asserted on the launch the runner is handed rather than on SDK options, since that is
+    # what now crosses the wire — and it is where a bearer would leak if one ever did.
+    launch = cast(Any, _ClosingClaudeClient.last_launch)
+    assert json.loads(launch.arguments[launch.arguments.index("--mcp-config") + 1]) == {
+        "mcpServers": {
+            "haku-console": {
+                "type": "http",
+                "url": "http://haku-console.test:9090/mcp",
+                "headers": {"Authorization": "Bearer haku-static-bearer"},
+            }
         }
     }
-    assert options.strict_mcp_config is True
-    assert "haku-static-bearer" not in options.env.values()
+    assert "--strict-mcp-config" in launch.arguments
+    assert "haku-static-bearer" not in launch.environment.values()
 
 
 async def test_terminal_runner_retry_deletes_its_stale_claim(
@@ -423,25 +456,11 @@ if __name__ == "__main__":
 
 
 class _RealDbClaudeClient(_LifecycleClaudeClient):
-    """Answers one prompt, then behaves like an idle client."""
+    """Answers every prompt with "pong", then goes quiet like an idle CLI."""
 
-    async def query(self, prompt: str) -> None:
-        self.prompt = prompt
-
-    def receive_response(self):
-        async def _messages():
-            yield AssistantMessage(content=[TextBlock(text="pong")], model="test")
-            yield ResultMessage(
-                subtype="success",
-                duration_ms=1,
-                duration_api_ms=1,
-                is_error=False,
-                num_turns=1,
-                session_id="s",
-                result="pong",
-            )
-
-        return _messages()
+    def __init__(self, adapter: object, launch: object, on_progress: object = None):
+        super().__init__(adapter, launch, on_progress)
+        self.script = [_assistant({"type": "text", "text": "pong"}), _result("pong")]
 
 
 async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, chat_service, operator_id) -> None:
@@ -458,7 +477,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
     # ever deletes one on the way out, and Kubernetes is not what this test is about.
     view, token = await chat_store.create(operator_id, SpaSession())
 
-    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
+    with patch("haku.console.x.claude_chat.cli_over_websocket", _RealDbClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -633,36 +652,19 @@ async def test_the_rollout_records_both_directions_and_skips_only_partials(
     assert all(frame.partial is False for frame in recorded)
 
 
-def _text_delta_frame(text: str) -> StreamEvent:
-    return StreamEvent(
-        uuid="u", session_id="s", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}
-    )
+def _text_delta_frame(text: str) -> dict[str, Any]:
+    return {
+        "type": "stream_event",
+        "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}},
+    }
 
 
 class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
     """Streams two deltas, then ends the turn without ever completing the message."""
 
-    def query(self, prompt: str):
-        async def _noop() -> None:
-            self.prompt = prompt
-
-        return _noop()
-
-    def receive_response(self):
-        async def _messages():
-            yield _text_delta_frame("half an ")
-            yield _text_delta_frame("answer")
-            yield ResultMessage(
-                subtype="success",
-                duration_ms=1,
-                duration_api_ms=1,
-                is_error=False,
-                num_turns=1,
-                session_id="s",
-                result="",
-            )
-
-        return _messages()
+    def __init__(self, adapter: object, launch: object, on_progress: object = None):
+        super().__init__(adapter, launch, on_progress)
+        self.script = [_text_delta_frame("half an "), _text_delta_frame("answer"), _result()]
 
 
 async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
@@ -676,7 +678,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
-    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _DyingMidStreamClaudeClient):
+    with patch("haku.console.x.claude_chat.cli_over_websocket", _DyingMidStreamClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -755,7 +757,7 @@ async def test_a_cancelled_runner_records_the_shutdown_instead_of_going_quiet(
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
-    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
+    with patch("haku.console.x.claude_chat.cli_over_websocket", _RealDbClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )

@@ -189,3 +189,25 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "cli_client",
+    srcs = ["cli_client.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":protocol",
+        ":transport",
+    ],
+)
+
+py_test(
+    name = "test_cli_client",
+    srcs = ["test_cli_client.py"],
+    deps = [
+        ":cli_client",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)

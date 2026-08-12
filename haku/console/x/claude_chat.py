@@ -9,22 +9,15 @@ import hashlib
 import json
 import logging
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any, Protocol, cast
 from uuid import UUID, uuid4
 
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
-    ResultMessage,
-    TextBlock,
-    ToolUseBlock,
-)
-from claude_agent_sdk.types import StreamEvent, SystemPromptPreset
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk.types import SystemPromptPreset
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -47,6 +40,7 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
+from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
 from haku.runtime.x.agent_sdk_transport.protocol import (
     CONSOLE_TO_RUNNER,
@@ -56,7 +50,6 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     RunnerToConsole,
     TextWebSocket,
 )
-from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
@@ -995,12 +988,7 @@ class ClaudeChatService:
                 setting_sources=[],
             )
         )
-        client = ClaudeSDKClient(
-            options=options,
-            transport=WebSocketTransport(
-                adapter, build_claude_launch(options), self._progress_reporter(session_id, room_id)
-            ),
-        )
+        client = cli_over_websocket(adapter, build_claude_launch(options), self._progress_reporter(session_id, room_id))
         abort_event = asyncio.Event()
         # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
         # the two are about different things: the inner one unwraps whatever the task group
@@ -1021,6 +1009,16 @@ class ClaudeChatService:
                     renewal = helpers.create_task(self._renew_lease(session_id))
                     try:
                         await client.connect()
+                        # One stream for the session, not one per turn. `receive_response()`
+                        # is request-scoped — it assumes this process issued the turn and ends
+                        # at that turn's `result` — which is wrong in two directions we now
+                        # care about: a prompt folded into a running turn is answered inside
+                        # the same response with no second `result`, and an adopted mid-flight
+                        # turn was issued by a replica that is gone
+                        # (<../../plans/cli_protocol_ownership.md>). Consuming a session-scoped
+                        # stream and dispatching by frame makes the turn a bracket over it
+                        # rather than a request/response pair.
+                        frames = client.frames().__aiter__()
                         while True:
                             status = await self._store.status(session_id)
                             if status is None or status in ENDED_SESSION_STATUSES:
@@ -1038,7 +1036,9 @@ class ClaudeChatService:
                             # name a turn rather than a session.
                             abort_event.clear()
                             try:
-                                await self._run_turn(client, session_id, text, room_id=room_id, abort_event=abort_event)
+                                await self._run_turn(
+                                    client, frames, session_id, text, room_id=room_id, abort_event=abort_event
+                                )
                             except Exception as error:
                                 logger.exception("Claude chat turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
@@ -1072,8 +1072,8 @@ class ClaudeChatService:
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                 await asyncio.shield(asyncio.wait_for(self._finalize(session_id, client), timeout=10))
 
-    async def _finalize(self, session_id: UUID, client: ClaudeSDKClient) -> None:
-        await client.disconnect()
+    async def _finalize(self, session_id: UUID, client: ClaudeCli) -> None:
+        await client.aclose()
         await self._cleanup_terminal_claim(session_id)
         await self._store.closed(session_id)
 
@@ -1097,27 +1097,38 @@ class ClaudeChatService:
                 abort_event.set()
 
     async def _run_turn(
-        self, client: ClaudeSDKClient, session_id: UUID, prompt: str, *, room_id: str | None, abort_event: asyncio.Event
+        self,
+        client: ClaudeCli,
+        frames: AsyncIterator[dict[str, Any]],
+        session_id: UUID,
+        prompt: str,
+        *,
+        room_id: str | None,
+        abort_event: asyncio.Event,
     ) -> None:
+        """Send *prompt* and consume the session's stream until this turn's `result`.
+
+        *frames* belongs to the session, not to this call — see `handle_runner`.
+        """
         await client.query(prompt)
         assistant_id: UUID | None = None
         streamed = ""
         saw_assistant_message = False
-        result: ResultMessage | None = None
+        result: dict[str, Any] | None = None
         try:
-            response_iter = client.receive_response().__aiter__()
             while True:
                 done, pending = await asyncio.wait(
-                    [asyncio.ensure_future(response_iter.__anext__()), asyncio.ensure_future(abort_event.wait())],
+                    [asyncio.ensure_future(anext(frames)), asyncio.ensure_future(abort_event.wait())],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if abort_event.is_set():
                     with contextlib.suppress(Exception):
                         await client.interrupt()
-                    # Drain remaining messages from the interrupted turn.
-                    async for message in response_iter:
-                        if isinstance(message, ResultMessage):
-                            result = message
+                    # Drain to this turn's end. The stream stays open for the next one: it is
+                    # the session's, so an interrupt ends a turn rather than the conversation.
+                    async for remaining in frames:
+                        if remaining.get("type") == "result":
+                            result = remaining
                             break
                     break
                 for task in done:
@@ -1126,50 +1137,58 @@ class ClaudeChatService:
                         for t in pending:
                             t.cancel()
                         raise exc
-                    msg = task.result()
-                    if not isinstance(msg, (StreamEvent, AssistantMessage, ResultMessage)):
-                        continue  # abort_event.wait() task — skip
-                    if isinstance(msg, StreamEvent):
-                        delta = _text_delta(msg.event)
-                        if not delta:
-                            continue
-                        if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(session_id)
-                        streamed += delta
-                        await self._store.update_assistant(session_id, assistant_id, streamed)
-                        # The rollout keeps no deltas, so without this the text an interrupted
-                        # turn produced would exist only in the message row and the log would
-                        # simply stop mid-answer (R5.5b).
-                        await self._store.update_partial_frame(session_id, streamed)
-                    elif isinstance(msg, AssistantMessage):
-                        saw_assistant_message = True
-                        if assistant_id is None:
-                            assistant_id = await self._store.begin_assistant(session_id)
-                        text = "".join(block.text for block in msg.content if isinstance(block, TextBlock)).strip()
-                        tool_uses = [
-                            {"tool_use_id": block.id, "name": block.name, "input": block.input}
-                            for block in msg.content
-                            if isinstance(block, ToolUseBlock)
-                        ]
-                        await self._store.update_assistant(
-                            session_id, assistant_id, text or streamed.strip(), tool_uses=tool_uses, complete=True
-                        )
-                        # The real frame is already in the log — the recorder wrote it when the
-                        # socket delivered it — so the stand-in has nothing left to stand for.
-                        await self._store.clear_partial_frame(session_id)
-                        assistant_id = None
-                        streamed = ""
-                    elif isinstance(msg, ResultMessage):
-                        result = msg
+                    # `asyncio.wait` erases the type: one task yields a frame, the other is
+                    # `abort_event.wait()` returning a bool.
+                    completed = task.result()
+                    if not isinstance(completed, dict):
+                        continue
+                    frame = completed
+                    match frame.get("type"):
+                        case "stream_event":
+                            if not (delta := _text_delta(frame.get("event", {}))):
+                                continue
+                            if assistant_id is None:
+                                assistant_id = await self._store.begin_assistant(session_id)
+                            streamed += delta
+                            await self._store.update_assistant(session_id, assistant_id, streamed)
+                            # The rollout keeps no deltas, so without this the text an
+                            # interrupted turn produced would exist only in the message row and
+                            # the log would simply stop mid-answer (R5.5b).
+                            await self._store.update_partial_frame(session_id, streamed)
+                        case "assistant":
+                            saw_assistant_message = True
+                            if assistant_id is None:
+                                assistant_id = await self._store.begin_assistant(session_id)
+                            blocks = _content_blocks(frame)
+                            text = "".join(
+                                str(block.get("text", "")) for block in blocks if block.get("type") == "text"
+                            ).strip()
+                            tool_uses = [
+                                {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
+                                for block in blocks
+                                if block.get("type") == "tool_use"
+                            ]
+                            await self._store.update_assistant(
+                                session_id, assistant_id, text or streamed.strip(), tool_uses=tool_uses, complete=True
+                            )
+                            # The real frame is already in the log — the recorder wrote it when
+                            # the socket delivered it — so the stand-in has nothing to stand for.
+                            await self._store.clear_partial_frame(session_id)
+                            assistant_id = None
+                            streamed = ""
+                        case "result":
+                            result = frame
                 for task in pending:
                     task.cancel()
                 if result is not None:
                     break
             if result is None:
-                raise RuntimeError("Claude response ended without a result")
-            if result.is_error and not abort_event.is_set():
-                raise RuntimeError(f"Claude returned {result.subtype}: {result.stop_reason or 'unknown error'}")
-            final_text = streamed.strip() or (result.result or "").strip()
+                raise RuntimeError("the Claude stream ended without a result for this turn")
+            if result.get("is_error") and not abort_event.is_set():
+                raise RuntimeError(
+                    f"Claude returned {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
+                )
+            final_text = streamed.strip() or str(result.get("result") or "").strip()
             if abort_event.is_set():
                 final_text += "\n\n[aborted by operator]"
             if assistant_id is not None:
@@ -1213,6 +1232,19 @@ class ClaudeChatService:
 
     async def aclose(self) -> None:
         await self._claims.aclose()
+
+
+def _content_blocks(frame: dict[str, Any]) -> list[dict[str, Any]]:
+    """The content blocks of an `assistant` frame, or none if it carries none.
+
+    Tolerant rather than strict: this reads the wire, where a block type we have never seen is
+    a new CLI feature and not a bug in us. The frame itself is already recorded verbatim, so
+    anything skipped here is still in the rollout.
+    """
+    message = frame.get("message")
+    if not isinstance(message, dict):
+        return []
+    return [block for block in message.get("content", []) if isinstance(block, dict)]
 
 
 def _text_delta(event: dict[str, Any]) -> str:
