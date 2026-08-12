@@ -9,10 +9,8 @@ from pathlib import Path
 import anyio
 import pytest
 import pytest_bazel
-from claude_agent_sdk import ClaudeAgentOptions
-from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
-from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
+from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.agent_sdk_transport.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     RUNNER_TO_CONSOLE,
@@ -61,31 +59,29 @@ def memory_websocket_pair() -> tuple[MemoryWebSocket, MemoryWebSocket]:
     )
 
 
-def test_launch_matches_the_pinned_sdk_and_uses_its_bundled_claude(tmp_path: Path) -> None:
-    options = enable_fine_grained_streaming(
-        ClaudeAgentOptions(
+def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
+    """The sandbox side of the launch: the CLI path is the runner's to choose, everything after
+    it is the console's.
+
+    This used to assert our argv equalled the SDK's `_build_command()`, and to locate the CLI
+    through the SDK's own `_find_cli()`. Both are gone with the dependency; the argv itself is
+    pinned in `test_options.py`, and that the image really carries an extracted `claude` is a
+    property of the `claude_executable` genrule the image build exercises.
+    """
+    launch = build_claude_launch(
+        ClaudeSession(
             cwd=tmp_path,
             permission_mode="dontAsk",
-            setting_sources=[],
-            system_prompt="remote prompt",
-            tools=[],
+            append_system_prompt="remote prompt",
             mcp_servers={
-                "haku-console": {
-                    "type": "http",
-                    "url": "http://haku-console.test/mcp",
-                    "headers": {"Authorization": "Bearer test-static-agent-token"},
-                }
+                "haku-console": HttpMcpServer(
+                    url="http://haku-console.test/mcp", headers={"Authorization": "Bearer test-static-agent-token"}
+                )
             },
         )
     )
-    launch = build_claude_launch(options)
-    sdk_transport = SubprocessCLITransport(prompt="", options=options)
-    bundled_cli = Path(sdk_transport._find_cli())
-    sdk_transport._cli_path = str(bundled_cli)
 
-    assert bundled_cli.is_file()
-    assert bundled_cli.name == "claude"
-    assert build_claude_command(bundled_cli, launch) == sdk_transport._build_command()
+    assert build_claude_command(Path("/usr/local/bin/claude"), launch) == ["/usr/local/bin/claude", *launch.arguments]
     assert launch.cwd == str(tmp_path)
     assert launch.environment[FINE_GRAINED_TOOL_STREAMING_ENV] == "1"
     mcp_config = launch.arguments[launch.arguments.index("--mcp-config") + 1]

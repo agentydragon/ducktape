@@ -16,10 +16,7 @@ py_library(
     name = "options",
     srcs = ["options.py"],
     visibility = ["//haku:__subpackages__"],
-    deps = [
-        ":protocol",
-        "@pypi//claude_agent_sdk",
-    ],
+    deps = [":protocol"],
 )
 
 py_library(
@@ -29,7 +26,6 @@ py_library(
     deps = [
         ":protocol",
         "@pypi//anyio",
-        "@pypi//claude_agent_sdk",
     ],
 )
 
@@ -74,6 +70,8 @@ py_binary(
     srcs = ["extract_claude.py"],
 )
 
+# The wheel is kept for exactly one thing: it ships a pinned `claude` binary, which the runner
+# image needs and which Anthropic does not publish standalone. No Python here imports the SDK.
 genrule(
     name = "claude_executable",
     srcs = ["@pypi//claude_agent_sdk:whl"],
@@ -154,7 +152,6 @@ py_test(
     deps = [
         ":options",
         ":protocol",
-        "@pypi//claude_agent_sdk",
         "@pypi//pytest_bazel",
     ],
 )
@@ -168,7 +165,6 @@ py_test(
         ":runner",
         "//:conftest",
         "@pypi//anyio",
-        "@pypi//claude_agent_sdk",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

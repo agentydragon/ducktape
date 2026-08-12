@@ -1,9 +1,9 @@
-"""Tunnel the Claude Agent SDK transport over a text WebSocket.
+"""Tunnel the CLI's newline-delimited JSON protocol over a text WebSocket.
 
-The Agent SDK already defines the conversation and control protocol. This module only moves
-that protocol across a WebSocket, inside the bridge envelope `protocol` defines: an SDK
-message travels as one `ClaudeMessage`, and Haku's own control frames travel beside it
-without sharing its key namespace.
+This module only moves that protocol across a WebSocket, inside the bridge envelope `protocol`
+defines: one CLI frame travels as one `ClaudeMessage`, and Haku's own control frames travel
+beside it without sharing its key namespace. What the frames mean is
+<../../../cli_protocol/README.md>; what reads them is `cli_client.ClaudeCli`.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import anyio
-from claude_agent_sdk import Transport
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
     RUNNER_TO_CONSOLE,
@@ -30,8 +29,14 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
 ProgressSink = Callable[[str], Awaitable[None]]
 
 
-class WebSocketTransport(Transport):
-    """Agent SDK ``Transport`` backed by an already-authenticated WebSocket."""
+class WebSocketTransport:
+    """A `cli_client.FrameChannel` backed by an already-authenticated WebSocket.
+
+    Structural rather than declared: `FrameChannel` is a Protocol, so this satisfies it by
+    shape. It used to subclass the Agent SDK's `Transport` ABC, which is what `end_input` and
+    `is_ready` were for — they stay because the bridge protocol has an `EndInput` frame the
+    runner answers, not because a base class demands them.
+    """
 
     def __init__(self, websocket: TextWebSocket, launch: ClaudeLaunch, on_progress: ProgressSink | None = None):
         self._websocket = websocket

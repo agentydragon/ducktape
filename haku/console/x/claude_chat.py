@@ -14,11 +14,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 from uuid import UUID, uuid4
 
-from claude_agent_sdk import ClaudeAgentOptions
-from claude_agent_sdk.types import SystemPromptPreset
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -43,7 +42,7 @@ from haku.console.operator_auth import OperatorActorDep
 from haku.console.tools.conversations import Conversation, RolloutFrame
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
-from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
+from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.agent_sdk_transport.protocol import (
     CONSOLE_TO_RUNNER,
     RUNNER_TO_CONSOLE,
@@ -1047,23 +1046,17 @@ class ClaudeChatService:
         """
         return None if self._room_surface is None else await self._store.room_of(session_id)
 
-    async def _preset_with(self, session_id: UUID, room_id: str | None) -> SystemPromptPreset | None:
-        """Claude Code's own system prompt, plus who this session is.
+    async def _appended_prompt(self, session_id: UUID, room_id: str | None) -> str | None:
+        """Who this session is, appended to Claude Code's own system prompt.
 
-        `append` rather than a bare string, which would *replace* the preset: the built-ins
-        (Read, Bash, Edit) are live in the sandbox and the preset is what tells the model how
-        to drive them. Haku's identity is an addition to that, not a substitute for it.
-
-        The literal is the SDK's own `SystemPromptPreset` TypedDict, so mypy checks its keys
-        and the two `Literal` values against the pinned SDK rather than trusting this spelling.
+        Appended rather than replacing it: the built-ins (Read, Bash, Edit) are live in the
+        sandbox and the preset is what tells the model how to drive them. Haku's identity is an
+        addition to that, not a substitute for it — which is why the launch sends
+        `--append-system-prompt` and never `--system-prompt`.
         """
         if self._room_surface is None or room_id is None:
             return None
-        return {
-            "type": "preset",
-            "preset": "claude_code",
-            "append": await self._room_surface.system_prompt(session_id, room_id),
-        }
+        return await self._room_surface.system_prompt(session_id, room_id)
 
     def _turn_status(self, room_id: str | None) -> _TurnStatus:
         """A status driver for one turn, wired to the room if this session serves one.
@@ -1103,7 +1096,7 @@ class ClaudeChatService:
         # generic-assistant bug this prompt exists to fix, and it would be invisible.
         try:
             room_id = await self._room_of(session_id)
-            preset = await self._preset_with(session_id, room_id)
+            appended = await self._appended_prompt(session_id, room_id)
         except Exception as error:
             logger.exception("Claude system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
@@ -1112,24 +1105,17 @@ class ClaudeChatService:
             return
         await websocket.accept()
         adapter = RecordingWebSocket(StarletteTextWebSocket(websocket), self._store, session_id)
-        options = enable_fine_grained_streaming(
-            ClaudeAgentOptions(
-                system_prompt=preset,
-                cwd=self._config.cwd,
-                env=self._config.claude_environment(),
-                mcp_servers={
-                    "haku-console": {
-                        "type": "http",
-                        "url": self._config.mcp_url,
-                        "headers": {"Authorization": f"Bearer {self._mcp_token.get_secret_value()}"},
-                    }
-                },
-                strict_mcp_config=True,
-                permission_mode="bypassPermissions",
-                setting_sources=[],
-            )
+        session = ClaudeSession(
+            append_system_prompt=appended,
+            cwd=Path(self._config.cwd),
+            environment=self._config.claude_environment(),
+            mcp_servers={
+                "haku-console": HttpMcpServer(
+                    url=self._config.mcp_url, headers={"Authorization": f"Bearer {self._mcp_token.get_secret_value()}"}
+                )
+            },
         )
-        client = cli_over_websocket(adapter, build_claude_launch(options), self._progress_reporter(session_id, room_id))
+        client = cli_over_websocket(adapter, build_claude_launch(session), self._progress_reporter(session_id, room_id))
         abort_event = asyncio.Event()
         # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
         # the two are about different things: the inner one unwraps whatever the task group

@@ -264,7 +264,10 @@ With it, the CLI sends `can_use_tool` carrying `tool_name`, `display_name`, `inp
 
 `--dangerously-skip-permissions` is the blunt alternative, but the CLI refuses it under
 root/sudo — which in a container reads as a handshake that never completes rather than as a flag
-error.
+error. **`--permission-mode bypassPermissions` is the same guard**: it fails with the
+`--dangerously-skip-permissions` message even though that flag was never passed, so a session
+that runs fine as an ordinary user dies at startup as root with an error naming a flag you
+cannot find in your argv.
 
 ## Client-hosted MCP servers
 

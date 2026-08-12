@@ -28,8 +28,17 @@ the thing standing between us and it, and four separate needs now point at the s
 - **We already own everything around it**: the transport, the envelope, the runner, the frame
   store. What is left is a thin protocol client.
 
-**What stays.** Launch-argument construction (`build_claude_launch`): flags, MCP configuration,
-the system-prompt preset shape. Dull, churn-prone, and genuinely someone else's problem.
+**What stays: nothing.** This originally kept launch-argument construction — flags, MCP
+configuration, the system-prompt preset shape — as "dull, churn-prone, and genuinely someone
+else's problem". That was wrong on the arithmetic. `SubprocessCLITransport._build_command()`
+translates ~40 options and the console sets seven; the rest were branches we never took, on a
+**private** method of a transport we constructed purely to borrow it and never let connect,
+assigning `_cli_path` from outside to make it work. `options.py` now builds the argv from a
+frozen `ClaudeSession` of those seven, `test_options.py` pins the exact result, and the pinned
+result was run against a real CLI.
+
+The wheel remains a **build** dependency for one reason: it ships a pinned `claude` binary that
+Anthropic does not publish standalone, and the runner image needs one. No Python imports it.
 
 **What it costs.** Owning protocol breakage across CLI upgrades. Two things make that
 affordable rather than reckless: the CLI ships _bundled with_ the SDK, so the pairing is pinned

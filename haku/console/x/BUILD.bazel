@@ -15,7 +15,6 @@ py_library(
         "//haku/runtime/x/agent_sdk_transport:cli_client",
         "//haku/runtime/x/agent_sdk_transport:options",
         "//haku/runtime/x/agent_sdk_transport:protocol",
-        "@pypi//claude_agent_sdk",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
