@@ -399,7 +399,7 @@ input to a running turn**. Interrupt exists; steer does not.
 
   **Not now, and not because it is blocked.** The first draft of this said re-adoption
   forbids it, leaning on <cli_protocol_ownership.md>'s "adding a hook, a `can_use_tool` callback,
-  or an SDK-hosted MCP server makes re-adoption qualitatively harder". That is a cost, not a
+  or a client-hosted MCP server makes re-adoption qualitatively harder". That is a cost, not a
   wall, and the resolution is not exotic: the runner already has to buffer and redial for
   design B, so it can also hold the inbound `control_request`s that went unanswered while the
   console was away and re-deliver them on adopt with everything else since the cursor. What
