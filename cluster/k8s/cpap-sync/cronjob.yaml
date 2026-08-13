@@ -17,28 +17,38 @@ spec:
         spec:
           restartPolicy: OnFailure
           hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
           nodeSelector:
-            kubernetes.io/hostname: wyrm2
+            kubernetes.io/hostname: optiplex
           securityContext:
             runAsUser: 0
           volumes:
             - name: workdir
               emptyDir: {}
-            - name: dbus
-              hostPath:
-                path: /run/dbus
-            - name: network-manager
-              hostPath:
-                path: /var/run/NetworkManager
           containers:
             - name: sync
               image: ghcr.io/agentydragon/cpap-sync:devel-20260717000149-6162a72 # {"$imagepolicy": "flux-system:cpap-sync"}
-              args: ["--git-url", "$(GIT_REPO_URL)"]
+              args:
+                - --git-url
+                - $(GIT_REPO_URL)
+                - --wifi-interface
+                - $(CPAP_WIFI_INTERFACE)
+                - --wifi-ssid
+                - $(CPAP_WIFI_SSID)
               env:
                 # The clone (initial re-seed: the card's full history) lands in
                 # TMPDIR — keep it on the emptyDir, not the container layer.
                 - name: TMPDIR
                   value: /workdir
+                - name: CPAP_WIFI_INTERFACE
+                  value: wlx9cefd5f62ee0
+                - name: CPAP_WIFI_SSID
+                  value: Rai CPAP ez Share
+                - name: CPAP_WIFI_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cpap-ezshare
+                      key: wifi_password
                 - name: GIT_REPO_URL
                   valueFrom:
                     secretKeyRef:
@@ -56,14 +66,10 @@ spec:
                       key: password
               securityContext:
                 capabilities:
-                  add: ["NET_ADMIN"]
+                  add: ["NET_ADMIN", "NET_RAW"]
               volumeMounts:
                 - name: workdir
                   mountPath: /workdir
-                - name: dbus
-                  mountPath: /run/dbus
-                - name: network-manager
-                  mountPath: /var/run/NetworkManager
               resources:
                 requests:
                   cpu: 100m

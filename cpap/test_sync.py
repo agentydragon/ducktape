@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 
 from cpap.card import FileEntry
-from cpap.sync import MANIFEST_FILENAME, SyncManifest, run_sync
+from cpap.sync import MANIFEST_FILENAME, SyncManifest, _wpa_config, run_sync
 
 NOW = datetime(2026, 6, 10, tzinfo=UTC)
 
@@ -77,8 +77,23 @@ class FakeCard:
 def sync(card: FakeCard, remote: Path) -> None:
     # file:// URL (not a plain path) so git honors --depth/--filter instead of local-clone mode.
     run_sync(
-        client=card, git_url=remote.as_uri(), branch="main", nm_connection=None, username=None, password=None, now=NOW
+        client=card,
+        git_url=remote.as_uri(),
+        branch="main",
+        wifi_interface=None,
+        wifi_ssid="unused",
+        wifi_password=None,
+        username=None,
+        password=None,
+        now=NOW,
     )
+
+
+def test_wpa_config_quotes_password_and_uses_private_control_dir(tmp_path: Path) -> None:
+    config = _wpa_config(ssid='Rai "CPAP"', password="pa\\ss\nword", control_dir=tmp_path)
+    assert f"ctrl_interface=DIR={tmp_path}" in config
+    assert 'ssid="Rai \\"CPAP\\""' in config
+    assert 'psk="pa\\\\ss\\nword"' in config
 
 
 def tree_paths(remote: Path) -> set[str]:

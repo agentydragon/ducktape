@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Sync all files from an ez Share WiFi SD card into the cpap-data Forgejo repo.
 
-Partial-clones the repo, brings up the host NetworkManager profile that joins
-the card's open AP, walks the card's HTTP file index, downloads anything new or
-changed into the worktree, tears the profile back down, then commits + pushes —
-git operations never overlap the card-WiFi window.
+Partial-clones the repo, associates the host-network WiFi interface with the
+card's AP, walks the card's HTTP file index, downloads anything new or changed
+into the worktree, tears the WiFi session back down, then commits + pushes — git
+operations never overlap the card-WiFi window.
 
 A committed `sync_meta.json` manifest records each file's size and card
 timestamp; a card entry matching its manifest entry is skipped (git discards
@@ -14,11 +14,12 @@ mismatches the card's next listing and self-heals on the following run.
 """
 
 import argparse
+import contextlib
 import logging
 import os
 import subprocess
-import sys
 import tempfile
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,10 +31,12 @@ from cpap.card import EZShareClient, FileEntry, download_relpath
 from cpap.gitstore import GitStore
 
 DEFAULT_BASE = "http://192.168.4.1"
-DEFAULT_NM_CONNECTION = "cpap-ezshare"
+DEFAULT_WIFI_INTERFACE = "wlx9cefd5f62ee0"
+DEFAULT_WIFI_SSID = "Rai CPAP ez Share"
 MANIFEST_FILENAME = "sync_meta.json"
 AUTHOR_NAME = "cpap sync"
 AUTHOR_EMAIL = "cpap@allegedly.works"
+WIFI_ASSOCIATION_TIMEOUT = 60
 
 logger = logging.getLogger(__name__)
 
@@ -96,14 +99,79 @@ def download_changed(client: CardClient, workdir: Path, manifest: SyncManifest) 
     return changed
 
 
-def nm_up(connection: str) -> None:
-    result = subprocess.run(["nmcli", "connection", "up", connection], check=False)
-    if result.returncode != 0:
-        sys.exit(f"ERROR: Failed to bring up {connection!r}. Is the CPAP powered on and in range?")
+def _wpa_quote(value: str) -> str:
+    """Quote a string for a wpa_supplicant double-quoted value."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
-def nm_down(connection: str) -> None:
-    subprocess.run(["nmcli", "connection", "down", connection], check=False)
+def _wpa_config(*, ssid: str, password: str, control_dir: Path) -> str:
+    return f"""ctrl_interface=DIR={control_dir}
+update_config=0
+country=US
+
+network={{
+    ssid={_wpa_quote(ssid)}
+    psk={_wpa_quote(password)}
+    key_mgmt=WPA-PSK
+}}
+"""
+
+
+def _wait_for_association(interface: str, timeout: int = WIFI_ASSOCIATION_TIMEOUT) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(["iw", "dev", interface, "link"], check=False, capture_output=True, text=True)
+        if result.returncode == 0 and "Connected to" in result.stdout:
+            return
+        time.sleep(1)
+    raise RuntimeError(f"WiFi interface {interface!r} did not associate with the CPAP AP within {timeout}s")
+
+
+def _remove_default_routes(interface: str) -> None:
+    """Remove DHCP-installed default routes belonging to the CPAP interface."""
+    for family in ("-4", "-6"):
+        result = subprocess.run(
+            ["ip", family, "route", "show", "default", "dev", interface], check=False, capture_output=True, text=True
+        )
+        for route in result.stdout.splitlines():
+            subprocess.run(["ip", family, "route", "del", *route.split()], check=False)
+
+
+@contextlib.contextmanager
+def wifi_connection(*, interface: str, ssid: str, password: str, runtime_dir: Path) -> Iterator[None]:
+    """Temporarily associate the host-network WiFi interface with the CPAP AP.
+
+    Talos supplies the kernel driver and network interface. The container only
+    supplies the userspace supplicant and DHCP client, and runs with hostNetwork
+    so those tools operate on the node's interface.
+    """
+    runtime_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    config = runtime_dir / "wpa_supplicant.conf"
+    config.write_text(_wpa_config(ssid=ssid, password=password, control_dir=runtime_dir))
+    config.chmod(0o600)
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        subprocess.run(["ip", "link", "set", "dev", interface, "up"], check=True)
+        process = subprocess.Popen(
+            ["wpa_supplicant", "-i", interface, "-c", str(config)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        _wait_for_association(interface)
+        subprocess.run(["dhclient", "-1", "-v", interface], check=True)
+        # The CPAP AP is a private side network. Do not let DHCP replace the
+        # OptiPlex's default route or affect cluster/Forgejo connectivity.
+        _remove_default_routes(interface)
+        yield
+    finally:
+        subprocess.run(["dhclient", "-r", interface], check=False)
+        if process is not None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        subprocess.run(["ip", "addr", "flush", "dev", interface], check=False)
+        subprocess.run(["ip", "link", "set", "dev", interface, "down"], check=False)
 
 
 def run_sync(
@@ -111,7 +179,9 @@ def run_sync(
     client: CardClient,
     git_url: str,
     branch: str,
-    nm_connection: str | None,
+    wifi_interface: str | None,
+    wifi_ssid: str,
+    wifi_password: str | None,
     username: str | None,
     password: str | None,
     now: datetime,
@@ -120,13 +190,15 @@ def run_sync(
         store = GitStore.clone(git_url, Path(tmp) / "repo", branch=branch, username=username, password=password)
         manifest = load_manifest(store)
 
-        if nm_connection is not None:
-            nm_up(nm_connection)
-        try:
+        if wifi_interface is None:
             changed = download_changed(client, store.workdir, manifest)
-        finally:
-            if nm_connection is not None:
-                nm_down(nm_connection)
+        else:
+            if wifi_password is None:
+                raise ValueError("wifi_password is required when wifi_interface is set")
+            with wifi_connection(
+                interface=wifi_interface, ssid=wifi_ssid, password=wifi_password, runtime_dir=Path(tmp) / "wifi"
+            ):
+                changed = download_changed(client, store.workdir, manifest)
 
         if not changed:
             logger.info("card matches manifest; nothing to commit")
@@ -149,10 +221,11 @@ def main() -> None:
     ap.add_argument("--branch", default="main")
     ap.add_argument("--base-url", default=DEFAULT_BASE)
     ap.add_argument(
-        "--nm-connection",
-        default=DEFAULT_NM_CONNECTION,
-        help="NetworkManager profile joining the card's AP ('' if already on the card's network).",
+        "--wifi-interface",
+        default=DEFAULT_WIFI_INTERFACE,
+        help="Host-network WiFi interface to associate with the card's AP ('' if already connected).",
     )
+    ap.add_argument("--wifi-ssid", default=DEFAULT_WIFI_SSID, help="Card WiFi SSID.")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -160,7 +233,9 @@ def main() -> None:
         client=EZShareClient(args.base_url),
         git_url=args.git_url,
         branch=args.branch,
-        nm_connection=args.nm_connection or None,
+        wifi_interface=args.wifi_interface or None,
+        wifi_ssid=args.wifi_ssid,
+        wifi_password=os.environ.get("CPAP_WIFI_PASSWORD"),
         username=os.environ["GIT_USERNAME"],
         password=os.environ["GIT_PASSWORD"],
         now=datetime.now(UTC),

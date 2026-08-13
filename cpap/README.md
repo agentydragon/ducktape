@@ -6,10 +6,10 @@ private Forgejo repo `cpap-data/cpap-data`, plus the `cpap` analysis skill
 
 ## Status
 
-Suspended: the CronJob is pinned to wyrm2, which is offline during relocation
-(see `cluster/docs/plan.md`). On the first run after unsuspending, the fresh
-repo is re-seeded with the card's full history (~17+ min over the card's WiFi;
-the old PVC-era data was discarded).
+The CronJob is moving to the always-on `optiplex` Talos worker with the WiFi
+stick physically attached there. On the first run after this migration, the
+fresh repo is re-seeded with the card's full history (~17+ min over the card's
+WiFi; the old PVC-era data was discarded).
 
 ## Background
 
@@ -17,7 +17,7 @@ the old PVC-era data was discarded).
 - Card AP: SSID `Rai CPAP ez Share`, IP `192.168.4.1`
 - Card firmware: `LZ1801EDPG:1.0.0`, XML API at `/client?command=...` + `/download?file=` (8.3 short filenames)
 - Data: `STR.EDF` (daily summary) + `DATALOG/<date>/*.edf` (~2.5 MB/night)
-- WiFi stick: `wlx9cefd5f62ee0` (MediaTek MT7921, 2.4 GHz), passed through to wyrm2 VM
+- WiFi stick: `wlx9cefd5f62ee0` (MediaTek MT7921, 2.4 GHz), attached to the `optiplex` Talos worker
 - Card WiFi credentials: SOPS at `secrets/shared/cpap-ezshare.yaml`
 
 ## Architecture
@@ -32,19 +32,20 @@ the old PVC-era data was discarded).
   full shallow clone would re-transfer everything nightly. The partial clone
   keeps the nightly transfer at KBs + the new files.
 - `sync.py` — the policy: clone, read the committed `sync_meta.json` manifest
-  (path → size + card timestamp), `nmcli connection up cpap-ezshare`, download
-  card entries that don't match their manifest entry, disconnect, commit + push
-  if anything changed. The manifest replaces the PVC-era stat check (git
-  discards mtimes); recording the _stored_ byte count makes mid-write downloads
-  self-heal on the next run.
+  (path → size + card timestamp), associate the host-network WiFi interface with
+  `wpa_supplicant`, obtain a lease, download card entries that don't match their
+  manifest entry, tear down the CPAP route, then commit + push if anything
+  changed. The manifest replaces the PVC-era stat check (git discards mtimes);
+  recording the _stored_ byte count makes mid-write downloads self-heal on the
+  next run.
 - Image: `ghcr.io/agentydragon/cpap-sync` (`//cpap:image`,
-  `debian:bookworm-slim` + `network-manager` + `git` + `ca-certificates` via
+  `debian:trixie-slim` + `wpa_supplicant` + `iw` + `iproute2` + `dhclient` + `git` + `ca-certificates` via
   apt manifest), built by `push-images.yml`, tagged `devel-*` for Flux image
   automation.
-- Cluster: `cluster/k8s/cpap-sync/` — CronJob (hostNetwork on wyrm2; pushes
-  via `https://git.allegedly.works`, so host DNS suffices — no cluster-DNS
-  dependency) + namespace (`pod-security.kubernetes.io/enforce: privileged` —
-  needs NET_ADMIN, hostNetwork, hostPath).
+- Cluster: `cluster/k8s/cpap-sync/` — CronJob (hostNetwork on optiplex; pushes
+  via `https://git.allegedly.works`, so host DNS suffices) + namespace
+  (`pod-security.kubernetes.io/enforce: privileged` — needs NET_ADMIN/NET_RAW
+  and hostNetwork).
 
 ## Credentials
 
@@ -63,7 +64,7 @@ a `cpap-data-reader` read-only collaborator, and two Secrets in the
 kubectl -n cpap-sync get secret cpap-data-git-write -o jsonpath='{.data.username}' | base64 -d  # etc.
 GIT_USERNAME=cpap-data GIT_PASSWORD=... bazelisk run //cpap:sync -- \
   --git-url https://git.allegedly.works/cpap-data/cpap-data.git \
-  --nm-connection ''   # '' = already on the card's WiFi; otherwise a NM profile name
+  --wifi-interface ''   # '' = already on the card's WiFi; otherwise CPAP_WIFI_PASSWORD is required
 ```
 
 Useful if the in-cluster initial seed push ever fails: any machine on the
@@ -71,9 +72,9 @@ card's WiFi with write creds can do the re-seed.
 
 ## Future
 
-- **USB stick placement (declarative)**: the WiFi stick is manually plugged
-  into wyrm2; ideally declared in `terraform/main/proxmox-nodes.tf` via USB
-  passthrough.
+- **USB stick placement**: the WiFi stick is physically attached to OptiPlex;
+  Talos supplies the kernel driver and the CronJob supplies only the temporary
+  userspace association.
 - **Roaming devices**: with the PVC gone, the sync can run from any machine
   near the CPAP (see `cluster/docs/plan.md`).
 - **Listing efficiency**: the card's `GETFILELIST` walk enumerates every
