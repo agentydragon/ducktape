@@ -44,6 +44,7 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import (
     ClaudeChatFrame,
     ClaudeChatMessage,
+    ClaudeChatPrompt,
     ClaudeChatSession,
     ClaudeChatTurn,
     ClaudeChatTurnPrompt,
@@ -179,7 +180,10 @@ class ClaudeChatSessionView(BaseModel):
     messages: list[ClaudeChatMessageView]
 
 
-class ClaudeChatPrompt(BaseModel):
+class ClaudeChatPromptRequest(BaseModel):
+    """What the SPA posts to send a prompt. Named for the request, since the prompt itself is now
+    a row (`database_schema.ClaudeChatPrompt`) rather than a field on the way in."""
+
     text: str = Field(min_length=1, max_length=100_000)
 
 
@@ -509,13 +513,12 @@ class ClaudeChatStore:
             # with no fold path wired (R2.2 holds a batch until the turn ends).
             if await _open_turn(db, session_id) is not None:
                 raise RuntimeError("a turn is already in flight")
-            existing = await db.scalar(
-                select(ClaudeChatMessage).where(
-                    ClaudeChatMessage.session_id == session_id, ClaudeChatMessage.status == ChatMessageStatus.PENDING
-                )
-            )
-            if existing is not None:
+            if await _queued_prompt(db, session_id) is not None or await _legacy_pending(db, session_id) is not None:
                 raise RuntimeError("a prompt is already queued")
+            # Still minted here, and still `pending`: the transcript row is what the SPA gets back
+            # from this call, and a replica on the previous image dequeues by finding that status.
+            # Both stop being true in the contract release, where the row is written final and the
+            # queue row alone says it is waiting.
             message = ClaudeChatMessage(
                 message_id=uuid4(),
                 session_id=session_id,
@@ -528,6 +531,9 @@ class ClaudeChatStore:
                 updated_at=now,
             )
             db.add(message)
+            db.add(
+                ClaudeChatPrompt(prompt_id=uuid4(), session_id=session_id, message_id=message.message_id, queued_at=now)
+            )
             # No status write: a queued prompt is not a turn in flight. Setting `responding`
             # here is what let `request_abort` accept an abort for a turn that did not exist.
             chat.updated_at = now
@@ -547,19 +553,21 @@ class ClaudeChatStore:
             chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if chat is None or chat.status in ENDED_SESSION_STATUSES:
                 return None
-            message = await db.scalar(
-                select(ClaudeChatMessage)
-                .where(
-                    ClaudeChatMessage.session_id == session_id,
-                    ClaudeChatMessage.role == ChatMessageRole.USER,
-                    ClaudeChatMessage.status == ChatMessageStatus.PENDING,
-                )
-                .order_by(ClaudeChatMessage.created_at)
-                .with_for_update(skip_locked=True)
-            )
-            if message is None:
-                return None
             now = datetime.now(UTC)
+            # The queue first, then the transcript scan it replaces. Both, for the length of one
+            # roll: a prompt an old replica accepted exists only as a `pending` message row, and
+            # dropping the scan now would leave it accepted and never answered.
+            if (queued := await _queued_prompt(db, session_id, lock=True)) is not None:
+                queued.claimed_at = now
+                message = await db.get(ClaudeChatMessage, queued.message_id)
+                if message is None:
+                    # The row the queue points at is gone, so there is no prompt to run and no
+                    # text to run it with. Claiming it anyway is what stops the session retrying
+                    # a prompt it can never read.
+                    logger.error("Claude chat prompt %s has no message row", queued.prompt_id)
+                    return None
+            elif (message := await _legacy_pending(db, session_id, lock=True)) is None:
+                return None
             message.status = ChatMessageStatus.COMPLETE
             message.updated_at = now
             chat.updated_at = now
@@ -1613,6 +1621,40 @@ async def _tool_results(db: AsyncSession, session_id: UUID) -> dict[str, ClaudeC
     return results
 
 
+async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> ClaudeChatPrompt | None:
+    """The prompt *session_id* is waiting to run, if it has one.
+
+    `SKIP LOCKED` when claiming, so two replicas racing on one session take different rows rather
+    than blocking on each other — though a partial unique index means there is at most one to take.
+    """
+    query = (
+        select(ClaudeChatPrompt)
+        .where(ClaudeChatPrompt.session_id == session_id, ClaudeChatPrompt.claimed_at.is_(None))
+        .order_by(ClaudeChatPrompt.queued_at)
+    )
+    prompt: ClaudeChatPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
+    return prompt
+
+
+async def _legacy_pending(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> ClaudeChatMessage | None:
+    """A prompt accepted by a replica on the previous image, which wrote no queue row.
+
+    CLEANUP(added 2026-08-13): Remove once every pod runs an image with `claude_chat_prompts`
+    (0033) — one roll after it ships. Until then this is the only way such a prompt is answered.
+    """
+    query = (
+        select(ClaudeChatMessage)
+        .where(
+            ClaudeChatMessage.session_id == session_id,
+            ClaudeChatMessage.role == ChatMessageRole.USER,
+            ClaudeChatMessage.status == ChatMessageStatus.PENDING,
+        )
+        .order_by(ClaudeChatMessage.created_at)
+    )
+    message: ClaudeChatMessage | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
+    return message
+
+
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
     """The turn *session_id* is in the middle of, if it is in the middle of one.
 
@@ -1839,7 +1881,7 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Clau
 
 @router.post("/api/claude/sessions/{session_id}/messages")
 async def send_message(
-    session_id: UUID, body: ClaudeChatPrompt, actor: OperatorActorDep, store: ClaudeChatStoreDep
+    session_id: UUID, body: ClaudeChatPromptRequest, actor: OperatorActorDep, store: ClaudeChatStoreDep
 ) -> ClaudeChatMessageView:
     try:
         return await store.enqueue_prompt(actor.operator_id, session_id, body.text)

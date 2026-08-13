@@ -928,6 +928,45 @@ class ClaudeChatMessage(Base):
     )
 
 
+class ClaudeChatPrompt(Base):
+    """One prompt waiting to be handed to the model, or the record that it was.
+
+    Split out of `claude_chat_messages` because that row was doing two jobs. `COMPLETE` on a user
+    row meant "handed to the model" and on an assistant row "the answer finished" — one enum with
+    opposite meanings, disambiguated only by `role` — and "one prompt in flight" was a scan of the
+    transcript for a `pending` row plus the rule that only one exists. Here the queue is its own
+    table, the transcript is what was said, and that rule is the partial unique index below.
+
+    Holds no copy of the prompt's text: `message_id` is the transcript row minted with it, which is
+    where the text lives, so the queue and the transcript cannot come to disagree about what was
+    asked.
+    """
+
+    __tablename__ = "claude_chat_prompts"
+
+    prompt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    message_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("claude_chat_messages.message_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    queued_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # When the harness took it. Absent means still waiting — the state the index below makes at
+    # most one of per session.
+    claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_claude_chat_prompts_session", "session_id", "queued_at"),
+        Index(
+            "uq_claude_chat_prompts_unclaimed", "session_id", unique=True, postgresql_where=text("claimed_at IS NULL")
+        ),
+    )
+
+
 class ClaudeChatTurn(Base):
     """One exchange, recorded as a range over the session's frame log.
 

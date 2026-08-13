@@ -27,7 +27,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ClaudeChatFrame, ClaudeChatSession
+from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatPrompt, ClaudeChatSession
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import (
     ABORTED_NOTICE,
@@ -865,6 +865,108 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, opera
 
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
     await chat_store.enqueue_prompt(operator_id, view.session_id, "second")
+
+
+async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The transcript row used to be the queue: `COMPLETE` on a user row meant "handed to the
+    model" while on an assistant row it means "the answer finished". The queue row is what says a
+    prompt is waiting now, and claiming it is what says it no longer is."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+
+    async with migrated_sessions() as db:
+        queued = list(await db.scalars(select(ClaudeChatPrompt)))
+    assert [(row.session_id, row.claimed_at) for row in queued] == [(view.session_id, None)]
+
+    turn = await chat_store.next_prompt(view.session_id)
+
+    assert turn is not None
+    assert turn.prompt == "why did it fail?", "the text comes from the transcript row the queue names"
+    async with migrated_sessions() as db:
+        [claimed] = list(await db.scalars(select(ClaudeChatPrompt)))
+    assert claimed.claimed_at is not None
+    assert claimed.message_id == turn.message_id
+
+
+async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_sessions, operator_id) -> None:
+    """It used to be a scan of the transcript for a `pending` row plus the rule that only one
+    exists — so two replicas racing on one session could each conclude they may accept."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
+
+    async with migrated_sessions() as db:
+        message = ClaudeChatMessage(
+            message_id=uuid4(),
+            session_id=view.session_id,
+            role=ChatMessageRole.USER,
+            status=ChatMessageStatus.PENDING,
+            content="second",
+            tool_uses=[],
+            error=None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        db.add(message)
+        db.add(
+            ClaudeChatPrompt(
+                prompt_id=uuid4(),
+                session_id=view.session_id,
+                message_id=message.message_id,
+                queued_at=datetime.now(UTC),
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await db.flush()
+
+
+async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """During the roll that adds the queue, a prompt an old replica accepted exists only as a
+    `pending` message row. Dropping that scan now would leave it accepted and never answered."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    async with migrated_sessions.begin() as db:
+        db.add(
+            ClaudeChatMessage(
+                message_id=uuid4(),
+                session_id=view.session_id,
+                role=ChatMessageRole.USER,
+                status=ChatMessageStatus.PENDING,
+                content="enqueued by the previous image",
+                tool_uses=[],
+                error=None,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    turn = await chat_store.next_prompt(view.session_id)
+
+    assert turn is not None
+    assert turn.prompt == "enqueued by the previous image"
+    # And admission still refuses while it waits, so the two paths cannot both accept.
+    async with migrated_sessions.begin() as db:
+        db.add(
+            ClaudeChatMessage(
+                message_id=uuid4(),
+                session_id=view.session_id,
+                role=ChatMessageRole.USER,
+                status=ChatMessageStatus.PENDING,
+                content="another legacy one",
+                tool_uses=[],
+                error=None,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    with pytest.raises(RuntimeError, match="already queued"):
+        await chat_store.enqueue_prompt(operator_id, view.session_id, "mine")
 
 
 async def test_a_matrix_batch_offered_mid_turn_is_still_held(

@@ -101,15 +101,24 @@ terminal path.
 
 ## 3. The user message row is a queue _and_ a transcript
 
-`next_prompt` marks a user row `COMPLETE` when it **hands the prompt to the model**; for an
-assistant row `COMPLETE` means the answer is finished. One enum, opposite meanings,
-disambiguated only by `role` — and the states already partition by role, since `PENDING` is
-only ever a user row and `STREAMING`/`FAILED` only ever assistant.
+**Expand half done.** `next_prompt` marked a user row `COMPLETE` when it **handed the prompt to the
+model**, while on an assistant row `COMPLETE` means the answer is finished — one enum, opposite
+meanings, disambiguated only by `role`. That was downstream of the row doing two jobs: "one prompt
+in flight" was a scan of the transcript for `PENDING` plus the rule that only one exists, and
+dequeue was `FOR UPDATE SKIP LOCKED` over the transcript.
 
-That is downstream of the row doing two jobs: "one prompt in flight" is enforced by scanning
-messages for `PENDING`, and dequeue is `FOR UPDATE SKIP LOCKED` over the transcript. Splitting
-the pending prompt from the message log lets the transcript be append-only and deletes a class
-of status reasoning. Touches the SPA, so it is the deepest of these.
+`claude_chat_prompts` is the queue: one row per prompt, `claimed_at` for whether it is still
+waiting, and a partial unique index making "one in flight per session" a property of the schema
+rather than a rule. It holds no copy of the prompt's text — `message_id` names the transcript row
+minted with it — so the two cannot come to disagree about what was asked.
+
+**The SPA is untouched**, because the transcript row is still minted at enqueue and still returned
+by `POST /api/claude/sessions/{id}/messages`.
+
+What remains is the contract half, once the roll converges: stop writing the message row as
+`pending` (write it final) and drop the `_legacy_pending` scan that answers a prompt an old replica
+accepted, which is tombstoned in the code. `'pending'` stays in the CHECK constraint — dropping it
+is a destructive migration for no benefit.
 
 ## 4. `tool_uses` is now a lossy copy of the rollout
 
