@@ -902,6 +902,88 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     assert calls["toolu_running"].result is None, "a call still running must not read as an empty answer"
 
 
+async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
+    chat_store, chat_service, migrated_sessions, operator_id
+) -> None:
+    """The transcript row records the agent's own message id, which is the pointer the message
+    rows never had — so a message finds exactly the calls it made instead of the view matching by
+    position. `tool_uses` is then a copy nothing reads for such a row."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    asked = {"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}
+    frame = _assistant(asked) | {"message": {"role": "assistant", "id": "msg_01", "content": [asked]}}
+    client = _FakeCli([frame, _result("done")])
+    await chat_service._run_turn(
+        cast(Any, client),
+        client.frames().__aiter__(),
+        view.session_id,
+        turn.prompt,
+        turn_id=turn.turn_id,
+        room_id=None,
+        abort_event=asyncio.Event(),
+    )
+    # The frames the recorder would have written, plus the answer, which is a `user` frame.
+    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, frame)
+    await chat_store.record_frame(
+        view.session_id,
+        FrameDirection.FROM_AGENT,
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_ok", "content": "7"}],
+            },
+        },
+    )
+    # Whatever the column says is now beside the point, so make it say something wrong.
+    async with migrated_sessions.begin() as db:
+        for message in await db.scalars(
+            select(ClaudeChatMessage).where(ClaudeChatMessage.agent_message_id == "msg_01")
+        ):
+            message.tool_uses = [{"tool_use_id": "toolu_stale", "name": "Stale", "input": {}}]
+
+    [call] = [
+        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_uses
+    ]
+
+    assert (call.tool_use_id, call.name) == ("toolu_ok", "Bash"), "the rollout wins over the column"
+    assert call.result is not None
+    assert call.result.content == "7"
+
+
+async def test_a_message_with_nothing_to_point_at_still_reads_its_calls_from_the_column(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """A row written before the pointer existed, or one the console synthesized rather than
+    observed — a turn whose text arrived only on the `result` frame — has no agent message id, and
+    the column is all it has. That is why the column is still written."""
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    message_id = await chat_store.begin_assistant(view.session_id)
+    await chat_store.update_assistant(
+        view.session_id,
+        message_id,
+        "did a thing",
+        tool_uses=[{"tool_use_id": "toolu_legacy", "name": "Bash", "input": {}}],
+        complete=True,
+    )
+
+    [call] = [
+        call for message in (await chat_store.get(operator_id, view.session_id)).messages for call in message.tool_uses
+    ]
+
+    assert call.tool_use_id == "toolu_legacy"
+    async with migrated_sessions() as db:
+        assert (
+            await db.scalar(
+                select(ClaudeChatMessage.agent_message_id).where(ClaudeChatMessage.message_id == message_id)
+            )
+            is None
+        )
+
+
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
     """The gate `enqueue_prompt` used to keep was `status == READY`, which doubled as "not
     mid-turn" only because `enqueue_prompt` itself had written `responding`. Asking the turn

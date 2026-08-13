@@ -456,7 +456,7 @@ class ClaudeChatStore:
                 ).all()
             )
             responding = await _open_turn(db, session_id) is not None
-            return _session_view(record, messages, responding=responding, results=await _tool_results(db, session_id))
+            return _session_view(record, messages, responding=responding, calls=await _rollout_calls(db, session_id))
 
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         now = datetime.now(UTC)
@@ -779,6 +779,7 @@ class ClaudeChatStore:
         content: str,
         *,
         tool_uses: list[dict[str, Any]] | None = None,
+        agent_message_id: str | None = None,
         complete: bool = False,
     ) -> None:
         now = datetime.now(UTC)
@@ -790,6 +791,8 @@ class ClaudeChatStore:
             message.content = content
             if tool_uses is not None:
                 message.tool_uses = tool_uses
+            if agent_message_id is not None:
+                message.agent_message_id = agent_message_id
             message.status = ChatMessageStatus.COMPLETE if complete else ChatMessageStatus.STREAMING
             message.updated_at = now
             # No `chat.status = RESPONDING` here. This runs per stream delta, so it was a
@@ -1506,7 +1509,14 @@ class ClaudeChatService:
                         ]
                         said = text or streamed.strip()
                         await self._store.update_assistant(
-                            session_id, assistant_id, said, tool_uses=tool_uses, complete=True
+                            session_id,
+                            assistant_id,
+                            said,
+                            tool_uses=tool_uses,
+                            # The wire's own id for this message, which is what lets a reader find
+                            # its calls in the frame log rather than match them by position.
+                            agent_message_id=_agent_message_id(frame),
+                            complete=True,
                         )
                         # The real frame is already in the log — the recorder wrote it when
                         # the socket delivered it — so the stand-in has nothing to stand for.
@@ -1595,6 +1605,12 @@ class ClaudeChatService:
         await self._claims.aclose()
 
 
+def _agent_message_id(frame: dict[str, Any]) -> str | None:
+    """The agent's own id for an `assistant` frame's message, if it carried one."""
+    message = frame.get("message")
+    return str(agent_id) if isinstance(message, dict) and (agent_id := message.get("id")) else None
+
+
 def _content_blocks(frame: dict[str, Any]) -> list[dict[str, Any]]:
     """The content blocks of an `assistant` frame, or none if it carries none.
 
@@ -1618,50 +1634,77 @@ def _text_delta(event: dict[str, Any]) -> str:
     return text if isinstance(text, str) else ""
 
 
-def _message_view(
-    message: ClaudeChatMessage, results: Mapping[str, ClaudeChatToolResultView] = MappingProxyType({})
-) -> ClaudeChatMessageView:
+@dataclass(frozen=True, slots=True)
+class _RolloutCalls:
+    """What one session's frame log says about tool calls.
+
+    Two indexes over the same frames, because the transcript joins to them by different keys: an
+    assistant message finds its own calls by the agent's message id, and a call finds its answer by
+    its own id — unique within a session, so that half needs no per-message association at all.
+    """
+
+    by_message: Mapping[str, list[dict[str, Any]]]
+    results: Mapping[str, ClaudeChatToolResultView]
+
+
+async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
+    """Read the calls and their results out of the session's rollout.
+
+    Both live only here: `assistant` frames carry the `tool_use` blocks, `user` frames carry the
+    `tool_result` blocks the turn loop drops, and `claude_chat_messages.tool_uses` is a copy of the
+    first half with the second half missing.
+    """
+    frames = await db.execute(
+        select(ClaudeChatFrame.kind, ClaudeChatFrame.payload)
+        .where(
+            ClaudeChatFrame.session_id == session_id,
+            ClaudeChatFrame.kind.in_([ChatMessageRole.ASSISTANT, ChatMessageRole.USER]),
+        )
+        .order_by(ClaudeChatFrame.frame_seq)
+    )
+    by_message: dict[str, list[dict[str, Any]]] = {}
+    results: dict[str, ClaudeChatToolResultView] = {}
+    for kind, payload in frames:
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            continue
+        agent_id = message.get("id")
+        for block in message.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            match block.get("type"):
+                case "tool_use" if kind == ChatMessageRole.ASSISTANT and agent_id:
+                    by_message.setdefault(str(agent_id), []).append(
+                        {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
+                    )
+                case "tool_result" if call_id := block.get("tool_use_id"):
+                    results[str(call_id)] = ClaudeChatToolResultView(
+                        content=block.get("content"), is_error=bool(block.get("is_error"))
+                    )
+    return _RolloutCalls(by_message=by_message, results=results)
+
+
+_NO_CALLS = _RolloutCalls(by_message=MappingProxyType({}), results=MappingProxyType({}))
+
+
+def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls = _NO_CALLS) -> ClaudeChatMessageView:
+    # The rollout where the row points into it, the column otherwise. That column is the lossy copy
+    # — the calls without their answers — and is kept only for rows with nothing to point at: ones
+    # that predate the pointer, and ones this console synthesized rather than observed.
+    recorded = calls.by_message.get(message.agent_message_id or "")
     return ClaudeChatMessageView(
         message_id=message.message_id,
         role=message.role,
         status=message.status,
         content=message.content,
         tool_uses=[
-            ClaudeChatToolUseView.model_validate(tool_use | {"result": results.get(tool_use["tool_use_id"])})
-            for tool_use in message.tool_uses
+            ClaudeChatToolUseView.model_validate(tool_use | {"result": calls.results.get(tool_use["tool_use_id"])})
+            for tool_use in (recorded if recorded is not None else message.tool_uses)
         ],
         error=message.error,
         created_at=message.created_at,
         updated_at=message.updated_at,
     )
-
-
-async def _tool_results(db: AsyncSession, session_id: UUID) -> dict[str, ClaudeChatToolResultView]:
-    """Every tool result this session's rollout recorded, by the id of the call it answers.
-
-    Keyed by `tool_use_id` rather than reconstructed per message, because the CLI's ids are unique
-    within a session and the message rows carry no pointer into the frame log — so a join by id is
-    exact where matching the Nth assistant message to the Nth assistant frame would be a guess.
-
-    Tool results arrive as `user` frames, which is why they were missing from the transcript at
-    all: the turn loop reads `assistant` frames and drops those.
-    """
-    frames = await db.scalars(
-        select(ClaudeChatFrame.payload).where(
-            ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.kind == ChatMessageRole.USER
-        )
-    )
-    results: dict[str, ClaudeChatToolResultView] = {}
-    for payload in frames:
-        message = payload.get("message")
-        if not isinstance(message, dict):
-            continue
-        for block in message.get("content", []):
-            if isinstance(block, dict) and block.get("type") == "tool_result" and (id := block.get("tool_use_id")):
-                results[str(id)] = ClaudeChatToolResultView(
-                    content=block.get("content"), is_error=bool(block.get("is_error"))
-                )
-    return results
 
 
 async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> ClaudeChatPrompt | None:
@@ -1713,11 +1756,7 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
 
 
 def _session_view(
-    record: ClaudeChatSession,
-    messages: list[ClaudeChatMessage],
-    *,
-    responding: bool,
-    results: Mapping[str, ClaudeChatToolResultView] = MappingProxyType({}),
+    record: ClaudeChatSession, messages: list[ClaudeChatMessage], *, responding: bool, calls: _RolloutCalls = _NO_CALLS
 ) -> ClaudeChatSessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 
@@ -1743,7 +1782,7 @@ def _session_view(
         created_at=record.created_at,
         updated_at=record.updated_at,
         provisioning=None,
-        messages=[_message_view(message, results) for message in messages],
+        messages=[_message_view(message, calls) for message in messages],
     )
 
 

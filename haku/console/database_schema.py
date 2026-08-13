@@ -916,6 +916,15 @@ class ClaudeChatMessage(Base):
     role: Mapped[ChatMessageRole] = mapped_column(TextBackedStrEnumColumn(ChatMessageRole), nullable=False)
     status: Mapped[ChatMessageStatus] = mapped_column(TextBackedStrEnumColumn(ChatMessageStatus), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # The agent's own id for the message this row records (`msg_…`), which is the pointer from the
+    # transcript into the frame log: an `assistant` frame carries the same id, so a reader can find
+    # exactly the tool calls that message made instead of guessing by position.
+    #
+    # NULL where there is nothing to point at: a user row, a row written before this column, or an
+    # assistant row the console synthesized rather than observed — a turn whose text arrived only
+    # on the `result` frame. Such a row's calls come from `tool_uses`, which is why that column is
+    # still written.
+    agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_uses: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

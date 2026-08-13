@@ -132,12 +132,19 @@ The join is by id rather than per message on purpose: the CLI's ids are unique w
 the message rows carry no pointer into the frame log, so matching the Nth assistant message to the
 Nth assistant frame would be a guess.
 
-**What remains is dropping the column**, which needs that missing pointer — a `frame_seq` on
-`claude_chat_messages`, additive — because without it the _calls_ cannot be re-sourced even though
-the results can. Then three releases, not two: `tool_uses` is `nullable=False` with only a
-Python-side `default=list`, so the ORM attribute cannot go until the column has a server default
-(`SET DEFAULT '[]'::jsonb`), and the `drop_column` cannot share a release with that — an old
-replica's `_message_view` selects the mapped column by name.
+**The pointer landed too**, and it is the agent's own message id rather than a `frame_seq`: an
+`assistant` frame carries the same `msg_…` id the transcript row now records, so the wire's own
+identity does the join and the console invents nothing. With it the _calls_ come from the rollout as
+well — `tool_uses` is read only for a row with nothing to point at, meaning one written before the
+column existed, or one the console synthesized rather than observed (a turn whose text arrived only
+on the `result` frame).
+
+**What remains is deleting the column**, in two more releases: `tool_uses` is `nullable=False` with
+only a Python-side `default=list`, so the ORM attribute cannot go until the column has a server
+default (`SET DEFAULT '[]'::jsonb`), and the `drop_column` cannot share a release with that — an old
+replica's `_message_view` selects the mapped column by name. The synthesized-message case has to
+stop needing it first: either those rows get their calls recorded as frames, or they keep having
+none, which is what they have today.
 
 ## 5. Frame recording belongs on the protocol client
 
