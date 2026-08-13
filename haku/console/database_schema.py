@@ -856,8 +856,11 @@ class ClaudeChatSession(Base):
     # the previous image during a roll. Deliberately not defaulted to `spa`: a wrong label is
     # worse than an absent one, since nothing downstream can tell the two apart afterwards.
     surface: Mapped[ChatSurface | None] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
-    # The Matrix room this session serves, denormalized from `matrix_conversation` because that
-    # table keeps only the current binding and this one has to outlive it.
+    # The Matrix room this session serves — the *history* half of the binding, where
+    # `matrix_conversation.session_id` is the current pointer. Denormalized from that table
+    # because it keeps only the live session, so without this column a replaced Matrix session
+    # became indistinguishable from an SPA one the moment the supervisor moved on. Written once at
+    # creation and never updated.
     room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ChatSessionStatus] = mapped_column(TextBackedStrEnumColumn(ChatSessionStatus), nullable=False)
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -1115,6 +1118,20 @@ class MatrixConversation(Base):
     room_id: Mapped[str] = mapped_column(Text, nullable=False)
     # The chat session currently serving the room. Null between a session dying and the
     # supervisor replacing it — an expected state, not a broken one.
+    #
+    # **This is the pointer; `claude_chat_sessions.room_id` is the history.** The same binding
+    # appears in both places on purpose and they answer different questions: this column says
+    # which session the room is talking to *now* and moves every time the supervisor replaces
+    # one, while the session's own `room_id` says which room that session served and never
+    # changes — which is what makes a past Matrix conversation findable after its successor has
+    # taken over (matrix_chat_runtime.md R11.3a). Asking this column "was this session mine?"
+    # answers about the room's present instead, and reads as no for every session but the live
+    # one.
+    #
+    # No constraint enforces that this points at a session whose `room_id` is this room: it is
+    # an agreement between two rows, which SQL cannot state (a CHECK sees one row, and a
+    # composite foreign key would need `room_id` in this table's key). It is maintained by
+    # `MatrixSessionSupervisor` alone, and asserted by a test rather than by the database.
     session_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="SET NULL"), nullable=True
     )

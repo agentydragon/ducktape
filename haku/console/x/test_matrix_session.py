@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from haku.console.chat_models import ChatSessionStatus
 from haku.console.database_schema import ClaudeChatSession
@@ -103,6 +103,35 @@ async def test_replaces_a_failed_session(supervisor, conversations, chat_store, 
     assert await bound_session(conversations) not in (None, dead)
     assert dead in recording_claims.deleted, "the dead session's claim must be swept before a new one is made"
     assert any("ended" in line for line in announced)
+
+
+async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
+    supervisor, conversations, chat_store, recording_claims, migrated_sessions
+) -> None:
+    """The binding lives in two places and they answer different questions.
+
+    `matrix_conversation.session_id` is the pointer — which session the room talks to *now* — and
+    `claude_chat_sessions.room_id` is the history, written once and never moved. No SQL constraint
+    can state the agreement between them (a CHECK sees one row; a composite foreign key would need
+    `room_id` in this table's key), so the supervisor is its only maintainer and this is where that
+    is checked. Without the history half, a replaced Matrix session became indistinguishable from
+    an SPA one the moment the supervisor moved on.
+    """
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await supervisor.supervise_once()
+    [first] = recording_claims.created
+    await chat_store.fail(first, "the sandbox went away")
+
+    await supervisor.supervise_once()
+
+    second = await bound_session(conversations)
+    assert second not in (None, first), "the pointer follows the live session"
+    async with migrated_sessions() as db:
+        rooms = {
+            row.session_id: row.room_id
+            for row in await db.scalars(select(ClaudeChatSession).order_by(ClaudeChatSession.created_at))
+        }
+    assert rooms == {first: MATRIX_ROOM, second: MATRIX_ROOM}, "each session still says which room it served"
 
 
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(

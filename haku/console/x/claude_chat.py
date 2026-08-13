@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Protocol, cast
+from typing import Annotated, Any, ClassVar, Protocol, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -342,6 +342,12 @@ class KubernetesSandboxClaims:
 class SpaSession:
     """A session created by the browser chat view, which has no room."""
 
+    # What the row records for this variant, carried on the variant rather than derived from it
+    # by an `isinstance` chain at the one call site — where the enum and the room had to be
+    # mapped separately, so a third surface would be two arms to remember rather than a field.
+    surface_column: ClassVar[ChatSurface] = ChatSurface.SPA
+    room_id: ClassVar[None] = None
+
 
 @dataclass(frozen=True)
 class MatrixSession:
@@ -353,6 +359,7 @@ class MatrixSession:
     check constraints, since the columns outlive this call signature.
     """
 
+    surface_column: ClassVar[ChatSurface] = ChatSurface.MATRIX
     room_id: str
 
 
@@ -387,8 +394,8 @@ class ClaudeChatStore:
                 ClaudeChatSession(
                     session_id=session_id,
                     operator_id=operator_id,
-                    surface=ChatSurface.MATRIX if isinstance(surface, MatrixSession) else ChatSurface.SPA,
-                    room_id=surface.room_id if isinstance(surface, MatrixSession) else None,
+                    surface=surface.surface_column,
+                    room_id=surface.room_id,
                     status=ChatSessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,

@@ -174,12 +174,15 @@ places — so renaming that one wants a two-step expand/contract rather than a s
   embeds the whole transcript, per wake. It is one now, compared against what was last sent. It
   still suppresses little during a turn, which is the reason not to pay for it three times: every
   delta genuinely changes the view.
-- `SpaSession`/`MatrixSession` variants plus the `ChatSurface` column enum plus an `isinstance`
-  mapping is close to the aliasing STYLE warns about; a `column_value` on the variants would
-  do.
-- `matrix_conversation.session_id` and `claude_chat_sessions.room_id` are two places the same
-  binding lives. The intended split is "conversation = current pointer, session.room_id =
-  history"; nothing enforces or states it, and it will drift.
+- **Done:** `SpaSession`/`MatrixSession` plus the `ChatSurface` column enum plus an `isinstance`
+  mapping at the one call site was close to the aliasing STYLE warns about — and it mapped the enum
+  and the room separately, so a third surface meant two arms to remember. Each variant now carries
+  its own `surface_column` and `room_id`, and `create` reads them.
+- **Done:** `matrix_conversation.session_id` and `claude_chat_sessions.room_id` are two places the
+  same binding lives, and now both columns say which question they answer: the first is the current
+  pointer, the second the history, written once and never moved. No SQL constraint can state an
+  agreement between two rows, so that is written down rather than left as an implied constraint,
+  with the supervisor named as its only maintainer and a test standing in for the constraint.
 
 ## Done since the review
 
