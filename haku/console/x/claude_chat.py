@@ -122,7 +122,7 @@ class ClaudeChatToolUseView(BaseModel):
     # Absent while the call is still running, and on a turn that died before it answered — which
     # is a state worth seeing rather than one to hide. It comes from the rollout, because
     # `claude_chat_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
-    # that asked and drops the `user` frames that answered (§4).
+    # that asked and drops the `user` frames that answered.
     result: ClaudeChatToolResultView | None = None
 
 

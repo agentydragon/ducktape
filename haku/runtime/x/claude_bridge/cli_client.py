@@ -1,11 +1,10 @@
 """A client for Claude Code's newline-delimited JSON protocol.
 
-Replaces `ClaudeSDKClient` for the console's session runtime. The reasoning is in
-<../../../plans/cli_protocol_ownership.md>; the short version is that the SDK's typed layer is
-not what the rollout records, its `receive_response()` is request-scoped in a runtime where turns
-are not requests, and it never stamps a prompt with the `uuid` that makes the CLI report that
-prompt's lifecycle. What is left of it after those is a launch-argument builder, which
-`options.py` still uses. The protocol itself is described in <../../../cli_protocol/README.md>.
+Replaces `ClaudeSDKClient` for the console's session runtime, because the SDK's typed layer was
+not what the rollout records, its `receive_response()` was request-scoped in a runtime where turns
+are not requests, and it never stamped a prompt with the `uuid` that makes the CLI report that
+prompt's lifecycle. `options.py` took the launch arguments that were left of it, so nothing here
+imports the SDK. The protocol itself is described in <../../../cli_protocol/README.md>.
 
 Two channels are multiplexed on one stream, distinguished by the top-level `type`:
 

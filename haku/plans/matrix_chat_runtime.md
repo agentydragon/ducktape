@@ -133,8 +133,8 @@ a handoff to another pod. How the gap is actually closed lives in
   What it costs us: `MatrixTurns.offer` stops refusing batches while a turn runs (R2.2 becomes
   fold-into-turn), `_run_turn` gains a way to write a prompt into a `receive_response()` it is
   already draining, and **a turn stops owning exactly one prompt** — one `result` covered two
-  here, which is the concrete reason the turn model in <chat_runtime_cleanup.md> brackets a
-  frame range rather than labelling frames.
+  here, which is the concrete reason `claude_chat_turns` brackets a frame range rather than
+  labelling frames.
 
 - **R2.3 [v1]** Batch order follows the homeserver's stream order and is preserved in the
   rendered prompt.
@@ -399,7 +399,7 @@ input to a running turn**. Interrupt exists; steer does not.
 
   **Not now, and not because it is blocked.** The first draft of this said re-adoption
   forbids it, leaning on <cli_protocol_ownership.md>'s "adding a hook, a `can_use_tool` callback,
-  or an SDK-hosted MCP server makes re-adoption qualitatively harder". That is a cost, not a
+  or a client-hosted MCP server makes re-adoption qualitatively harder". That is a cost, not a
   wall, and the resolution is not exotic: the runner already has to buffer and redial for
   design B, so it can also hold the inbound `control_request`s that went unanswered while the
   console was away and re-deliver them on adopt with everything else since the cursor. What
@@ -953,9 +953,9 @@ limit, kinds)` pages `claude_chat_frames` by its `frame_seq`, and skimming is a 
    requirement was actually asking for. And a turn is our interpretation where the log is the
    record: the CLI folds a mid-turn prompt into a running turn, so one `result` can answer two
    prompts, and a turn-shaped read would have to pick a lie about which prompt an exchange
-   belonged to. Turns still get a table (<chat_runtime_cleanup.md> §1) — for the abort race, for
-   cost and usage, for re-adoption — and a `read_turn` can be added over that later as a range
-   query. It is not a prerequisite for reading.
+   belonged to. Turns have their own table — for the abort race, for cost and usage, for
+   re-adoption — and `list_turns` reports its brackets as an index into the log; a `read_turn` can be
+   added over it later as a range query. It is not a prerequisite for reading.
 
    Hosted as an in-process MCP server on the console's existing `/mcp` (`haku_conversations`),
    the same pattern as `gmail` and `haku_routine`: credential-free, since the corpus is the
