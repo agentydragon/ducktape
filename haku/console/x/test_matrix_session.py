@@ -226,6 +226,7 @@ class _RecordingRoom:
         self._history = history
         self.shown: list[str] = []
         self.cleared = 0
+        self.typing: list[bool] = []
 
     async def recent_history(self, limit: int) -> Sequence[InboundMessage]:
         return await self._history(limit)
@@ -241,6 +242,9 @@ class _RecordingRoom:
 
     async def clear_status(self) -> None:
         self.cleared += 1
+
+    async def set_typing(self, active: bool) -> None:
+        self.typing.append(active)
 
 
 def surface(history: RecentHistory) -> MatrixSurface:

@@ -557,10 +557,12 @@ input to a running turn**. Interrupt exists; steer does not.
 
 ### R6 — Status and presence
 
-- **R6.1 [v1]** A turn in progress is visible in the room without the agent doing anything.
-  Typing notifications are set by the harness around the turn and refreshed for its
-  duration, and cleared on **every** terminal path including failure — a stuck typing
-  indicator is a recurring bug in other harnesses.
+- **R6.1 [built]** A turn in progress is visible in the room without the agent doing anything.
+  The harness sets a typing notification when the turn starts — immediately, unlike the status
+  line, since "Haku is working on it" is worth nothing after the fact — refreshes it every ten
+  seconds for the turn's duration, and clears it on **every** terminal path including failure. A
+  stuck typing indicator is a recurring bug in other harnesses; the homeserver's own 30-second
+  expiry is the backstop for the one path no code runs on, a console that dies mid-turn.
 - **R6.2 [built]** For slow turns, a status message reports what is happening now. It is
   created lazily, after a latency threshold, so short exchanges do not leave a
   status/answer pair behind.

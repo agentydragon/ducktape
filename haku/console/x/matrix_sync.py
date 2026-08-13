@@ -176,6 +176,22 @@ class MatrixSyncService:
             return
         await self._client.edit_notice(token, conversation.room_id, self._status_event_id, body, txn_id=uuid4().hex)
 
+    async def set_typing(self, active: bool) -> None:
+        """Show or hide Haku's typing indicator in the live room (R6.1).
+
+        Best effort by construction: a failed typing notice is cosmetic, and a turn that died
+        because the room could not be told it was thinking would be a strictly worse outcome
+        than an indicator that is briefly wrong. The homeserver expires the notice on its own,
+        so the failure mode of a lost `False` is a stale indicator for seconds, not forever.
+        """
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            return
+        try:
+            await self._client.set_typing(await self._token(), conversation.room_id, active=active)
+        except Exception:
+            logger.warning("Matrix: typing notification failed (active=%s)", active, exc_info=True)
+
     async def clear_status(self) -> None:
         """Retire the status line, if one was ever created (R6.5).
 

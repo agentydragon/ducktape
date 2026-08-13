@@ -997,6 +997,11 @@ class RolloutRecorder:
 # clutter.
 STATUS_AFTER_SECONDS = 8.0
 
+# How often a running turn re-asserts its typing notice. Comfortably inside the homeserver's
+# expiry (`matrix_client.TYPING_TIMEOUT_MS`, 30s), because the point of that expiry is to retire
+# the indicator when the console dies — not to blink it off mid-turn while it is still going.
+TYPING_REFRESH_SECONDS = 10.0
+
 
 def _coarse_status(frame: dict[str, Any]) -> str | None:
     """What the room should be told this frame means, or None if it means nothing to it.
@@ -1020,20 +1025,47 @@ def _coarse_status(frame: dict[str, Any]) -> str | None:
     return None
 
 
-class _TurnStatus:
-    """Drives the room's status line for one turn.
+async def _ignore_status(text: str) -> None:
+    del text
 
-    A polled driver rather than a write on every frame, because the two things that decide
-    whether to speak are both about elapsed time — the lazy-creation threshold and the edit
-    floor — and a turn can go a long while between frames. Frames set the state; the loop
-    decides when the room hears about it.
+
+async def _ignore_clear() -> None:
+    pass
+
+
+async def _ignore_typing(active: bool) -> None:
+    del active
+
+
+class _TurnStatus:
+    """Drives what the room shows while one turn runs: the typing indicator and the status line.
+
+    A polled driver rather than a write on every frame, because everything that decides whether
+    to speak is about elapsed time — the typing notice's expiry, the status line's lazy-creation
+    threshold, its edit floor — and a turn can go a long while between frames. Frames set the
+    state; the loop decides when the room hears about it.
+
+    The two differ in when they start. Typing goes on immediately, because "Haku is working on
+    it" is the whole message and it is worth nothing after the fact; the status line waits for
+    `STATUS_AFTER_SECONDS`, because a status/answer pair for a five-second exchange is clutter.
     """
 
-    def __init__(self, show: Callable[[str], Awaitable[None]], clear: Callable[[], Awaitable[None]]):
+    def __init__(
+        self,
+        show: Callable[[str], Awaitable[None]],
+        clear: Callable[[], Awaitable[None]],
+        typing: Callable[[bool], Awaitable[None]] = _ignore_typing,
+    ):
         self._show = show
         self._clear = clear
+        self._typing = typing
         self._state: str | None = None
+        # What the room was last told, so an unchanged state is not re-sent every tick. The sync
+        # service drops a repeat anyway, but a driver that says the same thing once a second is
+        # relying on that rather than meaning it.
+        self._shown: str | None = None
         self._started = time.monotonic()
+        self._typed_at = 0.0
         self._task: asyncio.Task[None] | None = None
 
     def note(self, frame: dict[str, Any]) -> None:
@@ -1045,26 +1077,31 @@ class _TurnStatus:
 
     async def _run(self) -> None:
         while True:
-            await asyncio.sleep(1.0)
-            if self._state is not None and time.monotonic() - self._started >= STATUS_AFTER_SECONDS:
+            # Refreshed rather than set once: the homeserver expires a typing notice by itself,
+            # which is what stops a dead console from leaving one stuck on — so a live turn has
+            # to keep saying it. Well inside `TYPING_TIMEOUT_MS`, so a slow round trip does not
+            # leave a gap the operator can see.
+            if time.monotonic() - self._typed_at >= TYPING_REFRESH_SECONDS:
+                self._typed_at = time.monotonic()
+                await self._typing(True)
+            if (
+                self._state is not None
+                and self._state != self._shown
+                and time.monotonic() - self._started >= STATUS_AFTER_SECONDS
+            ):
+                self._shown = self._state
                 await self._show(self._state)
+            await asyncio.sleep(1.0)
 
     async def finish(self) -> None:
-        """Stop driving and retire the line, on every path out of the turn including failure."""
+        """Stop driving and take both back, on every path out of the turn including failure."""
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        await self._typing(False)
         await self._clear()
-
-
-async def _ignore_status(text: str) -> None:
-    del text
-
-
-async def _ignore_clear() -> None:
-    pass
 
 
 class RoomSurface(Protocol):
@@ -1092,6 +1129,8 @@ class RoomSurface(Protocol):
     async def show_status(self, room_id: str, text: str) -> None: ...
 
     async def clear_status(self, room_id: str) -> None: ...
+
+    async def set_typing(self, room_id: str, active: bool) -> None: ...
 
 
 class ClaudeChatService:
@@ -1207,7 +1246,11 @@ class ClaudeChatService:
         surface, room = self._room_surface, room_id
         if surface is None or room is None:
             return _TurnStatus(_ignore_status, _ignore_clear)
-        return _TurnStatus(lambda text: surface.show_status(room, text), lambda: surface.clear_status(room))
+        return _TurnStatus(
+            lambda text: surface.show_status(room, text),
+            lambda: surface.clear_status(room),
+            lambda active: surface.set_typing(room, active),
+        )
 
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
         """Log every sandbox progress report, and show it to the room if there is one."""

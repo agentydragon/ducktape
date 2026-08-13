@@ -80,6 +80,8 @@ class RoomChannel(Protocol):
 
     async def show_status(self, body: str) -> None: ...
 
+    async def set_typing(self, active: bool) -> None: ...
+
     async def clear_status(self) -> None: ...
 
 
@@ -250,6 +252,11 @@ class MatrixSurface:
         """Retire that line once the turn is over, however it ended (R6.5)."""
         del room_id
         await self._room.clear_status()
+
+    async def set_typing(self, room_id: str, active: bool) -> None:
+        """Show a turn in progress without the agent doing anything about it (R6.1)."""
+        del room_id
+        await self._room.set_typing(active)
 
     async def _recent(self) -> list[HistoryMessage]:
         """The tail of the conversation, or none of it if the homeserver would not say.

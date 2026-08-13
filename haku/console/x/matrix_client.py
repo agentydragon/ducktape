@@ -29,6 +29,7 @@ from nio.responses import (
     RoomMessagesResponse,
     RoomRedactResponse,
     RoomSendResponse,
+    RoomTypingResponse,
     SyncResponse,
     WhoamiResponse,
 )
@@ -36,6 +37,11 @@ from nio.responses import (
 from haku.console.x.matrix_markdown import to_formatted_body
 
 logger = logging.getLogger(__name__)
+
+# How long the homeserver keeps Haku's typing notice alive without being told again (R6.1). Short
+# enough that a console dying mid-turn leaves an indicator that retires itself, long enough that
+# the turn's status driver refreshes it a handful of times rather than constantly.
+TYPING_TIMEOUT_MS = 30_000
 
 # Long-poll ceiling. Synapse returns as soon as anything arrives, so this only bounds how
 # long a quiet connection stays open before it is re-established.
@@ -227,6 +233,17 @@ class MatrixClient:
             ),
             RoomSendResponse,
         )
+
+    async def set_typing(self, token: str, room_id: str, *, active: bool) -> None:
+        """Start or stop Haku's typing notification in *room_id*.
+
+        The homeserver expires a typing notice by itself after `TYPING_TIMEOUT_MS`, which is what
+        makes this safe: a console that dies mid-turn leaves an indicator that goes away on its
+        own rather than one stuck on forever. The cost is that a live turn has to say it again
+        before that expiry, which the turn's status driver does.
+        """
+        self._client.access_token = token
+        _unwrap(await self._client.room_typing(room_id, active, timeout=TYPING_TIMEOUT_MS), RoomTypingResponse)
 
     async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
         """Remove an event. Used to retire a status line once its answer has posted (R6.5).

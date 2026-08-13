@@ -96,8 +96,8 @@ human-readable `description` — "Running Count regular files in the directory" 
 state from those and from each `assistant` frame's `tool_use` names, and the room shows it on a
 single lazily-created, rate-limited, redacted-on-finish line.
 
-What remains of R6 is R6.1: typing notifications for the turn's duration, cleared on every
-terminal path.
+R6.1 landed with it: the same driver sets a typing notification when the turn starts, refreshes it
+for the turn's duration, and takes it back wherever the turn ends.
 
 ## 3. The user message row is a queue _and_ a transcript
 

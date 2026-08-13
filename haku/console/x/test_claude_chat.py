@@ -33,6 +33,7 @@ from haku.console.x.claude_chat import (
     ABORTED_NOTICE,
     REPLICA,
     STATUS_AFTER_SECONDS,
+    TYPING_REFRESH_SECONDS,
     BridgeAuthentication,
     ClaudeChatService,
     ClaudeChatStore,
@@ -549,6 +550,56 @@ async def test_the_line_is_retired_even_when_the_turn_fails() -> None:
     assert cleared == [True]
 
 
+async def test_typing_starts_with_the_turn_rather_than_waiting_for_the_status_threshold() -> None:
+    """R6.1: "Haku is working on it" is worth nothing after the fact, so unlike the status line
+    it does not wait — a turn shorter than `STATUS_AFTER_SECONDS` still shows it."""
+    typed: list[bool] = []
+
+    status = _TurnStatus(_appender([]), _noop, _recorder(typed))
+    status.start()
+    await asyncio.sleep(1.2)
+    await status.finish()
+
+    assert typed == [True, False], "on at the start, off at the end, and no status line in between"
+
+
+async def test_typing_is_refreshed_for_the_length_of_the_turn() -> None:
+    """The homeserver expires the notice on its own — which is what keeps a dead console from
+    leaving one stuck on — so a live turn has to keep saying it."""
+    typed: list[bool] = []
+
+    status = _TurnStatus(_appender([]), _noop, _recorder(typed))
+    status._typed_at -= TYPING_REFRESH_SECONDS  # the last notice is already due for renewal
+    status.start()
+    await asyncio.sleep(1.2)
+
+    assert typed == [True]
+    status._typed_at -= TYPING_REFRESH_SECONDS
+    await asyncio.sleep(1.2)
+    await status.finish()
+
+    assert typed == [True, True, False]
+
+
+async def test_typing_is_taken_back_even_when_the_turn_fails() -> None:
+    """The stuck typing indicator this requirement is named after: every terminal path clears it,
+    failure included, and `finish()` is the one hook all of them run."""
+    typed: list[bool] = []
+
+    status = _TurnStatus(_appender([]), _noop, _recorder(typed))
+    status.start()
+    await status.finish()
+
+    assert typed[-1] is False
+
+
+def _recorder(sink: list[bool]) -> Callable[[bool], Awaitable[None]]:
+    async def typing(active: bool) -> None:
+        sink.append(active)
+
+    return typing
+
+
 def _appender(sink: list[str]) -> Callable[[str], Awaitable[None]]:
     async def show(text: str) -> None:
         sink.append(text)
@@ -638,6 +689,9 @@ class _RecordingRoomSurface:
         return None
 
     async def clear_status(self, room_id: str) -> None:
+        return None
+
+    async def set_typing(self, room_id: str, active: bool) -> None:
         return None
 
 
