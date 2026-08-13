@@ -17,7 +17,7 @@ WiFi; the old PVC-era data was discarded).
 - Card AP: SSID `Rai CPAP ez Share`, IP `192.168.4.1`
 - Card firmware: `LZ1801EDPG:1.0.0`, XML API at `/client?command=...` + `/download?file=` (8.3 short filenames)
 - Data: `STR.EDF` (daily summary) + `DATALOG/<date>/*.edf` (~2.5 MB/night)
-- WiFi stick: `wlx9cefd5f62ee0` (MediaTek MT7921, 2.4 GHz), attached to the `optiplex` Talos worker
+- WiFi stick: the sole wireless interface discovered by `iw` on the `optiplex` Talos worker (2.4 GHz USB adapter)
 - Card WiFi credentials: SOPS at `secrets/shared/cpap-ezshare.yaml`
 
 ## Architecture
@@ -32,8 +32,8 @@ WiFi; the old PVC-era data was discarded).
   full shallow clone would re-transfer everything nightly. The partial clone
   keeps the nightly transfer at KBs + the new files.
 - `sync.py` — the policy: clone, read the committed `sync_meta.json` manifest
-  (path → size + card timestamp), associate the host-network WiFi interface with
-  `wpa_supplicant`, obtain a lease, download card entries that don't match their
+  (path → size + card timestamp), discover and associate the host-network WiFi
+  interface with `wpa_supplicant`, obtain a lease, download card entries that don't match their
   manifest entry, tear down the CPAP route, then commit + push if anything
   changed. The manifest replaces the PVC-era stat check (git discards mtimes);
   recording the _stored_ byte count makes mid-write downloads self-heal on the

@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 
 from cpap.card import FileEntry
-from cpap.sync import MANIFEST_FILENAME, SyncManifest, _wpa_config, run_sync
+from cpap.sync import IW, MANIFEST_FILENAME, SyncManifest, _discover_wifi_interface, _wpa_config, run_sync
 
 NOW = datetime(2026, 6, 10, tzinfo=UTC)
 
@@ -94,6 +94,15 @@ def test_wpa_config_quotes_password_and_uses_private_control_dir(tmp_path: Path)
     assert f"ctrl_interface=DIR={tmp_path}" in config
     assert 'ssid="Rai \\"CPAP\\""' in config
     assert 'psk="pa\\\\ss\\nword"' in config
+
+
+def test_discovers_sole_wifi_interface(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert args == ([IW, "dev"],)
+        return subprocess.CompletedProcess([IW, "dev"], 0, stdout="phy#0\n\tInterface wlx1234\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert _discover_wifi_interface() == "wlx1234"
 
 
 def tree_paths(remote: Path) -> set[str]:

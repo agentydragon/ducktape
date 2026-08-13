@@ -31,11 +31,15 @@ from cpap.card import EZShareClient, FileEntry, download_relpath
 from cpap.gitstore import GitStore
 
 DEFAULT_BASE = "http://192.168.4.1"
-DEFAULT_WIFI_INTERFACE = "wlx9cefd5f62ee0"
+DEFAULT_WIFI_INTERFACE = "auto"
 DEFAULT_WIFI_SSID = "Rai CPAP ez Share"
+DHCLIENT = "/sbin/dhclient"
+IP = "/usr/bin/ip"
+IW = "/sbin/iw"
 MANIFEST_FILENAME = "sync_meta.json"
 AUTHOR_NAME = "cpap sync"
 AUTHOR_EMAIL = "cpap@allegedly.works"
+WPA_SUPPLICANT = "/sbin/wpa_supplicant"
 WIFI_ASSOCIATION_TIMEOUT = 60
 
 logger = logging.getLogger(__name__)
@@ -120,21 +124,37 @@ network={{
 def _wait_for_association(interface: str, timeout: int = WIFI_ASSOCIATION_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = subprocess.run(["iw", "dev", interface, "link"], check=False, capture_output=True, text=True)
+        result = subprocess.run([IW, "dev", interface, "link"], check=False, capture_output=True, text=True)
         if result.returncode == 0 and "Connected to" in result.stdout:
             return
         time.sleep(1)
     raise RuntimeError(f"WiFi interface {interface!r} did not associate with the CPAP AP within {timeout}s")
 
 
+def _discover_wifi_interface() -> str:
+    """Return the sole wireless interface exposed by the host network namespace."""
+    result = subprocess.run([IW, "dev"], check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Could not enumerate host WiFi interfaces: {result.stderr.strip()}")
+    interfaces = [
+        line.strip().split(maxsplit=1)[1]
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("Interface ")
+    ]
+    if len(interfaces) != 1:
+        found = ", ".join(interfaces) or "none"
+        raise RuntimeError(f"Expected exactly one host WiFi interface for the CPAP stick; found {found}")
+    return interfaces[0]
+
+
 def _remove_default_routes(interface: str) -> None:
     """Remove DHCP-installed default routes belonging to the CPAP interface."""
     for family in ("-4", "-6"):
         result = subprocess.run(
-            ["ip", family, "route", "show", "default", "dev", interface], check=False, capture_output=True, text=True
+            [IP, family, "route", "show", "default", "dev", interface], check=False, capture_output=True, text=True
         )
         for route in result.stdout.splitlines():
-            subprocess.run(["ip", family, "route", "del", *route.split()], check=False)
+            subprocess.run([IP, family, "route", "del", *route.split()], check=False)
 
 
 @contextlib.contextmanager
@@ -145,24 +165,25 @@ def wifi_connection(*, interface: str, ssid: str, password: str, runtime_dir: Pa
     supplies the userspace supplicant and DHCP client, and runs with hostNetwork
     so those tools operate on the node's interface.
     """
+    interface = _discover_wifi_interface() if interface == "auto" else interface
     runtime_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     config = runtime_dir / "wpa_supplicant.conf"
     config.write_text(_wpa_config(ssid=ssid, password=password, control_dir=runtime_dir))
     config.chmod(0o600)
     process: subprocess.Popen[bytes] | None = None
     try:
-        subprocess.run(["ip", "link", "set", "dev", interface, "up"], check=True)
+        subprocess.run([IP, "link", "set", "dev", interface, "up"], check=True)
         process = subprocess.Popen(
-            ["wpa_supplicant", "-i", interface, "-c", str(config)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            [WPA_SUPPLICANT, "-i", interface, "-c", str(config)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         _wait_for_association(interface)
-        subprocess.run(["dhclient", "-1", "-v", interface], check=True)
+        subprocess.run([DHCLIENT, "-1", "-v", interface], check=True)
         # The CPAP AP is a private side network. Do not let DHCP replace the
         # OptiPlex's default route or affect cluster/Forgejo connectivity.
         _remove_default_routes(interface)
         yield
     finally:
-        subprocess.run(["dhclient", "-r", interface], check=False)
+        subprocess.run([DHCLIENT, "-r", interface], check=False)
         if process is not None:
             process.terminate()
             try:
@@ -170,8 +191,8 @@ def wifi_connection(*, interface: str, ssid: str, password: str, runtime_dir: Pa
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
-        subprocess.run(["ip", "addr", "flush", "dev", interface], check=False)
-        subprocess.run(["ip", "link", "set", "dev", interface, "down"], check=False)
+        subprocess.run([IP, "addr", "flush", "dev", interface], check=False)
+        subprocess.run([IP, "link", "set", "dev", interface, "down"], check=False)
 
 
 def run_sync(
@@ -223,7 +244,7 @@ def main() -> None:
     ap.add_argument(
         "--wifi-interface",
         default=DEFAULT_WIFI_INTERFACE,
-        help="Host-network WiFi interface to associate with the card's AP ('' if already connected).",
+        help="Host-network WiFi interface to associate with the card's AP ('auto' discovers the sole WiFi interface; '' if already connected).",
     )
     ap.add_argument("--wifi-ssid", default=DEFAULT_WIFI_SSID, help="Card WiFi SSID.")
     args = ap.parse_args()

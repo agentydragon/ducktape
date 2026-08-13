@@ -41,7 +41,7 @@ spec:
                 - name: TMPDIR
                   value: /workdir
                 - name: CPAP_WIFI_INTERFACE
-                  value: wlx9cefd5f62ee0
+                  value: auto
                 - name: CPAP_WIFI_SSID
                   value: Rai CPAP ez Share
                 - name: CPAP_WIFI_PASSWORD
