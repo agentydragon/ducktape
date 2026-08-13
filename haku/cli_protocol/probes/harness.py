@@ -40,7 +40,7 @@ InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 
 
 class SubprocessChannel:
-    """A `FrameChannel` (see `haku.runtime.x.agent_sdk_transport.cli_client`) over a local CLI."""
+    """A `FrameChannel` (see `haku.runtime.x.claude_bridge.cli_client`) over a local CLI."""
 
     def __init__(self, *args: str):
         self._args = args

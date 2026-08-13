@@ -181,17 +181,24 @@ transcript, rollout. Not as a PR of its own — a standalone reshuffle has no ac
 and would conflict with everything else here; each split lands with the change that creates its
 seam.
 
-## 7a. `agent_sdk_transport` is named after a dependency it no longer has
+## 7a. The package was named after a dependency it no longer had
 
-The package holds the bridge envelope, the websocket channel, the CLI protocol client and the
-launch builder. None of it is an Agent SDK transport; the SDK is gone from the code, and what
-remains of the wheel is a build-time source for the `claude` binary (§0's note on moving that to
-npm). `runtime/x/claude_bridge` or similar would say what the package is.
+**Done.** `haku/runtime/x/agent_sdk_transport` is `haku/runtime/x/claude_bridge`. It holds the bridge
+envelope, the websocket channel, the CLI protocol client and the launch builder; none of that is an
+Agent SDK transport, the SDK is gone from the code (§0), and what remained of the wheel is a
+build-time source for the `claude` binary.
 
-Mechanical but not free: imports across the console and the runner, the Bazel target paths, the
-`runner_image`/`runner_bin` labels, and whatever in `cluster/` names them. The same applies to
-`HAKU_AGENT_SDK_RUNNER_TOKEN`, which is a deploy contract — a Secret key and env var in eight
-places — so renaming that one wants a two-step expand/contract rather than a sweep.
+Cheap in the end, because the published image name `haku-claude-runner` is set explicitly in
+`push-images.yml` rather than derived from the path: no Kubernetes Secret, no manifest content, and
+nothing that pulls the image had to change. What did: `MODULE.bazel`'s apt lock/manifest labels, the
+push-images image and test-target labels, `cluster/k8s/BUILD.bazel`'s visibility, a comment in
+`haku-sandbox-setup.sh`, and the imports.
+
+**`HAKU_AGENT_SDK_RUNNER_TOKEN` keeps its name**, deliberately. It is a deploy contract shared with
+`sandboxtemplate-haku-claude.yaml`, and a live session's runner pod keeps its image for up to
+`session_ttl_seconds` — so "new console, old runner" outlives any console roll, and renaming it would
+need the runner to accept both names for a whole runner-image release. An env var name is not the
+data model.
 
 ## 8. Smaller, mechanical
 

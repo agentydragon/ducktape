@@ -13,7 +13,7 @@ from typing import Any
 
 import anyio
 
-from haku.runtime.x.agent_sdk_transport.protocol import (
+from haku.runtime.x.claude_bridge.protocol import (
     RUNNER_TO_CONSOLE,
     ClaudeLaunch,
     ClaudeMessage,

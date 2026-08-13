@@ -15,7 +15,7 @@ running it, and much of it the CLI marks `@internal`. Treat it as pinned to a CL
 | <frames.py>   | Pydantic models for the slice the console acts on                  |
 | <probes/>     | Runnable experiments, each printing every frame in both directions |
 
-The client that uses all this is `haku/runtime/x/agent_sdk_transport/cli_client.py`.
+The client that uses all this is `haku/runtime/x/claude_bridge/cli_client.py`.
 
 ## Running a probe
 

@@ -47,8 +47,8 @@ from haku.cli_protocol.frames import (
     InitializeRequest,
     InterruptRequest,
 )
-from haku.runtime.x.agent_sdk_transport.protocol import ClaudeLaunch, TextWebSocket
-from haku.runtime.x.agent_sdk_transport.transport import ProgressSink, WebSocketTransport
+from haku.runtime.x.claude_bridge.protocol import ClaudeLaunch, TextWebSocket
+from haku.runtime.x.claude_bridge.transport import ProgressSink, WebSocketTransport
 
 logger = logging.getLogger(__name__)
 

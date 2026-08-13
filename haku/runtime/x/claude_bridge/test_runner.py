@@ -10,8 +10,8 @@ import anyio
 import pytest
 import pytest_bazel
 
-from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.agent_sdk_transport.protocol import (
+from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runtime.x.claude_bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     RUNNER_TO_CONSOLE,
     ClaudeLaunch,
@@ -19,7 +19,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     EndInput,
     SetupOutput,
 )
-from haku.runtime.x.agent_sdk_transport.runner import (
+from haku.runtime.x.claude_bridge.runner import (
     bridge_websocket_to_claude,
     build_claude_command,
     build_claude_environment,

@@ -11,7 +11,7 @@ from pathlib import Path
 import anyio
 from websockets.asyncio.client import ClientConnection, connect
 
-from haku.runtime.x.agent_sdk_transport.protocol import (
+from haku.runtime.x.claude_bridge.protocol import (
     CONSOLE_TO_RUNNER,
     ClaudeLaunch,
     ClaudeMessage,

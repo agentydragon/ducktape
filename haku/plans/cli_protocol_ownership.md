@@ -132,7 +132,7 @@ the console — so a reconnect lands on whichever replica the Service picks, wit
 problem to solve.
 
 What dies is the CLI process. `bridge_websocket_to_claude`
-(<../runtime/x/agent_sdk_transport/runner.py>) terminates it in its `finally` when the socket
+(<../runtime/x/claude_bridge/runner.py>) terminates it in its `finally` when the socket
 closes. That single line is the difference between the two designs below.
 
 ### Two designs

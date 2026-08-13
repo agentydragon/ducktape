@@ -56,7 +56,7 @@ from haku.console.x.conftest import (
 )
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
-from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli
+from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
 
 
 class RecordingCustomObjectsApi:

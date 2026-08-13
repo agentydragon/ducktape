@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.runtime.x.agent_sdk_transport.protocol import (
+from haku.runtime.x.claude_bridge.protocol import (
     CONSOLE_TO_RUNNER,
     RUNNER_TO_CONSOLE,
     ClaudeLaunch,
@@ -18,7 +18,7 @@ from haku.runtime.x.agent_sdk_transport.protocol import (
     SetupOutput,
     encode_object,
 )
-from haku.runtime.x.agent_sdk_transport.transport import WebSocketTransport
+from haku.runtime.x.claude_bridge.transport import WebSocketTransport
 
 
 class MemoryWebSocket:

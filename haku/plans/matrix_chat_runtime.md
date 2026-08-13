@@ -212,7 +212,7 @@ The three candidate workarounds, now only needed for turns with no boundary to a
 stdin and blocks up to 60s for a correlated `control_response`. There is a whole control
 channel beside the message stream — `initialize`, `mcp_status`, `get_context_usage`,
 `set_permission_mode`, `set_model`, `rewind_files`, `mcp_reconnect`, `mcp_toggle`,
-`stop_task`, `interrupt` — and because `agent_sdk_transport` tunnels SDK stdio over the
+`stop_task`, `interrupt` — and because `claude_bridge` tunnels SDK stdio over the
 bridge WebSocket, every one of them already reaches the CLI in the sandbox. So the gap is
 specific and worth stating precisely: the channel is rich, and **none of its subtypes adds
 input to a running turn**. Interrupt exists; steer does not.

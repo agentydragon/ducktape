@@ -52,9 +52,9 @@ from haku.console.database_schema import (
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
-from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
-from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
+from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
+from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runtime.x.claude_bridge.protocol import TextWebSocket
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
