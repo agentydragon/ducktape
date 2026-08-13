@@ -64,7 +64,7 @@ Each step is useful on its own and none of them is a rewrite.
 1. **Read the frame stream ourselves**, dispatching by frame type instead of calling
    `receive_response()`. Unblocks mid-turn folding (R2.2a) and is a prerequisite for adoption.
    The frames already pass through the client's own reader, which is also where they are
-   recorded (§5); this is about who routes them.
+   recorded; this is about who routes them.
 2. **Own `initialize`.** Request/response correlation is a dict of futures, a counter and a
    timeout. Done with step 1, since the blocking buffer makes them one change.
 3. **Own `interrupt`**, which is then a few lines on step 2's machinery — and lets abort
@@ -94,7 +94,7 @@ Worth taking up, in rough order of value:
   frame. Anywhere the console today parses Haku's prose, this replaces it with a structure.
 - **`forwardSubagentText`** — a subagent's prose reaches the client only with this set; by
   default the client sees its tool calls and nothing it said. Relevant to R6's status line, next
-  to `system/task_*` (<chat_runtime_cleanup.md> §2a), and it is a volume decision as much as a
+  to the `system/task_*` frames that line already reads, and it is a volume decision as much as a
   capability one: a room does not want every subagent's narration.
 - **`skills`** — an allowlist for what loads into the system prompt. A prompt-budget lever for a
   long-running session, and Haku's skill set is not small.
@@ -235,7 +235,7 @@ stream directly for an adopted turn" does not turn the store into a migration.
   is request-scoped and assumes this process issued the turn. An adopted mid-flight turn has to
   be read off the transport and routed by turn — this is step 1 of the ownership work above,
   and the reason it is first. Routed by _turn_ rather than by session, since a session outlives
-  many of them (<chat_runtime_cleanup.md> §1).
+  many of them — which is what `claude_chat_turns` brackets.
 - **An idle timeout in the runner.** A CLI held open for a console that never returns trades a
   wedged room for a wedged sandbox.
 
