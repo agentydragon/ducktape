@@ -12,11 +12,12 @@ import logging
 import os
 import secrets
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Annotated, Any, ClassVar, Protocol, cast
 from uuid import UUID, uuid4
 
@@ -97,12 +98,31 @@ class BridgeAuthentication(StrEnum):
     REJECTED = "rejected"
 
 
+class ClaudeChatToolResultView(BaseModel):
+    """What a tool answered, as the wire carried it.
+
+    `content` is passed through rather than normalized: the CLI sends a bare string for most
+    tools and a list of content blocks for those that return structured or mixed output, and
+    collapsing the two here would be this layer deciding what a tool's output means.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: Any
+    is_error: bool = False
+
+
 class ClaudeChatToolUseView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tool_use_id: str
     name: str
     input: dict[str, Any]
+    # Absent while the call is still running, and on a turn that died before it answered — which
+    # is a state worth seeing rather than one to hide. It comes from the rollout, because
+    # `claude_chat_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
+    # that asked and drops the `user` frames that answered (§4).
+    result: ClaudeChatToolResultView | None = None
 
 
 class ClaudeChatMessageView(BaseModel):
@@ -432,7 +452,7 @@ class ClaudeChatStore:
                 ).all()
             )
             responding = await _open_turn(db, session_id) is not None
-            return _session_view(record, messages, responding=responding)
+            return _session_view(record, messages, responding=responding, results=await _tool_results(db, session_id))
 
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         now = datetime.now(UTC)
@@ -1547,17 +1567,50 @@ def _text_delta(event: dict[str, Any]) -> str:
     return text if isinstance(text, str) else ""
 
 
-def _message_view(message: ClaudeChatMessage) -> ClaudeChatMessageView:
+def _message_view(
+    message: ClaudeChatMessage, results: Mapping[str, ClaudeChatToolResultView] = MappingProxyType({})
+) -> ClaudeChatMessageView:
     return ClaudeChatMessageView(
         message_id=message.message_id,
         role=message.role,
         status=message.status,
         content=message.content,
-        tool_uses=[ClaudeChatToolUseView.model_validate(tool_use) for tool_use in message.tool_uses],
+        tool_uses=[
+            ClaudeChatToolUseView.model_validate(tool_use | {"result": results.get(tool_use["tool_use_id"])})
+            for tool_use in message.tool_uses
+        ],
         error=message.error,
         created_at=message.created_at,
         updated_at=message.updated_at,
     )
+
+
+async def _tool_results(db: AsyncSession, session_id: UUID) -> dict[str, ClaudeChatToolResultView]:
+    """Every tool result this session's rollout recorded, by the id of the call it answers.
+
+    Keyed by `tool_use_id` rather than reconstructed per message, because the CLI's ids are unique
+    within a session and the message rows carry no pointer into the frame log — so a join by id is
+    exact where matching the Nth assistant message to the Nth assistant frame would be a guess.
+
+    Tool results arrive as `user` frames, which is why they were missing from the transcript at
+    all: the turn loop reads `assistant` frames and drops those.
+    """
+    frames = await db.scalars(
+        select(ClaudeChatFrame.payload).where(
+            ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.kind == ChatMessageRole.USER
+        )
+    )
+    results: dict[str, ClaudeChatToolResultView] = {}
+    for payload in frames:
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            continue
+        for block in message.get("content", []):
+            if isinstance(block, dict) and block.get("type") == "tool_result" and (id := block.get("tool_use_id")):
+                results[str(id)] = ClaudeChatToolResultView(
+                    content=block.get("content"), is_error=bool(block.get("is_error"))
+                )
+    return results
 
 
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
@@ -1575,7 +1628,11 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
 
 
 def _session_view(
-    record: ClaudeChatSession, messages: list[ClaudeChatMessage], *, responding: bool
+    record: ClaudeChatSession,
+    messages: list[ClaudeChatMessage],
+    *,
+    responding: bool,
+    results: Mapping[str, ClaudeChatToolResultView] = MappingProxyType({}),
 ) -> ClaudeChatSessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 
@@ -1601,7 +1658,7 @@ def _session_view(
         created_at=record.created_at,
         updated_at=record.updated_at,
         provisioning=None,
-        messages=[_message_view(message) for message in messages],
+        messages=[_message_view(message, results) for message in messages],
     )
 
 

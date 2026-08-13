@@ -113,10 +113,22 @@ of status reasoning. Touches the SPA, so it is the deepest of these.
 
 ## 4. `tool_uses` is now a lossy copy of the rollout
 
-`claude_chat_messages.tool_uses` holds id/name/input and no result. Since the frame store
-landed, the frames hold both, verbatim. One reader —
-`frontend/x/claude_chat_page.tsx` — so re-sourcing it from frames would also give the SPA the
-tool _results_ it cannot show today, after which the column goes.
+**Half done.** `claude_chat_messages.tool_uses` holds id/name/input and no result — the turn loop
+keeps the `tool_use` blocks that asked and drops the `user` frames that answered. The frames beside
+it hold both, verbatim, so `ClaudeChatSessionView` now carries each call's **result** joined from
+them by `tool_use_id`, and the SPA renders it (a failed call in red, a call still running as the ask
+alone). That is the half worth having on its own: the answer was previously visible nowhere.
+
+The join is by id rather than per message on purpose: the CLI's ids are unique within a session and
+the message rows carry no pointer into the frame log, so matching the Nth assistant message to the
+Nth assistant frame would be a guess.
+
+**What remains is dropping the column**, which needs that missing pointer — a `frame_seq` on
+`claude_chat_messages`, additive — because without it the _calls_ cannot be re-sourced even though
+the results can. Then three releases, not two: `tool_uses` is `nullable=False` with only a
+Python-side `default=list`, so the ORM attribute cannot go until the column has a server default
+(`SET DEFAULT '[]'::jsonb`), and the `drop_column` cannot share a release with that — an old
+replica's `_message_view` selects the mapped column by name.
 
 ## 5. Frame recording belongs on the protocol client
 

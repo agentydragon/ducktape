@@ -356,7 +356,16 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     assert [(m.content, [u.model_dump() for u in m.tool_uses], m.status) for m in messages] == [
         (
             "",
-            [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}],
+            [
+                {
+                    "tool_use_id": "toolu_01",
+                    "name": "mcp__haku-console__haku-console__list_mcp_servers",
+                    "input": {},
+                    # No `user` frame answered it in this test, and the view says so rather than
+                    # showing an empty result.
+                    "result": None,
+                }
+            ],
             ChatMessageStatus.COMPLETE,
         ),
         ("The Haku Console catalog is available.", [], ChatMessageStatus.COMPLETE),
@@ -787,6 +796,56 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     assert record.usage == {"output_tokens": 91}
     assert record.first_frame_seq > record.last_frame_seq if record.last_frame_seq else True
     assert record.ended_at is not None
+
+
+async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
+    """`claude_chat_messages.tool_uses` keeps the `tool_use` blocks that asked and nothing that
+    answered — the turn loop drops the `user` frames carrying results. The frames beside it hold
+    both, so the view joins them by `tool_use_id`, which is exact where matching the Nth message to
+    the Nth frame would be a guess."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "count the files")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    client = _FakeCli(
+        [
+            _assistant({"type": "tool_use", "id": "toolu_ok", "name": "Bash", "input": {"command": "true"}}),
+            _assistant({"type": "tool_use", "id": "toolu_running", "name": "Bash", "input": {"command": "sleep 1"}}),
+            _result("done"),
+        ]
+    )
+    await chat_service._run_turn(
+        cast(Any, client),
+        client.frames().__aiter__(),
+        view.session_id,
+        turn.prompt,
+        turn_id=turn.turn_id,
+        room_id=None,
+        abort_event=asyncio.Event(),
+    )
+    # As the CLI sends them: a result is a `user` frame, and one call is left unanswered.
+    await chat_store.record_frame(
+        view.session_id,
+        FrameDirection.FROM_AGENT,
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_ok", "content": "42", "is_error": False}],
+            },
+        },
+    )
+
+    calls = {
+        call.tool_use_id: call
+        for message in (await chat_store.get(operator_id, view.session_id)).messages
+        for call in message.tool_uses
+    }
+
+    assert calls["toolu_ok"].result is not None
+    assert (calls["toolu_ok"].result.content, calls["toolu_ok"].result.is_error) == ("42", False)
+    assert calls["toolu_running"].result is None, "a call still running must not read as an empty answer"
 
 
 async def test_a_second_prompt_is_refused_while_a_turn_is_open(chat_store, operator_id) -> None:
