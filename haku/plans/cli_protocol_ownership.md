@@ -212,6 +212,52 @@ Two consequences worth building deliberately:
   transaction ids does not apply here: it is about derived counters resetting across a restart, and
   an agent-assigned message id does not reset.)
 
+### The bridge protocol is versioned; the versioning is pointed the wrong way
+
+`PROTOCOL_VERSION` is 2, it rides on the `start` frame, and `ClaudeLaunch.protocol_version` is
+`Literal[2]` so a peer on another version fails validation immediately rather than further in with a
+stranger symptom. That is a real version, and it was the right one for a bridge whose two ends live
+and die together. Re-adoption breaks three of its assumptions at once.
+
+**It flows one way — from the end that cannot adapt to the end that must.** `start` is
+console → runner, so the runner validates the console's version and the console never learns the
+runner's. Today that is harmless, because a rejected session is replaced within ninety seconds by
+one launched from the current image. Under adoption it inverts: the runner's image is fixed when its
+claim is created and its process now outlives many console releases, while the console rolls six
+times a day. The end that has to be backward compatible is the console, and it is the end flying
+blind. The runner has to state its version — on connect, and again on adopt, since an adopting
+console did not launch it.
+
+**Exact match has no room to negotiate.** `Literal[2]` admits one value; there is no
+minimum-supported, no range, no "speak 2 to this peer and 3 to that one". A console that must serve
+both an old runner and a new one cannot, so the first release after this ships would kill every
+session older than itself — which is the thing being fixed.
+
+**`extra="forbid"` makes every additive field a fleet-wide breaking change.** That is deliberate and
+its reasoning is stated in `_Frame`: a frame this end does not fully understand is a version
+mismatch, and silently dropping an unknown field would let the two ends disagree about what was
+said — the cost being honest, since no frame change is atomic across two independently rolled
+images. Correct today. But the replay design above adds a field to the envelope, and under adoption
+"not atomic" stops meaning "a few sessions fail during the rollout" and starts meaning "every live
+session dies on every console release that touches the envelope".
+
+**The rule that gets both properties: evolve by adding kinds, not fields.** The envelope already
+discriminates on `kind`, so an unknown _kind_ fails the union parse — fail-closed, for free, exactly
+where a must-understand change belongs. An optional field added to a known kind is safe to ignore
+precisely because a receiver that ignores it behaves as it did before, which is the old version's
+correct behaviour. So:
+
+- unknown `kind` → reject, as now;
+- unknown field within a known kind → ignore rather than reject, which is what turns an additive
+  change from a fleet-wide break into a no-op for peers that predate it;
+- anything a peer **must** understand to stay correct arrives as a new kind, not as a field — the
+  adopt/resume frame this design needs is itself an example, and it is naturally fail-closed;
+- the version stops being an assertion and becomes a negotiation: the runner offers what it speaks,
+  the console picks the highest both know.
+
+`SetupOutput` is the precedent that this works — it exists because the envelope has somewhere to put
+a frame belonging to neither protocol, which is the same property being leaned on here.
+
 ### Letting the console own the whole lifecycle
 
 Today a session's outer bound is `shutdownTime` on the SandboxClaim, set to
@@ -232,6 +278,16 @@ recycling sessions that wedged — a session whose runner is crashlooping into a
 reclaimed by the TTL, not by anything that understands what happened
 (<../console/debug/2026_08_13_sessions_boot_and_die.md>). Remove the backstop first and those
 sessions stop being cleaned up at all.
+
+**And keep a bound, because the bound is the protocol-compatibility window.** A runner's image is
+fixed when its claim is created, so the oldest live runner is exactly as old as the longest-lived
+session — which is exactly how far back the console must still speak the bridge protocol. With a
+bound, the support policy is finite and derivable: at roughly six console releases a day, a 24h
+horizon means the console must speak whatever the runner images of the last day speak, and a version
+older than that cannot be connected to anything. Without a bound, "the console must remain
+compatible with every bridge version ever shipped" is the policy, whether or not anyone writes it
+down. Pick the horizon deliberately and derive the support window from it, rather than discovering
+the window when an eight-month-old sandbox refuses a handshake.
 
 ### The lease decision this revisits
 
