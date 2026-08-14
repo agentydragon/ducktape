@@ -48,10 +48,6 @@ forever. What is left is the half about meaning rather than rate._
 _Unblocked: stage 3 landed, so the envelope can gain the `frame_uid` below without a flag day.
 This is where the queues earn their place._
 
-- **A bounded outbound buffer in the runner**, re-sent on adopt. The recognising half landed:
-  `frame_identity.frame_uid` names what a frame is, `uq_claude_chat_frames_uid` makes a repeat a
-  no-op, and `ClaudeCli._read` drops a frame the log already holds rather than routing it twice.
-  What is missing is anything that replays — the runner still delivers at most once.
 - **Derive Matrix's `txn_id` from the message id** instead of `uuid4().hex`, so the homeserver is a
   second line of defence against a replayed `assistant` reaching the room twice. Cheap now that
   `works.allegedly.haku` already carries the id on the event.

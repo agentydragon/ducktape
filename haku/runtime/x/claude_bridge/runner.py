@@ -7,6 +7,8 @@ import logging
 import os
 import subprocess
 import sys
+from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import anyio
@@ -29,6 +31,20 @@ from haku.runtime.x.claude_bridge.protocol import (
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class Outbound:
+    """One frame on its way to the console, and whether a later console may need it again.
+
+    `replayable` is decided here, where the payload is already parsed, rather than by re-reading
+    the JSON at send time — and it is the runner's one piece of CLI vocabulary, earned because
+    the class it excludes is the class that cannot survive being sent twice.
+    """
+
+    text: str
+    replayable: bool
+
+
 # What the CLI may say before its pipes fill and it pauses for want of a listener. Sized for a
 # whole turn rather than the gap in one: the runner forwards every frame including the streaming
 # deltas, so a long answer written while nobody is connected runs to thousands. Still a buffer
@@ -40,6 +56,15 @@ RECONNECT_MAX_DELAY = 20.0
 # A sandbox held for a console that never returns is a wedged sandbox, which is worse than the
 # wedged room it was protecting. Generous against a roll, decisive against an outage.
 MAX_DISCONNECTED_SECONDS = 900.0
+
+# The CLI frame kind that is sent and never retained; see `_queue_cli_line`.
+DELTA_TYPE = "stream_event"
+
+# How many already-sent frames are kept to hand a console that adopts this session. Bounded
+# because this is a window over what a dying console may not have recorded, not a second copy of
+# the rollout — the console's own log is that. Generous enough to cover a turn's worth of
+# assistant messages and tool results, which is what a roll mid-turn can strand.
+REPLAY_WINDOW = 500
 
 
 class ClientWebSocketAdapter(TextWebSocket):
@@ -75,14 +100,24 @@ def build_claude_environment(launch: ClaudeLaunch) -> dict[str, str]:
     return environment
 
 
-async def _queue_cli_line(outbound: MemoryObjectSendStream[str], line: bytes) -> None:
-    """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
+async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], line: bytes) -> None:
+    """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one.
+
+    **A delta is sent but never retained.** `stream_event` has no agent-assigned identity, so a
+    console cannot recognise a second copy of one, and its reconstruction is `streamed += delta` —
+    a replay double-appends. It is also the class that never needs replaying: whatever it built is
+    superseded by the completed `assistant` frame behind it, which does carry an id
+    (<../../../cli_protocol/frame_identity.py>).
+    """
     if not (stripped := line.strip()).startswith(b"{"):
         return
-    await outbound.send(ClaudeMessage(payload=decode_object(stripped.decode())).model_dump_json())
+    payload = decode_object(stripped.decode())
+    await outbound.send(
+        Outbound(text=ClaudeMessage(payload=payload).model_dump_json(), replayable=payload.get("type") != DELTA_TYPE)
+    )
 
 
-async def _forward_cli_frames(outbound: MemoryObjectSendStream[str], stdout: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_frames(outbound: MemoryObjectSendStream[Outbound], stdout: anyio.abc.ByteReceiveStream) -> None:
     pending = b""
     async for chunk in stdout:
         pending += chunk
@@ -109,7 +144,7 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
                 raise ValueError("console sent a second launch frame mid-conversation")
 
 
-async def _forward_cli_errors(outbound: MemoryObjectSendStream[str], stderr: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr: anyio.abc.ByteReceiveStream) -> None:
     """Forward what the CLI wrote to stderr, to this log and to the console.
 
     It used to go to `DEVNULL`, which is the one place a failure to start is explained: the
@@ -124,7 +159,9 @@ async def _forward_cli_errors(outbound: MemoryObjectSendStream[str], stderr: any
     async for chunk in stderr:
         sys.stdout.buffer.write(chunk)
         sys.stdout.buffer.flush()
-        await outbound.send(SetupOutput(data=chunk).model_dump_json())
+        # Not retained: narration is recorded as a frame with no identity, so a console cannot
+        # tell a replayed line from a repeated one and would show the bootstrap twice.
+        await outbound.send(Outbound(text=SetupOutput(data=chunk).model_dump_json(), replayable=False))
 
 
 async def _start_claude(claude_path: Path, launch: ClaudeLaunch) -> anyio.abc.Process:
@@ -161,7 +198,7 @@ async def _shutdown(process: anyio.abc.Process) -> int | None:
 
 
 async def _drain_cli(
-    process: anyio.abc.Process, outbound: MemoryObjectSendStream[str], scope: anyio.CancelScope
+    process: anyio.abc.Process, outbound: MemoryObjectSendStream[Outbound], scope: anyio.CancelScope
 ) -> None:
     """Read the CLI for as long as it lives, whether or not a console is listening.
 
@@ -186,14 +223,24 @@ async def _drain_cli(
 
 
 async def _serve_console(
-    websocket: TextWebSocket, process: anyio.abc.Process, outbound: MemoryObjectReceiveStream[str]
+    websocket: TextWebSocket,
+    process: anyio.abc.Process,
+    outbound: MemoryObjectReceiveStream[Outbound],
+    replay: deque[str] | None = None,
 ) -> None:
     """Copy frames both ways for one console connection, returning when that connection ends.
 
-    A frame taken from the buffer and then lost to a dying socket is gone: this delivers at most
-    once, which is enough while adoption is limited to sessions between turns. Making a
-    reconnect lossless is the resume cursor plus frame identity in
-    <../../../plans/cli_protocol_ownership.md>, and it is the next stage of this work.
+    **The replay window is what makes a lost socket lossless.** A frame taken from the buffer and
+    handed to a dying socket used to be gone: the console may have recorded it, or the send may
+    have died in flight, and nothing could tell the two apart. So every retained frame is offered
+    again to whichever console adopts the session next, and the console drops the ones it already
+    has by their agent-assigned identity (<../../../cli_protocol/frame_identity.py>).
+
+    That makes the exactness of the window an optimisation rather than a correctness argument —
+    re-sending a frame the console already holds costs one `ON CONFLICT DO NOTHING`. What it must
+    not do is *omit* one, which is why frames are retained as they are sent rather than as they
+    are acknowledged: there is no acknowledgement, and inventing one would be a second protocol
+    for what the console's own log already answers.
     """
     stdin = process.stdin
     assert stdin is not None
@@ -209,8 +256,14 @@ async def _serve_console(
 
         async def cli_to_console() -> None:
             try:
+                if replay:
+                    logger.info("Re-sending %d frame(s) the previous console may not have", len(replay))
+                    for retained in list(replay):
+                        await websocket.send_text(retained)
                 async for frame in outbound:
-                    await websocket.send_text(frame)
+                    await websocket.send_text(frame.text)
+                    if frame.replayable and replay is not None:
+                        replay.append(frame.text)
             except (ConnectionClosed, anyio.BrokenResourceError):
                 pass
             finally:
@@ -226,7 +279,7 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
     The single-connection shape, kept because it is the whole of what a session without
     reconnection needs; `run` composes the same pieces with a process that outlives the socket.
     """
-    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
     process = await _start_claude(claude_path, launch)
     try:
         async with anyio.create_task_group() as tasks:
@@ -346,8 +399,11 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
     if bearer_token:
         headers = {"Authorization": f"Bearer {bearer_token}"}
 
-    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
     process: anyio.abc.Process | None = None
+    # Retained across connections, which is the whole point: it is what a console that adopts this
+    # session mid-turn is handed before it starts hearing live frames.
+    replay: deque[str] = deque(maxlen=REPLAY_WINDOW)
 
     try:
         async with anyio.create_task_group() as session:
@@ -372,7 +428,7 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
                         # pipes never fill: they drain into the buffer either way, and the buffer's
                         # backpressure pauses the CLI rather than dropping what it said.
                         session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
-                    await _serve_console(websocket, process, outbound_receiver)
+                    await _serve_console(websocket, process, outbound_receiver, replay)
                 except ConnectionClosed:
                     # This connection ending says nothing about the session; `_dial` decides
                     # whether there is still a console worth waiting for.

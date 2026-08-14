@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections import deque
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
@@ -23,6 +24,8 @@ from haku.runtime.x.claude_bridge.protocol import (
     SetupOutput,
 )
 from haku.runtime.x.claude_bridge.runner import (
+    REPLAY_WINDOW,
+    Outbound,
     _serve_console,
     _shutdown,
     _start_claude,
@@ -173,7 +176,7 @@ async def test_the_cli_keeps_running_when_a_console_connection_ends(tmp_path: Pa
     fake_claude.chmod(0o755)
     launch = ClaudeLaunch(arguments=(), cwd=str(tmp_path), environment={})
     console_socket, runner_socket = memory_websocket_pair()
-    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](8)
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](8)
 
     process = await _start_claude(fake_claude, launch)
     try:
@@ -215,10 +218,65 @@ async def test_the_runner_waits_out_a_missing_console_but_not_a_refusing_one(tmp
     assert answered == [HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.FORBIDDEN]
 
 
+async def test_a_second_console_is_handed_what_the_first_may_not_have_recorded(tmp_path: Path) -> None:
+    """The point of the window. A frame handed to a dying socket may or may not have been
+    recorded, and nothing at this end can tell the two apart — so it is offered again, and the
+    console drops what it already has by the agent's own id."""
+    process = await _start_claude(executable(tmp_path / "claude", "sleep 30"), _launch(tmp_path))
+    sender, receiver = anyio.create_memory_object_stream[Outbound](8)
+    replay: deque[str] = deque(maxlen=REPLAY_WINDOW)
+    answered = ClaudeMessage(payload={"type": "assistant", "message": {"id": "msg_01abc"}}).model_dump_json()
+    try:
+        first_console, first_runner = memory_websocket_pair()
+        await sender.send(Outbound(text=answered, replayable=True))
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(partial(_serve_console, first_runner, process, receiver, replay))
+            with anyio.fail_after(5):
+                assert await first_console.receive_text() == answered
+            await first_console.close()
+
+        second_console, second_runner = memory_websocket_pair()
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(partial(_serve_console, second_runner, process, receiver, replay))
+            with anyio.fail_after(5):
+                assert await second_console.receive_text() == answered, "the adopting console got nothing"
+            await second_console.close()
+    finally:
+        sender.close()
+        await _shutdown(process)
+
+
+async def test_a_delta_is_sent_but_never_replayed(tmp_path: Path) -> None:
+    """The one class replay corrupts: a `stream_event` has no identity for a console to recognise
+    it by, and `streamed += delta` double-appends. It is also the class that never needs it —
+    whatever it built is superseded by the completed `assistant` frame behind it."""
+    process = await _start_claude(executable(tmp_path / "claude", "sleep 30"), _launch(tmp_path))
+    sender, receiver = anyio.create_memory_object_stream[Outbound](8)
+    replay: deque[str] = deque(maxlen=REPLAY_WINDOW)
+    delta = ClaudeMessage(payload={"type": "stream_event", "event": {}}).model_dump_json()
+    try:
+        console, runner = memory_websocket_pair()
+        await sender.send(Outbound(text=delta, replayable=False))
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(partial(_serve_console, runner, process, receiver, replay))
+            with anyio.fail_after(5):
+                assert await console.receive_text() == delta, "a delta must still reach the console live"
+            await console.close()
+
+        assert not replay, "a delta must not be retained for the next console"
+    finally:
+        sender.close()
+        await _shutdown(process)
+
+
 def executable(path: Path, body: str) -> Path:
     path.write_text(f"#!/usr/bin/env bash\n{body}\n")
     path.chmod(0o755)
     return path
+
+
+def _launch(cwd: Path) -> ClaudeLaunch:
+    return ClaudeLaunch(arguments=(), cwd=str(cwd), environment={})
 
 
 async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> None:
