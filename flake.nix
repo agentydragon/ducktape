@@ -710,7 +710,6 @@
         # from the OptiPlex host.
         cpap-gateway = mkNixos {
           hostname = "cpap-gateway";
-          username = "agentydragon";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           enableHomeManager = false;
         };
