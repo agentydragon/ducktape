@@ -20,7 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.state_index.chunking import CHUNKER_VERSION, Chunk, chunk_text
 from haku.state_index.embedder import Embedder
 from haku.state_index.git_tree import list_tip, read_blob
-from haku.state_index.store import ChunkRow, cached_blobs, current_state, insert_chunks, replace_tip, touch_blobs
+from haku.state_index.schema import Corpus
+from haku.state_index.store import (
+    ChunkRow,
+    cached_content,
+    current_git_state,
+    insert_chunks,
+    replace_tip,
+    touch_content,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +79,7 @@ async def sync(
     the tree is identical. It exists so a push-triggered sync and a reconciling cron can both
     fire as often as they like — the common case, where nothing moved, costs one SELECT.
     """
-    if (state := await current_state(session)) is not None and (
+    if (state := await current_git_state(session)) is not None and (
         state.commit_sha,
         state.branch,
         state.chunker_version,
@@ -82,8 +90,8 @@ async def sync(
 
     entries = list_tip(repo, commit_sha)
     blob_shas = {entry.blob_sha for entry in entries}
-    cached = await cached_blobs(
-        session, sorted(blob_shas), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key
+    cached = await cached_content(
+        session, Corpus.GIT, sorted(blob_shas), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key
     )
 
     pending: list[tuple[str, Chunk]] = []
@@ -106,7 +114,8 @@ async def sync(
         vectors = embedder.embed_documents([chunk.text for _, chunk in batch])
         rows.extend(
             ChunkRow(
-                blob_sha=blob_sha,
+                corpus=Corpus.GIT,
+                content_sha=blob_sha,
                 chunk_no=chunk.chunk_no,
                 chunker_version=CHUNKER_VERSION,
                 model_key=embedder.model_key,
@@ -119,7 +128,9 @@ async def sync(
         )
 
     await insert_chunks(session, rows, now=now)
-    await touch_blobs(session, sorted(cached), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key, now=now)
+    await touch_content(
+        session, Corpus.GIT, sorted(cached), chunker_version=CHUNKER_VERSION, model_key=embedder.model_key, now=now
+    )
     await replace_tip(
         session,
         entries,

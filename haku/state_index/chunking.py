@@ -31,42 +31,51 @@ class Chunk:
 
 
 @dataclass(frozen=True, slots=True)
-class _Line:
+class Span:
+    """A run of text and where it sits, in bytes, inside the document it came from."""
+
     byte_start: int
     byte_end: int
     text: str
 
 
-def _lines(blob: str) -> Iterator[_Line]:
-    """Split into lines that keep their terminators, carrying byte offsets into the blob."""
-    offset = 0
-    for line in blob.splitlines(keepends=True):
-        end = offset + len(line.encode())
-        yield _Line(byte_start=offset, byte_end=end, text=line)
-        offset = end
+def split_utf8(text: str, max_bytes: int, *, byte_start: int = 0, size: int | None = None) -> Iterator[Span]:
+    """Hard-split `text` into spans of at most `max_bytes`, never inside a character.
 
-
-def _split_oversized(line: _Line) -> Iterator[_Line]:
-    """Hard-split a single line that exceeds the max, on character boundaries."""
-    if line.byte_end - line.byte_start <= _MAX_BYTES:
-        yield line
+    The chat chunker shares this for the one case its message-boundary packing cannot handle —
+    a single message longer than a chunk — so both corpora split unbreakable text the same way.
+    Pass `size` when the caller already knows the encoded length; the common case is a span that
+    fits, and re-encoding to find that out is the whole cost of chunking a large file.
+    """
+    encoded_size = len(text.encode()) if size is None else size
+    if encoded_size <= max_bytes:
+        yield Span(byte_start=byte_start, byte_end=byte_start + encoded_size, text=text)
         return
-    offset = line.byte_start
+    offset = byte_start
     buffer = ""
-    for char in line.text:
-        if len((buffer + char).encode()) > _MAX_BYTES:
+    for char in text:
+        if len((buffer + char).encode()) > max_bytes:
             encoded = len(buffer.encode())
-            yield _Line(byte_start=offset, byte_end=offset + encoded, text=buffer)
+            yield Span(byte_start=offset, byte_end=offset + encoded, text=buffer)
             offset += encoded
             buffer = ""
         buffer += char
     if buffer:
-        yield _Line(byte_start=offset, byte_end=offset + len(buffer.encode()), text=buffer)
+        yield Span(byte_start=offset, byte_end=offset + len(buffer.encode()), text=buffer)
 
 
-def _pack(lines: Iterator[_Line]) -> Iterator[list[_Line]]:
+def _lines(blob: str) -> Iterator[Span]:
+    """Split into lines that keep their terminators, carrying byte offsets into the blob."""
+    offset = 0
+    for line in blob.splitlines(keepends=True):
+        end = offset + len(line.encode())
+        yield Span(byte_start=offset, byte_end=end, text=line)
+        offset = end
+
+
+def _pack(lines: Iterator[Span]) -> Iterator[list[Span]]:
     """Greedily pack lines into groups of at most the target size, never splitting a line."""
-    group: list[_Line] = []
+    group: list[Span] = []
     for line in lines:
         span = line.byte_end - line.byte_start
         if group and (group[-1].byte_end - group[0].byte_start) + span > _TARGET_BYTES:
@@ -85,7 +94,11 @@ def chunk_text(blob: str) -> list[Chunk]:
     the blob can slice the exact span back out.
     """
     chunks: list[Chunk] = []
-    for group in _pack(part for line in _lines(blob) for part in _split_oversized(line)):
+    for group in _pack(
+        part
+        for line in _lines(blob)
+        for part in split_utf8(line.text, _MAX_BYTES, byte_start=line.byte_start, size=line.byte_end - line.byte_start)
+    ):
         text = "".join(line.text for line in group)
         if not text.strip():
             continue

@@ -31,6 +31,11 @@ async def session(pgvector_container: PostgresContainer) -> AsyncGenerator[Async
     try:
         async with engine.begin() as connection:
             await connection.exec_driver_sql("DROP SCHEMA IF EXISTS state_index CASCADE")
+            # `public` holds the console tables the chat corpus reads, and the `vector`
+            # extension. Both are reset here, before `ensure_schema` puts the extension back —
+            # dropping it afterwards would take the vector columns with it.
+            await connection.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
+            await connection.exec_driver_sql("CREATE SCHEMA public")
         await ensure_schema(engine)
         async with async_sessionmaker(engine, expire_on_commit=False)() as opened:
             yield opened

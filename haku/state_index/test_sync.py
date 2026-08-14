@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import math
-from collections.abc import Sequence
 from pathlib import Path
 
 import pygit2
@@ -14,45 +12,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.state_index.chunking import CHUNKER_VERSION
+from haku.state_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.state_index.git_tree import list_tip
 from haku.state_index.schema import Chunk
-from haku.state_index.store import current_state, read_indexed_text, search
+from haku.state_index.store import current_git_state, read_indexed_text, search_git
 from haku.state_index.sync import AlreadyCurrent, SyncOutcome, SyncReport, sync
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
-
-# A vector space with one axis per marker word, so "which document is about beta" has an
-# answer a test can assert. The floor keeps every vector non-zero: cosine distance against a
-# zero vector is undefined, and a chunk mentioning none of the markers is normal.
-_MARKERS = ("alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta")
-
-
-class FakeEmbedder:
-    """Deterministic marker-word embedder — no model weights in a database test."""
-
-    dims = len(_MARKERS)
-
-    def __init__(self, model_key: str = "fake-v1") -> None:
-        self.model_key = model_key
-
-    def _vector(self, text: str) -> list[float]:
-        counts = [text.lower().count(marker) + 0.01 for marker in _MARKERS]
-        norm = math.sqrt(sum(count * count for count in counts))
-        return [count / norm for count in counts]
-
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self._vector(text) for text in texts]
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._vector(text)
-
-
-class ExplodingEmbedder(FakeEmbedder):
-    """Fails once it has embedded anything at all, to cut a sync off mid-flight."""
-
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        raise RuntimeError("embedder unavailable")
 
 
 @pytest.fixture
@@ -83,7 +50,7 @@ def as_report(outcome: SyncOutcome) -> SyncReport:
 
 
 async def find(session: AsyncSession, embedder: FakeEmbedder, query: str, **kwargs):
-    return await search(
+    return await search_git(
         session,
         embedder.embed_query(query),
         chunker_version=CHUNKER_VERSION,
@@ -131,7 +98,7 @@ async def test_deleted_content_keeps_its_cached_embedding(session: AsyncSession,
     await run_sync(session, repo, first, embedder)
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
 
-    cached = await session.execute(select(func.count()).select_from(Chunk).where(Chunk.blob_sha == gone_sha))
+    cached = await session.execute(select(func.count()).select_from(Chunk).where(Chunk.content_sha == gone_sha))
 
     assert cached.scalar_one() > 0
 
@@ -188,7 +155,7 @@ async def test_a_failed_sync_leaves_the_previous_tip_searchable(session: AsyncSe
         )
     await session.rollback()
 
-    state = await current_state(session)
+    state = await current_git_state(session)
     assert state is not None
     assert state.commit_sha == first
     assert [hit.path for hit in await find(session, embedder, "alpha")] == ["a.md"]
