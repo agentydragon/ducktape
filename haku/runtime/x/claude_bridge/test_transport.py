@@ -88,7 +88,12 @@ def test_launch_rejects_another_protocol_version() -> None:
 
 
 def test_an_unknown_frame_kind_is_refused() -> None:
-    """A kind from a newer peer is an error, not something to route somewhere plausible."""
+    """A kind from a newer peer is an error, not something to route somewhere plausible.
+
+    The other half of the same decision as the unknown-*field* test below: a peer that cannot name
+    the frame cannot act on it, so must-understand changes arrive as kinds and fail closed here,
+    while optional additions arrive as fields and are ignored.
+    """
     with pytest.raises(ValidationError, match="union_tag_invalid"):
         CONSOLE_TO_RUNNER.validate_json(encode_object({"kind": "a-kind-from-the-future"}))
 
@@ -99,10 +104,19 @@ def test_a_frame_missing_its_kind_is_refused() -> None:
         CONSOLE_TO_RUNNER.validate_json(encode_object({"type": "haku_transport", "subtype": "end_input"}))
 
 
-def test_a_frame_carrying_an_unknown_field_is_refused() -> None:
-    """`extra=forbid`: a field this end does not understand is a version mismatch, not noise."""
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "setup_output", "data": "aGk=", "severity": "warning"}))
+def test_a_frame_carrying_an_unknown_field_is_read_without_it() -> None:
+    """An optional addition from a newer peer. Ignoring it leaves this end behaving as its own
+    version correctly did, which is the whole point of adding one.
+
+    This used to be `extra=forbid` and assert the opposite. That made every additive field a
+    fleet-wide break: a live session's runner keeps its image for hours, so the release that added
+    a field killed every session still on the previous one.
+    """
+    frame = RUNNER_TO_CONSOLE.validate_json(
+        encode_object({"kind": "setup_output", "data": "aGk=", "severity": "warning"})
+    )
+
+    assert frame == SetupOutput(data=b"hi")
 
 
 def test_a_frame_missing_a_required_field_is_refused() -> None:
