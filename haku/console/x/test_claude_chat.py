@@ -653,7 +653,7 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
     make an offset skip or repeat a row."""
     session, _ = await chat_store.create(operator_id, SpaSession())
     for kind in ("user", "assistant", "result"):
-        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, {"type": kind})
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
     first = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=2, kinds=None)
     rest = await chat_store.read_frames(str(session.session_id), after_seq=first[-1].frame_seq, limit=2, kinds=None)
@@ -665,7 +665,7 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
 async def test_the_kinds_filter_skims_without_paging_through_everything(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id, SpaSession())
     for kind in ("user", "system", "assistant", "system", "result"):
-        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, {"type": kind})
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
     frames = await chat_store.read_frames(
         str(session.session_id), after_seq=None, limit=25, kinds=["assistant", "result"]
@@ -677,8 +677,8 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
     mine, _ = await chat_store.create(operator_id, SpaSession())
     theirs, _ = await chat_store.create(operator_id, SpaSession())
-    await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, {"type": "assistant"})
-    await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, {"type": "result"})
+    await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
+    await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
 
     frames = await chat_store.read_frames(str(mine.session_id), after_seq=None, limit=25, kinds=None)
 
@@ -857,7 +857,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     # A frame from before this turn, so a bracket that started at the log's beginning would show.
-    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, {"type": "system"})
+    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
@@ -919,6 +919,7 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
     await chat_store.record_frame(
         view.session_id,
         FrameDirection.FROM_AGENT,
+        "user",
         {
             "type": "user",
             "message": {
@@ -963,10 +964,11 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
         abort_event=asyncio.Event(),
     )
     # The frames the recorder would have written, plus the answer, which is a `user` frame.
-    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, frame)
+    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, frame["type"], frame)
     await chat_store.record_frame(
         view.session_id,
         FrameDirection.FROM_AGENT,
+        "user",
         {
             "type": "user",
             "message": {

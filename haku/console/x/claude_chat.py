@@ -662,8 +662,15 @@ class ClaudeChatStore:
             for row in rows
         ]
 
-    async def record_frame(self, session_id: UUID, direction: FrameDirection, payload: dict[str, Any]) -> None:
-        """Append one protocol frame to the session's rollout.
+    async def record_frame(
+        self, session_id: UUID, direction: FrameDirection, kind: str, payload: dict[str, Any]
+    ) -> None:
+        """Append one frame to the session's rollout, under the kind its own protocol gives it.
+
+        *kind* is passed rather than read out of the payload because the payload's discriminator
+        is not the console's to assume: a CLI frame keeps it in `type`, the bridge envelope keeps
+        it in `kind`, and deriving one from the other is what would make everything in this table
+        have to look like a CLI frame whether it was one or not.
 
         Failures are not swallowed. Every other write in a turn reaches the same database, so
         one that cannot record has already lost the session — and a rollout with quiet holes is
@@ -676,7 +683,7 @@ class ClaudeChatStore:
                 ClaudeChatFrame(
                     session_id=session_id,
                     direction=direction,
-                    kind=_frame_kind(payload),
+                    kind=kind,
                     payload=payload,
                     partial=False,
                     created_at=now,
@@ -991,14 +998,19 @@ SETUP_OUTPUT_KIND = "setup_output"
 
 
 def _setup_output_frame(text: str) -> dict[str, Any]:
-    """One line the sandbox printed, as a rollout frame.
+    """One line the sandbox printed, as a rollout row.
 
-    Not the CLI's vocabulary — this is the bridge's `SetupOutput`, which is why it gets a kind
-    of its own rather than dressing up as something the agent said. It sits in the same log
-    because the question a reader asks is "what happened in this session", and until the CLI
-    exists the answer is entirely here.
+    **Console-authored, like `partial`, and it says so with its discriminator.** The bridge's
+    own frame is `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what
+    arrives here is one line the transport has already decoded (`errors="replace"`) and split
+    for the room. So this is a rendering, not the wire, and putting it under `kind` rather than
+    the CLI's `type` is what keeps it from reading as a protocol frame that never existed.
+
+    It lives in the frame log rather than a table of its own because the question a reader asks
+    is "what happened in this session, in order" — and for a session that died before the CLI
+    produced anything, the answer is entirely here.
     """
-    return {"type": SETUP_OUTPUT_KIND, "text": text}
+    return {"kind": SETUP_OUTPUT_KIND, "text": text}
 
 
 def _frame_kind(payload: dict[str, Any]) -> str:
@@ -1031,7 +1043,7 @@ class RolloutRecorder:
 
     async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> None:
         if _frame_kind(payload) != _PARTIAL_FRAME_KIND:
-            await self._store.record_frame(self._session_id, direction, payload)
+            await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
 
 
 # How long a turn runs before the room is told anything about it (R6.2). Below this the
@@ -1306,7 +1318,9 @@ class ClaudeChatService:
 
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
-            await self._store.record_frame(session_id, FrameDirection.FROM_AGENT, _setup_output_frame(detail))
+            await self._store.record_frame(
+                session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, _setup_output_frame(detail)
+            )
             if self._room_surface is not None and room_id is not None:
                 await self._room_surface.report(room_id, detail)
 
