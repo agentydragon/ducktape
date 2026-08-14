@@ -14,92 +14,38 @@ in view, which is said at each such point.
 
 ## How the stages are ordered
 
-Six constraints, and everything else is preference:
+Three constraints still bind, and everything else is preference:
 
-1. **Diagnosis before change.** Today a failed session records a precise reason in a column nobody
-   reads and narrates an imprecise one where everyone is looking. Until that is inverted, every
-   change below is evaluated blind.
-2. **Survive a roll before removing the TTL.** The TTL is currently recycling sessions that wedged.
-   Remove the backstop first and they stop being cleaned up at all.
-3. **Sessions must survive being asked for before they are allocated on demand.** Allocating lazily
-   while the failure is still there moves it from "always" to "whenever somebody speaks", which is
-   when it costs a person something.
-4. **Version negotiation before anything that adds a field to the envelope.** The replay design adds
-   one, and under adoption a breaking envelope change stops meaning "some sessions fail during the
-   rollout" and starts meaning "every live session dies on every console release".
-5. **The frontend seam before the backend seam.** The first is smaller, is pure refactoring, and
+1. **Version negotiation before anything that adds a field to the envelope.** The replay design adds
+   one, and now that adoption is live a breaking envelope change no longer means "some sessions fail
+   during the rollout" — it means "every live session dies on every console release".
+2. **The frontend seam before the backend seam.** The first is smaller, is pure refactoring, and
    does not touch the schema until its last step; the second changes where meaning is extracted.
-6. **Contract halves land when their roll converges**, independently of all of this.
+3. **Contract halves land when their roll converges**, independently of all of this.
 
-## Stage 0 — make failures say why
-
-_No behaviour change. Everything after this is measured against it._
-
-- **Announce the reason, not just the status.** `supervise_once` says `session … ended (failed);
-starting a new one` while `chat.error` — always set, and specific — stays in Postgres. It already
-  has the row.
-- **Stop discarding the CLI's stderr.** `bridge_websocket_to_claude` opens the process with
-  `stderr=subprocess.DEVNULL`, so a `claude` that fails to start yields `Claude Code exited with
-status N` and the sentence that said why is thrown away in the sandbox. Forward it as progress.
-- **Record `SetupOutput` into the rollout.** Bootstrap output reaches the pod's stdout and the room
-  and nothing durable, so it dies with the reaped pod — which is exactly the case worth reading.
-- **Guard `on_progress`.** `transport.py` awaits it per line inside the read loop with no guard, so
-  a room-side failure becomes a session-side one. This is also what stops a 429 during bootstrap
-  from being recorded as `Claude runtime failed: 429` over the real error.
-- **Run the three checks** in the debug note against production, and write the answer into it.
-
-**Done when** a session that died says why in the room, and the first cause of the boot-and-die
-pattern is confirmed rather than argued.
-
-## Stage 1 — survive a console roll
-
-_The measured cause: the console deployment took 41 image bumps in seven days (~6 rolls/day), and
-with the 12 daily TTL expiries a room's session dies about every 80 minutes, usually having done
-nothing in between._
-
-The crashloop that amplifies each death is four reasonable facts in combination: the bridge
-credential is single-use, so every reconnect is refused; Kubernetes restarts the runner, since the
-pod template sets no `restartPolicy`; the runner has no retry, so it exits into the refusal; and
-nothing ends the session for ~90s, until the lease sweep. **Most rolls land on an idle session**,
-where both directions are empty and surviving one needs no buffering at all:
-
-- **The runner stops killing the CLI on disconnect.** `bridge_websocket_to_claude`'s `finally`
-  terminates the process — the single line that makes the sandbox disposable.
-- **The runner redials with backoff** instead of exiting, which retires the crashloop by
-  construction: a process that does not exit is not restarted.
-- **`authenticate_bridge` gains an adopt path**, gated on taking the lease — that gate is the
-  arbitration that stops both replicas adopting one CLI.
-- **The runner owns "already initialized"**, so an adopting console does not re-handshake a live
-  process. The one piece of the full design this subset needs.
-- **The console says goodbye.** It knows it is going away — the `CancelledError` path exists to
-  record it, inside a 30s grace with a shielded finalizer — so it can close with a code meaning
-  _rolling, reconnect_ rather than leaving the runner to infer a roll from a dropped socket.
-- **Separate planned ends from failures.** A TTL reap and a roll both present as `failed` with an
-  alarming string; while they do, no failure rate means anything.
-
-**Done when** a deliberate console roll leaves the room still answering, pod `RESTARTS` stops
-climbing, and measured session lifetime exceeds the roll interval.
+Three more are discharged, and are why stages 5 and 6 sit where they do: diagnosis came before
+change; a roll is survived before the TTL that was recycling wedged sessions is removed; and a
+session survives being asked for before it is allocated on demand. All three rested on stage 1,
+which has landed — but stage 1 is verified only by tests, so **the first deliberate console roll
+against production is still owed** before anything downstream trusts it
+(<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
 ## Stage 2 — make the room behave
 
-_Independent of stages 1 and 3–7; can run in parallel with any of them._
+_Independent of every other stage; can run in parallel with any of them. Its pacing half landed:
+`_TurnStatus` now holds the floor and defers what it refuses, and `show_status` is an idempotent
+"make the line say this". What is left is the pacing that is not the status line's._
 
-- **One paced send queue per room.** `STATUS_EDIT_INTERVAL_SECONDS` drops the value it refuses
-  rather than deferring it, and `_TurnStatus` has already marked that state shown — so a status
-  change inside the floor is lost until the next one. But a debounce is only correct for latest-wins
-  state: a reply, a bootstrap line, a `holding N message(s)` all lose information when dropped. So
-  the room wants FIFO for what must arrive with the status line collapsing into one pending slot,
-  and the pacer scoped to the room, because the limit is per room across every kind of send.
+- **One paced send queue per room.** The floor has an owner but only over one kind of send, and the
+  homeserver's limit is per room across all of them. A reply, a bootstrap line, a `holding N
+message(s)` each lose information when dropped, so the room wants FIFO for what must arrive with
+  the status line collapsing into one pending slot — the driver's floor moving into the pacer as one
+  case of it. The loudest senders are the unpaced ones, worst being the bootstrap narration at one
+  notice per line.
 - **Honour the server's answer.** `_unwrap` turns any `ErrorResponse` into
   `MatrixError(f"{status_code}: {message}")`, discarding a 429's `retry_after_ms`; nio's own
   `max_limit_exceeded_retries` is unset. Five seconds is a guess at `rc_message` on that homeserver,
-  never checked against what it actually said. The loudest senders are also the unpaced ones —
-  worst being the bootstrap narration at one notice per line.
-- **Count messages, not events.** `recent_messages` passes `limit` to `/messages` as the page size
-  and then filters to `RoomMessageText`, so `RE_AWAKENING_MESSAGES = 20` is a budget of timeline
-  events in a room that is mostly the console's own notices. A re-awakening can come back with two
-  or three real messages, or none, believing it asked for twenty — and it fails silently. `_backfill`
-  in the same file already pages until it has what it wants; this wants that shape.
+  never checked against what it actually said.
 - **Tag what the console sends.** Every question about a room event is currently answered by a
   proxy: msgtype for "is this conversational", sender for "is this ours", nothing at all for "which
   transcript row is this". A namespaced content object naming the session, the transcript row, the
@@ -107,11 +53,8 @@ _Independent of stages 1 and 3–7; can run in parallel with any of them._
   for free, which is the ledger stage 4 would otherwise have to invent. Public and federated, so ids
   and kinds only; stripped by redaction; absent on existing history, so today's msgtype rule stays
   as the fallback.
-- **Delete `_sent_event_ids`.** An unbounded in-memory set that can never match: every event in it
-  was sent by the bot, and `MatrixClient._messages` has already dropped everything the bot sent.
 
-**Done when** the status line is never stale past the floor, a burst cannot 429 the session, and a
-re-awakening prompt contains the number of real messages it asked for.
+**Done when** a burst cannot 429 the session, and every event the console sends says what it is.
 
 ## Stage 3 — version the bridge so it can evolve
 
