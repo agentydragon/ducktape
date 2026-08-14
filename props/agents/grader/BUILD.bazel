@@ -167,6 +167,7 @@ py_test(
 
 py_test(
     name = "test_matchable_occurrences",
+    size = "medium",  # measured at ~60s; `small` is a 60s timeout
     srcs = ["test_matchable_occurrences.py"],
     requires_docker = True,
     deps = [
