@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Sync all files from an ez Share WiFi SD card into the cpap-data Forgejo repo.
 
-Partial-clones the repo, associates the host-network WiFi interface with the
-card's AP, walks the card's HTTP file index, downloads anything new or changed
-into the worktree, tears the WiFi session back down, then commits + pushes — git
-operations never overlap the card-WiFi window.
+Partial-clones the repo, optionally associates a direct-run WiFi interface with
+the card's AP, walks the card's HTTP file index, downloads anything new or
+changed into the worktree, then commits + pushes. Cluster runs leave WiFi
+association to the permanent gateway VM and only use its HTTP endpoint.
 
 A committed `sync_meta.json` manifest records each file's size and card
 timestamp; a card entry matching its manifest entry is skipped (git discards

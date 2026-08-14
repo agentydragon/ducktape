@@ -4,5 +4,5 @@ metadata:
   name: cpap-sync
   labels:
     name: cpap-sync
-    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce: baseline
     goldilocks.fairwinds.com/enabled: "false"

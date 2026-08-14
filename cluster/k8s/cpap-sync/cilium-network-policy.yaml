@@ -1,0 +1,47 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cpap-sync-egress
+  namespace: cpap-sync
+  annotations:
+    description: >-
+      The sync Job may resolve DNS, reach the in-cluster CPAP gateway Service,
+      and push to Forgejo through the cluster gateway.
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cpap-sync
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+    # The Service is port 80, but Cilium enforces the translated backend
+    # targetPort after socket-level load balancing (18080). See
+    # cluster/docs/cilium_network_policy.md.
+    - toServices:
+        - k8sService:
+            serviceName: cpap-card
+            namespace: cpap-sync
+      toPorts:
+        - ports:
+            - port: "18080"
+              protocol: TCP
+
+    # git.allegedly.works resolves to the cluster's Gateway node addresses;
+    # cluster covers those node entities as well as in-cluster Forgejo traffic.
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "3000"
+              protocol: TCP

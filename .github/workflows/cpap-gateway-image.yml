@@ -1,0 +1,80 @@
+# Build the stateless CPAP gateway qcow2 and publish it as a KubeVirt
+# containerDisk image. Flux tracks the resulting devel-* tags through the
+# cpap-gateway ImagePolicy.
+name: cpap-gateway image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/nixos/hosts/cpap-gateway/**"
+      - "nix/nixos/modules/vm-hardware.nix"
+      - ".github/workflows/cpap-gateway-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    name: Build & push cpap-gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/cpap-gateway
+    steps:
+      - uses: actions/checkout@v6
+
+      # Attic trusted pubkeys (SSOT) — read with jq before Nix is installed,
+      # since extra_nix_config below is a static field.
+      - name: Load Attic trusted pubkeys
+        id: attic_keys
+        run: echo "value=$(jq -r 'join(\" \")' nix/attic-pubkeys.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes fetch-closure
+            netrc-file = /home/runner/.config/nix/netrc
+            extra-trusted-public-keys = ${{ steps.attic_keys.outputs.value }}
+            extra-substituters = https://cache.allegedly.works/main
+            fallback = true
+
+      # Decrypts secrets/ci/* → exports ATTIC_TOKEN for the binary cache.
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Write Nix netrc for cache.allegedly.works
+        run: |
+          mkdir -p /home/runner/.config/nix
+          umask 077
+          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+            > /home/runner/.config/nix/netrc
+
+      - name: Build containerDisk image
+        run: nix build .#cpap-gateway-container-disk --print-build-logs
+
+      - name: Compute tag
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      # Keep feature-branch/manual runs from publishing a tag that Flux would
+      # consider deployable. workflow_dispatch on devel remains useful for a
+      # retry after a transient registry failure.
+      - name: Push to GHCR
+        if: github.ref_name == 'devel'
+        run: |
+          ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+          echo "$GITHUB_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --insecure-policy \
+            "docker-archive:$(readlink -f result)" \
+            "docker://$ref"
+          echo "pushed $ref" >> "$GITHUB_STEP_SUMMARY"

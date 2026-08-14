@@ -9,8 +9,15 @@ spec:
   certificateRotateStrategy: {}
   configuration:
     developerConfiguration:
-      featureGates: []
+      featureGates:
+        - HostDevices
     imagePullPolicy: IfNotPresent
+    permittedHostDevices:
+      usb:
+        - resourceName: kubevirt.io/cpap-wifi
+          selectors:
+            - vendor: "0e8d"
+              product: "7961"
     smbios:
       manufacturer: Talos Virtualization
       product: allegedly-works-kubevirt
@@ -33,6 +40,7 @@ spec:
                     operator: In
                     values:
                       - hil
+                      - home
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
   workloadUpdateStrategy: {}

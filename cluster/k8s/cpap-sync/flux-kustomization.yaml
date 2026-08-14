@@ -15,4 +15,13 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
-  timeout: 2m
+  timeout: 30m
+  dependsOn:
+    - name: kubevirt
+      namespace: ducktape-flux
+  wait: true
+  healthChecks:
+    - apiVersion: kubevirt.io/v1
+      kind: VirtualMachine
+      name: cpap-gateway
+      namespace: cpap-sync
