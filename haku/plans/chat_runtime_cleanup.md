@@ -13,7 +13,80 @@ The runtime is single-Claude-CLI, single-Matrix-room by construction, and both a
 eventually. That is not a demand to generalize now; it is what makes some of the tidying below the
 wrong tidying if done without it in view, which is said at each such point.
 
+The first item is not a cleanup at all — it is a behaviour change the owner asked for, and it is
+first because it is the one with a running cost.
+
 Ordered by payoff, not by size.
+
+## A sandbox should be allocated because there is something to do
+
+Today a Matrix room holds a sandbox permanently, whether or not anyone is talking to it.
+`MatrixSessionSupervisor.supervise_once` provisions whenever the room has no live session, so the
+steady state is: claim, pod, CLI, idle, `session_ttl_seconds` expires (**7200s**), session fails,
+supervisor provisions again. The warm pool is `replicas: 0` — claim-specific env forces a cold start
+in Agent Sandbox v0.5.1 — so each cycle is a full cold start.
+
+For a room nobody speaks in, that is **twelve cold starts a day**, each announcing `provisioning a
+sandbox · session …` into the room and then narrating its bootstrap there (R7.1), while holding
+~1 CPU / 2Gi of an 8 CPU / 16Gi namespace quota continuously. And each replacement already discards
+the CLI's context and re-awakens from the last twenty room messages (R3.3a) — so the current design
+pays the context loss on a two-hour timer regardless of whether the conversation was going anywhere.
+
+**Why it is like this.** The SPA has a gesture that means "I want a session": the operator clicks,
+`POST /api/claude/sessions` runs, and the claim is that click. Matrix has no gesture, so the
+supervisor substitutes for one — and the substitute it uses is _assume demand, permanently_. The
+honest substitute is the prompt itself.
+
+**What makes it cheap now.** The prompt queue already separated "accepted" from "running":
+`claude_chat_prompts` is durable, `next_prompt` claims it whenever the turn loop gets there, and the
+turn loop already blocks on a `PROMPT` notification. So a prompt can be accepted against a session
+whose sandbox does not exist yet, and the allocation becomes another consumer of the same signal.
+Before the queue landed this would have needed a second durable queue; now it does not.
+
+**The split.** A session row is free; a SandboxClaim is not, and `ClaudeChatService.create` does both
+in one call. Separate them:
+
+- `create()` writes the row and stops. New status **`idle`**: the session exists, nothing is
+  allocated, and nothing is wrong.
+- `allocate()` mints the rendezvous credential, creates the claim, and moves to `provisioning` —
+  which keeps its current meaning, "a claim exists and we are waiting for the runner".
+- Admission accepts on `idle` as well as `ready`, so `enqueue_prompt` is what creates demand.
+- The supervisor's trigger becomes "this session has an unclaimed prompt and no sandbox" instead of
+  "this room has no live session". It already wakes on notifications; `ChatEventKind.PROMPT` is the
+  one to wake on.
+- `MatrixTurns.offer` stops refusing an unallocated session. The batch is then taken into the durable
+  queue rather than left on the homeserver for the watermark to re-deliver, and `holding N
+message(s)` gives way to something truer — the sandbox is starting _because_ of that message.
+
+**Two things this touches that are easy to get wrong.**
+
+`LIVE_SESSION_STATUSES` currently means both "worth keeping" and "has a lease somebody must renew".
+An idle session is the first that is worth keeping and has no holder to lose, so `expire_stale_leases`
+must stop treating membership in that set as "must have a live lease" — otherwise every idle session
+is swept the moment its lease passes, which is the opposite of the intent. Split the set, or exclude
+`idle` from the sweep explicitly; do not give an idle session a fake far-future lease.
+
+And **adding an enum value is a two-release change here**, not an additive one. `TextBackedStrEnumColumn`
+parses the column into `ChatSessionStatus`, so a replica on the previous image reading an `idle` row
+fails rather than degrading. Release one: add the member and widen `ck_claude_chat_sessions_status`.
+Release two: start writing it. The same discipline `0033` used for the queue.
+
+**The cost, stated plainly.** The first message after a quiet period pays the full cold start — pod
+start plus bootstrap — where today it is answered by an already-warm sandbox. That is the trade: a
+permanently-held sandbox buys latency for the first message after silence. It is mitigable
+(`_report_holding` already tells the room its message is waiting; the typing indicator already runs;
+a warm pool above zero would cover it if the annotation rendezvous the manifest mentions lands) but
+it is real, and it is the thing to measure after the change rather than assume away.
+
+**Its natural pair, which is a separate decision.** Allocating on demand only saves the idle case if
+something also _releases_ on idle — otherwise the first message of the day still pins a sandbox until
+the TTL. An idle timer (no turn for N minutes → drop the claim, back to `idle`) is the obvious pair,
+and it costs the CLI's context each time it fires. That cost is already being paid every two hours by
+the clock, so an idle timer moves it rather than adding it — and `--resume` (design A in
+<cli_protocol_ownership.md>) is what would make it nearly free. Worth doing second, and measured.
+
+**It composes with the backend seam below**: a direct-model backend has no sandbox to allocate at
+all, so "the session exists" and "its resources exist" want separating regardless of this.
 
 ## The room is a parameter that nothing reads
 
