@@ -1471,8 +1471,14 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
                     break
                 await asyncio.sleep(0.2)
             await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
+            # Waits for the streamed text, not merely for a partial row to exist. The first
+            # delta creates the row, so waiting on its existence raced the second delta and
+            # cancelled between them — which asserted a timing rather than the property. What
+            # makes this "cut off mid-stream" is that no `assistant` frame ever completes the
+            # message, and that is true however many deltas have landed.
             for _ in range(75):
-                if [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]:
+                partial = [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]
+                if partial and partial[0].payload["message"]["content"][0]["text"] == "half an answer":
                     break
                 await asyncio.sleep(0.2)
         finally:
