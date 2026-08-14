@@ -8,6 +8,6 @@ specimen_targets(
     code_srcs = glob(["code/**/*"]),
     slug = "ducktape/2025-11-22-01",
     split = "valid",
-    # Measured at ~60s, and `specimen_targets` defaults to `small`, a 60s timeout.
+    # See props/agents/grader — a wedge, not slowness.
     test_size = "medium",
 )
