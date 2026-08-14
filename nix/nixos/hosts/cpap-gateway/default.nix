@@ -131,9 +131,11 @@ in
       PrivateTmp = true;
       ProtectHome = true;
       ProtectSystem = "strict";
+      # ExecStartPre's `ip route get` queries the kernel through rtnetlink.
       RestrictAddressFamilies = [
         "AF_INET"
         "AF_INET6"
+        "AF_NETLINK"
       ];
     };
   };
