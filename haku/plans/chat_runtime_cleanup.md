@@ -370,6 +370,42 @@ looking for it.
 - **`KubernetesSandboxClaims._clients()`** is double-checked locking with four `assert`s to satisfy
   the type checker. One `_Clients` dataclass built under the lock would need none of them.
 
+## Streaming the answer into the room — [later]
+
+The SPA watches an answer form, because `update_assistant` rewrites the message row per delta and
+SSE carries it. Matrix hears nothing until an assistant message completes. Wanted eventually, at low
+priority — and two facts decide the design before taste does.
+
+**Matrix cannot stream at delta rate.** `STATUS_EDIT_INTERVAL_SECONDS` is five seconds, and its
+comment says why: the floor is Synapse's per-room rate limit and what a person can read, not how
+fast the agent produces text. Every edit is also a real, permanent event in the room's timeline,
+federated and replicated, where an SSE frame is not. So what is achievable is a coarse "the text so
+far" refresh every few seconds, not token-by-token — worth knowing before deciding it is worth
+building, and part of why it is correctly low priority.
+
+**The obvious implementation would poison the re-awakening history.** Editing the reply itself means
+the answer's final text lives in the last `m.replace` of a chain, while the original event holds the
+first chunk. `MatrixClient.recent_messages` — which feeds the last twenty messages into a
+replacement session's system prompt (R3.3a) — keeps every `RoomMessageText` and deliberately keeps
+Haku's own, and an edit of an `m.text` reply _is_ an `m.text` event. The trick that excludes status
+chatter for free does not apply: notices are excluded because `m.notice` parses to a different nio
+class, and a reply's edits do not. So a streamed answer would fill the history read with twenty
+partial drafts of one message, each carrying the `* ` fallback prefix, unless that read learns to
+resolve edit chains and take the latest replacement per original.
+
+**Which is the argument for streaming into the status line's mechanism instead of into the answer.**
+`show_status`/`clear_status` already create one notice, edit it under a rate limit, and redact it
+when the turn ends. Streaming prose is that same pattern with different content: the preview is a
+notice, so it is excluded from history by the existing rule; the final answer is still posted once as
+a clean `m.text`; nothing has to resolve edit chains; and a console that dies mid-stream leaves a
+stale preview rather than a permanently truncated answer. It also unifies with the status line rather
+than competing with it — one line that says what Haku is doing, showing prose while there is prose
+and tool names when there is not.
+
+The cost is a visible seam: the preview disappears and the answer appears, where editing in place
+would grow the message a chat client already renders as one. That is the real trade, and it is a
+question about the room's feel rather than about the machinery.
+
 ## Carried from the first review
 
 ### Mid-turn steering works and we are not using it
