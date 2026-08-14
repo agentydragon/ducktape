@@ -73,6 +73,22 @@ It accounts for every observation:
 - **The wedge is loud.** Waiting on the lock, loading, and starting the container each log with
   elapsed time, so a future hang names the step it is in instead of producing an empty log.
 
+## A wrong turn worth recording
+
+The first attempt at "is it already loaded" compared the daemon's `.Id` for the tag against the
+**config digest read from the OCI layout**, on the reasoning that an image's id _is_ its config
+digest and so no state need be written down. It is not, here: Docker's classic image store rewrites
+an OCI config on load, so `.Id` is the digest of the rewritten one.
+
+The failure mode is what makes this worth a note. A comparison that never matches does not fail
+visibly — it silently reloads every image on every target, serialised behind the new lock, which is
+**slower than doing nothing**. It went out and two more specimen targets and an editor-agent test
+timed out on the next run.
+
+So the daemon's id is now recorded rather than predicted, and only ever compared against itself:
+the marker holds `<layout digest> <daemon id>`, and a skip needs both to still hold — the layout so
+a pin bump or a rebuild reloads, the daemon id so a prune or an out-of-band retag does too.
+
 ## Still open
 
 - **The daemon's own container start is unbounded.** The lock removes the herd on the _load_; N

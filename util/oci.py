@@ -15,9 +15,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from more_itertools import one
 from opentelemetry import trace
 
 from util.bazel import runfiles
@@ -71,29 +69,6 @@ def read_oci_layout_digest(image_dir: Path) -> str:
     return digest
 
 
-def _read_blob(image_dir: Path, digest: str) -> dict[str, Any]:
-    algorithm, _, hexdigest = digest.partition(":")
-    blob: dict[str, Any] = json.loads((image_dir / "blobs" / algorithm / hexdigest).read_text())
-    return blob
-
-
-def read_oci_config_digest(image_dir: Path) -> str:
-    """The digest of the image *config* blob, which is what Docker reports as an image's `Id`.
-
-    Not the manifest digest `read_oci_layout_digest` returns: that identifies the manifest, and
-    the daemon does not generally know it for an image crane pushed — a loaded image has no
-    `RepoDigests` to compare against. The config digest it does know, and it identifies the same
-    bytes, so it is the one thing both ends can name.
-    """
-    manifest = _read_blob(image_dir, read_oci_layout_digest(image_dir))
-    if (nested := manifest.get("manifests")) is not None:
-        # A multi-platform index. Bazel pins these per platform, so one entry is the norm and more
-        # than one means the caller is loading something this cannot identify unambiguously.
-        manifest = _read_blob(image_dir, one(nested)["digest"])
-    config_digest: str = manifest["config"]["digest"]
-    return config_digest
-
-
 # ---------------------------------------------------------------------------
 # Image loading via crane
 # ---------------------------------------------------------------------------
@@ -132,43 +107,63 @@ def _one_loader_at_a_time(tag: str) -> Iterator[None]:
 
 
 def daemon_image_id(tag: str) -> str | None:
-    """The config digest the local Docker daemon holds under *tag*, or None if it holds nothing."""
+    """The image id the local Docker daemon holds under *tag*, or None if it holds nothing."""
     inspect = subprocess.run(
         ["docker", "image", "inspect", "--format", "{{.Id}}", tag], capture_output=True, text=True, check=False
     )
     return inspect.stdout.strip() if inspect.returncode == 0 else None
 
 
+def _loaded_marker(tag: str) -> Path:
+    return Path(tempfile.gettempdir()) / f"oci-load-{hashlib.sha256(tag.encode()).hexdigest()[:16]}.loaded"
+
+
+def _already_loaded(tag: str, wanted: str) -> bool:
+    """Whether this machine already loaded exactly *wanted* under *tag*, and it is still there.
+
+    **Two facts, and both have to hold.** The marker says which layout was loaded — that is the
+    question a tag cannot answer, since `postgres:18` and `python:3.13-slim` move upstream and are
+    pinned by digest in Bazel, and a tag this repo builds is reused on every build. The daemon says
+    whether what was loaded is still present and still the same image, which is what catches a
+    prune or an out-of-band retag and stops the marker from being believed on its own.
+
+    **Why not just compare the daemon's id to the layout's config digest.** Because they are not
+    the same number: Docker's classic image store rewrites an OCI config on load, so `.Id` is the
+    digest of its rewritten config. Comparing them would never match, and "never matches" here does
+    not fail visibly — it silently reloads every image on every target, which is slower than doing
+    nothing at all. So the daemon's id is recorded rather than predicted, and only ever compared
+    against itself.
+    """
+    marker = _loaded_marker(tag)
+    if not marker.exists():
+        return False
+    layout, _, loaded_id = marker.read_text().strip().partition(" ")
+    return layout == wanted and loaded_id == daemon_image_id(tag)
+
+
 def load_oci_image(image: OciImage) -> str:
     """Ensure the local Docker daemon holds *image*, loading it via crane if it does not.
 
-    **Identity is the digest, not the tag.** A tag is not an identity here: `postgres:18` and
-    `python:3.13-slim` move upstream and are pinned by digest in Bazel, so a pin bump leaves the
-    tag unchanged — and a tag this repo builds (`wayback-proxy:latest`) is reused on every build.
-    Skipping on the tag alone would pin a warm worker to whatever it loaded first, with nothing
-    short of a manual `docker rmi` able to dislodge it.
-
     **Callers do not check first.** Every call site used to decide for itself whether to skip, in
-    the same three lines, and each was a place to get that wrong.
+    the same three lines, and each was a place to get the question in `_already_loaded` wrong.
 
-    The comparison is against the daemon rather than against any note this kept, so there is no
-    state to go stale or to lie. If the two ever disagree about how to spell the same image, the
-    result is a load that did not need doing — never a stale image served as a fresh one.
-
-    Checked twice on purpose: once before the lock, so a warm daemon costs one `docker image
-    inspect`, and once **inside** it, so the first waiter behind a loader finds the image already
-    there and skips the load just done for it.
+    Checked twice on purpose: once before the lock, so a warm daemon costs a file read and one
+    `docker image inspect`, and once **inside** it, so the first waiter behind a loader finds the
+    image already there and skips the load just done for it.
     """
     layout_rloc = runfiles.get_required_path(image.rloc_file).read_text().strip()
     oci_layout = runfiles.get_required_path(layout_rloc)
-    wanted = read_oci_config_digest(oci_layout)
-    if daemon_image_id(image.tag) == wanted:
+    wanted = read_oci_layout_digest(oci_layout)
+    if _already_loaded(image.tag, wanted):
         return image.tag
     with tracer.start_as_current_span(f"load_oci_image({image.tag})"), _one_loader_at_a_time(image.tag):
-        if daemon_image_id(image.tag) == wanted:
+        if _already_loaded(image.tag, wanted):
             return image.tag
         started = time.monotonic()
         logger.info("Loading %s (%s) into the Docker daemon (pid %d)", image.tag, wanted[:19], os.getpid())
         push_to_daemon(oci_layout, image.tag)
+        # Written after the push and recording what the daemon actually ended up with, so a crash
+        # mid-load leaves the older truth rather than a claim about bytes it never received.
+        _loaded_marker(image.tag).write_text(f"{wanted} {daemon_image_id(image.tag)}")
         logger.info("Loaded %s in %.1fs", image.tag, time.monotonic() - started)
     return image.tag
