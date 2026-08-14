@@ -11,8 +11,9 @@ from pathlib import Path
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_after_delay, wait_exponential
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from haku.runtime.x.claude_bridge.protocol import (
     CONSOLE_TO_RUNNER,
@@ -27,20 +28,17 @@ from haku.runtime.x.claude_bridge.protocol import (
 
 logger = logging.getLogger(__name__)
 
-# How long the CLI's output waits for a console before its pipes fill and it pauses. Sized for a
-# roll's worth of frames rather than a turn's: enough that a reconnect inside a few seconds costs
-# nothing, small enough to be a buffer rather than a store.
-OUTBOUND_BUFFER = 1000
+# What the CLI may say before its pipes fill and it pauses for want of a listener. Sized for a
+# whole turn rather than the gap in one: the runner forwards every frame including the streaming
+# deltas, so a long answer written while nobody is connected runs to thousands. Still a buffer
+# rather than a store — what makes a reconnect lossless is the resume cursor, not this number.
+OUTBOUND_BUFFER = 10_000
 
 RECONNECT_BASE_DELAY = 1.0
 RECONNECT_MAX_DELAY = 20.0
 # A sandbox held for a console that never returns is a wedged sandbox, which is worse than the
 # wedged room it was protecting. Generous against a roll, decisive against an outage.
 MAX_DISCONNECTED_SECONDS = 900.0
-
-# The console's "you are not admitted": a consumed credential, a session already over. Nothing a
-# retry can change, and retrying anyway is the crashloop this design exists to end.
-POLICY_VIOLATION_CODE = 1008
 
 
 class ClientWebSocketAdapter(TextWebSocket):
@@ -283,8 +281,38 @@ async def _receive_launch(websocket: TextWebSocket) -> ClaudeLaunch:
     return launch
 
 
-def _reconnect_delay(attempt: int) -> float:
-    return min(RECONNECT_BASE_DELAY * 2.0**attempt, RECONNECT_MAX_DELAY)
+def _worth_redialling(error: BaseException) -> bool:
+    """Whether a failed dial is a console that is not there *yet*, rather than one refusing us.
+
+    See `NOT_ADMITTED_CODE` for why a refusal arrives as a 4xx handshake response instead of a
+    close code. A 5xx is the Gateway with no ready backend — which is exactly what a console roll
+    looks like from in here — and an `OSError` is the connection itself failing; both are worth
+    waiting out, and neither used to be: `InvalidStatus` is not an `OSError`, so a single 503
+    mid-roll escaped the loop and took the sandbox with it.
+    """
+    if isinstance(error, InvalidStatus):
+        return error.response.status_code >= 500
+    return isinstance(error, OSError | InvalidHandshake)
+
+
+async def _dial(websocket_url: str, headers: dict[str, str] | None) -> ClientConnection:
+    """Connect, waiting out a console that is missing for as long as that is worth doing.
+
+    The clock starts at each call, so the budget is "how long since this runner last had a
+    console" rather than how long the session has run — a sandbox is worth holding through any
+    number of rolls, and worth releasing after one outage that does not end.
+    """
+
+    async def dial_once() -> ClientConnection:
+        return await connect(websocket_url, additional_headers=headers)
+
+    return await AsyncRetrying(
+        retry=retry_if_exception(_worth_redialling),
+        wait=wait_exponential(multiplier=RECONNECT_BASE_DELAY, max=RECONNECT_MAX_DELAY),
+        stop=stop_after_delay(MAX_DISCONNECTED_SECONDS),
+        before_sleep=before_sleep_log(logger, logging.INFO),
+        reraise=True,
+    )(dial_once)
 
 
 async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:
@@ -311,41 +339,44 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
 
     outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
     process: anyio.abc.Process | None = None
-    attempt = 0
-    gave_up_at = anyio.current_time() + MAX_DISCONNECTED_SECONDS
 
     try:
         async with anyio.create_task_group() as session:
             while True:
                 try:
-                    async with connect(websocket_url, additional_headers=headers) as connection:
-                        websocket = ClientWebSocketAdapter(connection)
-                        launch = await _receive_launch(websocket)
-                        if process is None:
-                            if setup_path is not None:
-                                await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
-                            process = await _start_claude(claude_path, launch)
-                            # Long-lived, so nothing the CLI writes is lost to a closed socket and
-                            # its pipes never fill: they drain into the buffer either way, and the
-                            # buffer's backpressure pauses the CLI rather than dropping what it said.
-                            session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
-                        attempt = 0
-                        gave_up_at = anyio.current_time() + MAX_DISCONNECTED_SECONDS
-                        await _serve_console(websocket, process, outbound_receiver)
-                except ConnectionClosed as closed:
-                    # 1008 is the console refusing this runner — a consumed credential, a session
-                    # already over. Retrying cannot change either, and retrying anyway is the
-                    # crashloop this whole design is undoing.
-                    if closed.code == POLICY_VIOLATION_CODE:
-                        logger.info("Console refused this runner (%s); stopping", closed.reason)
-                        return
-                except OSError as error:
-                    logger.info("Console unreachable (%s); redialling", error)
-                if anyio.current_time() >= gave_up_at:
-                    logger.error("No console for %ds; giving up this sandbox", MAX_DISCONNECTED_SECONDS)
-                    return
-                await anyio.sleep(_reconnect_delay(attempt))
-                attempt += 1
+                    connection = await _dial(websocket_url, headers)
+                except (OSError, InvalidHandshake) as error:
+                    # Either the console refused this runner or it never came back inside
+                    # `MAX_DISCONNECTED_SECONDS`; the error text says which. Both end the sandbox,
+                    # because one held for a console that never returns is worse than the wedged
+                    # room it was protecting.
+                    logger.info("Giving up on the console (%s); releasing this sandbox", error)
+                    break
+                try:
+                    websocket = ClientWebSocketAdapter(connection)
+                    launch = await _receive_launch(websocket)
+                    if process is None:
+                        if setup_path is not None:
+                            await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
+                        process = await _start_claude(claude_path, launch)
+                        # Long-lived, so nothing the CLI writes is lost to a closed socket and its
+                        # pipes never fill: they drain into the buffer either way, and the buffer's
+                        # backpressure pauses the CLI rather than dropping what it said.
+                        session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
+                    await _serve_console(websocket, process, outbound_receiver)
+                except ConnectionClosed:
+                    # This connection ending says nothing about the session; `_dial` decides
+                    # whether there is still a console worth waiting for.
+                    pass
+                finally:
+                    await connection.close()
+                # Not a backoff — `_dial` owns that — but a floor, so a console that admits this
+                # runner and then immediately hangs up costs one redial a second rather than as
+                # many as this loop can turn.
+                await anyio.sleep(RECONNECT_BASE_DELAY)
+            # Ends `_drain_cli`, which otherwise holds this group open for as long as the CLI
+            # lives — so giving up on the console would hang instead of releasing the sandbox.
+            session.cancel_scope.cancel()
     finally:
         if process is not None and (exited_with := await _shutdown(process)) not in (0, None):
             raise RuntimeError(f"Claude Code exited with status {exited_with}")

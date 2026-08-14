@@ -54,7 +54,7 @@ from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRec
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.claude_bridge.protocol import TextWebSocket
+from haku.runtime.x.claude_bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
@@ -75,11 +75,6 @@ PROVISION_LEASE = timedelta(minutes=10)
 # back for is reclaimed promptly. Shorter than `LEASE_TTL` because nothing is holding it — this
 # is a window for an adopter to appear, not a heartbeat anyone is keeping.
 ADOPTION_GRACE = timedelta(seconds=45)
-
-# Sent to the runner when this replica is going away rather than ending the session, so the
-# reconnect is a decision rather than an inference. 1001 is the WebSocket protocol's own "going
-# away"; the runner stops only for 1008, which is what an admission refusal closes with.
-GOING_AWAY_CODE = 1001
 
 # This process, as the lease records its holder. Kubernetes sets HOSTNAME to the pod name, which
 # is what `kubectl logs` wants as an argument — so a session that died names the thing to go read.
@@ -1388,10 +1383,10 @@ class ClaudeChatService:
         authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == BridgeAuthentication.TERMINAL:
             await self._cleanup_terminal_claim(session_id)
-            await websocket.close(code=1008, reason="runner session is already terminal")
+            await websocket.close(code=NOT_ADMITTED_CODE, reason="runner session is already terminal")
             return
         if authentication == BridgeAuthentication.REJECTED:
-            await websocket.close(code=1008, reason="invalid or consumed runner credential")
+            await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
         # Whatever the previous holder was in the middle of is not ours to finish: its frames
         # went to a socket that is gone. Closing it is also what keeps the session usable, since
@@ -1544,7 +1539,7 @@ class ClaudeChatService:
         """
         if keep_sandbox:
             # Said with a code rather than by dropping the socket, so the runner reconnects
-            # because it was told to rather than because it guessed. It stops only for 1008.
+            # because it was told to rather than because it guessed.
             with contextlib.suppress(Exception):
                 await websocket.close(code=GOING_AWAY_CODE, reason="console replica going away")
             await client.aclose()
@@ -2133,6 +2128,6 @@ async def runner_websocket(websocket: WebSocket, session_id: UUID) -> None:
     authorization = websocket.headers.get("authorization", "")
     scheme, _, bearer = authorization.partition(" ")
     if service is None or scheme.lower() != "bearer" or not bearer:
-        await websocket.close(code=1008, reason="runner authentication required")
+        await websocket.close(code=NOT_ADMITTED_CODE, reason="runner authentication required")
         return
     await service.handle_runner(websocket, session_id, bearer)

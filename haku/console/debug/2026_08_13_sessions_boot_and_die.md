@@ -14,7 +14,10 @@ Four facts, each reasonable alone, that jointly produce the symptom:
 
 1. **The bridge credential is single-use.** `ClaudeChatStore.authenticate_bridge` accepts only a
    session with `status == PROVISIONING` and `bridge_connected_at is None`, and sets both on the way
-   through. Every later connect for that session is `REJECTED` and closed with 1008.
+   through. Every later connect for that session is `REJECTED`. The console closes with 1008, but
+   it does so before `accept()`, so what the runner actually receives is an HTTP `403` — see
+   `NOT_ADMITTED_CODE`, which is why the first reconnect loop keyed on a close code that could
+   never arrive.
    [The ownership plan](../../plans/cli_protocol_ownership.md) already names this as the thing
    re-adoption has to change; what it does today is the subject here.
 2. **Kubernetes restarts the runner when it exits.** The pod template

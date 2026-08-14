@@ -29,6 +29,26 @@ FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMIN
 # that its first frame settles — repeating it on every CLI payload would be noise.
 PROTOCOL_VERSION: Final = 2
 
+# The part of this contract that is not a frame: what ending the socket means.
+#
+# **The runner redials after every disconnection except a refusal.** A refusal is the console
+# rejecting *this runner* — a consumed credential, a session already over — which no retry can
+# change, and retrying it anyway is a crashloop against a "no". Everything else, a replica going
+# away mid-roll included, leaves a CLI worth reconnecting to.
+#
+# **Gotcha: a refusal reaches the runner as an HTTP status, not as this close code.** Every
+# refusal is decided before the socket exists, and an ASGI server answers a handshake the
+# application closed before accepting with `403 Forbidden` — the code below never goes on the
+# wire. It is still worth naming at the console's three refusal sites, and worth naming *here*,
+# next to the reason it does not travel. So the runner keys on the handshake status: a 4xx is a
+# refusal, and a 5xx is a Gateway with no ready backend, which is what a console roll looks like.
+#
+# `GOING_AWAY_CODE` is the code that does travel, sent after `accept()` when the console is only
+# saying that *this replica* is leaving. Here rather than at either end because these are rules
+# spanning both, and they ship as separate images.
+NOT_ADMITTED_CODE: Final = 1008
+GOING_AWAY_CODE: Final = 1001
+
 
 class _Frame(BaseModel):
     # `forbid` because a frame this end does not fully understand is a version mismatch, and

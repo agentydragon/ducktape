@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import contextlib
 from functools import partial
+from http import HTTPStatus
 from pathlib import Path
 
 import anyio
 import pytest
 import pytest_bazel
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.http11 import Request, Response
 
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.claude_bridge.protocol import (
@@ -27,6 +30,7 @@ from haku.runtime.x.claude_bridge.runner import (
     build_claude_command,
     build_claude_environment,
     prepare_workspace,
+    run,
 )
 
 
@@ -180,6 +184,35 @@ async def test_the_cli_keeps_running_when_a_console_connection_ends(tmp_path: Pa
     finally:
         outbound_sender.close()
         await _shutdown(process)
+
+
+async def test_the_runner_waits_out_a_missing_console_but_not_a_refusing_one(tmp_path: Path) -> None:
+    """The refusal a crashloop is made of, and the outage that is not one.
+
+    All three of the console's refusal paths close before `accept()`, and an ASGI server answers
+    such a handshake with `403`, never a close code — so the close-code check this replaced could
+    not fire. Worse, `InvalidStatus` is not an `OSError`: a single `503` from a Gateway with no
+    ready backend, which is exactly what a console roll looks like from in here, escaped `run()`
+    and took the sandbox with it.
+    """
+    answered: list[int] = []
+
+    def answer(connection: ServerConnection, request: Request) -> Response:
+        status = HTTPStatus.SERVICE_UNAVAILABLE if not answered else HTTPStatus.FORBIDDEN
+        answered.append(status)
+        return connection.respond(status, "")
+
+    async def never_reached(connection: ServerConnection) -> None:
+        raise AssertionError("a rejected handshake must not reach the handler")
+
+    async with serve(never_reached, host="127.0.0.1", port=0, process_request=answer) as server:
+        port = next(iter(server.sockets)).getsockname()[1]
+        with anyio.fail_after(30):
+            # Returns rather than raising: the sandbox is done, and a runner that exits nonzero
+            # here is one Kubernetes restarts into the same refusal.
+            await run(f"ws://127.0.0.1:{port}", tmp_path / "claude", None)
+
+    assert answered == [HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.FORBIDDEN]
 
 
 def executable(path: Path, body: str) -> Path:

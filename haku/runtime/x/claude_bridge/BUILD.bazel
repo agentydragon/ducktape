@@ -36,6 +36,7 @@ py_library(
     deps = [
         ":protocol",
         "@pypi//anyio",
+        "@pypi//tenacity",
         "@pypi//websockets",
     ],
 )
@@ -48,6 +49,7 @@ py_binary(
     deps = [
         ":protocol",
         "@pypi//anyio",
+        "@pypi//tenacity",
         "@pypi//websockets",
     ],
 )
@@ -175,6 +177,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//websockets",
     ],
 )
 
