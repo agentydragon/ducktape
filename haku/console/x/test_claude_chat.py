@@ -452,6 +452,43 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert "haku-static-bearer" not in launch.environment.values()
 
 
+class _NarratingClaudeClient(_LifecycleClaudeClient):
+    """Says one bootstrap line through the progress sink, then ends the session."""
+
+    on_connect: Callable[[], Awaitable[None]] | None = None
+
+    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
+        super().__init__(adapter, launch, on_progress, frames_to)
+        self._on_progress = cast(Callable[[str], Awaitable[None]], on_progress)
+
+    async def connect(self) -> dict[str, Any]:
+        response = await super().connect()
+        await self._on_progress("Cloning into '/workspace/haku-state'...")
+        on_connect = type(self).on_connect
+        assert on_connect is not None
+        await on_connect()
+        return response
+
+
+async def test_the_sandbox_narration_outlives_the_pod_that_wrote_it(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """Bootstrap output and the CLI's stderr are where a session that never reached the model
+    explains itself, and both used to live only in the pod's log and in the room — the first
+    reaped with the sandbox, the second interleaved with everything else.
+    """
+    websocket = _LifecycleWebSocket()
+
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    _NarratingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
+    with patch("haku.console.x.claude_chat.cli_over_websocket", _NarratingClaudeClient):
+        await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
+
+    frames = await chat_store.read_frames(str(session_id), after_seq=None, limit=10, kinds=["setup_output"])
+    assert [frame.payload["text"] for frame in frames] == ["Cloning into '/workspace/haku-state'..."]
+
+
 async def test_terminal_runner_retry_deletes_its_stale_claim(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:

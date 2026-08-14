@@ -255,6 +255,35 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     await transport.close()
 
 
+async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
+    """Narration is not worth a session.
+
+    The sink posts into a Matrix room, which rate-limits; this is awaited inside the read loop,
+    so an unguarded raise here ended the conversation and recorded the room's error over
+    whatever the narration was reporting.
+    """
+    console_socket, runner_socket = memory_websocket_pair()
+
+    async def on_progress(line: str) -> None:
+        raise RuntimeError(f"the room said no to {line!r}")
+
+    transport = WebSocketTransport(
+        console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
+    )
+    await transport.connect()
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
+
+    messages = transport.read_messages()
+    await runner_socket.send_text(SetupOutput(data=b"Cloning into '/workspace/haku-state'...\n").model_dump_json())
+    answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
+    await runner_socket.send_text(ClaudeMessage(payload=answer).model_dump_json())
+
+    with anyio.fail_after(1):
+        assert await anext(messages) == answer
+
+    await transport.close()
+
+
 async def test_transport_refuses_a_control_frame_from_the_runner() -> None:
     """`end_input` only travels console -> runner; one coming back is refused at the read.
 

@@ -338,14 +338,24 @@ class MatrixSessionSupervisor:
         # anything reporting a failure.
         await self._chat_store.expire_stale_leases()
 
-        status = await self._chat_store.status(conversation.session_id) if conversation.session_id is not None else None
+        outcome = (
+            await self._chat_store.outcome(conversation.session_id) if conversation.session_id is not None else None
+        )
+        status = outcome.status if outcome is not None else None
         if status in LIVE_SESSION_STATUSES:
             await self._report(str(status), f"session {conversation.session_id} is {status}")
             return
 
         if conversation.session_id is not None:
+            # With the reason, not just the status. Every path that ends a session records a
+            # specific sentence in `error` — which replica went away, what the runtime failed
+            # with, that the runner disconnected — and the room used to be told only `failed`,
+            # so the one place an operator was looking held the least informative version of
+            # what the console knew.
+            reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
             await self._report(
-                f"ended:{status}", f"session {conversation.session_id} ended ({status or 'gone'}); starting a new one"
+                f"ended:{status}",
+                f"session {conversation.session_id} ended ({status or 'gone'}){reason}; starting a new one",
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.

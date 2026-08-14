@@ -1061,6 +1061,12 @@ class ClaudeChatFrame(Base):
     are dropped by the turn loop's extraction, as is a result's cost and usage — and it would
     have to be migrated when the console starts reading the CLI's jsonl directly for an adopted
     turn (cli_protocol_ownership.md, design B).
+
+    **Two things here are not the CLI's protocol**, and both say so in their `kind`. A
+    ``setup_output`` frame is a line the sandbox printed — bootstrap narration and the CLI's own
+    stderr — which belongs in this log because a session that died before the CLI produced a
+    frame has its whole account there. And a ``partial`` row is the console's reconstruction of
+    an answer still streaming; see that column.
     """
 
     __tablename__ = "claude_chat_frames"

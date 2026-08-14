@@ -103,6 +103,9 @@ async def test_replaces_a_failed_session(supervisor, conversations, chat_store, 
     assert await bound_session(conversations) not in (None, dead)
     assert dead in recording_claims.deleted, "the dead session's claim must be swept before a new one is made"
     assert any("ended" in line for line in announced)
+    # The status alone says a session died; only the reason says which failure it was, and the
+    # room is the one place an operator is looking.
+    assert any("the sandbox went away" in line for line in announced)
 
 
 async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(

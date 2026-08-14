@@ -90,6 +90,24 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
                 raise ValueError("console sent a second launch frame mid-conversation")
 
 
+async def _send_cli_errors(websocket: TextWebSocket, stderr: anyio.abc.ByteReceiveStream) -> None:
+    """Forward what the CLI wrote to stderr, to this log and to the console.
+
+    It used to go to `DEVNULL`, which is the one place a failure to start is explained: the
+    console sees the exit status and nothing else, so `Claude Code exited with status 1` was the
+    whole account of a rejected credential or a bad flag.
+
+    Sent as `SetupOutput` because that frame is already "bytes the sandbox wrote" and adding a
+    kind of its own would be a `PROTOCOL_VERSION` bump — which, until the two ends negotiate,
+    breaks every session on release. The console narrates and records it like any other sandbox
+    output; telling the two apart is worth a frame kind once one is affordable.
+    """
+    async for chunk in stderr:
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+        await websocket.send_text(SetupOutput(data=chunk).model_dump_json())
+
+
 async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
     """Run one Claude CLI and copy its native stream-JSON protocol over WebSocket."""
     process = await anyio.open_process(
@@ -98,12 +116,14 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
         env=build_claude_environment(launch),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
     )
     stdin = process.stdin
     stdout = process.stdout
+    stderr = process.stderr
     assert stdin is not None
     assert stdout is not None
+    assert stderr is not None
 
     try:
         async with anyio.create_task_group() as tasks:
@@ -121,6 +141,10 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
                 finally:
                     tasks.cancel_scope.cancel()
 
+            # No `cancel_scope.cancel()` when this one ends: stderr closing says nothing about
+            # whether the conversation is over, and the CLI's exit is `cli_to_websocket`'s to
+            # notice. Draining it also keeps the pipe from filling and blocking the process.
+            tasks.start_soon(_send_cli_errors, websocket, stderr)
             tasks.start_soon(websocket_to_cli)
             tasks.start_soon(cli_to_websocket)
 

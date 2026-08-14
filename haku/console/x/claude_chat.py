@@ -399,6 +399,19 @@ class TurnStart:
     prompt: str
 
 
+@dataclass(frozen=True, slots=True)
+class SessionOutcome:
+    """Where a session got to, and why if it ended badly.
+
+    The two travel together because every caller that acts on a dead session wants to say which
+    one it was: the supervisor announced `ended (failed)` into the room for years while the
+    sentence explaining it sat in `error`, reachable only by querying Postgres by hand.
+    """
+
+    status: ChatSessionStatus
+    error: str | None
+
+
 class ClaudeChatStore:
     """Async Postgres store for Claude chat sessions."""
 
@@ -844,10 +857,14 @@ class ClaudeChatStore:
         async with self._sessions() as db:
             return await db.scalar(select(ClaudeChatSession.room_id).where(ClaudeChatSession.session_id == session_id))
 
-    async def status(self, session_id: UUID) -> ChatSessionStatus | None:
+    async def outcome(self, session_id: UUID) -> SessionOutcome | None:
         async with self._sessions() as db:
             chat = await db.get(ClaudeChatSession, session_id)
-            return chat.status if chat is not None else None
+            return None if chat is None else SessionOutcome(status=chat.status, error=chat.error)
+
+    async def status(self, session_id: UUID) -> ChatSessionStatus | None:
+        outcome = await self.outcome(session_id)
+        return outcome.status if outcome is not None else None
 
     async def renew_lease(self, session_id: UUID) -> None:
         """Assert that this replica still holds *session_id* and is still working on it.
@@ -968,6 +985,20 @@ def _assistant_frame(text: str) -> dict[str, Any]:
     what says it was reconstructed rather than observed.
     """
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+SETUP_OUTPUT_KIND = "setup_output"
+
+
+def _setup_output_frame(text: str) -> dict[str, Any]:
+    """One line the sandbox printed, as a rollout frame.
+
+    Not the CLI's vocabulary — this is the bridge's `SetupOutput`, which is why it gets a kind
+    of its own rather than dressing up as something the agent said. It sits in the same log
+    because the question a reader asks is "what happened in this session", and until the CLI
+    exists the answer is entirely here.
+    """
+    return {"type": SETUP_OUTPUT_KIND, "text": text}
 
 
 def _frame_kind(payload: dict[str, Any]) -> str:
@@ -1264,10 +1295,18 @@ class ClaudeChatService:
         )
 
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
-        """Log every sandbox progress report, and show it to the room if there is one."""
+        """Record every sandbox progress report, log it, and show it to the room if there is one.
+
+        Recorded first because the rollout is the only durable copy. This narration is where a
+        bootstrap says why it failed and where the CLI's own stderr now arrives, and until this
+        it lived in the pod's log and in the room — the first reaped with the sandbox, the
+        second interleaved with everything else. A session that died before producing a single
+        CLI frame therefore explained itself nowhere.
+        """
 
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
+            await self._store.record_frame(session_id, FrameDirection.FROM_AGENT, _setup_output_frame(detail))
             if self._room_surface is not None and room_id is not None:
                 await self._room_surface.report(room_id, detail)
 

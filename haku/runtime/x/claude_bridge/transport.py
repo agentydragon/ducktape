@@ -8,6 +8,7 @@ beside it without sharing its key namespace. What the frames mean is
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -27,6 +28,8 @@ from haku.runtime.x.claude_bridge.protocol import (
 # a caller with nowhere to show them should do — they are narration, and the conversation is
 # unaffected.
 ProgressSink = Callable[[str], Awaitable[None]]
+
+logger = logging.getLogger(__name__)
 
 
 class WebSocketTransport:
@@ -97,7 +100,15 @@ class WebSocketTransport:
             # Blank lines are not reports; a script that spaces its output would otherwise
             # post empty notices into the room.
             if self._on_progress is not None and (text := line.decode(errors="replace").strip()):
-                await self._on_progress(text)
+                # Narration is not worth a session. The sink posts into a Matrix room, which
+                # can rate-limit, lose its binding, or simply be down — and this is awaited
+                # inside the read loop, so an unguarded raise here ends the conversation and
+                # records the sink's error over whatever the narration was reporting. That is
+                # exactly how a rate-limited bootstrap comes to be filed as a runtime failure.
+                try:
+                    await self._on_progress(text)
+                except Exception:
+                    logger.warning("Progress report failed for %r", text, exc_info=True)
 
     async def end_input(self) -> None:
         if self._ready:

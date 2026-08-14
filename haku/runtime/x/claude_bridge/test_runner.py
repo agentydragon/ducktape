@@ -133,6 +133,28 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
     assert runner_socket.closed
 
 
+async def test_what_the_cli_writes_to_stderr_reaches_the_console(tmp_path: Path) -> None:
+    """The one place a CLI that fails to start explains itself.
+
+    It went to `DEVNULL`, so a rejected credential or a bad flag reached the console as
+    `Claude Code exited with status 1` and nothing else.
+    """
+    fake_claude = tmp_path / "claude"
+    fake_claude.write_text(
+        "#!/usr/bin/env python3\nimport sys\nprint('cannot start: no credential', file=sys.stderr, flush=True)\n"
+    )
+    fake_claude.chmod(0o755)
+    launch = ClaudeLaunch(arguments=(), cwd=str(tmp_path), environment={})
+    console_socket, runner_socket = memory_websocket_pair()
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(partial(bridge_websocket_to_claude, runner_socket, claude_path=fake_claude, launch=launch))
+        with anyio.fail_after(5):
+            assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == SetupOutput(
+                data=b"cannot start: no credential\n"
+            )
+
+
 def executable(path: Path, body: str) -> Path:
     path.write_text(f"#!/usr/bin/env bash\n{body}\n")
     path.chmod(0o755)
