@@ -4,7 +4,7 @@ metadata:
   name: cpap-gateway
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/cpap-gateway
+  image: git.allegedly.works/ducktape-ci/cpap-gateway
   interval: 5m
   secretRef:
-    name: gaffer-ghcr-pull
+    name: forgejo-images-creds

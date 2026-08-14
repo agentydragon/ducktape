@@ -1,6 +1,6 @@
 # Build the stateless CPAP gateway qcow2 and publish it as a KubeVirt
-# containerDisk image. Flux tracks the resulting devel-* tags through the
-# cpap-gateway ImagePolicy.
+# containerDisk image in the private Forgejo registry. Flux tracks the
+# resulting devel-* tags through the cpap-gateway ImagePolicy.
 name: cpap-gateway image
 
 on:
@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-push:
@@ -24,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/cpap-gateway
+      IMAGE: git.allegedly.works/ducktape-ci/cpap-gateway
     steps:
       - uses: actions/checkout@v6
 
@@ -69,13 +68,12 @@ jobs:
       # Keep feature-branch/manual runs from publishing a tag that Flux would
       # consider deployable. workflow_dispatch on devel remains useful for a
       # retry after a transient registry failure.
-      - name: Push to GHCR
+      - name: Push to Forgejo registry
         if: github.ref_name == 'devel'
-        env:
-          GHCR_TOKEN: ${{ github.token }}
         run: |
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
-          echo "$GHCR_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          echo "$FORGEJO_IMAGES_PASSWORD" | skopeo login git.allegedly.works \
+            -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
           skopeo copy --insecure-policy \
             "docker-archive:$(readlink -f result)" \
             "docker://$ref"

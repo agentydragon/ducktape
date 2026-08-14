@@ -20,6 +20,8 @@ spec:
   dependsOn:
     - name: kubevirt
       namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: kubevirt.io/v1

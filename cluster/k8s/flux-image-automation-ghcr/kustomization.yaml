@@ -19,8 +19,6 @@ resources:
   - activitywatch-image-policy.yaml
   - cpap-sync-image-repository.yaml
   - cpap-sync-image-policy.yaml
-  - cpap-gateway-image-repository.yaml
-  - cpap-gateway-image-policy.yaml
   - airlock-image-repository.yaml
   - airlock-image-policy.yaml
   - budget-exporter-image-repository.yaml

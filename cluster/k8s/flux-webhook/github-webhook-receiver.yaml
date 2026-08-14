@@ -132,9 +132,6 @@ spec:
       name: matrix-user-provisioner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: cpap-gateway
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: cpap-sync
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

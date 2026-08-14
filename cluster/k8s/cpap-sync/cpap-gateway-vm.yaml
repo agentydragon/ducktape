@@ -57,7 +57,7 @@ spec:
           containerDisk:
             # This is a stateless VM disk. Flux ImageUpdateAutomation updates
             # the tag from the cpap-gateway ImagePolicy after CI publishes it.
-            image: ghcr.io/agentydragon/cpap-gateway:devel-20260813000000-0000000 # {"$imagepolicy": "flux-system:cpap-gateway"}
+            image: git.allegedly.works/ducktape-ci/cpap-gateway:devel-20260813000000-0000000 # {"$imagepolicy": "flux-system:cpap-gateway"}
             imagePullPolicy: IfNotPresent
         - name: cpap-secret
           secret:
