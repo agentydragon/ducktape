@@ -103,6 +103,14 @@ class EZShareClient:
     def __init__(self, base_url: str = DEFAULT_BASE) -> None:
         self._base = base_url.rstrip("/")
 
+    def _proxy_url(self, url: str) -> str:
+        """Route card-returned absolute URLs through the configured gateway."""
+        parsed = urllib.parse.urlsplit(url)
+        if not parsed.scheme or not parsed.netloc:
+            return urllib.parse.urljoin(f"{self._base}/", url)
+        base = urllib.parse.urlsplit(self._base)
+        return urllib.parse.urlunsplit((base.scheme, base.netloc, parsed.path, parsed.query, parsed.fragment))
+
     def _get_bytes(self, path: str, timeout: int = 30) -> bytes:
         with urllib.request.urlopen(f"{self._base}{path}", timeout=timeout) as r:
             data: bytes = r.read()
@@ -141,7 +149,7 @@ class EZShareClient:
 
     def listdir_url(self, url: str) -> list[FileEntry]:
         """List a directory by its GETFILELIST URL. Excludes '.' and '..' entries."""
-        root = self._parse_xml(self._get_url_bytes(url))
+        root = self._parse_xml(self._get_url_bytes(self._proxy_url(url)))
         return [FileEntry._from_xml(f) for f in root.findall(".//file") if f.findtext("name") not in (".", "..")]
 
     def listdir(self, path: str = "A:") -> list[FileEntry]:
@@ -166,7 +174,7 @@ class EZShareClient:
         """Download a file to dest via a .tmp intermediate (atomic rename on completion)."""
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
-        with urllib.request.urlopen(url, timeout=300) as r, tmp.open("wb") as f:
+        with urllib.request.urlopen(self._proxy_url(url), timeout=300) as r, tmp.open("wb") as f:
             while chunk := r.read(65536):
                 f.write(chunk)
         tmp.rename(dest)
