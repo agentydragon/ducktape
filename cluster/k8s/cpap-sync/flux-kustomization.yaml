@@ -5,6 +5,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
+  retryInterval: 1m
   path: ./cluster/k8s/cpap-sync
   prune: true
   sourceRef:
