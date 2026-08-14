@@ -258,6 +258,45 @@ correct behaviour. So:
 `SetupOutput` is the precedent that this works — it exists because the envelope has somewhere to put
 a frame belonging to neither protocol, which is the same property being leaned on here.
 
+#### A supported range, and what it costs to have one
+
+The console keeps a range — `SUPPORTED = 2..N` — rather than a number, and speaks whatever a given
+runner speaks. Right, and four things follow that are easier to build in than to retrofit.
+
+**A range only stays cheap if unknown fields are ignored on receipt.** The console does not merely
+parse frames, it emits them, so "supporting v2" means being able to _produce_ v2-shaped frames. With
+`extra="forbid"` on the receiving end, a v2 runner rejects any frame carrying a field it predates —
+so a console supporting 2..4 would have to keep a serializer per version and pick one per
+connection. Relax forbid to ignore on receipt and that collapses: the console emits its newest
+shape, an older peer drops what it does not know, and behaves as its version correctly did. The
+range and the field policy are the same decision, not two.
+
+**Negotiation needs a fixed point, and today there is none.** The version rides on `start`, which is
+console → runner and the _first_ frame — so the console must choose a version before it has heard
+anything, and the runner cannot state its own until after it has decoded a frame whose shape is what
+is in question. The way out is that the runner speaks first: a minimal `hello` carrying nothing but
+its supported range, whose shape is then **frozen forever**, with the console replying `start` (a new
+session) or `resume` (an adoption) in the version it picked. Every negotiated protocol needs one
+frame that can never change; this is the moment to choose it and keep it as small as it can be.
+
+**Installing that is itself the last breaking change.** A v2 runner waits for `start` and rejects an
+unknown kind, so it will never send or accept a `hello`. The transition is a shim on the console
+side: wait briefly for a `hello`, and on silence assume a pre-negotiation peer and send the v2
+`start` it is waiting for. Bounded, deletable, and worth writing with the deletion condition in the
+comment — once no live session runs a runner image older than the negotiation, the shim goes. One
+more flag day buys the end of flag days.
+
+**Dropping a version from the low end is an operational step, not an edit.** Removing 2 from the
+range means a sandbox still speaking 2 can no longer be adopted by any console — so it has to be
+drained first, and "is anything still on it" is answerable: a session's runner image is fixed at
+claim creation, so the question is whether any live session predates that image. The same reasoning
+as the expand/contract migrations, with the roll being the runner fleet rather than the console's.
+
+**And a range needs a test per end of it.** This repo already runs the discipline for FastMCP — one
+exact version, adapter contract tests before a repin. A range inverts it: the contract tests run at
+the oldest and the newest supported version, or "we support 2" quietly becomes a claim nobody
+checks. `test_transport.py` and `test_runner.py` are where that matrix goes.
+
 ### Letting the console own the whole lifecycle
 
 Today a session's outer bound is `shutdownTime` on the SandboxClaim, set to
