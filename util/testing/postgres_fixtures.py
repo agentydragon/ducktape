@@ -7,9 +7,8 @@ under the wrong name; and no ``# noqa`` needed in conftests, where F401 is ignor
 ``start_postgres_container`` is the underlying preload+start helper for packages that
 wrap it (e.g. props, which adds a tracing span).
 
-The preload is skipped when the daemon already has both images: ``postgres:18`` and
-``testcontainers/ryuk:0.8.1`` are immutable upstream tags, so on a warm worker reused
-across test targets this avoids re-pushing ~30s of layers for nothing.
+Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
+push on a warm worker by itself — this module no longer checks.
 
 Packages keep their own ``postgres_admin_url(postgres_container)`` because the
 SQLAlchemy driver differs (``postgresql+psycopg://`` vs ``postgresql+asyncpg://``).
@@ -23,7 +22,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.oci import image_in_daemon, load_oci_image
+from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +37,7 @@ def start_postgres_container() -> PostgresContainer:
     daemon's own container start, so the least this can do is name where the time went.
     """
     for image in (RYUK, POSTGRES_18):
-        if not image_in_daemon(image.tag):
-            load_oci_image(image)
+        load_oci_image(image)
     container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
     started = time.monotonic()
     logger.info("Starting %s", POSTGRES_18.tag)

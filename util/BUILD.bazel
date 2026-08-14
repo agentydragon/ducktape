@@ -106,6 +106,7 @@ py_library(
     deps = [
         ":crane",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//opentelemetry_api",
     ],
 )
