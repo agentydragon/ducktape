@@ -81,6 +81,16 @@ survivable and whatever is left will then be visible:
   credentials from the reflected `haku-forgejo-git` secret, which this repo already warns drifts
   (root `AGENTS.md`, "Haku Forgejo Tokens"). Produces an entirely empty rollout, since it precedes
   any CLI frame.
+- **A rate-limited burst of bootstrap narration**, which would fail the session _while reporting
+  something else_. The console turns `SetupOutput` into one room notice per line
+  (`transport.py` splits the runner's raw chunks and awaits `on_progress` for each), unpaced —
+  and `prepare_workspace` merges the bootstrap's stderr into that stream, so the **failure** path is
+  the one that produces the burst. Nothing handles a 429: `_unwrap` raises `MatrixError` and drops
+  `retry_after_ms`, and the awaited `on_progress` has no guard, so the raise leaves the transport's
+  read loop and lands in `handle_runner`'s `except*` as `Claude runtime failed: …`. A bootstrap that
+  failed for an ordinary reason would then be recorded as a Matrix error, with its actual message
+  three notices back in a room nobody is reading. Distinguishable in the query below: the error text
+  says `429`.
 - **The CLI exiting on its own**, which would read as `Claude Code exited with status N` with the
   reason discarded by the DEVNULL above.
 - **The 7200s TTL** — a death the console itself scheduled, arriving as `WebSocketDisconnect` and

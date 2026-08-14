@@ -310,6 +310,79 @@ tail of one. Worth deciding before adding cleverness to the tail read; and note 
 the room (below) would put edit events into that same tail, which is a third reason this read needs
 to become selective rather than positional.
 
+## Room events should say what they are, instead of being inferred from their msgtype
+
+Every question the console asks about a room event today is answered by a proxy. "Is this
+conversational?" is answered by `RoomMessageText` versus `RoomMessageNotice`. "Is this ours?" is
+answered by the sender. "Which transcript row is this?" cannot be answered at all. Matrix event
+content takes custom keys, so the console can simply say it — a namespaced object on every event it
+sends, naming the session, the transcript row, the agent's own `msg_…` where there is one, and what
+kind of thing this is (reply, status line, lifecycle notice, bootstrap line, preview).
+
+What that buys, mostly by retiring inferences already documented above as fragile:
+
+- **The history read stops being a msgtype heuristic.** `recent_messages` keeps `m.text` and drops
+  `m.notice` because that happens to separate conversation from chatter today. It stops separating
+  them the moment anything conversational is not an `m.text` — which streaming into an edited notice
+  is exactly — and it can never express "this notice mattered". A `kind` says the thing itself.
+- **It gives the transcript↔room join, which does not exist in either direction.**
+  `claude_chat_messages` holds no event id and the room holds no message id, so "which room event is
+  this row" and "which row is this event" are both unanswerable. That is what an operator redacting
+  or editing a message, or reacting to one, would need to be attributable to anything.
+- **It makes delivery idempotent for free.** Tagging a reply with its `agent_message_id` turns the
+  room itself into the ledger: an adopting console can ask "have I already posted `msg_x`?" instead
+  of keeping a durable side table for it. That is the piece the identity-based replay design
+  (<cli_protocol_ownership.md>) would otherwise have to invent, and it composes exactly — the frame
+  is recognisable on the wire, and its delivery is recognisable in the room.
+
+Three cautions. **Custom content is public** to everyone in the room and federates, so it carries
+ids and kinds, never anything sensitive. **A redaction strips content**, so metadata does not
+survive one — a redacted status line is untagged by definition. And **the existing history has no
+tags**, so every reader has to tolerate absence: an untagged `m.text` from the operator is
+conversational, an untagged `m.notice` is not, which is exactly today's rule kept as the fallback.
+
+The inbound direction wants the same treatment and is half-done: `_as_prompt` renders
+`[{event_id}] {body}` so the agent can cite a message back, but those ids live only inside the
+prompt string. Which room events produced a prompt is therefore recoverable only by parsing prose —
+structured on the way out, unstructured on the way in.
+
+## The rate limit is guessed at, never handled — and the guess only covers the calmest sender
+
+`STATUS_EDIT_INTERVAL_SECONDS = 5.0` is the console's whole answer to Synapse's per-room limit, and
+three things are wrong with it.
+
+**It drops instead of debouncing.** `show_status` returns early inside the floor without keeping the
+value it refused, and `_TurnStatus` has already recorded that state as shown — so the update is lost
+rather than deferred, and the line reads stale until the next change (above). A correct trailing-edge
+debounce keeps the latest pending value and flushes it when the floor passes. That is the fix for the
+status line specifically.
+
+**But a debounce is only correct for latest-wins state**, and most of what the console says is not
+that. A status line is latest-wins: superseding it loses nothing. A reply, a bootstrap line, a
+`holding N message(s)` — dropping any of those loses information. So the room does not want one
+debounce, it wants a **paced send queue**: FIFO for anything that must arrive, with the status line
+collapsing into a single pending slot inside it. One pacer per room, because the limit is per room
+across every kind of send — which the current design cannot express, since the pacing lives inside
+the one method that edits the status line.
+
+**And the loudest paths are the unpaced ones.** The status line is the only sender that paces itself.
+Unpaced: `reply` — now once per assistant message, so a turn that says three things posts three
+messages back to back; `announce`; `_report_holding`; the redaction in `clear_status`; and worst,
+the bootstrap narration, which is **one notice per line** of `SetupOutput` (`transport.py` splits
+the runner's raw chunks and awaits `on_progress` per line) as fast as the bootstrap writes them.
+The calmest sender has all the pacing and the burstiest has none.
+
+**Nothing reads the server's own answer.** `_unwrap` turns any `ErrorResponse` into
+`MatrixError(f"{status_code}: {message}")`, so a 429's `retry_after_ms` — the homeserver telling us
+exactly how long to wait — is discarded at the boundary. nio can retry these itself
+(`AsyncClientConfig(max_limit_exceeded_retries=…)`) and the config sets only `encryption_enabled`
+and `request_timeout`, so it does not. The five seconds is therefore open-loop: a guess at a limit
+whose real value is `rc_message` on that homeserver (Synapse's default is 0.2/s with a burst of 10,
+unless tuned), never checked against what the server actually said.
+
+Fixing that is the cheap half — honour `retry_after_ms`, or let nio do it — and it is also what
+turns the queue above from a guess into a control loop.
+
 ## The transcript and the rollout are two records of one conversation
 
 `claude_chat_messages` is now largely derivable from `claude_chat_frames`: an assistant message _is_
@@ -405,6 +478,12 @@ looking for it.
   user row, which cannot have tool calls at all.
 - **`KubernetesSandboxClaims._clients()`** is double-checked locking with four `assert`s to satisfy
   the type checker. One `_Clients` dataclass built under the lock would need none of them.
+- **`MatrixSyncService._sent_event_ids` can never match.** It is an unbounded in-memory set of every
+  event the console has sent, checked in `_serviced` so the console does not treat its own posts as
+  input. But `MatrixClient._messages` has already dropped every event whose `sender` is the bot —
+  which is every event in that set, since they are all sent as the bot. The second filter is
+  unreachable, and it is the one that costs memory and is lost on restart. The sender check is the
+  real mechanism, and it is one layer down with a comment naming R1.5.
 
 ## Streaming the answer into the room — [later]
 
