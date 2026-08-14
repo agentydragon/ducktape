@@ -68,9 +68,11 @@ from haku.console.mcp_config import (
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
 from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.state_index.embedder import build_bge_small
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -362,10 +364,12 @@ def create_app(
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
                 broker=node_daemon_service,
             )
+        index_searcher = PostgresIndexSearcher(db_sessions, build_bge_small()) if settings.state_index_enabled else None
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,
                 hostexec=hostexec_server,
+                index=index_searcher,
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
                 rollout=claude_chat_store if claude_runtime is not None else None,

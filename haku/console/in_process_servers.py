@@ -15,6 +15,7 @@ import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.routine as routine_tools
+import haku.console.tools.state_index as state_index_tools
 from haku.console.config import HostexecConfig
 from haku.console.mcp_config import (
     InProcessCredentialKind,
@@ -51,6 +52,9 @@ class InProcessServerDependencies:
     # structurally — set only when the Claude runtime is configured, since without it there are
     # no sessions to read.
     rollout: conversations_tools.RolloutReader | None = None
+    # The semantic index over haku-state's notes and past conversations — set only when
+    # `state_index_enabled`, since building one loads the embedding model.
+    index: state_index_tools.IndexSearcher | None = None
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
@@ -75,6 +79,10 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
     if dependencies.rollout is not None:
         servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = const_in_process_server(
             conversations_tools.build_mcp(dependencies.rollout)
+        )
+    if dependencies.index is not None:
+        servers[state_index_tools.HAKU_INDEX_SERVER_ID] = const_in_process_server(
+            state_index_tools.build_mcp(dependencies.index)
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}

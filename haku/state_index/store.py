@@ -35,14 +35,14 @@ from haku.state_index.schema import (
 # across dimensions. MATERIALIZED pins that evaluation order rather than trusting the planner.
 _GIT_SEARCH_SQL = text("""
     WITH candidates AS MATERIALIZED (
-        SELECT t.path, c.chunk_no, c.byte_start, c.byte_end, c.text, c.embedding
+        SELECT t.path, t.blob_sha, c.chunk_no, c.byte_start, c.byte_end, c.text, c.embedding
         FROM state_index.git_tip t
         JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = t.blob_sha
         WHERE c.chunker_version = :chunker_version
           AND c.model_key = :model_key
           AND (CAST(:path_prefix AS text) IS NULL OR starts_with(t.path, CAST(:path_prefix AS text)))
     )
-    SELECT path, chunk_no, byte_start, byte_end, text,
+    SELECT path, blob_sha, chunk_no, byte_start, byte_end, text,
            1 - (embedding <=> CAST(:query AS vector)) AS score
     FROM candidates
     ORDER BY embedding <=> CAST(:query AS vector)
@@ -80,6 +80,9 @@ _CHAT_SEARCH_SQL = text("""
 @dataclass(frozen=True, slots=True)
 class GitSearchHit:
     path: str
+    # The content itself, not just where it sat: a caller with a clone can read the exact bytes
+    # back with `git cat-file`, and a path alone would have moved by the time they did.
+    blob_sha: str
     chunk_no: int
     byte_start: int
     byte_end: int
@@ -96,6 +99,25 @@ class ChatSearchHit:
     last_message_at: datetime.datetime
     text: str
     score: float
+
+
+@dataclass(frozen=True, slots=True)
+class GitIndexSummary:
+    files: int
+    chunks: int
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkCounts:
+    """How much of a corpus a search can currently reach, and how much it cannot.
+
+    `superseded` is chunks under a chunker or model that is no longer current: they are still
+    cached against a rollback, but nothing under the live regime joins them, so they answer
+    nothing until the sync re-embeds their content.
+    """
+
+    current: int
+    superseded: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,6 +380,39 @@ async def search_chat(
         },
     )
     return [ChatSearchHit(**row) for row in result.mappings()]
+
+
+async def git_index_summary(session: AsyncSession, *, chunker_version: int, model_key: str) -> GitIndexSummary:
+    """What the searchable git set holds: the tree's size, and the chunks a search can reach.
+
+    `chunks` joins the tip rather than counting the corpus, so it excludes both the cache's
+    departed content and files that are legitimately never chunked (binaries, oversized blobs).
+    """
+    files = (await session.execute(select(func.count()).select_from(GitTipEntry))).scalar_one()
+    chunks = (
+        await session.execute(
+            select(func.count())
+            .select_from(GitTipEntry)
+            .join(Chunk, Chunk.content_sha == GitTipEntry.blob_sha)
+            .where(Chunk.corpus == Corpus.GIT)
+            .where(Chunk.chunker_version == chunker_version)
+            .where(Chunk.model_key == model_key)
+        )
+    ).scalar_one()
+    return GitIndexSummary(files=files, chunks=chunks)
+
+
+async def chunk_counts(session: AsyncSession, corpus: Corpus, *, chunker_version: int, model_key: str) -> ChunkCounts:
+    """How many of a corpus's chunks are under the live regime, and how many are left behind."""
+    current_regime = (Chunk.chunker_version == chunker_version) & (Chunk.model_key == model_key)
+    current, superseded = (
+        await session.execute(
+            select(func.count().filter(current_regime), func.count().filter(~current_regime))
+            .select_from(Chunk)
+            .where(Chunk.corpus == corpus)
+        )
+    ).one()
+    return ChunkCounts(current=current, superseded=superseded)
 
 
 async def chat_index_summary(session: AsyncSession) -> ChatIndexSummary:

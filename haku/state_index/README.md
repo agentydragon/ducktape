@@ -129,16 +129,41 @@ Deliberately absent — it depends on the evaluation above:
   chain instead (the console's CNPG cluster is the intended home — no new stateful service,
   and `haku/console/README.md` already names Postgres as an accepted private boundary). The chat
   corpus makes that the obvious home rather than one option: its source tables are already there.
-- **The MCP tool surface.** The consumer is meant to be an in-process FastMCP server in
-  haku-console (`haku/console/in_process_servers.py`). A `git` hit returns path + byte range +
-  score so a caller reads current content rather than a cached copy; a `chat` hit returns
-  session + message ids so a caller pages the real rollout through `haku_conversations`. Which
-  agents see it, and under which auto-approval policy, is a config decision in
-  `cluster/k8s/haku/console/config.yaml` — but see **Read scoping** below first.
+- **The MCP tool surface — built, and off.** `haku_index`
+  (<../console/tools/state_index.py>) is an in-process FastMCP server in haku-console:
+  `search_notes`/`read_note`, `search_conversations`/`read_messages`, and `index_status`. Search
+  returns a snippet and a **pointer** — a path plus the blob sha for notes, a session plus room
+  and message ids for conversations — and the read tools resolve them, so a caller never acts on
+  the cached copy in `chunks.text`.
+
+  It is gated behind `HAKU_CONSOLE_STATE_INDEX_ENABLED` (default off), because building the
+  searcher loads the embedding model into the console process: search embeds its query, so the
+  model is on the request path and cannot be lazy without the first search paying for it. Nothing
+  is registered in `cluster/k8s/haku/console/config.yaml` yet — a configured server with no
+  builder fails `validate_in_process_server_bindings` at startup — so turning it on is a config
+  change and a policy decision together, and **Read scoping** below is the gate on the second.
+
+- **A database that has pgvector — the blocker.** The console's CNPG cluster runs
+  `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`
+  (<../../cluster/k8s/haku/console/db/postgres-cluster.yaml>), which does not ship the extension,
+  and nothing else in the cluster uses it. The migration that creates these tables therefore
+  cannot land yet: Alembic runs at startup before the console serves, so a failing
+  `CREATE EXTENSION vector` is a console that will not start. Two ways out, and they are a real
+  choice rather than a formality:
+  1. **Give CNPG pgvector** — a custom image built from the CNPG one plus `postgresql-18-pgvector`
+     (<../../cluster/docs/container-images.md> for how images are built and published here). Keeps
+     the KNN in the database.
+  2. **Drop the extension** — store vectors as `bytea` and do the exact KNN in Python. The design
+     already rejected ANN indexes at this corpus size, so pgvector is only carrying the distance
+     operator; a few thousand chunks × 384 float32 is a few megabytes and a numpy dot product.
+     This removes the deployment blocker entirely and costs one rewrite of `store`'s two queries.
+
 - **The sync trigger.** For `git`, a CronJob with a Forgejo credential that must come from
-  `tf/gitops/haku-state`, not a hand-minted token. For `chat`, nothing external is needed: the
-  console writes the messages itself, so a post-turn call or a `LISTEN/NOTIFY` consumer in-process
-  is the natural shape and a cron is the fallback.
+  `tf/gitops/haku-state`, not a hand-minted token — and it cannot be the console, which
+  deliberately holds no haku-state git credential at all. For `chat`, nothing external is needed:
+  the console writes the messages itself, so a post-turn call or a replica-coordinated sweep
+  alongside `oauth_association_maintenance.py` is the natural shape and a cron is the fallback.
+  Until one exists, `index_status` reports a backlog that nothing is draining.
 - **Eviction.** `last_seen_at` is maintained but nothing sweeps it. At 384 dims a chunk's
   vector is ~1.5 KB, so wait until it shows up on a disk graph. When you do add a sweep, it
   must exclude anything still referenced:

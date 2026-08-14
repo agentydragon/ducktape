@@ -379,6 +379,12 @@ class Settings(BaseSettings):
     # reflections of the same server.
     mcp_catalog_cache_ttl_seconds: float = Field(default=60.0, ge=0.0, le=900.0)
 
+    # Serve the `haku_index` semantic search tools (haku/console/tools/state_index.py). Off by
+    # default because it loads the embedding model into the process at startup: search embeds its
+    # query, so the model is on the request path and cannot be lazy without the first search
+    # paying for it.
+    state_index_enabled: bool = False
+
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
     # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus
