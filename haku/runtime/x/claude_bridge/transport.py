@@ -15,10 +15,13 @@ from typing import Any
 import anyio
 
 from haku.runtime.x.claude_bridge.protocol import (
+    PROTOCOL_VERSION,
     RUNNER_TO_CONSOLE,
+    SUPPORTED_VERSIONS,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Hello,
     SetupOutput,
     TextWebSocket,
     decode_object,
@@ -30,6 +33,14 @@ from haku.runtime.x.claude_bridge.protocol import (
 ProgressSink = Callable[[str], Awaitable[None]]
 
 logger = logging.getLogger(__name__)
+
+# CLEANUP(added 2026-08-14): Delete this wait, and the fallback below it, once no runner image
+#   predating `Hello` can still be running — i.e. once every live SandboxClaim was created after
+#   the release that added it, which `session_ttl_seconds` bounds at two hours. Until then a
+#   runner that never says hello is not broken, only older, and the console must not hang on it.
+#   The cost of keeping it is this wait on every legacy connection; the cost of deleting it early
+#   is every such session failing to start.
+HELLO_SECONDS = 2.0
 
 
 class WebSocketTransport:
@@ -53,10 +64,42 @@ class WebSocketTransport:
         self._closed = False
 
     async def connect(self) -> None:
+        """Settle the version, then send the launch in it.
+
+        Read-before-write, which is the whole of the negotiation: the runner speaks first because
+        it is the end that cannot adapt — its image is fixed when its claim is created, while the
+        console is whatever rolled most recently. A console that chose before hearing would be
+        choosing for a peer it knows nothing about.
+        """
         if self._closed:
             raise RuntimeError("WebSocket transport is closed")
-        await self._websocket.send_text(self._launch.model_dump_json())
+        version = await self._negotiate()
+        await self._websocket.send_text(self._launch.model_copy(update={"protocol_version": version}).model_dump_json())
         self._ready = True
+
+    async def _negotiate(self) -> int:
+        """The highest version both ends speak, or `PROTOCOL_VERSION` for a runner that is older.
+
+        Silence is the old runner: it waits for `start` and says nothing before it, so the only
+        way to tell it from a slow one is to stop waiting. See `HELLO_SECONDS`, which carries the
+        condition for deleting this whole branch.
+        """
+        with anyio.move_on_after(HELLO_SECONDS):
+            match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
+                case Hello(supported=supported):
+                    if not (common := set(supported) & set(SUPPORTED_VERSIONS)):
+                        raise RuntimeError(
+                            f"no protocol version in common: runner speaks {supported}, this console "
+                            f"speaks {SUPPORTED_VERSIONS}"
+                        )
+                    return max(common)
+                case first:
+                    # Not a version problem but a sequencing one, and worth saying so: a runner
+                    # that sends anything before its hello has skipped the handshake, and reading
+                    # its next frame as a launch response would compound the confusion.
+                    raise RuntimeError(f"runner sent {first.kind} before saying hello")
+        logger.info("Runner said no hello in %ss; assuming protocol %d", HELLO_SECONDS, PROTOCOL_VERSION)
+        return PROTOCOL_VERSION
 
     async def write(self, data: str) -> None:
         if not self._ready:
@@ -71,11 +114,16 @@ class WebSocketTransport:
             raise RuntimeError("WebSocket transport is not connected")
         try:
             while self._ready:
-                # Exhaustive: `RunnerToConsole` is these two. A `start` or `end_input` coming
-                # back the wrong way never reaches here — the decoder refuses it.
+                # Exhaustive over `RunnerToConsole`. A `start` or `end_input` coming back the
+                # wrong way never reaches here — the decoder refuses it.
                 match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
                     case ClaudeMessage(payload=payload):
                         yield payload
+                    case Hello():
+                        # `connect` consumed the one hello this connection has. A second is the
+                        # runner restarting a handshake mid-conversation, which nothing here can
+                        # honour — and without this case the `match` would drop it in silence.
+                        raise RuntimeError("runner said hello again mid-conversation")
                     case SetupOutput(data=data):
                         # Narration about the sandbox, not part of the conversation: it must
                         # not reach `ClaudeCli`, which would see an unknown frame type.

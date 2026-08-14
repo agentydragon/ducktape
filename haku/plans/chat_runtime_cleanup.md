@@ -14,21 +14,18 @@ in view, which is said at each such point.
 
 ## How the stages are ordered
 
-Three constraints still bind, and everything else is preference:
+Two constraints still bind, and everything else is preference:
 
-1. **Version negotiation before anything that adds a field to the envelope.** The replay design adds
-   one, and now that adoption is live a breaking envelope change no longer means "some sessions fail
-   during the rollout" — it means "every live session dies on every console release".
-2. **The frontend seam before the backend seam.** The first is smaller, is pure refactoring, and
+1. **The frontend seam before the backend seam.** The first is smaller, is pure refactoring, and
    does not touch the schema until its last step; the second changes where meaning is extracted.
-3. **Contract halves land when their roll converges**, independently of all of this.
+2. **Contract halves land when their roll converges**, independently of all of this.
 
-Three more are discharged, and are why stages 5 and 6 sit where they do: diagnosis came before
+Four are discharged. Version negotiation now precedes the field stage 4 adds; diagnosis came before
 change; a roll is survived before the TTL that was recycling wedged sessions is removed; and a
-session survives being asked for before it is allocated on demand. All three rested on stage 1,
-which has landed — but stage 1 is verified only by tests, so **the first deliberate console roll
-against production is still owed** before anything downstream trusts it
-(<../console/debug/2026_08_13_sessions_boot_and_die.md>).
+session survives being asked for before it is allocated on demand — which is why stages 5 and 6 sit
+where they do. The last three rested on stage 1, which has landed, but **stage 1 is verified only by
+tests**: the first deliberate console roll against production is still owed before anything
+downstream trusts it (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
 ## Stage 2 — make the room behave
 
@@ -46,39 +43,10 @@ forever. What is left is the half about meaning rather than rate._
 
 **Done when** every event the console sends says what it is.
 
-## Stage 3 — version the bridge so it can evolve
-
-_Before stage 4, which adds a field to the envelope._
-
-`PROTOCOL_VERSION` is 2 and rides on `start`, typed `Literal[2]`. Three properties are wrong for a
-world where the runner outlives many console releases: it flows from the end that cannot adapt to
-the end that must (the console never learns the runner's version); exact match cannot negotiate; and
-`extra="forbid"` makes every additive field a fleet-wide break.
-
-- **Evolve by adding kinds, not fields.** An unknown `kind` already fails the union parse —
-  fail-closed exactly where a must-understand change belongs — while an optional field a peer
-  ignores leaves it behaving as its version correctly did. So: unknown kind rejects, unknown field
-  is ignored, must-understand changes arrive as new kinds.
-- **A supported range, not a number**, which only stays cheap given the above: the console emits
-  frames as well as parsing them, so with `forbid` on the far end a range means one serializer per
-  version. The range and the field policy are one decision.
-- **The runner speaks first.** Negotiation needs a fixed point, and today the version rides on the
-  console's first frame — so the console must choose before hearing anything, and the runner cannot
-  state its range until it has decoded a frame whose shape is what is in question. A minimal `hello`
-  carrying only the supported range, its shape then **frozen forever**, with the console replying
-  `start` or `resume` in the chosen version.
-- **A deletable transition shim.** A v2 runner waits for `start` and rejects unknown kinds, so the
-  console waits briefly for a `hello` and on silence sends the v2 `start` the peer expects. One more
-  flag day buys the end of flag days; write the deletion condition into the tombstone.
-- **Contract tests at both ends of the range.** The repo runs this discipline for FastMCP as an
-  exact pin; a range inverts it, or "we support 2" becomes a claim nobody checks.
-
-**Done when** an old runner image and a current console interoperate in a test, and adding a field
-to the envelope breaks nothing.
-
 ## Stage 4 — survive a roll mid-turn
 
-_Needs stage 3. This is where the queues earn their place._
+_Unblocked: stage 3 landed, so the envelope can gain the `frame_uid` below without a flag day.
+This is where the queues earn their place._
 
 - **A bounded outbound buffer in the runner**, re-sent on adopt.
 - **Replay is safe because frames carry identity, not because the cursor is exact.** The console can

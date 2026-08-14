@@ -20,6 +20,7 @@ from haku.runtime.x.claude_bridge.protocol import (
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Hello,
     SetupOutput,
     TextWebSocket,
     decode_object,
@@ -276,6 +277,14 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
 
 
 async def _receive_launch(websocket: TextWebSocket) -> ClaudeLaunch:
+    """Say which versions this image speaks, then read the launch the console chose.
+
+    The hello goes first on **every** connection, not only the first: the console that adopts a
+    session after a roll is a different process from the one that started it, and it has to be
+    told the same thing. It is also cheap to a console too old to expect it — that one never reads
+    before it writes, so the frame simply goes unread.
+    """
+    await websocket.send_text(Hello().model_dump_json())
     if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), ClaudeLaunch):
         raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
     return launch

@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Final, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING"
 
@@ -90,10 +90,19 @@ class ClaudeLaunch(_Frame):
     """
 
     kind: Literal["start"] = "start"
-    # `Literal[2]` rather than a plain int, so a peer on another version fails validation
-    # here rather than somewhere further in with a stranger symptom. The default keeps the
-    # two spellings of the number checked against each other by the type checker.
-    protocol_version: Literal[2] = PROTOCOL_VERSION
+    # The version the console settled on after hearing the runner's `Hello`, which is why this
+    # is no longer `Literal[2]`: a negotiated number cannot be a constant. Validated against
+    # `SUPPORTED_VERSIONS` rather than left open, so a peer on a version this image cannot speak
+    # fails here rather than somewhere further in with a stranger symptom.
+    protocol_version: int = PROTOCOL_VERSION
+
+    @field_validator("protocol_version")
+    @classmethod
+    def _one_we_speak(cls, value: int) -> int:
+        if value not in SUPPORTED_VERSIONS:
+            raise ValueError(f"protocol version {value} is not one of {SUPPORTED_VERSIONS}")
+        return value
+
     arguments: tuple[str, ...]
     cwd: str = Field(min_length=1)
     environment: dict[str, str]
