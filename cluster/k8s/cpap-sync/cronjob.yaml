@@ -33,7 +33,9 @@ spec:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
-                readOnlyRootFilesystem: true
+                # The aspect py_binary launcher materializes its venv under the
+                # image runfiles directory at startup, so this container needs
+                # a writable root filesystem despite the other hardening here.
                 seccompProfile:
                   type: RuntimeDefault
               args:
