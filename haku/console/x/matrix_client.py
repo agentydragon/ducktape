@@ -1,7 +1,6 @@
 """Matrix client for the console's chat surface, over `matrix-nio`.
 
-Two deviations from stock nio, both forced by the console being a leader-elected replica
-set rather than a single long-lived process:
+Three deviations from stock nio:
 
 - **Sync position lives in Postgres**, not nio's on-disk store, because the loop can move
   to a different pod (`matrix_sync.MatrixSyncStore`). `since` is always passed explicitly
@@ -9,6 +8,11 @@ set rather than a single long-lived process:
 - **Failures raise.** nio reports them as result-union values (`SyncError`); the loop needs
   a rejected token to be distinguishable from a transport failure, so every call here
   converts errors to exceptions.
+- **429s are bounded** (`MAX_RATE_LIMIT_RETRIES`), so being rate-limited is something the
+  console finds out about rather than something it silently waits out.
+
+The first two are forced by the console being a leader-elected replica set rather than a
+single long-lived process; the third by `matrix_pacer` needing to hear the answer.
 
 E2EE is off (`haku/plans/matrix_chat_runtime.md` — the room is a plain DM), so no crypto
 store, no `python-olm`.
@@ -66,9 +70,29 @@ _INITIAL_FILTER = {"room": {"timeline": {"limit": 0}}}
 # Errcodes that mean "this token is no longer good", as opposed to a transport failure.
 _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 
+# How many times nio may absorb a 429 inside one request before the error reaches us.
+#
+# **Gotcha: nio's default is unlimited, not off.** `AsyncClient._send` already loops on
+# `M_LIMIT_EXCEEDED`, sleeping the server's `retry_after_ms` (or five seconds when it gives
+# none), and `max_limit_exceeded=None` means it does that forever — so a rate-limited send
+# never returned an error, it just stopped returning. That is worse than a visible failure:
+# the caller is blocked inside `room_send` with nothing in any log, and `matrix_pacer` cannot
+# learn a budget it is never told about. Two retries keep a single burst invisible while
+# making a sustained one arrive somewhere it can be acted on.
+MAX_RATE_LIMIT_RETRIES = 2
+
 
 class MatrixError(Exception):
-    """The homeserver returned an error for a call we made."""
+    """The homeserver returned an error for a call we made.
+
+    `retry_after_ms` is a 429's own answer to "how long", carried rather than formatted into
+    the message because `matrix_pacer` acts on it: it is the only measurement of the room's
+    real budget that this console ever receives.
+    """
+
+    def __init__(self, message: str, *, retry_after_ms: int | None = None):
+        super().__init__(message)
+        self.retry_after_ms = retry_after_ms
 
 
 class MatrixAuthError(MatrixError):
@@ -111,7 +135,7 @@ def _unwrap[R: Response](response: Response, expected: type[R]) -> R:
         return response
     if isinstance(response, ErrorResponse):
         error = MatrixAuthError if response.status_code in _AUTH_ERRCODES else MatrixError
-        raise error(f"{response.status_code}: {response.message}")
+        raise error(f"{response.status_code}: {response.message}", retry_after_ms=response.retry_after_ms)
     raise MatrixError(f"unexpected {type(response).__name__} where {expected.__name__} was required")
 
 
@@ -124,7 +148,11 @@ class MatrixClient:
             homeserver=homeserver.rstrip("/"),
             user=user_id,
             device_id=device_id,
-            config=AsyncClientConfig(encryption_enabled=False, request_timeout=SYNC_TIMEOUT_MS / 1000 + 15),
+            config=AsyncClientConfig(
+                encryption_enabled=False,
+                request_timeout=SYNC_TIMEOUT_MS / 1000 + 15,
+                max_limit_exceeded=MAX_RATE_LIMIT_RETRIES,
+            ),
         )
 
     async def close(self) -> None:

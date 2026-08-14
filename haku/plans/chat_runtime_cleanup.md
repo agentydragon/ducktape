@@ -32,20 +32,10 @@ against production is still owed** before anything downstream trusts it
 
 ## Stage 2 — make the room behave
 
-_Independent of every other stage; can run in parallel with any of them. Its pacing half landed:
-`_TurnStatus` now holds the floor and defers what it refuses, and `show_status` is an idempotent
-"make the line say this". What is left is the pacing that is not the status line's._
+_Independent of every other stage; can run in parallel with any of them. Pacing landed: every send
+goes through `matrix_pacer.RoomPacer`, and a 429 now reaches it instead of being absorbed inside nio
+forever. What is left is the half about meaning rather than rate._
 
-- **One paced send queue per room.** The floor has an owner but only over one kind of send, and the
-  homeserver's limit is per room across all of them. A reply, a bootstrap line, a `holding N
-message(s)` each lose information when dropped, so the room wants FIFO for what must arrive with
-  the status line collapsing into one pending slot — the driver's floor moving into the pacer as one
-  case of it. The loudest senders are the unpaced ones, worst being the bootstrap narration at one
-  notice per line.
-- **Honour the server's answer.** `_unwrap` turns any `ErrorResponse` into
-  `MatrixError(f"{status_code}: {message}")`, discarding a 429's `retry_after_ms`; nio's own
-  `max_limit_exceeded_retries` is unset. Five seconds is a guess at `rc_message` on that homeserver,
-  never checked against what it actually said.
 - **Tag what the console sends.** Every question about a room event is currently answered by a
   proxy: msgtype for "is this conversational", sender for "is this ours", nothing at all for "which
   transcript row is this". A namespaced content object naming the session, the transcript row, the
@@ -54,7 +44,7 @@ message(s)` each lose information when dropped, so the room wants FIFO for what 
   and kinds only; stripped by redaction; absent on existing history, so today's msgtype rule stays
   as the fallback.
 
-**Done when** a burst cannot 429 the session, and every event the console sends says what it is.
+**Done when** every event the console sends says what it is.
 
 ## Stage 3 — version the bridge so it can evolve
 

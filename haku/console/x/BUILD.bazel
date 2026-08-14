@@ -170,10 +170,30 @@ py_test(
 )
 
 py_library(
+    name = "matrix_pacer",
+    srcs = ["matrix_pacer.py"],
+    deps = [":matrix_client"],
+)
+
+py_test(
+    name = "test_matrix_pacer",
+    srcs = ["test_matrix_pacer.py"],
+    deps = [
+        ":matrix_client",
+        ":matrix_pacer",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "matrix_sync",
     srcs = ["matrix_sync.py"],
     deps = [
         ":matrix_client",
+        ":matrix_pacer",
         ":matrix_session",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -188,6 +208,7 @@ py_test(
     deps = [
         ":conftest",
         ":matrix_client",
+        ":matrix_pacer",
         ":matrix_session",
         ":matrix_sync",
         "//:conftest",
