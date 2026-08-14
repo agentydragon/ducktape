@@ -20,6 +20,9 @@ from haku.runtime.x.claude_bridge.protocol import (
     SetupOutput,
 )
 from haku.runtime.x.claude_bridge.runner import (
+    _serve_console,
+    _shutdown,
+    _start_claude,
     bridge_websocket_to_claude,
     build_claude_command,
     build_claude_environment,
@@ -153,6 +156,30 @@ async def test_what_the_cli_writes_to_stderr_reaches_the_console(tmp_path: Path)
             assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == SetupOutput(
                 data=b"cannot start: no credential\n"
             )
+
+
+async def test_the_cli_keeps_running_when_a_console_connection_ends(tmp_path: Path) -> None:
+    """The property the whole roll-survival design rests on.
+
+    `bridge_websocket_to_claude` used to terminate Claude in its `finally`, so one dropped socket
+    ended the conversation; `_serve_console` returning is now just this connection ending.
+    """
+    fake_claude = tmp_path / "claude"
+    fake_claude.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n")
+    fake_claude.chmod(0o755)
+    launch = ClaudeLaunch(arguments=(), cwd=str(tmp_path), environment={})
+    console_socket, runner_socket = memory_websocket_pair()
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](8)
+
+    process = await _start_claude(fake_claude, launch)
+    try:
+        await console_socket.close()
+        with anyio.fail_after(5):
+            await _serve_console(runner_socket, process, outbound_receiver)
+        assert process.returncode is None, "the CLI must outlive the connection that was serving it"
+    finally:
+        outbound_sender.close()
+        await _shutdown(process)
 
 
 def executable(path: Path, body: str) -> Path:

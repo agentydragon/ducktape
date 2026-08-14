@@ -70,6 +70,16 @@ LEASE_RENEW_INTERVAL = timedelta(seconds=30)
 # The creator's grant, covering the gap before a runner attaches and starts renewing. Longer
 # than `LEASE_TTL` because it has to cover an image pull onto a cold node.
 PROVISION_LEASE = timedelta(minutes=10)
+# What a replica going down cleanly leaves behind: long enough for the runner to notice the
+# socket close and redial onto whichever replica is up, short enough that a session nobody comes
+# back for is reclaimed promptly. Shorter than `LEASE_TTL` because nothing is holding it — this
+# is a window for an adopter to appear, not a heartbeat anyone is keeping.
+ADOPTION_GRACE = timedelta(seconds=45)
+
+# Sent to the runner when this replica is going away rather than ending the session, so the
+# reconnect is a decision rather than an inference. 1001 is the WebSocket protocol's own "going
+# away"; the runner stops only for 1008, which is what an admission refusal closes with.
+GOING_AWAY_CODE = 1001
 
 # This process, as the lease records its holder. Kubernetes sets HOSTNAME to the pod name, which
 # is what `kubectl logs` wants as an argument — so a session that died names the thing to go read.
@@ -472,6 +482,16 @@ class ClaudeChatStore:
             return _session_view(record, messages, responding=responding, calls=await _rollout_calls(db, session_id))
 
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
+        """Admit a runner to its session — the first time, and every time after.
+
+        **Taking the lease is the admission.** A reconnect used to be refused unconditionally
+        (`PROVISIONING` and no `bridge_connected_at`), which made the sandbox disposable: the
+        runner had no way back after any disconnect, so Kubernetes restarted it into a refusal
+        until the sweep replaced the whole session. Now a live session admits a runner that can
+        take its lease, and the lease is what stops both replicas adopting one CLI — whoever
+        writes it under this row lock has it, and the other is told to go away for as long as
+        the holder keeps renewing.
+        """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             record = await db.get(ClaudeChatSession, session_id, with_for_update=True)
@@ -479,12 +499,50 @@ class ClaudeChatStore:
                 return BridgeAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
                 return BridgeAuthentication.TERMINAL
-            if record.status != ChatSessionStatus.PROVISIONING or record.bridge_connected_at is not None:
+            if record.status == ChatSessionStatus.PROVISIONING and record.bridge_connected_at is None:
+                record.bridge_connected_at = now
+                record.status = ChatSessionStatus.READY
+            elif record.lease_holder not in (None, REPLICA) and record.lease_expires_at > now:
+                # Somebody else is still serving this session and saying so. Refusing is what
+                # keeps one CLI answering to one console.
                 return BridgeAuthentication.REJECTED
-            record.bridge_connected_at = now
-            record.status = ChatSessionStatus.READY
+            record.lease_holder = REPLICA
+            record.lease_expires_at = now + LEASE_TTL
             record.updated_at = now
             return BridgeAuthentication.ACCEPTED
+
+    async def release_lease(self, session_id: UUID) -> None:
+        """Hand a live session back for adoption, without declaring it dead.
+
+        A replica going down cleanly knows the difference between "this session is over" and
+        "I am no longer the one holding it", and only the second is true during a roll. Clearing
+        the holder is what lets the returning runner be admitted immediately rather than waiting
+        out the previous holder's lease.
+
+        The short grant that replaces the deadline is what stops `expire_stale_leases` from
+        failing the session in the seconds before the runner redials — and what makes it fail
+        the session if none ever does.
+        """
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+            if chat is not None and chat.status in LIVE_SESSION_STATUSES:
+                chat.lease_holder = None
+                chat.lease_expires_at = datetime.now(UTC) + ADOPTION_GRACE
+                chat.updated_at = datetime.now(UTC)
+
+    async def abandon_open_turn(self, session_id: UUID) -> UUID | None:
+        """Close whatever turn the previous holder left open, and say which it was.
+
+        An adopting console inherits the session, not the exchange: the frames answering that
+        prompt went to a socket that no longer exists. Leaving it open would also wedge the
+        session outright, since `uq_claude_chat_turns_open` permits exactly one and
+        `next_prompt` opens another.
+        """
+        async with self._sessions.begin() as db:
+            turn_id = await _open_turn(db, session_id)
+        if turn_id is not None:
+            await self.end_turn(turn_id, TurnOutcome.FAILED)
+        return turn_id
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
         """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
@@ -1335,6 +1393,11 @@ class ClaudeChatService:
         if authentication == BridgeAuthentication.REJECTED:
             await websocket.close(code=1008, reason="invalid or consumed runner credential")
             return
+        # Whatever the previous holder was in the middle of is not ours to finish: its frames
+        # went to a socket that is gone. Closing it is also what keeps the session usable, since
+        # only one turn may be open at a time.
+        if (abandoned := await self._store.abandon_open_turn(session_id)) is not None:
+            logger.warning("Claude chat session %s adopted with turn %s still open", session_id, abandoned)
         # Rendered before the socket is accepted, alongside the other admission failures, so a
         # broken prompt ends the session where the supervisor can see it (and say so in the
         # room) instead of raising past the cleanup below and leaving the claim stranded.
@@ -1367,6 +1430,10 @@ class ClaudeChatService:
             RolloutRecorder(self._store, session_id),
         )
         abort_event = asyncio.Event()
+        # Whether the sandbox should outlive this connection. False for an ending session — one
+        # closed, or failed in a way the CLI cannot be asked to continue past — and true when it
+        # is only this replica that is going away.
+        keep_sandbox = False
         # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
         # the two are about different things: the inner one unwraps whatever the task group
         # failed with, the outer one is this whole activity being cancelled.
@@ -1432,7 +1499,13 @@ class ClaudeChatService:
                         abort_watch.cancel()
                         renewal.cancel()
             except* WebSocketDisconnect:
-                await self._store.fail(session_id, "sandbox runner disconnected")
+                # The runner went away, which is no longer the same as the session being over:
+                # it keeps the CLI alive across a lost socket and redials. Hand the session back
+                # and let the lease decide — a runner that returns is admitted, and one that
+                # never does lets the grant lapse into the sweep.
+                logger.info("Claude chat session %s lost its runner; leaving it for adoption", session_id)
+                keep_sandbox = True
+                await self._store.release_lease(session_id)
             except* Exception as errors:
                 # `fail` records the message; the traceback is what says which call produced
                 # it, and the listener mismatch was three frames below anything it named.
@@ -1440,11 +1513,16 @@ class ClaudeChatService:
                 await self._store.fail(session_id, f"Claude runtime failed: {_first_message(errors)}")
         except asyncio.CancelledError:
             # `CancelledError` is a `BaseException`, so neither clause above sees it. This is
-            # the shutdown path — a rolling update, an evicted pod — and leaving it unrecorded
-            # is what let a room sit on "responding" forever: the status stayed live, and the
-            # only process that could correct it was the one going away. Record, then re-raise;
-            # cancellation is never swallowed.
-            await self._store.fail(session_id, "console replica shut down mid-session")
+            # this replica going away — a rolling update, an evicted pod — which says nothing
+            # about the session. It used to be recorded as a failure, which is what made every
+            # console roll end every conversation: the row went terminal, so the runner's
+            # reconnect was refused as `TERMINAL` and the supervisor built a replacement.
+            #
+            # Hand it back instead. The sandbox outlives this process, the runner redials, and
+            # whichever replica answers adopts it. Nothing is swallowed: the grant `release_lease`
+            # leaves is short, and the sweep fails the session if no runner returns.
+            keep_sandbox = True
+            await self._store.release_lease(session_id)
             raise
         finally:
             # Shielded because everything here is an `await` and this task may already be
@@ -1453,9 +1531,24 @@ class ClaudeChatService:
             # SIGKILL runs no finalizer at all, which is why the lease, not this block, is what
             # actually guarantees the session stops looking alive.
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
-                await asyncio.shield(asyncio.wait_for(self._finalize(session_id, client), timeout=10))
+                await asyncio.shield(
+                    asyncio.wait_for(self._finalize(session_id, websocket, client, keep_sandbox), timeout=10)
+                )
 
-    async def _finalize(self, session_id: UUID, client: ClaudeCli) -> None:
+    async def _finalize(self, session_id: UUID, websocket: WebSocket, client: ClaudeCli, keep_sandbox: bool) -> None:
+        """Let go of one runner connection, and of the session itself unless it outlives us.
+
+        `keep_sandbox` is the difference between "this conversation is over" and "this replica
+        is". Deleting the claim on the second is what made a roll destroy the sandbox it was
+        supposed to leave running.
+        """
+        if keep_sandbox:
+            # Said with a code rather than by dropping the socket, so the runner reconnects
+            # because it was told to rather than because it guessed. It stops only for 1008.
+            with contextlib.suppress(Exception):
+                await websocket.close(code=GOING_AWAY_CODE, reason="console replica going away")
+            await client.aclose()
+            return
         await client.aclose()
         await self._cleanup_terminal_claim(session_id)
         await self._store.closed(session_id)

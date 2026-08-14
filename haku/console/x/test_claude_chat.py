@@ -31,6 +31,7 @@ from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, Cla
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import (
     ABORTED_NOTICE,
+    GOING_AWAY_CODE,
     REPLICA,
     STATUS_AFTER_SECONDS,
     TYPING_REFRESH_SECONDS,
@@ -487,6 +488,78 @@ async def test_the_sandbox_narration_outlives_the_pod_that_wrote_it(
 
     frames = await chat_store.read_frames(str(session_id), after_seq=None, limit=10, kinds=["setup_output"])
     assert [frame.payload["text"] for frame in frames] == ["Cloning into '/workspace/haku-state'..."]
+
+
+class _RollingClaudeClient(_LifecycleClaudeClient):
+    """Stands in for this replica being cancelled mid-session, which is what a roll is."""
+
+    async def connect(self) -> dict[str, Any]:
+        await super().connect()
+        raise asyncio.CancelledError
+
+
+async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The measured cause of sessions that record a boot and a death.
+
+    A roll cancels `handle_runner`, which recorded `console replica shut down mid-session` and
+    failed the row — so the runner's reconnect was refused as terminal and the whole session was
+    replaced. Six rolls a day made that the ordinary end of a conversation.
+    """
+    websocket = _LifecycleWebSocket()
+
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    with (
+        patch("haku.console.x.claude_chat.cli_over_websocket", _RollingClaudeClient),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
+
+    assert await chat_store.status(session_id) == ChatSessionStatus.READY, "a roll is not a session ending"
+    assert recording_claims.deleted == [], "the sandbox outlives the replica that was serving it"
+    assert websocket.closed == (GOING_AWAY_CODE, "console replica going away"), (
+        "the runner reconnects because it was told to, not because it guessed"
+    )
+
+
+async def test_a_returning_runner_is_admitted_and_takes_the_lease(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """A reconnect used to be refused unconditionally, which is what made the sandbox disposable."""
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    token = recording_claims.tokens[session_id]
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+
+    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+        assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.REJECTED, (
+            "a replica still renewing its lease keeps the session it is serving"
+        )
+        await chat_store.release_lease(session_id)
+        assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
+            "a session handed back is adoptable by whichever replica the runner reaches"
+        )
+
+
+async def test_adoption_closes_the_turn_the_previous_holder_left_open(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The frames answering that prompt went to a socket that no longer exists — and one open
+    turn per session is a schema property, so leaving it would wedge the session outright.
+    """
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+
+    assert await chat_store.abandon_open_turn(session_id) == started.turn_id
+    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    assert turn.outcome == TurnOutcome.FAILED
+    assert await chat_store.abandon_open_turn(session_id) is None, "nothing left open to abandon"
 
 
 async def test_terminal_runner_retry_deletes_its_stale_claim(
@@ -1572,13 +1645,18 @@ async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, mig
     assert (await chat_store.get(operator_id, view.session_id)).error == "something else went wrong first"
 
 
-async def test_a_cancelled_runner_records_the_shutdown_instead_of_going_quiet(
-    chat_store, chat_service, operator_id
+async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
+    chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
     """Pod termination cancels this task, and `CancelledError` is not an `Exception`.
 
-    So neither `except` clause saw it: the session kept its live status, the replica went
-    away, and the room waited forever. The status must end terminal, and say so.
+    So neither `except` clause saw it, and the session kept a live status nobody was
+    maintaining — the room waited forever. Failing the row closed that hole and cost every roll
+    its conversation, because a failed session is terminal and the runner's reconnect is refused.
+
+    Handing it back keeps both properties: the session stays adoptable by whichever replica the
+    runner reaches, and the short grant left behind is what the sweep still catches when no
+    runner ever does.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
@@ -1593,8 +1671,13 @@ async def test_a_cancelled_runner_records_the_shutdown_instead_of_going_quiet(
         with contextlib.suppress(asyncio.CancelledError):
             await runner
 
+    assert await chat_store.status(view.session_id) == ChatSessionStatus.READY
+    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+        assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
+    assert await chat_store.expire_stale_leases() == 1
     assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
-    assert "shut down" in (await chat_store.get(operator_id, view.session_id)).error
 
 
 if __name__ == "__main__":

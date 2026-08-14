@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from websockets.asyncio.client import ClientConnection, connect
+from websockets.exceptions import ConnectionClosed
 
 from haku.runtime.x.claude_bridge.protocol import (
     CONSOLE_TO_RUNNER,
@@ -21,6 +24,23 @@ from haku.runtime.x.claude_bridge.protocol import (
     decode_object,
     encode_object,
 )
+
+logger = logging.getLogger(__name__)
+
+# How long the CLI's output waits for a console before its pipes fill and it pauses. Sized for a
+# roll's worth of frames rather than a turn's: enough that a reconnect inside a few seconds costs
+# nothing, small enough to be a buffer rather than a store.
+OUTBOUND_BUFFER = 1000
+
+RECONNECT_BASE_DELAY = 1.0
+RECONNECT_MAX_DELAY = 20.0
+# A sandbox held for a console that never returns is a wedged sandbox, which is worse than the
+# wedged room it was protecting. Generous against a roll, decisive against an outage.
+MAX_DISCONNECTED_SECONDS = 900.0
+
+# The console's "you are not admitted": a consumed credential, a session already over. Nothing a
+# retry can change, and retrying anyway is the crashloop this design exists to end.
+POLICY_VIOLATION_CODE = 1008
 
 
 class ClientWebSocketAdapter(TextWebSocket):
@@ -56,22 +76,22 @@ def build_claude_environment(launch: ClaudeLaunch) -> dict[str, str]:
     return environment
 
 
-async def _forward_cli_line(websocket: TextWebSocket, line: bytes) -> None:
+async def _queue_cli_line(outbound: MemoryObjectSendStream[str], line: bytes) -> None:
     """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
-    await websocket.send_text(ClaudeMessage(payload=decode_object(stripped.decode())).model_dump_json())
+    await outbound.send(ClaudeMessage(payload=decode_object(stripped.decode())).model_dump_json())
 
 
-async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_frames(outbound: MemoryObjectSendStream[str], stdout: anyio.abc.ByteReceiveStream) -> None:
     pending = b""
     async for chunk in stdout:
         pending += chunk
         while b"\n" in pending:
             line, pending = pending.split(b"\n", 1)
-            await _forward_cli_line(websocket, line)
+            await _queue_cli_line(outbound, line)
 
-    await _forward_cli_line(websocket, pending)
+    await _queue_cli_line(outbound, pending)
 
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
@@ -84,13 +104,13 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
                 await stdin.send((encode_object(payload) + "\n").encode())
             case ClaudeLaunch():
                 # Not a direction error — `start` is the console's to send — but a sequencing
-                # one: it comes once, before this loop, so a second means the console thinks
-                # it is talking to a runner that has not launched. The types cannot say that,
-                # so this check stays where the two above went.
+                # one: it opens a connection, so a second one mid-conversation means the console
+                # thinks it is talking to a runner that has not launched. The types cannot say
+                # that, so this check stays where the two above went.
                 raise ValueError("console sent a second launch frame mid-conversation")
 
 
-async def _send_cli_errors(websocket: TextWebSocket, stderr: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_errors(outbound: MemoryObjectSendStream[str], stderr: anyio.abc.ByteReceiveStream) -> None:
     """Forward what the CLI wrote to stderr, to this log and to the console.
 
     It used to go to `DEVNULL`, which is the one place a failure to start is explained: the
@@ -105,12 +125,11 @@ async def _send_cli_errors(websocket: TextWebSocket, stderr: anyio.abc.ByteRecei
     async for chunk in stderr:
         sys.stdout.buffer.write(chunk)
         sys.stdout.buffer.flush()
-        await websocket.send_text(SetupOutput(data=chunk).model_dump_json())
+        await outbound.send(SetupOutput(data=chunk).model_dump_json())
 
 
-async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
-    """Run one Claude CLI and copy its native stream-JSON protocol over WebSocket."""
-    process = await anyio.open_process(
+async def _start_claude(claude_path: Path, launch: ClaudeLaunch) -> anyio.abc.Process:
+    return await anyio.open_process(
         build_claude_command(claude_path, launch),
         cwd=launch.cwd,
         env=build_claude_environment(launch),
@@ -118,48 +137,108 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    stdin = process.stdin
-    stdout = process.stdout
-    stderr = process.stderr
-    assert stdin is not None
+
+
+async def _shutdown(process: anyio.abc.Process) -> int | None:
+    """Stop the CLI, reporting the status it chose for itself — or None if we chose for it.
+
+    The distinction is the difference between a failure and a teardown: a process we signalled
+    reports the signal, so treating that as an exit status files every clean shutdown as
+    `Claude Code exited with status -15`.
+    """
+    # A CLI that has already exited is reaped here, so its own status is the one reported.
+    with anyio.move_on_after(1):
+        await process.wait()
+    exited_with = process.returncode
+
+    if process.returncode is None:
+        process.terminate()
+    with anyio.move_on_after(5, shield=True):
+        await process.wait()
+    if process.returncode is None:
+        process.kill()
+        await process.wait()
+    return exited_with
+
+
+async def _drain_cli(
+    process: anyio.abc.Process, outbound: MemoryObjectSendStream[str], scope: anyio.CancelScope
+) -> None:
+    """Read the CLI for as long as it lives, whether or not a console is listening.
+
+    Long-lived rather than per-connection, which is what lets the process outlive a socket: its
+    pipes keep draining into `outbound`, so a disconnected console costs the sandbox a pause
+    rather than a wedge, and nothing it said is thrown away because there was nowhere to put it.
+    When the buffer fills the reads stop, the pipes fill behind them, and the CLI waits — the
+    honest behaviour for an agent nobody is listening to.
+
+    Cancels *scope* when stdout ends, because that is the CLI exiting and there is then nothing
+    left to serve any console with.
+    """
+    stdout, stderr = process.stdout, process.stderr
     assert stdout is not None
     assert stderr is not None
+    async with anyio.create_task_group() as readers:
+        # stderr ending says nothing about the conversation; stdout ending is the CLI's exit.
+        readers.start_soon(_forward_cli_errors, outbound, stderr)
+        await _forward_cli_frames(outbound, stdout)
+        readers.cancel_scope.cancel()
+    scope.cancel()
 
+
+async def _serve_console(
+    websocket: TextWebSocket, process: anyio.abc.Process, outbound: MemoryObjectReceiveStream[str]
+) -> None:
+    """Copy frames both ways for one console connection, returning when that connection ends.
+
+    A frame taken from the buffer and then lost to a dying socket is gone: this delivers at most
+    once, which is enough while adoption is limited to sessions between turns. Making a
+    reconnect lossless is the resume cursor plus frame identity in
+    <../../../plans/cli_protocol_ownership.md>, and it is the next stage of this work.
+    """
+    stdin = process.stdin
+    assert stdin is not None
+    async with anyio.create_task_group() as tasks:
+
+        async def console_to_cli() -> None:
+            try:
+                await _send_websocket_input(websocket, stdin)
+            except (EOFError, anyio.EndOfStream, ConnectionClosed):
+                pass
+            finally:
+                tasks.cancel_scope.cancel()
+
+        async def cli_to_console() -> None:
+            try:
+                async for frame in outbound:
+                    await websocket.send_text(frame)
+            except (ConnectionClosed, anyio.BrokenResourceError):
+                pass
+            finally:
+                tasks.cancel_scope.cancel()
+
+        tasks.start_soon(console_to_cli)
+        tasks.start_soon(cli_to_console)
+
+
+async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
+    """Run one Claude CLI and serve exactly one console connection with it.
+
+    The single-connection shape, kept because it is the whole of what a session without
+    reconnection needs; `run` composes the same pieces with a process that outlives the socket.
+    """
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
+    process = await _start_claude(claude_path, launch)
     try:
         async with anyio.create_task_group() as tasks:
-
-            async def websocket_to_cli() -> None:
-                try:
-                    await _send_websocket_input(websocket, stdin)
-                except (EOFError, anyio.EndOfStream):
-                    await stdin.aclose()
-                    tasks.cancel_scope.cancel()
-
-            async def cli_to_websocket() -> None:
-                try:
-                    await _send_cli_output(websocket, stdout)
-                finally:
-                    tasks.cancel_scope.cancel()
-
-            # No `cancel_scope.cancel()` when this one ends: stderr closing says nothing about
-            # whether the conversation is over, and the CLI's exit is `cli_to_websocket`'s to
-            # notice. Draining it also keeps the pipe from filling and blocking the process.
-            tasks.start_soon(_send_cli_errors, websocket, stderr)
-            tasks.start_soon(websocket_to_cli)
-            tasks.start_soon(cli_to_websocket)
-
-        return_code = await process.wait()
-        if return_code != 0:
-            raise RuntimeError(f"Claude Code exited with status {return_code}")
+            tasks.start_soon(_drain_cli, process, outbound_sender, tasks.cancel_scope)
+            await _serve_console(websocket, process, outbound_receiver)
+            tasks.cancel_scope.cancel()
     finally:
-        if process.returncode is None:
-            process.terminate()
-        with anyio.move_on_after(5, shield=True):
-            await process.wait()
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
+        exited_with = await _shutdown(process)
         await websocket.close()
+    if exited_with not in (0, None):
+        raise RuntimeError(f"Claude Code exited with status {exited_with}")
 
 
 async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSocket | None = None) -> None:
@@ -198,19 +277,78 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSoc
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
 
 
+async def _receive_launch(websocket: TextWebSocket) -> ClaudeLaunch:
+    if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), ClaudeLaunch):
+        raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
+    return launch
+
+
+def _reconnect_delay(attempt: int) -> float:
+    return min(RECONNECT_BASE_DELAY * 2.0**attempt, RECONNECT_MAX_DELAY)
+
+
 async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:
-    """Connect to Console and proxy the CLI's own protocol between it and Claude Code."""
+    """Serve one Claude CLI to whichever console is up, across as many connections as that takes.
+
+    **The CLI outlives the connection.** It used to die with it — one socket, one process, and
+    `bridge_websocket_to_claude` terminating Claude in its `finally` — so a console roll ended
+    the conversation, and the reconnect Kubernetes then forced was refused by a console that
+    admitted a session only once. Six rolls a day made that the normal end of a session.
+
+    So this dials, serves, and dials again, holding the process across the gap. What the console
+    sends on a later connection is a `start` frame it built fresh, and it is deliberately
+    **ignored**: the launch decided the argv, the system prompt and the MCP wiring of a process
+    that is already running, and none of those can be re-applied to it. The runner is the honest
+    owner of "the handshake already happened", because it is the end that owns the process.
+
+    Giving up is bounded. A sandbox held for a console that never returns trades a wedged room
+    for a wedged sandbox, so after `MAX_DISCONNECTED_SECONDS` without one this exits and lets the
+    claim be reclaimed.
+    """
     headers: dict[str, str] | None = None
     if bearer_token:
         headers = {"Authorization": f"Bearer {bearer_token}"}
 
-    async with connect(websocket_url, additional_headers=headers) as connection:
-        websocket = ClientWebSocketAdapter(connection)
-        if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), ClaudeLaunch):
-            raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
-        if setup_path is not None:
-            await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
-        await bridge_websocket_to_claude(websocket, claude_path=claude_path, launch=launch)
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
+    process: anyio.abc.Process | None = None
+    attempt = 0
+    gave_up_at = anyio.current_time() + MAX_DISCONNECTED_SECONDS
+
+    try:
+        async with anyio.create_task_group() as session:
+            while True:
+                try:
+                    async with connect(websocket_url, additional_headers=headers) as connection:
+                        websocket = ClientWebSocketAdapter(connection)
+                        launch = await _receive_launch(websocket)
+                        if process is None:
+                            if setup_path is not None:
+                                await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
+                            process = await _start_claude(claude_path, launch)
+                            # Long-lived, so nothing the CLI writes is lost to a closed socket and
+                            # its pipes never fill: they drain into the buffer either way, and the
+                            # buffer's backpressure pauses the CLI rather than dropping what it said.
+                            session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
+                        attempt = 0
+                        gave_up_at = anyio.current_time() + MAX_DISCONNECTED_SECONDS
+                        await _serve_console(websocket, process, outbound_receiver)
+                except ConnectionClosed as closed:
+                    # 1008 is the console refusing this runner — a consumed credential, a session
+                    # already over. Retrying cannot change either, and retrying anyway is the
+                    # crashloop this whole design is undoing.
+                    if closed.code == POLICY_VIOLATION_CODE:
+                        logger.info("Console refused this runner (%s); stopping", closed.reason)
+                        return
+                except OSError as error:
+                    logger.info("Console unreachable (%s); redialling", error)
+                if anyio.current_time() >= gave_up_at:
+                    logger.error("No console for %ds; giving up this sandbox", MAX_DISCONNECTED_SECONDS)
+                    return
+                await anyio.sleep(_reconnect_delay(attempt))
+                attempt += 1
+    finally:
+        if process is not None and (exited_with := await _shutdown(process)) not in (0, None):
+            raise RuntimeError(f"Claude Code exited with status {exited_with}")
 
 
 def _optional_path(value: str | None) -> Path | None:
