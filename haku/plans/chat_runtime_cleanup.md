@@ -6,8 +6,12 @@ here is a bug report in the sense of "production is broken": the runtime works a
 
 The second review (2026-08-13) read the code de novo, after the first review's findings had landed.
 Its theme is different from the first's: the data model is now mostly honest, and what remains is
-**one seam drawn in the wrong place** — the messaging surface — plus the cost of the transcript and
-the rollout being two records of the same thing.
+**two seams** — the messaging surface, drawn in the wrong place, and the agent backend, not drawn at
+all — plus the cost of the transcript and the rollout being two records of the same thing.
+
+The runtime is single-Claude-CLI, single-Matrix-room by construction, and both are wanted plural
+eventually. That is not a demand to generalize now; it is what makes some of the tidying below the
+wrong tidying if done without it in view, which is said at each such point.
 
 Ordered by payoff, not by size.
 
@@ -79,6 +83,81 @@ MatrixSession` variants all collapse into it, and `create()` stops taking a surf
 This is the largest item here and the one with the clearest payoff. It is also, unlike the rest,
 a migration.
 
+## A second agent backend, and where it would have to plug in
+
+Wanted eventually rather than now: the Codex CLI, or direct model calls with no CLI at all, beside
+the Claude Code CLI this was built around. Nothing here needs building yet. It is written down
+because the cheap moment to draw this seam is before there are two backends, and because it
+**changes what "clean" means for two items below**.
+
+Four layers are Claude-shaped today, and only one of them is genuinely coupled:
+
+1. **Launch and transport** — `claude_bridge`, `ClaudeSession`, `build_claude_launch`, and the
+   SandboxClaim's warm pool. Already a package boundary; a second backend is a second implementation
+   behind it.
+2. **Wire → meaning. This is the coupling.** `_run_turn` matches on `frame.get("type")`
+   (`stream_event`, `assistant`, `result`) and six module helpers parse Anthropic content blocks:
+   `_content_blocks`, `_text_delta`, `_agent_message_id`, `_coarse_status`, `_rollout_calls`,
+   `_assistant_frame`. `end_turn` keys `total_cost_usd`/`usage`/`duration_ms` off the `result` frame.
+   The turn loop _is_ a Claude CLI frame interpreter, and each of those readers would need a second
+   case.
+3. **The conversation record** — `claude_chat_messages`, whose shape is already neutral, beside
+   `claude_chat_frames`, which is verbatim wire and therefore necessarily per-backend.
+4. **The frontends** — the seam above, and independent of this one: what a session talks to and what
+   answers it are different questions.
+
+**The event the loop actually wants.** Every branch of `_run_turn` reduces to one of five things,
+none of which is Anthropic-specific:
+
+```python
+TextDelta(text)                                  # something is being written
+MessageCompleted(agent_message_id, text, calls)  # a message finished, with what it asked for
+ToolResult(call_id, content, is_error)           # …and what came back
+Activity(description)                            # what to put on the room's status line
+TurnCompleted(outcome, text, cost, usage, duration_ms)
+```
+
+One adapter per backend produces that stream, the loop dispatches on it, and the six helpers move
+inside the Claude adapter. `ClaudeCli.frames()` already sits exactly where that adapter goes — it
+yields wire dicts, which is precisely why the console became the interpreter.
+<cli_protocol_ownership.md>'s "type only the frames we act on" landed for the control channel and
+deferred the conversation channel on the grounds that nothing acted on those frames yet. Something
+does: the five branches above.
+
+**The rollout generalizes; its name does not.** `direction` is already named for the agent rather
+than for the console and the runner, `kind` is already free text, and `payload` is already opaque
+JSONB — so another backend's wire fits the table as it stands. What does not fit is console code
+reading `kind` without knowing which backend wrote it: `_rollout_calls` filters `assistant`/`user`,
+which are Anthropic's words for those frames. The backend belongs on the session row, and any reader
+of `kind` belongs behind the adapter.
+
+**This corrects the `tool_uses` item below.** That item's plan is to delete the column and read tool
+calls from the rollout. With one backend that is strictly better, because the frames hold the results
+the column never did. With two it makes tool calls visible only for sessions whose backend happens to
+speak Anthropic frames — a Codex session would render no tool cards at all. The neutral fix is the
+same shape one table further along: a `tool_call(message_id, call_id, name, input, result, is_error)`
+row written by the adapter, which is what `tool_uses` should have been. It answers the lossy-copy
+objection by holding the result, and it is where the rollout join lands anyway. Delete `tool_uses`
+into _that_, not into a frame parse.
+
+**And it settles "projection or primary".** With one backend the transcript looks redundant beside
+the rollout. With several, the transcript is the only cross-backend record of the conversation and
+the rollout is per-backend evidence beneath it. So: transcript primary, rollout an audit log — the
+opposite of where the duplication item below leans, and the reason to decide it deliberately.
+
+**What direct model calls break that a second CLI does not.** The session lifecycle —
+`provisioning` → the runner dials in → `bridge_connected_at` → `ready`, with a bridge token and a
+SandboxClaim — is the statement "a remote process connects back to us". A direct backend has no such
+process: the session is ready when created and the console drives the turn in-process. The lease
+still means something (a replica died mid-turn); the rendezvous does not. So the backend also decides
+which of those statuses are reachable, which is worth knowing before `ChatSessionStatus` is treated
+as universal.
+
+**Naming, cheap and expensive.** `ClaudeChatStore`, `ClaudeChatService`, `ClaudeChatSessionView` are
+free to rename when the seam lands. The `claude_chat_*` tables and `/api/claude/sessions` are not,
+and renaming them buys nothing a comment does not. Neutral names in code, historical names in
+Postgres and in the URL — said once here so it does not get re-litigated later.
+
 ## Every stream delta re-reads the whole session
 
 `update_assistant` NOTIFYs on each delta; `_sse_stream` wakes and calls `store.get`; `store.get`
@@ -132,9 +211,12 @@ synthesized rather than observed.
 
 Worth deciding rather than drifting: is the transcript a **projection** of the rollout — derived,
 rebuildable, holding only what the wire does not say — or is it the primary record with the rollout
-as an audit log beside it? Today it is written as if it were primary and read as if it were
-derived. Choosing "projection" retires `tool_uses`, `agent_message_id` and the double write; choosing
-"primary" means saying so and dropping the derivation in `_message_view`.
+as an audit log beside it? Today it is written as if it were primary and read as if it were derived.
+
+A second backend decides this, and decides it against the projection: the rollout is one agent
+protocol's wire, so it cannot be the record a Codex or direct-API session shares. Transcript primary,
+rollout per-backend evidence — which means the double write and `agent_message_id` are what to remove
+here, and the calls move into a table rather than into a frame parse (both above).
 
 ## `bridge_token_fingerprint = b""` is a boolean wearing a credential's clothes
 
@@ -267,6 +349,11 @@ than observed (a turn whose text arrived only on the `result` frame).
 replica's `_message_view` selects the mapped column by name. The synthesized-message case has to
 stop needing it first: either those rows get their calls recorded as frames, or they keep having
 none, which is what they have today.
+
+**Where it should be deleted to has changed**: into a `tool_call` table written by the backend
+adapter, not into a parse of the Claude CLI's frames, which only sessions on that backend have. See
+"a second agent backend" above — the synthesized-message case dissolves there too, since a
+synthesized message and an observed one both produce adapter events.
 
 ### An expired lease should mean unowned, not dead
 
