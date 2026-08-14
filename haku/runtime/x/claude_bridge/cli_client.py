@@ -86,7 +86,9 @@ class FrameSink(Protocol):
 
     async def sent(self, payload: dict[str, Any]) -> None: ...
 
-    async def received(self, payload: dict[str, Any]) -> None: ...
+    # False means the sink has seen this exact frame before, and the reader must not route it a
+    # second time. A sink with no notion of that returns True for everything.
+    async def received(self, payload: dict[str, Any]) -> bool: ...
 
 
 class ClaudeCliError(Exception):
@@ -196,8 +198,13 @@ class ClaudeCli:
                 # Before the routing, deliberately: control frames never reach `frames()`, so a
                 # recorder hung off the conversation queue would silently drop the control
                 # channel from the record — invisible until someone tried to debug an interrupt.
-                if self._frames_to is not None:
-                    await self._frames_to.received(frame)
+                # The record is also what recognises a replay: an adopted connection re-sends
+                # whatever the previous console may not have acknowledged, and a frame already in
+                # the log must not be routed again — a second `assistant` would post the same
+                # answer into the room twice.
+                if self._frames_to is not None and not await self._frames_to.received(frame):
+                    logger.info("Skipping a frame this session already has: %s", frame.get("type"))
+                    continue
                 match frame.get("type"):
                     case "control_response":
                         self._resolve(frame)

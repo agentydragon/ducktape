@@ -27,9 +27,11 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import delete, func, select
+from sqlalchemy import CursorResult, delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LIVE_SESSION_STATUSES,
@@ -717,8 +719,15 @@ class ClaudeChatStore:
 
     async def record_frame(
         self, session_id: UUID, direction: FrameDirection, kind: str, payload: dict[str, Any]
-    ) -> None:
-        """Append one frame to the session's rollout, under the kind its own protocol gives it.
+    ) -> bool:
+        """Append one frame to the session's rollout, unless this session already has it.
+
+        Returns whether the frame was recorded. **False means a replay** — the same
+        agent-assigned identity already in this session's log — and the caller's job is then to
+        not act on it a second time, which is the whole point of deduplicating here rather than
+        letting the row be written twice and reconciling later. A frame with no identity
+        (`frame_identity.frame_uid` explains which those are) is always recorded, because "no
+        identity" is not "the same as the last one".
 
         *kind* is passed rather than read out of the payload because the payload's discriminator
         is not the console's to assume: a CLI frame keeps it in `type`, the bridge envelope keeps
@@ -732,17 +741,31 @@ class ClaudeChatStore:
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            db.add(
-                ClaudeChatFrame(
+            # `ON CONFLICT DO NOTHING` against the partial unique index rather than a read
+            # followed by a write: two replicas can be replaying the same buffer at once during
+            # an adoption, and a check-then-insert would let both through.
+            insert = (
+                pg_insert(ClaudeChatFrame)
+                .values(
                     session_id=session_id,
                     direction=direction,
                     kind=kind,
                     payload=payload,
                     partial=False,
+                    frame_uid=frame_uid(kind, payload),
                     created_at=now,
                     updated_at=now,
                 )
+                # `index_where` as well as the columns, because the index is partial and Postgres
+                # will not infer one without its predicate. A row whose `frame_uid` is NULL does
+                # not satisfy that predicate, so it is simply inserted — which is the behaviour
+                # "no identity is not the same as the last one" needs.
+                .on_conflict_do_nothing(
+                    index_elements=["session_id", "frame_uid"], index_where=text("frame_uid IS NOT NULL")
+                )
             )
+            recorded = cast("CursorResult[Any]", await db.execute(insert))
+        return recorded.rowcount == 1
 
     async def list_conversations(self, *, limit: int) -> list[Conversation]:
         """Past sessions, newest first, for the `haku_conversations` read tools.
@@ -1091,12 +1114,19 @@ class RolloutRecorder:
     async def sent(self, payload: dict[str, Any]) -> None:
         await self._record(FrameDirection.TO_AGENT, payload)
 
-    async def received(self, payload: dict[str, Any]) -> None:
-        await self._record(FrameDirection.FROM_AGENT, payload)
+    async def received(self, payload: dict[str, Any]) -> bool:
+        return await self._record(FrameDirection.FROM_AGENT, payload)
 
-    async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> None:
-        if _frame_kind(payload) != _PARTIAL_FRAME_KIND:
-            await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
+    async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> bool:
+        """Record the frame, answering whether the caller should act on it.
+
+        A delta is skipped and reported as fresh: the store keeps one rewritten `partial` row for
+        the answer in flight instead, and the turn loop still has to append it. Only a frame the
+        log already holds under the same agent-assigned identity is a replay.
+        """
+        if _frame_kind(payload) == _PARTIAL_FRAME_KIND:
+            return True
+        return await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
 
 
 # How long a turn runs before the room is told anything about it (R6.2). Below this the

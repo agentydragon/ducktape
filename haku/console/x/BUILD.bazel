@@ -7,6 +7,7 @@ py_library(
     srcs = ["claude_chat.py"],
     deps = [
         ":chat_notifications",
+        "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",

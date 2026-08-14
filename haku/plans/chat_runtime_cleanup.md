@@ -48,21 +48,13 @@ forever. What is left is the half about meaning rather than rate._
 _Unblocked: stage 3 landed, so the envelope can gain the `frame_uid` below without a flag day.
 This is where the queues earn their place._
 
-- **A bounded outbound buffer in the runner**, re-sent on adopt.
-- **Replay is safe because frames carry identity, not because the cursor is exact.** The console can
-  die between recording a frame and acknowledging it, so a frame is replayed however exact the
-  cursor was — which makes the cursor an optimisation and identity the correctness argument. The
-  frames the console keeps already carry agent-assigned identity: `assistant` → `message.id`, `user`
-  → the `tool_result`'s `tool_use_id`, `result` → its turn, `command_lifecycle` →
-  `(command_uuid, state)`, `system/task_*` → `task_id`.
-- **Except deltas, which is the one class replay corrupts.** A `stream_event` has no identity and
-  `streamed += delta` double-appends. It is also the class that never needs replaying, and the
-  recorder already drops them — so "buffer everything except deltas" is a rule that already exists
-  for another reason.
-- **Dedupe at ingestion, not at storage**, since a replayed `assistant` frame that reaches
-  `_run_turn` posts to the room a second time. A nullable `frame_uid` with a partial unique index on
-  `(session_id, frame_uid)` makes it a schema property; deriving Matrix's `txn_id` from the message
-  id (instead of `uuid4().hex`) makes the homeserver a second line of defence.
+- **A bounded outbound buffer in the runner**, re-sent on adopt. The recognising half landed:
+  `frame_identity.frame_uid` names what a frame is, `uq_claude_chat_frames_uid` makes a repeat a
+  no-op, and `ClaudeCli._read` drops a frame the log already holds rather than routing it twice.
+  What is missing is anything that replays — the runner still delivers at most once.
+- **Derive Matrix's `txn_id` from the message id** instead of `uuid4().hex`, so the homeserver is a
+  second line of defence against a replayed `assistant` reaching the room twice. Cheap now that
+  `works.allegedly.haku` already carries the id on the event.
 - **Close the claimed-but-never-delivered window.** `next_prompt` claims the prompt and opens the
   turn in one transaction; `_run_turn` writes it to the CLI afterwards. A replica dying in between
   leaves a claimed prompt never asked and a turn that never ends — harmless while the session dies

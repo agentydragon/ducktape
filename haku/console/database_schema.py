@@ -1093,12 +1093,28 @@ class ClaudeChatFrame(Base):
     # that is the turn worth having. It costs one extra write per delta, alongside the one
     # `update_assistant` already does.
     partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # The agent's own identity for this frame, where it has one — see
+    # <../cli_protocol/frame_identity.py> for which kinds do and why deltas must not.
+    #
+    # NULL is the common case and always will be: a delta, a console-authored row, and every row
+    # recorded before this column existed. It means "no identity to compare", not "not yet
+    # computed", so a reader must not treat two NULLs as the same frame.
+    frame_uid: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
         Index("idx_claude_chat_frames_session", "session_id", "frame_seq"),
+        # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
+        # because most rows have no identity; a plain unique index would be almost all nulls.
+        Index(
+            "uq_claude_chat_frames_uid",
+            "session_id",
+            "frame_uid",
+            unique=True,
+            postgresql_where=text("frame_uid IS NOT NULL"),
+        ),
         # One in-flight reconstruction per session, as a schema property rather than a rule the
         # turn loop has to keep: there is only ever one assistant message streaming at a time.
         Index("uq_claude_chat_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),

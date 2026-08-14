@@ -775,6 +775,44 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
     assert [frame.kind for frame in frames] == ["assistant", "result"]
 
 
+async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> None:
+    """The property the whole of stage 4 rests on. An adopted connection re-sends whatever the
+    previous console may not have acknowledged, and the agent's own id is what recognises it —
+    the cursor is an optimisation, this is the correctness argument."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    frame = {"type": "assistant", "message": {"id": "msg_01abc", "content": []}}
+
+    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
+    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is False
+
+    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=None)
+    assert [frame.kind for frame in frames] == ["assistant"]
+
+
+async def test_two_sessions_may_hold_the_same_agent_id(chat_store, operator_id) -> None:
+    """The index is per session, because a replacement session re-awakened from the room can be
+    handed the same message ids by an agent with no idea it is a second session."""
+    mine, _ = await chat_store.create(operator_id, SpaSession())
+    theirs, _ = await chat_store.create(operator_id, SpaSession())
+    frame = {"type": "assistant", "message": {"id": "msg_01abc", "content": []}}
+
+    assert await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
+    assert await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
+
+
+async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_id) -> None:
+    """ "No identity" is not "the same as the last one". Deltas and console-authored rows have
+    none, and two of them are two frames."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    delta = {"type": "stream_event", "event": {"type": "content_block_delta"}}
+
+    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
+    assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
+
+    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=None)
+    assert len(frames) == 2
+
+
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
     mine, _ = await chat_store.create(operator_id, SpaSession())
     theirs, _ = await chat_store.create(operator_id, SpaSession())
