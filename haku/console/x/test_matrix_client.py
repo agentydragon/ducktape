@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 import pytest_bazel
 from nio.responses import RoomMessagesResponse, SyncResponse
 
 from haku.console.x import matrix_client
-from haku.console.x.matrix_client import MatrixClient
+from haku.console.x.matrix_client import HAKU_CONTENT_KEY, EventTag, MatrixClient, RoomEventKind
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
@@ -201,6 +202,29 @@ async def test_history_stops_at_the_start_of_the_room():
     recent = await client.recent_messages("tok", ROOM, since="s1", limit=20)
 
     assert [message.body for message in recent] == ["all there is"]
+
+
+def test_a_tag_survives_the_wire() -> None:
+    tag = EventTag(
+        kind=RoomEventKind.REPLY,
+        session_id=UUID("11111111-2222-3333-4444-555555555555"),
+        message_id=UUID("99999999-8888-7777-6666-555555555555"),
+        agent_message_id="msg_01abc",
+    )
+
+    assert EventTag.parse({HAKU_CONTENT_KEY: tag.content()}) == tag
+
+
+def test_an_untagged_event_is_readable_as_untagged() -> None:
+    """Every event predating this, and every event the operator sends. Neither can be
+    interpreted, and both already have a reading — the msgtype and sender rules."""
+    assert EventTag.parse({"msgtype": "m.text", "body": "hello"}) is None
+
+
+def test_a_kind_this_release_does_not_know_is_refused_rather_than_guessed() -> None:
+    """A newer console talking. Reading it as some default would be worse than admitting it is
+    unreadable, since every caller already handles an untagged event."""
+    assert EventTag.parse({HAKU_CONTENT_KEY: {"kind": "something_later"}}) is None
 
 
 if __name__ == "__main__":

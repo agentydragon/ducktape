@@ -1276,7 +1276,14 @@ class RoomSurface(Protocol):
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
 
-    async def deliver(self, room_id: str, text: str) -> None: ...
+    async def deliver(
+        self,
+        room_id: str,
+        text: str,
+        session_id: UUID,
+        message_id: UUID | None = ...,
+        agent_message_id: str | None = ...,
+    ) -> None: ...
 
     async def report(self, room_id: str, detail: str) -> None: ...
 
@@ -1709,14 +1716,17 @@ class ClaudeChatService:
                         # The real frame is already in the log — the recorder wrote it when
                         # the socket delivered it — so the stand-in has nothing to stand for.
                         await self._store.clear_partial_frame(session_id)
-                        assistant_id = None
+                        spoken_id, assistant_id = assistant_id, None
                         streamed = ""
                         # Speak each message as it finishes rather than only the final answer
                         # (R11.1). A turn that says what it is about to do, works, and then
                         # reports back is three messages in the transcript and used to be one in
                         # the room — so the room saw the conclusion and never the reasoning.
                         if said:
-                            await self._deliver_reply(session_id, room_id, said)
+                            # The row and the agent's own id travel with it, so the room event
+                            # states which message it is showing instead of leaving that to be
+                            # inferred from order and timing.
+                            await self._deliver_reply(session_id, room_id, said, spoken_id, _agent_message_id(frame))
                             spoke = True
                     case "result":
                         result = frame
@@ -1769,7 +1779,14 @@ class ClaudeChatService:
             # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
             await status.finish()
 
-    async def _deliver_reply(self, session_id: UUID, room_id: str | None, text: str) -> None:
+    async def _deliver_reply(
+        self,
+        session_id: UUID,
+        room_id: str | None,
+        text: str,
+        message_id: UUID | None = None,
+        agent_message_id: str | None = None,
+    ) -> None:
         """Say *text* into the room, if this session serves one.
 
         Called for each assistant message as it finishes and once more at the turn's end for
@@ -1785,7 +1802,7 @@ class ClaudeChatService:
         if self._room_surface is None or room_id is None:
             return
         try:
-            await self._room_surface.deliver(room_id, text)
+            await self._room_surface.deliver(room_id, text, session_id, message_id, agent_message_id)
         except Exception:
             logger.exception("Reply delivery failed for session %s", session_id)
 

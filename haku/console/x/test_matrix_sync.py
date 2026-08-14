@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
+from uuid import UUID
 
 import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
-from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
+from haku.console.x.matrix_client import EventTag, InboundMessage, Invite, MatrixAuthError, RoomEventKind, SyncResult
 from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 
@@ -26,6 +27,7 @@ class _FakeMatrix:
     notices: list[tuple[str, str]] = field(default_factory=list)
     edits: list[tuple[str, str]] = field(default_factory=list)
     redacted: list[str] = field(default_factory=list)
+    tags: list[EventTag] = field(default_factory=list)
     since: str | None = None
     token_valid: bool = True
     logins: int = 0
@@ -44,16 +46,19 @@ class _FakeMatrix:
     async def join(self, token: str, room_id: str) -> None:
         self.joined.append(room_id)
 
-    async def send_text(self, token: str, room_id: str, body: str, txn_id: str) -> str:
+    async def send_text(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         self.sent.append((room_id, body))
+        self.tags.append(tag)
         return f"$sent-{len(self.sent)}"
 
-    async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
+    async def send_notice(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         self.notices.append((room_id, body))
+        self.tags.append(tag)
         return f"$notice-{len(self.notices)}"
 
-    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str) -> None:
+    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str, tag: EventTag) -> None:
         self.edits.append((event_id, body))
+        self.tags.append(tag)
 
     async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
         self.redacted.append(event_id)
@@ -129,6 +134,9 @@ async def watermark(store: MatrixSyncStore) -> str | None:
 async def cached_token(store: MatrixSyncStore) -> str | None:
     state = await store.load(MATRIX_USER)
     return state.access_token if state is not None else None
+
+
+SESSION = UUID("11111111-2222-3333-4444-555555555555")
 
 
 def _message(body: str, sender: str = MATRIX_OPERATOR, event_id: str = "$evt") -> InboundMessage:
@@ -244,7 +252,7 @@ async def test_reply_posts_the_answer_as_text(service, matrix, sync_store, bound
     matrix.result = SyncResult("s2", (), ())
     await sync_store.save_token(MATRIX_USER, "cached")
 
-    await service.reply("the answer")
+    await service.reply("the answer", EventTag(kind=RoomEventKind.REPLY, session_id=SESSION))
     await settled(service)
 
     assert matrix.sent == [(MATRIX_ROOM, "the answer")]
@@ -374,6 +382,45 @@ async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, 
     await settled(service)
 
     assert matrix.redacted == []
+
+
+async def test_a_reply_says_which_transcript_row_it_is(service, matrix, sync_store, bound_room) -> None:
+    """The statement that replaces a guess. Which message an event shows used to be answerable
+    only by matching order and timing against the transcript; stage 4's dedupe needs it to be a
+    lookup, and that is cheap only if the event said so when it was sent."""
+    message_id = UUID("99999999-8888-7777-6666-555555555555")
+    await service.reply(
+        "the answer",
+        EventTag(kind=RoomEventKind.REPLY, session_id=SESSION, message_id=message_id, agent_message_id="msg_01abc"),
+    )
+    await settled(service)
+
+    [tag] = matrix.tags
+    assert (tag.kind, tag.session_id, tag.message_id, tag.agent_message_id) == (
+        RoomEventKind.REPLY,
+        SESSION,
+        message_id,
+        "msg_01abc",
+    )
+
+
+async def test_each_kind_of_notice_says_which_it_is(service, matrix, turns, bound_room) -> None:
+    """Msgtype answered "is this conversational" only because everything worth excluding happened
+    to be a notice. These are four different things and now say so."""
+    matrix.result = SyncResult("s2", (_message("hello"),), ())
+    turns.accepts = False
+    await service.sync_once("tok")
+    await service.announce("provisioning a sandbox")
+    await service.announce("cloning haku-state", RoomEventKind.NARRATION)
+    await service.show_status("running Bash", SESSION)
+    await settled(service)
+
+    assert [tag.kind for tag in matrix.tags] == [
+        RoomEventKind.HOLDING,
+        RoomEventKind.LIFECYCLE,
+        RoomEventKind.NARRATION,
+        RoomEventKind.STATUS,
+    ]
 
 
 if __name__ == "__main__":

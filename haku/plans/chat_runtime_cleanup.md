@@ -27,21 +27,6 @@ where they do. The last three rested on stage 1, which has landed, but **stage 1
 tests**: the first deliberate console roll against production is still owed before anything
 downstream trusts it (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
-## Stage 2 — make the room behave
-
-_Independent of every other stage; can run in parallel with any of them. Pacing landed: every send
-goes through `matrix_pacer.RoomPacer`, and a 429 now reaches it instead of being absorbed inside nio
-forever. What is left is the half about meaning rather than rate._
-
-- **Tag what the console sends.** Every question about a room event is currently answered by a
-  proxy: msgtype for "is this conversational", sender for "is this ours", nothing at all for "which
-  transcript row is this". A namespaced content object naming the session, the transcript row, the
-  agent's `msg_…` and a `kind` replaces all three with statements — and makes delivery idempotent
-  for free, which is the ledger stage 4 would otherwise have to invent. Public and federated, so ids
-  and kinds only; stripped by redaction; absent on existing history, so today's msgtype rule stays
-  as the fallback.
-
-**Done when** every event the console sends says what it is.
 
 ## Stage 4 — survive a roll mid-turn
 

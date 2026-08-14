@@ -16,7 +16,7 @@ from haku.console.database_schema import ClaudeChatSession
 from haku.console.x.chat_notifications import ChatNotifications
 from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
-from haku.console.x.matrix_client import InboundMessage, MatrixError
+from haku.console.x.matrix_client import EventTag, InboundMessage, MatrixError, RoomEventKind
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
 from haku.console.x.system_prompt import SystemPromptTemplate
 
@@ -234,13 +234,13 @@ class _RecordingRoom:
     async def recent_history(self, limit: int) -> Sequence[InboundMessage]:
         return await self._history(limit)
 
-    async def announce(self, body: str) -> None:
+    async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
         raise AssertionError("the prompt path does not speak into the room")
 
-    async def reply(self, body: str) -> None:
+    async def reply(self, body: str, tag: EventTag) -> None:
         raise AssertionError("the prompt path does not speak into the room")
 
-    async def show_status(self, body: str) -> None:
+    async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         self.shown.append(body)
 
     async def clear_status(self) -> None:

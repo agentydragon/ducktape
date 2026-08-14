@@ -850,18 +850,29 @@ class _RecordingRoomSurface:
 
     def __init__(self) -> None:
         self.delivered: list[str] = []
+        # What each delivery said it was: the transcript row and the agent's own id, which the
+        # room event now states rather than leaving to be matched by position.
+        self.tagged: list[tuple[UUID | None, str | None]] = []
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return "you are Haku"
 
-    async def deliver(self, room_id: str, text: str) -> None:
+    async def deliver(
+        self,
+        room_id: str,
+        text: str,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        agent_message_id: str | None = None,
+    ) -> None:
         assert room_id == ROOM
         self.delivered.append(text)
+        self.tagged.append((message_id, agent_message_id))
 
     async def report(self, room_id: str, detail: str) -> None:
         return None
 
-    async def show_status(self, room_id: str, text: str) -> None:
+    async def show_status(self, room_id: str, text: str, session_id: UUID | None = None) -> None:
         return None
 
     async def clear_status(self, room_id: str) -> None:
