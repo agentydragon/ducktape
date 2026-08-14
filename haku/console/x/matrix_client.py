@@ -40,6 +40,7 @@ from nio.responses import (
     SyncResponse,
     WhoamiResponse,
 )
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from haku.console.x.matrix_markdown import to_formatted_body
 
@@ -106,8 +107,7 @@ class RoomEventKind(StrEnum):
     ROOM = "room"
 
 
-@dataclass(frozen=True)
-class EventTag:
+class EventTag(BaseModel):
     """What the console states about an event it is sending.
 
     **Ids and kinds only.** This room is public and federated, so the content travels to every
@@ -119,21 +119,20 @@ class EventTag:
     absent on everything that is not a reply, because nothing else corresponds to a row.
     """
 
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
     kind: RoomEventKind
     session_id: UUID | None = None
     message_id: UUID | None = None
     agent_message_id: str | None = None
 
     def content(self) -> dict[str, Any]:
-        """The tag as it goes on the wire, with absent fields left out rather than sent null."""
-        stated: dict[str, Any] = {"kind": self.kind}
-        if self.session_id is not None:
-            stated["session_id"] = str(self.session_id)
-        if self.message_id is not None:
-            stated["message_id"] = str(self.message_id)
-        if self.agent_message_id is not None:
-            stated["agent_message_id"] = self.agent_message_id
-        return stated
+        """The tag as it goes on the wire, with absent fields left out rather than sent null.
+
+        `mode="json"` is what turns the UUIDs into strings, so this is the wire form rather than
+        the Python one; `exclude_none` is what keeps an absent field absent.
+        """
+        return self.model_dump(mode="json", exclude_none=True)
 
     @classmethod
     def parse(cls, content: dict[str, Any]) -> EventTag | None:
@@ -142,32 +141,18 @@ class EventTag:
         None covers two different things and deliberately does not distinguish them: an event
         somebody else sent, and one this console sent before tagging existed. Neither can be
         interpreted, so both fall back to the msgtype and sender rules that predate this.
+
+        `extra="ignore"` rather than `forbid`, for the same reason the bridge envelope ignores
+        them: a newer console adding a field must not make its events unreadable here. An unknown
+        `kind` is the opposite case and does fail — a kind is what this is dispatched on.
         """
         if not isinstance(stated := content.get(HAKU_CONTENT_KEY), dict):
             return None
         try:
-            kind = RoomEventKind(stated["kind"])
-        except (KeyError, ValueError):
-            # A kind this release does not know is a newer console talking, which is the one
-            # case where guessing is worse than admitting we cannot read it.
+            return cls.model_validate(stated)
+        except ValidationError:
             logger.warning("Matrix: unreadable Haku tag %r", stated)
             return None
-        return cls(
-            kind=kind,
-            session_id=_optional_uuid(stated.get("session_id")),
-            message_id=_optional_uuid(stated.get("message_id")),
-            agent_message_id=stated.get("agent_message_id"),
-        )
-
-
-def _optional_uuid(value: Any) -> UUID | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return UUID(value)
-    except ValueError:
-        logger.warning("Matrix: Haku tag carried an unparseable id %r", value)
-        return None
 
 
 class MatrixError(Exception):
