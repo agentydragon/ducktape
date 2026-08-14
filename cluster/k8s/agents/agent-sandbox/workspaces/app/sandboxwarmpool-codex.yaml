@@ -1,5 +1,4 @@
-# One pre-warmed codex-lane workspace (see sandboxwarmpool-zai.yaml for the
-# cost/latency tradeoff).
+# One pre-warmed codex-lane workspace.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxWarmPool
 metadata:

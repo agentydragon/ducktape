@@ -318,7 +318,6 @@ rec {
   gnome-shell-aiquota = aiquota;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
-  zai-cli = pkgs.callPackage ./zai-cli.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
   litert-lm = pkgs.callPackage ./litert-lm.nix { };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };

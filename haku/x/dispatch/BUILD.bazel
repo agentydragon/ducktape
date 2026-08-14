@@ -1,0 +1,204 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "result_tokens",
+    srcs = ["result_tokens.py"],
+)
+
+py_library(
+    name = "prompt_lint",
+    srcs = ["prompt_lint.py"],
+)
+
+py_library(
+    name = "classifier",
+    srcs = ["classifier.py"],
+    deps = [
+        ":models",
+        "@pypi//anthropic",
+    ],
+)
+
+py_library(
+    name = "db",
+    srcs = ["db.py"],
+    deps = [
+        ":models",
+        # asyncpg is imported dynamically by SQLAlchemy's postgresql+asyncpg
+        # dialect — without the explicit dep it's absent from the image
+        # (ModuleNotFoundError at startup; tests run sqlite+aiosqlite and
+        # can't catch it).
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "litellm_keys",
+    srcs = ["litellm_keys.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_library(
+    name = "k8s_jobs",
+    srcs = ["k8s_jobs.py"],
+    deps = [
+        ":models",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        ":classifier",
+        ":config",
+        ":db",
+        ":k8s_jobs",
+        ":litellm_keys",
+        ":models",
+        ":prompt_lint",
+        ":result_tokens",
+        "@pypi//anthropic",
+        "@pypi//fastapi",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "haku.x.dispatch.app",
+    deps = [":app"],
+)
+
+# ── OCI Image ─────────────────────────────────────────────────────────────────
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "app.py",
+    deps = [":app"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["haku-dispatcher:latest"],
+    visibility = ["//visibility:public"],
+)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":db",
+        ":k8s_jobs",
+        ":litellm_keys",
+        ":models",
+        "@pypi//aiosqlite",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_result_tokens",
+    srcs = ["test_result_tokens.py"],
+    deps = [
+        ":result_tokens",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_prompt_lint",
+    srcs = ["test_prompt_lint.py"],
+    deps = [
+        ":prompt_lint",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_k8s_jobs",
+    srcs = ["test_k8s_jobs.py"],
+    data = ["//cluster/k8s/x/haku/dispatch/dispatcher:job-template.yaml"],
+    deps = [
+        ":k8s_jobs",
+        ":models",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_zones_config",
+    srcs = ["test_zones_config.py"],
+    data = ["//cluster/k8s/x/haku/dispatch/dispatcher:zones.yaml"],
+    deps = [
+        ":config",
+        "//cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":conftest",
+        ":k8s_jobs",
+        ":result_tokens",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

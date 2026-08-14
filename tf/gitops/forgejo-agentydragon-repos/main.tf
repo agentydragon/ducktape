@@ -1,6 +1,6 @@
 # Forgejo repo access for agentydragon-owned source mirrors.
 #
-# Provisions the AI-agent service users (`agent-box-codex`, `agent-box-zai`,
+# Provisions the AI-agent service users (`agent-box-codex`,
 # `codex-pod`, …), attaches their SSH push keys, adopts the existing
 # `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and grants Haku
 # read access. Provider wiring mirrors tf/gitops/forgejo-claude.
@@ -33,10 +33,6 @@ locals {
     agent-box-codex = {
       username = forgejo_user.agent_box_codex.login
       password = random_password.agent_box_codex.result
-    }
-    agent-box-zai = {
-      username = forgejo_user.agent_box_zai.login
-      password = random_password.agent_box_zai.result
     }
     codex-pod = {
       username = forgejo_user.codex_pod.login
@@ -116,43 +112,6 @@ resource "forgejo_collaborator" "agent_box_codex_ducktape" {
 resource "forgejo_collaborator" "agent_box_codex_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
   user          = forgejo_user.agent_box_codex.login
-  permission    = "read"
-}
-
-# --- agent-box-zai service user + read collaboration (fork model) ---
-# Same shape as agent-box-codex above: the zai agent authenticates to Forgejo
-# over SSH (key below), so the password is never delivered anywhere.
-resource "random_password" "agent_box_zai" {
-  length  = 48
-  special = false
-}
-
-resource "forgejo_user" "agent_box_zai" {
-  login                = "agent-box-zai"
-  email                = "agent-box-zai@allegedly.works"
-  password             = random_password.agent_box_zai.result
-  must_change_password = false
-  visibility           = "private"
-}
-
-# agent-box-zai's git push key (private half lives on agent-box as the zai user's
-# Forgejo identity, ssh_keys/agent-box-zai-forgejo). Inlined because the
-# tofu-controller runs only this module path, so file() cannot read repo-root.
-resource "forgejo_ssh_key" "agent_box_zai" {
-  user  = forgejo_user.agent_box_zai.login
-  key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBKUgk4jTaYnkK5hq1c5htDiDsIlmHzkUoVq2RqDfKd4 agent-box-zai-forgejo"
-  title = "agent-box-zai-forgejo"
-}
-
-resource "forgejo_collaborator" "agent_box_zai_ducktape" {
-  repository_id = forgejo_repository.ducktape.id
-  user          = forgejo_user.agent_box_zai.login
-  permission    = "read"
-}
-
-resource "forgejo_collaborator" "agent_box_zai_gaffer" {
-  repository_id = forgejo_repository.gaffer_private.id
-  user          = forgejo_user.agent_box_zai.login
   permission    = "read"
 }
 

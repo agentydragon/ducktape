@@ -37,7 +37,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: ghcr.io/agentydragon/haku-claude-runner:devel-20260811044730-1a926e3 # {"$imagepolicy": "flux-system:haku-claude-runner"}
+          image: ghcr.io/agentydragon/haku-claude-runner:devel-20260814221958-f607fa3 # {"$imagepolicy": "flux-system:haku-claude-runner"}
           imagePullPolicy: Always
           workingDir: /workspace
           env:
@@ -63,10 +63,20 @@ spec:
             # fails loudly there.
             - name: HAKU_SETUP_BAZEL_TRUST
               value: "0"
-            # ducktape is a read-only source Haku consults, and reaching it means github.com —
-            # which this namespace's egress does not allow (the only external host is
-            # api.anthropic.com, through the OAuth-substituting proxy). Skipped rather than left
-            # to fail so the bootstrap's exit status keeps meaning "the workspace is ready".
+            # The placeholder the egress proxy swaps for the real agentydragon-agent PAT on
+            # exact GitHub hosts (claude-iron.yaml). Not a secret: on its own it authenticates
+            # nothing, which is why it can sit in a manifest and in the agent's ~/.netrc.
+            # `GITHUB_TOKEN` too, so API callers and `gh` find it where they look; the netrc
+            # entry the bootstrap writes is what git uses.
+            - name: HAKU_GITHUB_TOKEN
+              value: proxy-haku-claude-github-placeholder
+            - name: GITHUB_TOKEN
+              value: proxy-haku-claude-github-placeholder
+            # ducktape is a read-only source Haku consults. github.com is now reachable *from
+            # the agent's shell*, which has the proxy in its environment — but not from the
+            # bootstrap, which runs with pod env and deliberately has no proxy vars, so a clone
+            # here would still fail. Left skipped so the bootstrap's exit status keeps meaning
+            # "the workspace is ready"; the agent can clone it itself when it wants it.
             - name: HAKU_DUCKTAPE_SKIP
               value: "1"
           securityContext:

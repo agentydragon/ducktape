@@ -58,6 +58,11 @@ const claudeBoundaryMessages = [
         tool_use_id: "toolu_01HakuConsoleRead",
         name: "mcp__haku-console__haku-console__list_mcp_servers",
         input: {},
+        result: {
+          content:
+            '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
+          is_error: false,
+        },
       },
     ],
     error: null,
@@ -172,6 +177,11 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                           tool_use_id: "toolu_01HakuConsoleRead",
                           name: "mcp__haku-console__haku-console__list_mcp_servers",
                           input: {},
+                          result: {
+                            content:
+                              '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}',
+                            is_error: false,
+                          },
                         },
                         {
                           tool_use_id: "toolu_02WriteNote",
@@ -180,6 +190,17 @@ const claudeSession = scene?.startsWith("claude-provisioning")
                             file_path: "/workspace/note.txt",
                             content: "Hello from the disposable Haku sandbox.",
                           },
+                          // A failed call and a still-running one, so the scene shows all three
+                          // states a result can be in.
+                          result: {
+                            content: "EACCES: permission denied, open '/workspace/note.txt'",
+                            is_error: true,
+                          },
+                        },
+                        {
+                          tool_use_id: "toolu_03StillRunning",
+                          name: "Bash",
+                          input: { command: "rg --files | wc -l" },
                         },
                       ],
                     }

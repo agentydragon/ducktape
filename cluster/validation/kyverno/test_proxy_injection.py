@@ -100,12 +100,6 @@ POLICIES: dict[str, Injection] = {
         ca_bundle="/mitmproxy-ca/ca-certificates.crt",
         bypasses=LOOPBACK | CLUSTER_ADDRESSING,
     ),
-    "cluster/k8s/haku/zones/policies/inject-haku-zones-mitmproxy.yaml": Injection(
-        namespace="haku-sandbox-zai",
-        proxy="http://haku-zones-mitmproxy.haku-zones-mitmproxy.svc.cluster.local:8080",
-        ca_bundle="/mitmproxy-ca/ca-certificates.crt",
-        bypasses=LOOPBACK | CLUSTER_ADDRESSING,
-    ),
 }
 
 

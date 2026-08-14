@@ -9,18 +9,33 @@ whether either survives is open (<../../plans/matrix_chat_runtime.md> § Open qu
 
 ## `claude_chat.py` — sessions, sandboxes, and the turn loop
 
-The shared substrate: session and message rows, Postgres `LISTEN`/`NOTIFY`, the SandboxClaim,
-the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat surface's
-own HTTP routes and SSE stream, which is the older of the two experiments.
+The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`, the
+SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
+surface's own HTTP routes and SSE stream, which is the older of the two experiments.
+
+**A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
+opens `claude_chat_turns` in one transaction; `_run_turn` is that turn's span and closes it on
+every exit, keeping what the `result` frame reported about cost, usage and duration. At most one
+turn per session is open (a partial unique index), and that is the single question behind three
+answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
+SPA is shown `responding` — which the session view now derives rather than reading off a column.
+So an open turn on a session nothing is renewing is not a leak; it is the record of an exchange
+whose replica went away before anything could close it.
+
+**The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
+frame either way, both channels, verbatim — the control channel included, since an interrupt that
+did not take is diagnosable from nothing else. The one thing skipped is `stream_event`, because the
+store keeps a single rewritten `partial` row for the answer in flight instead; that is a decision
+about the record and so lives here rather than in the client.
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
 announces itself, so the browser one is the easy one to forget you are paying for.
 
-Streaming (`StreamEvent`, and the `asyncio.wait` abort dance around it) exists for the SPA
-alone. The Matrix path forwards only a finished turn (R11.1), so if the SPA view is ever
-retired that machinery goes with it.
+Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole
+assistant messages, each as it completes (R11.1), so if the SPA view is ever retired that
+machinery goes with it.
 
 ## Matrix chat surface
 
@@ -33,10 +48,13 @@ retired that machinery goes with it.
 
 Two behaviours worth knowing before reading the code:
 
-- **A refused batch is not queued here.** `enqueue_prompt` only accepts on a ready session
-  with nothing pending, so when it refuses, the sync watermark is simply not advanced and
-  the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
-  dropped" (R1.6) come out of that, with no second durable queue.
+- **A refused batch is not queued here.** `enqueue_prompt` only accepts on a ready session with
+  no turn open and nothing pending, so when it refuses, the sync watermark is simply not advanced
+  and the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
+  dropped" (R1.6) come out of that, with no second durable queue. The gate asks
+  `claude_chat_turns` whether an exchange is in flight; it used to ask whether the session's
+  status was `ready`, which happened to mean the same thing only because `enqueue_prompt` itself
+  wrote `responding`.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a
   batch. The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning

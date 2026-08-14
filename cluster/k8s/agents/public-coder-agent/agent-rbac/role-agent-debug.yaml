@@ -2,15 +2,7 @@
 #
 # Two jobs, both of which need a shell in the agent's own pod:
 #
-# 1. **Measuring the GLM context windows.** The declared 200000/96000 for the
-#    glm-*-anthropic routes is an unmeasured placeholder. Measuring it needs a
-#    LiteLLM key allowlisted for GLM, and the only one is this instance's own
-#    key -- it exists as an env var inside this pod and nowhere an agent can
-#    otherwise read. Running openai_utils/probe_context_window.py in here is the
-#    cheapest way to get a real number; the alternative is minting a second
-#    GLM-capable key purely to probe with, which is more credential surface for
-#    less.
-# 2. **Test-driving the agent.** Confirming it can autonomously open a pull
+# **Test-driving the agent.** Confirming it can autonomously open a pull
 #    request end to end means issuing it a task, which is an `openclaw agent`
 #    invocation inside the pod.
 #
@@ -29,7 +21,7 @@ metadata:
   name: public-coder-agent-debug
   namespace: public-coder-agent
   annotations:
-    description: Time-boxed read-and-exec access so the agent-lab experiments can measure GLM context windows and test-drive the coder agent. Remove after 2026-07-31.
+    description: Time-boxed read-and-exec access for the autonomous-PR test-drive. Remove after 2026-07-31.
 rules:
   - apiGroups: [""]
     resources: [pods, pods/log, events]

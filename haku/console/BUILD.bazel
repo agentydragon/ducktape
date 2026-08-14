@@ -71,6 +71,7 @@ py_library(
     deps = [
         ":config",
         ":mcp_config",
+        "//haku/console/tools:conversations",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
         "//haku/console/tools:hostexec",

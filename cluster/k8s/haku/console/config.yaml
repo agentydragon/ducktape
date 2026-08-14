@@ -141,9 +141,17 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
+  - id: haku_conversation_reads
+    type: exact_tools
+    tools:
+      haku_conversations:
+        - list_conversations
+        - read_rollout
+        - list_turns
   - id: haku_v1
     type: any_of
     policies:
+      - haku_conversation_reads
       - gmail_reads
       - google_calendar_reads
       - grocy_reads
@@ -344,6 +352,15 @@ mcp:
     # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
     # credential, so it needs no operator-resolved backend auth.
     - id: haku_routine
+      backend:
+        kind: in_process
+        credential:
+          kind: none
+    # `haku_conversations` (haku/console/tools/conversations.py): read Haku's own past sessions
+    # out of the console's rollout store, so a replacement session can consult what its
+    # predecessor actually did instead of only the last few room messages. Read-only, and
+    # credential-free — the corpus is the console's own database.
+    - id: haku_conversations
       backend:
         kind: in_process
         credential:

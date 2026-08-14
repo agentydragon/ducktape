@@ -53,9 +53,9 @@ For chat front-ends that pair with any of the above (when the platform's UI does
 
 OpenHands is the closest analog to Codex Cloud, but the **open-source** parts only get you so far against this cluster's desiderata.
 
-Investigated 2026-05-07 against `ghcr.io/all-hands-ai/openhands:main` running in <../cluster/k8s/openhands/>:
+Investigated 2026-05-07 against `ghcr.io/all-hands-ai/openhands:main` running in <../cluster/k8s/x/openhands/>:
 
-- The legacy `KubernetesRuntime` was deleted upstream (commit `e86067c15` "Removed V0 runtime", `bc4706524` "Remove unused core.schema package and KubernetesConfig"). The `[core] runtime = kubernetes` and `[kubernetes]` blocks in <../cluster/k8s/openhands/app/configmap-toml.yaml> are now silently ignored.
+- The legacy `KubernetesRuntime` was deleted upstream (commit `e86067c15` "Removed V0 runtime", `bc4706524` "Remove unused core.schema package and KubernetesConfig"). The `[core] runtime = kubernetes` and `[kubernetes]` blocks in <../cluster/k8s/x/openhands/app/configmap-toml.yaml> are now silently ignored.
 - The new App Server (`openhands/app_server/sandbox/`) ships only three sandbox backends: `DockerSandboxService`, `ProcessSandboxService`, `RemoteSandboxService`. There is **no `kubernetes_sandbox_service.py`**.
 - Selection logic at `openhands/app_server/config.py:158` falls back to Docker when `RUNTIME` isn't `remote` or `local`/`process`. So a clean install in k8s without a Docker socket faults every time the sandbox is touched (`docker.errors.DockerException: ... /var/run/docker.sock ... No such file or directory`) — the symptom that prompted this doc.
 - The `RemoteSandboxService` calls a separate **`runtime-api`** server (`/start`, `/sessions/{id}`, `/sessions/batch`, `/resume`, `/pause`, `/stop`, `/destroy`). All-Hands operates that server as a SaaS at `runtime.eval.all-hands.dev` and ships it as `ghcr.io/openhands/runtime-api:<sha>`, but:
@@ -64,7 +64,7 @@ Investigated 2026-05-07 against `ghcr.io/all-hands-ai/openhands:main` running in
   - The Helm chart that wires it together (<https://github.com/All-Hands-AI/OpenHands-Cloud>) is **PolyForm Free Trial 1.0.0** — source-available, capped at 30 days/year non-commercial. Not OSS.
 - The MIT-licensed `openhands/software-agent-sdk` ships workspace backends for `apptainer/`, `cloud/`, `docker/`, `remote_api/` — still no `kubernetes/`.
 
-Net: to use OpenHands in this cluster with k8s-pod sandboxes you'd either (a) write a FastAPI shim implementing the runtime-api wire protocol over the kube API (the existing <../cluster/k8s/openhands/sandboxes/> namespace + `openhands-sandbox-manager` Role already grant what such a shim would need), (b) buy an OpenHands-Cloud commercial license, or (c) point at the All-Hands SaaS runtime-api so sandboxes live in their cluster, not yours. Process-runtime is a same-day unblocker but defeats the whole isolation goal.
+Net: to use OpenHands in this cluster with k8s-pod sandboxes you'd either (a) write a FastAPI shim implementing the runtime-api wire protocol over the kube API (the existing <../cluster/k8s/x/openhands/sandboxes/> namespace + `openhands-sandbox-manager` Role already grant what such a shim would need), (b) buy an OpenHands-Cloud commercial license, or (c) point at the All-Hands SaaS runtime-api so sandboxes live in their cluster, not yours. Process-runtime is a same-day unblocker but defeats the whole isolation goal.
 
 ## Notes on the other contenders
 

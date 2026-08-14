@@ -336,7 +336,7 @@ The agent-box VM and its `codex` user are live (see
       Flip it on once `attic-jwt-rotation` has minted+committed
       `secrets/hosts/agent-box-attic.yaml` to devel (the path literal would
       otherwise fail flake eval).
-- [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`/`zai`
+- [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`
       (the `agentUsers` list + a per-user HM module under `nix/home/hosts/agent-box/`),
       but running Claude Code against Anthropic directly (not via LiteLLM/z.ai).
 - [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):

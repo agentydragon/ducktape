@@ -1,6 +1,5 @@
 # agent-box - headless CLI-only NixOS VM (KubeVirt) hosting agent users, each under
-# its own dedicated, scoped identity. `codex` runs OpenAI Codex; `zai` runs
-# Claude Code routed to z.ai's GLM via the cluster LiteLLM proxy. See
+# its own dedicated, scoped identity. `codex` runs OpenAI Codex. See
 # cluster/k8s/agent-box/README.md.
 #
 # Multi-user: the host config is generated from `agentUsers` below. Add a future
@@ -29,10 +28,6 @@ let
     {
       name = "codex";
       idSecretPath = ../../../../ssh_keys/agent-box-codex-user.sops.key;
-    }
-    {
-      name = "zai";
-      idSecretPath = ../../../../ssh_keys/agent-box-zai-user.sops.key;
     }
   ];
 in
@@ -179,5 +174,5 @@ in
     '';
   };
 
-  users.motd = "agent-box - headless KubeVirt agent VM (codex: OpenAI Codex; zai: Claude Code via LiteLLM/z.ai)\n";
+  users.motd = "agent-box - headless KubeVirt VM (codex: OpenAI Codex)\n";
 }

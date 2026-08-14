@@ -1,7 +1,7 @@
 # agent-sandbox — disposable agent workspaces
 
 [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-controller plus per-LLM-lane templates (`zai`, `codex`) in `agent-workspaces`: click-a-command
+controller plus a Codex LLM-lane template in `agent-workspaces`: click-a-command
 disposable dev workspaces for agents — the agent-box workflow (a machine you go
 to, creds already wired, Claude CLI installed) minus the persistence.
 
@@ -26,8 +26,7 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 - `workspace-image/` — the dedicated
   `git.allegedly.works/ducktape-ci/agent-workspace` image (Claude Code + Codex
   CLIs, dev basics, no baked credentials, no haku coupling). WebFetch/WebSearch
-  are denied in baked Claude settings — GLM's tool-call shape differs from
-  Anthropic's, matching `nix/home/claude_code/z-claude.nix`. Built by
+  are denied in baked Claude settings. Built by
   `.github/workflows/agent-workspace-image.yml` on `devel` pushes into the
   Forgejo registry (pull credential provisioned in code by
   `tf/gitops/forgejo-images` — no GHCR visibility clicking); Flux image
@@ -38,9 +37,8 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 - `workspaces/{namespace,app}/` — the dedicated `agent-workspaces` namespace
   (own ResourceQuota/LimitRange) and the LLM-lane `SandboxTemplate`s + warm
   pools + janitor `CleanupPolicy`. Templates are named by lane like the haku
-  zones — `zai` (GLM, `claude` CLI) and `codex` (OpenAI Codex-account models,
-  `codex` CLI), both via LiteLLM; a new lane adds a sibling template + pool +
-  key. Deliberately **not** `claude-sandbox` — that
+  zones — `codex` (OpenAI Codex-account models, `codex` CLI) via LiteLLM.
+  Deliberately **not** `claude-sandbox` — that
   namespace is Claude's own disposable in-cluster scratch space, and hosting
   workspaces there would mix tenants and quotas.
 
@@ -66,7 +64,7 @@ metadata:
   name: ws-mytask
 spec:
   warmPoolRef:
-    name: zai
+    name: codex
   lifecycle:
     shutdownPolicy: Delete
     shutdownTime: "$(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)"
@@ -87,7 +85,7 @@ WS=$(kubectl -n agent-workspaces get sandboxclaim ws-mytask -o jsonpath='{.statu
 ```bash
 kubectl -n agent-workspaces get sandboxclaims,sandboxes,pods   # what exists
 kubectl -n agent-workspaces get sandbox "$WS" -o yaml          # conditions (Ready/Suspended/Finished), nodeName, podIPs
-kubectl -n agent-workspaces describe sandboxwarmpool zai      # pool readiness (readyReplicas)
+kubectl -n agent-workspaces describe sandboxwarmpool codex   # pool readiness (readyReplicas)
 ```
 
 ### Work in it
@@ -146,7 +144,7 @@ a "new workspace" button is a candidate follow-up.
 ### Troubleshooting
 
 - **Claim stuck unclaimed**: pool exhausted or template broken —
-  `describe sandboxwarmpool zai`, then `kubectl -n agent-workspaces get events`.
+  `describe sandboxwarmpool codex`, then `kubectl -n agent-workspaces get events`.
 - **Pod `Pending`**: usually the namespace ResourceQuota
   (`workspaces/namespace/resourcequota.yaml`) or PVC binding —
   `describe pod ws-mytask`.
@@ -164,12 +162,6 @@ namespace — model allowlisting and per-lane usage observability, deliberately
 no budget caps; deleting a lane's `litellm_key.*` TF resource is that lane's
 LLM kill switch.
 
-- `zai`: the template points `ANTHROPIC_BASE_URL` at
-  `litellm.litellm.svc.cluster.local:4000` and reads `ANTHROPIC_AUTH_TOKEN`
-  from `litellm-key-agent-workspaces` (GLM-model allowlist shared with the
-  haku zai lane). `ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` both pin
-  `glm-5.2-anthropic` (z-claude parity) so Claude Code doesn't request
-  `claude-*` names the key rejects.
 - `codex`: the image bakes `~/.codex/config.toml`
   (`workspace-image/codex-config.toml`) with a LiteLLM provider over the
   Responses API; the template supplies `LITELLM_API_KEY` from
@@ -197,6 +189,6 @@ that. Untrusted workloads stay in the haku zones perimeter until then.
   door.
 - **Web UI**: `coder/agentapi` (Apache-2.0) per sandbox behind an
   Authentik-guarded `HTTPRoute`.
-- **Haku dispatch**: `haku/dispatch/k8s_jobs.py` could stamp `SandboxClaim`s
-  instead of `Job`s to gain warm starts and pause/resume; the zone perimeter
-  (namespace + Kyverno mitmproxy injection) applies to sandbox pods unchanged.
+- **Haku dispatch**: the archived `haku/x/dispatch/k8s_jobs.py` remains a design
+  reference for a future `SandboxClaim`-based launcher; the zone perimeter
+  (namespace + Kyverno mitmproxy injection) would apply to sandbox pods unchanged.

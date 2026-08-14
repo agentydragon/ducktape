@@ -1,7 +1,7 @@
 # Deb packages layered on debian:trixie-slim for the CPAP sync container.
-# nmcli talks to host NetworkManager over dbus (the cronjob mounts /run/dbus
-# and /var/run/NetworkManager from the host); git clones/pushes the cpap-data
-# Forgejo repo via https://git.allegedly.works. The CA bundle it needs comes from
+# Cluster jobs use the Wyrm2 CPAP gateway and only need the HTTP client plus git;
+# the WiFi packages remain for direct manual runs near the card. Git clones/pushes
+# the cpap-data Forgejo repo via https://git.allegedly.works. The CA bundle it needs comes from
 # //third_party/debian_slim:cacerts, not this apt layer.
 #
 # Regenerate the lock file after any change:
@@ -18,5 +18,8 @@ archs:
   - "amd64"
 
 packages:
+  - "isc-dhcp-client"
   - "git"
-  - "network-manager"
+  - "iproute2"
+  - "iw"
+  - "wpasupplicant"

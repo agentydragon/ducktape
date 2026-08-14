@@ -71,6 +71,7 @@ py_library(
 
 py_test(
     name = "test_runs",
+    size = "medium",  # measured at 47.9s; `small` is a 60s timeout
     srcs = ["test_runs.py"],
     requires_docker = True,
     deps = [

@@ -46,7 +46,8 @@
       "sandbox": {
         "mode": "off"
       },
-      "skills": []
+      "skills": [],
+      "verboseDefault": "full"
     },
     "entries": {
       "haku": {

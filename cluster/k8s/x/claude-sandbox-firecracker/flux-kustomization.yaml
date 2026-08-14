@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: claude-sandbox-firecracker
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  # Not actively working on this — suspended to free resources.
+  suspend: true
+  path: ./cluster/k8s/x/claude-sandbox-firecracker
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  timeout: 2m
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: claude-sandbox-secrets
+      namespace: ducktape-flux
+    - name: kvm-device-plugin
+      namespace: ducktape-flux

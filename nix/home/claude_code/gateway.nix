@@ -1,6 +1,6 @@
 # mkClaudeGateway — generate a Claude Code wrapper that points the CLI at an
 # Anthropic-shaped gateway via Bearer auth. Owns the env/exec pattern once; each gateway
-# (z-claude, codex-claude, tana-claude) is a declarative spec passed as an attrset.
+# (codex-claude, tana-claude, gemini-claude) is a declarative spec passed as an attrset.
 #
 # Always strips ANTHROPIC_API_KEY (`env -u`) so Claude Code never sees both
 # ANTHROPIC_AUTH_TOKEN and ANTHROPIC_API_KEY set — it warns "auth may not work as expected"

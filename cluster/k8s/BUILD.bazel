@@ -49,7 +49,7 @@ filegroup(
 
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
-# contract filegroup below). The zone injector under haku/zones/policies is not
+# contract filegroup below). The zone injector under x/haku/zones/policies is not
 # here on purpose — proxy_injection_policy_files already pins it by name.
 filegroup(
     name = "kyverno_policy_files",
@@ -109,7 +109,6 @@ filegroup(
         # Cilium DNS rule pinned against it.
         "agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
         "agents/haku-egress-proxy/openclaw-spike-iron.yaml",
-        "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml",
         "agents/mitmproxy/cnp-cloud-api-egress.yaml",
         "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "kustomization.yaml",
@@ -122,7 +121,6 @@ filegroup(
 filegroup(
     name = "proxy_injection_policy_files",
     srcs = [
-        "haku/zones/policies/inject-haku-zones-mitmproxy.yaml",
         "kyverno/policies/inject-haku-egress-proxy.yaml",
         "kyverno/policies/inject-mitmproxy.yaml",
     ],
@@ -165,5 +163,5 @@ filegroup(
 filegroup(
     name = "haku_sandbox_setup",
     srcs = ["haku/workspaces/image/haku-sandbox-setup.sh"],
-    visibility = ["//haku/runtime/x/agent_sdk_transport:__pkg__"],
+    visibility = ["//haku/runtime/x/claude_bridge:__pkg__"],
 )

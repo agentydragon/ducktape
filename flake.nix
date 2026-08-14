@@ -536,6 +536,39 @@
           # switch. Published by vm-images-publisher with IMAGE_OUTPUT=agent-box-image,
           # OBJECT_PREFIX=agent-box. cloud-init still injects the persisted host key.
           agent-box-image = self.nixosConfigurations.agent-box.config.system.build.images.qemu-efi;
+          # Stateless KubeVirt containerDisk: the qcow2 lives at /disk/disk.qcow2
+          # in an OCI image, owned by KubeVirt's qemu UID (107). Flux publishes
+          # a new tag when this output changes and updates the VM manifest.
+          cpap-gateway-container-disk =
+            let
+              diskImage = self.nixosConfigurations.cpap-gateway.config.system.build.images.qemu-efi;
+              diskRoot = pkgs.runCommand "cpap-gateway-container-disk-root" { } ''
+                mkdir -p $out/disk
+                cp ${diskImage}/*.qcow2 $out/disk/disk.qcow2
+              '';
+            in
+            pkgs.dockerTools.buildLayeredImage {
+              name = "ghcr.io/agentydragon/cpap-gateway";
+              contents = [ diskRoot ];
+              includeStorePaths = false;
+              maxLayers = 2;
+              # streamLayeredImage assembles contents through symlinkJoin;
+              # dereference the build-time link before the layer is tarred.
+              extraCommands = ''
+                cp --dereference disk/disk.qcow2 disk/disk.qcow2.real
+                rm disk/disk.qcow2
+                mv disk/disk.qcow2.real disk/disk.qcow2
+              '';
+              fakeRootCommands = ''
+                chown 107:107 disk/disk.qcow2
+              '';
+              # KubeVirt's virt-launcher runs qemu as UID 107. dockerTools
+              # applies this ownership to the layer without chowning the Nix
+              # store output itself.
+              uid = 107;
+              gid = 107;
+              config = { };
+            };
         };
 
       homeConfigurations = {
@@ -613,8 +646,7 @@
         };
 
         # agent-box - headless CLI-only KubeVirt VM hosting agent users, each under
-        # its own scoped identity. `codex` runs OpenAI Codex; `zai` runs Claude Code
-        # routed to z.ai's GLM via the cluster LiteLLM proxy. See
+        # its own scoped identity. `codex` runs OpenAI Codex. See
         # cluster/k8s/agent-box/README.md.
         agent-box = mkNixos {
           hostname = "agent-box";
@@ -625,18 +657,6 @@
             isK8sWorker = false;
             module = ./nix/home/hosts/agent-box/codex.nix;
           };
-          # zai is a second agent user. codex is the primary inline-HM user above
-          # (and also enables home-manager's extraSpecialArgs/sharedModules); zai is
-          # wired as an extra home-manager user here so mkNixos stays
-          # single-user-generic. The matching NixOS user is created by the host
-          # config's agentUsers list (nix/nixos/hosts/agent-box/default.nix).
-          extraModules = [
-            {
-              home-manager.users.zai = {
-                imports = [ ./nix/home/hosts/agent-box/zai.nix ];
-              };
-            }
-          ];
         };
 
         # public-coder-devbox - isolated NixOS build/test VM for the public-coder
@@ -669,6 +689,14 @@
         bootstrap = mkNixos {
           hostname = "bootstrap";
           username = "agentydragon";
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          enableHomeManager = false;
+        };
+
+        # Minimal KubeVirt VM that owns the USB CPAP WiFi adapter passed through
+        # from the OptiPlex host.
+        cpap-gateway = mkNixos {
+          hostname = "cpap-gateway";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           enableHomeManager = false;
         };

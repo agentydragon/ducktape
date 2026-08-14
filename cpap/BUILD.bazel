@@ -48,6 +48,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_card",
+    srcs = ["test_card.py"],
+    deps = [
+        ":card",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # ── OCI Image ────────────────────────────────────────────────────────────────
 
 aspect_py_binary(

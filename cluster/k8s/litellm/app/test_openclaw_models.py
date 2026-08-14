@@ -1,5 +1,3 @@
-import re
-
 import json5
 import pytest_bazel
 import yaml
@@ -58,20 +56,6 @@ def _litellm_models() -> dict[str, dict]:
     return {entry["model_name"]: entry for entry in config["model_list"]}
 
 
-def _hcl_string_list(source: str, name: str) -> list[str]:
-    match = re.search(rf"(?ms)^\s*{re.escape(name)}\s*=\s*\[(.*?)\]", source)
-    assert match is not None, f"missing HCL list {name}"
-    return re.findall(r'"([^"]+)"', match.group(1))
-
-
-def _zai_model_aliases(source: str) -> dict[str, str]:
-    resource = re.search(r'(?ms)^resource "litellm_team" "zai_clients" \{(.*?\n\})', source)
-    assert resource is not None, "missing zai_clients team"
-    aliases = re.search(r"(?ms)^\s*model_aliases\s*=\s*\{(.*?)^\s*\}", resource.group(1))
-    assert aliases is not None, "missing zai_clients model aliases"
-    return dict(re.findall(r'^\s*"([^"]+)"\s*=\s*"([^"]+)"', aliases.group(1), flags=re.MULTILINE))
-
-
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
     """Every model the agents may name must exist in the committed LiteLLM config."""
     litellm_models = _litellm_models()
@@ -117,13 +101,6 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
             "litellm_params": {"model": f"anthropic/{model_id}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
-
-
-def test_terraform_anthropic_rosters_match_the_generator() -> None:
-    source = get_required_path(_LITELLM_KEYS_TF).read_text()
-
-    assert _hcl_string_list(source, "classifier_models") == ANTHROPIC_MODELS
-    assert _zai_model_aliases(source) == dict.fromkeys(ANTHROPIC_MODELS, "glm-5.2-anthropic")
 
 
 def test_tana_compatibility_roster_remains_explicitly_pinned() -> None:

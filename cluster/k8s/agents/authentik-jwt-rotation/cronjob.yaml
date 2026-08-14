@@ -43,9 +43,6 @@ spec:
             - name: agent-box-codex-creds
               secret:
                 secretName: agent-box-codex-client-credentials
-            - name: agent-box-zai-creds
-              secret:
-                secretName: agent-box-zai-client-credentials
             - name: haku-mail-creds
               secret:
                 secretName: haku-mail-client-credentials
@@ -83,9 +80,6 @@ spec:
                   readOnly: true
                 - name: agent-box-codex-creds
                   mountPath: /var/run/secrets/authentik/agent-box-codex
-                  readOnly: true
-                - name: agent-box-zai-creds
-                  mountPath: /var/run/secrets/authentik/agent-box-zai
                   readOnly: true
                 - name: haku-mail-creds
                   mountPath: /var/run/secrets/authentik/haku-mail

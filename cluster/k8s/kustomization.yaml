@@ -76,12 +76,12 @@ resources:
   - agents/authentik-jwt-rotation/flux-kustomization.yaml
   - agents/forgejo-token-rotation/flux-kustomization.yaml
   - agents/attic-jwt-rotation/flux-kustomization.yaml
-  - agents/claude-sandbox-firecracker/flux-kustomization.yaml
+  - x/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/alloy-otlp-bearer/flux-kustomization.yaml
   - agents/codex-pod/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml
-  - agents/google-workspace-mcp/flux-kustomization.yaml
+  - x/google-workspace-mcp/flux-kustomization.yaml
   - agents/tana-mcp/flux-kustomization.yaml
   - agents/tana-mcp-facade/flux-kustomization.yaml
   - agents/tana-mcp-facade/monitoring/flux-kustomization.yaml
@@ -125,8 +125,6 @@ resources:
   - agents/haku-openclaw-spike/app/flux-kustomization.yaml
   - x/squid-egress-spike/namespace/flux-kustomization.yaml
   - x/squid-egress-spike/app/flux-kustomization.yaml
-  - agents/haku-zones-mitmproxy-namespace/flux-kustomization.yaml
-  - agents/haku-zones-mitmproxy/flux-kustomization.yaml
   - agents/loki-read-proxy/flux-kustomization.yaml # namespace-filtered read-only Loki queries for Haku
   - agents/public-coder-agent/namespace/flux-kustomization.yaml
   - agents/public-coder-agent/proxy/flux-kustomization.yaml
@@ -193,15 +191,6 @@ resources:
   - authentik/proxy-routes/flux-kustomization.yaml
   - authentik/sso-providers-tf/flux-kustomization.yaml
 
-  # --- harbor ---
-  - harbor/namespace/flux-kustomization.yaml
-  - harbor/agent-rbac/flux-kustomization.yaml
-  - harbor/db/flux-kustomization.yaml
-  - harbor/app/flux-kustomization.yaml
-  - harbor/secrets/flux-kustomization.yaml
-  - harbor/proxy-cache/flux-kustomization.yaml
-  - harbor/servicemonitor/flux-kustomization.yaml
-  - harbor/oidc-config/flux-kustomization.yaml
 
   # --- oci-cache (Zot pull-through mirror for docker.io/ghcr.io/quay.io/etc.) ---
   - oci-cache/namespace/flux-kustomization.yaml
@@ -256,15 +245,6 @@ resources:
   #  self_hosted support; see haku/runtime/managed_agent/self_hosted/README.md)
   - haku/workloads/flux-kustomization.yaml # Flux reconciles Haku's haku-state k8s/ workloads under a constrained SA
   - haku/ui-image-webhook/flux-kustomization.yaml # operator-owned Receiver: Forgejo package webhook → reconcile the (Haku-owned) haku-ui ImageRepository
-  # --- haku worker zones + dispatch (haku/plans/multi_agent.md) ---
-  - haku/zones/zai/flux-kustomization.yaml # z.ai/GLM worker zone (pure perimeter; Jobs only)
-  - haku/zones/policies/flux-kustomization.yaml # Kyverno proxy/CA injection for zone pods
-  - haku/dispatch/namespace/flux-kustomization.yaml
-  - haku/dispatch/agent-rbac/flux-kustomization.yaml # logs/configmaps read for rollout debugging (dispatcher logs = controller diagnostics)
-  - haku/dispatch/db/flux-kustomization.yaml # CNPG: workers-LiteLLM key DB (+ validator DB later)
-  - haku/dispatch/litellm/flux-kustomization.yaml # second-layer workers-LiteLLM (zone keys upstream; CNP: zone pods only)
-  - haku/dispatch/dispatcher/flux-kustomization.yaml # dispatcher: classifier gate + Job stamping + result turn-in
-
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
   - matrix/secrets/flux-kustomization.yaml
@@ -363,26 +343,26 @@ resources:
   - grocy/vallejo/agent-rbac/flux-kustomization.yaml
   - grocy/vallejo/user-perms/flux-kustomization.yaml
 
-  # --- tandoor ---
-  - tandoor/namespace/flux-kustomization.yaml
-  - tandoor/db/flux-kustomization.yaml
-  - tandoor/app/flux-kustomization.yaml
+  # --- archived: tandoor ---
+  - x/tandoor/namespace/flux-kustomization.yaml
+  - x/tandoor/db/flux-kustomization.yaml
+  - x/tandoor/app/flux-kustomization.yaml
 
-  # --- openhands ---
-  - openhands/namespace/flux-kustomization.yaml
-  - openhands/secrets/flux-kustomization.yaml
-  - openhands/sandboxes/flux-kustomization.yaml
-  - openhands/app/flux-kustomization.yaml
+  # --- archived: openhands ---
+  - x/openhands/namespace/flux-kustomization.yaml
+  - x/openhands/secrets/flux-kustomization.yaml
+  - x/openhands/sandboxes/flux-kustomization.yaml
+  - x/openhands/app/flux-kustomization.yaml
 
   # --- proxmox-proxy ---
   - proxmox-proxy/flux-kustomization.yaml
   - proxmox-proxy/agent-rbac/flux-kustomization.yaml
 
-  # --- wayback-cache ---
-  - wayback-cache/namespace/flux-kustomization.yaml
-  - wayback-cache/agent-rbac/flux-kustomization.yaml
-  - wayback-cache/db/flux-kustomization.yaml
-  - wayback-cache/flux-kustomization.yaml
+  # --- archived: wayback-cache ---
+  - x/wayback-cache/namespace/flux-kustomization.yaml
+  - x/wayback-cache/agent-rbac/flux-kustomization.yaml
+  - x/wayback-cache/db/flux-kustomization.yaml
+  - x/wayback-cache/flux-kustomization.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml
@@ -394,8 +374,8 @@ resources:
   # --- github-branch-protection ---
   - github-branch-protection/flux-kustomization.yaml
 
-  # --- standalone applications ---
-  - buildbuddy-executor/flux-kustomization.yaml
+  # --- archived standalone applications ---
+  - x/buildbuddy-executor/flux-kustomization.yaml
   - gecko/namespace/flux-kustomization.yaml
   - gecko/app/flux-kustomization.yaml
   - agent-box/namespace/flux-kustomization.yaml
@@ -403,6 +383,14 @@ resources:
   - website/flux-kustomization.yaml
   - x/browsertrix/namespace/flux-kustomization.yaml
   - x/browsertrix/app/flux-kustomization.yaml
+  - x/harbor/namespace/flux-kustomization.yaml
+  - x/harbor/secrets/flux-kustomization.yaml
+  - x/harbor/db/flux-kustomization.yaml
+  - x/harbor/oidc-config/flux-kustomization.yaml
+  - x/harbor/proxy-cache/flux-kustomization.yaml
+  - x/harbor/servicemonitor/flux-kustomization.yaml
+  - x/harbor/agent-rbac/flux-kustomization.yaml
+  - x/harbor/app/flux-kustomization.yaml
   - x/archivebox/namespace/flux-kustomization.yaml
   - x/archivebox/app/flux-kustomization.yaml
 

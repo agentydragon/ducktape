@@ -33,12 +33,16 @@ configurations that failed on the way, are in [lab_notes.md](lab_notes.md).
 | [TODO.md](TODO.md)                                         | Open work, each item carrying the evidence for why it matters                                          |
 | [requirements.md](requirements.md)                         | The original stated wants, cross-cutting and per-agent-function                                        |
 | [survey/](survey/README.md)                                | The sourced evidence behind the verdicts: upstream code, live CRD schemas, vendor docs, with citations |
-| [manifests/](manifests/)                                   | Lab manifests reproducing the tested shapes                                                            |
 
 Where the survey and the findings disagree, the findings win: one is what the
 documentation claimed, the other is what the cluster did. That ordering is about
 resolving conflicts, not about which is worth keeping — most options were closed
 on sourced evidence and never needed a measurement.
+
+The disposable lab manifests have been retired now that their deployable successors
+live under [cluster/k8s/agents/public-coder-agent](../../cluster/k8s/agents/public-coder-agent)
+and [cluster/k8s/agents/haku-openclaw-spike](../../cluster/k8s/agents/haku-openclaw-spike).
+The lab notes and findings remain the evidence for their design decisions.
 
 ## Reading it
 

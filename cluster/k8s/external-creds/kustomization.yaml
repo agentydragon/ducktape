@@ -4,5 +4,4 @@ resources:
   - anthropic-haku.sops.yaml
   - gemini.sops.yaml
   - groq.sops.yaml
-  - zai.sops.yaml
   - distribution.yaml

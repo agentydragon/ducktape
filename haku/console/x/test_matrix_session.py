@@ -2,25 +2,22 @@
 
 from __future__ import annotations
 
+import datetime
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from haku.console.chat_models import ChatSessionStatus
 from haku.console.database_schema import ClaudeChatSession
 from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore
+from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import InboundMessage, MatrixError
-from haku.console.x.matrix_session import (
-    MatrixConversationStore,
-    MatrixSessionSupervisor,
-    MatrixSystemPrompt,
-    RecentHistory,
-)
+from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
 from haku.console.x.system_prompt import SystemPromptTemplate
 
 
@@ -106,6 +103,64 @@ async def test_replaces_a_failed_session(supervisor, conversations, chat_store, 
     assert await bound_session(conversations) not in (None, dead)
     assert dead in recording_claims.deleted, "the dead session's claim must be swept before a new one is made"
     assert any("ended" in line for line in announced)
+    # The status alone says a session died; only the reason says which failure it was, and the
+    # room is the one place an operator is looking.
+    assert any("the sandbox went away" in line for line in announced)
+
+
+async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
+    supervisor, conversations, chat_store, recording_claims, migrated_sessions
+) -> None:
+    """The binding lives in two places and they answer different questions.
+
+    `matrix_conversation.session_id` is the pointer — which session the room talks to *now* — and
+    `claude_chat_sessions.room_id` is the history, written once and never moved. No SQL constraint
+    can state the agreement between them (a CHECK sees one row; a composite foreign key would need
+    `room_id` in this table's key), so the supervisor is its only maintainer and this is where that
+    is checked. Without the history half, a replaced Matrix session became indistinguishable from
+    an SPA one the moment the supervisor moved on.
+    """
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await supervisor.supervise_once()
+    [first] = recording_claims.created
+    await chat_store.fail(first, "the sandbox went away")
+
+    await supervisor.supervise_once()
+
+    second = await bound_session(conversations)
+    assert second not in (None, first), "the pointer follows the live session"
+    async with migrated_sessions() as db:
+        rooms = {
+            row.session_id: row.room_id
+            for row in await db.scalars(select(ClaudeChatSession).order_by(ClaudeChatSession.created_at))
+        }
+    assert rooms == {first: MATRIX_ROOM, second: MATRIX_ROOM}, "each session still says which room it served"
+
+
+async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
+    supervisor, conversations, chat_store, recording_claims, migrated_sessions, announced
+) -> None:
+    """The failure that took the room down on 2026-08-11.
+
+    The session stayed `responding` because the replica running it went away without
+    recording anything, and a live status was taken at face value here — so this method kept
+    reporting "is responding" at a session that no longer existed anywhere but in a row.
+    Supervision has to reclaim it, not believe it.
+    """
+    await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
+    await supervisor.supervise_once()
+    [orphan] = recording_claims.created
+    async with migrated_sessions.begin() as db:
+        chat = await db.get(ClaudeChatSession, orphan)
+        assert chat is not None
+        chat.status = ChatSessionStatus.RESPONDING
+        chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+
+    await supervisor.supervise_once()
+
+    assert len(recording_claims.created) == 2, "the orphaned session was believed rather than replaced"
+    assert await bound_session(conversations) not in (None, orphan)
+    assert any("ended" in line for line in announced)
 
 
 async def test_replaces_a_session_whose_row_is_gone(
@@ -157,18 +212,50 @@ async def test_does_not_repeat_an_unchanged_status(
 async def bound(conversations: MatrixConversationStore, chat_store: ClaudeChatStore, operator_id: UUID) -> UUID:
     """A room bound to a real session row — `session_id` is a foreign key, not a free UUID."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
-    view, _ = await chat_store.create(operator_id)
+    view, _ = await chat_store.create(operator_id, SpaSession())
     await conversations.set_session(MATRIX_USER, view.session_id)
     return view.session_id
 
 
-def system_prompt(conversations: MatrixConversationStore, history: RecentHistory) -> MatrixSystemPrompt:
-    return MatrixSystemPrompt(
+# What `RoomChannel.recent_history` is, as a callable the fake room can be handed. Lives here
+# rather than in the module now that the port declares the method itself.
+RecentHistory = Callable[[int], Awaitable[Sequence[InboundMessage]]]
+
+
+class _RecordingRoom:
+    """A `RoomChannel` that keeps what it was told instead of speaking to a homeserver."""
+
+    def __init__(self, history: RecentHistory) -> None:
+        self._history = history
+        self.shown: list[str] = []
+        self.cleared = 0
+        self.typing: list[bool] = []
+
+    async def recent_history(self, limit: int) -> Sequence[InboundMessage]:
+        return await self._history(limit)
+
+    async def announce(self, body: str) -> None:
+        raise AssertionError("the prompt path does not speak into the room")
+
+    async def reply(self, body: str) -> None:
+        raise AssertionError("the prompt path does not speak into the room")
+
+    async def show_status(self, body: str) -> None:
+        self.shown.append(body)
+
+    async def clear_status(self) -> None:
+        self.cleared += 1
+
+    async def set_typing(self, active: bool) -> None:
+        self.typing.append(active)
+
+
+def surface(history: RecentHistory) -> MatrixSurface:
+    return MatrixSurface(
         MATRIX_CONFIG,
         runtime_config(),
-        conversations,
         SystemPromptTemplate("{{ room_id }} {{ session_id }} {{ recent_messages | length }}"),
-        history,
+        _RecordingRoom(history),
     )
 
 
@@ -180,33 +267,31 @@ def served(*messages: InboundMessage) -> RecentHistory:
     return _history
 
 
-async def test_prompt_describes_the_bound_session(conversations: MatrixConversationStore, bound: UUID) -> None:
-    assert await system_prompt(conversations, served()).render(bound) == f"{MATRIX_ROOM} {bound} 0"
+async def test_prompt_describes_the_room_it_is_given(bound: UUID) -> None:
+    """No session filtering here any more: being called at all says this session serves it.
+
+    The console selects this surface from the session's own `surface` column, so the room is
+    an argument rather than something to look up and check.
+    """
+    assert await surface(served()).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 0"
 
 
-async def test_prompt_declines_a_session_it_does_not_own(conversations: MatrixConversationStore, bound: UUID) -> None:
-    """A console SPA session shares the service and must not be told it lives in a room."""
-    assert await system_prompt(conversations, served()).render(uuid4()) is None
-
-
-async def test_prompt_survives_an_unreadable_room(conversations: MatrixConversationStore, bound: UUID) -> None:
+async def test_prompt_survives_an_unreadable_room(bound: UUID) -> None:
     """A homeserver that will not serve history costs context, not the whole session."""
 
     async def unreadable(limit: int) -> tuple[InboundMessage, ...]:
         raise MatrixError("500: homeserver said no")
 
-    assert await system_prompt(conversations, unreadable).render(bound) == f"{MATRIX_ROOM} {bound} 0"
+    assert await surface(unreadable).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 0"
 
 
-async def test_prompt_carries_both_sides_of_the_room_history(
-    conversations: MatrixConversationStore, bound: UUID
-) -> None:
+async def test_prompt_carries_both_sides_of_the_room_history(bound: UUID) -> None:
     history = served(
         InboundMessage(room_id=MATRIX_ROOM, event_id="$a", sender=MATRIX_OPERATOR, body="hi", origin_server_ts=0),
         InboundMessage(room_id=MATRIX_ROOM, event_id="$b", sender=MATRIX_USER, body="hello", origin_server_ts=1),
     )
 
-    assert await system_prompt(conversations, history).render(bound) == f"{MATRIX_ROOM} {bound} 2"
+    assert await surface(history).system_prompt(bound, MATRIX_ROOM) == f"{MATRIX_ROOM} {bound} 2"
 
 
 if __name__ == "__main__":

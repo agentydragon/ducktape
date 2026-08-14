@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixSyncState
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, MatrixClient
+from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
 
 logger = logging.getLogger(__name__)
@@ -96,8 +97,13 @@ class MatrixSyncService:
         self._conversations = conversations
         self._turns = turns
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
-        self._sent_event_ids: set[str] = set()
+        # Public because it has a lifecycle, and this object's owner is the one that drives it:
+        # everything the console says into the room goes through here, so it outlives no
+        # individual send and belongs to whoever is running the service.
+        self.pacer = RoomPacer()
         self._holding = False
+        self._status_event_id: str | None = None
+        self._status_body: str | None = None
 
     async def _token(self) -> str:
         """A working access token, logging in only when the cached one is not.
@@ -124,11 +130,11 @@ class MatrixSyncService:
             # Joining would put Haku in a room nothing services, which reads as listening
             # (R3.6a). Say so where we can actually speak: the room already bound.
             logger.warning("Matrix: refusing invite to %s — already serving %s", invite.room_id, live_room)
-            await self._send_notice(token, live_room, f"invited to another room; still serving this one ({live_room})")
+            self._queue_notice(live_room, f"invited to another room; still serving this one ({live_room})")
             return
         await self._client.join(token, invite.room_id)
         logger.info("Matrix: joined %s on invite from %s", invite.room_id, invite.inviter)
-        await self._send_notice(token, invite.room_id, "joined — this is now Haku's room")
+        self._queue_notice(invite.room_id, "joined — this is now Haku's room")
 
     async def reply(self, body: str) -> None:
         """Post Haku's answer into the live room as ordinary text (R11.1)."""
@@ -136,8 +142,88 @@ class MatrixSyncService:
         if conversation is None:
             logger.error("Matrix: a turn finished with no room bound; dropping the answer")
             return
-        event_id = await self._client.send_text(await self._token(), conversation.room_id, body, txn_id=uuid4().hex)
-        self._sent_event_ids.add(event_id)
+        room_id = conversation.room_id
+
+        async def post() -> None:
+            await self._client.send_text(await self._token(), room_id, body, txn_id=uuid4().hex)
+
+        self.pacer.send(post)
+
+    async def show_status(self, body: str) -> None:
+        """Make the room's single status line say *body*, creating or editing it (R6.2, R6.5).
+
+        One line per turn rather than a notice per step: a room where every tool call is a
+        message is a room nobody reads. The event id of the live line is held here because
+        this is the only object that knows the room and the token; the turn loop says what
+        the state is and never learns how it is shown.
+
+        **Idempotent, and paced by the room rather than by this call.** The floor moved to the
+        caller (`_TurnStatus`), because deciding what the line should say and deciding when it
+        may change have to be one decision; the room's own budget is `matrix_pacer`'s, where
+        the status line is the one sender allowed to overwrite what it has not yet said.
+
+        Create-or-edit is decided inside the queued send, not here, because the create is what
+        produces the event id the edit needs — and between queueing and sending, it may not
+        have happened yet. The pacer is serial, so by the time an edit runs its create has.
+        """
+        if body == self._status_body:
+            return
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            return
+        self._status_body = body
+        room_id = conversation.room_id
+
+        async def post() -> None:
+            token = await self._token()
+            if self._status_event_id is None:
+                self._status_event_id = await self._client.send_notice(token, room_id, body, txn_id=uuid4().hex)
+                return
+            await self._client.edit_notice(token, room_id, self._status_event_id, body, txn_id=uuid4().hex)
+
+        self.pacer.set_status(post)
+
+    async def set_typing(self, active: bool) -> None:
+        """Show or hide Haku's typing indicator in the live room (R6.1).
+
+        Best effort by construction: a failed typing notice is cosmetic, and a turn that died
+        because the room could not be told it was thinking would be a strictly worse outcome
+        than an indicator that is briefly wrong. The homeserver expires the notice on its own,
+        so the failure mode of a lost `False` is a stale indicator for seconds, not forever.
+        """
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            return
+        try:
+            await self._client.set_typing(await self._token(), conversation.room_id, active=active)
+        except Exception:
+            logger.warning("Matrix: typing notification failed (active=%s)", active, exc_info=True)
+
+    async def clear_status(self) -> None:
+        """Retire the status line, if one was ever created (R6.5).
+
+        Called on every terminal path, including failure — a status line left saying "running
+        Bash" after the turn died is the stuck-typing-indicator bug in another costume.
+
+        A change still waiting to go out is dropped rather than sent and then redacted, which
+        would spend two of the room's ten sends showing something for a fraction of a second.
+        Reading the event id is left to the queued send for the same reason `show_status`
+        does: a create queued a moment ago has not necessarily happened yet.
+        """
+        self._status_body = None
+        self.pacer.drop_status()
+        conversation = await self._conversations.load(self._config.user_id)
+        if conversation is None:
+            return
+        room_id = conversation.room_id
+
+        async def retire() -> None:
+            event_id, self._status_event_id = self._status_event_id, None
+            if event_id is None:
+                return
+            await self._client.redact(await self._token(), room_id, event_id, reason="turn finished")
+
+        self.pacer.send(retire)
 
     async def recent_history(self, limit: int) -> tuple[InboundMessage, ...]:
         """The tail of the live room's conversation, for re-awakening a replacement session.
@@ -164,22 +250,29 @@ class MatrixSyncService:
         if conversation is None:
             logger.info("Matrix: no room bound yet, dropping notice: %s", body)
             return
-        await self._send_notice(await self._token(), conversation.room_id, body)
+        self._queue_notice(conversation.room_id, body)
 
-    async def _send_notice(self, token: str, room_id: str, body: str) -> None:
-        # A fresh transaction ID rather than a derived one: Synapse deduplicates per access
-        # token, the token outlives a restart, and any counter we could derive would reset —
-        # so a notice after a restart would be silently swallowed as a replay of an older
-        # one. Notices have no retry to make idempotent, so there is nothing to trade away.
-        event_id = await self._client.send_notice(token, room_id, body, txn_id=uuid4().hex)
-        self._sent_event_ids.add(event_id)
+    def _queue_notice(self, room_id: str, body: str) -> None:
+        async def post() -> None:
+            # A fresh transaction ID rather than a derived one: Synapse deduplicates per access
+            # token, the token outlives a restart, and any counter we could derive would reset —
+            # so a notice after a restart would be silently swallowed as a replay of an older
+            # one. Notices have no retry to make idempotent, so there is nothing to trade away.
+            await self._client.send_notice(await self._token(), room_id, body, txn_id=uuid4().hex)
+
+        self.pacer.send(post)
 
     def _serviced(self, messages: tuple[InboundMessage, ...], live_room: str | None) -> list[InboundMessage]:
-        """The messages of a batch that are ours to act on."""
+        """The messages of a batch that are ours to act on.
+
+        Haku's own posts are not among them, and are already gone: `MatrixClient._messages`
+        drops everything the bot sent (R1.5). This used to check them again against a set of
+        every event id this process had ever sent — a filter that could not match, since every
+        entry in it was excluded one layer down, and that cost memory for as long as the replica
+        lived and was empty again the moment it restarted.
+        """
         serviced = []
         for message in messages:
-            if message.event_id in self._sent_event_ids:
-                continue
             if message.room_id != live_room:
                 # Only the bound room is serviced (R3.6a). Reachable for a room joined
                 # before the binding existed, and for anything that gets Haku into a room
@@ -204,7 +297,7 @@ class MatrixSyncService:
         live_room = await self._live_room(token, result.messages)
         if messages := self._serviced(result.messages, live_room):
             if not await self._turns.offer(messages):
-                await self._report_holding(token, live_room, len(messages))
+                self._report_holding(live_room, len(messages))
                 return
             self._holding = False
             logger.info("Matrix: handed %d message(s) to the session", len(messages))
@@ -225,10 +318,10 @@ class MatrixSyncService:
             return None
         room = await self._conversations.claim_room(self._config.user_id, adopted)
         logger.info("Matrix: adopted %s from traffic — no room was bound", room)
-        await self._send_notice(token, room, "adopted this room — Haku had no room bound")
+        self._queue_notice(room, "adopted this room — Haku had no room bound")
         return room
 
-    async def _report_holding(self, token: str, live_room: str | None, count: int) -> None:
+    def _report_holding(self, live_room: str | None, count: int) -> None:
         """Tell the room once that its messages are waiting, not lost (R1.6).
 
         Once, not once per pass: a refused batch is re-offered on every sync until it is
@@ -242,7 +335,7 @@ class MatrixSyncService:
         if self._holding or live_room is None:
             return
         self._holding = True
-        await self._send_notice(token, live_room, f"holding {count} message(s) until Haku is ready")
+        self._queue_notice(live_room, f"holding {count} message(s) until Haku is ready")
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""
@@ -283,9 +376,17 @@ class MatrixSyncService:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
+        """Hold the sync loop and the room's outbound queue for as long as this replica runs.
+
+        The pacer runs on **every** replica, not only the sync leader: the turn loop speaks
+        through this object from whichever replica holds the session's lease, which is not
+        generally the one holding the sync lock. That is also why the budget it enforces is an
+        estimate — see `matrix_pacer`.
+        """
         task = asyncio.create_task(self._run(), name="matrix-sync")
         try:
-            yield
+            async with self.pacer.run():
+                yield
         finally:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

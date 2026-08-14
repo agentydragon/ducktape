@@ -1,0 +1,37 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+# Libraries rather than binaries: a probe needs a real Claude credential and makes real model
+# calls, so it is run by hand (`python3 -m haku.cli_protocol.probes.<name>`) on whatever box has
+# that credential, and never by Bazel. Building them is what puts them under the mypy and ruff
+# aspects. They import nothing outside the standard library, which is what keeps running them
+# there possible.
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    visibility = ["//haku:__subpackages__"],
+)
+
+py_library(
+    name = "initialize_fields",
+    srcs = ["initialize_fields.py"],
+    deps = [":harness"],
+)
+
+py_library(
+    name = "hooks",
+    srcs = ["hooks.py"],
+    deps = [":harness"],
+)
+
+py_library(
+    name = "client_hosted_mcp",
+    srcs = ["client_hosted_mcp.py"],
+    deps = [":harness"],
+)
+
+py_library(
+    name = "steering",
+    srcs = ["steering.py"],
+    deps = [":harness"],
+)

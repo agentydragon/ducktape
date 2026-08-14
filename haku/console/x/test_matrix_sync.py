@@ -12,6 +12,7 @@ from pydantic import SecretStr
 
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
+from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 
 
@@ -23,6 +24,8 @@ class _FakeMatrix:
     joined: list[str] = field(default_factory=list)
     sent: list[tuple[str, str]] = field(default_factory=list)
     notices: list[tuple[str, str]] = field(default_factory=list)
+    edits: list[tuple[str, str]] = field(default_factory=list)
+    redacted: list[str] = field(default_factory=list)
     since: str | None = None
     token_valid: bool = True
     logins: int = 0
@@ -48,6 +51,12 @@ class _FakeMatrix:
     async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
         self.notices.append((room_id, body))
         return f"$notice-{len(self.notices)}"
+
+    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str) -> None:
+        self.edits.append((event_id, body))
+
+    async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
+        self.redacted.append(event_id)
 
 
 @dataclass
@@ -79,7 +88,13 @@ def matrix() -> _FakeMatrix:
 
 
 @pytest.fixture
-def service(sync_store, conversations, turns, matrix) -> MatrixSyncService:
+async def service(sync_store, conversations, turns, matrix):
+    """The service with its outbound queue running, because every send goes through it.
+
+    Unthrottled: what the real budget is and how it is spent is `test_matrix_pacer`'s subject,
+    and giving these tests the room's true rate would make each of them wait five seconds per
+    send to assert something that is not about waiting.
+    """
     service = MatrixSyncService(
         MATRIX_CONFIG,
         SecretStr("pw"),
@@ -89,7 +104,14 @@ def service(sync_store, conversations, turns, matrix) -> MatrixSyncService:
         turns=cast(Any, turns),
     )
     service._client = cast(Any, matrix)
-    return service
+    service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)
+    async with service.pacer.run():
+        yield service
+
+
+async def settled(service: MatrixSyncService) -> None:
+    """Wait for what the service queued to actually reach the homeserver."""
+    await service.pacer.flush()
 
 
 @pytest.fixture
@@ -147,6 +169,7 @@ async def test_a_refused_batch_says_so_once(service, matrix, turns, bound_room):
 
     await service.sync_once("tok")
     await service.sync_once("tok")
+    await settled(service)
 
     assert len(matrix.notices) == 1, "a held batch is re-offered every pass; saying so every pass is spam"
 
@@ -166,6 +189,7 @@ async def test_refuses_a_second_room_and_says_so_in_the_first(service, matrix, b
 
     await service.sync_once("tok")
 
+    await settled(service)
     assert matrix.joined == []
     [(room_id, body)] = matrix.notices
     assert room_id == MATRIX_ROOM
@@ -189,6 +213,7 @@ async def test_adopts_an_unbound_room_from_operator_traffic(service, matrix, tur
 
     await service.sync_once("tok")
 
+    await settled(service)
     assert turns.offered == [["hi"]], "the adopting batch is serviced, not dropped"
     [(room_id, body)] = matrix.notices
     assert room_id == "!already-joined:allegedly.works"
@@ -220,6 +245,7 @@ async def test_reply_posts_the_answer_as_text(service, matrix, sync_store, bound
     await sync_store.save_token(MATRIX_USER, "cached")
 
     await service.reply("the answer")
+    await settled(service)
 
     assert matrix.sent == [(MATRIX_ROOM, "the answer")]
 
@@ -229,6 +255,7 @@ async def test_announce_posts_a_notice_into_the_live_room(service, matrix, sync_
     await sync_store.save_token(MATRIX_USER, "cached")
 
     await service.announce("provisioning a sandbox")
+    await settled(service)
 
     assert matrix.notices == [(MATRIX_ROOM, "provisioning a sandbox")]
 
@@ -291,6 +318,62 @@ async def test_auth_error_surfaces_so_the_loop_can_re_login(service, matrix, bou
     except MatrixAuthError:
         return
     raise AssertionError("MatrixAuthError should propagate out of sync_once")
+
+
+async def test_the_turn_status_is_one_line_that_gets_edited(service, matrix, bound_room) -> None:
+    """R6.5. A notice per update would make a busy turn unreadable, which is the whole point
+    of having a status line rather than progress messages."""
+    await service.show_status("running Bash")
+    await settled(service)
+    await service.show_status("running Read")
+    await settled(service)
+
+    assert matrix.notices == [(bound_room, "running Bash")]
+    assert matrix.edits == [("$notice-1", "running Read")]
+
+
+async def test_a_repeated_state_is_not_resent(service, matrix, bound_room) -> None:
+    await service.show_status("running Bash")
+    await service.show_status("running Bash")
+    await settled(service)
+
+    assert matrix.edits == []
+
+
+async def test_every_state_it_is_given_reaches_the_line(service, matrix, bound_room) -> None:
+    """Idempotent, not paced: what the line should say and when it may change are one decision,
+    and they belong to the caller (`claude_chat._TurnStatus`).
+
+    Declining here used to lose the update outright — the driver had already recorded it as
+    shown, so it never offered it again and the room read the older state for the rest of the
+    turn. The floor is still there; it is just where the deferral can be remembered.
+    """
+    await service.show_status("running Bash")
+    await settled(service)
+    await service.show_status("running Read")
+    await settled(service)
+    await service.show_status("running Grep")
+    await settled(service)
+
+    assert matrix.edits == [("$notice-1", "running Read"), ("$notice-1", "running Grep")]
+
+
+async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_room) -> None:
+    await service.show_status("running Bash")
+    await settled(service)
+
+    await service.clear_status()
+    await settled(service)
+
+    assert matrix.redacted == ["$notice-1"]
+
+
+async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, matrix, bound_room) -> None:
+    """Short turns never create a line, and finishing one must not redact someone else's event."""
+    await service.clear_status()
+    await settled(service)
+
+    assert matrix.redacted == []
 
 
 if __name__ == "__main__":

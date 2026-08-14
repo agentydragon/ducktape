@@ -4,12 +4,6 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: llm-zai-reader
-  namespace: litellm
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
   name: llm-anthropic-haku-reader
   namespace: litellm
 ---
@@ -30,17 +24,6 @@ kind: ServiceAccount
 metadata:
   name: llm-anthropic-haku-reader
   namespace: flux-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: llm-zai-reader
-  namespace: ducktape-flux
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["llm-zai"]
-    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -74,20 +57,6 @@ rules:
     resources: ["secrets"]
     resourceNames: ["llm-gemini"]
     verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: llm-zai-litellm-reader
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: llm-zai-reader
-subjects:
-  - kind: ServiceAccount
-    name: llm-zai-reader
-    namespace: litellm
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -147,20 +116,6 @@ subjects:
 ---
 # These target-local stores are capabilities: their authenticated ServiceAccount
 # can read only the matching source Secret in ducktape-flux.
-apiVersion: external-secrets.io/v1
-kind: SecretStore
-metadata:
-  name: llm-zai
-  namespace: litellm
-spec:
-  provider:
-    kubernetes:
-      server:
-        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
-      auth:
-        serviceAccount: { name: llm-zai-reader, namespace: litellm }
-      remoteNamespace: ducktape-flux
----
 apiVersion: external-secrets.io/v1
 kind: SecretStore
 metadata:

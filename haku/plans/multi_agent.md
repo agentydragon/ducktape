@@ -1,24 +1,24 @@
 # Haku multi-agent architecture — remaining work
 
-**This doc is forward-looking.** The dispatch plane is built and live: a Haku
-orchestrator (Anthropic, full perimeter) dispatching well-scoped jobs to cheaper,
-lower-trust worker **zones**. What is built is documented where the code lives — this
-plan holds only what is **not yet built**.
+**This doc is forward-looking.** The former Haku dispatch plane is archived and no
+longer deployed. The archived implementation and manifests remain available as
+historical reference; this plan holds only what is **not yet built**.
 
-Built, documented elsewhere:
+Archived, documented elsewhere:
 
-- Dispatcher service + worker image: <../dispatch/README.md>
-- Cluster wiring (workers-LiteLLM, CNPG, the three-hop key chain): <../../cluster/k8s/haku/dispatch/README.md>
-- Zone perimeters and the trust model: <../../cluster/k8s/haku/zones/README.md>
+- Dispatcher service + worker image: <../x/dispatch/README.md>
+- Cluster wiring (workers-LiteLLM, CNPG, and the three-hop key chain): <../../cluster/k8s/x/haku/dispatch/README.md>
+- Zone perimeters and the trust model: <../../cluster/k8s/x/haku/zones/README.md>
 - Security contract (enforcement inventory): <../docs/security.md>
 - Settled options survey (dispatch plane, Centaur deep-eval, harness): <../archive/2026_07_02_dispatch_plane_options.md>
 
 ## Where it stands
 
-Live: the **zai zone** (z.ai GLM, public-by-construction prompts only, Claude Code CLI
-harness). First production jobs run end to end — `POST /jobs` from `haku-sandbox` →
-credential lint → Anthropic classifier → per-job key mint → k8s Job in `haku-sandbox-zai`
-→ result read back through the `haku_reader` role. Built across build-order steps 1–4 (PRs
+Historical: the former **zai zone** (z.ai GLM, public-by-construction prompts only,
+Claude Code CLI harness) ran end to end — `POST /jobs` from `haku-sandbox` → credential
+lint → Anthropic classifier → per-job key mint → k8s Job in the former `haku-sandbox-zai`
+namespace → result read back through the `haku_reader` role. It was built across
+build-order steps 1–4 (PRs
 [#2739](https://github.com/agentydragon/ducktape/pull/2739),
 [#2748](https://github.com/agentydragon/ducktape/pull/2748),
 [#2754](https://github.com/agentydragon/ducktape/pull/2754), plus rollout fixes).
@@ -44,7 +44,7 @@ credential lint → Anthropic classifier → per-job key mint → k8s Job in `ha
 
 Deferred: grocery-order bounded-write MCP; PII check as a required CI status on PRs.
 
-New local-inference follow-up: <local_dispatch_zone.md>. It adapts the existing zone
+New local-inference follow-up: <../x/dispatch/local_dispatch_zone.md>. It adapts the former zone
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 
@@ -141,7 +141,7 @@ Still to wire:
   today only the _main_ LiteLLM instance has `callbacks: ["langfuse_otel", "prometheus"]`
   wired (`cluster/k8s/litellm/app/deployment.yaml`, one project: `langfuse-litellm-project`);
   the workers-LiteLLM generator explicitly flags the gap
-  (`cluster/k8s/haku/dispatch/litellm/generate_workers_litellm.py`'s own
+  (`cluster/k8s/x/haku/dispatch/litellm/generate_workers_litellm.py`'s own
   `# TODO(langfuse)` comment — `callbacks: ["prometheus"]` only). There's also **no
   Terraform provider for Langfuse** (`tf/gitops/sso-providers/provider_langfuse.tf` is only
   the Authentik OIDC login client) — every project/key that exists today came from Langfuse

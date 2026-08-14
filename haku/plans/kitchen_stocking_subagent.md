@@ -20,8 +20,10 @@ Operator's framing: something collects what changed since the subagent's last ru
 Grocy, and possibly other sources) and decides whether to trigger; when it does trigger, it
 processes the whole batch of changes at once rather than reacting edit-by-edit.
 
-**What exists today that this can build on:** `haku/dispatch/app.py` is Haku-initiated only
-— `POST /jobs` (Haku's own bearer token), no externally-triggered job creation path.
+**Historical implementation note:** the former `haku/x/dispatch/app.py` launcher was
+Haku-initiated only — `POST /jobs` (Haku's own bearer token), with no externally-triggered
+job creation path. That dispatch plane is now archived; this plan does not assume it is
+deployed.
 Sensors (`changedetection.io` → webhook → `haku-state intake/`) are step 6 in
 `multi_agent.md`'s build order and not built; even once they exist, they land findings in
 Haku's own intake for Haku to act on, not a direct dispatch trigger.
@@ -46,9 +48,8 @@ tight enough) turns out to matter.
 
 ## Zone / trust fit
 
-Operator's framing: "low sensitivity... run this one easily with z.ai." Worth checking
-against the zai zone's actual admission policy before assuming it clears: `multi_agent.md`
-describes the zai classifier as admitting **"public-by-construction" prompts only** — the
+Operator's framing: "low sensitivity... run this one easily with z.ai." The former Haku
+zai zone's admission policy was **"public-by-construction" prompts only** — the
 bar today is about the _prompt_ being safe to leak, not just "low sensitivity" in a general
 sense. Household pantry contents aren't secret, but they're also not obviously
 public-by-construction the way a public-repo doc audit is. Two live options if zai's actual
@@ -57,7 +58,7 @@ classifier turns out to be stricter than this task fits:
 - **The oai zone** (moderate trust, described but only partially built per `multi_agent.md`'s
   step 5) explicitly allows "project/calendar-shaped facts, coarse finances" — household
   stock/shopping data fits comfortably there even if it doesn't clear zai's bar.
-- **A local model** (`local_dispatch_zone.md`, fully designed, nothing landed) sidesteps the
+- **A local model** (`../x/dispatch/local_dispatch_zone.md`, fully designed, nothing landed) sidesteps the
   question — no data leaves the cluster at all, and the operator explicitly floated this
   ("maybe even a local model, IDK — we would need to actually measure that").
 

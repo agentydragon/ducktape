@@ -3,8 +3,8 @@
 Archived decision history for the Haku multi-agent dispatch plane. These evaluations
 picked the design that is now built (dispatcher + k8s Jobs + two-layer LiteLLM + Claude
 Code CLI harness); they are kept for the reasoning, not as current plans. The built
-system is documented in <../dispatch/README.md> and
-<../../cluster/k8s/haku/dispatch/README.md>; still-forward options (ChatGPT access for the
+system is documented in <../x/dispatch/README.md> and
+<../../cluster/k8s/x/haku/dispatch/README.md>; still-forward options (ChatGPT access for the
 oai zone, sensors) live in <../plans/multi_agent.md>.
 
 ## Dispatch plane

@@ -4,7 +4,7 @@ metadata:
   name: public-coder-agent-agent-rbac
   namespace: ducktape-flux
   annotations:
-    description: Time-boxed read-and-exec access to the public-coder-agent instance, for GLM context measurement and the autonomous-PR test-drive. Remove after 2026-07-31.
+    description: Time-boxed read-and-exec access to the public-coder-agent instance for the autonomous-PR test-drive. Remove after 2026-07-31.
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/agent-rbac

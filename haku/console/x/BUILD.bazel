@@ -7,14 +7,15 @@ py_library(
     srcs = ["claude_chat.py"],
     deps = [
         ":chat_notifications",
+        "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_auth",
-        "//haku/runtime/x/agent_sdk_transport:options",
-        "//haku/runtime/x/agent_sdk_transport:protocol",
-        "//haku/runtime/x/agent_sdk_transport:transport",
-        "@pypi//claude_agent_sdk",
+        "//haku/console/tools:conversations",
+        "//haku/runtime/x/claude_bridge:cli_client",
+        "//haku/runtime/x/claude_bridge:options",
+        "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
@@ -75,9 +76,10 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:conftest",
-        "@pypi//claude_agent_sdk",
+        "//haku/console:database_schema",
+        "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -87,7 +89,29 @@ py_test(
 py_library(
     name = "matrix_client",
     srcs = ["matrix_client.py"],
-    deps = ["@pypi//matrix_nio"],
+    deps = [
+        ":matrix_markdown",
+        "@pypi//matrix_nio",
+    ],
+)
+
+py_library(
+    name = "matrix_markdown",
+    srcs = ["matrix_markdown.py"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//markdown",
+    ],
+)
+
+py_test(
+    name = "test_matrix_markdown",
+    srcs = ["test_matrix_markdown.py"],
+    deps = [
+        ":matrix_markdown",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
@@ -147,10 +171,30 @@ py_test(
 )
 
 py_library(
+    name = "matrix_pacer",
+    srcs = ["matrix_pacer.py"],
+    deps = [":matrix_client"],
+)
+
+py_test(
+    name = "test_matrix_pacer",
+    srcs = ["test_matrix_pacer.py"],
+    deps = [
+        ":matrix_client",
+        ":matrix_pacer",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "matrix_sync",
     srcs = ["matrix_sync.py"],
     deps = [
         ":matrix_client",
+        ":matrix_pacer",
         ":matrix_session",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -165,6 +209,7 @@ py_test(
     deps = [
         ":conftest",
         ":matrix_client",
+        ":matrix_pacer",
         ":matrix_session",
         ":matrix_sync",
         "//:conftest",

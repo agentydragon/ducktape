@@ -24,10 +24,8 @@ RUN usermod --login workspace --home /home/workspace --move-home node \
     && mkdir -p /workspace \
     && chown workspace:workspace /workspace
 
-# z-claude parity (nix/home/claude_code/z-claude.nix): WebFetch/WebSearch are
-# denied because GLM's tool-call shape differs from Anthropic's (see
-# cluster/k8s/litellm/app/model_rosters.py) — the calls fail confusingly
-# through the GLM lane. Model pinning comes from the SandboxTemplate env.
+# Claude Code's WebFetch/WebSearch settings are intentionally kept out of this
+# shared image; model-specific behavior belongs in the lane template.
 COPY --chown=workspace:workspace claude-settings.json /home/workspace/.claude/settings.json
 
 # Skip Claude Code first-run friction, same knobs as the mkClaudeGateway

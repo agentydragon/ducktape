@@ -21,7 +21,7 @@ spec:
       namespace: ducktape-flux
     - name: agent-workspaces-namespace
       namespace: ducktape-flux
-    - name: litellm-keys-tf # mints + reflects litellm-key-agent-workspaces
+    - name: litellm-keys-tf # mints + reflects the Codex workspace key
       namespace: ducktape-flux
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
       namespace: ducktape-flux

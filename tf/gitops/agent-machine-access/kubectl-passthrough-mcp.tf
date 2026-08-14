@@ -81,7 +81,7 @@ resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
         return {"groups": ["haku"]}
     # agent-box VM users map 1:1 to a same-named k8s group (group == username).
     # Add a user by extending this set.
-    if username in {"agent-box-codex", "agent-box-zai"}:
+    if username == "agent-box-codex":
         return {"groups": [username]}
     return {"groups": []}
   EXPR

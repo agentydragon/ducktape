@@ -480,8 +480,6 @@ py_test(
         "//cluster/k8s:flux_system_files",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
-        "//cluster/k8s/haku/dispatch/dispatcher:manifests",
-        "//cluster/k8s/haku/dispatch/litellm:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/litellm/tana:manifests",

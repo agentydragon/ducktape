@@ -71,6 +71,10 @@ nix/nixos/hosts/agent-box/** filename-conventions-ignored=true
 nix/home/hosts/agent-box/** filename-conventions-ignored=true
 plans/agent-box.md filename-conventions-ignored=true
 
+# CPAP gateway NixOS host: the directory name intentionally matches the
+# kebab-case Kubernetes/DNS host name used by the VM.
+nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
+
 # Non-K8s YAML under cluster/k8s/ - rules_distroless apt manifests for CronJob
 # images. cluster/validation/cluster.py reads this attribute via `git check-attr`
 # (pygit2) and skips the file from orphan detection + resource parsing.
@@ -83,9 +87,9 @@ cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=tru
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
-cluster/k8s/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
+cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
+cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
 # haku-console config, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/haku/console/config.yaml cluster-manifest-ignored=true
 # iron-proxy config for the coder agent's egress proxy, mounted via
@@ -114,3 +118,7 @@ x/k8s_old/** rules-lint-ignored=true
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
 cluster/docs/inference/model_comparison/** rules-lint-ignored=true
+# Retired Haku dispatch-lane manifests; preserved as non-runnable reference material.
+cluster/k8s/x/haku/** cluster-manifest-ignored=true
+cluster/k8s/x/agents/haku-zones-mitmproxy/** cluster-manifest-ignored=true
+cluster/k8s/x/agents/haku-zones-mitmproxy-namespace/** cluster-manifest-ignored=true

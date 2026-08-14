@@ -1,5 +1,8 @@
-# The credential-holding Claude proxy can resolve DNS and connect only to the
-# exact Anthropic API host for which its Authorization substitution is defined.
+# The credential-holding Claude proxy can resolve DNS and connect only to the exact hosts
+# for which an Authorization substitution is defined, plus the githubusercontent hosts a
+# GitHub clone redirects to. Those redirect targets deliberately get **no** substitution
+# rule: they serve pre-signed URLs, so an Authorization header is unnecessary there and
+# sending the PAT to them would widen where the credential travels for no gain.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -21,8 +24,20 @@ spec:
           rules:
             dns:
               - matchName: api.anthropic.com
+              - matchName: api.github.com
+              - matchName: codeload.github.com
+              - matchName: github.com
+              - matchName: objects.githubusercontent.com
+              - matchName: raw.githubusercontent.com
+              - matchName: release-assets.githubusercontent.com
     - toFQDNs:
         - matchName: api.anthropic.com
+        - matchName: api.github.com
+        - matchName: codeload.github.com
+        - matchName: github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
       toPorts:
         - ports:
             - port: "443"

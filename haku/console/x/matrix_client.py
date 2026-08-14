@@ -1,7 +1,6 @@
 """Matrix client for the console's chat surface, over `matrix-nio`.
 
-Two deviations from stock nio, both forced by the console being a leader-elected replica
-set rather than a single long-lived process:
+Three deviations from stock nio:
 
 - **Sync position lives in Postgres**, not nio's on-disk store, because the loop can move
   to a different pod (`matrix_sync.MatrixSyncStore`). `since` is always passed explicitly
@@ -9,6 +8,11 @@ set rather than a single long-lived process:
 - **Failures raise.** nio reports them as result-union values (`SyncError`); the loop needs
   a rejected token to be distinguishable from a transport failure, so every call here
   converts errors to exceptions.
+- **429s are bounded** (`MAX_RATE_LIMIT_RETRIES`), so being rate-limited is something the
+  console finds out about rather than something it silently waits out.
+
+The first two are forced by the console being a leader-elected replica set rather than a
+single long-lived process; the third by `matrix_pacer` needing to hear the answer.
 
 E2EE is off (`haku/plans/matrix_chat_runtime.md` — the room is a plain DM), so no crypto
 store, no `python-olm`.
@@ -27,12 +31,21 @@ from nio.responses import (
     JoinResponse,
     LoginResponse,
     RoomMessagesResponse,
+    RoomRedactResponse,
     RoomSendResponse,
+    RoomTypingResponse,
     SyncResponse,
     WhoamiResponse,
 )
 
+from haku.console.x.matrix_markdown import to_formatted_body
+
 logger = logging.getLogger(__name__)
+
+# How long the homeserver keeps Haku's typing notice alive without being told again (R6.1). Short
+# enough that a console dying mid-turn leaves an indicator that retires itself, long enough that
+# the turn's status driver refreshes it a handful of times rather than constantly.
+TYPING_TIMEOUT_MS = 30_000
 
 # Long-poll ceiling. Synapse returns as soon as anything arrives, so this only bounds how
 # long a quiet connection stays open before it is re-established.
@@ -57,9 +70,29 @@ _INITIAL_FILTER = {"room": {"timeline": {"limit": 0}}}
 # Errcodes that mean "this token is no longer good", as opposed to a transport failure.
 _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 
+# How many times nio may absorb a 429 inside one request before the error reaches us.
+#
+# **Gotcha: nio's default is unlimited, not off.** `AsyncClient._send` already loops on
+# `M_LIMIT_EXCEEDED`, sleeping the server's `retry_after_ms` (or five seconds when it gives
+# none), and `max_limit_exceeded=None` means it does that forever — so a rate-limited send
+# never returned an error, it just stopped returning. That is worse than a visible failure:
+# the caller is blocked inside `room_send` with nothing in any log, and `matrix_pacer` cannot
+# learn a budget it is never told about. Two retries keep a single burst invisible while
+# making a sustained one arrive somewhere it can be acted on.
+MAX_RATE_LIMIT_RETRIES = 2
+
 
 class MatrixError(Exception):
-    """The homeserver returned an error for a call we made."""
+    """The homeserver returned an error for a call we made.
+
+    `retry_after_ms` is a 429's own answer to "how long", carried rather than formatted into
+    the message because `matrix_pacer` acts on it: it is the only measurement of the room's
+    real budget that this console ever receives.
+    """
+
+    def __init__(self, message: str, *, retry_after_ms: int | None = None):
+        super().__init__(message)
+        self.retry_after_ms = retry_after_ms
 
 
 class MatrixAuthError(MatrixError):
@@ -102,7 +135,7 @@ def _unwrap[R: Response](response: Response, expected: type[R]) -> R:
         return response
     if isinstance(response, ErrorResponse):
         error = MatrixAuthError if response.status_code in _AUTH_ERRCODES else MatrixError
-        raise error(f"{response.status_code}: {response.message}")
+        raise error(f"{response.status_code}: {response.message}", retry_after_ms=response.retry_after_ms)
     raise MatrixError(f"unexpected {type(response).__name__} where {expected.__name__} was required")
 
 
@@ -115,7 +148,11 @@ class MatrixClient:
             homeserver=homeserver.rstrip("/"),
             user=user_id,
             device_id=device_id,
-            config=AsyncClientConfig(encryption_enabled=False, request_timeout=SYNC_TIMEOUT_MS / 1000 + 15),
+            config=AsyncClientConfig(
+                encryption_enabled=False,
+                request_timeout=SYNC_TIMEOUT_MS / 1000 + 15,
+                max_limit_exceeded=MAX_RATE_LIMIT_RETRIES,
+            ),
         )
 
     async def close(self) -> None:
@@ -170,23 +207,46 @@ class MatrixClient:
 
         `since` is a `/sync` watermark, which is also a valid `/messages` pagination token —
         so this reads back from wherever the loop has got to, with no second position to keep.
+
+        **`limit` counts messages, not timeline events.** It used to be the page size, with the
+        filter applied afterwards — and this room's timeline is mostly the console talking to
+        itself: a provisioning announcement and one notice per line of bootstrap output on every
+        session start, plus the status line's creation, edits and redaction on every turn. Each
+        of those is excluded here, correctly, and each still spent one of the twenty events
+        fetched. A re-awakening could come back with two or three real messages, or none, while
+        believing it had asked for twenty — silently, since the prompt renders with whatever it
+        found. Paging until the count is met is the same shape `_backfill` beside this already
+        uses.
         """
         self._client.access_token = token
-        page = _unwrap(
-            await self._client.room_messages(room_id, start=since, direction=MessageDirection.back, limit=limit),
-            RoomMessagesResponse,
-        )
-        recent = [self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText)]
+        recent: list[InboundMessage] = []
+        start = since
+        for _ in range(MAX_BACKFILL_PAGES):
+            page = _unwrap(
+                await self._client.room_messages(
+                    room_id, start=start, direction=MessageDirection.back, limit=TIMELINE_LIMIT
+                ),
+                RoomMessagesResponse,
+            )
+            recent.extend(self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText))
+            # `end` is absent at the start of the room's history: there is no earlier page to ask
+            # for, and asking again would re-read this one forever.
+            if len(recent) >= limit or not page.chunk or page.end is None:
+                break
+            start = page.end
         recent.reverse()
-        return tuple(recent)
+        return tuple(recent[-limit:] if len(recent) > limit else recent)
 
     async def send_text(self, token: str, room_id: str, body: str, txn_id: str) -> str:
-        """Send a plain-text message, returning its event ID.
+        """Send Haku's reply, rendering its Markdown for clients that display HTML.
+
+        `body` stays the Markdown source: it is the spec's fallback for clients that show no
+        formatting, and it is what a plain-text reader should see (R11.7).
 
         `txn_id` makes the send idempotent: a retry with the same value is deduplicated by
         the homeserver rather than posting twice.
         """
-        return await self._send(token, room_id, "m.text", body, txn_id)
+        return await self._send(token, room_id, "m.text", body, txn_id, formatted=to_formatted_body(body))
 
     async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
         """Send an `m.notice`, returning its event ID.
@@ -196,12 +256,62 @@ class MatrixClient:
         """
         return await self._send(token, room_id, "m.notice", body, txn_id)
 
-    async def _send(self, token: str, room_id: str, msgtype: str, body: str, txn_id: str) -> str:
+    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str) -> None:
+        """Replace an earlier notice in place, rather than posting a second one.
+
+        This is what lets a turn have **one** status line instead of a line per step (R6.5).
+        The edit is its own event carrying `m.replace`: clients that understand it re-render
+        the original, and clients that do not show the fallback body — which is why the
+        top-level `body` is the new text prefixed with `*`, per the spec's convention, rather
+        than the new text alone.
+        """
         self._client.access_token = token
-        response = _unwrap(
+        new_content = {"msgtype": "m.notice", "body": body}
+        _unwrap(
             await self._client.room_send(
-                room_id, message_type="m.room.message", content={"msgtype": msgtype, "body": body}, tx_id=txn_id
+                room_id,
+                message_type="m.room.message",
+                content=new_content
+                | {
+                    "body": f"* {body}",
+                    "m.new_content": new_content,
+                    "m.relates_to": {"rel_type": "m.replace", "event_id": event_id},
+                },
+                tx_id=txn_id,
             ),
+            RoomSendResponse,
+        )
+
+    async def set_typing(self, token: str, room_id: str, *, active: bool) -> None:
+        """Start or stop Haku's typing notification in *room_id*.
+
+        The homeserver expires a typing notice by itself after `TYPING_TIMEOUT_MS`, which is what
+        makes this safe: a console that dies mid-turn leaves an indicator that goes away on its
+        own rather than one stuck on forever. The cost is that a live turn has to say it again
+        before that expiry, which the turn's status driver does.
+        """
+        self._client.access_token = token
+        _unwrap(await self._client.room_typing(room_id, active, timeout=TYPING_TIMEOUT_MS), RoomTypingResponse)
+
+    async def redact(self, token: str, room_id: str, event_id: str, reason: str) -> None:
+        """Remove an event. Used to retire a status line once its answer has posted (R6.5).
+
+        A redaction rather than a final edit: the status described work in progress, and once
+        the answer is in the room the line is not stale so much as spent — leaving one edited
+        to "done" behind on every turn is the clutter the single status line exists to avoid.
+        """
+        self._client.access_token = token
+        _unwrap(await self._client.room_redact(room_id, event_id, reason=reason), RoomRedactResponse)
+
+    async def _send(
+        self, token: str, room_id: str, msgtype: str, body: str, txn_id: str, formatted: str | None = None
+    ) -> str:
+        self._client.access_token = token
+        content: dict[str, str] = {"msgtype": msgtype, "body": body}
+        if formatted is not None:
+            content |= {"format": "org.matrix.custom.html", "formatted_body": formatted}
+        response = _unwrap(
+            await self._client.room_send(room_id, message_type="m.room.message", content=content, tx_id=txn_id),
             RoomSendResponse,
         )
         return response.event_id

@@ -4,8 +4,8 @@ Receives JSON on stdin, outputs formatted status to stdout.
 Displays session info, model, cwd, cost, context window usage, and subscription
 quota utilization. Quota data comes from `aiquota`'s shared cache (read +
 populated via `QuotaService`), selecting the provider matching the running
-session (claude vs z.ai), so the statusline agrees with the `aiquota` CLI and
-GNOME extension.
+session (Claude or Codex). z.ai sessions remain flat-rate but intentionally
+have no quota backend.
 """
 
 import asyncio

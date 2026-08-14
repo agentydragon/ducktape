@@ -1,7 +1,6 @@
-# codex LLM lane: OpenAI Codex-account models via the cluster LiteLLM. Same
-# image and pod anatomy as the zai template (see sandboxtemplate-zai.yaml for
-# the networkPolicyManagement/dnsPolicy/storageClassName rationale — all three
-# are load-bearing); only the credential env differs. The codex CLI picks up
+# codex LLM lane: OpenAI Codex-account models via the cluster LiteLLM. The
+# networkPolicyManagement/dnsPolicy/storageClassName settings are load-bearing.
+# The codex CLI picks up
 # the baked ~/.codex/config.toml (workspace-image/codex-config.toml), whose
 # provider reads the key from LITELLM_API_KEY.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
@@ -31,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workspace
-          image: git.allegedly.works/ducktape-ci/agent-workspace:devel-20260806043723-13724b0 # {"$imagepolicy": "flux-system:agent-workspace"}
+          image: git.allegedly.works/ducktape-ci/agent-workspace:devel-20260814041228-cbf5875 # {"$imagepolicy": "flux-system:agent-workspace"}
           command: ["sleep", "infinity"]
           workingDir: /workspace
           securityContext:

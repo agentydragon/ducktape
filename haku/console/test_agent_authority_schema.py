@@ -1507,3 +1507,107 @@ def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_lease_backfill_reclaims_a_session_no_replica_is_holding(db_url: str) -> None:
+    """A session written before 0027 has no lease, so the sweep cannot see it.
+
+    That is exactly how the Matrix room stayed on "responding" after the lease shipped: the
+    wedged session predated the column, and `expire_stale_leases` only looks at leases that
+    exist and have passed. A live row must come out of this migration holding a lease that will
+    expire unless somebody renews it, and a terminal row must not be resurrected.
+    """
+    apply_migrations(db_url, "0027")
+    engine = create_engine(db_url)
+    operator_id = uuid4()
+    orphan, healthy, finished = uuid4(), uuid4(), uuid4()
+    now = _now()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO operators (operator_id, status, created_at, updated_at)
+                    VALUES (:operator_id, 'active', :now, :now)
+                    """
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+            for session_id, status in ((orphan, "responding"), (healthy, "ready"), (finished, "closed")):
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO claude_chat_sessions (
+                            session_id, operator_id, status, bridge_token_fingerprint,
+                            bridge_connected_at, error, lease_expires_at, created_at, updated_at
+                        ) VALUES (
+                            :session_id, :operator_id, :status, :fingerprint,
+                            NULL, NULL, NULL, :now, :now
+                        )
+                        """
+                    ),
+                    {
+                        "session_id": session_id,
+                        "operator_id": operator_id,
+                        "status": status,
+                        "fingerprint": b"fingerprint",
+                        "now": now,
+                    },
+                )
+
+        apply_migrations(db_url)
+
+        with engine.connect() as conn:
+            leases: dict[UUID, datetime.datetime | None] = {
+                row.session_id: row.lease_expires_at
+                for row in conn.execute(text("SELECT session_id, lease_expires_at FROM claude_chat_sessions"))
+            }
+        # Grace, not an expired lease: a replica that is genuinely alive renews inside the TTL,
+        # so the backfill must not declare every healthy session dead the moment it runs.
+        for live in (orphan, healthy):
+            lease = leases[live]
+            assert lease is not None, "0027 rows must not stay leaseless"
+            assert lease > now, "a live session must get grace to prove its holder exists"
+        assert leases[finished] == now, "a terminal session's lease ended when the row last changed"
+    finally:
+        engine.dispose()
+
+
+def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
+    """The point of 0029: "live but unreclaimable" stops being a state you can reach.
+
+    0028 repaired the rows already in it, but repair alone leaves the next forgotten insert
+    free to recreate it, and the failure is invisible — the session simply never recovers.
+    """
+    apply_migrations(db_url)
+    engine = create_engine(db_url)
+    operator_id = uuid4()
+    now = _now()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO operators (operator_id, status, created_at, updated_at)
+                    VALUES (:operator_id, 'active', :now, :now)
+                    """
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO claude_chat_sessions (
+                        session_id, operator_id, status, bridge_token_fingerprint,
+                        bridge_connected_at, error, lease_expires_at, created_at, updated_at
+                    ) VALUES (
+                        :session_id, :operator_id, 'responding', :fingerprint,
+                        NULL, NULL, NULL, :now, :now
+                    )
+                    """
+                ),
+                {"session_id": uuid4(), "operator_id": operator_id, "fingerprint": b"fp", "now": now},
+            )
+    finally:
+        engine.dispose()

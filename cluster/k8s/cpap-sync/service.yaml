@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cpap-card
+  namespace: cpap-sync
+  annotations:
+    description: >-
+      Internal ClusterIP facade for the CPAP card HTTP API exposed by the
+      KubeVirt gateway VM on the OptiPlex.
+spec:
+  type: ClusterIP
+  selector:
+    kubevirt.io/domain: cpap-gateway
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 18080

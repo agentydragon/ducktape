@@ -1,0 +1,38 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-dispatcher
+  namespace: ducktape-flux
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  path: ./cluster/k8s/x/haku/dispatch/dispatcher
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: dispatcher
+      namespace: haku-dispatch
+  dependsOn:
+    - name: haku-dispatch-namespace
+      namespace: ducktape-flux
+    - name: haku-dispatch-db
+      namespace: ducktape-flux
+    # Mounts the TF-minted classifier key (reflected) + workers master key.
+    - name: litellm-keys-tf
+      namespace: ducktape-flux
+    # Key minting target; also transitively orders the zone keys.
+    - name: haku-dispatch-litellm
+      namespace: ducktape-flux
+    # rbac-zone-zai.yaml creates a Role inside the zone namespace.
+    - name: haku-zone-zai
+      namespace: ducktape-flux
+    # ESO generators + the flux-system mirror store.
+    - name: external-secrets-config
+      namespace: ducktape-flux

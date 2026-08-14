@@ -26,15 +26,11 @@ keys:
   # user's age decryption identity.
   - &agent-box-host age1gzgkw3pcyd4aan0ndqnc7g7q4rrg3ufpd7n2hepuqpjcmqjj056s4lqawx
   - &agent-box-codex-user age16madmg3yjv39dekr6dscqr2slv0haxcw7lw25v8vmly4wl95td4qwev54u
-  # zai agent user on agent-box: its id_ed25519, planted by NixOS sops-nix and doubling
-  # as its age decryption identity (mirrors agent-box-codex-user above).
-  - &agent-box-zai-user age14zkdx3rku2yp9zv8ejrlv0yd53yx7rmmtfzxmxhawvc5hp2gxf7sxnv4sv
-  # Dedicated, narrow age key for the litellm-zai-clients virtual-key SSOT
-  # (tf/gitops/litellm-keys/litellm-zai-clients-key.yaml). Its private half lives ONLY in the
-  # litellm-keys tf-runner (SOPS_AGE_KEY, via the litellm-zai-clients-sops-age-key
-  # Secret) so TF can decrypt this one file via sops_external — it is NOT the broad
-  # cluster SOPS key, so the runner can decrypt nothing else.
-  - &litellm-zai-clients age165jt8xt99jzfjk9y03tkt34hxcpx0ues3fmzdpgh9vq9gva28adqdarctz
+  # Dedicated, narrow age key for the scoped LiteLLM client-key SSOT files. Its
+  # private half lives only in the litellm-keys tf-runner (SOPS_AGE_KEY, via the
+  # litellm-clients-sops-age-key Secret) so TF can decrypt those files via
+  # sops_external — it is NOT the broad cluster SOPS key.
+  - &litellm-clients age165jt8xt99jzfjk9y03tkt34hxcpx0ues3fmzdpgh9vq9gva28adqdarctz
   # CI key (GitHub Actions, narrow access to CI-only SOPS secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
   - &ci age1zl5lv4g0lzd4pcwx9q4vvq0w4rpmkde5r68k4n2zu89urmnx9svs3c2mef
@@ -317,7 +313,6 @@ creation_rules:
           - *admin
           - *agent-box-host
           - *agent-box-codex-user
-          - *agent-box-zai-user
 
   # wyrm2 gnome-remote-desktop system-RDP TLS pair (admin + host). The system
   # daemon decrypts via the host key; the cert is public but encrypted alongside
@@ -429,21 +424,6 @@ creation_rules:
       - age:
           - *admin
           - *agent-box-codex-user
-  # zai user identity: decrypted on the VM by NixOS sops-nix via the host key, then
-  # planted at /home/zai/.ssh/id_ed25519. admin retained for management.
-  - path_regex: ssh_keys/agent-box-zai-user\.sops\.key$
-    store_type: binary
-    key_groups:
-      - age:
-          - *admin
-          - *agent-box-host
-  # zai Forgejo bot push key: decrypted by the zai user's home-manager sops-nix.
-  - path_regex: ssh_keys/agent-box-zai-forgejo\.sops\.key$
-    store_type: binary
-    key_groups:
-      - age:
-          - *admin
-          - *agent-box-zai-user
 
   # --- ActivityWatch Syncthing private keys (SOPS binary, admin + owning user key) ---
   - path_regex: secrets/home/atlas/activitywatch-syncthing\.sops\.key$
@@ -703,29 +683,6 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # agent-box zai K8s bearer JWT (auto-rotated by the authentik-jwt-rotation
-  # CronJob). Decrypted by the zai user's home-manager on agent-box to render
-  # ~/.kube/config; admin + user keys retained for break-glass.
-  - path_regex: secrets/agent-box-zai-k8s-jwt\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *agent-box-zai-user
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-  # agent-box zai Forgejo tea token (auto-rotated by forgejo-token-rotation).
-  # Decrypted by the zai user's home-manager to render ~/.config/tea/config.yml.
-  - path_regex: secrets/agent-box-zai-forgejo-tea-token\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *agent-box-zai-user
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
   # codex-pod Forgejo tea token (auto-rotated by forgejo-token-rotation). The pod
   # consumes the cluster/k8s Secret manifest; this bare SOPS file is the rotator's
   # encrypted stamp/raw-token output and operator break-glass copy.
@@ -737,52 +694,36 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # z.ai-scoped LiteLLM virtual key (SSOT). Value lives here in git SOPS — NOT as a
-  # cluster Secret. Read by the litellm-keys tf-runner via sops_external (using the
-  # narrow &litellm-zai-clients key) to mint litellm_key.zai_clients, and by the
-  # laptop z-claude alias + the agent-box zai user (ducktape.sopsEnv.LITELLM_ZAI_KEY).
-  # Recipients: admin + the narrow runner key + laptops + agent-box-zai (NOT the
-  # broad cluster key).
-  - path_regex: tf/gitops/litellm-keys/litellm-zai-clients-key\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *litellm-zai-clients
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-          - *agent-box-zai-user
   # tana-clients virtual key (laptop tana-claude — laptop-only). Reuses the narrow
-  # litellm-zai-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
+  # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
   - path_regex: tf/gitops/litellm-keys/litellm-tana-clients-key\.yaml$
     key_groups:
       - age:
           - *admin
-          - *litellm-zai-clients
+          - *litellm-clients
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
   # codex-clients virtual key (laptop + agent-box codex-claude; codex-pod receives it via
-  # the reflected kubernetes_secret, not sops). Reuses the narrow litellm-zai-clients key.
+  # the reflected kubernetes_secret, not sops). Reuses the narrow litellm-clients key.
   - path_regex: tf/gitops/litellm-keys/litellm-codex-clients-key\.yaml$
     key_groups:
       - age:
           - *admin
-          - *litellm-zai-clients
+          - *litellm-clients
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
           - *agent-box-codex-user
   # gemini-clients virtual key (laptop gemini-claude — laptop-only). Reuses the narrow
-  # litellm-zai-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
+  # litellm-clients age key so the existing tf-runner SOPS_AGE_KEY decrypts it too.
   - path_regex: tf/gitops/litellm-keys/litellm-gemini-clients-key\.yaml$
     key_groups:
       - age:
           - *admin
-          - *litellm-zai-clients
+          - *litellm-clients
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *atlas-agentydragon
@@ -846,7 +787,6 @@ creation_rules:
           - *claude-web
           - *codex-cloud-agent
           - *agent-box-codex-user
-          - *agent-box-zai-user
           - *haku
   # Hetzner Robot webservice credentials (admin + all user keys)
   - path_regex: secrets/hetzner-robot\.sops\.yaml$

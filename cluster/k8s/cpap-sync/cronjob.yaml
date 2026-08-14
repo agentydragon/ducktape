@@ -5,7 +5,7 @@ metadata:
   namespace: cpap-sync
   annotations:
     description: >-
-      Connects to the ez Share WiFi SD card in the ResMed CPAP and syncs all EDF data files into the cpap-data Forgejo repo (partial clone + commit + push; credentials from the cpap-data-git-write secret).
+      Connects to the ez Share WiFi SD card through the cpap-card gateway Service and syncs all EDF data files into the cpap-data Forgejo repo (partial clone + commit + push; credentials from the cpap-data-git-write secret).
 spec:
   schedule: "0 10 * * *"
   successfulJobsHistoryLimit: 3
@@ -14,26 +14,37 @@ spec:
     spec:
       backoffLimit: 2
       template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: cpap-sync
+            app.kubernetes.io/component: sync
         spec:
           restartPolicy: OnFailure
-          hostNetwork: true
           nodeSelector:
-            kubernetes.io/hostname: wyrm2
-          securityContext:
-            runAsUser: 0
+            kubernetes.io/hostname: optiplex
+          automountServiceAccountToken: false
           volumes:
             - name: workdir
               emptyDir: {}
-            - name: dbus
-              hostPath:
-                path: /run/dbus
-            - name: network-manager
-              hostPath:
-                path: /var/run/NetworkManager
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/cpap-sync:devel-20260717000149-6162a72 # {"$imagepolicy": "flux-system:cpap-sync"}
-              args: ["--git-url", "$(GIT_REPO_URL)"]
+              image: ghcr.io/agentydragon/cpap-sync:devel-20260814202303-a5529fd # {"$imagepolicy": "flux-system:cpap-sync"}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                # The aspect py_binary launcher materializes its venv under the
+                # image runfiles directory at startup, so this container needs
+                # a writable root filesystem despite the other hardening here.
+                seccompProfile:
+                  type: RuntimeDefault
+              args:
+                - --base-url
+                - http://cpap-card.cpap-sync.svc.cluster.local
+                - --git-url
+                - $(GIT_REPO_URL)
+                - --wifi-interface
+                - ""
               env:
                 # The clone (initial re-seed: the card's full history) lands in
                 # TMPDIR — keep it on the emptyDir, not the container layer.
@@ -54,16 +65,9 @@ spec:
                     secretKeyRef:
                       name: cpap-data-git-write
                       key: password
-              securityContext:
-                capabilities:
-                  add: ["NET_ADMIN"]
               volumeMounts:
                 - name: workdir
                   mountPath: /workdir
-                - name: dbus
-                  mountPath: /run/dbus
-                - name: network-manager
-                  mountPath: /var/run/NetworkManager
               resources:
                 requests:
                   cpu: 100m

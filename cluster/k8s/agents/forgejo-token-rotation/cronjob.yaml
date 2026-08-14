@@ -41,9 +41,6 @@ spec:
             - name: agent-box-codex-forgejo
               secret:
                 secretName: forgejo-token-mint-agent-box-codex
-            - name: agent-box-zai-forgejo
-              secret:
-                secretName: forgejo-token-mint-agent-box-zai
             - name: codex-pod-forgejo
               secret:
                 secretName: forgejo-token-mint-codex-pod
@@ -78,9 +75,6 @@ spec:
                   readOnly: true
                 - name: agent-box-codex-forgejo
                   mountPath: /var/run/secrets/forgejo/agent-box-codex
-                  readOnly: true
-                - name: agent-box-zai-forgejo
-                  mountPath: /var/run/secrets/forgejo/agent-box-zai
                   readOnly: true
                 - name: codex-pod-forgejo
                   mountPath: /var/run/secrets/forgejo/codex-pod

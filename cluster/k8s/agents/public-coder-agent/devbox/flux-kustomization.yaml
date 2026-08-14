@@ -2,22 +2,17 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: public-coder-devbox-app
-  # Stays in flux-system during the pilot because its SOPS decryption key is
-  # namespace-local. Move it once that controller-only key replication is
-  # designed and validated separately.
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 30m
   path: ./cluster/k8s/agents/public-coder-agent/devbox/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:

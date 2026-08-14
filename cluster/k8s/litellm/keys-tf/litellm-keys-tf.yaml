@@ -33,12 +33,12 @@ spec:
               name: tofu-state-db-credentials
               key: password
         # Narrow SOPS age private key (cluster/k8s/litellm/keys-tf/
-        # litellm-zai-clients-sops-age-key.sops.yaml) so sops_external can decrypt
-        # secrets/litellm-zai-clients-key.yaml. Single-purpose — decrypts only that
+        # litellm-clients-sops-age-key.sops.yaml) so sops_external can decrypt
+        # secrets/litellm-clients-key.yaml. Single-purpose — decrypts only that
         # file; not the broad cluster SOPS key.
         - name: SOPS_AGE_KEY
           valueFrom:
             secretKeyRef:
-              name: litellm-zai-clients-sops-age-key
+              name: litellm-clients-sops-age-key
               key: key
   vars: []

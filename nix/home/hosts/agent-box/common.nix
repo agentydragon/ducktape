@@ -1,10 +1,9 @@
-# Shared home-manager base for agent-box agent users (codex, zai).
+# Shared home-manager base for the agent-box Codex user.
 #
 # Deliberately slim (NOT ../../home.nix): each agent identity is least-privilege, so
 # this imports only the secrets it is granted (BuildBuddy, attic, the Forgejo bot key,
 # an agent k8s kubeconfig) plus zsh/direnv/git — not agentydragon's full secret set.
-# Per-user files (codex.nix, zai.nix) import this with their params and add the
-# agent-specific CLI (codex / claude-code).
+# The Codex module imports this with its params and adds the agent-specific CLI.
 #
 # This is a function from per-user params to a home-manager module, so the per-user
 # files call `import ./common.nix { ... }` inside their own `imports`.

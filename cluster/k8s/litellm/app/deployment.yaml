@@ -91,12 +91,6 @@ spec:
                 secretKeyRef:
                   name: litellm-salt-key
                   key: key
-            # z.ai (GLM) key for the z.ai upstream models in proxy-config.yaml.
-            - name: ZAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: litellm-zai-key
-                  key: ZAI_API_KEY
             # Anthropic key for the claude-* upstream models (ESO mirror of the
             # spend-capped haku-cloud workspace key; see secrets/anthropic-api-key-eso.yaml).
             - name: ANTHROPIC_API_KEY

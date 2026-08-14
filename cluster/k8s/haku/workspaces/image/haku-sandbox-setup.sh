@@ -10,7 +10,7 @@
 #
 # TWO IMAGES RUN THIS, and a change here lands in both:
 #   - the haku-sandbox exec target (this directory's Dockerfile), via the MCP bootstrap;
-#   - the Console-owned Claude runner (//haku/runtime/x/agent_sdk_transport:runner_image),
+#   - the Console-owned Claude runner (//haku/runtime/x/claude_bridge:runner_image),
 #     which runs it itself before launching Claude Code, so that session comes up with
 #     Haku's manual and its git credential rather than an empty /workspace.
 # The steps a given box does not want are switched off by env, below — never by a second
@@ -94,6 +94,20 @@ machine git.allegedly.works
 login ${HAKU_GIT_USERNAME}
 password ${HAKU_GIT_PASSWORD}
 NETRC
+
+# GitHub, only where the template asked for it. HAKU_GITHUB_TOKEN is a non-secret
+# placeholder the egress proxy swaps for the real agentydragon-agent PAT on the way out, so
+# what lands here is inert on its own — that is the point, and why this is safe to write
+# into a file the agent can read. The login name is ignored by GitHub when the password is a
+# token, but git demands one. Absent in the haku-sandbox template, which reaches github.com
+# unauthenticated for public reads and should keep doing so.
+if [ -n "${HAKU_GITHUB_TOKEN:-}" ]; then
+  cat >>"$HOME/.netrc" <<NETRC
+machine github.com
+login x-access-token
+password ${HAKU_GITHUB_TOKEN}
+NETRC
+fi
 
 # ── 4. haku-state checkout ───────────────────────────────────────────────────
 # So `bazel run //cli:...` has something to run against. Branch is main (haku-state's

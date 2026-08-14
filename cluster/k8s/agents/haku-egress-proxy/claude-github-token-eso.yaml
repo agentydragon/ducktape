@@ -1,0 +1,24 @@
+# The agentydragon-agent GitHub PAT, for the Console-owned Claude sandbox. The real
+# credential is consumed only by this namespace's claude iron-proxy; the sandbox receives a
+# non-secret placeholder that the proxy replaces in Authorization headers for exact GitHub
+# hosts. Same remote secret the OpenClaw spike reads — one account, separately delivered, so
+# retiring the spike does not take this with it.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-claude-github-token
+  namespace: haku-egress-proxy
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-claude-sandbox-secret-store
+  target:
+    name: haku-claude-github-token
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: GITHUB_TOKEN
+      remoteRef:
+        key: github-token
+        property: token

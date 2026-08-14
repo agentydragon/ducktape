@@ -141,7 +141,10 @@ a service account token on disk.
 The `oc-plain` shape with the hand-written mitmproxy addon swapped for
 [iron-proxy](https://github.com/ironsh/iron-proxy) in `replace` mode: the agent
 holds `GH_PAT=proxy-github-placeholder` and the real PAT lives only in the
-proxy. Manifest: <manifests/iron-proxy-lab.yaml>. Detail: F15, F16.
+proxy. The disposable lab manifest has been retired; its deployed successors are
+the [public coder agent](../../cluster/k8s/agents/public-coder-agent) and the
+[Haku OpenClaw spike](../../cluster/k8s/agents/haku-openclaw-spike). Detail: F15,
+F16.
 
 | Criterion                   | Status   | Evidence                                                                                         |
 | --------------------------- | -------- | ------------------------------------------------------------------------------------------------ |

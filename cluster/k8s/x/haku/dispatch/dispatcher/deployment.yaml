@@ -1,0 +1,104 @@
+# The dispatcher (haku/x/dispatch/README.md):
+# classifier-gated POST /jobs stamping worker Jobs into zone namespaces, worker
+# result turn-in, kill switch. All credentials via secretKeyRef — pod specs are
+# Haku-visible through cluster-diagnostics-reader.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatcher
+  namespace: haku-dispatch
+  labels:
+    app.kubernetes.io/name: dispatcher
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dispatcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dispatcher
+    spec:
+      serviceAccountName: dispatcher
+      containers:
+        - name: dispatcher
+          image: ghcr.io/agentydragon/haku-dispatcher:devel-20260716235627-6162a72 # {"$imagepolicy": "flux-system:haku-dispatcher"}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-dispatch-db-dispatcher
+                  key: uri
+            - name: WORKERS_LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: workers-litellm-master-key
+                  key: api-key
+            # Classifier calls go through the main LiteLLM with a claude-*-only
+            # virtual key (tf/gitops/litellm-keys, reflected from the litellm
+            # namespace) — Langfuse logging, budget, and kill switch for free;
+            # this service holds no raw provider credential.
+            - name: ANTHROPIC_BASE_URL
+              value: http://litellm.litellm.svc.cluster.local:4000
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-dispatcher-classifier
+                  key: api-key
+            - name: HAKU_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dispatcher-haku-token
+                  key: token
+            - name: RESULT_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dispatcher-result-hmac
+                  key: secret
+            - name: JOB_TEMPLATE_PATH
+              value: /etc/dispatcher/job-template.yaml
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dispatcher
+              readOnly: true
+            - name: classifier-context
+              mountPath: /etc/dispatcher-classifier-context
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: dispatcher-config
+        # Operator-provided private classifier context (names/identifiers that
+        # must never appear in prompts, repos known public). Optional: absent
+        # secret = base policy only. To provide it, author a Secret
+        # `dispatcher-classifier-context` with key `context.md` as SOPS
+        # (sops -e -i) in this directory — never plaintext in git.
+        - name: classifier-context
+          secret:
+            secretName: dispatcher-classifier-context
+            optional: true

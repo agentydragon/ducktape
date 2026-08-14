@@ -12,7 +12,7 @@ exports_files(
 py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
-    visibility = ["//cluster/k8s/haku/dispatch/litellm:__pkg__"],
+    visibility = ["//cluster/k8s/x/haku/dispatch/litellm:__pkg__"],
 )
 
 py_test(

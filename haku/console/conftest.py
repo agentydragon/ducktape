@@ -5,6 +5,11 @@ Postgres is required by the console (approval ledger + operator OAuth store), so
 builds the app runs against a fresh per-test database. `db_url` is a pristine empty database (used by
 the migration tests, which drive alembic themselves); `migrated_db_url` is the same database upgraded
 to head (used by everything else, including `make_client`).
+
+This file is expensive to *import*, not just to use: `create_app` drags in the whole composition
+root, which pytest pays at collection for every test under `haku/console/` whose target depends on
+`//haku/console:conftest` — fixtures nobody requested included. So a subpackage of leaf tests that
+uses none of these fixtures should leave the dep off (see `tools/BUILD.bazel`).
 """
 
 from __future__ import annotations

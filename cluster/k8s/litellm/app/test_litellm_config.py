@@ -6,7 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, ZAI_ANTHROPIC_MODELS
+from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
@@ -22,16 +22,6 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
     # gemma4 trains at 128k; expose only that ctx variant.
     ("gemma4:31b-it-q8_0", [("128k", None)]),
 ]
-
-# z.ai (GLM) served via z.ai's Anthropic Messages endpoint. The key comes from the
-# ZAI_API_KEY env var (litellm-zai-key secret). Routing GLM through the Anthropic shape
-# avoids the union-tool-input bug GLM hits on the OpenAI chat shape (z.ai's Anthropic
-# adapter parses GLM's XML tool calls back into proper JSON `tool_use.input` objects). See
-# docs/zai_api.md. LiteLLM fronts it so it logs to Langfuse (via `litellm_metadata`) and
-# props need not hold ZAI_API_KEY. Exposed via LiteLLM's `/v1/messages` endpoint; props'
-# llm-proxy routes its /v1/messages here. The OpenAI-shaped coding-plan route was removed
-# in favor of this one.
-_ZAI_ANTHROPIC_BASE = "https://api.z.ai/api/anthropic"
 
 # Groq (fast open-model inference: Llama chat + Whisper ASR). Key from the
 # GROQ_API_KEY env var (litellm-groq-key secret). Free tier.
@@ -76,8 +66,8 @@ GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-00
 # Tana (Tana-UI models) fronted through the DB-less tana-litellm proxy. tana-litellm is a
 # standard LiteLLM that speaks /v1/messages and authenticates with the same litellm-master-key
 # the main proxy already holds, so we chain to it with the `anthropic/` provider — a verbatim
-# /v1/messages passthrough with no shape translation (same pattern as z.ai GLM above). Key
-# stays in-cluster only; laptop consumers use a scoped tana virtual key against this proxy.
+# /v1/messages passthrough with no shape translation. Key stays in-cluster only; laptop
+# consumers use a scoped tana virtual key against this proxy.
 #
 # Tana encodes reasoning effort in the model name (`/medium`, `/high`), not a `reasoning_effort`
 # param, so there is no clean "one model + effort knob" to map onto. We expose one model per
@@ -153,21 +143,6 @@ def _gemini_entries() -> Iterator[dict]:
             "model_name": model,
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "embedding"},
-        }
-
-
-def _zai_anthropic_entries() -> Iterator[dict]:
-    for model in ZAI_ANTHROPIC_MODELS:
-        yield {
-            "model_name": f"{model}-anthropic",
-            "litellm_params": {
-                # `anthropic/` provider → LiteLLM posts Anthropic Messages to
-                # {api_base}/v1/messages with x-api-key, no shape translation.
-                "model": f"anthropic/{model}",
-                "api_base": _ZAI_ANTHROPIC_BASE,
-                "api_key": "os.environ/ZAI_API_KEY",
-            },
-            "model_info": {"mode": "chat", "supports_function_calling": True},
         }
 
 
@@ -252,7 +227,6 @@ def _expected_main_config() -> dict:
     model_list: list[dict] = []
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
-    model_list.extend(_zai_anthropic_entries())
     model_list.extend(_tana_entries())
     model_list.extend(_cliproxy_entries())
     model_list.extend(_cliproxy_responses_entries())
@@ -302,13 +276,10 @@ def test_terraform_codex_lanes_match_the_cliproxy_model_list() -> None:
 
 
 # main.tf's own comment: "Model names must match generated model_name entries in
-# cluster/k8s/litellm/app/proxy-config.yaml". These are the locals that spell names out
-# literally, so every element must resolve. zai_lane_models is the one that still builds
-# its names with a for-expression; the zai test in cluster/k8s/haku/dispatch/litellm
-# covers it.
+# cluster/k8s/litellm/app/proxy-config.yaml". These are the remaining live-key
+# locals that spell names out literally, so every element must resolve.
 _TF_LITERAL_MODEL_LOCALS = [
     "oai_lane_models",
-    "classifier_models",
     "tana_client_models",
     "codex_client_models",
     "embedding_client_models",

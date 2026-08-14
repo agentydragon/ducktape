@@ -37,7 +37,7 @@ Three cheap carry-overs that cost a day each if forgotten:
   ignores silently and then fails with a misleading `SELF_SIGNED_CERT_IN_CHAIN` (F17,
   F18).
 - Explicit `resources.requests`, or the namespace LimitRange default applies and the
-  gateway is OOMKilled mid-run (recorded in `manifests/iron-proxy-lab.yaml`).
+  gateway is OOMKilled mid-run (recorded in the retired `oc-iron` lab run).
 
 ## What does not transfer: the credential model
 

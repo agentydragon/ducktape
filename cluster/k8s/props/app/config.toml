@@ -6,8 +6,8 @@ backend_url = "http://props:8000"
 # cluster/k8s/props/app/llm-proxy-deployment.yaml.
 llm_proxy_url = "http://props-llm-proxy:8000"
 # Default evaluator: the grader supervisor auto-grades critic runs with this
-# model. glm-4.6 (z.ai via LiteLLM) so grading runs without the home GPU host.
-grader_model = "glm-4.6"
+# model. GPT-5.6 Terra via LiteLLM keeps grading off the home GPU host.
+grader_model = "codex-gpt-5.6-terra"
 
 [executor]
 type = "kubernetes"
@@ -44,107 +44,16 @@ context_window_tokens = 131072
 max_output_tokens = 131072
 max_parallel_agents = 3
 
-# z.ai GLM matrix via LiteLLM through z.ai's Anthropic Messages shape
-# (api.z.ai/api/anthropic), reached via props-llm-proxy's /v1/messages. Routing GLM
-# through the Anthropic shape avoids the union-tool-input bug it hits on the OpenAI chat
-# shape (see docs/z_ai_api.md). The logical name (glm-X) maps to the `<name>-anthropic`
-# LiteLLM model. Pricing/limits below are the z.ai coding-plan list rates for glm-4.6
-# applied uniformly (the plan is quota-based, so per-token cost is a budget guardrail
-# rather than metered billing); refine per-model if z.ai publishes distinct rates.
+# GPT-5.6 Terra via the Codex subscription route in LiteLLM. The subscription
+# route is flat-rate, so Props records no per-token charge for grading.
 [[models]]
-name = "glm-4.5"
+name = "codex-gpt-5.6-terra"
 upstream = "litellm"
-upstream_model = "glm-4.5-anthropic"
+upstream_model = "codex-gpt-5.6-terra"
 api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-[[models]]
-name = "glm-4.5-air"
-upstream = "litellm"
-upstream_model = "glm-4.5-air-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-[[models]]
-name = "glm-4.6"
-upstream = "litellm"
-upstream_model = "glm-4.6-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-[[models]]
-name = "glm-4.7"
-upstream = "litellm"
-upstream_model = "glm-4.7-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-[[models]]
-name = "glm-5"
-upstream = "litellm"
-upstream_model = "glm-5-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-[[models]]
-name = "glm-5-turbo"
-upstream = "litellm"
-upstream_model = "glm-5-turbo-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-[[models]]
-name = "glm-5.1"
-upstream = "litellm"
-upstream_model = "glm-5.1-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 200000
-max_output_tokens = 131072
-max_parallel_agents = 8
-
-# glm-5.2 (released 2026-06-17) ships a 1M-token context window, unlike the
-# 200k of earlier GLM models. Pricing left at the uniform family guardrail above.
-[[models]]
-name = "glm-5.2"
-upstream = "litellm"
-upstream_model = "glm-5.2-anthropic"
-api_shape = "anthropic"
-input_usd_per_1m_tokens = 0.39
-cached_input_usd_per_1m_tokens = 0.39
-output_usd_per_1m_tokens = 1.74
-context_window_tokens = 1000000
-max_output_tokens = 131072
+input_usd_per_1m_tokens = 0
+cached_input_usd_per_1m_tokens = 0
+output_usd_per_1m_tokens = 0
+context_window_tokens = 372000
+max_output_tokens = 128000
 max_parallel_agents = 8

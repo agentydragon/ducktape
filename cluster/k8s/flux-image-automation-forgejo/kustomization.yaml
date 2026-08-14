@@ -17,3 +17,5 @@ resources:
   - grocy-user-perms-provisioner-image-policy.yaml
   - osm-mcp-image-repository.yaml
   - osm-mcp-image-policy.yaml
+  - cpap-gateway-image-repository.yaml
+  - cpap-gateway-image-policy.yaml

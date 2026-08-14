@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - ducktape-gitrepository.yaml
-  - public-coder-agent-flux-reader.yaml
+  - ducktape-flux-reader.yaml

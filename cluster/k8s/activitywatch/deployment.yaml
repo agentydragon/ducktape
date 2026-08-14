@@ -27,7 +27,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       containers:
         - name: aw-server
-          image: ghcr.io/agentydragon/aw-server:devel-20260810093614-3eab1af # {"$imagepolicy": "flux-system:activitywatch"}
+          image: ghcr.io/agentydragon/aw-server:devel-20260814091751-19b7f5c # {"$imagepolicy": "flux-system:activitywatch"}
           command:
             - /usr/local/bin/aw-server
             - --host

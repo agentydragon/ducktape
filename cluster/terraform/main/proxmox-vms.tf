@@ -83,13 +83,6 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     host = "spice"
     usb3 = true
   }
-  # ez Share WiFi SD card reader (MediaTek MT7961) — for CPAP data sync CronJob.
-  # Passed through by vendor:product ID so it survives atlas USB port changes.
-  # Requires a one-time wyrm2 restart to activate USB hotplug.
-  usb {
-    host = "0e8d:7961"
-    usb3 = true
-  }
   # RTL-SDR Blog V4 (Realtek RTL2838) — for SDR streaming via rtl_tcp.
   usb {
     host = "0bda:2838"

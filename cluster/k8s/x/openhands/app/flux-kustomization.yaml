@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: openhands
+  namespace: ducktape-flux
+spec:
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+
+    namespace: ducktape-flux
+  path: ./cluster/k8s/x/openhands/app
+  prune: true
+  wait: true
+  dependsOn:
+    - name: openhands-namespace
+    - name: openhands-secrets
+    - name: openhands-sandboxes
+    - name: gateway
+      namespace: ducktape-flux
+    - name: authentik
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux

@@ -74,7 +74,7 @@ volume shared read-only with the agent.
 
 ## Using the shared cluster cache service
 
-`cluster/k8s/wayback-cache/` runs the shared write-through cache service
+`cluster/k8s/x/wayback-cache/` runs the shared write-through cache service
 (ClusterIP only) so repeated lookups reuse stored metadata and replay bodies
 without re-hitting IA. Point the proxy at it through a port-forward:
 

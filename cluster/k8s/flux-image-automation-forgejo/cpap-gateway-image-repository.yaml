@@ -1,0 +1,10 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: cpap-gateway
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/cpap-gateway
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds

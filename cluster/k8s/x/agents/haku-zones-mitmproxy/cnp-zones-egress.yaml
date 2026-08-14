@@ -1,0 +1,93 @@
+# External endpoints Haku worker-zone jobs may reach through the shared proxy.
+# Deviation from agents/haku-egress-proxy: NO Google APIs (the whole point of the
+# zones — see cluster/k8s/x/haku/zones/README.md), no api.anthropic.com
+# (workers' LLM path is in-cluster via the haku-dispatch workers-LiteLLM), no
+# image registries (kubelet pulls images at the node, not through pod egress).
+# v1 allowlist = git hosting + package indexes for in-job tooling; widen only
+# with evidence (each addition is a reviewable diff here).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-zones-egress
+  namespace: haku-zones-mitmproxy
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-zones-mitmproxy
+  egress:
+    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
+    #
+    # Mirrors every toFQDNs entry below, pinned against them by
+    # //cluster/validation:test_egress_allowlists. Rationale for the duplication,
+    # for `**.cluster.local`, and for why this layer is not redundant with
+    # toFQDNs: see the same rule in
+    # agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+              - matchName: api.github.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+    # The shared build-registry bucket: public package, source and toolchain
+    # registries, granted all-or-none. Pinned as one set by
+    # //cluster/validation:test_egress_allowlists (BUILD_REGISTRIES) -- add a host
+    # there and here together, or the test fails.
+    - toFQDNs:
+        - matchName: bcr.bazel.build
+        - matchName: cache.nixos.org
+        - matchName: channels.nixos.org
+        - matchName: code.forgejo.org
+        - matchName: codeload.github.com
+        - matchName: data.forgejo.org
+        - matchName: files.pythonhosted.org
+        - matchName: ftp.gnu.org
+        - matchName: ghcr.io
+        - matchName: github.com
+        - matchName: nixos.org
+        - matchName: nodejs.org
+        - matchName: objects.githubusercontent.com
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: pypi.org
+        - matchName: raw.githubusercontent.com
+        - matchName: registry.npmjs.org
+        - matchName: release-assets.githubusercontent.com
+        - matchName: releases.bazel.build
+        - matchName: snapshot.debian.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # api.github.com is a write surface (gists, issues, pushes), so it is
+    # granted on its own rather than folded into the shared bucket.
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

@@ -21,6 +21,7 @@ import datetime
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select, text
@@ -32,7 +33,7 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
-from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
+from haku.console.x.claude_chat import REPLICA, ClaudeChatService, ClaudeChatStore, MatrixSession
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
@@ -56,9 +57,33 @@ PROVISION_BACKOFF = datetime.timedelta(seconds=60)
 # so there is still exactly one login and one device (R10.3a).
 Announce = Callable[[str], Awaitable[None]]
 
-# Reads the tail of the live room's conversation, newest `limit` messages, oldest first.
-# Supplied by the sync service for the same reason `Announce` is: it holds the credential.
-RecentHistory = Callable[[int], Awaitable[Sequence[InboundMessage]]]
+
+class RoomChannel(Protocol):
+    """Everything `MatrixSurface` needs said to, or read from, the live room.
+
+    One port rather than the four separate dependencies this used to take — a history callable,
+    an announce callable, a reply callable, and a status object — all of which were bound to the
+    same sync service at composition. The callables were narrow because the *supervisor* must
+    never hold a Matrix credential (`Announce` above, still one function for exactly that
+    reason); passing three of them plus the whole service to one collaborator bought nothing and
+    hid that they were one thing.
+
+    Implemented by the sync loop, the only holder of the credential and the only object that
+    knows which room is bound.
+    """
+
+    async def recent_history(self, limit: int) -> Sequence[InboundMessage]: ...
+
+    async def announce(self, body: str) -> None: ...
+
+    async def reply(self, body: str) -> None: ...
+
+    async def show_status(self, body: str) -> None: ...
+
+    async def set_typing(self, active: bool) -> None: ...
+
+    async def clear_status(self) -> None: ...
+
 
 # How much of the conversation a replacement session is handed. Enough to pick up a thread
 # mid-topic, not enough to be a transcript — anything older is in the room, which the agent
@@ -167,46 +192,71 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
     return "\n".join(f"[{message.event_id}] {message.body}" for message in messages)
 
 
-class MatrixSystemPrompt:
-    """Renders the system prompt for the session bound to the live room.
+class MatrixSurface:
+    """Everything the turn loop does that is specific to a session serving a Matrix room.
 
-    Filters by session the same way `MatrixReplySink` does, and for the same reason: one
-    `ClaudeChatService` serves both surfaces, and a console SPA session must not be told it
-    is speaking into a Matrix room.
+    One class rather than three sinks, and no session filtering in any of them: the console
+    picks this by reading the session's own `surface` (R11.3a), so being called at all is the
+    statement that this session serves `room_id`. Each method used to begin by loading the
+    current room binding and comparing its `session_id` — the row's own fact, re-derived per
+    delivery, in a form where getting it wrong meant silently saying nothing.
 
     History is read here rather than carried forward from the previous session, because by
     the time a replacement session starts, the one that held the context is gone. The room is
     the source (R3.3a) — it is also what Rai sees, so what the prompt claims was said and
     what the room shows cannot disagree.
+
+    The `RoomChannel` is the sync service, which holds the only Matrix credential and services
+    one room (R3.6a) — so `room_id` names the room it already speaks to rather than choosing
+    between rooms.
     """
 
     def __init__(
-        self,
-        config: MatrixConfig,
-        runtime: ClaudeRuntimeConfig,
-        conversations: MatrixConversationStore,
-        template: SystemPromptTemplate,
-        history: RecentHistory,
+        self, config: MatrixConfig, runtime: ClaudeRuntimeConfig, template: SystemPromptTemplate, room: RoomChannel
     ):
         self._config = config
         self._runtime = runtime
-        self._conversations = conversations
         self._template = template
-        self._history = history
+        self._room = room
 
-    async def render(self, session_id: UUID) -> str | None:
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None or conversation.session_id != session_id:
-            return None
+    async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return self._template.render(
             SessionIntroduction(
                 session_id=session_id,
-                room_id=conversation.room_id,
+                room_id=room_id,
                 operator_user_id=self._config.operator_user_id,
                 workspace=self._runtime.cwd,
                 recent_messages=await self._recent(),
             )
         )
+
+    async def deliver(self, room_id: str, text: str) -> None:
+        """Forward a finished turn's answer into the room (R11.1)."""
+        del room_id  # The reply channel is already bound to the one room this console services.
+        if not (body := text.strip()):
+            logger.warning("Matrix: a turn finished with no text to send")
+            return
+        await self._room.reply(body)
+
+    async def report(self, room_id: str, detail: str) -> None:
+        """Narrate the sandbox's setup into the room (R7.1)."""
+        del room_id
+        await self._room.announce(detail)
+
+    async def show_status(self, room_id: str, text: str) -> None:
+        """Say what the turn is doing now, on the room's one status line (R6.2)."""
+        del room_id
+        await self._room.show_status(text)
+
+    async def clear_status(self, room_id: str) -> None:
+        """Retire that line once the turn is over, however it ended (R6.5)."""
+        del room_id
+        await self._room.clear_status()
+
+    async def set_typing(self, room_id: str, active: bool) -> None:
+        """Show a turn in progress without the agent doing anything about it (R6.1)."""
+        del room_id
+        await self._room.set_typing(active)
 
     async def _recent(self) -> list[HistoryMessage]:
         """The tail of the conversation, or none of it if the homeserver would not say.
@@ -217,7 +267,7 @@ class MatrixSystemPrompt:
         goes quiet. Loud, though — this is a homeserver problem and should be visible.
         """
         try:
-            messages = await self._history(RE_AWAKENING_MESSAGES)
+            messages = await self._room.recent_history(RE_AWAKENING_MESSAGES)
         except Exception:
             logger.exception("Matrix: could not read room history; starting the session without it")
             return []
@@ -230,29 +280,6 @@ class MatrixSystemPrompt:
             )
             for message in messages
         ]
-
-
-class MatrixReplySink:
-    """Egress: forwards a finished turn's answer into the live room (R11.1).
-
-    Attached to the shared `ClaudeChatService`, so it sees every session's turn and must
-    filter: only the session bound to the Matrix room is forwarded, and a console SPA
-    session on the same service is left alone.
-    """
-
-    def __init__(self, config: MatrixConfig, conversations: MatrixConversationStore, reply: Announce):
-        self._config = config
-        self._conversations = conversations
-        self._reply = reply
-
-    async def deliver(self, session_id: UUID, final_text: str) -> None:
-        conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None or conversation.session_id != session_id:
-            return
-        if not (body := final_text.strip()):
-            logger.warning("Matrix: session %s finished a turn with no text to send", session_id)
-            return
-        await self._reply(body)
 
 
 class MatrixSessionSupervisor:
@@ -305,21 +332,37 @@ class MatrixSessionSupervisor:
         if conversation is None:
             return  # No room yet — nothing to serve, and nowhere to say so.
 
-        status = await self._chat_store.status(conversation.session_id) if conversation.session_id is not None else None
+        # Before believing a live status, give a session whose holder has gone away the chance
+        # to become an ended one. Otherwise this method reads `responding` off a row nobody is
+        # working on and returns satisfied, which is how a room stops being answered without
+        # anything reporting a failure.
+        await self._chat_store.expire_stale_leases()
+
+        outcome = (
+            await self._chat_store.outcome(conversation.session_id) if conversation.session_id is not None else None
+        )
+        status = outcome.status if outcome is not None else None
         if status in LIVE_SESSION_STATUSES:
             await self._report(str(status), f"session {conversation.session_id} is {status}")
             return
 
         if conversation.session_id is not None:
+            # With the reason, not just the status. Every path that ends a session records a
+            # specific sentence in `error` — which replica went away, what the runtime failed
+            # with, that the runner disconnected — and the room used to be told only `failed`,
+            # so the one place an operator was looking held the least informative version of
+            # what the console knew.
+            reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
             await self._report(
-                f"ended:{status}", f"session {conversation.session_id} ended ({status or 'gone'}); starting a new one"
+                f"ended:{status}",
+                f"session {conversation.session_id} ended ({status or 'gone'}){reason}; starting a new one",
             )
             # The claim may already be gone — `handle_runner` deletes it on the way out — so
             # this is the idempotent sweep rather than a targeted delete.
             await self._conversations.set_session(self._config.user_id, None)
             await self._chat.reconcile_terminal_claims()
 
-        session = await self._chat.create(await self._operator_id())
+        session = await self._chat.create(await self._operator_id(), MatrixSession(room_id=conversation.room_id))
         await self._conversations.set_session(self._config.user_id, session.session_id)
         self._last_announced = ChatSessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
@@ -372,7 +415,12 @@ class MatrixSessionSupervisor:
                 if not locked:
                     await asyncio.sleep(LEADER_RETRY.total_seconds())
                     continue
-                logger.info("Matrix: this replica is the session supervisor")
+                logger.info("Matrix: this replica (%s) is the session supervisor", REPLICA)
+                # Said in the room, not just logged. `_last_announced` is per-process, so a
+                # new leader re-announces whatever the current status is — which reads as the
+                # session having changed when only the supervisor did. Naming the replica
+                # makes a handover legible instead of looking like a duplicate notice.
+                await self._report(f"leader:{REPLICA}", f"session supervisor is now {REPLICA}")
                 try:
                     await self._supervise_as_leader()
                 except asyncio.CancelledError:

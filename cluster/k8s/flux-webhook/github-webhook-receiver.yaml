@@ -69,13 +69,7 @@ spec:
       name: haku-openclaw-spike
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-dispatcher
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: haku-claude-runner
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: haku-zone-worker
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: haku-sandbox-mcp

@@ -11,8 +11,8 @@ pod IP. What keeps that safe is not the bind address but networkpolicy.yaml,
 which admits only the outpost's pods -- without it any pod could forge
 x-authentik-username and be trusted as agentydragon.
 
-Two lanes on one LiteLLM key: the Codex subscription models and the z.ai GLM
-models. Only the 5.6 group is offered from the Codex lane. contextWindow/maxTokens are measured, not
+The agent uses Codex subscription models through one LiteLLM key. Only the 5.6
+group is offered. contextWindow/maxTokens are measured, not
 published: openai_utils/probe_context_window.py binary-searches the live
 serving path and all three 5.6 models reject identically just above
 372,000 total context. Published figures disagree in both directions --

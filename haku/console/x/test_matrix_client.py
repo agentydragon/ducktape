@@ -175,5 +175,33 @@ async def test_backfill_is_bounded_and_says_what_it_dropped(monkeypatch, caplog)
     assert "gave up backfilling" in caplog.text
 
 
+async def test_history_counts_messages_rather_than_timeline_events():
+    """What a replacement session is handed is `limit` *messages* (R3.3a).
+
+    It used to be `limit` events, filtered afterwards — and this room's timeline is mostly the
+    console's own notices, so a re-awakening could come back with almost nothing while believing
+    it had asked for twenty. Silently: the prompt renders with whatever it found.
+    """
+    chatter = [_message(USER, f"provisioning {index}", event_id=f"$n{index}", msgtype="m.notice") for index in range(4)]
+    older = {"chunk": [_message(OPERATOR, "the actual question", event_id="$q")], "start": "p2", "end": "p3"}
+    client, homeserver = _client(_sync_body(), pages=[{"chunk": chatter, "start": "p1", "end": "p2"}, older])
+
+    recent = await client.recent_messages("tok", ROOM, since="s1", limit=1)
+
+    assert [message.body for message in recent] == ["the actual question"]
+    assert homeserver.message_kwargs["start"] == "p2", "the second page is asked for from where the first ended"
+
+
+async def test_history_stops_at_the_start_of_the_room():
+    """A room with less history than asked for ends the paging rather than re-reading it."""
+    # No `end`: the homeserver's way of saying there is no earlier page to ask for.
+    first = {"chunk": [_message(OPERATOR, "all there is", event_id="$a")], "start": "p1"}
+    client, _ = _client(_sync_body(), pages=[first])
+
+    recent = await client.recent_messages("tok", ROOM, since="s1", limit=20)
+
+    assert [message.body for message in recent] == ["all there is"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

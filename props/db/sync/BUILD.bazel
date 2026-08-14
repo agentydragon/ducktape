@@ -127,6 +127,7 @@ py_test(
 
 py_test(
     name = "test_model_metadata_sync",
+    size = "medium",  # measured at 43.3s; `small` is a 60s timeout
     srcs = ["test_model_metadata_sync.py"],
     requires_docker = True,
     deps = [

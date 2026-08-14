@@ -1,0 +1,19 @@
+# The Job template is data for haku/x/dispatch's stamping parity test.
+exports_files(
+    [
+        "job-template.yaml",
+        "zones.yaml",
+    ],
+    visibility = ["//haku/x/dispatch:__pkg__"],
+)
+
+# Cluster manifests for cluster/validation's flux-build test (the
+# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+filegroup(
+    name = "manifests",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD.bazel"],
+    ),
+    visibility = ["//cluster/validation:__pkg__"],
+)

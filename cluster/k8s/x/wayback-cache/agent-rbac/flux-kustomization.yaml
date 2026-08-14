@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: wayback-cache-agent-rbac
+  namespace: ducktape-flux
+  annotations:
+    description: Agent RBAC for wayback-cache namespace. Lightweight — only RoleBindings. Depends on namespace existing + agent RBAC base for ClusterRoles.
+spec:
+  # Decommissioned by operator request; keep its configuration but stop reconciliation.
+  suspend: true
+  interval: 10m
+  path: ./cluster/k8s/x/wayback-cache/agent-rbac
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  timeout: 2m
+  dependsOn:
+    - name: wayback-cache-namespace
+      namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux

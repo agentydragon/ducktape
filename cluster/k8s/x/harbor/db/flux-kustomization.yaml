@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: harbor-db
+  namespace: ducktape-flux
+spec:
+  # Suspended 2026-06-03 while the rest of Harbor (app, storage) is also
+  # unusable with Proxmox down. The cluster.yaml here has been updated to
+  # `local-path-ovh` + region=hil so it'll come back up on OVH when
+  # unsuspended; the rest of Harbor needs separate work before unsuspending
+  # is meaningful.
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  path: ./cluster/k8s/x/harbor/db
+  prune: true
+  wait: true
+  dependsOn:
+    - name: harbor-namespace
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: local-path-provisioner
+      namespace: ducktape-flux

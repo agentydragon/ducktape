@@ -4,6 +4,9 @@ metadata:
   name: agent-box-namespace
   namespace: ducktape-flux
 spec:
+  # The retired VM stack and its namespace were intentionally deleted.
+  # Keep this controller paused so Flux does not recreate the empty namespace.
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 2m

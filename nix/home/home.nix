@@ -13,10 +13,6 @@
 let
   toTOML = (pkgs.formats.toml { }).generate;
 
-  # `z-claude`: Claude Code on z.ai GLM via the cluster LiteLLM proxy, reading
-  # $LITELLM_ZAI_KEY. See ./claude_code/z-claude.nix. Shared with the agent-box zai user.
-  zClaude = import ./claude_code/z-claude.nix { inherit pkgs; };
-
   # `codex-claude`: Claude Code on ChatGPT/Codex via the in-cluster CLIProxyAPI gateway.
   # See ./claude_code/codex-claude.nix.
   codexClaude = import ./claude_code/codex-claude.nix { inherit pkgs; };
@@ -115,12 +111,6 @@ in
     HABITIFY_API_KEY = {
       sopsFile = ../../secrets/shared/habitify.yaml;
       key = "habitify_api_key";
-    };
-    # z.ai-scoped LiteLLM virtual key (SSOT in tf/gitops/litellm-keys/litellm-zai-clients-key.yaml)
-    # powering the `z-claude` Claude-Code-on-GLM alias below.
-    LITELLM_ZAI_KEY = {
-      sopsFile = ../../tf/gitops/litellm-keys/litellm-zai-clients-key.yaml;
-      key = "litellm_zai_key";
     };
     # Tana-scoped LiteLLM virtual key powering the `tana-claude` alias below.
     TANA_LITELLM_KEY = {
@@ -365,7 +355,6 @@ in
       sccache
       gcc
 
-      zClaude
       codexClaude
       tanaClaude
       geminiClaude
@@ -385,7 +374,6 @@ in
       bbapi
       gterm-theme
       ducktapePackages.tana-outliner
-      ducktapePackages.zai-cli
     ]
     ++ [
       eza

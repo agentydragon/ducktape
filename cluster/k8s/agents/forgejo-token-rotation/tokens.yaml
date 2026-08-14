@@ -29,10 +29,6 @@ rotations:
     credentials_dir: /var/run/secrets/forgejo/agent-box-codex
     sops_file: secrets/agent-box-codex-forgejo-tea-token.yaml
     token_prefix: forgejo-tea-agent-box-codex
-  - name: agent-box-zai
-    credentials_dir: /var/run/secrets/forgejo/agent-box-zai
-    sops_file: secrets/agent-box-zai-forgejo-tea-token.yaml
-    token_prefix: forgejo-tea-agent-box-zai
   - name: codex-pod
     credentials_dir: /var/run/secrets/forgejo/codex-pod
     sops_file: secrets/codex-pod-forgejo-tea-token.yaml

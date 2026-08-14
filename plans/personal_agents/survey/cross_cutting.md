@@ -74,7 +74,7 @@ LiteLLM 1.86.3's Responses-to-chat bridge returning before the Responses-specifi
 logging hook runs (`cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`,
 confirmed still present in 1.87.1/1.88.0-rc.3 per that doc). Haku's second-layer
 worker LiteLLM only wires `prometheus` with a `TODO(langfuse)` pending a dedicated
-project (`cluster/k8s/haku/dispatch/litellm/generate_workers_litellm.py:37-39`).
+project (`cluster/k8s/x/haku/dispatch/litellm/generate_workers_litellm.py:37-39`).
 
 ### C5 — no unrestricted network for personal-data agents
 
