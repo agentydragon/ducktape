@@ -6,3 +6,5 @@ metadata:
 spec:
   image: ghcr.io/agentydragon/cpap-gateway
   interval: 5m
+  secretRef:
+    name: gaffer-ghcr-pull

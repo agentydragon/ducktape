@@ -71,9 +71,11 @@ jobs:
       # retry after a transient registry failure.
       - name: Push to GHCR
         if: github.ref_name == 'devel'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
         run: |
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
-          echo "$GITHUB_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          echo "$GHCR_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           skopeo copy --insecure-policy \
             "docker-archive:$(readlink -f result)" \
             "docker://$ref"
