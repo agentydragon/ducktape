@@ -152,8 +152,10 @@ is the one piece of design B this subset does need.
 
 **Rolled mid-turn is the harder half**, and it is where the queues earn their place: frames the agent
 produced while nobody was listening have to survive, so the runner keeps a bounded outbound buffer
-and the adopting console says which sequence it already has. That is the additive envelope field and
-the version bump.
+and re-sends from it on adopt. What makes that safe is that the frames worth replaying carry the
+agent's own identity, so a duplicate is recognisable and the cursor only has to be roughly right —
+worked through in [the ownership plan](../../plans/cli_protocol_ownership.md), including the one
+frame class where replay would corrupt rather than duplicate.
 
 Worth noticing that the **inbound half is already durable, on the console side**: `claude_chat_prompts`
 is a Postgres queue, so a prompt that was never delivered is not lost. With one gap that adoption

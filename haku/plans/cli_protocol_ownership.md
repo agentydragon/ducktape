@@ -152,10 +152,9 @@ stream directly for an adopted turn" does not turn the store into a migration.
   the CLI now outlives the connection, so an adopting console must not re-handshake a process
   that is already initialized. The runner owns the process lifetime, so it is the honest owner
   of the fact that the handshake happened. Consoles come and go around it.
-- **A resume point.** The runner keeps a bounded ring buffer of frames it has not seen
-  acknowledged; on adopt, the console says which sequence it already has. That means a
-  monotonic sequence number on runner → console frames — additive to the envelope, and by the
-  envelope's own `extra="forbid"` rule it costs a `PROTOCOL_VERSION` bump.
+- **A resume point, made safe by identity rather than by exactness.** The runner keeps a bounded
+  buffer of frames it has not seen acknowledged and re-sends from there on adopt. See below: what
+  makes that correct is that a replayed frame is recognisable, not that the cursor is right.
 - **An adopt path in `authenticate_bridge`.** It currently requires `status == PROVISIONING`
   and `bridge_connected_at is None`, so every reconnect is refused. Adoption must be gated on
   taking the lease — that is the arbitration that stops two replicas adopting one CLI.
@@ -165,6 +164,74 @@ stream directly for an adopted turn" does not turn the store into a migration.
   `claude_chat_turns` brackets.
 - **An idle timeout in the runner.** A CLI held open for a console that never returns trades a
   wedged room for a wedged sandbox.
+
+### Replay is safe because frames have identity — with one exception
+
+The first version of the resume point above wanted an exact, durable cursor: a monotonic sequence
+number on the envelope, and an acknowledgement the runner could trust. That is the expensive part —
+it is a `PROTOCOL_VERSION` bump, which is not atomic across two independently rolled images — and it
+is also the wrong thing to lean on. **A cursor cannot be the correctness argument, because the
+console can die between recording a frame and acknowledging it**; the frame is then replayed no
+matter how exact the cursor was. Something downstream has to tolerate seeing it twice.
+
+Once it does, the cursor stops being load-bearing: it bounds _how much_ is replayed, not whether
+replaying is safe. Deliver at least once, recognise duplicates, and the sequence number becomes an
+optimisation that can be added later or not at all.
+
+**The frames the console keeps already carry identity**, assigned by the agent rather than by us:
+
+| frame               | identity                                                              |
+| ------------------- | --------------------------------------------------------------------- |
+| `assistant`         | `message.id` (`msg_…`) — already stored as `agent_message_id`         |
+| `user`              | the `tool_use_id` of the `tool_result` block it carries; one per call |
+| `result`            | one per turn, and the console knows which turn is open                |
+| `command_lifecycle` | `(command_uuid, state)` — the uuid we stamped, plus which state it is |
+| `system/task_*`     | `task_id`, and `tool_use_id` where one applies                        |
+
+**The exception is `stream_event`, and it is the one place replay actively corrupts.** A delta has
+no identity — two identical ones are legitimately distinct — and the turn loop's `streamed += delta`
+would double-append the text on replay. But deltas are also the one class that never needs
+replaying: each is a preview of an `assistant` frame that arrives complete moments later, and the
+console already declines to record them (`RolloutRecorder` skips them, so the log stays readable).
+So the buffer's rule falls out of a rule that already exists for another reason: **the runner buffers
+everything except deltas.** Both halves of the system then agree that a delta is worth nothing once
+its message has landed.
+
+Two consequences worth building deliberately:
+
+- **Make it a schema property, not a rule.** A nullable `frame_uid` on `claude_chat_frames` with a
+  partial unique index on `(session_id, frame_uid)` makes "the same frame twice" unrepresentable
+  rather than something every writer has to remember — the shape `uq_claude_chat_turns_open` and
+  `uq_claude_chat_prompts_unclaimed` already use. Additive.
+- **Dedupe where the frame enters, not where it is stored.** The record is not the only thing a
+  frame touches: a replayed `assistant` frame that reached `_run_turn` would post the message into
+  the room a second time. The check belongs at ingestion, ahead of dispatch, so a duplicate is
+  neither recorded nor acted on. Matrix offers a second line for free — `send_text` currently passes
+  `txn_id=uuid4().hex`, so the homeserver cannot deduplicate a reply it has already seen. Derived
+  from the message's own `msg_…` id it could. (The reasoning that keeps _notices_ on fresh
+  transaction ids does not apply here: it is about derived counters resetting across a restart, and
+  an agent-assigned message id does not reset.)
+
+### Letting the console own the whole lifecycle
+
+Today a session's outer bound is `shutdownTime` on the SandboxClaim, set to
+`now + session_ttl_seconds` (7200) **at creation and never patched**. So it is not an idle timeout —
+a conversation in full flow dies at exactly two hours, mid-turn, and the room is told the session
+failed. Removing it in favour of console-managed lifecycle is right, and cheaper than it looks
+because the TTL is not what prevents leaks: the Kyverno `CleanupPolicy` beside the template already
+reaps Sandboxes and SandboxClaims older than 24h, at the CR layer, precisely because the Agent
+Sandbox controller recreates deleted Pods. That janitor is the backstop; the TTL is a policy on top
+of it.
+
+So: drop `shutdownTime` to the janitor's horizon or omit it, and let the console release a sandbox
+when it decides the session is done — an idle timer, plus the lease as liveness, plus the janitor as
+the thing that catches a console that forgot both.
+
+**Order matters here.** Do not remove the TTL before rolls are survivable. Today it is quietly
+recycling sessions that wedged — a session whose runner is crashlooping into a refused reconnect is
+reclaimed by the TTL, not by anything that understands what happened
+(<../console/debug/2026_08_13_sessions_boot_and_die.md>). Remove the backstop first and those
+sessions stop being cleaned up at all.
 
 ### The lease decision this revisits
 
