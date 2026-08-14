@@ -20,6 +20,11 @@ Ordered by payoff, not by size.
 
 ## A sandbox should be allocated because there is something to do
 
+**Not the fix for sessions that boot and die** — that is a live defect with its own note,
+<../console/debug/2026_08_13_sessions_boot_and_die.md>, and doing this first would move the failure
+from "always" to "whenever somebody speaks", which is when it costs a person something. This item is
+about cost and noise, and it should follow that one.
+
 Today a Matrix room holds a sandbox permanently, whether or not anyone is talking to it.
 `MatrixSessionSupervisor.supervise_once` provisions whenever the room has no live session, so the
 steady state is: claim, pod, CLI, idle, `session_ttl_seconds` expires (**7200s**), session fails,
