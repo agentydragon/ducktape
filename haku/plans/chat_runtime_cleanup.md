@@ -274,6 +274,42 @@ idempotent "make the line say X", retaining a value it could not send yet and fl
 floor passes. Not "call `_show` more often" — that puts the retry in the layer that was trying not
 to think about pacing.
 
+## A replacement session gets far less history than "the last twenty messages"
+
+`RE_AWAKENING_MESSAGES = 20` is what R3.3a promises a replacement session: enough of the
+conversation to pick up a thread mid-topic. What it actually gets is thinner, and thinnest exactly
+when it matters most.
+
+`MatrixClient.recent_messages` passes `limit` straight to `/messages` as the **page size**, then
+filters the page down to `RoomMessageText`. So twenty is a budget of _timeline events_, not of
+messages — and this room's timeline is mostly the console talking to itself. Per session start:
+`provisioning a sandbox · session …`, one notice **per chunk of bootstrap output** (the progress
+reporter forwards `SetupOutput` as it arrives), and the supervisor's status reports. Per turn: the
+status line's creation, its edits, and its redaction. Every one of those is a `m.notice`, which is
+excluded from the history read — correctly, it would be noise — but each still consumes one of the
+twenty events fetched.
+
+Sessions currently cycle roughly every eighty minutes
+(<../console/debug/2026_08_13_sessions_boot_and_die.md>), so that chatter is dense. A re-awakening
+in a quiet room can therefore come back with two or three real messages, or none, while believing it
+asked for twenty. The failure is silent: the prompt renders with whatever it found.
+
+**The fix already exists three methods away.** `_backfill` loops up to `MAX_BACKFILL_PAGES` at
+`TIMELINE_LIMIT` events per page until it reaches what it is looking for. `recent_messages` wants
+the same shape: page backwards until it has `limit` **qualifying messages** or a page cap is hit, so
+the number means what its name says. Cheap, local, and it makes the promise true.
+
+**What "smarter" could mean beyond fixing the count.** R3.3a chose the room as the source on the
+grounds that it is also what the operator sees, so the prompt and the room cannot disagree — which
+was right, and was decided when the console had no durable transcript of its own. It has one now:
+every prompt it accepted and every assistant message is in `claude_chat_messages`, joinable to the
+room through the session's `room_id`, structured into turns, with the tool calls beside it. So the
+two sources answer different questions — the room for agreement with what the operator sees, the
+store for completeness and structure — and a re-awakening could use both rather than reading a flat
+tail of one. Worth deciding before adding cleverness to the tail read; and note that streaming into
+the room (below) would put edit events into that same tail, which is a third reason this read needs
+to become selective rather than positional.
+
 ## The transcript and the rollout are two records of one conversation
 
 `claude_chat_messages` is now largely derivable from `claude_chat_frames`: an assistant message _is_
