@@ -34,6 +34,7 @@ from haku.console.x.claude_chat import (
     GOING_AWAY_CODE,
     REPLICA,
     STATUS_AFTER_SECONDS,
+    STATUS_EDIT_INTERVAL_SECONDS,
     TYPING_REFRESH_SECONDS,
     BridgeAuthentication,
     ClaudeChatService,
@@ -644,6 +645,33 @@ async def test_a_slow_turn_says_what_it_is_doing_and_then_retires_the_line() -> 
 
     assert shown == ["running Bash"]
     assert cleared == [True]
+
+
+async def test_a_state_that_changes_inside_the_floor_is_deferred_rather_than_lost() -> None:
+    """The floor may delay what the room is told; it may not decide the room is never told it.
+
+    This used to be the sink's: it declined silently inside its own edit interval while this
+    driver had already recorded the state as shown, so a turn that changed tools twice in five
+    seconds left the room reading the first of them — until the *next* change, which on a turn
+    that then settles into one long tool call is the rest of the turn.
+    """
+    shown: list[str] = []
+
+    status = _TurnStatus(_appender(shown), _noop)
+    status._started -= STATUS_AFTER_SECONDS  # the turn has already been running a while
+    status.start()
+    status.note(_assistant({"type": "tool_use", "id": "t1", "name": "Read", "input": {}}))
+    await asyncio.sleep(1.2)
+    status.note(_assistant({"type": "tool_use", "id": "t2", "name": "Bash", "input": {}}))
+    await asyncio.sleep(1.2)
+
+    assert shown == ["running Read"], "the second change lands inside the floor"
+
+    status._shown_at -= STATUS_EDIT_INTERVAL_SECONDS  # the floor passes
+    await asyncio.sleep(1.2)
+    await status.finish()
+
+    assert shown == ["running Read", "running Bash"], "and is still waiting when it does"
 
 
 async def test_the_line_is_retired_even_when_the_turn_fails() -> None:

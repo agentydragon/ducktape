@@ -1109,6 +1109,15 @@ STATUS_AFTER_SECONDS = 8.0
 # the indicator when the console dies — not to blink it off mid-turn while it is still going.
 TYPING_REFRESH_SECONDS = 10.0
 
+# Floor on how often the room's status line is rewritten. Paced for a reader and for Synapse's
+# per-room rate limit, not for how fast the agent changes what it is doing.
+#
+# Here rather than at the send, because a floor and a "what should it say" have to be one
+# decision: a sink that silently declines to send inside its own floor loses the state the
+# driver had already recorded as shown. This is the driver's to defer, and the eventual
+# room-wide pacer takes it over along with every other sender.
+STATUS_EDIT_INTERVAL_SECONDS = 5.0
+
 
 def _coarse_status(frame: dict[str, Any]) -> str | None:
     """What the room should be told this frame means, or None if it means nothing to it.
@@ -1172,6 +1181,7 @@ class _TurnStatus:
         # relying on that rather than meaning it.
         self._shown: str | None = None
         self._started = time.monotonic()
+        self._shown_at = 0.0
         self._typed_at = 0.0
         self._task: asyncio.Task[None] | None = None
 
@@ -1191,12 +1201,19 @@ class _TurnStatus:
             if time.monotonic() - self._typed_at >= TYPING_REFRESH_SECONDS:
                 self._typed_at = time.monotonic()
                 await self._typing(True)
+            # One owner for the pace. The floor used to be the sink's, which dropped anything
+            # offered inside it while this loop had already recorded it as shown — so a state
+            # that changed twice within the floor left the room reading the older of the two
+            # until the *next* change, which on a turn that then settles into one long tool call
+            # is the rest of the turn. Deferring here instead means the value is still waiting on
+            # the next tick.
             if (
                 self._state is not None
                 and self._state != self._shown
                 and time.monotonic() - self._started >= STATUS_AFTER_SECONDS
+                and time.monotonic() - self._shown_at >= STATUS_EDIT_INTERVAL_SECONDS
             ):
-                self._shown = self._state
+                self._shown, self._shown_at = self._state, time.monotonic()
                 await self._show(self._state)
             await asyncio.sleep(1.0)
 

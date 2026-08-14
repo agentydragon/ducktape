@@ -19,7 +19,6 @@ import datetime
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from time import monotonic
 from uuid import uuid4
 
 from pydantic import SecretStr
@@ -40,9 +39,6 @@ _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
 LEADER_RETRY = datetime.timedelta(seconds=30)
 # Backoff after a failed sync, so a homeserver outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
-# Floor on how often the turn's status line is edited (R6.5). Paced for a reader and for
-# Synapse's per-room rate limit, not for how fast the agent changes what it is doing.
-STATUS_EDIT_INTERVAL_SECONDS = 5.0
 
 
 class MatrixSyncStore:
@@ -100,11 +96,9 @@ class MatrixSyncService:
         self._conversations = conversations
         self._turns = turns
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
-        self._sent_event_ids: set[str] = set()
         self._holding = False
         self._status_event_id: str | None = None
         self._status_body: str | None = None
-        self._status_shown_at = 0.0
 
     async def _token(self) -> str:
         """A working access token, logging in only when the cached one is not.
@@ -143,36 +137,32 @@ class MatrixSyncService:
         if conversation is None:
             logger.error("Matrix: a turn finished with no room bound; dropping the answer")
             return
-        event_id = await self._client.send_text(await self._token(), conversation.room_id, body, txn_id=uuid4().hex)
-        self._sent_event_ids.add(event_id)
+        await self._client.send_text(await self._token(), conversation.room_id, body, txn_id=uuid4().hex)
 
     async def show_status(self, body: str) -> None:
-        """Put *body* on the room's single status line, creating or editing it (R6.2, R6.5).
+        """Make the room's single status line say *body*, creating or editing it (R6.2, R6.5).
 
         One line per turn rather than a notice per step: a room where every tool call is a
         message is a room nobody reads. The event id of the live line is held here because
         this is the only object that knows the room and the token; the turn loop says what
         the state is and never learns how it is shown.
 
-        Rate-limited here for the same reason. Pacing is a property of the homeserver and of
-        what a person can read, not of how often the agent changes what it is doing, so a
-        turn that switches tools ten times in a second still costs one edit.
+        **Idempotent, and no longer paced.** The floor moved to the caller (`_TurnStatus`),
+        because deciding what the line should say and deciding when it may change have to be
+        one decision: declining here, silently, lost updates the driver had already recorded as
+        shown.
         """
         if body == self._status_body:
             return
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
             return
-        now = monotonic()
-        if self._status_event_id is not None and now - self._status_shown_at < STATUS_EDIT_INTERVAL_SECONDS:
-            return
-        self._status_body, self._status_shown_at = body, now
+        self._status_body = body
         token = await self._token()
         if self._status_event_id is None:
             self._status_event_id = await self._client.send_notice(
                 token, conversation.room_id, body, txn_id=uuid4().hex
             )
-            self._sent_event_ids.add(self._status_event_id)
             return
         await self._client.edit_notice(token, conversation.room_id, self._status_event_id, body, txn_id=uuid4().hex)
 
@@ -238,15 +228,19 @@ class MatrixSyncService:
         # token, the token outlives a restart, and any counter we could derive would reset —
         # so a notice after a restart would be silently swallowed as a replay of an older
         # one. Notices have no retry to make idempotent, so there is nothing to trade away.
-        event_id = await self._client.send_notice(token, room_id, body, txn_id=uuid4().hex)
-        self._sent_event_ids.add(event_id)
+        await self._client.send_notice(token, room_id, body, txn_id=uuid4().hex)
 
     def _serviced(self, messages: tuple[InboundMessage, ...], live_room: str | None) -> list[InboundMessage]:
-        """The messages of a batch that are ours to act on."""
+        """The messages of a batch that are ours to act on.
+
+        Haku's own posts are not among them, and are already gone: `MatrixClient._messages`
+        drops everything the bot sent (R1.5). This used to check them again against a set of
+        every event id this process had ever sent — a filter that could not match, since every
+        entry in it was excluded one layer down, and that cost memory for as long as the replica
+        lived and was empty again the moment it restarted.
+        """
         serviced = []
         for message in messages:
-            if message.event_id in self._sent_event_ids:
-                continue
             if message.room_id != live_room:
                 # Only the bound room is serviced (R3.6a). Reachable for a room joined
                 # before the binding existed, and for anything that gets Haku into a room

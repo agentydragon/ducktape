@@ -179,15 +179,35 @@ class MatrixClient:
 
         `since` is a `/sync` watermark, which is also a valid `/messages` pagination token —
         so this reads back from wherever the loop has got to, with no second position to keep.
+
+        **`limit` counts messages, not timeline events.** It used to be the page size, with the
+        filter applied afterwards — and this room's timeline is mostly the console talking to
+        itself: a provisioning announcement and one notice per line of bootstrap output on every
+        session start, plus the status line's creation, edits and redaction on every turn. Each
+        of those is excluded here, correctly, and each still spent one of the twenty events
+        fetched. A re-awakening could come back with two or three real messages, or none, while
+        believing it had asked for twenty — silently, since the prompt renders with whatever it
+        found. Paging until the count is met is the same shape `_backfill` beside this already
+        uses.
         """
         self._client.access_token = token
-        page = _unwrap(
-            await self._client.room_messages(room_id, start=since, direction=MessageDirection.back, limit=limit),
-            RoomMessagesResponse,
-        )
-        recent = [self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText)]
+        recent: list[InboundMessage] = []
+        start = since
+        for _ in range(MAX_BACKFILL_PAGES):
+            page = _unwrap(
+                await self._client.room_messages(
+                    room_id, start=start, direction=MessageDirection.back, limit=TIMELINE_LIMIT
+                ),
+                RoomMessagesResponse,
+            )
+            recent.extend(self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText))
+            # `end` is absent at the start of the room's history: there is no earlier page to ask
+            # for, and asking again would re-read this one forever.
+            if len(recent) >= limit or not page.chunk or page.end is None:
+                break
+            start = page.end
         recent.reverse()
-        return tuple(recent)
+        return tuple(recent[-limit:] if len(recent) > limit else recent)
 
     async def send_text(self, token: str, room_id: str, body: str, txn_id: str) -> str:
         """Send Haku's reply, rendering its Markdown for clients that display HTML.

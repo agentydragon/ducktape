@@ -12,7 +12,7 @@ from pydantic import SecretStr
 
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
 from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, SyncResult
-from haku.console.x.matrix_sync import STATUS_EDIT_INTERVAL_SECONDS, MatrixSyncService, MatrixSyncStore
+from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 
 
 @dataclass
@@ -305,7 +305,6 @@ async def test_the_turn_status_is_one_line_that_gets_edited(service, matrix, bou
     """R6.5. A notice per update would make a busy turn unreadable, which is the whole point
     of having a status line rather than progress messages."""
     await service.show_status("running Bash")
-    service._status_shown_at -= STATUS_EDIT_INTERVAL_SECONDS
     await service.show_status("running Read")
 
     assert matrix.notices == [(bound_room, "running Bash")]
@@ -314,19 +313,24 @@ async def test_the_turn_status_is_one_line_that_gets_edited(service, matrix, bou
 
 async def test_a_repeated_state_is_not_resent(service, matrix, bound_room) -> None:
     await service.show_status("running Bash")
-    service._status_shown_at -= STATUS_EDIT_INTERVAL_SECONDS
     await service.show_status("running Bash")
 
     assert matrix.edits == []
 
 
-async def test_edits_are_rate_limited(service, matrix, bound_room) -> None:
-    """A turn that switches tools ten times a second still costs the room one line."""
+async def test_every_state_it_is_given_reaches_the_line(service, matrix, bound_room) -> None:
+    """Idempotent, not paced: what the line should say and when it may change are one decision,
+    and they belong to the caller (`claude_chat._TurnStatus`).
+
+    Declining here used to lose the update outright — the driver had already recorded it as
+    shown, so it never offered it again and the room read the older state for the rest of the
+    turn. The floor is still there; it is just where the deferral can be remembered.
+    """
     await service.show_status("running Bash")
     await service.show_status("running Read")
     await service.show_status("running Grep")
 
-    assert matrix.edits == []
+    assert matrix.edits == [("$notice-1", "running Read"), ("$notice-1", "running Grep")]
 
 
 async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_room) -> None:
