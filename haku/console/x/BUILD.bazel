@@ -173,9 +173,12 @@ py_library(
     name = "synapse_container",
     testonly = True,
     srcs = ["synapse_container.py"],
+    # Reaches every target that runs a Synapse through `deps`, so a new one needs no `data` of its own.
+    data = ["synapse_overrides.yaml"],
     deps = [
         "//third_party/containers:rlocations",
         "//util:oci",
+        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//httpx",

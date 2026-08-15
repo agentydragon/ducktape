@@ -4,9 +4,9 @@
 Synapse does not serve until it holds a config it generated itself — a signing key and a macaroon
 secret are part of that config — so bring-up is two container runs over one host directory. The
 first is the image's `generate` mode; the second serves, reading the generated `homeserver.yaml`
-**and** an overrides file this module wrote before generating. Synapse merges several
-`--config-path` files by top-level key, so the test's settings land without rewriting a file the
-container's own user owns.
+**and** `synapse_overrides.yaml`, which this module copies in before generating. Synapse merges
+several `--config-path` files by top-level key, so the test's settings land without rewriting a
+file the container's own user owns.
 
 Both runs pin `UID`/`GID` to this process's (the image's `start.py` honours them), so everything
 Synapse writes into that directory is still deletable by the test that made it.
@@ -21,8 +21,8 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import shutil
 import tempfile
-import textwrap
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -37,6 +37,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from testcontainers.core.container import DockerContainer
 
 from third_party.containers.rlocations import RYUK, SYNAPSE
+from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 SERVER_NAME = "haku.test"
 
 _CLIENT_PORT = 8008
-_OVERRIDES_FILE = "test-overrides.yaml"
+_OVERRIDES = "_main/haku/console/x/synapse_overrides.yaml"
 _STARTUP_BUDGET = datetime.timedelta(minutes=3)
 
 _ENVIRONMENT = {
@@ -56,72 +57,6 @@ _ENVIRONMENT = {
     "UID": str(os.getuid()),
     "GID": str(os.getgid()),
 }
-
-# Registration is open because the alternative — the shared-secret admin flow — means reading a
-# secret back out of a config file the container generated, for no extra coverage.
-#
-# The rate limits matter more than they look. Stock Synapse allows a fifth of a message per second
-# and ten logins a burst, so filling a room past `TIMELINE_LIMIT` trips `M_LIMIT_EXCEEDED` long
-# before the gap under test exists — and `MatrixClient` deliberately bounds nio's otherwise
-# unlimited 429 retry (`MAX_RATE_LIMIT_RETRIES`), so that arrives as a failure rather than as a
-# wait. Every limit a test can reach is lifted out of the way.
-_OVERRIDES = textwrap.dedent("""\
-    enable_registration: true
-    enable_registration_without_verification: true
-
-    # Replaces the generated listener, which binds `::` as well as `0.0.0.0`. The test Docker
-    # network has no IPv6, and Synapse treats a listener it cannot bind as fatal — so without this
-    # it exits during startup with `Address family not supported by protocol`.
-    listeners:
-      - port: 8008
-        type: http
-        tls: false
-        bind_addresses: ["0.0.0.0"]
-        x_forwarded: true
-        resources:
-          - names: [client]
-            compress: false
-
-    rc_message:
-      per_second: 1000
-      burst_count: 1000
-    rc_registration:
-      per_second: 1000
-      burst_count: 1000
-    rc_login:
-      address:
-        per_second: 1000
-        burst_count: 1000
-      account:
-        per_second: 1000
-        burst_count: 1000
-      failed_attempts:
-        per_second: 1000
-        burst_count: 1000
-    rc_joins:
-      local:
-        per_second: 1000
-        burst_count: 1000
-      remote:
-        per_second: 1000
-        burst_count: 1000
-    rc_joins_per_room:
-      per_second: 1000
-      burst_count: 1000
-    rc_invites:
-      per_room:
-        per_second: 1000
-        burst_count: 1000
-      per_user:
-        per_second: 1000
-        burst_count: 1000
-      per_issuer:
-        per_second: 1000
-        burst_count: 1000
-
-    presence:
-      enabled: false
-""")
 
 _REGISTER = "/_matrix/client/v3/register"
 
@@ -297,7 +232,8 @@ def run_synapse() -> Iterator[Synapse]:
     """A homeserver of its own, torn down with everything anybody registered in it."""
     with _progress_to_disk(), tempfile.TemporaryDirectory(prefix="synapse-") as directory:
         data = Path(directory)
-        (data / _OVERRIDES_FILE).write_text(_OVERRIDES)
+        overrides = data / Path(_OVERRIDES).name
+        shutil.copyfile(get_required_path(_OVERRIDES), overrides)
         for image in (RYUK, SYNAPSE):
             load_oci_image(image)
         _generate_config(data)
@@ -306,7 +242,7 @@ def run_synapse() -> Iterator[Synapse]:
             container.with_env(key, value)
         container.with_volume_mapping(str(data), "/data", "rw")
         container.with_command(
-            ["run", "--config-path", "/data/homeserver.yaml", "--config-path", f"/data/{_OVERRIDES_FILE}"]
+            ["run", "--config-path", "/data/homeserver.yaml", "--config-path", f"/data/{overrides.name}"]
         )
         container.with_exposed_ports(_CLIENT_PORT)
         logger.info("Starting %s", SYNAPSE.tag)
