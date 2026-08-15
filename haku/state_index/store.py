@@ -240,8 +240,9 @@ async def replace_tip(
         await session.execute(
             insert(GitTipEntry), [{"path": entry.path, "blob_sha": entry.blob_sha} for entry in entries]
         )
-    state = {
-        "id": 1,
+    # Only the indexed half: a row already exists whenever a sweep has looked, and its
+    # `remote_*` columns are not this function's to move.
+    indexed = {
         "commit_sha": commit_sha,
         "branch": branch,
         "chunker_key": chunker_key,
@@ -249,13 +250,29 @@ async def replace_tip(
         "synced_at": now,
     }
     await session.execute(
-        pg_insert(GitSyncState).values(**state).on_conflict_do_update(index_elements=["id"], set_=state)
+        pg_insert(GitSyncState).values(id=1, **indexed).on_conflict_do_update(index_elements=["id"], set_=indexed)
     )
 
 
 async def current_git_state(session: AsyncSession) -> GitSyncState | None:
     """What the searchable git set currently holds, or None before the first sync."""
     return await session.get(GitSyncState, 1)
+
+
+async def record_remote_tip(session: AsyncSession, commit_sha: str, *, branch: str, now: datetime.datetime) -> None:
+    """Record what the branch points at now, leaving whatever is indexed alone.
+
+    Written on every sweep, including the ones that decide there is nothing to do, so an ageing
+    `remote_seen_at` means the sweep has stopped rather than that the corpus is current.
+    """
+    values = {"id": 1, "branch": branch, "remote_commit": commit_sha, "remote_seen_at": now}
+    await session.execute(
+        pg_insert(GitSyncState)
+        .values(**values)
+        .on_conflict_do_update(
+            index_elements=["id"], set_={"branch": branch, "remote_commit": commit_sha, "remote_seen_at": now}
+        )
+    )
 
 
 async def search_git(

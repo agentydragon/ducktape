@@ -133,18 +133,19 @@ class PostgresIndexSearcher:
         model_key = self._embedder.model_key
         async with self._sessions() as session:
             git_state = await current_git_state(session)
-            haku_state: HakuStateStatus | None = None
-            if git_state is not None:
-                summary = await git_index_summary(session, model_key=model_key)
-                counts = await chunk_counts(session, Corpus.GIT, model_key=model_key)
-                haku_state = HakuStateStatus(
-                    commit_sha=git_state.commit_sha,
-                    branch=git_state.branch,
-                    indexed_at=git_state.synced_at,
-                    files=summary.files,
-                    chunks=summary.chunks,
-                    superseded_chunks=counts.superseded,
-                )
+            summary = await git_index_summary(session, model_key=model_key)
+            counts = await chunk_counts(session, Corpus.GIT, model_key=model_key)
+            haku_state = HakuStateStatus(
+                indexed_commit=None if git_state is None else git_state.commit_sha,
+                remote_commit=None if git_state is None else git_state.remote_commit,
+                remote_seen_at=None if git_state is None else git_state.remote_seen_at,
+                branch=None if git_state is None else git_state.branch,
+                indexed_at=None if git_state is None else git_state.synced_at,
+                files=summary.files,
+                chunks=summary.chunks,
+                embedded_chunks=counts.current,
+                superseded_chunks=counts.superseded,
+            )
 
             chat_summary = await chat_index_summary(session)
             chat_counts = await chunk_counts(session, Corpus.CHAT, model_key=model_key)

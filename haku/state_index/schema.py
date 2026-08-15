@@ -116,17 +116,41 @@ class GitTipEntry(Base):
 
 
 class GitSyncState(Base):
-    """What `git_tip` currently holds. One row; `id` is pinned to 1."""
+    """What the branch holds and what `git_tip` holds. One row; `id` is pinned to 1.
+
+    Two halves that become true at different moments, which is why the indexed half is nullable:
+    a sweep records `remote_commit` every time it looks, including before anything has ever been
+    indexed and on the ticks that decide there is nothing to do, while `commit_sha` only appears
+    when a sync completes. They live in one row rather than two tables because they are two facts
+    about the same branch and every reader wants both — "is the index behind" is a comparison
+    within a row.
+
+    The check keeps the indexed half all-or-nothing: a commit without the regime it was indexed
+    under, or without a time, is not a state this can be in.
+    """
 
     __tablename__ = "git_sync_state"
-    __table_args__ = (CheckConstraint("id = 1", name="ck_git_sync_state_singleton"),)
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_git_sync_state_singleton"),
+        CheckConstraint(
+            "(commit_sha IS NULL) = (chunker_key IS NULL)"
+            " AND (commit_sha IS NULL) = (model_key IS NULL)"
+            " AND (commit_sha IS NULL) = (synced_at IS NULL)",
+            name="ck_git_sync_state_indexed_half",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
-    commit_sha: Mapped[str] = mapped_column(Text, nullable=False)
     branch: Mapped[str] = mapped_column(Text, nullable=False)
-    chunker_key: Mapped[str] = mapped_column(Text, nullable=False)
-    model_key: Mapped[str] = mapped_column(Text, nullable=False)
-    synced_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # What the branch pointed at when a sweep last looked, and when that was. Null only until the
+    # first sweep reaches the repository at all, which is the shape of an unreachable remote.
+    remote_commit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remote_seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The indexed half: null together until a first sync completes.
+    commit_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunker_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ChatChunk(Base):

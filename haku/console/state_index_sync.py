@@ -30,7 +30,7 @@ from haku.console.config import HakuStateGitConfig
 from haku.state_index.chat_sync import sync_chat
 from haku.state_index.embedder import Embedder
 from haku.state_index.git_tree import fetch_branch, open_mirror, remote_tip
-from haku.state_index.store import current_git_state
+from haku.state_index.store import current_git_state, record_remote_tip
 from haku.state_index.sync import AlreadyCurrent, is_current, sync
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,11 @@ class StateIndexMaintenance:
                 logger.error("haku-state remote has no branch %r", git.branch)
                 return
             async with self._sessions() as session:
+                # Recorded before the gate, and committed on its own, so `index_status` can say the
+                # sweep is alive and what it saw even on the ticks that decide there is nothing to
+                # do — and before a first sync has ever completed.
+                await record_remote_tip(session, tip, branch=git.branch, now=datetime.datetime.now(datetime.UTC))
+                await session.commit()
                 # The gate is the whole regime, not just the commit: a new embedding model has to
                 # re-index a tip that never moved, and asking `ls-remote` alone would skip it.
                 if is_current(

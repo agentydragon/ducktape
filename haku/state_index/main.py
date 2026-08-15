@@ -194,10 +194,14 @@ async def _status(database_url: str) -> None:
     finally:
         await engine.dispose()
     if git is None:
-        typer.echo("git: empty — nothing synced yet")
+        typer.echo("git: empty — no sweep has looked at the remote yet")
+    elif git.commit_sha is None:
+        typer.echo(
+            f"git: {git.branch}@{git.remote_commit[:12] if git.remote_commit else '?'} seen, nothing indexed yet"
+        )
     else:
         typer.echo(
-            f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat()} "
+            f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat() if git.synced_at else '?'} "
             f"(chunker v{git.chunker_key}, model {git.model_key})"
         )
     if chat.last_indexed_at is None:

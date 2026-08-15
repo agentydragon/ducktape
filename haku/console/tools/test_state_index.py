@@ -72,7 +72,15 @@ class _Searcher:
     async def status(self) -> IndexStatus:
         return IndexStatus(
             haku_state=HakuStateStatus(
-                commit_sha="abc123", branch="main", indexed_at=NOW, files=12, chunks=40, superseded_chunks=0
+                indexed_commit="abc123",
+                remote_commit="abc123",
+                remote_seen_at=NOW,
+                branch="main",
+                indexed_at=NOW,
+                files=12,
+                chunks=40,
+                embedded_chunks=40,
+                superseded_chunks=0,
             ),
             conversations=ConversationsStatus(
                 sessions=3,
@@ -133,7 +141,7 @@ async def test_status_reports_the_backlog_an_agent_needs_to_read_an_empty_result
     async with Client(build_mcp(_Searcher())) as client:
         status = (await client.call_tool("index_status", {})).data
     assert status.conversations.unindexed_messages == 4
-    assert status.haku_state.commit_sha == "abc123"
+    assert status.haku_state.indexed_commit == "abc123"
 
 
 def test_the_server_is_named_for_its_id() -> None:

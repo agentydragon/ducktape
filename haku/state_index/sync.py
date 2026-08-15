@@ -79,6 +79,8 @@ def is_current(
     has not moved, so a commit-only comparison says "nothing to do" while the stored vectors no
     longer answer for the content.
     """
+    # `commit_sha` is null on a row a sweep created before anything was ever indexed, which the
+    # tuple comparison handles: null never equals a commit, so that row is never current.
     return state is not None and (state.commit_sha, state.branch, state.chunker_key, state.model_key) == (
         commit_sha,
         branch,

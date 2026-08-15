@@ -26,7 +26,7 @@ from haku.console.operator_identity import OperatorStatus
 from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import CHAT_ADVISORY_LOCK, StateIndexMaintenance
 from haku.console.tools.state_index import ConversationSource, HakuStateSource, SearchCorpus
-from haku.state_index.fake_embedder import FakeEmbedder
+from haku.state_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
@@ -137,13 +137,47 @@ async def test_an_unmoved_remote_is_never_fetched(
     await maintenance.sync_git_once()
 
 
+async def test_status_reports_the_remote_before_anything_is_indexed(
+    migrated_engine: AsyncEngine,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    haku_state: HakuStateGitConfig,
+    embedder: FakeEmbedder,
+) -> None:
+    """A sweep that cannot finish still has to leave evidence that it looked."""
+    with pytest.raises(RuntimeError):
+        await StateIndexMaintenance(
+            migrated_engine, migrated_sessions, embedder=ExplodingEmbedder(), git=haku_state
+        ).sync_git_once()
+
+    status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
+    assert status.indexed_commit is None
+    assert status.remote_commit is not None
+    assert status.branch == "main"
+
+
+async def test_status_reports_the_indexed_commit_once_a_sync_lands(
+    migrated_engine: AsyncEngine,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    haku_state: HakuStateGitConfig,
+    embedder: FakeEmbedder,
+) -> None:
+    await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
+
+    status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
+    assert status.indexed_commit == status.remote_commit
+    assert (status.files, status.embedded_chunks) == (1, 1)
+
+
 async def test_without_git_configured_the_git_sweep_is_a_no_op(
     migrated_engine: AsyncEngine, migrated_sessions: async_sessionmaker[AsyncSession], embedder: FakeEmbedder
 ) -> None:
     """The console serves the chat corpus alone until it is given a way to read haku-state."""
     await StateIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_git_once()
 
-    assert (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state is None
+    # Reported as empty rather than absent: a caller cannot tell "unconfigured" from "not yet
+    # indexed" from the corpus's own status, and `remote_commit` is what says nothing has looked.
+    status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
+    assert (status.indexed_commit, status.remote_commit, status.embedded_chunks) == (None, None, 0)
 
 
 async def test_a_replica_that_loses_the_lock_leaves_the_work_alone(

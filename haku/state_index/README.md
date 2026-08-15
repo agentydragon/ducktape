@@ -22,7 +22,7 @@ One shared table and a per-corpus set around it:
 | --------------------- | ------------------------- | ------------------------------------------------------------------------ |
 | `chunks`              | `(corpus, content_sha)`   | every embedding ever computed, including for content no longer reachable |
 | `git_tip`             | `path`                    | the tree at the indexed commit, replaced wholesale per sync              |
-| `git_sync_state`      | singleton                 | which commit `git_tip` holds                                             |
+| `git_sync_state`      | singleton                 | what the branch points at, and which commit `git_tip` holds              |
 | `chat_chunks`         | `(session_id, window_no)` | the searchable windows of each chat session                              |
 | `chat_chunk_messages` | window + ordinal          | **which messages each window holds**                                     |
 | `chat_sessions`       | `session_id`              | each session's shape as last indexed, which is what decides re-indexing  |
@@ -204,6 +204,20 @@ Deliberately absent — it depends on the evaluation above:
 - **The MCP tool surface — built, and off.** `haku_index`
   (<../console/tools/state_index.py>) is an in-process FastMCP server in haku-console: one
   `search` with a `corpus` argument (`haku_state`, `conversations`, or both), plus `index_status`.
+
+  **`index_status` answers before there is anything to search.** It reports `remote_commit` —
+  what the last sweep saw on the branch, recorded on every tick including the ones that decide
+  there is nothing to do — alongside `indexed_commit`, which is null until a first sync has
+  completed, and `embedded_chunks`, which climbs while one is running. The three together say
+  which of "never configured", "never reached the repository", "indexing right now" and "behind
+  by a commit" is true. That distinction is not hypothetical: on 2026-08-15 the corpus sat empty
+  for an hour while the status surface returned a bare `null`, and diagnosing it took a psql
+  session against the production database.
+
+  Both facts live in one `git_sync_state` row rather than two tables: they are two things about
+  the same branch, every reader wants both, and "is the index behind" should be a comparison
+  within a row. The indexed half is nullable because it becomes true later, and a check keeps it
+  all-or-nothing so a commit can never be recorded without the regime it was indexed under.
 
   **Search returns pointers, not content, and there are no read tools here.** A haku-state hit
   carries the path, the commit, and the blob sha — Haku reads the file from its own clone. A

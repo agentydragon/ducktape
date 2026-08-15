@@ -93,21 +93,44 @@ class SearchHit(BaseModel):
 
 
 class HakuStateStatus(BaseModel):
-    """What the haku-state corpus holds.
+    """What the haku-state corpus holds, and how far that is from what the repository holds.
 
-    No backlog figure, and that absence is the honest answer rather than an omission: how far
-    behind this corpus is depends on haku-state's current tip, and `indexed_at` ageing is the
-    signal that its sync has stopped.
+    Reported even before anything has been indexed, because "nothing yet" and "never asked" and
+    "failing every sweep" are different answers and an absent object gave all three the same
+    shape. A first index of a whole repository takes minutes of embedding, and during it
+    `indexed_commit` is null while `embedded_chunks` climbs.
     """
 
-    commit_sha: str
-    branch: str
-    indexed_at: datetime.datetime = Field(description="When that commit was indexed, not when it was made.")
-    files: int = Field(description="Paths at the indexed commit, including ones never chunked (binaries, dumps).")
-    chunks: int = Field(description="Chunks a search can reach — those still at the tip, under the live regime.")
+    indexed_commit: str | None = Field(
+        default=None, description="The commit a search reaches. Null until a first sync has completed."
+    )
+    remote_commit: str | None = Field(
+        default=None,
+        description="What the branch pointed at when a sweep last looked. Differing from "
+        "`indexed_commit` means a sync is outstanding or in progress; null means no sweep has "
+        "reached the repository yet, which is the shape of a misconfigured or unreachable remote.",
+    )
+    remote_seen_at: datetime.datetime | None = Field(
+        default=None, description="When a sweep last reached the remote. Ageing means the sweep has stopped."
+    )
+    branch: str | None = None
+    indexed_at: datetime.datetime | None = Field(
+        default=None, description="When `indexed_commit` was indexed, not when it was made."
+    )
+    files: int = Field(default=0, description="Paths at the indexed commit, including ones never chunked.")
+    chunks: int = Field(
+        default=0, description="Chunks a search can reach — those still at the tip, under the live regime."
+    )
+    embedded_chunks: int = Field(
+        default=0,
+        description="Chunks embedded under the live regime, whether or not the tip reaches them. This is "
+        "the one that moves during a first index, since embeddings commit as they are computed while "
+        "the tip is swapped only at the end.",
+    )
     superseded_chunks: int = Field(
+        default=0,
         description="Chunks embedded under an older chunker or model, which no search can reach. "
-        "Nonzero means a re-embed is outstanding."
+        "Nonzero means a re-embed is outstanding.",
     )
 
 
@@ -130,7 +153,10 @@ class ConversationsStatus(BaseModel):
 
 
 class IndexStatus(BaseModel):
-    haku_state: HakuStateStatus | None = Field(description="Absent before haku-state has ever been indexed.")
+    haku_state: HakuStateStatus = Field(
+        description="Always present: before a first index its `indexed_commit` is null and "
+        "`remote_commit` says whether a sweep has reached the repository at all."
+    )
     conversations: ConversationsStatus
 
 
