@@ -358,10 +358,11 @@ Consequences for this package, and note where they do **not** land: `chunks` is 
 content-addressed embedding cache, and two instances sharing a row share an embedding of
 byte-identical text — the same property `ChatChunk` already relies on when two sessions hold the
 same exchange verbatim. Identity lives on the occurrences, which is what a hit hands back, so the
-instance goes there: `git_tip` and `git_sync_state` stop being single rows, chat occurrences derive
-theirs from the session, and the permitted-instance join belongs in the same materialized CTE that
-already filters `corpus` and `model_key` before the distance operator. Embeddings are a
-recomputable cache, so this is much cheaper to do while the index is small.
+instance goes there: `git_tip` is keyed `(index, path)`, `git_sync_state` gets a row per index —
+which retires its `id = 1` singleton CHECK, since the index name is the natural key it never had —
+chat occurrences derive theirs from the session, and the permitted-instance join belongs in the
+same materialized CTE that already filters `corpus` and `model_key` before the distance operator.
+Embeddings are a recomputable cache, so this is much cheaper to do while the index is small.
 
 What settling it touches:
 

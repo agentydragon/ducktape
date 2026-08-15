@@ -655,6 +655,11 @@ instructions must convey, at minimum:
   any other source. The operator may hand over a bare event ID and expect it to be resolved
   rather than guessed at.
 - **R8.7 Its own session ID** (R7.3).
+- **R8.8 [later] Which rooms it is subscribed to**, once subscriptions exist (R5.4's note). They
+  are owned by the agent rather than the session precisely so they survive rotation, which means a
+  replacement session inherits a set it cannot discover — and would otherwise receive messages
+  stamped with room ids it has never heard of, making R2.4's provenance uninterpretable and any
+  addressed reply a guess. Same class of fact as R8.7: handed over because it cannot be derived.
 
 Whether this lives in `base/instructions.md`, in `haku-state`, or in the per-turn wakeup
 rendering is a design question — but R8.2, R8.3, and R8.4 describe the harness, so they

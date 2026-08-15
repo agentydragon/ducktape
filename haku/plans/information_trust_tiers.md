@@ -168,10 +168,17 @@ is scoped by it) and gains nothing. The dedup win holds for chat exactly as it d
 
 What it touches, none of it large:
 
-- **Occurrence tables become per-instance.** `GitTipEntry` and `GitSyncState` are single rows
-  today with `id` pinned to 1; they become one set per git index. Chat occurrences already carry
-  `session_id`, so the instance can be derived from the session rather than stored — store it if
-  the join proves hot, but derive first.
+- **Occurrence tables become per-instance, and one wart disappears.** The two git tables are not
+  duplicates of each other, which is worth stating since the names suggest it: `git_tip` is one
+  row **per path** at the indexed commit — the tip's contents — while `git_sync_state` is a single
+  row saying **which** commit that is, under which chunker and model, plus what the remote head
+  was last seen pointing at. They cannot merge: the remote half is true before anything is indexed
+  at all, so it would need a row with no path, and the indexed commit would otherwise repeat on
+  every path row. Per instance, `git_tip`'s key becomes `(index, path)` and `git_sync_state` gets
+  one row per index — which **removes** its `id = 1` singleton CHECK, because the index name is a
+  natural key where `id` was a placeholder for having none. Chat occurrences already carry
+  `session_id`, so their instance can be derived from the session rather than stored; derive
+  first, store only if the join proves hot.
 - **Filter occurrences before ranking, not after.** The searches already materialize a CTE
   filtering `corpus` + `model_key` before the distance operator runs — load-bearing rather than
   cosmetic, since pgvector errors on mixed dimensions — so the permitted-instance join belongs in
@@ -335,6 +342,19 @@ Six consequences, in the order they will bite:
   thread root. With several rooms in one context the agent cannot address a reply without knowing
   which room each message came from, and which room is its own — so the room joins the batch's
   provenance and the prompt has to say which one is home.
+- **A new session must be told what it is subscribed to** (operator, 2026-08-15), and this is a
+  correctness requirement rather than a courtesy. Subscriptions outlive sessions by design — that
+  is the point of hanging them off the agent — so a replacement session inherits a set it has no
+  way to discover. Without being told it receives messages stamped with room ids it has never
+  heard of, which makes the provenance above uninterpretable and any addressed reply a guess. It
+  is also the precondition for the attention tool below: an agent cannot sensibly mute what it
+  does not know it is watching.
+
+  This belongs with the facts the system prompt already carries — identity, the room, the session
+  id (R7.3), the harness contract, the recent messages — and it is the same class of fact as those:
+  something the agent must be handed because it cannot derive it. R3.3a's re-awakening is where it
+  lands, since that is the path a rotated session takes.
+
 - **The send tool takes a room id, which R5.3 forbids — deliberately relaxed, not overlooked.**
   R5.3's property was that reaching another room is "not expressible rather than merely denied".
   That cannot survive a tool whose whole job is addressing another room. What replaces it is
