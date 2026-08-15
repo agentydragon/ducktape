@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
 from haku.console.database_schema import Base as ConsoleBase, ClaudeChatMessage, ClaudeChatSession, Operator
 from haku.console.operator_identity import OperatorStatus
-from haku.state_index.chat_corpus import chat_chunker_key
 from haku.state_index.chat_sync import ChatSyncReport, sync_chat
 from haku.state_index.fake_embedder import FakeEmbedder
+from haku.state_index.query import query_chat
 from haku.state_index.schema import ChatChunk, Chunk, Corpus
-from haku.state_index.store import ChatSearchHit, search_chat
+from haku.state_index.store import ChatSearchHit
 
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
@@ -107,14 +107,7 @@ async def run_sync(session: AsyncSession, embedder: FakeEmbedder) -> ChatSyncRep
 async def find(
     session: AsyncSession, embedder: FakeEmbedder, query: str, *, session_id: UUID | None = None
 ) -> list[ChatSearchHit]:
-    return await search_chat(
-        session,
-        await embedder.embed_query(query),
-        chunker_key=chat_chunker_key(),
-        model_key=embedder.model_key,
-        limit=5,
-        session_id=session_id,
-    )
+    return await query_chat(session, embedder, query, limit=5, session_id=session_id)
 
 
 async def test_a_hit_names_the_session_and_the_messages_it_holds(

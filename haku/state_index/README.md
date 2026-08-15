@@ -45,6 +45,13 @@ bigger chunks match more broadly and cite less precisely — which is why it is 
 constant. Index and query must use the same budget: a query under a different one searches a
 regime nothing was written under.
 
+**Reads take the budget, never the key.** `store.chunker_key_for` derives it from the corpus,
+because the two corpora's keys are the same string whenever their chunkers are at the same version
+under the same budget — as they are today. A reader that passed the other corpus's key would
+therefore work until one of the two versions moved, and then match nothing, which is
+indistinguishable from a subject that never came up. Writers still pass theirs explicitly: they
+record it in the corpus's sync state as well as on the chunk.
+
 The key is serialized from the budget rather than formatted by hand, and is one column rather
 than several, for the same reason in both cases: **a regime filter cannot be under-specified.**
 A field added to `ChunkBudget` lands in the key automatically, and a query either matches the

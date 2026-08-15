@@ -33,7 +33,6 @@ from haku.console.tools.state_index import (
 )
 from haku.state_index.chat_corpus import chat_chunker_key
 from haku.state_index.chat_source import session_shapes
-from haku.state_index.chunking import git_chunker_key
 from haku.state_index.embedder import Embedder
 from haku.state_index.schema import Corpus
 from haku.state_index.store import (
@@ -77,12 +76,7 @@ class PostgresIndexSearcher:
         if state is None:
             return []
         found = await search_git(
-            session,
-            embedding,
-            chunker_key=git_chunker_key(),
-            model_key=self._embedder.model_key,
-            limit=limit,
-            path_prefix=path_prefix,
+            session, embedding, model_key=self._embedder.model_key, limit=limit, path_prefix=path_prefix
         )
         # `commit_sha` on every hit rather than once alongside them: a hit is a pointer, and a
         # pointer that needs a second field from its envelope to be resolvable is half a pointer.
@@ -105,12 +99,7 @@ class PostgresIndexSearcher:
         self, session: AsyncSession, embedding: list[float], *, limit: int, session_id: UUID | None
     ) -> list[SearchHit]:
         found = await search_chat(
-            session,
-            embedding,
-            chunker_key=git_chunker_key(),
-            model_key=self._embedder.model_key,
-            limit=limit,
-            session_id=session_id,
+            session, embedding, model_key=self._embedder.model_key, limit=limit, session_id=session_id
         )
         # The room a hit came from is the console's own binding, not the index's: the index knows
         # sessions, and which room a session served is `claude_chat_sessions.room_id`.
@@ -145,8 +134,8 @@ class PostgresIndexSearcher:
             git_state = await current_git_state(session)
             haku_state: HakuStateStatus | None = None
             if git_state is not None:
-                summary = await git_index_summary(session, chunker_key=git_chunker_key(), model_key=model_key)
-                counts = await chunk_counts(session, Corpus.GIT, chunker_key=git_chunker_key(), model_key=model_key)
+                summary = await git_index_summary(session, model_key=model_key)
+                counts = await chunk_counts(session, Corpus.GIT, model_key=model_key)
                 haku_state = HakuStateStatus(
                     commit_sha=git_state.commit_sha,
                     branch=git_state.branch,
@@ -157,7 +146,7 @@ class PostgresIndexSearcher:
                 )
 
             chat_summary = await chat_index_summary(session)
-            chat_counts = await chunk_counts(session, Corpus.CHAT, chunker_key=git_chunker_key(), model_key=model_key)
+            chat_counts = await chunk_counts(session, Corpus.CHAT, model_key=model_key)
             # The same two reads `sync_chat` opens with, diffed the same way — so what this
             # reports as waiting is exactly what a sync run would pick up.
             shapes = await session_shapes(session)

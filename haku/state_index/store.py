@@ -16,7 +16,8 @@ from sqlalchemy import delete, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from haku.state_index.chat_corpus import MessageChunk
+from haku.state_index.chat_corpus import MessageChunk, chat_chunker_key
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, git_chunker_key
 from haku.state_index.git_tree import TipEntry
 from haku.state_index.schema import (
     SCHEMA,
@@ -142,6 +143,21 @@ class ChunkRow:
     embedding: list[float]
 
 
+def chunker_key_for(corpus: Corpus, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
+    """Which chunker's key a corpus's chunks carry.
+
+    Reads derive it from the corpus rather than accepting it, because the two keys are the same
+    string whenever the two chunkers happen to be at the same version under the same budget — so a
+    reader that passed the wrong one would work until either version moved and then silently match
+    nothing. Writers still pass theirs explicitly: they record it in the corpus's sync state too.
+    """
+    match corpus:
+        case Corpus.GIT:
+            return git_chunker_key(budget)
+        case Corpus.CHAT:
+            return chat_chunker_key(budget)
+
+
 async def ensure_schema(engine: AsyncEngine) -> None:
     """Create the extension, schema, and tables if they aren't there.
 
@@ -247,16 +263,16 @@ async def search_git(
     session: AsyncSession,
     embedding: Sequence[float],
     *,
-    chunker_key: str,
     model_key: str,
     limit: int,
     path_prefix: str | None = None,
+    budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
 ) -> list[GitSearchHit]:
     result = await session.execute(
         _GIT_SEARCH_SQL,
         {
             "corpus": Corpus.GIT,
-            "chunker_key": chunker_key,
+            "chunker_key": chunker_key_for(Corpus.GIT, budget),
             "model_key": model_key,
             "path_prefix": path_prefix,
             "query": f"[{','.join(map(str, embedding))}]",
@@ -266,7 +282,9 @@ async def search_git(
     return [GitSearchHit(**row) for row in result.mappings()]
 
 
-async def read_indexed_text(session: AsyncSession, path: str, *, chunker_key: str, model_key: str) -> str | None:
+async def read_indexed_text(
+    session: AsyncSession, path: str, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+) -> str | None:
     """The indexed spans of `path` at the tip, concatenated, or None if it isn't indexed.
 
     Not byte-exact: whitespace-only spans are never chunked, so runs of blank lines between
@@ -278,7 +296,7 @@ async def read_indexed_text(session: AsyncSession, path: str, *, chunker_key: st
         .join(GitTipEntry, GitTipEntry.blob_sha == Chunk.content_sha)
         .where(Chunk.corpus == Corpus.GIT)
         .where(GitTipEntry.path == path)
-        .where(Chunk.chunker_key == chunker_key)
+        .where(Chunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
         .where(Chunk.model_key == model_key)
         .order_by(Chunk.chunk_no)
     )
@@ -362,16 +380,16 @@ async def search_chat(
     session: AsyncSession,
     embedding: Sequence[float],
     *,
-    chunker_key: str,
     model_key: str,
     limit: int,
     session_id: UUID | None = None,
+    budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
 ) -> list[ChatSearchHit]:
     result = await session.execute(
         _CHAT_SEARCH_SQL,
         {
             "corpus": Corpus.CHAT,
-            "chunker_key": chunker_key,
+            "chunker_key": chunker_key_for(Corpus.CHAT, budget),
             "model_key": model_key,
             "session_id": session_id,
             "query": f"[{','.join(map(str, embedding))}]",
@@ -381,7 +399,9 @@ async def search_chat(
     return [ChatSearchHit(**row) for row in result.mappings()]
 
 
-async def git_index_summary(session: AsyncSession, *, chunker_key: str, model_key: str) -> GitIndexSummary:
+async def git_index_summary(
+    session: AsyncSession, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+) -> GitIndexSummary:
     """What the searchable git set holds: the tree's size, and the chunks a search can reach.
 
     `chunks` joins the tip rather than counting the corpus, so it excludes both the cache's
@@ -394,16 +414,18 @@ async def git_index_summary(session: AsyncSession, *, chunker_key: str, model_ke
             .select_from(GitTipEntry)
             .join(Chunk, Chunk.content_sha == GitTipEntry.blob_sha)
             .where(Chunk.corpus == Corpus.GIT)
-            .where(Chunk.chunker_key == chunker_key)
+            .where(Chunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
             .where(Chunk.model_key == model_key)
         )
     ).scalar_one()
     return GitIndexSummary(files=files, chunks=chunks)
 
 
-async def chunk_counts(session: AsyncSession, corpus: Corpus, *, chunker_key: str, model_key: str) -> ChunkCounts:
+async def chunk_counts(
+    session: AsyncSession, corpus: Corpus, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+) -> ChunkCounts:
     """How many of a corpus's chunks are under the live regime, and how many are left behind."""
-    current_regime = (Chunk.chunker_key == chunker_key) & (Chunk.model_key == model_key)
+    current_regime = (Chunk.chunker_key == chunker_key_for(corpus, budget)) & (Chunk.model_key == model_key)
     current, superseded = (
         await session.execute(
             select(func.count().filter(current_regime), func.count().filter(~current_regime))

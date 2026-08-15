@@ -25,10 +25,11 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.state_index.chat_sync import sync_chat
-from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, git_chunker_key
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.state_index.git_tree import fetch_branch, open_mirror
 from haku.state_index.openai_embedder import OpenAIEmbedder
-from haku.state_index.store import chat_index_summary, current_git_state, ensure_schema, search_chat, search_git
+from haku.state_index.query import query_chat, query_git
+from haku.state_index.store import chat_index_summary, current_git_state, ensure_schema
 from haku.state_index.sync import AlreadyCurrent, sync
 
 app = typer.Typer(help=__doc__)
@@ -140,17 +141,9 @@ def index_chat(database_url: DatabaseUrl) -> None:
 
 async def _query_git(database_url: str, query: str, limit: int, path_prefix: str | None) -> None:
     engine = create_async_engine(database_url)
-    embedder = _embedder()
     try:
         async with async_sessionmaker(engine)() as session:
-            hits = await search_git(
-                session,
-                await embedder.embed_query(query),
-                chunker_key=git_chunker_key(),
-                model_key=embedder.model_key,
-                limit=limit,
-                path_prefix=path_prefix,
-            )
+            hits = await query_git(session, _embedder(), query, limit=limit, path_prefix=path_prefix, budget=_budget())
     finally:
         await engine.dispose()
     for hit in hits:
@@ -159,7 +152,7 @@ async def _query_git(database_url: str, query: str, limit: int, path_prefix: str
 
 
 @app.command("query-git")
-def query_git(
+def query_git_command(
     text: Annotated[str, typer.Argument()], database_url: DatabaseUrl, limit: int = 10, path_prefix: str | None = None
 ) -> None:
     """Search the indexed git tip."""
@@ -168,17 +161,9 @@ def query_git(
 
 async def _query_chat(database_url: str, query: str, limit: int, session_id: UUID | None) -> None:
     engine = create_async_engine(database_url)
-    embedder = _embedder()
     try:
         async with async_sessionmaker(engine)() as session:
-            hits = await search_chat(
-                session,
-                await embedder.embed_query(query),
-                chunker_key=git_chunker_key(),
-                model_key=embedder.model_key,
-                limit=limit,
-                session_id=session_id,
-            )
+            hits = await query_chat(session, _embedder(), query, limit=limit, session_id=session_id, budget=_budget())
     finally:
         await engine.dispose()
     for hit in hits:
@@ -190,7 +175,7 @@ async def _query_chat(database_url: str, query: str, limit: int, session_id: UUI
 
 
 @app.command("query-chat")
-def query_chat(
+def query_chat_command(
     text: Annotated[str, typer.Argument()],
     database_url: DatabaseUrl,
     limit: int = 10,
