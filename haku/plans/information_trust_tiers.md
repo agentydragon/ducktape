@@ -145,32 +145,76 @@ on one read path leaks — a corpus an agent cannot name does not. The tier does
 becomes the sweep's **routing input** rather than a filter every reader must remember.
 
 One subtlety worth recording before someone optimizes it away: **content addressing makes
-identical text collide across instances.** For `git` that is a dedup win — the same file vendored
-in two repos is one embedding. For `chat` across tiers it is precisely the leak being prevented,
-one row serving a high and a low corpus at once. So the instance belongs in the key and the
-duplicate embedding for identical text is the correct trade; separation beats dedup here.
+**A shared embedding across instances is fine, and the schema already says why.** An earlier draft
+of this section claimed content addressing made cross-instance sharing a leak — that a `chat` row
+serving a high and a low corpus at once was the very thing being prevented. It is not, and
+`ChatChunk`'s own docstring makes the argument: it is keyed by position in the session rather than
+by content "because two sessions can hold the same exchange verbatim: they are then **two windows
+sharing one cached vector\*\*, and a search that matches it must be able to say which session each
+hit came from."
+
+That is the separation this design needs, already built:
+
+- **`chunks` is a content-addressed embedding cache.** Sharing a row is sharing an embedding of
+  byte-identical text. A searcher who can reach it through their own corpus was entitled to that
+  text anyway, so nothing crosses.
+- **The occurrence rows carry identity** — `chat_chunks`/`chat_chunk_messages` say which session
+  and which messages, `git_tip` says which path at which commit — and those are what a hit hands
+  back, since the index returns pointers rather than content.
+
+**So the instance goes on the occurrences, not in the chunk key.** `chunks` keeps `corpus` as the
+**type** (a blob sha and a rendered-window hash really are different namespaces, and `chunker_key`
+is scoped by it) and gains nothing. The dedup win holds for chat exactly as it does for git.
 
 What it touches, none of it large:
 
-- **`Chunk`'s primary key** gains the instance. The searches already filter `corpus` + `model_key`
-  in a materialized CTE before the distance operator ever runs — described there as load-bearing
-  rather than cosmetic, since pgvector errors on mixed dimensions — so the instance joins a filter
-  that already exists in the hot path.
-- **`GitTipEntry` and `GitSyncState` stop being singletons.** Both are one row today, with `id`
-  pinned to 1; they become one per git instance.
-- **The sweeps run per instance.** `state_index_sync.py` takes an advisory lock per corpus; one
-  lock per type iterating its instances is the simpler first step, exactly as with the Matrix
-  supervisor.
-- **`state_index_reader.py` is where the grant lands.** It already maps the tool surface's
-  `haku_state`/`conversations` vocabulary onto the index's `git`/`chat`; that mapping becomes
-  instance-aware and is the one place to check what the caller may search.
-- **The grant is config, in a shape that exists.** `haku_recall_reads` is one atom granting the
-  index reads; it becomes per-corpus grants.
+- **Occurrence tables become per-instance.** `GitTipEntry` and `GitSyncState` are single rows
+  today with `id` pinned to 1; they become one set per git index. Chat occurrences already carry
+  `session_id`, so the instance can be derived from the session rather than stored — store it if
+  the join proves hot, but derive first.
+- **Filter occurrences before ranking, not after.** The searches already materialize a CTE
+  filtering `corpus` + `model_key` before the distance operator runs — load-bearing rather than
+  cosmetic, since pgvector errors on mixed dimensions — so the permitted-instance join belongs in
+  that same CTE. Ranking globally and dropping afterwards would work, but a short top-K would then
+  hint that hidden matches exist.
+- **The sweeps run per instance**, with an advisory lock each; one lock per type iterating its
+  instances is the simpler first step, exactly as with the Matrix supervisor.
+- **`state_index_reader.py` is where the grant lands**, and mostly **shrinks**: it exists to map
+  the tool surface's `haku_state`/`conversations` vocabulary onto the index's `git`/`chat`, and
+  with named indexes the names are the config, so the mapping stops being a hardcoded translation
+  and becomes a permission check.
+- **The grant is config in a shape that exists.** `haku_recall_reads` is one atom granting the
+  index reads; it becomes per-index grants.
+
+### Configuration: named indexes with type-discriminated settings
+
+Operator, 2026-08-15: **"index `foobar` is of type `git`, indexes this remote"**, with room for
+more settings later. That is a named instance carrying type-specific configuration, and this
+codebase already has the pattern — `mcp.servers` entries select a discriminated `backend`
+(`remote_mcp` with a URL and auth, or `in_process` with a credential kind), and STYLE prefers a
+union of variant types over a flag plus optional fields that permit nonsense:
+
+```yaml
+indexes:
+  - name: haku-state
+    type: git
+    remote: ...
+  - name: ducktape
+    type: git
+    remote: ...
+  - name: conversations-high
+    type: chat
+    tier: high
+```
+
+A `git` index names a remote; a `chat` index names which sessions it covers, which is where the
+tier does its routing work. `index_status` becomes per index, and the tool's `corpus` argument
+becomes an index name — so adding a second repo stops being a schema question and becomes a config
+entry.
 
 **The migration is cheap because embeddings are a cache.** `chunks` is derived data, recomputable
-from its sources, so mis-attribution is a re-index rather than a loss: add the column, backfill to
-a default instance, re-embed whatever was routed wrongly. That also makes this much safer to do
-early than late.
+from its sources, so a mis-routed occurrence is a re-index rather than a loss. That makes this much
+safer to do early than late.
 
 **It makes the RLS option more attractive**, without deciding it. <../state_index/README.md> keeps
 a scoped-Postgres-role alternative in its inventory; with corpora as first-class the natural RLS

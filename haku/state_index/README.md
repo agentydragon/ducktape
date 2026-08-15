@@ -349,12 +349,18 @@ exposing the corpus through `/mcp` to any agent.
 
 **The trigger condition has since arrived, and the intended answer is not a filter.** Several
 agent kinds at several information trust levels (<../plans/information_trust_tiers.md>) is exactly
-the "a room Haku should not see" case above. The direction chosen there is to make `Corpus` a
-**type** (`git`/`chat` — how content is chunked and addressed) with an **instance** per tier and
-per repo (who may read it), so the gate is which corpora a caller may search rather than a
-predicate every read path has to remember. Consequences for this package: the instance joins
-`chunks`' primary key and the `corpus`/`model_key` filter the searches already run; `git_tip` and
-`git_sync_state` stop being single rows; the sweeps iterate instances. Embeddings are a
+the "a room Haku should not see" case above. The direction chosen there: `Corpus` stays the
+**type** (`git`/`chat` — how content is chunked and addressed) and gains named **instances**
+configured per repo and per tier, so the gate is which indexes a caller may search rather than a
+predicate every read path has to remember.
+
+Consequences for this package, and note where they do **not** land: `chunks` is unchanged. It is a
+content-addressed embedding cache, and two instances sharing a row share an embedding of
+byte-identical text — the same property `ChatChunk` already relies on when two sessions hold the
+same exchange verbatim. Identity lives on the occurrences, which is what a hit hands back, so the
+instance goes there: `git_tip` and `git_sync_state` stop being single rows, chat occurrences derive
+theirs from the session, and the permitted-instance join belongs in the same materialized CTE that
+already filters `corpus` and `model_key` before the distance operator. Embeddings are a
 recomputable cache, so this is much cheaper to do while the index is small.
 
 What settling it touches:
