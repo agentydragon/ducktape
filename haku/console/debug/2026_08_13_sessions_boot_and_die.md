@@ -201,6 +201,84 @@ the failure simply moves from "always" to "whenever somebody speaks", which is w
 person something. Fix the reason-reporting and the crashloop first; allocate lazily once a session
 that is asked for reliably survives being asked for.
 
+## Verifying the fix
+
+Everything above this is diagnosis. The fix landed across stages 1 and 4 and, until the run below,
+was **verified only by tests** — which is how it reached production with a hole in it.
+
+**Roll the lease holder with `kubectl delete pod`, not `rollout restart`.** The restart works by
+adding a `kubectl.kubernetes.io/restartedAt` annotation to the pod template, which Flux reconciles
+away; with `maxUnavailable: 0` the replacement never becomes Ready, so the originals are never
+terminated — and `rollout status` reports success anyway. A pod deletion is not a spec change, so
+nothing reverts it, and it is exactly the event being tested.
+
+Deleting the _other_ replica proves nothing, so finding the holder is not optional:
+
+```sql
+SELECT session_id, status, lease_holder, lease_expires_at
+FROM claude_chat_sessions
+WHERE status IN ('ready', 'responding', 'provisioning')
+ORDER BY created_at DESC;
+```
+
+```bash
+kubectl -n haku-claude-sandbox get pods       # note RESTARTS: this is the number that used to climb
+kubectl -n haku-console delete pod <lease_holder>
+```
+
+### A. An idle session (stage 1)
+
+The common case — six rolls a day, almost all between turns.
+
+**Passes when** the `session_id` is unchanged, its `lease_holder` is now a _different_ pod, the
+sandbox pod's `RESTARTS` has not moved, and a message in the room is answered.
+
+**Fails as** `status = 'failed'` with `error` containing "console replica holding this session went
+away mid-turn", or a new `session_id` where the old one was. That is the original bug: the runner
+was refused on reconnect and the supervisor built a replacement.
+
+### B. Mid-turn (stage 4)
+
+The half only a roll exercises, and the newer code.
+
+1. Ask Haku something that runs for a while — a few tool calls, thirty seconds or more.
+2. While the room's status line still shows it working, delete the lease holder.
+3. Watch the room.
+
+**Passes when** the answer arrives **once**, and
+
+```sql
+SELECT turn_id, started_at, ended_at, outcome FROM claude_chat_turns
+WHERE session_id = '<id>' ORDER BY started_at DESC LIMIT 5;
+```
+
+shows **one** turn covering the exchange with `outcome = 'answered'`.
+
+**Fails as** a turn with `outcome = 'failed'` followed by a second turn for the same prompt — the
+turn was closed and the prompt re-asked — or the answer appearing in the room twice.
+
+The adopting replica says so in its log. Its **absence** means the roll landed on an idle session
+rather than that stage 4 did nothing; the two are identical from the room, so retry rather than
+concluding anything:
+
+```bash
+kubectl -n haku-console logs -l app.kubernetes.io/name=haku-console --since=15m \
+  | grep -i "adopted with turn"
+```
+
+### While you are in there
+
+One number this repo estimates rather than knows — `chat_runtime_projection.md` stage 1 says to
+check it before stage 2 relies on it:
+
+```sql
+SELECT kind, count(*) FROM claude_chat_frames
+WHERE session_id = '<id>' GROUP BY kind ORDER BY count(*) DESC;
+```
+
+`stream_event` should be the largest bucket by a wide margin. How wide is the answer to "what does
+recording the deltas actually cost".
+
 ## What the first real roll found: the fix had a hole
 
 Run 2026-08-15. The deliberate `rollout restart` **did not roll** — Flux reconciled the
