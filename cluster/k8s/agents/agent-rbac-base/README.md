@@ -35,7 +35,8 @@ Depends on: `agent-rbac-base`, `kyverno-policies`.
 Contains:
 
 - `ClusterRoleBinding` for `cluster-diagnostics-reader` (cluster-wide)
-- `RoleBinding` for `logs-configmaps-reader` in `flux-system` only
+- `RoleBinding` for `logs-configmaps-reader` in `flux-system` for the interactive
+  Claude Web group and agent-box Codex
 
 ### 3. Per-service `<service>/agent-rbac/` — namespace-scoped RoleBindings
 
@@ -72,22 +73,26 @@ grants stay deliberately secret-free.
 ### 4. Haku background agent — diagnostics subset
 
 The Haku agent authenticates as group `oidc-ksbx-groups:haku` (see Authentication below) and,
-beyond its full-CRUD `haku-sandbox` Role, is **co-subjected** onto the existing reader bindings
-to give it general cluster diagnostics plus safe log reading. The in-cluster `haku` and
-`haku-claude` ServiceAccounts are co-subjected onto this same durable reader set, so the
-managed worker and Console-owned Claude runners have equivalent diagnostics access without
-duplicating any permission rules:
+beyond its full-CRUD `haku-sandbox` Role, receives general cluster diagnostics plus safe log
+reading. The in-cluster `haku` and `haku-claude` ServiceAccounts receive the same durable
+diagnostics access without duplicating any permission rules:
 
 - **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
   ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no
   readable credential material — it can see what's running and how it's wired, nothing it could
   exfiltrate.
-- **Logs/configmaps in infrastructure namespaces only** (co-subjected on the per-namespace
-  bindings). These carry controller diagnostics, not user content. The binding YAMLs listed by
-  <permissions.md> are the namespace source of truth.
+- **Logs/configmaps in explicitly opted-in namespaces**. A GitOps-owned Namespace label,
+  `rbac.ducktape.io/haku-logs-configmaps: "true"`, is the source of truth. The
+  `generate-haku-logs-configmaps-reader` Kyverno policy generates one namespaced
+  `RoleBinding` containing the Haku group and both ServiceAccounts. These carry controller
+  diagnostics, not user content.
 
 The experimental `agent-lab` and `public-coder-agent` debug grants remain OIDC-group-only;
 they are not part of the durable ServiceAccount parity set.
+
+The separate `oidc-ksbx-groups:kubectl-sandbox-users` group belongs to the interactive Claude
+Code Web/kubectl sandbox environment. It is not a parent group of Haku and is granted access
+independently where its explicit RoleBindings appear.
 
 This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.md>) to read-only
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are

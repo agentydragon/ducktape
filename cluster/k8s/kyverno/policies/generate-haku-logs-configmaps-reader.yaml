@@ -1,0 +1,54 @@
+# Grant Haku's diagnostics subjects access to logs/configmaps in explicitly
+# opted-in namespaces. The namespace label is GitOps-owned; it is an access
+# grant, not merely metadata.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-haku-logs-configmaps-reader
+  annotations:
+    policies.kyverno.io/title: Generate Haku logs/configmaps reader
+    policies.kyverno.io/category: Access Control
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Namespace, RoleBinding
+    policies.kyverno.io/description: >-
+      Generates a namespaced, read-only logs/configmaps RoleBinding for Haku
+      whenever a GitOps-managed Namespace opts in with the
+      rbac.ducktape.io/haku-logs-configmaps label.
+spec:
+  background: true
+  rules:
+    - name: generate-haku-logs-configmaps-reader
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/haku-logs-configmaps: "true"
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: haku-logs-configmaps-reader
+        namespace: "{{request.object.metadata.name}}"
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/managed-by: kyverno
+              rbac.ducktape.io/access: haku-logs-configmaps
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: logs-configmaps-reader
+          subjects:
+            - kind: Group
+              name: oidc-ksbx-groups:haku
+              apiGroup: rbac.authorization.k8s.io
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - kind: ServiceAccount
+              name: haku-claude
+              namespace: haku-claude-sandbox

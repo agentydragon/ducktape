@@ -56,7 +56,6 @@ resources:
   - docker-ci/agent-rbac/flux-kustomization.yaml
   - keda/flux-kustomization.yaml # event-driven autoscaler; presently scoped to haku-ci
   - haku-ci/flux-kustomization.yaml # Forgejo Actions runner for Haku's in-cluster image builds
-  - haku-ci/agent-rbac/flux-kustomization.yaml # read-only logs/configmaps for Haku to debug its CI
 
   # --- agents ---
   - agents/shared-rbac/flux-kustomization.yaml

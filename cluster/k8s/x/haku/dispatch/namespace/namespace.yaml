@@ -9,4 +9,5 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "auto"
+    rbac.ducktape.io/haku-logs-configmaps: "true"
     name: haku-dispatch

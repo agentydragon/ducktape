@@ -21,6 +21,24 @@ py_library(
 # policy can be run on its own.
 
 py_test(
+    name = "test_haku_logs_configmaps_reader",
+    srcs = ["test_haku_logs_configmaps_reader.py"],
+    data = [
+        "//cluster/k8s:kyverno_policy_files",
+        "@multitool//tools/kyverno",
+    ] + glob([
+        "testdata/namespace_haku_logs.yaml",
+        "testdata/namespace_without_haku_logs.yaml",
+    ]),
+    deps = [
+        ":apply",
+        ":paths",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_default_vpa_requests_only",
     srcs = ["test_default_vpa_requests_only.py"],
     data = [

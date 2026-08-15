@@ -12,8 +12,9 @@ The runner executes **Haku-authored** build steps (the `.forgejo/workflows/` + `
 in `haku-state`). A prompt-injected Haku could author a hostile build, so the runner is
 contained to roughly Haku's existing sandbox blast radius:
 
-- **Not in `haku-sandbox`.** It lives in its own namespace where Haku has **no RBAC**, so Haku
-  can't tamper with the runner pod or its registry/git push creds — but it is **egress-fenced**
+- **Not in `haku-sandbox`.** It lives in its own namespace where Haku has only the generated
+  read-only logs/configmaps binding, so Haku can't tamper with the runner pod or its
+  registry/git push creds — but it is **egress-fenced**
   like haku-sandbox (`networkpolicy.yaml`: DNS + base-image registries/npm/pypi + in-cluster
   only).
 - **Rootless daemon in a privileged pod** (`docker:27-dind-rootless`, `privileged: true`). The
@@ -22,7 +23,7 @@ contained to roughly Haku's existing sandbox blast radius:
   `/dev/net/tun` and disables the mount masks RootlessKit needs). The non-privileged path was
   attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks
   (see the paving section). The privileged pod's blast radius is bounded by this namespace
-  being operator-only (no Haku RBAC), pinned **off the control planes**, and egress-fenced.
+  being operator-only for writes, pinned **off the control planes**, and egress-fenced.
 - **Repo-scoped, single-use runners** registered only to the `haku-state` repo, so they only ever
   run Haku's jobs. Each pod registers ephemerally under its own Kubernetes pod name (so concurrent
   pods cannot collide), runs exactly one job, and exits — a hostile build cannot outlive its own
