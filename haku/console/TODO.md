@@ -186,3 +186,30 @@ A `startupProbe` on the same endpoint with a generous `failureThreshold` separat
 from "wedged" and lets the liveness budget stay tight for steady state. Deliberately not solved by
 loosening `livenessProbe`, which would blunt detection for the whole life of the pod to buy slack
 that is only needed once.
+
+## `claude_chat_frames` does not map to one concept
+
+`kind` holds two discriminator vocabularies at once. `RolloutRecorder` — a `FrameSink` on
+`ClaudeCli`, so it structurally only ever sees CLI protocol frames — writes the CLI's own top-level
+`type` there. `_progress_reporter` writes `setup_output`, which is the **bridge envelope's** `kind`
+literal, for one decoded line of a `SetupOutput`. Two unrelated sinks, one column, two vocabularies.
+
+A `partial` row is a third thing again: the console's own reconstruction of an answer still
+streaming, which wears `assistant` and is told apart by a boolean column rather than by `kind`.
+
+**Consequences, so this reads as a known state rather than an oversight:**
+
+- There is deliberately **no enum over `kind`**. One would give a name to a concept the schema does
+  not have, and an enum over the union of two vocabularies is what made the first attempt confusing
+  enough to back out.
+- The loose `*_FRAME_KIND` constants in `x/claude_chat.py` stay loose, with a pointer here.
+- The table's own docstring says the same thing, since that is where a reader meets it first.
+
+The `partial` row leaves on its own: it is tombstoned on `update_partial_frame`, and recording the
+stream deltas removed its reason to exist. What is left after that is the two-vocabulary problem.
+
+`../plans/chat_runtime_projection.md` § stage 2 holds the intended shape — the table becomes the log
+of the bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
+along with what that costs (the sink has to move down to `WebSocketTransport`, and it is three
+releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
+scheduled**, and no other work depends on it.

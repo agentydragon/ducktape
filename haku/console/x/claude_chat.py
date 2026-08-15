@@ -37,7 +37,6 @@ from haku.console.chat_models import (
     ChatSessionStatus,
     ChatSurface,
     FrameDirection,
-    FrameKind,
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
@@ -641,7 +640,7 @@ class ClaudeChatStore:
             # hundreds and each carries a few characters of an answer that arrives whole a moment
             # later, so a reader asking for "everything" wants the frames, not the typing. Naming
             # the kind is how a caller reading a truncated answer asks for them anyway.
-            query = query.where(ClaudeChatFrame.kind != FrameKind.STREAM_EVENT)
+            query = query.where(ClaudeChatFrame.kind != DELTA_FRAME_KIND)
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(ClaudeChatFrame.frame_seq).limit(limit))).all()
         return [
@@ -678,7 +677,7 @@ class ClaudeChatStore:
                     ClaudeChatFrame(
                         session_id=session_id,
                         direction=FrameDirection.FROM_AGENT,
-                        kind=FrameKind.ASSISTANT,
+                        kind=ASSISTANT_FRAME_KIND,
                         payload=_assistant_frame(text),
                         partial=True,
                         created_at=now,
@@ -893,6 +892,30 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
+# TODO(frame-vocabulary): these are not one vocabulary, and there is deliberately no enum over
+# them yet. Five of them are the CLI's own top-level `type`; `SETUP_OUTPUT_KIND` is the *bridge*
+# envelope's `kind` literal, put in the same column by a different sink. An enum over the union
+# would give a name to a concept the schema does not actually have — see `ClaudeChatFrame` and
+# stage 2 of <../../plans/chat_runtime_projection.md>, which is where this becomes one thing.
+
+# One token batch of an answer still being written. Hundreds per turn, and the completed
+# `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
+# view.
+DELTA_FRAME_KIND = "stream_event"
+
+# The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
+# sends `user` frames too, carrying tool results.
+PROMPT_FRAME_KIND = "user"
+
+# The frame that ends a turn, and the one that completes an assistant message. Both are read back
+# out of the log by `adopt_open_turn` to work out what a departed holder had got to.
+RESULT_FRAME_KIND = "result"
+ASSISTANT_FRAME_KIND = "assistant"
+
+# The bridge's, not the CLI's — see the TODO above.
+SETUP_OUTPUT_KIND = "setup_output"
+
+
 def _assistant_frame(text: str) -> dict[str, Any]:
     """The frame shape the agent will send, for the one the console stands in for meanwhile.
 
@@ -915,7 +938,7 @@ def _setup_output_frame(text: str) -> dict[str, Any]:
     is "what happened in this session, in order" — and for a session that died before the CLI
     produced anything, the answer is entirely here.
     """
-    return {"kind": FrameKind.SETUP_OUTPUT, "text": text}
+    return {"kind": SETUP_OUTPUT_KIND, "text": text}
 
 
 def _frame_kind(payload: dict[str, Any]) -> str:
@@ -982,10 +1005,10 @@ def _coarse_status(frame: dict[str, Any]) -> str | None:
     both would need maintaining every time the tool surface grows.
     """
     match frame.get("type"):
-        case FrameKind.ASSISTANT:
+        case "assistant":
             names = [block["name"] for block in _content_blocks(frame) if block.get("type") == "tool_use"]
             return f"running {', '.join(names)}" if names else "writing"
-        case FrameKind.SYSTEM:
+        case "system":
             match frame.get("subtype"):
                 # `description` here is the CLI's own prose for the step in flight, e.g.
                 # "Running Count regular files in the directory" — better than anything the
@@ -1238,7 +1261,7 @@ class ClaudeChatService:
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
             await self._store.record_frame(
-                session_id, FrameDirection.FROM_AGENT, FrameKind.SETUP_OUTPUT, _setup_output_frame(detail)
+                session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, _setup_output_frame(detail)
             )
             if self._room_surface is not None and room_id is not None:
                 await self._room_surface.report(room_id, detail)
@@ -1477,7 +1500,7 @@ class ClaudeChatService:
                     # ends a turn rather than the conversation.
                     while True:
                         remaining = await next_frame
-                        if remaining.get("type") == FrameKind.RESULT:
+                        if remaining.get("type") == RESULT_FRAME_KIND:
                             result = remaining
                             break
                         next_frame = asyncio.ensure_future(anext(frames))
@@ -1486,7 +1509,7 @@ class ClaudeChatService:
                 frame = next_frame.result()
                 status.note(frame)
                 match frame.get("type"):
-                    case FrameKind.STREAM_EVENT:
+                    case "stream_event":
                         if not (delta := _text_delta(frame.get("event", {}))):
                             continue
                         if assistant_id is None:
@@ -1497,7 +1520,7 @@ class ClaudeChatService:
                         # turn produced would exist only in the message row and the log would
                         # simply stop mid-answer (R5.5b).
                         await self._store.update_partial_frame(session_id, streamed)
-                    case FrameKind.ASSISTANT:
+                    case "assistant":
                         saw_assistant_message = True
                         if assistant_id is None:
                             assistant_id = await self._store.begin_assistant(session_id)
@@ -1535,7 +1558,7 @@ class ClaudeChatService:
                             # inferred from order and timing.
                             await self._deliver_reply(session_id, room_id, said, spoken_id, _agent_message_id(frame))
                             spoke = True
-                    case FrameKind.RESULT:
+                    case "result":
                         result = frame
                         break
             if result is None:
@@ -1668,7 +1691,8 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
     frames = await db.execute(
         select(ClaudeChatFrame.kind, ClaudeChatFrame.payload)
         .where(
-            ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.kind.in_([FrameKind.ASSISTANT, FrameKind.USER])
+            ClaudeChatFrame.session_id == session_id,
+            ClaudeChatFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]),
         )
         .order_by(ClaudeChatFrame.frame_seq)
     )
@@ -1683,7 +1707,7 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
             if not isinstance(block, dict):
                 continue
             match block.get("type"):
-                case "tool_use" if kind == FrameKind.ASSISTANT and agent_id:
+                case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
                     by_message.setdefault(str(agent_id), []).append(
                         {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
                     )
@@ -1784,7 +1808,7 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
             ClaudeChatFrame.session_id == session_id,
             ClaudeChatFrame.frame_seq >= first_frame_seq,
             ClaudeChatFrame.direction == FrameDirection.TO_AGENT,
-            ClaudeChatFrame.kind == FrameKind.USER,
+            ClaudeChatFrame.kind == PROMPT_FRAME_KIND,
         )
         .limit(1)
     )
@@ -1804,7 +1828,7 @@ async def _recorded_result(db: AsyncSession, session_id: UUID, first_frame_seq: 
             ClaudeChatFrame.session_id == session_id,
             ClaudeChatFrame.frame_seq >= first_frame_seq,
             ClaudeChatFrame.direction == FrameDirection.FROM_AGENT,
-            ClaudeChatFrame.kind == FrameKind.RESULT,
+            ClaudeChatFrame.kind == RESULT_FRAME_KIND,
         )
         .limit(1)
     )
@@ -1823,7 +1847,7 @@ async def _said_anything(db: AsyncSession, session_id: UUID, first_frame_seq: in
             ClaudeChatFrame.session_id == session_id,
             ClaudeChatFrame.frame_seq >= first_frame_seq,
             ClaudeChatFrame.direction == FrameDirection.FROM_AGENT,
-            ClaudeChatFrame.kind == FrameKind.ASSISTANT,
+            ClaudeChatFrame.kind == ASSISTANT_FRAME_KIND,
             ~ClaudeChatFrame.partial,
         )
         .limit(1)

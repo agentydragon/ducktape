@@ -75,7 +75,7 @@ before stage 2 commits to it. `read_frames` leaves them out of its default view,
 "would bury the log for a reader" is actually answered. One extra write per delta until stage 2
 removes the `partial` row it replaces, at which point it is a wash.
 
-### 2. Make the frame log store one thing — **the table becomes the bridge**
+### 2. Make the frame log store one thing — recorded, **not scheduled**
 
 `claude_chat_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
 sinks write to it:
@@ -89,7 +89,9 @@ Plus a `partial` row, the console's own reconstruction of a streaming answer, wh
 `assistant` and is told apart by a boolean column. That one leaves regardless: it is tombstoned on
 `update_partial_frame`, and stage 1 removed its reason to exist.
 
-**Decided: the table is the log of the bridge.** `kind` becomes the envelope discriminator
+**The intended shape, if and when this is picked up: the table is the log of the bridge.** Nothing
+here is scheduled, and the rest of this plan does not depend on it — stage 3 onward can proceed with
+the schema exactly as it is. `kind` becomes the envelope discriminator
 (`claude`, `setup_output`, `hello`, `start`, `end_input` — `protocol.py` owns the list) and the
 CLI's own `type` gets a column of its own. Two columns, each answering one question, and any
 future runner-originated frame has a home instead of a special case.

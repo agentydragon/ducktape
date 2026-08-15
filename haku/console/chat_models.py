@@ -41,35 +41,6 @@ class FrameDirection(StrEnum):
     FROM_AGENT = "from_agent"
 
 
-class FrameKind(StrEnum):
-    """The kinds of rollout frame the console names.
-
-    **Deliberately not `ChatMessageRole`**, which shares two of these spellings by coincidence: a
-    `user` frame from the agent carries a tool result, not a user message, and either enum gaining
-    a value would silently change what the other selects.
-
-    **Not the type of `claude_chat_frames.kind` either**: the CLI may send a type this console has
-    never heard of, and a record that refuses to store one is worse than a name it cannot match.
-    The column stays text; this names the closed subset.
-
-    `SETUP_OUTPUT` is the odd member, and a known defect rather than a design: it is the *bridge's*
-    discriminator sitting in a column that otherwise holds the *CLI's* `type`, because two unrelated
-    sinks write here. Stage 2 of <../plans/chat_runtime_projection.md> makes the column the bridge's
-    vocabulary throughout, at which point that half of this splits off into a closed enum that can
-    be the column's type — and this one keeps the CLI's, which must stay open.
-    """
-
-    ASSISTANT = "assistant"
-    USER = "user"
-    RESULT = "result"
-    SYSTEM = "system"
-    STREAM_EVENT = "stream_event"
-    CONTROL_REQUEST = "control_request"
-    CONTROL_RESPONSE = "control_response"
-    COMMAND_LIFECYCLE = "command_lifecycle"
-    SETUP_OUTPUT = "setup_output"
-
-
 class TurnOutcome(StrEnum):
     """How one exchange ended. Absent while it is still running.
 

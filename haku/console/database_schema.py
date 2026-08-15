@@ -1061,14 +1061,14 @@ class ClaudeChatFrame(Base):
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
     are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    **`kind` holds two discriminator vocabularies**, because two unrelated sinks write here:
+    **TODO(frame-vocabulary): this schema is in a half state and does not map to one concept.**
+    ``kind`` holds two discriminator vocabularies, because two unrelated sinks write here:
     `RolloutRecorder` puts the CLI's own top-level ``type`` in it, and the setup reporter puts the
     *bridge* envelope's ``setup_output`` literal in it. A ``partial`` row is a third thing again —
     the console's reconstruction of an answer still streaming — and wears ``assistant`` while being
     told apart by its own column. So "what is this row" has three answers and no one field gives
-    them. Stage 2 of <../plans/chat_runtime_projection.md> makes this table the log of the bridge:
-    ``kind`` becomes the envelope's discriminator throughout and the CLI's type gets its own
-    column.
+    them, which is why there is no enum over ``kind``: one would name a concept this table does not
+    have. <../plans/chat_runtime_projection.md> holds the intended shape; nothing is scheduled.
     """
 
     __tablename__ = "claude_chat_frames"
