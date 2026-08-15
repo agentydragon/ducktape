@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -1502,6 +1502,31 @@ async def test_a_matrix_batch_offered_mid_turn_is_still_held(
                 room_id=MATRIX_ROOM, event_id="$2", sender=MATRIX_OPERATOR, body="and another thing", origin_server_ts=2
             )
         ]
+    )
+
+    assert offered is False
+
+
+async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_raised(
+    chat_store, conversations, migrated_identity_store, migrated_sessions, operator_id
+) -> None:
+    """The supervisor is between sessions, which the room must survive.
+
+    `enqueue_prompt` answers a vanished session with `KeyError`, and `offer` used to catch only
+    `RuntimeError` — so this raised into the sync loop, which logged something generic and slept.
+    The watermark stayed put, so nothing was lost, but ingress stalled in a retry loop and the
+    operator was told nothing. Refusing is the answer that gets them a "holding" notice.
+    """
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=MATRIX_ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert await conversations.claim_room(MATRIX_USER, MATRIX_ROOM) == MATRIX_ROOM
+    await conversations.set_session(MATRIX_USER, view.session_id)
+    turns = MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
+    async with migrated_sessions.begin() as db:
+        await db.execute(delete(ClaudeChatSession).where(ClaudeChatSession.session_id == view.session_id))
+
+    offered = await turns.offer(
+        [InboundMessage(room_id=MATRIX_ROOM, event_id="$1", sender=MATRIX_OPERATOR, body="hi", origin_server_ts=1)]
     )
 
     assert offered is False

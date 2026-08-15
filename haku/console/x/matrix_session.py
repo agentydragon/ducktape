@@ -166,17 +166,20 @@ class MatrixTurns:
         if conversation is None or conversation.session_id is None:
             logger.info("Matrix: no session bound yet, holding %d message(s)", len(messages))
             return False
-        if (status := await self._chat_store.status(conversation.session_id)) != ChatSessionStatus.READY:
-            logger.info(
-                "Matrix: session %s is %s, holding %d message(s)", conversation.session_id, status, len(messages)
-            )
-            return False
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
             await self._chat_store.enqueue_prompt(operator_id, conversation.session_id, _as_prompt(messages))
-        except RuntimeError as error:
-            # Lost a race with the turn loop, or a prompt landed between the status read and
-            # here. Both mean "not now", which is the same answer as an unready session.
+        except (RuntimeError, KeyError) as error:
+            # Admission is `enqueue_prompt`'s alone, and it decides under `SELECT … FOR UPDATE`.
+            # A status read here first could only ever agree with a decision that had not been
+            # made yet, so it was two answers to one question and the durable one always won.
+            #
+            # Both exceptions mean the same thing to a caller that holds its messages: not now.
+            # `RuntimeError` is an unready session, a turn in flight, or a prompt already queued;
+            # `KeyError` is a session row that has gone (the supervisor is between sessions).
+            # Refusing rather than raising is what keeps the watermark where it is and gets the
+            # room a "holding" notice, instead of stalling ingress in a retry loop that says
+            # nothing to the operator.
             logger.info("Matrix: session %s refused the batch: %s", conversation.session_id, error)
             return False
         return True
