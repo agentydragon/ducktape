@@ -27,6 +27,28 @@ That is enforceable. "Classify each message before it crosses" is not, by itself
 probabilistic filter on output from an author assumed adversarial. Both are wanted; only the
 first is the boundary.
 
+## An agent kind is its workspace repo
+
+Operator, 2026-08-15, and it is the right mechanism: **agent kinds are distinguished by which
+repo they clone as their workspace.** That makes the corpus label above operational rather than
+notional — the tier of an agent is a fact about its manifest, checkable from outside, not a
+judgment about its behaviour. It also composes with everything this deployment already has per
+kind: a SandboxTemplate and claim, a ServiceAccount and RBAC, an egress perimeter, a LiteLLM
+route. The workspace clone is already how the Haku sandbox bootstraps, so this is the existing
+mechanism carrying one more meaning rather than a new one.
+
+Two things it does not do, and both matter:
+
+- **A repo is a label only while its contents are homogeneous.** The moment a lower tier needs to
+  touch part of a higher-tier repo, the answer is to split the repo, not to subdivide the label —
+  which is exactly what multi_agent.md already anticipates in wanting `ui/` out of `haku-state`
+  before frontend chores can be offloaded. Expect the tier boundary to force repo splits, and
+  treat that as the design working rather than as friction.
+- **The workspace is not the only inflow.** MCP tool results, room history, and anything another
+  agent says all land in context regardless of which repo was cloned. So the repo bounds the
+  **starting** corpus, not the accumulated one — which is precisely why the channels between
+  agents need their own check, and why that check cannot be inferred from the mount.
+
 ## What this inherits from doctrine, including the uncomfortable parts
 
 <../docs/security.md> already states the test, and it applies here unchanged: **every new write
@@ -71,21 +93,50 @@ What that costs, stated up front:
   synchronous classifier in the delegation path is one more resident model competing for the same
   VRAM — and one that must answer **now**, not when a slot frees.
 
-## Three channels, three mechanisms
+## What the classifier is actually for
 
-"Run a classifier on it" is one answer to three different questions, and they are not the same
-question.
+Operator, 2026-08-15, and it corrects the framing this document first had. The threat is **not
+primarily a malicious lower tier extracting secrets**. It is the **high-trust agent volunteering
+something that should never have reached a room a lower-tier agent is sitting in** — Haku
+mentioning the operator's embarrassing medical condition while coordinating work, in a channel
+where an OpenAI-backed agent is a member and therefore its provider sees every word.
 
-| Channel            | What crosses                     | Right mechanism                                     |
-| ------------------ | -------------------------------- | --------------------------------------------------- |
-| Delegation payload | the task the higher tier authors | local classifier, synchronous, fail closed          |
-| Returned result    | the lower tier's output          | an **integrity** control, not a confidentiality one |
-| Git push           | content leaving into a repo      | the destination, **not** the proxy — see below      |
+That is a different and harder problem than gating a delegation payload, in three ways:
+
+- **It is per message, not per handoff.** Every message the high-trust agent posts into a shared
+  room is a potential disclosure, including ones that are not delegating anything.
+- **It is inadvertence, not attack.** The failure is a helpful agent supplying context, so the
+  classifier is catching ordinary behaviour rather than an adversary. That makes it more likely to
+  fire and more valuable — and it does **not** retire the adversarial case, since the threat model
+  still assumes Haku can be steered.
+- **The judgment is relevance versus disclosure, not deny-all.** The lower tier genuinely needs
+  some context to do its job, so the classifier cannot simply refuse anything personal.
+
+Three channels follow, and they want different mechanisms:
+
+| Channel                   | What crosses                  | Right mechanism                                     |
+| ------------------------- | ----------------------------- | --------------------------------------------------- |
+| Message into a mixed room | anything the higher tier says | local classifier, synchronous, fail closed          |
+| A lower tier's output     | its results and its messages  | an **integrity** control, not a confidentiality one |
+| Git push                  | content leaving into a repo   | the destination, **not** the proxy — see below      |
 
 The asymmetry is worth naming: outbound is a disclosure control, inbound is an injection control.
-multi_agent.md already says sensor output is untrusted input to Haku; a worker's returned result
-is the same thing, and needs no classifier — it needs the treatment every adversarial source
-already gets.
+multi_agent.md already says sensor output is untrusted input to Haku; another agent's messages are
+the same thing, and need no classifier — they need the treatment every adversarial source already
+gets.
+
+**The choke point already exists, which is what makes this enforceable.** The console holds the
+only Matrix credential and posts everything the agent says (R11.1 auto-forward — the agent has no
+send tool). So the classifier is a filter in the reply path, before the room send, in reviewed
+console code that the agent cannot reach around. That satisfies "enforcement at the perimeter,
+never by in-agent rules" for a check that is otherwise in-band.
+
+**Make the channel narrow so the classifier's job is easy.** Free prose into a mixed room is the
+hardest possible input for a small local model — paraphrase, inference chains and oblique
+reference ("the thing from Tuesday") all defeat keyword-shaped judgment. A structured task
+envelope, where the higher tier states goal, inputs and acceptance criteria in fields rather than
+narrating, is dramatically more checkable and forces the agent to be deliberate about what it is
+handing over. Reserve free-form messages for same-tier rooms.
 
 ### Git content: check at the destination
 
@@ -107,31 +158,53 @@ The _other_ half of the idea is right about the proxy, though: **which repos an 
 at all** is metadata, the proxy already sees the request path, and <../TODO.md> already wants it —
 that turns a standing all-or-nothing grant into a reviewable list.
 
-## Matrix between agents: what it costs
+## Shared rooms, with the operator in them
 
-Attractive because it is built, keeps history, and the operator can watch. Three costs, in
-increasing order of how much they change the design.
+The chosen shape (operator, 2026-08-15): agents talk to each other in Matrix rooms the operator
+is also a member of, and messages pass the classifier on the way in. This section is what that
+requires — the objections that mattered are absorbed as requirements rather than as reasons not
+to.
 
-- **A shared room sits at the trust level of its lowest member, permanently.** Every member's
-  homeserver copy is readable by that member's agent, and a room is append-only and federated, so
-  nothing said in it can be taken back. A room shared across tiers is a standing downgrade
-  channel — and it would force the classifier to gate _every message_ rather than delegation
-  payloads, which is exactly the shape argued against above.
-- **Pairwise rooms are what survives**, and matrix_chat_runtime R3.6a's [later] already names the
-  structure: one room per `(operator, agent)`, one bot account per agent. Extending the key to
-  `(agent, agent)` keeps every room two-party, so each has one well-defined tier pair and one
-  policy. The group room is the thing to refuse.
-- **Everything R3.5 bought comes straight back.** matrix*chat_runtime puts mention gating,
-  per-room sender allowlists and multi-bot loop protection out of scope \_because it is a DM*. Two
-  bots in a room reinstates all three, and the loop is the dangerous one: two agents answering
-  each other burn budget with no human in the loop. An inter-agent room needs a turn and budget
-  cap that is not "the operator notices".
+**The policy rule is the room's floor.** A message is checked against the **lowest tier among the
+room's current members**, so membership _is_ the policy and there is one number to reason about
+per room. It also means adding a member re-parameterizes every future message in that room.
 
-Worth weighing against what it replaces: the archived dispatch plane's job/result shape had none
-of these problems, because it was request/response with no shared store. Matrix buys observability
-and history and costs a shared mutable transcript at the lowest common tier. If the reason for
-Matrix is that the operator can watch, note that the console now has a session view
-(<../console/plans/session_channels.md>) — the same visibility without a shared room.
+Five requirements follow, in the order they will bite:
+
+- **`m.room.history_visibility` must be `joined`, set at creation.** This is the trap. The
+  default is `shared`, under which a newly joined member can backfill the room's entire history —
+  every message written before it arrived, none of which was ever classified against its
+  presence. Adding an OpenAI-backed agent to an existing room would hand its provider the whole
+  backlog in one go, and changing the setting afterwards does not retroactively hide anything. Get
+  this right when the room is made, or not at all.
+- **A room's tier is monotonically non-increasing.** Everything already said stays disclosed to
+  everyone who could read it; removing a low-tier member does not un-disclose. So a room can be
+  downgraded once and never restored, and "just add the cheap agent to this existing room" is the
+  gesture that spends the room permanently. Prefer creating a room at the tier it will need.
+- **Operator presence is detection, not prevention.** By the time the operator reads a leak, the
+  event has federated to every member's homeserver and its provider has already seen it. That is
+  the argument for the classifier being synchronous and fail-closed rather than an audit log —
+  and equally the argument for keeping the operator in the room anyway, because their reaction is
+  the only calibration signal the classifier will ever get.
+- **A withheld message has to be visible as withheld.** Silently dropping one leaves the operator
+  unable to tell whether the agent answered, and leaves the other agents waiting on a reply that
+  is never coming. It wants its own `RoomEventKind` in the tag vocabulary
+  (<../console/x/matrix_client.py>) so the room shows that something was said and held.
+- **Loop protection stops being optional.** matrix_chat_runtime puts mention gating, sender
+  allowlists and multi-bot loop protection out of scope explicitly **because it is a DM** (R3.5).
+  Several bots in a room reinstates all three, and R1.5's "ignore my own sender" is no longer
+  enough — each agent must ignore other agents unless addressed. The dangerous one is two agents
+  answering each other: the operator being a **member** does not mean the operator is **watching**,
+  so this needs a per-room turn and budget cap rather than a human noticing.
+
+**One bot account per agent becomes required rather than optional.** R3.6a's [later] already
+sketches it; here it is load-bearing, because the classifier's policy keys on room membership and
+membership means nothing if the agents share an MXID.
+
+Recorded so the trade is explicit rather than forgotten: the archived dispatch plane's job/result
+shape had none of these problems, because request/response has no shared store to sit at a floor.
+What the room buys instead is that the operator can watch the coordination happen and can join in,
+which the job shape never offered.
 
 ## The named workloads need less than the classifier
 
@@ -159,13 +232,22 @@ on it.
 
 ## Open questions
 
-- **Where does the tier label live, and who may set it?** A per-corpus label is only as good as
-  its authority. If Haku may set it, Haku may relabel; if only ducktape may, every new source
-  costs a PR. This is the decision the rest of the design hangs off.
+- **Where does the tier label live, and who may set it?** With agent kinds keyed on their
+  workspace repo, the repo is the natural home — which makes it a ducktape manifest fact and
+  therefore not Haku's to change. The residue is rooms: a room's floor is derived from
+  membership, so **whoever may invite may downgrade**, and that authority needs naming.
 - **Does a lower-tier agent's memory inherit the tier of what it was told?** Anything durable it
-  keeps — a state repo, a scratch note, a session that outlives the task — carries the delegation
-  payload forward into unrelated work unless the tier travels with it.
-- **What happens on refusal?** Silent redaction, a refused delegation, or an operator prompt.
-  Only the last is honest when the classifier is the component most likely to be wrong.
+  keeps — a state repo, a scratch note, a session that outlives the task — carries what it was
+  told forward into unrelated work unless the tier travels with it. Its workspace repo bounds
+  where it can write that down, which is one more reason the repo is the right label.
+- **What happens on refusal?** A held message is visible as held, but the agent still needs to
+  learn something — telling it exactly what was withheld and why hands an adversarial author the
+  classifier's decision boundary, while telling it nothing makes it retry the same disclosure
+  differently. Leaning toward: tell the agent it was withheld, tell the **operator** why.
+- **How much does the operator want to see?** Coordination chatter between agents in a room the
+  operator is in becomes a notification surface. Muting it defeats the point of being there;
+  not muting it makes the room unusable for the operator's own conversation with Haku, which is
+  an argument for inter-agent rooms being separate from the operator's DM even though the
+  operator is a member of both.
 - **The oai prompt line** — still open from multi_agent.md, and it is the values call this whole
   design is parameterized by.
