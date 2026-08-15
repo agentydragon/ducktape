@@ -2,11 +2,11 @@
 
 load("//devinfra/python:defs.bzl", "py_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_testonly = True)
 
 py_library(
     name = "recording_claims",
-    testonly = True,
     srcs = ["recording_claims.py"],
+    visibility = ["//visibility:public"],
     deps = ["//haku/console/x:sandbox_claims"],
 )
