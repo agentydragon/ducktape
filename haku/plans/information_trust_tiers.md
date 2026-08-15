@@ -153,6 +153,38 @@ continuously — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, two idle rooms i
 doing nothing. <chat_runtime_cleanup.md> § stage 6 (allocate because there is something to do) is
 what makes this scale, and it is worth landing with multi-session rather than after it.
 
+### Talking to a particular agent: one Matrix account each
+
+Operator, 2026-08-15, and it is the right answer for a reason beyond addressing: **the room-tier
+policy keys on membership, and membership means nothing if the agents share an MXID.** So distinct
+accounts are load-bearing rather than cosmetic, and they also make "open a conversation with agent
+X" need no new interface at all — the operator starts a DM with `@haku-x`, and their client
+already shows one conversation per agent.
+
+What it costs, given what the singleton audit above found:
+
+- **Nothing schema-side for the watermark.** `matrix_sync_state` is already keyed by `user_id`, so
+  N accounts are N rows today.
+- **A sync loop per account, and `MXSY` stops being a constant.** The lock has to derive from the
+  account, or one loop has to serve several accounts; the former is closer to what exists.
+- **Config becomes a list.** `MatrixConfig` carries one `user_id`/`password` pair.
+- **Each account is provisioned, never hand-minted.** `cluster/provisioners/matrix_user_provisioner`
+  already registers `@haku` from a SOPS password (R10.3); each agent kind gets the same treatment,
+  under the same doctrine that governs Haku's Forgejo tokens — GitOps produces the credential, and
+  live drift is fixed by fixing the provisioner.
+- **R3.6's join rule generalizes unchanged**: each account joins only invites from the operator's
+  own MXID.
+
+**The tier of a new DM should be derived, not asked for.** A DM with agent X is a two-party room
+whose only members are the operator and X, so it can be created at **X's own tier** with no
+operator gesture — which keeps the common case free. Only a multi-party room needs its tier
+declared, and that is exactly where declaring one is worth the friction.
+
+One console consequence, small but worth catching early: the sessions surface
+(<../console/plans/session_channels.md>) shows `surface` and `room_id` per session, and with
+several agent kinds it needs to show **which agent** too, or two rooms' sessions become
+indistinguishable in the list.
+
 ## What this inherits from doctrine, including the uncomfortable parts
 
 <../docs/security.md> already states the test, and it applies here unchanged: **every new write
@@ -206,16 +238,41 @@ choice deletes most of the design:
   a federated event cannot be unsent and the provider has already received it. Tune accordingly;
   this is the rare case where a jumpy detector is the right failure direction.
 
-Two things still to decide, and they are cheap to decide late:
+### The outgoing queue, which is what makes it async
 
-- **What "halt" covers** — the offending agent's session, the room's delivery, or every agent.
-  Widest is safest and this is a backstop, so the burden is on arguing for narrower.
-- **Synchronous or after the fact.** Synchronous is the only version that prevents the specific
-  message, and costs latency on every message forever. Asynchronous costs nothing per message and
-  still stops messages 2..N — which is less of a concession than it first appears, since the
-  first message is already unrecoverable the instant it federates. Synchronous is the better
-  default for a backstop whose whole job is the one message; asynchronous is defensible if the
-  latency proves to matter.
+Operator, 2026-08-15: outgoing messages go into a **queue**, the classifier consumes the queue and
+decides, and the first failed message halts — for that agent.
+
+**This dominates both options an earlier draft weighed**, and it is worth seeing why rather than
+just taking it. That draft posed synchronous (prevents the message, costs latency on every message
+forever) against after-the-fact (costs nothing, but the message has already federated and is
+unrecoverable). A queue in front of the room is **neither**: it is asynchronous with respect to the
+_agent_, which never waits and does not know the check exists, and still strictly before the
+_room_, because nothing has been posted when the classifier sees it. The latency moves from the
+turn to the delivery — the room sees a reply a beat later — which is the cheap place to put it in a
+chat surface.
+
+Four properties it needs, and one of them is not obvious:
+
+- **Ordered drain, per room.** A held message must not be overtaken by the ones behind it, which
+  is what makes "the first failed message halts" a coherent rule rather than a race.
+- **Hold, do not discard, what was queued behind the failure.** Those messages are the evidence
+  for working out what happened, and they cost nothing to keep.
+- **Halt scoped to the agent** is the right default here, narrower than the "widest is safest"
+  this document argued before. The disclosure is one agent volunteering the operator's data, so
+  stopping that agent stops the source; other agents in the room continuing is a feature, not a
+  gap. Widen only if a failure is ever found that is not attributable to one sender.
+- **The queue is the room outbox, and it is not new.**
+  <chat_runtime_projection.md> § stage 5 already turns `matrix_pacer`'s deque into rows for
+  delivery reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for
+  channel reconciliation. This makes a third consumer, and the one that changes the priority: an
+  outbox is a prerequisite for the classifier rather than a tidy-up, because a classifier needs
+  somewhere durable to **hold** a message while it decides.
+
+**So v0 builds the queue and no classifier.** With nothing consuming it but delivery, the outbox
+is exactly the reliability improvement stage 5 already wanted; the classifier lands later as a
+stage in front of the drain. That is a clean seam, and it means the v0/v1 boundary costs no
+rework.
 
 ### Where it runs: local is a preference, not a requirement
 
