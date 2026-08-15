@@ -21,13 +21,18 @@ decisions that later ones supersede. Current position:
   sibling mesh, no Valkey.
 - **Secrets may transit the cache** — accepted; the cache is trusted for that
   role. Storage of authenticated responses is still denied.
+- **The console gate does not cache in Squid** (`ttl=0 negative_ttl=0`). The
+  console is the only decision cache. See "Decided: do not cache the helper's
+  response".
 - **Superseded**: the two-layer "iron in front of a central shared cache" target
   architecture, and the earlier "Decision: option B". Both are kept below for
   their reasoning and are labelled.
 
-Still open before building: re-run the spike on Squid 6.x/7.x (it ran on
-3.5.27), several credentials per fence, and the base64 `Basic` form for
-git-over-HTTPS.
+The questions this note opened with are answered. The spike ran in-cluster on
+Squid 7.6 (2026-08-10) and settled the 6.x/7.x port, several credentials per
+fence, the base64 `Basic` form for git-over-HTTPS, destination scoping in both
+directions, and `cache deny has_auth`. What remains is building the console
+gate, not deciding whether the mechanism exists.
 
 ## Finding: nothing on the market does 1 + 2 together
 
@@ -213,8 +218,9 @@ mechanism surveyed that can both hold a request for a human and remember the
 answer:
 
 - the helper answers `OK` / `ERR` / `BH` and may take as long as it needs;
-- Squid caches the verdict via `ttl=` (default 3600s) and `negative_ttl=`, so an
-  operator is asked once per domain, not once per request;
+- an operator is asked once per domain rather than once per request — though
+  **not** via Squid's `ttl=`, which is disabled: see "Decided: do not cache the
+  helper's response". The console's own policy table is what remembers;
 - `concurrency=n` keeps one helper serving interleaved queries.
 
 Had credentialed traffic bypassed the cache, this hook would have been blind to
@@ -740,12 +746,14 @@ This is the strongest reason to run Squid somewhere, and it is worth separating
 from the caching question.
 
 **Squid `external_acl_type` is a direct fit.** A helper process receives
-formatted request fields and answers `OK` / `ERR` / `BH`. Decisions are cached
-by Squid itself — `ttl=n` (default 3600s) and a separate `negative_ttl` — and
-`concurrency=n` lets one helper handle interleaved queries with channel IDs. So
-a Python helper can call haku-console on an undecided domain, wait for the
-operator, answer, and Squid remembers the verdict for the whole TTL rather than
-re-asking per request. That is exactly the requested behaviour.
+formatted request fields and answers `OK` / `ERR` / `BH`, and `concurrency=n`
+lets one helper handle interleaved queries with channel IDs. So a Python helper
+can call haku-console on an undecided domain, get an answer, and enforce it.
+
+Squid _can_ also cache the verdict itself (`ttl=n`, default 3600s, plus a
+separate `negative_ttl`). **That is deliberately turned off** — see "Decided: do
+not cache the helper's response". Remembering is the console's job, so that
+revocation and approval both take effect on the next request.
 
 **iron's `judge` transform is not a fit, despite appearances.** It is hardcoded
 to Anthropic/OpenAI providers, with `timeout` defaulting to `8s`, a circuit
@@ -781,8 +789,8 @@ request from that fence's agents.
 acl known dstdomain "/etc/squid/allowed-domains.txt"
 http_access allow known
 
-# 2. Everything else asks haku-console, once per (client, host) per TTL.
-external_acl_type haku_gate ttl=86400 negative_ttl=30 concurrency=16 \
+# 2. Everything else asks haku-console, every time. No Squid-side cache.
+external_acl_type haku_gate ttl=0 negative_ttl=0 concurrency=64 \
   %SRC %DST /usr/local/bin/haku_gate.py
 acl gated external haku_gate
 http_access allow gated
@@ -791,8 +799,9 @@ http_access deny all
 ```
 
 The helper answers `OK` (match → allowed), `ERR` (no match → falls through to
-`deny all`), or `BH` (helper broken). Squid caches the verdict itself, so an
-operator is asked once per key rather than once per request.
+`deny all`), or `BH` (helper broken). Every gated request consults the console;
+the console answers already-decided pairs from its own table, so this is an RPC
+per request, not a prompt per request.
 
 **The static allowlist short-circuiting first is the load-bearing part.** It
 keeps haku-console out of the path for all normal traffic, so console downtime
@@ -812,11 +821,11 @@ The workable pattern is therefore **deny-now, ask-async, allow-on-retry**:
 1. Undecided domain → helper files an approval with haku-console and returns
    `ERR` immediately (optionally after a short grace, ~5–10s, to catch an
    operator who is already looking).
-2. `negative_ttl=30` makes that denial expire quickly.
+2. Nothing to expire: with `negative_ttl=0` the denial is not cached at all.
 3. The operator approves in the console; haku-console records it in its policy
    table.
-4. The agent's retry — or its next run — hits the helper again, which now gets
-   an immediate allow, and Squid caches it for `ttl`.
+4. The agent's retry — or its next run — hits the helper again and gets an
+   immediate allow. Approval takes effect on the very next request.
 
 That is Claude Code's sandbox UX adapted to a client that cannot be prompted:
 the first attempt fails, approval happens out of band, the retry succeeds.
@@ -836,12 +845,10 @@ troubling the operator.
 
 ### Two design decisions to make before building
 
-**What goes in the cache key.** Squid keys the ACL cache on the concatenated
-format values, so `%SRC %DST` means one prompt _per client per host_. In a fence
-with many sandbox pods that re-prompts for every new pod. Keying on `%DST` alone
-gives one prompt per host per fence, but then the client identity is available
-only for the audit record, not for the decision. Per-agent policy and low prompt
-volume are in tension here; pick deliberately.
+**~~What goes in the cache key.~~** Settled by the no-cache decision above: there
+is no Squid-side cache to key. `%SRC %DST` are simply what the helper is told
+about each request, and scoping — per agent, per host, per time box — is entirely
+the console's to define in its own policy table.
 
 **Fail-closed versus fail-open.** `ERR` on console failure fails closed, which is
 right for a security control — and is survivable precisely because the static
@@ -861,29 +868,55 @@ This supersedes the "static allowlist short-circuits so the console is never a
 hard dependency" suggestion above. It is a coherent fail-closed posture; the
 consequences below are what it costs.
 
-#### Squid's TTL becomes the polling interval, not the time box
+#### Decided: do not cache the helper's response (operator, 2026-08-10)
 
-The helper **cannot** return a per-response `ttl=`. The response keywords are
-`user=`, `password=`, `message=`, `tag=`, `log=` and `clt_conn_tag=`; TTL is
-configured statically on the `external_acl_type` line. So a console decision
-that expires at some specific time cannot be expressed to Squid directly.
+`ttl=0 negative_ttl=0`. Squid holds no verdicts; **haku-console is the only
+decision cache**, and it is authoritative.
 
-The mapping that does work: **Squid's `ttl=` is how often it re-asks; the console
-owns the real expiry.** With `ttl=300`, Squid re-consults at most every five
-minutes and the console applies its own time-boxing on each query, so effective
-revocation latency is one Squid TTL. Shorter TTL = finer time-boxing and more
-console load; longer = coarser and more outage tolerance.
+This removes a constraint rather than adding cost. The helper **cannot** return a
+per-response `ttl=` — the response keywords are `user=`, `password=`, `message=`,
+`tag=`, `log=` and `clt_conn_tag=`, and TTL is static on the
+`external_acl_type` line — so under any caching scheme a console decision with a
+specific expiry could not be expressed to Squid, and Squid's `ttl=` would only
+ever approximate it as a polling interval. With no cache the question is moot:
+the console applies its own time-boxing on every query, and revocation takes
+effect on the next request rather than one TTL later.
 
-`grace=` helps here — "percentage remaining of TTL where a refresh of a cached
-entry should be initiated" — so entries refresh in the background before they
-expire and requests do not block on revalidation.
+**`negative_ttl=0` is the half that matters most.** A stale allow is the obvious
+hazard, but a stale _deny_ is the one that gets felt: operator approves, agent
+retries, and a cached `ERR` refuses it for another 30 seconds — which reads as a
+broken approval flow at precisely the moment someone is watching it.
 
-#### Console downtime is bounded by that same TTL
+The cost is one in-cluster RPC per gated request. That is affordable **only
+because the static allowlist short-circuits first**: the hot path — LLM API,
+Forgejo, GitHub — never reaches the helper, so the RPC is paid on exactly the
+rare, interesting traffic the console wanted to see anyway. Without that
+ordering, `ttl=0` would put a console round-trip in front of every request the
+fence handles.
 
-Fail-closed does not mean instant outage: cached allows keep working until they
-expire. With `ttl=300`, a console outage degrades over ~5 minutes rather than
-immediately. That is the knob that trades revocation latency against outage
-tolerance, and it should be chosen deliberately rather than defaulted.
+Consequences to build for:
+
+- **The helper must be genuinely concurrent.** Request rate now equals helper
+  call rate for undecided domains. An asyncio helper with `concurrency=64` is
+  fine; fork-per-request would serialise the fence.
+- **The helper must call the console's in-cluster Service, not
+  `haku.allegedly.works`.** Every gated request pays this hop, so it should not
+  traverse ingress, public DNS or the internet, and a fail-closed gate should not
+  depend on public routing being healthy. The static allow of
+  `haku.allegedly.works` is a different path — that one is for the _agent's_ own
+  console traffic.
+
+#### Console downtime degrades reach, not operation
+
+There is no cache to soften an outage, so fail-closed is now absolute for gated
+hosts: console down means every _undecided_ domain is denied, immediately.
+
+What keeps that from being a fence-wide outage is the static allowlist. With the
+console down, an agent keeps talking to everything already sanctioned in git and
+loses only the ability to reach somewhere **new**. That is a good failure
+profile, and it has a maintenance implication: **it holds only while the static
+list is genuinely comprehensive.** A thin static list silently converts a console
+outage into an agent outage.
 
 #### The circular dependency to avoid
 
