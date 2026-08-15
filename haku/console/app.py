@@ -73,7 +73,7 @@ from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import claude_chat, matrix_session, matrix_sync, sandbox_claims
+from haku.console.x import claude_chat, matrix_outbox, matrix_session, matrix_sync, sandbox_claims
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.state_index.openai_embedder import OpenAIEmbedder
@@ -286,6 +286,7 @@ def create_app(
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversations,
             matrix_session.MatrixTurns(matrix_config, matrix_conversations, session_store, operator_identity_store),
+            matrix_outbox.RoomOutbox(db_sessions),
         )
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never

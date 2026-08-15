@@ -27,7 +27,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import Session, SessionFrame, SessionMessage, SessionPrompt
+from haku.console.database_schema import Session, SessionFrame, SessionMessage, SessionOutbox, SessionPrompt
 from haku.console.x.claude_chat import (
     ABORTED_NOTICE,
     ADOPTION_GRACE,
@@ -644,37 +644,23 @@ _NARRATED_TURN = [
 
 
 class _RecordingRoomSurface:
-    """A `RoomSurface` that keeps what was said instead of talking to a homeserver.
+    """A `RoomSurface` that keeps what it was told instead of talking to a homeserver.
 
-    *fails_once_on* makes the first send of that exact text raise, as a homeserver refusing one
-    request does. Once, because a transient failure is the case worth pinning: what the turn does
-    next is the room's only remaining chance at that text.
+    Answers are not among it: they are `session_outbox` rows the turn writes with the message
+    they copy, so what the room is owed is read out of the database (`_queued_for_the_room`)
+    rather than out of a sink the turn calls. What is left here is what genuinely describes a
+    moment — including the notice a turn with nothing to say leaves.
     """
 
-    def __init__(self, *, fails_once_on: str | None = None) -> None:
-        self.delivered: list[str] = []
-        # What each delivery said it was: the transcript row and the agent's own id, which the
-        # room event now states rather than leaving to be matched by position.
-        self.tagged: list[tuple[UUID | None, str | None]] = []
-        self._fails_once_on = fails_once_on
+    def __init__(self) -> None:
+        self.silent_turns = 0
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return "you are Haku"
 
-    async def deliver(
-        self,
-        room_id: str,
-        text: str,
-        session_id: UUID,
-        message_id: UUID | None = None,
-        agent_message_id: str | None = None,
-    ) -> None:
+    async def report_silent_turn(self, room_id: str) -> None:
         assert room_id == ROOM
-        if text == self._fails_once_on:
-            self._fails_once_on = None
-            raise RuntimeError("the homeserver refused this send")
-        self.delivered.append(text)
-        self.tagged.append((message_id, agent_message_id))
+        self.silent_turns += 1
 
     async def report(self, room_id: str, detail: str) -> None:
         return None
@@ -719,6 +705,7 @@ class _InterruptedCli(_FakeCli):
 
 async def _turn_into_a_room(
     chat_store: SessionStore,
+    migrated_sessions: async_sessionmaker[AsyncSession],
     recording_claims: RecordingClaims,
     notifications: SessionNotifications,
     operator_id: UUID,
@@ -727,7 +714,7 @@ async def _turn_into_a_room(
     abort_event: asyncio.Event | None = None,
     room: _RecordingRoomSurface | None = None,
 ) -> list[str]:
-    """Run one turn against *client* for a room-backed session and return what the room heard."""
+    """Run one turn against *client* for a room-backed session and return what the room is owed."""
     room = room or _RecordingRoomSurface()
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
@@ -746,14 +733,31 @@ async def _turn_into_a_room(
             room_id=ROOM,
             abort_event=abort_event or asyncio.Event(),
         )
-    return room.delivered
+    return await _queued_for_the_room(migrated_sessions, view.session_id)
+
+
+async def _queued_for_the_room(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:
+    """What this session put in the room's outbox, oldest first.
+
+    The turn no longer hands its answer to anything: it writes a row with the message the answer
+    is, and `matrix_outbox` says it. So the assertion that used to read a delivery sink reads the
+    rows, which is the same question asked of the record that actually survives the process.
+    """
+    async with sessions() as db:
+        return list(
+            await db.scalars(
+                select(SessionOutbox.body)
+                .where(SessionOutbox.session_id == session_id)
+                .order_by(SessionOutbox.created_at, SessionOutbox.outbox_id)
+            )
+        )
 
 
 async def test_a_resumed_turn_finishes_the_answer_it_inherited(
-    chat_store, recording_claims, notifications, operator_id
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """The whole point of routing by turn: the replacement replica finishes the exchange the dead
-    one started, in the message it started, and the room hears the answer once."""
+    one started, in the message it started, and the room is owed the answer once."""
     room = _RecordingRoomSurface()
     service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
@@ -786,79 +790,119 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
             abort_event=asyncio.Event(),
         )
 
-    assert room.delivered == ["because the disk was full"], "one delivery, not the answer twice"
+    queued = await _queued_for_the_room(migrated_sessions, session_id)
+    assert queued == ["because the disk was full"], "one row, not the answer twice"
     assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
     [turn] = await chat_store.list_turns(str(session_id), limit=5)
     assert (turn.turn_id, turn.outcome) == (str(started.turn_id), TurnOutcome.ANSWERED)
 
 
-async def test_the_room_hears_each_assistant_message_as_it_finishes(
-    chat_store, recording_claims, notifications, operator_id
+async def test_the_room_is_owed_each_assistant_message_as_it_finishes(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """A turn that says what it is about to do, works, then reports back is three messages in
     the transcript and used to be one in the room: it spoke only the final answer, so the room
     watched a long turn in silence and then saw a conclusion with none of its reasoning."""
-    delivered = await _turn_into_a_room(
-        chat_store, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
+    queued = await _turn_into_a_room(
+        chat_store, migrated_sessions, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
     )
 
-    assert delivered == ["Looking at the logs now.", "Found it: a bad config."]
+    assert queued == ["Looking at the logs now.", "Found it: a bad config."]
 
 
 async def test_the_last_message_is_not_repeated_by_the_result_frame(
-    chat_store, recording_claims, notifications, operator_id
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """`result.result` carries the same text as the turn's last assistant message, so speaking
+    """`result.result` carries the same text as the turn's last assistant message, so queueing
     both would post the answer twice."""
-    delivered = await _turn_into_a_room(
-        chat_store, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
+    queued = await _turn_into_a_room(
+        chat_store, migrated_sessions, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN)
     )
 
-    assert delivered.count("Found it: a bad config.") == 1
+    assert queued.count("Found it: a bad config.") == 1
 
 
-async def test_a_send_that_failed_does_not_count_as_the_room_having_heard_it(
-    chat_store, recording_claims, notifications, operator_id
+async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """A drop needing neither a runner reconnection nor a console roll, and the reason the room
-    could go silent for a turn that ran perfectly well.
+    """The drop that needed neither a reconnection nor a roll: a turn that raised after producing
+    text (<../debug/message_drops.md> E4).
 
-    Delivery is deliberately not fatal — a transient send failure must not cost the session — but
-    the turn used to record the *attempt* as having been heard. That disarmed the one mechanism
-    that would have recovered it: `result.result` repeats the last assistant message, and the turn
-    speaks it only when the room has not already heard it. So one refused send produced a turn
-    that answered in the transcript and said nothing in the room.
-
-    What this does **not** cover, because the surface cannot report it: the Matrix surface queues
-    into `matrix_pacer` and returns before the request exists, so a failure there is invisible here
-    and stays lost. That is the durable outbox's job (`plans/chat_runtime_projection.md` stage 5).
+    `result.is_error` raises before any delivery ran, the `except` fails the session, and what the
+    agent said existed only in the transcript — where nobody but the SPA is looking. The row is
+    now written with the message, in one transaction, so the answer outlives the turn that
+    produced it and the drain says it whatever the turn went on to do.
     """
-    room = _RecordingRoomSurface(fails_once_on="Found it: a bad config.")
-
-    delivered = await _turn_into_a_room(
-        chat_store, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN), room=room
+    service = SessionService(
+        runtime_config(),
+        chat_store,
+        recording_claims,
+        notifications,
+        mcp_token=MCP_TOKEN,
+        room_surface=_RecordingRoomSurface(),
     )
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+    client = _FakeCli([*_NARRATED_TURN[:-1], {"type": "result", "is_error": True, "subtype": "error_during_execution"}])
 
-    assert delivered == ["Looking at the logs now.", "Found it: a bad config."]
+    with pytest.raises(RuntimeError):
+        async with asyncio.timeout(30):
+            await service._run_turn(
+                cast(Any, client),
+                client.frames().__aiter__(),
+                view.session_id,
+                turn,
+                room_id=ROOM,
+                abort_event=asyncio.Event(),
+            )
+
+    assert await _queued_for_the_room(migrated_sessions, view.session_id) == [
+        "Looking at the logs now.",
+        "Found it: a bad config.",
+    ]
 
 
 async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(
-    chat_store, recording_claims, notifications, operator_id
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """No assistant message completed, so nothing was said along the way — the `result` frame is
     the only thing that keeps the room from hearing silence."""
-    delivered = await _turn_into_a_room(
-        chat_store, recording_claims, notifications, operator_id, _FakeCli([_result("nothing streamed, but an answer")])
+    queued = await _turn_into_a_room(
+        chat_store,
+        migrated_sessions,
+        recording_claims,
+        notifications,
+        operator_id,
+        _FakeCli([_result("nothing streamed, but an answer")]),
     )
 
-    assert delivered == ["nothing streamed, but an answer"]
+    assert queued == ["nothing streamed, but an answer"]
 
 
-async def test_an_aborted_turn_says_so_on_its_own(chat_store, recording_claims, notifications, operator_id) -> None:
+async def test_a_turn_with_nothing_at_all_to_say_reports_it_rather_than_queueing_nothing(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
+) -> None:
+    """R11.2 has no silence token, and an empty answer is not one: the room is told the turn
+    finished without saying anything, as a notice, and no row is written for the empty string."""
+    room = _RecordingRoomSurface()
+
+    queued = await _turn_into_a_room(
+        chat_store, migrated_sessions, recording_claims, notifications, operator_id, _FakeCli([_result("")]), room=room
+    )
+
+    assert (queued, room.silent_turns) == ([], 1)
+
+
+async def test_an_aborted_turn_says_so_on_its_own(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
+) -> None:
     """Two things this pins down. The abort notice rides on `final_text`, which a turn that has
-    already spoken no longer delivers, so it has to be said on its own or an operator's stop is
-    invisible in the room. And the turn has to *survive* the abort at all: draining to the
+    already queued its answer no longer sends, so it has to be said on its own or an operator's
+    stop is invisible in the room. And the turn has to *survive* the abort at all: draining to the
     interrupt's `result` used to open a second `anext` on the session's generator, which an async
     generator refuses — so an abort landing where they land, between frames, raised out of the
     turn and failed the whole session instead of ending its turn.
@@ -866,13 +910,13 @@ async def test_an_aborted_turn_says_so_on_its_own(chat_store, recording_claims, 
     abort_event = asyncio.Event()
     client = _InterruptedCli(_NARRATED_TURN[:-1], abort_event=abort_event)
 
-    delivered = await _turn_into_a_room(
-        chat_store, recording_claims, notifications, operator_id, client, abort_event=abort_event
+    queued = await _turn_into_a_room(
+        chat_store, migrated_sessions, recording_claims, notifications, operator_id, client, abort_event=abort_event
     )
 
     assert client.interrupted
     # The notice on its own, and nothing from the interrupt's own `result` frame ("stopped").
-    assert delivered == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
+    assert queued == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
 
 
 async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(

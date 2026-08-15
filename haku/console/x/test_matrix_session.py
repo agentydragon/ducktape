@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -15,7 +15,7 @@ from haku.console.chat_models import SessionStatus
 from haku.console.database_schema import Session
 from haku.console.x.claude_chat import ADOPTION_GRACE, BridgeAuthentication, SessionService, SessionStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
-from haku.console.x.matrix_client import EventTag, InboundMessage, MatrixError, RoomEventKind
+from haku.console.x.matrix_client import InboundMessage, MatrixError, RoomEventKind
 from haku.console.x.matrix_session import NOTHING_SAID, MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
@@ -230,16 +230,12 @@ class _RecordingRoom:
         self.cleared = 0
         self.typing: list[bool] = []
         self.announced: list[tuple[str, RoomEventKind]] = []
-        self.replied: list[tuple[str, EventTag]] = []
 
     async def recent_history(self, limit: int) -> Sequence[InboundMessage]:
         return await self._history(limit)
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
         self.announced.append((body, kind))
-
-    async def reply(self, body: str, tag: EventTag) -> None:
-        self.replied.append((body, tag))
 
     async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         self.shown.append(body)
@@ -302,23 +298,7 @@ async def test_building_a_prompt_says_nothing_into_the_room(bound: UUID) -> None
 
     await built.system_prompt(bound, MATRIX_ROOM)
 
-    assert (room.announced, room.replied) == ([], [])
-
-
-async def test_an_answer_reaches_the_room_tagged_with_its_row(bound: UUID) -> None:
-    message_id = uuid4()
-    delivering, room = surface_and_room(served())
-
-    await delivering.deliver(MATRIX_ROOM, "  because the disk was full  ", bound, message_id, "msg_01abc")
-
-    [(body, tag)] = room.replied
-    assert body == "because the disk was full", "trimmed, since the room shows what it is given"
-    assert (tag.kind, tag.session_id, tag.message_id, tag.agent_message_id) == (
-        RoomEventKind.REPLY,
-        bound,
-        message_id,
-        "msg_01abc",
-    )
+    assert room.announced == []
 
 
 async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
@@ -327,13 +307,15 @@ async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
     indistinguishable from an answer the console lost.
 
     A notice rather than a reply, because nothing was said — this is the console reporting an
-    outcome, not the agent talking.
+    outcome, not the agent talking. Answers themselves no longer come through this surface at
+    all: they are outbox rows, and `test_matrix_outbox.py` is where what the room hears is
+    asserted.
     """
-    delivering, room = surface_and_room(served())
+    del bound
+    reporting, room = surface_and_room(served())
 
-    await delivering.deliver(MATRIX_ROOM, "   ", bound)
+    await reporting.report_silent_turn(MATRIX_ROOM)
 
-    assert room.replied == []
     assert room.announced == [(NOTHING_SAID, RoomEventKind.NARRATION)]
 
 

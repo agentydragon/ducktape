@@ -928,6 +928,7 @@ py_library(
         "//haku/console/tools:gmail",
         "//haku/console/tools:routine",
         "//haku/console/x:claude_chat",
+        "//haku/console/x:matrix_outbox",
         "//haku/console/x:matrix_session",
         "//haku/console/x:matrix_sync",
         "//haku/state_index:openai_embedder",

@@ -21,6 +21,7 @@ from haku.console.x.matrix_client import (
     SyncResult,
     UnmappableEvent,
 )
+from haku.console.x.matrix_outbox import PendingReply
 from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_sync import MatrixSyncService, MatrixSyncStore
 
@@ -119,6 +120,10 @@ async def service(sync_store, conversations, turns, matrix):
         store=sync_store,
         conversations=conversations,
         turns=cast(Any, turns),
+        # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
+        # pass and assert the narration, which never touches the table. `test_matrix_outbox` is
+        # where the drain is exercised.
+        outbox=cast(Any, None),
     )
     service._client = cast(Any, matrix)
     service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)
@@ -149,6 +154,19 @@ async def cached_token(store: MatrixSyncStore) -> str | None:
 
 
 SESSION = UUID("11111111-2222-3333-4444-555555555555")
+
+
+def _queued(body: str, *, message_id: UUID | None = None, agent_message_id: str | None = None) -> PendingReply:
+    """A row as the drain would hand it over, without going near the table it came out of."""
+    return PendingReply(
+        outbox_id=uuid4(),
+        session_id=SESSION,
+        room_id=MATRIX_ROOM,
+        body=body,
+        message_id=message_id,
+        agent_message_id=agent_message_id,
+        attempts=1,
+    )
 
 
 def _message(body: str, sender: str = MATRIX_OPERATOR, event_id: str = "$evt") -> InboundMessage:
@@ -331,12 +349,11 @@ async def test_ignores_messages_from_a_room_that_is_not_the_live_one(service, ma
     assert turns.offered == []
 
 
-async def test_reply_posts_the_answer_as_text(service, matrix, sync_store, bound_room):
+async def test_posting_a_queued_reply_says_it_as_text(service, matrix, sync_store, bound_room):
     matrix.result = SyncResult("s2", (), ())
     await sync_store.save_token(MATRIX_USER, "cached")
 
-    await service.reply("the answer", EventTag(kind=RoomEventKind.REPLY, session_id=SESSION))
-    await settled(service)
+    await service.post_reply(_queued("the answer"))
 
     assert matrix.sent == [(MATRIX_ROOM, "the answer")]
 
@@ -472,11 +489,8 @@ async def test_a_reply_says_which_transcript_row_it_is(service, matrix, sync_sto
     only by matching order and timing against the transcript; stage 4's dedupe needs it to be a
     lookup, and that is cheap only if the event said so when it was sent."""
     message_id = UUID("99999999-8888-7777-6666-555555555555")
-    await service.reply(
-        "the answer",
-        EventTag(kind=RoomEventKind.REPLY, session_id=SESSION, message_id=message_id, agent_message_id="msg_01abc"),
-    )
-    await settled(service)
+
+    await service.post_reply(_queued("the answer", message_id=message_id, agent_message_id="msg_01abc"))
 
     [tag] = matrix.tags
     assert (tag.kind, tag.session_id, tag.message_id, tag.agent_message_id) == (
@@ -487,17 +501,16 @@ async def test_a_reply_says_which_transcript_row_it_is(service, matrix, sync_sto
     )
 
 
-async def test_a_replayed_reply_is_the_same_transaction(service, matrix, sync_store, bound_room) -> None:
-    """The homeserver's half of not posting an answer twice: the same transcript row re-sent is
-    the same transaction, so Synapse returns the first event rather than making a second."""
-    message_id = uuid4()
-    tag = EventTag(kind=RoomEventKind.REPLY, session_id=SESSION, message_id=message_id)
-    await service.reply("the answer", tag)
-    await service.reply("the answer", tag)
-    await settled(service)
+async def test_a_redriven_reply_is_the_same_transaction(service, matrix, sync_store, bound_room) -> None:
+    """The homeserver's half of not posting an answer twice: a row re-sent after a failed attempt
+    is the same transaction, so Synapse returns the first event rather than making a second."""
+    reply = _queued("the answer")
+
+    await service.post_reply(reply)
+    await service.post_reply(reply)
 
     first, second = matrix.transactions
-    assert first == second == message_id.hex
+    assert first == second == reply.outbox_id.hex
 
 
 async def test_a_status_edit_is_a_new_transaction_every_time(service, matrix, bound_room) -> None:

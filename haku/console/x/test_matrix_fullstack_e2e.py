@@ -11,23 +11,26 @@ The property is one line and it is the same in every test here: the bodies Haku 
 are `re: ` and what the operator typed. It fails on a message that was never answered and on one
 answered twice, which are the two ways an outbound path can be wrong.
 
-**Three ways a produced reply is lost today**, none of which the console notices:
+**Three ways a produced reply used to be lost**, none of which the console noticed. Each is a
+test here, and each failed when this file was written against a console that delivered by handing
+a closure to an in-process queue:
 
-1. A delivery that raises is logged and dropped (`_deliver_reply`), and `spoke` is set anyway — so
-   the end-of-turn fallback, the one thing that would have said the same text a second time, reads
-   "already said" and stays quiet. One failed send makes the whole turn silent. No reconnect and
-   no roll are involved; this is the plain case.
-2. `_deliver_reply` only **queues**. `matrix_pacer` is an in-process deque draining at
-   `SENDS_PER_SECOND`, so on a room with anything queued ahead of it "delivered" is minutes away
-   from "spoken", and a console that stops in between takes the queue with it.
-3. Across a roll neither is recovered. The frame is in `session_frames`, so the runner's replay
+1. A delivery that raised was logged and dropped (`_deliver_reply`), and `spoke` was set anyway —
+   so the end-of-turn fallback, the one thing that would have said the same text a second time,
+   read "already said" and stayed quiet. One failed send made the whole turn silent. No reconnect
+   and no roll involved; the plain case.
+2. `_deliver_reply` only **queued**. `matrix_pacer` is an in-process deque draining at
+   `SENDS_PER_SECOND`, so on a room with anything queued ahead of it "delivered" was minutes away
+   from "spoken", and a console that stopped in between took the queue with it.
+3. Across a roll neither was recovered. The frame is in `session_frames`, so the runner's replay
    is refused as one this session already has (`RolloutRecorder.received`), and `adopt_open_turn`
-   reads the same row as `spoke=True` — which its own docstring admits it cannot tell from
+   read the same row as `spoke=True` — which its own docstring admits it cannot tell from
    delivered. Permanently recorded, permanently unspoken.
 
-R11.6 says the opposite: "a produced reply must never be lost silently". These are the tests for
-that, and on `devel` the last three fail while `test_a_quiet_run_replies_once_to_every_message`
-passes — which is what makes those failures attributable to the drop rather than to this harness.
+R11.6 says the opposite: "a produced reply must never be lost silently". What closes all three is
+the durable room outbox (`matrix_outbox.py`): the reply is a row written with the message it
+copies, and a drain says it and marks it sent only once the homeserver has taken it.
+`test_a_quiet_run_replies_once_to_every_message` is the control, and it passed throughout.
 """
 
 from __future__ import annotations
@@ -115,14 +118,7 @@ class Deployment:
     """
 
     def __init__(
-        self,
-        *,
-        name: str,
-        environment: dict[str, str],
-        bot_user_id: str,
-        port: int,
-        state: Path,
-        store: SessionStore,
+        self, *, name: str, environment: dict[str, str], bot_user_id: str, port: int, state: Path, store: SessionStore
     ):
         self.bot_user_id = bot_user_id
         self._name = name
@@ -394,17 +390,23 @@ async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment,
     assert room.replies() == ["re: one", "re: two", "re: three"]
 
 
-async def test_a_reply_whose_delivery_fails_is_never_said_at_all(deployment: Deployment, room: Room) -> None:
-    """One refused send makes a whole turn silent, with the console still running.
+async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(deployment: Deployment, room: Room) -> None:
+    """A refused send used to make a whole turn silent, with the console still running.
 
-    No reconnect, no roll, nothing queued: the delivery raises, `_deliver_reply` logs it and
-    returns, and `spoke = True` runs anyway — so the end-of-turn fallback that would have posted
-    the same text off the `result` frame reads "already said" and posts nothing. The transcript row
-    is written, so every surface except the room looks correct.
+    No reconnect, no roll, nothing queued: the delivery raised, `_deliver_reply` logged it and
+    returned, `spoke = True` ran anyway, and the end-of-turn fallback that would have posted the
+    same text off the `result` frame read "already said". The transcript row was written, so every
+    surface except the room looked correct.
 
-    Both of `_run_turn`'s delivery calls are covered, because each is the only chance its text
-    gets: `two` fails on the per-message send, and `three`, which the agent answers with a `result`
-    frame and no assistant message at all, fails on the end-of-turn one.
+    Now the reply is a `session_outbox` row and the refusal is the row's: unsent, one attempt
+    spent, retried after its backoff. Two refusals are armed rather than one, so both kinds of
+    reply are covered — `two` is an ordinary assistant message, and `three`, which the agent
+    answers with a `result` frame and no assistant message at all, is a turn's last word and
+    carries no transcript row of its own.
+
+    **Order is part of the assertion.** A refused reply holds the queue rather than being
+    overtaken, so `four` — produced while the earlier two were still waiting out their backoff —
+    still arrives last.
     """
     await deployment.start_console("console-1")
     session_id = await deployment.serving()
@@ -429,17 +431,21 @@ async def test_a_reply_whose_delivery_fails_is_never_said_at_all(deployment: Dep
     assert room.replies() == ["re: one", "re: two", "re: three", "re: four"]
 
 
-async def test_a_reply_still_queued_when_the_console_stops_is_lost_with_it(deployment: Deployment, room: Room) -> None:
-    """A produced reply the console had not yet said dies with the process. Nothing reconnects.
+async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replacement(
+    deployment: Deployment, room: Room
+) -> None:
+    """A produced reply the console had not yet said used to die with the process.
 
-    `_deliver_reply` hands the answer to `matrix_pacer`, an in-process deque draining at
-    `SENDS_PER_SECOND` — so with anything queued ahead of it, "delivered" is minutes from "spoken".
-    Here the agent narrates 25 lines first, which is 25 paced notices, and the answer queues behind
-    them. The console is then stopped the way a deploy stops it.
+    `_deliver_reply` handed the answer to `matrix_pacer`, an in-process deque draining at
+    `SENDS_PER_SECOND` — so with anything queued ahead of it, "delivered" was minutes from
+    "spoken". Here the agent narrates 25 lines first, which is 25 paced notices, and the answer
+    queues behind them. The console is then stopped the way a deploy stops it.
 
-    Nothing here is timing-luck in the direction that matters: the assertion is made after the
-    process is *gone*, and a room no console is serving cannot gain a message. The pacer's own
-    shutdown flush is bounded at `FLUSH_SECONDS`, which at this rate is one send.
+    What the answer is now is a row, so the assertion is in two halves and both matter: with the
+    process *gone* the room still does not have it — a queue that had somehow flushed would make
+    the second half vacuous — and a replacement console says it without the agent, the runner or
+    the operator doing anything. The pacer's own shutdown flush is bounded at `FLUSH_SECONDS`,
+    which at this rate is one send, so the gap is not luck.
     """
     await deployment.start_console("console-1")
     session_id = await deployment.serving()
@@ -451,6 +457,10 @@ async def test_a_reply_still_queued_when_the_console_stops_is_lost_with_it(deplo
     assert "re: two" not in room.replies(), "the answer reached the room before the gap could be opened"
 
     await deployment.stop()
+    assert "re: two" not in room.replies(), "a room no console is serving gained a message"
+
+    await deployment.start_console("console-2")
+    await deployment.wait_for_reply(room, "re: two")
 
     assert room.replies() == ["re: one", "re: two"]
 
@@ -458,12 +468,16 @@ async def test_a_reply_still_queued_when_the_console_stops_is_lost_with_it(deplo
 async def test_every_message_is_answered_exactly_once_across_a_console_roll(deployment: Deployment, room: Room) -> None:
     """The headline: three messages, a console roll in the middle of the second, one reply each.
 
-    The roll happens in the gap this module is about — the answer recorded, the room not yet told —
-    and the console that takes over does not close it. The runner replays the frame and
-    `RolloutRecorder.received` refuses it as one this session already has; `adopt_open_turn` reads
-    the same row and resumes the turn with `spoke=True`, which its own docstring admits it cannot
-    tell from delivered. So the `result` frame's copy of the text is suppressed too, and the answer
-    ends up permanently recorded and permanently unspoken.
+    The roll happens in the gap this module is about — the answer recorded, the room not yet told.
+    The console that took over used not to close it: the runner replays the frame and
+    `RolloutRecorder.received` refuses it as one this session already has, and `adopt_open_turn`
+    read the same row and resumed the turn with `spoke=True`, which its own docstring admits it
+    cannot tell from delivered. So the `result` frame's copy of the text was suppressed too, and
+    the answer ended up permanently recorded and permanently unspoken.
+
+    **Exactly once, so this fails on a duplicate as well as on a drop** — which is the assertion
+    the redrive has to survive. The row the first console wrote is the same row the second one
+    drains, and re-deriving the same reply collides with it rather than adding a second copy.
 
     The agent holds its `result` across the roll on purpose: that leaves the turn open, so the
     second console adopts an exchange in flight rather than finding a finished one.

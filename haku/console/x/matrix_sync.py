@@ -12,7 +12,8 @@ a voice memo — because re-offering it would never converge on an answer. Those
 the room and then acknowledged (`_report_unreadable`), which is the other half of R1.6.
 
 It is also the only holder of a Matrix credential, so the session supervisor's lifecycle
-notices go out through `announce` rather than through a second login.
+notices go out through `announce` rather than through a second login — and so an answer, which
+lives as a row until it has been said, is drained into the room from here (`matrix_outbox`).
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from haku.console.x.matrix_client import (
     RoomEventKind,
     UnmappableEvent,
 )
+from haku.console.x.matrix_outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
 
@@ -105,6 +107,7 @@ class MatrixSyncService:
         store: MatrixSyncStore,
         conversations: MatrixConversationStore,
         turns: MatrixTurns,
+        outbox: RoomOutbox,
     ):
         # Taken separately from `config`, which carries it as optional: the service is
         # only ever constructed once the password is known to be there (R10.3b).
@@ -119,6 +122,9 @@ class MatrixSyncService:
         # everything the console says into the room goes through here, so it outlives no
         # individual send and belongs to whoever is running the service.
         self.pacer = RoomPacer()
+        # Held here rather than by the composition root because it needs the two things only this
+        # object has: the credential that can speak into the room, and the pacer that decides when.
+        self._outbox = RoomOutboxDrain(engine, outbox, self.pacer, self.post_reply, self.bound_room)
         self._holding = False
         self._status_event_id: str | None = None
         self._status_body: str | None = None
@@ -156,23 +162,22 @@ class MatrixSyncService:
         logger.info("Matrix: joined %s on invite from %s", invite.room_id, invite.inviter)
         self._queue_notice(invite.room_id, "joined — this is now Haku's room", RoomEventKind.ROOM)
 
-    async def reply(self, body: str, tag: EventTag) -> None:
-        """Post Haku's answer into the live room as ordinary text (R11.1).
+    async def post_reply(self, reply: PendingReply) -> None:
+        """Post one queued answer into the room as ordinary text (R11.1).
 
-        `tag` is what makes the event say which transcript row it is — and, through
-        `EventTag.transaction_id`, what stops the same row being posted twice: this is the one
-        send whose identity the homeserver can hold us to.
+        Called by `RoomOutboxDrain`, from inside the pacer's queue, so this is the send itself —
+        it raises when the homeserver refuses, and that is what leaves the row unsent and
+        claimable again. The tag is what makes the event say which transcript row it is showing,
+        and the transaction id is the row's own, so a redrive is refused rather than doubled.
         """
+        await self._client.send_text(
+            await self._token(), reply.room_id, reply.body, txn_id=reply.transaction_id(), tag=reply.tag()
+        )
+
+    async def bound_room(self) -> str | None:
+        """The room this console services, or None before the operator has invited it into one."""
         conversation = await self._conversations.load(self._config.user_id)
-        if conversation is None:
-            logger.error("Matrix: a turn finished with no room bound; dropping the answer")
-            return
-        room_id = conversation.room_id
-
-        async def post() -> None:
-            await self._client.send_text(await self._token(), room_id, body, txn_id=tag.transaction_id(), tag=tag)
-
-        self.pacer.send(post)
+        return None if conversation is None else conversation.room_id
 
     async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         """Make the room's single status line say *body*, creating or editing it (R6.2, R6.5).
@@ -436,16 +441,17 @@ class MatrixSyncService:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        """Hold the sync loop and the room's outbound queue for as long as this replica runs.
+        """Hold the sync loop, the room's outbound queue and its outbox drain.
 
-        The pacer runs on **every** replica, not only the sync leader: the turn loop speaks
-        through this object from whichever replica holds the session's lease, which is not
-        generally the one holding the sync lock. That is also why the budget it enforces is an
-        estimate — see `matrix_pacer`.
+        The pacer runs on **every** replica, not only the sync leader: the console's narration is
+        queued from whichever replica holds the session's lease, which is not generally the one
+        holding the sync lock. That is also why the budget it enforces is an estimate — see
+        `matrix_pacer`. The drain contends for a lock of its own, so it runs on one replica while
+        the pacer runs on all of them, which is what keeps replies in order.
         """
         task = asyncio.create_task(self._run(), name="matrix-sync")
         try:
-            async with self.pacer.run():
+            async with self.pacer.run(), self._outbox.run():
                 yield
         finally:
             task.cancel()

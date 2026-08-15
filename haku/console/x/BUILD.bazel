@@ -198,6 +198,7 @@ py_library(
     deps = [
         ":claude_chat",
         ":matrix_client",
+        ":matrix_outbox",
         ":matrix_session",
         ":matrix_sync",
         ":sandbox_claims",
@@ -399,10 +400,42 @@ py_library(
     srcs = ["matrix_sync.py"],
     deps = [
         ":matrix_client",
+        ":matrix_outbox",
         ":matrix_pacer",
         ":matrix_session",
         "//haku/console:config",
         "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "matrix_outbox",
+    srcs = ["matrix_outbox.py"],
+    deps = [
+        ":matrix_client",
+        ":matrix_pacer",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_matrix_outbox",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_matrix_outbox.py"],
+    deps = [
+        ":claude_chat",
+        ":conftest",
+        ":matrix_client",
+        ":matrix_outbox",
+        ":matrix_pacer",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -414,6 +447,7 @@ py_test(
     deps = [
         ":conftest",
         ":matrix_client",
+        ":matrix_outbox",
         ":matrix_pacer",
         ":matrix_session",
         ":matrix_sync",

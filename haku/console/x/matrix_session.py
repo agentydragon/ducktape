@@ -33,7 +33,7 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_chat import REPLICA, MatrixSession, SessionService, SessionStore
-from haku.console.x.matrix_client import EventTag, InboundMessage, RoomEventKind
+from haku.console.x.matrix_client import InboundMessage, RoomEventKind
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
@@ -66,12 +66,14 @@ Announce = Callable[[str], Awaitable[None]]
 class RoomChannel(Protocol):
     """Everything `MatrixSurface` needs said to, or read from, the live room.
 
-    One port rather than the four separate dependencies this used to take — a history callable,
-    an announce callable, a reply callable, and a status object — all of which were bound to the
-    same sync service at composition. The callables were narrow because the *supervisor* must
-    never hold a Matrix credential (`Announce` above, still one function for exactly that
-    reason); passing three of them plus the whole service to one collaborator bought nothing and
-    hid that they were one thing.
+    One port rather than the separate dependencies this used to take — a history callable, an
+    announce callable and a status object, all bound to the same sync service at composition. The
+    callables were narrow because the *supervisor* must never hold a Matrix credential (`Announce`
+    above, still one function for exactly that reason); passing several of them plus the whole
+    service to one collaborator bought nothing and hid that they were one thing.
+
+    Answers do not travel through here: they are rows the outbox drain says into the room, which
+    is the only way a producer can be told that the room actually heard one.
 
     Implemented by the sync loop, the only holder of the credential and the only object that
     knows which room is bound.
@@ -80,8 +82,6 @@ class RoomChannel(Protocol):
     async def recent_history(self, limit: int) -> Sequence[InboundMessage]: ...
 
     async def announce(self, body: str, kind: RoomEventKind = ...) -> None: ...
-
-    async def reply(self, body: str, tag: EventTag) -> None: ...
 
     async def show_status(self, body: str, session_id: UUID | None = ...) -> None: ...
 
@@ -238,37 +238,17 @@ class MatrixSurface:
             )
         )
 
-    async def deliver(
-        self,
-        room_id: str,
-        text: str,
-        session_id: UUID,
-        message_id: UUID | None = None,
-        agent_message_id: str | None = None,
-    ) -> None:
-        """Forward a finished turn's answer into the room (R11.1).
+    async def report_silent_turn(self, room_id: str) -> None:
+        """Say that a turn finished with nothing to show for it (R11.2).
 
-        The ids travel as a tag on the event, so the room says which transcript row it is showing
-        rather than leaving that to be matched by position and timing.
+        Every turn speaks, and there is deliberately no silence token — an empty answer that
+        produced no room event at all made the empty string into one, which is the single thing
+        that requirement rules out. A notice rather than a reply, because nothing was said: this
+        is the console reporting an outcome, not the agent talking.
         """
-        del room_id  # The reply channel is already bound to the one room this console services.
-        if not (body := text.strip()):
-            # R11.2: every turn speaks, and there is deliberately no silence token — returning
-            # here made the empty string into one, which is the single thing that requirement
-            # rules out. A notice rather than a reply, because nothing was said: this is the
-            # console reporting an outcome, not the agent talking.
-            logger.warning("Matrix: a turn finished with no text to send")
-            await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
-            return
-        await self._room.reply(
-            body,
-            EventTag(
-                kind=RoomEventKind.REPLY,
-                session_id=session_id,
-                message_id=message_id,
-                agent_message_id=agent_message_id,
-            ),
-        )
+        del room_id  # This channel is already bound to the one room the console services.
+        logger.warning("Matrix: a turn finished with no text to send")
+        await self._room.announce(NOTHING_SAID, RoomEventKind.NARRATION)
 
     async def report(self, room_id: str, detail: str) -> None:
         """Narrate the sandbox's setup into the room (R7.1)."""

@@ -42,6 +42,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
     SessionMessage,
+    SessionOutbox,
     SessionPrompt,
     SessionTurn,
     SessionTurnPrompt,
@@ -783,13 +784,22 @@ class SessionStore:
         tool_uses: list[dict[str, Any]] | None = None,
         agent_message_id: str | None = None,
         complete: bool = False,
-    ) -> None:
+    ) -> bool:
+        """Write what this assistant message says so far. True once the room owes it.
+
+        **A completed message queues the room's copy in this same transaction.** Writing it at
+        delivery time instead is what let a turn raising between producing text and speaking it
+        lose the answer entirely (<../debug/message_drops.md> E4): the message row committed, the
+        room was never told, and nothing afterwards knew there had been anything to say. Here the
+        two facts commit together or not at all, and `session_outbox` is what says the room is
+        still owed one.
+        """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             message = await db.get(SessionMessage, message_id)
             chat = await db.get(Session, session_id)
             if message is None or chat is None:
-                return
+                return False
             message.content = content
             if tool_uses is not None:
                 message.tool_uses = tool_uses
@@ -801,6 +811,36 @@ class SessionStore:
             # session-row write per delta to hold a flag true that the open turn already states.
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
+            if not complete:
+                return False
+            return await _enqueue_reply(
+                db,
+                chat,
+                content,
+                message_id=message_id,
+                agent_message_id=message.agent_message_id,
+                turn_id=None,
+                now=now,
+            )
+
+    async def enqueue_turn_reply(self, session_id: UUID, turn_id: UUID, text: str) -> bool:
+        """Queue a turn's last word, the one reply no transcript row holds. True if it is owed.
+
+        Two callers, and at most one of them per turn: text that arrived only on the `result`
+        frame after the turn's last assistant message said nothing, and the notice an aborted
+        turn leaves. `turn_id` is the idempotence key that makes re-derivation by a replacement
+        replica a no-op rather than a second copy in the room — see `session_outbox.turn_id`.
+
+        False for an empty body and for a session serving no room; the SPA reads the message rows
+        this turn already wrote, so it is owed nothing here.
+        """
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            if (chat := await db.get(Session, session_id)) is None:
+                return False
+            return await _enqueue_reply(
+                db, chat, text, message_id=None, agent_message_id=None, turn_id=turn_id, now=now
+            )
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
@@ -1019,18 +1059,16 @@ class RoomSurface(Protocol):
 
     **The service picks this by reading the session's `surface`**, rather than offering every
     session to every listener and letting each one re-derive whether it is its own.
+
+    **Replies are not here any more.** They are rows in `session_outbox`, written where they are
+    produced and drained into the room by whoever holds the outbox lock, which is what a surface
+    reporting success at enqueue could never be (<../debug/message_drops.md>). What is left is
+    what genuinely describes a moment and is worthless afterwards.
     """
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
 
-    async def deliver(
-        self,
-        room_id: str,
-        text: str,
-        session_id: UUID,
-        message_id: UUID | None = ...,
-        agent_message_id: str | None = ...,
-    ) -> None: ...
+    async def report_silent_turn(self, room_id: str) -> None: ...
 
     async def report(self, room_id: str, detail: str) -> None: ...
 
@@ -1420,10 +1458,10 @@ class SessionService:
         turn_id = turn.turn_id
         assistant_id: UUID | None = None
         streamed = ""
-        # Whether the room has actually received the most recent assistant message, so the turn's
-        # final text is not posted a second time: `result.result` normally repeats it. This is
-        # delivery, not attempt — a send that failed leaves this False so the `result` frame's
-        # text still reaches the room, rather than being suppressed by a message nobody heard.
+        # Whether this turn has already queued the room a reply, so the turn's final text is not
+        # posted a second time: `result.result` normally repeats the last assistant message. It is
+        # the outbox row's existence and no longer a report from the delivery layer — which used
+        # to be a statement about a `deque.append`, true whether or not the room ever heard it.
         spoke = False
         match turn:
             case TurnStart():
@@ -1488,31 +1526,29 @@ class SessionService:
                             if block.get("type") == "tool_use"
                         ]
                         said = text or streamed.strip()
-                        await self._store.update_assistant(
-                            session_id,
-                            assistant_id,
-                            said,
-                            tool_uses=tool_uses,
-                            # The wire's own id for this message, which is what lets a reader find
-                            # its calls in the frame log rather than match them by position.
-                            agent_message_id=agent_message_id(frame),
-                            complete=True,
+                        # Each message is queued for the room as it finishes rather than only the
+                        # final answer (R11.1), so a turn that narrates, works and reports back is
+                        # three messages in the room and not just its conclusion — and the row is
+                        # written here, with the message, rather than after the turn has decided
+                        # it is over.
+                        spoke = (
+                            await self._store.update_assistant(
+                                session_id,
+                                assistant_id,
+                                said,
+                                tool_uses=tool_uses,
+                                # The wire's own id for this message, which is what lets a reader
+                                # find its calls in the frame log rather than match by position.
+                                agent_message_id=agent_message_id(frame),
+                                complete=True,
+                            )
+                            or spoke
                         )
                         # The real frame is already in the log — the recorder wrote it when
                         # the socket delivered it — so the stand-in has nothing to stand for.
                         await self._store.clear_partial_frame(session_id)
-                        spoken_id, assistant_id = assistant_id, None
+                        assistant_id = None
                         streamed = ""
-                        # Speak each message as it finishes rather than only the final answer
-                        # (R11.1), so a turn that narrates, works and reports back is three
-                        # messages in the room and not just its conclusion.
-                        if said:
-                            # The row and the agent's own id travel with it, so the room event
-                            # states which message it is showing instead of leaving that to be
-                            # inferred from order and timing.
-                            spoke = await self._deliver_reply(
-                                session_id, room_id, said, spoken_id, agent_message_id(frame)
-                            )
                     case "result":
                         result = frame
                         break
@@ -1531,27 +1567,41 @@ class SessionService:
                 # having stopped mid-answer. `final_text` is not written over it, because the
                 # harness adds `[aborted by operator]` to that and the frame records what the
                 # agent produced, not what the room was told.
-                await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
+                spoke = (
+                    await self._store.update_assistant(
+                        session_id, assistant_id, final_text, tool_uses=[], complete=True
+                    )
+                    or spoke
+                )
                 assistant_id = None
             elif not saw_assistant_message:
                 assistant_id = await self._store.begin_assistant(session_id)
-                await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
+                spoke = (
+                    await self._store.update_assistant(
+                        session_id, assistant_id, final_text, tool_uses=[], complete=True
+                    )
+                    or spoke
+                )
                 assistant_id = None
+            # Only what the room is not already owed. Each assistant message queued its own row as
+            # it finished, and `result.result` normally repeats the last of them — so queueing
+            # `final_text` unconditionally would post the answer twice. Two cases still need it: a
+            # turn whose text belongs to no completed message at all, and an abort, whose notice
+            # rides on `final_text` and so on no message row.
+            #
+            # **Before the turn is closed, not after.** Closing it is what makes it unadoptable, so
+            # a replica dying between the two would strand this reply with nothing left to
+            # re-derive it. This way the window leaves the turn open, and what the replacement
+            # re-derives collides with the row already there (`session_outbox.turn_id`).
+            if not spoke:
+                await self._speak(session_id, room_id, turn_id, final_text)
+            elif abort_event.is_set():
+                await self._speak(session_id, room_id, turn_id, ABORTED_NOTICE)
             # Closed with what the `result` frame reported, which is the only place a turn's
             # cost, usage and duration exist.
             await self._store.end_turn(
                 turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result
             )
-            # Only what the room has not already heard. Each assistant message was spoken as it
-            # finished, and `result.result` normally repeats the last of them — so delivering
-            # `final_text` unconditionally would post the answer twice. Three cases still need it:
-            # a turn whose text arrived only on the `result` frame (no assistant message ever
-            # completed), an abort, whose notice is on `final_text` and not on any message, and a
-            # last message whose delivery failed — where this is the room's only chance to hear it.
-            if not spoke:
-                await self._deliver_reply(session_id, room_id, final_text)
-            elif abort_event.is_set():
-                await self._deliver_reply(session_id, room_id, ABORTED_NOTICE)
         except Exception as error:
             await self._store.end_turn(turn_id, TurnOutcome.FAILED)
             if assistant_id is not None:
@@ -1564,42 +1614,22 @@ class SessionService:
             # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
             await status.finish()
 
-    async def _deliver_reply(
-        self,
-        session_id: UUID,
-        room_id: str | None,
-        text: str,
-        message_id: UUID | None = None,
-        agent_message_id: str | None = None,
-    ) -> bool:
-        """Say *text* into the room, if this session serves one. True if the room heard it.
+    async def _speak(self, session_id: UUID, room_id: str | None, turn_id: UUID, text: str) -> None:
+        """Queue the turn's last word for the room, or report that it had none (R11.2).
 
-        Called for each assistant message as it finishes and once more at the turn's end for
-        whatever the room has not heard yet. A session with no room needs nothing here: the
-        SPA's client reads the message rows the turn already wrote — so that case is vacuously
-        delivered, and the caller's "already said" bookkeeping does not depend on the surface.
+        Only ever the end of a turn: everything a completed assistant message says is queued with
+        the message itself, in one transaction. What is left over is text that belongs to no
+        message row — an abort notice, or an answer that arrived only on the `result` frame.
 
-        Deliberately not fatal: the message row is written before this runs, so a failed push
-        is a delivery problem rather than a session problem. Failing here would mark the
-        session dead and cost the whole conversation over a transient send error.
-
-        **The return value is the point**, and callers must use it. Reporting success for a send
-        that raised is what let one failed delivery silence a whole turn: the caller marked the
-        room as having heard the message, which suppressed the `result` frame's copy of the same
-        text — the room's second chance at it.
-        TODO(matrix): retry rather than only logging, once the room outbox exists
-        (<../../plans/chat_runtime_projection.md> stage 5) — today a failed send is recovered
-        only when the `result` frame happens to repeat it, and the message row is readable in
-        the SPA regardless.
+        A session with no room needs nothing here; the SPA's client reads the message rows the
+        turn already wrote. An empty body is not a silence token (R11.2): the room is told that
+        the turn finished without saying anything, as a notice rather than as a reply, because it
+        is the console reporting an outcome and not the agent talking.
         """
         if self._room_surface is None or room_id is None:
-            return True
-        try:
-            await self._room_surface.deliver(room_id, text, session_id, message_id, agent_message_id)
-        except Exception:
-            logger.exception("Reply delivery failed for session %s", session_id)
-            return False
-        return True
+            return
+        if not await self._store.enqueue_turn_reply(session_id, turn_id, text):
+            await self._room_surface.report_silent_turn(room_id)
 
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back here is the
@@ -1645,6 +1675,51 @@ async def _legacy_pending(db: AsyncSession, session_id: UUID, *, lock: bool = Fa
     )
     message: SessionMessage | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
     return message
+
+
+async def _enqueue_reply(
+    db: AsyncSession,
+    chat: Session,
+    body: str,
+    *,
+    message_id: UUID | None,
+    agent_message_id: str | None,
+    turn_id: UUID | None,
+    now: datetime,
+) -> bool:
+    """Put *body* in the room's outbox, inside the caller's transaction.
+
+    False means there is nothing for the room to be owed, which covers two ordinary states and no
+    failures: a session serving no room — the SPA reads the message rows directly — and a message
+    whose text is empty.
+
+    **Every row carries exactly one identity, and the insert is idempotent on it**, because both
+    ways a reply can be produced twice are ways a *replacement* replica produces it. A completed
+    `assistant` frame is identified by its transcript row and can be replayed out of the runner's
+    rollout; a turn's last word is identified by the turn and is re-derived by whoever adopts a
+    turn left open. Postgres infers one index per statement, so the conflict target follows
+    whichever identity this row has.
+    """
+    if chat.room_id is None or not (queued := body.strip()):
+        return False
+    inserted = pg_insert(SessionOutbox).values(
+        outbox_id=uuid4(),
+        session_id=chat.session_id,
+        room_id=chat.room_id,
+        body=queued,
+        message_id=message_id,
+        agent_message_id=agent_message_id,
+        turn_id=turn_id,
+        created_at=now,
+        attempts=0,
+        next_attempt_at=now,
+    )
+    await db.execute(
+        inserted.on_conflict_do_nothing(index_elements=["message_id"], index_where=SessionOutbox.message_id.isnot(None))
+        if message_id is not None
+        else inserted.on_conflict_do_nothing(index_elements=["turn_id"], index_where=SessionOutbox.turn_id.isnot(None))
+    )
+    return True
 
 
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:

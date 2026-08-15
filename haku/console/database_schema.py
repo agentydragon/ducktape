@@ -1121,6 +1121,80 @@ class SessionFrame(Base):
     )
 
 
+class SessionOutbox(Base):
+    """One reply a session produced, waiting for the room to be told it.
+
+    **The row is the delivery**, and it is written in the same transaction as the assistant
+    message it is a copy of. Before this, a produced reply existed only as a closure on an
+    in-process queue: `MatrixSyncService.reply` appended to a deque and returned, so the turn
+    recorded "the room heard this" about a `deque.append`, a send that raised was discarded with
+    a log line and no retry, and a queue still holding an answer died with its replica
+    (<debug/message_drops.md> E1, E4, E6, E7). A row survives all four, and a drain that marks
+    it sent only once the send has returned is what makes "answered" mean answered.
+
+    **Replies only.** The console's narration — status line, lifecycle notices, holding and
+    bootstrap lines — stays on `matrix_pacer`'s in-process queue: R11.6 is about a reply the
+    agent produced, and a notice that describes a moment is not worth redelivering minutes
+    later. That is also why there is no `kind` column: every row here is a `REPLY`.
+
+    **One target, one channel.** `room_id` is a Matrix room because that is the only channel
+    there is; a second one joins by adding a discriminator beside it rather than by overloading
+    this column (<plans/session_channels.md> § 1).
+    """
+
+    __tablename__ = "session_outbox"
+
+    # Also the transaction id the send goes out under, so a redrive is refused by the homeserver
+    # rather than posting twice — see `matrix_outbox.PendingReply.transaction_id`.
+    outbox_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    room_id: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # The transcript row this reply is, which the room event states as its tag. NULL for the two
+    # replies that correspond to no row: a turn's abort notice, and text that arrived only on a
+    # `result` frame after the turn's last assistant message said nothing.
+    message_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="SET NULL"), nullable=True
+    )
+    agent_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The idempotence key for the one reply a turn can produce that no transcript row holds: its
+    # last word, which is either an answer that arrived on the `result` frame alone or the notice
+    # an abort leaves. `_run_turn` writes at most one of those per turn and writes it *before*
+    # closing the turn, so a replica dying in that window leaves the turn open and its replacement
+    # re-derives the same reply — which this makes a no-op rather than a second copy in the room.
+    #
+    # NULL wherever `message_id` carries the identity instead. Not turn *state*: nothing reads it
+    # to decide anything about the turn, and the drain never looks at it.
+    turn_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Set once the homeserver has accepted the send, and never before it returns. Everything else
+    # — claimed, in flight, refused, dropped with its replica — leaves this NULL, which is what
+    # makes redrive the default rather than a case anyone has to detect.
+    sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # When this row may be claimed again. Moved into the future by every claim, so a homeserver
+    # that is refusing everything is retried on a widening interval instead of spending the row's
+    # whole budget in a minute.
+    next_attempt_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        # What the drain asks for on every pass: the oldest row for this room that nobody has
+        # sent. Partial, because a sent row is the overwhelming majority and is never read again.
+        Index("idx_session_outbox_unsent", "room_id", "created_at", postgresql_where=text("sent_at IS NULL")),
+        # A message is queued for the room once. The assistant frame that completes a message can
+        # be seen twice — a runner replaying its rollout into a replacement replica — and without
+        # this the second sighting would queue a second copy of the same answer.
+        Index("uq_session_outbox_message", "message_id", unique=True, postgresql_where=text("message_id IS NOT NULL")),
+        # And a turn's last word is queued once, for the adoption case `turn_id` describes above.
+        Index("uq_session_outbox_turn", "turn_id", unique=True, postgresql_where=text("turn_id IS NOT NULL")),
+    )
+
+
 class PushSubscription(Base):
     """One browser Push API subscription an Operator has granted this console.
 
