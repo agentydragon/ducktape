@@ -6,9 +6,9 @@ against `SandboxClaim`s in `agent-workspaces` — auth is whatever kubeconfig
 `kubectl` resolves (the namespace is operator-only).
 
 ```bash
-ws new -t zai      # claim a warm workspace on a lane (ready in seconds) + shell in
-ws new -t zai fix --ttl 3d
-ws new -t codex exp   # lanes are LLM templates (ws templates lists them)
+ws new -t codex      # claim a warm workspace on a lane (ready in seconds) + shell in
+ws new -t codex fix --ttl 3d
+ws new -t codex exp  # lanes are LLM templates (ws templates lists them)
 ws templates       # available lanes + warm-pool readiness
 ws ls              # claim → sandbox, pod phase, deadline
 ws sh [name]       # shell into a claim (default: newest)

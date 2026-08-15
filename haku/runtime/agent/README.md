@@ -7,7 +7,7 @@ Framework**. It is not the primary live Haku runtime; today that is
 different image, dependencies, and git write identity.
 
 - **Model** via the in-cluster **LiteLLM** proxy (OpenAI-compatible), so the provider
-  (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM config knob (`HAKU_MODEL`), not code.
+  (Anthropic / OpenAI) is a LiteLLM config knob (`HAKU_MODEL`), not code.
   Only LiteLLM holds provider keys.
 - **Tools**: a `run_command` shell tool (the Pod is the trust boundary — see
   <../../PLAN.md>) plus haku-console's aggregated MCP catalog (Tana reads to

@@ -2,7 +2,7 @@
 
 Runtime C (see <../../plans/runtime_options.md>): the agent loop runs here, in-process
 and provider-agnostic. Model calls go through the in-cluster LiteLLM proxy
-(OpenAI-compatible), so the provider (Anthropic / OpenAI / Z.AI-GLM) is a LiteLLM
+(OpenAI-compatible), so the provider (Anthropic / OpenAI) is a LiteLLM
 config knob (`HAKU_MODEL`), not code. Tools are a `run_command` shell tool (the Pod
 is the trust boundary — see <../../PLAN.md>) plus haku-console's aggregated MCP
 catalog (Tana reads to start).

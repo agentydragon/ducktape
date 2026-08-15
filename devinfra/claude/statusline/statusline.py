@@ -4,8 +4,7 @@ Receives JSON on stdin, outputs formatted status to stdout.
 Displays session info, model, cwd, cost, context window usage, and subscription
 quota utilization. Quota data comes from `aiquota`'s shared cache (read +
 populated via `QuotaService`), selecting the provider matching the running
-session (Claude or Codex). z.ai sessions remain flat-rate but intentionally
-have no quota backend.
+session (Claude or Codex).
 """
 
 import asyncio
@@ -152,26 +151,23 @@ def _daemon_healthy(sock_path: Path, timeout: float = 0.5) -> bool:
         return False
 
 
-def _detect_quota_route(*, base_url: str, model_id: str) -> QuotaRoute:
+def _detect_quota_route(*, base_url: str) -> QuotaRoute:
     """Attribute a session to a quota provider, failing closed when ambiguous.
 
-    Direct endpoints identify their provider. The repository's LiteLLM endpoint
-    additionally uses the model slug to distinguish GLM from unknown routes.
+    Only explicit, currently supported endpoint hostnames identify a provider.
+    Do not infer a provider from a model name: aliases may outlive a provider
+    route, and unknown endpoints must not consume another provider's quota.
     """
     if not base_url:
         return QuotaRoute(provider="claude")
     host = urlparse(base_url).hostname or ""
     if host == "api.anthropic.com":
         return QuotaRoute(provider="claude")
-    if host == "z.ai" or host.endswith(".z.ai"):
-        return QuotaRoute(provider="zai", label="zai")
     if host == "cli-proxy-api.allegedly.works":
         # codex-claude wrapper → CLIProxyAPI → ChatGPT/Codex subscription.
         # Quota is read by the `codex` provider from ~/.codex/auth.json.
         return QuotaRoute(provider="codex", label="oai")
     if host == "litellm.allegedly.works":
-        if model_id.lower().startswith("glm-"):
-            return QuotaRoute(provider="zai", label="litellm→zai")
         return QuotaRoute(provider=None, label="litellm→?")
     return QuotaRoute(provider=None, label="proxy→?")
 
@@ -245,8 +241,7 @@ def main() -> None:
     oauth = read_credentials()
     is_subscription = oauth is not None and oauth.subscription_type is not None
 
-    model_id = (data.model.id if data.model is not None else "") or os.environ.get("ANTHROPIC_MODEL", "")
-    quota_route = _detect_quota_route(base_url=os.environ.get("ANTHROPIC_BASE_URL", ""), model_id=model_id)
+    quota_route = _detect_quota_route(base_url=os.environ.get("ANTHROPIC_BASE_URL", ""))
 
     # Quota comes from aiquota's shared cache (read + populated by fetch_all).
     # Do not fetch or display any provider's quota when attribution is unknown.

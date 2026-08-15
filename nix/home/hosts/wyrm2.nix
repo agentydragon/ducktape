@@ -57,10 +57,7 @@
     };
   };
 
-  ducktape.aiquota = {
-    enable = true;
-    sopsFile = ../../../secrets/shared/zai.yaml;
-  };
+  ducktape.aiquota.enable = true;
 
   # Keep GNOME's cursor selection declarative. Unmanaged dconf values can
   # otherwise override the installed theme with an invalid empty name/size.

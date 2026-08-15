@@ -42,11 +42,6 @@ spec:
                 secretKeyRef:
                   name: openhands-secrets
                   key: JWT_SECRET
-            - name: ZAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: openhands-secrets
-                  key: ZAI_API_KEY
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -58,14 +53,12 @@ spec:
                   name: openhands-secrets
                   key: GITHUB_TOKEN
             - name: LLM_MODEL
-              value: anthropic/claude-sonnet-5
+              value: openai/gpt-5.6-terra
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: openhands-secrets
-                  key: ZAI_API_KEY
-            - name: LLM_BASE_URL
-              value: https://api.z.ai/api/anthropic
+                  key: OPENAI_API_KEY
             - name: OLLAMA_BASE_URL
               value: http://ollama.ollama:11434
           volumeMounts:

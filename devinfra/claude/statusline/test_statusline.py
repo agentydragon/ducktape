@@ -323,43 +323,21 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
 
 
 @pytest.mark.parametrize(
-    ("base_url", "model_id", "expected"),
+    ("base_url", "expected"),
     [
         pytest.param(
-            "https://api.z.ai/api/anthropic", "glm-5.2", QuotaRoute(provider="zai", label="zai"), id="direct_zai"
+            "https://litellm.allegedly.works", QuotaRoute(provider=None, label="litellm→?"), id="ambiguous_litellm"
         ),
         pytest.param(
-            "https://litellm.allegedly.works",
-            "glm-5.2-anthropic",
-            QuotaRoute(provider="zai", label="litellm→zai"),
-            id="litellm_glm_fallback",
+            "https://cli-proxy-api.allegedly.works", QuotaRoute(provider="codex", label="oai"), id="cli_proxy_api_codex"
         ),
-        pytest.param(
-            "https://litellm.allegedly.works",
-            "some-model-alias",
-            QuotaRoute(provider=None, label="litellm→?"),
-            id="ambiguous_litellm",
-        ),
-        pytest.param(
-            "https://cli-proxy-api.allegedly.works",
-            "gpt-5.6-sol",
-            QuotaRoute(provider="codex", label="oai"),
-            id="cli_proxy_api_codex",
-        ),
-        pytest.param(
-            "https://unknown-proxy.example",
-            "claude-opus-5",
-            QuotaRoute(provider=None, label="proxy→?"),
-            id="ambiguous_proxy",
-        ),
-        pytest.param(
-            "https://api.anthropic.com", "claude-opus-5", QuotaRoute(provider="claude"), id="default_anthropic"
-        ),
-        pytest.param("", "claude-opus-5", QuotaRoute(provider="claude"), id="unset"),
+        pytest.param("https://unknown-proxy.example", QuotaRoute(provider=None, label="proxy→?"), id="ambiguous_proxy"),
+        pytest.param("https://api.anthropic.com", QuotaRoute(provider="claude"), id="default_anthropic"),
+        pytest.param("", QuotaRoute(provider="claude"), id="unset"),
     ],
 )
-def test_detect_quota_route(base_url: str, model_id: str, expected: QuotaRoute):
-    assert _detect_quota_route(base_url=base_url, model_id=model_id) == expected
+def test_detect_quota_route(base_url: str, expected: QuotaRoute):
+    assert _detect_quota_route(base_url=base_url) == expected
 
 
 # Fixed "now" for deterministic quota formatting
@@ -447,27 +425,10 @@ def test_render_minimal(snapshot: SnapshotAssertion):
 
 
 @pytest.mark.parametrize(
-    ("base_url", "model_id", "include_quota", "quota_error", "expected"),
+    ("base_url", "include_quota", "quota_error", "expected"),
     [
         pytest.param(
             "https://litellm.allegedly.works",
-            "glm-5.2-anthropic",
-            True,
-            None,
-            "litellm→zai 5h:24% 7d:61%",
-            id="known_with_quota",
-        ),
-        pytest.param(
-            "https://litellm.allegedly.works",
-            "glm-5.2-anthropic",
-            False,
-            None,
-            "litellm→zai quota unavailable",
-            id="known_without_quota",
-        ),
-        pytest.param(
-            "https://litellm.allegedly.works",
-            "some-model-alias",
             True,
             None,
             "litellm→? quota unknown",
@@ -475,18 +436,15 @@ def test_render_minimal(snapshot: SnapshotAssertion):
         ),
         pytest.param(
             "https://litellm.allegedly.works",
-            "glm-5.2-anthropic",
             False,
             "aiquota config error",
-            "litellm→zai aiquota config error",
+            "litellm→? aiquota config error",
             id="config_error",
         ),
     ],
 )
-def test_detect_and_format_quota_segments(
-    base_url: str, model_id: str, include_quota: bool, quota_error: str | None, expected: str
-):
-    route = _detect_quota_route(base_url=base_url, model_id=model_id)
+def test_detect_and_format_quota_segments(base_url: str, include_quota: bool, quota_error: str | None, expected: str):
+    route = _detect_quota_route(base_url=base_url)
     quota = (
         _render_quota(seven_day_util=61.0, seven_day_resets_in=timedelta(), five_hour_util=24.0)
         if include_quota

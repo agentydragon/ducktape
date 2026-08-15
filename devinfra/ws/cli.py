@@ -28,7 +28,7 @@ Quick reference:
 
 ```text
 ws templates                   LLM lanes + warm-pool readiness
-ws new -t zai                  claim a warm GLM workspace + shell in
+ws new -t codex                claim a warm workspace + shell
 ws new -t codex exp --ttl 3d   named claim, codex lane, 3-day deadline
 ws ls                          claims: template, sandbox, phase, deadline
 ws sh [exp]                    tmux shell into a claim (default: newest)

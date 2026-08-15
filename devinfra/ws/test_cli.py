@@ -25,19 +25,20 @@ def test_shutdown_time_rfc3339() -> None:
 
 
 def test_claim_manifest_shape() -> None:
-    m = claim_manifest("ws-test", "90m", NOW, "zai")
+    m = claim_manifest("ws-test", "90m", NOW, "codex")
     assert m["metadata"] == {"name": "ws-test", "namespace": "agent-workspaces"}
-    assert m["spec"]["warmPoolRef"] == {"name": "zai"}
+    assert m["spec"]["warmPoolRef"] == {"name": "codex"}
     assert m["spec"]["lifecycle"] == {"shutdownPolicy": "Delete", "shutdownTime": "2026-07-16T13:30:00Z"}
 
 
 @pytest.mark.parametrize("argv", [[], ["--help"]], ids=["bare", "help"])
 def test_quick_reference_rendered(argv: list[str]) -> None:
     output = CliRunner().invoke(app, argv).output
-    # Each example survives as its own line — catches rich/click re-wrapping
-    # collapsing the block, not just the substrings existing somewhere.
+    # Rich may wrap longer examples at the terminal width, but each must still
+    # be present in the rendered reference rather than silently disappearing.
+    normalized = " ".join(output.split())
     for example in ["ws new -t codex exp --ttl 3d", "ws extend exp 24h", "ws rm exp / ws rm --all"]:
-        assert any(example in line for line in output.splitlines()), f"{example}\n----\n{output}"
+        assert example in normalized, f"{example}\n----\n{output}"
 
 
 def test_quick_reference_alignment_survives() -> None:

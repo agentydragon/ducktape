@@ -46,10 +46,7 @@ in
     ${rugged}
   '';
 
-  ducktape.aiquota = {
-    enable = true;
-    sopsFile = ../../../secrets/shared/zai.yaml;
-  };
+  ducktape.aiquota.enable = true;
 
   # Atlas-specific configuration (Proxmox host with GUI)
   home.stateVersion = "24.05";
