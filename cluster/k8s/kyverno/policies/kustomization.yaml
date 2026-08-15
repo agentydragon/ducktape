@@ -9,7 +9,7 @@ resources:
   - restrict-agent-kustomization-patch.yaml
   - restrict-agent-gateway-routes.yaml
   - require-secret-store-conditions.yaml
-  - generate-haku-diagnostics-readers.yaml
+  - generate-agent-diagnostics-readers.yaml
   - clusterrole-cleanup-controller-jobs.yaml
   - clusterrole-cleanup-controller-workloads.yaml
   - clusterrole-cleanup-controller-sandboxes.yaml

@@ -3,5 +3,4 @@ kind: Namespace
 metadata:
   name: cert-manager
   labels:
-    rbac.ducktape.io/haku-namespace-diagnostics: "true"
-    rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"
+    rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"

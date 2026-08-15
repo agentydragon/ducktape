@@ -6,4 +6,4 @@ metadata:
     name: docker-ci
     pod-security.kubernetes.io/enforce: privileged
     goldilocks.fairwinds.com/enabled: "false"
-    rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"
+    rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"

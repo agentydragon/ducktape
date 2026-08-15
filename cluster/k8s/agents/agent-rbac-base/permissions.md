@@ -12,15 +12,12 @@ Use `roleRef.name` in those files to determine which permission class is bound:
 service-specific reader Role/ClusterRole such as `ollama-reader`,
 `langfuse-log-reader`, or `claude-props-reader`.
 
-Haku's `logs-configmaps-reader` grants are the exception to the file matrix: a
-GitOps-owned Namespace opts in with
-`rbac.ducktape.io/haku-logs-configmaps: "true"`, and
-`cluster/k8s/kyverno/policies/generate-haku-diagnostics-readers.yaml` generates
-the namespaced RoleBindings for the Haku OIDC group and both Haku ServiceAccounts.
-The same policy generates the `kubectl-sandbox-users` group's common
-`namespace-diagnostics-reader` and `logs-configmaps-reader` bindings from the corresponding
-`rbac.ducktape.io/kubectl-sandbox-*` Namespace labels. The `kubectl-sandbox-users` group
-remains a separate Claude Code Web identity.
+The common `logs-configmaps-reader` and `namespace-diagnostics-reader` grants are the
+exception to the file matrix: a GitOps-owned Namespace opts in with the corresponding
+`rbac.ducktape.io/agent-*` label, and
+`cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates one
+namespaced RoleBinding for the approved Haku and `kubectl-sandbox-users` identities.
+The `kubectl-sandbox-users` group remains a separate Claude Code Web identity.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
 `gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an

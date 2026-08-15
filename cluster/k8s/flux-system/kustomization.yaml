@@ -18,7 +18,7 @@ patches:
         path: /metadata/labels/goldilocks.fairwinds.com~1enabled
         value: "false"
       - op: add
-        path: /metadata/labels/rbac.ducktape.io~1haku-logs-configmaps
+        path: /metadata/labels/rbac.ducktape.io~1agent-logs-configmaps-reader
         value: "true"
   # Keep flux controller disk I/O (git clones, artifacts, image automation — all on
   # emptyDir, i.e. the host disk) off the control-plane nodes, whose etcd lives on slow

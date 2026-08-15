@@ -21,15 +21,14 @@ py_library(
 # policy can be run on its own.
 
 py_test(
-    name = "test_haku_diagnostics_readers",
-    srcs = ["test_haku_diagnostics_readers.py"],
+    name = "test_agent_diagnostics_readers",
+    srcs = ["test_agent_diagnostics_readers.py"],
     data = [
         "//cluster/k8s:kyverno_policy_files",
         "@multitool//tools/kyverno",
     ] + glob([
-        "testdata/namespace_haku_*.yaml",
-        "testdata/namespace_kubectl_sandbox_*.yaml",
-        "testdata/namespace_without_haku_logs.yaml",
+        "testdata/namespace_agent_*.yaml",
+        "testdata/namespace_without_agent_logs.yaml",
     ]),
     deps = [
         ":apply",

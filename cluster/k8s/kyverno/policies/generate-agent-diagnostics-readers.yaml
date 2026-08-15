@@ -1,10 +1,10 @@
-# Grant diagnostics subjects access in explicitly opted-in namespaces.
+# Grant approved agent identities access in explicitly opted-in namespaces.
 # The namespace labels are GitOps-owned; they are access grants, not merely
 # metadata.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: generate-haku-diagnostics-readers
+  name: generate-agent-diagnostics-readers
   annotations:
     policies.kyverno.io/title: Generate agent diagnostics readers
     policies.kyverno.io/category: Access Control
@@ -16,7 +16,7 @@ metadata:
 spec:
   background: true
   rules:
-    - name: generate-haku-logs-configmaps-reader
+    - name: generate-agent-logs-configmaps-reader
       match:
         any:
           - resources:
@@ -24,77 +24,7 @@ spec:
                 - Namespace
               selector:
                 matchLabels:
-                  rbac.ducktape.io/haku-logs-configmaps: "true"
-      generate:
-        generateExisting: true
-        synchronize: true
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: RoleBinding
-        name: haku-logs-configmaps-reader
-        namespace: "{{request.object.metadata.name}}"
-        data:
-          metadata:
-            labels:
-              rbac.ducktape.io/managed-by: kyverno
-              rbac.ducktape.io/access: haku-logs-configmaps
-          roleRef:
-            apiGroup: rbac.authorization.k8s.io
-            kind: ClusterRole
-            name: logs-configmaps-reader
-          subjects:
-            - kind: Group
-              name: oidc-ksbx-groups:haku
-              apiGroup: rbac.authorization.k8s.io
-            - kind: ServiceAccount
-              name: haku
-              namespace: haku-sandbox
-            - kind: ServiceAccount
-              name: haku-claude
-              namespace: haku-claude-sandbox
-    - name: generate-haku-namespace-diagnostics-reader
-      match:
-        any:
-          - resources:
-              kinds:
-                - Namespace
-              selector:
-                matchLabels:
-                  rbac.ducktape.io/haku-namespace-diagnostics: "true"
-      generate:
-        generateExisting: true
-        synchronize: true
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: RoleBinding
-        name: haku-namespace-diagnostics-reader
-        namespace: "{{request.object.metadata.name}}"
-        data:
-          metadata:
-            labels:
-              rbac.ducktape.io/managed-by: kyverno
-              rbac.ducktape.io/access: haku-namespace-diagnostics
-          roleRef:
-            apiGroup: rbac.authorization.k8s.io
-            kind: ClusterRole
-            name: namespace-diagnostics-reader
-          subjects:
-            - kind: Group
-              name: oidc-ksbx-groups:haku
-              apiGroup: rbac.authorization.k8s.io
-            - kind: ServiceAccount
-              name: haku
-              namespace: haku-sandbox
-            - kind: ServiceAccount
-              name: haku-claude
-              namespace: haku-claude-sandbox
-    - name: generate-kubectl-sandbox-logs-configmaps-reader
-      match:
-        any:
-          - resources:
-              kinds:
-                - Namespace
-              selector:
-                matchLabels:
-                  rbac.ducktape.io/kubectl-sandbox-logs-configmaps: "true"
+                  rbac.ducktape.io/agent-logs-configmaps-reader: "true"
       generate:
         generateExisting: true
         synchronize: true
@@ -106,16 +36,25 @@ spec:
           metadata:
             labels:
               rbac.ducktape.io/managed-by: kyverno
-              rbac.ducktape.io/access: kubectl-sandbox-logs-configmaps
+              rbac.ducktape.io/access: agent-logs-configmaps-reader
           roleRef:
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
             name: logs-configmaps-reader
           subjects:
             - kind: Group
+              name: oidc-ksbx-groups:haku
+              apiGroup: rbac.authorization.k8s.io
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - kind: ServiceAccount
+              name: haku-claude
+              namespace: haku-claude-sandbox
+            - kind: Group
               name: oidc-ksbx-groups:kubectl-sandbox-users
               apiGroup: rbac.authorization.k8s.io
-    - name: generate-kubectl-sandbox-namespace-diagnostics-reader
+    - name: generate-agent-namespace-diagnostics-reader
       match:
         any:
           - resources:
@@ -123,7 +62,7 @@ spec:
                 - Namespace
               selector:
                 matchLabels:
-                  rbac.ducktape.io/kubectl-sandbox-namespace-diagnostics: "true"
+                  rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
       generate:
         generateExisting: true
         synchronize: true
@@ -135,12 +74,21 @@ spec:
           metadata:
             labels:
               rbac.ducktape.io/managed-by: kyverno
-              rbac.ducktape.io/access: kubectl-sandbox-namespace-diagnostics
+              rbac.ducktape.io/access: agent-namespace-diagnostics-reader
           roleRef:
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
             name: namespace-diagnostics-reader
           subjects:
+            - kind: Group
+              name: oidc-ksbx-groups:haku
+              apiGroup: rbac.authorization.k8s.io
+            - kind: ServiceAccount
+              name: haku
+              namespace: haku-sandbox
+            - kind: ServiceAccount
+              name: haku-claude
+              namespace: haku-claude-sandbox
             - kind: Group
               name: oidc-ksbx-groups:kubectl-sandbox-users
               apiGroup: rbac.authorization.k8s.io
