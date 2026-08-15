@@ -20,53 +20,18 @@ Two constraints still bind, and everything else is preference:
    does not touch the schema until its last step; the second changes where meaning is extracted.
 2. **Contract halves land when their roll converges**, independently of all of this.
 
-Four are discharged. Version negotiation now precedes the field stage 4 adds; diagnosis came before
-change; a roll is survived before the TTL that was recycling wedged sessions is removed; and a
+Four are discharged: version negotiation preceded the field stage 4 added, diagnosis came before
+change, a roll is survived before the TTL that was recycling wedged sessions is removed, and a
 session survives being asked for before it is allocated on demand — which is why stages 5 and 6 sit
-where they do. The last three rested on stage 1, which has landed, but **stage 1 is verified only by
-tests**: the first deliberate console roll against production is still owed before anything
-downstream trusts it (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
-
-## Stage 2 — make the room behave
-
-_Independent of every other stage; can run in parallel with any of them. Pacing landed: every send
-goes through `matrix_pacer.RoomPacer`, and a 429 now reaches it instead of being absorbed inside nio
-forever. What is left is the half about meaning rather than rate._
-
-- **Tag what the console sends.** Every question about a room event is currently answered by a
-  proxy: msgtype for "is this conversational", sender for "is this ours", nothing at all for "which
-  transcript row is this". A namespaced content object naming the session, the transcript row, the
-  agent's `msg_…` and a `kind` replaces all three with statements — and makes delivery idempotent
-  for free, which is the ledger stage 4 would otherwise have to invent. Public and federated, so ids
-  and kinds only; stripped by redaction; absent on existing history, so today's msgtype rule stays
-  as the fallback.
-
-**Done when** every event the console sends says what it is.
-
-## Stage 4 — survive a roll mid-turn
-
-_Unblocked: stage 3 landed, so the envelope can gain the `frame_uid` below without a flag day.
-This is where the queues earn their place._
-
-- **A bounded outbound buffer in the runner**, re-sent on adopt. The recognising half landed:
-  `frame_identity.frame_uid` names what a frame is, `uq_claude_chat_frames_uid` makes a repeat a
-  no-op, and `ClaudeCli._read` drops a frame the log already holds rather than routing it twice.
-  What is missing is anything that replays — the runner still delivers at most once.
-- **Derive Matrix's `txn_id` from the message id** instead of `uuid4().hex`, so the homeserver is a
-  second line of defence against a replayed `assistant` reaching the room twice. Cheap now that
-  `works.allegedly.haku` already carries the id on the event.
-- **Close the claimed-but-never-delivered window.** `next_prompt` claims the prompt and opens the
-  turn in one transaction; `_run_turn` writes it to the CLI afterwards. A replica dying in between
-  leaves a claimed prompt never asked and a turn that never ends — harmless while the session dies
-  with it, real once sessions survive. `command_lifecycle`'s `queued`/`started` is what distinguishes
-  "delivered, answer coming" from "never left".
-- **Route an adopted turn by turn**, not by session.
-
-**Done when** a roll during a turn loses no answer and posts nothing twice.
+where they do. Both of those rest on stages 1 and 4, which have landed, but **they are verified
+only by tests**: the first deliberate console roll against production is still owed before anything
+downstream trusts them (<../console/debug/2026_08_13_sessions_boot_and_die.md>). Stage 4 raises the
+stakes on that rather than lowering them — a turn is now inherited across a roll instead of being
+closed, so a roll is the only thing that exercises it.
 
 ## Stage 5 — let the console own the lifecycle
 
-_Needs stages 1 and 4 (constraint 2)._
+_Both of its prerequisites, stages 1 and 4, have landed._
 
 `shutdownTime` is set to `now + session_ttl_seconds` at claim creation and **never patched**, so it
 is not an idle timeout: a conversation in full flow dies at exactly two hours, mid-turn, and the room

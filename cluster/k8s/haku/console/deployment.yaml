@@ -78,7 +78,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260814230357-990e580 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260815022322-9e15022 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -88,7 +88,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
-              value: devel-20260814230357-990e580 # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260815022322-9e15022 # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE_STATIC_IMAGE_TAG
               value: devel-20260813021503-ba68459 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
             # Capability tier: the launch-routine action. The console builds both the
@@ -148,7 +148,7 @@ spec:
             # client fails closed on a mismatch rather than writing a second vector space into
             # the corpus. Change it and every cached vector is invalidated by construction.
             - name: HAKU_CONSOLE_EMBEDDER__MODEL
-              value: "qwen3-embedding:0.6b"
+              value: "qwen3-embedding:4b"
             # Qwen3-Embedding is instruction-aware: queries carry a task instruction, documents
             # do not. The asymmetry is the client's to apply, because the endpoint is
             # model-generic — check this against the tag Ollama actually serves.

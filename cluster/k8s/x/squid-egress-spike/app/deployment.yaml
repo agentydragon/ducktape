@@ -40,9 +40,14 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 31
-        runAsGroup: 31
-        fsGroup: 31
+        # 13 = `proxy`, Debian's squid user (`--with-default-user=proxy`). It was
+        # 31 while the image was Alpine-based, whose user is `squid`. The image's
+        # CI verify step prints `id proxy` on every build so this number comes
+        # from the build rather than from memory -- a mismatch does not fail
+        # loudly, it fails as the cache directory being unwritable.
+        runAsUser: 13
+        runAsGroup: 13
+        fsGroup: 13
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -52,7 +57,7 @@ spec:
         # squid.conf cannot read environment variables -- its ${...} covers only
         # process_name/process_number/service_name.
         - name: prepare
-          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260810054933-f1d9b6a # {"$imagepolicy": "flux-system:squid-ssl"}
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260815024022-da9005e # {"$imagepolicy": "flux-system:squid-ssl"}
           envFrom:
             - configMapRef:
                 name: squid-spike-fake-credentials
@@ -89,7 +94,7 @@ spec:
               readOnly: true
       containers:
         - name: squid
-          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260810054933-f1d9b6a # {"$imagepolicy": "flux-system:squid-ssl"}
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260815024022-da9005e # {"$imagepolicy": "flux-system:squid-ssl"}
           args: ["-f", "/etc/squid/squid.conf", "-N"]
           ports:
             - name: proxy

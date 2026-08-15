@@ -224,6 +224,10 @@ py_test(
 
 py_test(
     name = "test_split_based_rls",
+    # Genuine slowness, unlike the four in
+    # <../../debug/2026_08_14_docker_test_timeouts.md>: 54.1s alone against an uncontended
+    # daemon, of which pytest reports 49.1s, so `small`'s 60s leaves it no room at all.
+    size = "medium",
     srcs = [
         "test_split_based_rls.py",
     ],

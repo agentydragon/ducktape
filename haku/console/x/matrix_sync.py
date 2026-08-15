@@ -19,7 +19,7 @@ import datetime
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from uuid import uuid4
+from uuid import UUID
 
 from pydantic import SecretStr
 from sqlalchemy import select, text
@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixSyncState
-from haku.console.x.matrix_client import InboundMessage, Invite, MatrixAuthError, MatrixClient
+from haku.console.x.matrix_client import EventTag, InboundMessage, Invite, MatrixAuthError, MatrixClient, RoomEventKind
 from haku.console.x.matrix_pacer import RoomPacer
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixTurns
 
@@ -130,14 +130,21 @@ class MatrixSyncService:
             # Joining would put Haku in a room nothing services, which reads as listening
             # (R3.6a). Say so where we can actually speak: the room already bound.
             logger.warning("Matrix: refusing invite to %s — already serving %s", invite.room_id, live_room)
-            self._queue_notice(live_room, f"invited to another room; still serving this one ({live_room})")
+            self._queue_notice(
+                live_room, f"invited to another room; still serving this one ({live_room})", RoomEventKind.ROOM
+            )
             return
         await self._client.join(token, invite.room_id)
         logger.info("Matrix: joined %s on invite from %s", invite.room_id, invite.inviter)
-        self._queue_notice(invite.room_id, "joined — this is now Haku's room")
+        self._queue_notice(invite.room_id, "joined — this is now Haku's room", RoomEventKind.ROOM)
 
-    async def reply(self, body: str) -> None:
-        """Post Haku's answer into the live room as ordinary text (R11.1)."""
+    async def reply(self, body: str, tag: EventTag) -> None:
+        """Post Haku's answer into the live room as ordinary text (R11.1).
+
+        `tag` is what makes the event say which transcript row it is — and, through
+        `EventTag.transaction_id`, what stops the same row being posted twice: this is the one
+        send whose identity the homeserver can hold us to.
+        """
         conversation = await self._conversations.load(self._config.user_id)
         if conversation is None:
             logger.error("Matrix: a turn finished with no room bound; dropping the answer")
@@ -145,11 +152,11 @@ class MatrixSyncService:
         room_id = conversation.room_id
 
         async def post() -> None:
-            await self._client.send_text(await self._token(), room_id, body, txn_id=uuid4().hex)
+            await self._client.send_text(await self._token(), room_id, body, txn_id=tag.transaction_id(), tag=tag)
 
         self.pacer.send(post)
 
-    async def show_status(self, body: str) -> None:
+    async def show_status(self, body: str, session_id: UUID | None = None) -> None:
         """Make the room's single status line say *body*, creating or editing it (R6.2, R6.5).
 
         One line per turn rather than a notice per step: a room where every tool call is a
@@ -174,12 +181,18 @@ class MatrixSyncService:
         self._status_body = body
         room_id = conversation.room_id
 
+        tag = EventTag(kind=RoomEventKind.STATUS, session_id=session_id)
+
         async def post() -> None:
             token = await self._token()
             if self._status_event_id is None:
-                self._status_event_id = await self._client.send_notice(token, room_id, body, txn_id=uuid4().hex)
+                self._status_event_id = await self._client.send_notice(
+                    token, room_id, body, txn_id=tag.transaction_id(), tag=tag
+                )
                 return
-            await self._client.edit_notice(token, room_id, self._status_event_id, body, txn_id=uuid4().hex)
+            await self._client.edit_notice(
+                token, room_id, self._status_event_id, body, txn_id=tag.transaction_id(), tag=tag
+            )
 
         self.pacer.set_status(post)
 
@@ -239,7 +252,7 @@ class MatrixSyncService:
             await self._token(), conversation.room_id, since=state.next_batch, limit=limit
         )
 
-    async def announce(self, body: str) -> None:
+    async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
         """Post a lifecycle notice into the live room, if there is one.
 
         The supervisor's outbound path (`matrix_session.Announce`): it owns session
@@ -250,15 +263,13 @@ class MatrixSyncService:
         if conversation is None:
             logger.info("Matrix: no room bound yet, dropping notice: %s", body)
             return
-        self._queue_notice(conversation.room_id, body)
+        self._queue_notice(conversation.room_id, body, kind)
 
-    def _queue_notice(self, room_id: str, body: str) -> None:
+    def _queue_notice(self, room_id: str, body: str, kind: RoomEventKind) -> None:
+        tag = EventTag(kind=kind)
+
         async def post() -> None:
-            # A fresh transaction ID rather than a derived one: Synapse deduplicates per access
-            # token, the token outlives a restart, and any counter we could derive would reset —
-            # so a notice after a restart would be silently swallowed as a replay of an older
-            # one. Notices have no retry to make idempotent, so there is nothing to trade away.
-            await self._client.send_notice(await self._token(), room_id, body, txn_id=uuid4().hex)
+            await self._client.send_notice(await self._token(), room_id, body, txn_id=tag.transaction_id(), tag=tag)
 
         self.pacer.send(post)
 
@@ -318,7 +329,7 @@ class MatrixSyncService:
             return None
         room = await self._conversations.claim_room(self._config.user_id, adopted)
         logger.info("Matrix: adopted %s from traffic — no room was bound", room)
-        self._queue_notice(room, "adopted this room — Haku had no room bound")
+        self._queue_notice(room, "adopted this room — Haku had no room bound", RoomEventKind.ROOM)
         return room
 
     def _report_holding(self, live_room: str | None, count: int) -> None:
@@ -335,7 +346,7 @@ class MatrixSyncService:
         if self._holding or live_room is None:
             return
         self._holding = True
-        self._queue_notice(live_room, f"holding {count} message(s) until Haku is ready")
+        self._queue_notice(live_room, f"holding {count} message(s) until Haku is ready", RoomEventKind.HOLDING)
 
     async def _run_as_leader(self) -> None:
         """Sync until cancelled. Only ever entered holding the advisory lock."""

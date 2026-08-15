@@ -407,6 +407,30 @@ class TurnStart:
 
 
 @dataclass(frozen=True, slots=True)
+class TurnResumed:
+    """A turn a departed holder opened and asked, and how far its answer had got.
+
+    The three state fields are what `_run_turn`'s locals held when that process died, and they
+    are load-bearing rather than tidy. The runner replays what a console may not have recorded
+    but deliberately **not** the stream deltas (`runner.DELTA_TYPE`) — they are the one class
+    that cannot survive being sent twice — so a resumed turn starting from nothing would write
+    the tail of an answer as a second message and post it into the room beside the first.
+    """
+
+    turn_id: UUID
+    # The assistant message left streaming, and the text already in it. None where the previous
+    # holder had opened no message: either it died before the first delta, or the last one it
+    # saw completed and closed the message it was building.
+    assistant_id: UUID | None
+    streamed: str
+    # Whether the room has already heard something from this turn, so the end-of-turn fallback
+    # does not repeat it. Read from the log rather than remembered, which is why it cannot tell
+    # a message recorded and delivered from one recorded and then lost with the process. It
+    # answers "recorded", and prefers the silence to the double post.
+    spoke: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SessionOutcome:
     """Where a session got to, and why if it ended badly.
 
@@ -527,19 +551,59 @@ class ClaudeChatStore:
                 chat.lease_expires_at = datetime.now(UTC) + ADOPTION_GRACE
                 chat.updated_at = datetime.now(UTC)
 
-    async def abandon_open_turn(self, session_id: UUID) -> UUID | None:
-        """Close whatever turn the previous holder left open, and say which it was.
+    async def adopt_open_turn(self, session_id: UUID) -> TurnResumed | None:
+        """Say what the previous holder's open turn was, and hand back the one worth finishing.
 
-        An adopting console inherits the session, not the exchange: the frames answering that
-        prompt went to a socket that no longer exists. Leaving it open would also wedge the
-        session outright, since `uq_claude_chat_turns_open` permits exactly one and
-        `next_prompt` opens another.
+        An adopting console inherits the session, and — since the sandbox outlived the replica —
+        the exchange with it. "A turn was open" is three different situations, and closing all
+        three was what made a roll mid-turn cost an answer:
+
+        1. **It never asked.** `next_prompt` claims the prompt and opens the turn in one
+           transaction, and `_run_turn` writes it to the CLI afterwards; a replica dying between
+           the two left the prompt claimed, the transcript row marked as handed over, and nothing
+           ever asked — invisible, because the room's answer to a message it will never get is
+           silence. The prompt goes back on the queue and the turn is closed.
+        2. **It finished and nobody wrote that down.** The `result` frame is in the log but
+           `end_turn` never ran. The record already holds the answer, so the turn is closed from
+           it rather than waited on — waiting would be forever, since a recorded frame is a
+           replay the recorder now refuses.
+        3. **It is still running.** Its remaining frames are on their way down the new socket,
+           so the turn stays open and is returned for `_run_turn` to finish.
+
+        Leaving a turn open is only safe because exactly one may be: `uq_claude_chat_turns_open`
+        is what stops `next_prompt` opening a second beside the inherited one.
         """
         async with self._sessions.begin() as db:
-            turn_id = await _open_turn(db, session_id)
-        if turn_id is not None:
-            await self.end_turn(turn_id, TurnOutcome.FAILED)
-        return turn_id
+            turn = await db.scalar(
+                select(ClaudeChatTurn)
+                .where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
+                .with_for_update()
+            )
+            if turn is None:
+                return None
+            turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
+            closing: dict[str, Any] | None = None
+            if not await _prompt_left(db, session_id, first_frame_seq):
+                await _requeue(db, turn_id)
+                await notify(db, ChatEventKind.PROMPT, session_id)
+            elif (closing := await _recorded_result(db, session_id, first_frame_seq)) is None:
+                streaming = await _streaming_assistant(db, session_id)
+                assistant_id, streamed = streaming if streaming is not None else (None, "")
+                return TurnResumed(
+                    turn_id=turn_id,
+                    assistant_id=assistant_id,
+                    streamed=streamed,
+                    spoke=await _said_anything(db, session_id, first_frame_seq),
+                )
+        # Cases 1 and 2. A turn that never asked has no result to close with and no outcome but
+        # failure; one that finished carries its own, which `end_turn` also mines for the cost
+        # and usage the previous holder never got to write.
+        await self.end_turn(
+            turn_id,
+            TurnOutcome.ANSWERED if closing is not None and not closing.get("is_error") else TurnOutcome.FAILED,
+            closing,
+        )
+        return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
         """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
@@ -1060,6 +1124,15 @@ class StarletteTextWebSocket(TextWebSocket):
 # the completed `assistant` frame beside it is recorded like anything else.
 _PARTIAL_FRAME_KIND = "stream_event"
 
+# The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
+# sends `user` frames too, carrying tool results.
+PROMPT_FRAME_KIND = "user"
+
+# The frame that ends a turn, and the one that completes an assistant message. Both are read
+# back out of the log by `adopt_open_turn` to work out what a departed holder had got to.
+RESULT_FRAME_KIND = "result"
+ASSISTANT_FRAME_KIND = "assistant"
+
 
 def _assistant_frame(text: str) -> dict[str, Any]:
     """The frame shape the agent will send, for the one the console stands in for meanwhile.
@@ -1276,7 +1349,14 @@ class RoomSurface(Protocol):
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
 
-    async def deliver(self, room_id: str, text: str) -> None: ...
+    async def deliver(
+        self,
+        room_id: str,
+        text: str,
+        session_id: UUID,
+        message_id: UUID | None = ...,
+        agent_message_id: str | None = ...,
+    ) -> None: ...
 
     async def report(self, room_id: str, detail: str) -> None: ...
 
@@ -1435,11 +1515,12 @@ class ClaudeChatService:
         if authentication == BridgeAuthentication.REJECTED:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
-        # Whatever the previous holder was in the middle of is not ours to finish: its frames
-        # went to a socket that is gone. Closing it is also what keeps the session usable, since
-        # only one turn may be open at a time.
-        if (abandoned := await self._store.abandon_open_turn(session_id)) is not None:
-            logger.warning("Claude chat session %s adopted with turn %s still open", session_id, abandoned)
+        # Whatever the previous holder was in the middle of *is* ours to finish: the sandbox
+        # outlived it, so the rest of that exchange is about to arrive on this socket. What is
+        # left to decide is which of three things its open turn was — `adopt_open_turn`.
+        resumed = await self._store.adopt_open_turn(session_id)
+        if resumed is not None:
+            logger.warning("Claude chat session %s adopted with turn %s still running", session_id, resumed.turn_id)
         # Rendered before the socket is accepted, alongside the other admission failures, so a
         # broken prompt ends the session where the supervisor can see it (and say so in the
         # room) instead of raising past the cleanup below and leaving the claim stranded.
@@ -1509,7 +1590,14 @@ class ClaudeChatService:
                             status = await self._store.status(session_id)
                             if status is None or status in ENDED_SESSION_STATUSES:
                                 break
-                            turn = await self._store.next_prompt(session_id)
+                            # The inherited turn before any new prompt, and once: its remaining
+                            # frames are already on their way, so opening a second turn to take
+                            # them would deliver one exchange's answer into another's bracket —
+                            # which is what routing by session rather than by turn meant.
+                            turn: TurnStart | TurnResumed | None = resumed
+                            resumed = None
+                            if turn is None:
+                                turn = await self._store.next_prompt(session_id)
                             if turn is None:
                                 # Wait for a LISTEN/NOTIFY instead of polling.
                                 await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
@@ -1523,13 +1611,7 @@ class ClaudeChatService:
                             abort_event.clear()
                             try:
                                 await self._run_turn(
-                                    client,
-                                    frames,
-                                    session_id,
-                                    turn.prompt,
-                                    turn_id=turn.turn_id,
-                                    room_id=room_id,
-                                    abort_event=abort_event,
+                                    client, frames, session_id, turn, room_id=room_id, abort_event=abort_event
                                 )
                             except Exception as error:
                                 logger.exception("Claude chat turn failed for session %s", session_id)
@@ -1619,28 +1701,36 @@ class ClaudeChatService:
         client: ClaudeCli,
         frames: AsyncIterator[dict[str, Any]],
         session_id: UUID,
-        prompt: str,
+        turn: TurnStart | TurnResumed,
         *,
-        turn_id: UUID,
         room_id: str | None,
         abort_event: asyncio.Event,
     ) -> None:
-        """Send *prompt* and consume the session's stream until this turn's `result`.
+        """Ask *turn*'s question if it has not been asked, then consume the stream until its `result`.
 
-        *frames* belongs to the session, not to this call — see `handle_runner`. *turn_id* is the
-        turn `next_prompt` opened for this prompt: this call is its span, so it closes it on
-        every exit and is the only thing that does. A turn left open is therefore not a
-        bookkeeping leak — it means no code got to close it, which is what a replica losing its
-        pod mid-exchange looks like from outside.
+        *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
+        turn's span, so it closes it on every exit and is the only thing that does. A turn left
+        open is therefore not a bookkeeping leak — it means no code got to close it, which is
+        what a replica losing its pod mid-exchange looks like from outside, and what the
+        `TurnResumed` variant exists to pick back up.
         """
-        await client.query(prompt)
+        turn_id = turn.turn_id
         assistant_id: UUID | None = None
         streamed = ""
-        saw_assistant_message = False
-        result: dict[str, Any] | None = None
         # Whether anything has been said into the room yet, so the turn's final text is not
         # posted a second time: `result.result` normally repeats the last assistant message.
         spoke = False
+        match turn:
+            case TurnStart():
+                await client.query(turn.prompt)
+            case TurnResumed():
+                # The question was asked by a process that is gone; what is left is the answer,
+                # picked up wherever that process had got to (`adopt_open_turn`).
+                assistant_id, streamed, spoke = turn.assistant_id, turn.streamed, turn.spoke
+        # A resumed turn that has already completed a message must not have a second minted for
+        # it at the end, so this starts where `spoke` does rather than at False.
+        saw_assistant_message = spoke
+        result: dict[str, Any] | None = None
         status = self._turn_status(room_id)
         status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
@@ -1709,14 +1799,17 @@ class ClaudeChatService:
                         # The real frame is already in the log — the recorder wrote it when
                         # the socket delivered it — so the stand-in has nothing to stand for.
                         await self._store.clear_partial_frame(session_id)
-                        assistant_id = None
+                        spoken_id, assistant_id = assistant_id, None
                         streamed = ""
                         # Speak each message as it finishes rather than only the final answer
                         # (R11.1). A turn that says what it is about to do, works, and then
                         # reports back is three messages in the transcript and used to be one in
                         # the room — so the room saw the conclusion and never the reasoning.
                         if said:
-                            await self._deliver_reply(session_id, room_id, said)
+                            # The row and the agent's own id travel with it, so the room event
+                            # states which message it is showing instead of leaving that to be
+                            # inferred from order and timing.
+                            await self._deliver_reply(session_id, room_id, said, spoken_id, _agent_message_id(frame))
                             spoke = True
                     case "result":
                         result = frame
@@ -1769,7 +1862,14 @@ class ClaudeChatService:
             # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
             await status.finish()
 
-    async def _deliver_reply(self, session_id: UUID, room_id: str | None, text: str) -> None:
+    async def _deliver_reply(
+        self,
+        session_id: UUID,
+        room_id: str | None,
+        text: str,
+        message_id: UUID | None = None,
+        agent_message_id: str | None = None,
+    ) -> None:
         """Say *text* into the room, if this session serves one.
 
         Called for each assistant message as it finishes and once more at the turn's end for
@@ -1785,7 +1885,7 @@ class ClaudeChatService:
         if self._room_surface is None or room_id is None:
             return
         try:
-            await self._room_surface.deliver(room_id, text)
+            await self._room_surface.deliver(room_id, text, session_id, message_id, agent_message_id)
         except Exception:
             logger.exception("Reply delivery failed for session %s", session_id)
 
@@ -1941,6 +2041,111 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
         select(ClaudeChatTurn.turn_id).where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
     )
     return turn_id
+
+
+async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> bool:
+    """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
+
+    **The console's own write is the evidence, not the CLI's acknowledgement.** `sent()` records
+    the frame after `channel.write` returns, so its absence means the bytes did not go out; its
+    presence means they did, and from then on the CLI's `command_lifecycle` — the only thing that
+    would say whether the *CLI* has the prompt — may still be sitting in the runner's replay
+    window, unrecorded, because replay does not begin until the socket is accepted and this runs
+    before that. Asking a question the record cannot yet answer would re-ask a prompt the agent
+    already has, which is the worse of the two failures: a duplicate turn instead of a lost one.
+
+    So the ambiguous middle — written to a socket that then died — is deliberately treated as
+    delivered, and what this closes is the window where nothing was written at all.
+    """
+    written = await db.scalar(
+        select(ClaudeChatFrame.frame_seq)
+        .where(
+            ClaudeChatFrame.session_id == session_id,
+            ClaudeChatFrame.frame_seq >= first_frame_seq,
+            ClaudeChatFrame.direction == FrameDirection.TO_AGENT,
+            ClaudeChatFrame.kind == PROMPT_FRAME_KIND,
+        )
+        .limit(1)
+    )
+    return written is not None
+
+
+async def _recorded_result(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> dict[str, Any] | None:
+    """This turn's `result` frame, if its holder recorded one and then died before closing it.
+
+    Its presence means the exchange is over and nothing more is coming: the runner will replay
+    the frame, and `record_frame` will refuse it as one this session already has, so a resumed
+    turn would wait for an end that cannot arrive twice.
+    """
+    payload: dict[str, Any] | None = await db.scalar(
+        select(ClaudeChatFrame.payload)
+        .where(
+            ClaudeChatFrame.session_id == session_id,
+            ClaudeChatFrame.frame_seq >= first_frame_seq,
+            ClaudeChatFrame.direction == FrameDirection.FROM_AGENT,
+            ClaudeChatFrame.kind == RESULT_FRAME_KIND,
+        )
+        .limit(1)
+    )
+    return payload
+
+
+async def _said_anything(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> bool:
+    """Whether this turn has already completed an assistant message.
+
+    `partial` rows are excluded: one is the console's own reconstruction of an answer still
+    streaming, so counting it would read "the room has heard this" off text nothing has sent.
+    """
+    said = await db.scalar(
+        select(ClaudeChatFrame.frame_seq)
+        .where(
+            ClaudeChatFrame.session_id == session_id,
+            ClaudeChatFrame.frame_seq >= first_frame_seq,
+            ClaudeChatFrame.direction == FrameDirection.FROM_AGENT,
+            ClaudeChatFrame.kind == ASSISTANT_FRAME_KIND,
+            ~ClaudeChatFrame.partial,
+        )
+        .limit(1)
+    )
+    return said is not None
+
+
+async def _streaming_assistant(db: AsyncSession, session_id: UUID) -> tuple[UUID, str] | None:
+    """The assistant message still being written, with the text already in it."""
+    message = await db.scalar(
+        select(ClaudeChatMessage)
+        .where(
+            ClaudeChatMessage.session_id == session_id,
+            ClaudeChatMessage.role == ChatMessageRole.ASSISTANT,
+            ClaudeChatMessage.status == ChatMessageStatus.STREAMING,
+        )
+        .order_by(ClaudeChatMessage.created_at.desc())
+    )
+    return None if message is None else (message.message_id, message.content)
+
+
+async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
+    """Put the prompts *turn_id* claimed back where `next_prompt` will find them again.
+
+    Three writes because the claim is recorded in three places, and a prompt left in any of them
+    is one the queue no longer offers: the queue row's `claimed_at`, the transcript row's status,
+    and the link saying this turn answered it — which has to go, or the turn that finally does
+    answer cannot record that it did (`(turn_id, message_id)` is the primary key, and the message
+    half of it would repeat).
+    """
+    message_ids = list(
+        (await db.scalars(select(ClaudeChatTurnPrompt.message_id).where(ClaudeChatTurnPrompt.turn_id == turn_id))).all()
+    )
+    if not message_ids:
+        return
+    now = datetime.now(UTC)
+    for message in await db.scalars(select(ClaudeChatMessage).where(ClaudeChatMessage.message_id.in_(message_ids))):
+        message.status = ChatMessageStatus.PENDING
+        message.updated_at = now
+    for prompt in await db.scalars(select(ClaudeChatPrompt).where(ClaudeChatPrompt.message_id.in_(message_ids))):
+        prompt.claimed_at = None
+    await db.execute(delete(ClaudeChatTurnPrompt).where(ClaudeChatTurnPrompt.turn_id == turn_id))
+    logger.warning("Claude chat turn %s never asked its prompt; re-queued %d", turn_id, len(message_ids))
 
 
 def _session_view(

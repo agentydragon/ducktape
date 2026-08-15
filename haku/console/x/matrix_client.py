@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any
+from uuid import UUID, uuid4
 
 from nio import AsyncClient, AsyncClientConfig, ErrorResponse, Response
 from nio.api import MessageDirection
@@ -37,6 +40,7 @@ from nio.responses import (
     SyncResponse,
     WhoamiResponse,
 )
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from haku.console.x.matrix_markdown import to_formatted_body
 
@@ -82,6 +86,98 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 MAX_RATE_LIMIT_RETRIES = 2
 
 
+# The console's own key inside an event's `content`. Reverse-DNS on the deployment's domain,
+# which is the Matrix convention for a field outside the spec's namespace.
+HAKU_CONTENT_KEY = "works.allegedly.haku"
+
+
+class RoomEventKind(StrEnum):
+    """What the console meant by an event it sent.
+
+    Every one of these used to be inferred. "Is this conversational" was read off the msgtype —
+    true only because notices happen to be the things worth excluding — and "which transcript row
+    is this" could not be asked at all. A kind says it instead.
+    """
+
+    REPLY = "reply"
+    STATUS = "status"
+    NARRATION = "narration"
+    LIFECYCLE = "lifecycle"
+    HOLDING = "holding"
+    ROOM = "room"
+
+
+class EventTag(BaseModel):
+    """What the console states about an event it is sending.
+
+    **Ids and kinds only.** This room is public and federated, so the content travels to every
+    server in it and is not ours to take back; a tag that carried text would be publishing the
+    same thing twice, in a field nobody renders. Redaction strips it along with the rest of
+    `content`, which is the behaviour a status line's retirement wants anyway.
+
+    `message_id` is the transcript row and `agent_message_id` is the agent's own `msg_…`. Both are
+    absent on everything that is not a reply, because nothing else corresponds to a row.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    kind: RoomEventKind
+    session_id: UUID | None = None
+    message_id: UUID | None = None
+    agent_message_id: str | None = None
+
+    def content(self) -> dict[str, Any]:
+        """The tag as it goes on the wire, with absent fields left out rather than sent null.
+
+        `mode="json"` is what turns the UUIDs into strings, so this is the wire form rather than
+        the Python one; `exclude_none` is what keeps an absent field absent.
+        """
+        return self.model_dump(mode="json", exclude_none=True)
+
+    def transaction_id(self) -> str:
+        """What to send this event under, so a re-send of the same thing is not a second event.
+
+        **Derived where the event has an identity, fresh where it does not**, which sorts the
+        senders exactly as they want sorting. A reply names a transcript row, and re-posting that
+        row is always a mistake — so the row's id is the transaction, and the homeserver refuses
+        the duplicate on our behalf. A status edit and a lifecycle notice name no row: each is a
+        genuinely new event, and deriving one would be a way to lose it.
+
+        Two facts make the derived half work, both of them Synapse's rather than the spec's.
+        Its transaction cache keys on `(path, user, device_id)` — the **device**, not the access
+        token — and `MatrixClient` pins `device_id` at construction, so the replacement replica
+        that re-sends is the same device as the one that died. And an entry lives between 30 and
+        60 minutes, far longer than the seconds a console roll takes. Outside that window this
+        degrades to what it replaced, which is why it is a second line of defence and not the
+        first: the first is `frame_uid`, and a replayed `assistant` frame is dropped before any
+        of this is reached.
+
+        Impure by design and called once per send. It cannot be a field, because the fresh half
+        must differ between two events carrying an otherwise identical tag.
+        """
+        return self.message_id.hex if self.message_id is not None else uuid4().hex
+
+    @classmethod
+    def parse(cls, content: dict[str, Any]) -> EventTag | None:
+        """Read a tag off an event, or None for anything this console did not tag.
+
+        None covers two different things and deliberately does not distinguish them: an event
+        somebody else sent, and one this console sent before tagging existed. Neither can be
+        interpreted, so both fall back to the msgtype and sender rules that predate this.
+
+        `extra="ignore"` rather than `forbid`, for the same reason the bridge envelope ignores
+        them: a newer console adding a field must not make its events unreadable here. An unknown
+        `kind` is the opposite case and does fail — a kind is what this is dispatched on.
+        """
+        if not isinstance(stated := content.get(HAKU_CONTENT_KEY), dict):
+            return None
+        try:
+            return cls.model_validate(stated)
+        except ValidationError:
+            logger.warning("Matrix: unreadable Haku tag %r", stated)
+            return None
+
+
 class MatrixError(Exception):
     """The homeserver returned an error for a call we made.
 
@@ -113,6 +209,8 @@ class InboundMessage:
     sender: str
     body: str
     origin_server_ts: int
+    # Present only on events this console sent since tagging landed; see `EventTag.parse`.
+    tag: EventTag | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +226,15 @@ class SyncResult:
     next_batch: str
     messages: tuple[InboundMessage, ...]
     invites: tuple[Invite, ...]
+
+
+def _is_conversational(message: InboundMessage) -> bool:
+    """Whether *message* is part of the conversation rather than the console talking about it.
+
+    An untagged event is the operator's, or predates tagging — either way the msgtype rule that
+    got it this far is the only reading available, and it already said yes.
+    """
+    return message.tag is None or message.tag.kind is RoomEventKind.REPLY
 
 
 def _unwrap[R: Response](response: Response, expected: type[R]) -> R:
@@ -201,9 +308,11 @@ class MatrixClient:
         conversation is not context (R3.3a). Same room, same events, so the two read paths
         cannot share a filter.
 
-        Lifecycle notices are excluded for free: the console sends them as `m.notice`, which
-        nio parses as `RoomMessageNotice`, a different class from the `RoomMessageText` this
-        keeps. Re-awakening a session with its own status chatter would be noise.
+        Lifecycle notices are excluded twice over. They go out as `m.notice`, which nio parses
+        as `RoomMessageNotice` — a different class from the `RoomMessageText` this keeps — and
+        they now also carry a kind that says they are not the conversation. The msgtype was
+        doing that job by coincidence: it is true only for as long as everything worth excluding
+        happens to be a notice, which is a property of today's senders rather than a rule.
 
         `since` is a `/sync` watermark, which is also a valid `/messages` pagination token —
         so this reads back from wherever the loop has got to, with no second position to keep.
@@ -228,7 +337,12 @@ class MatrixClient:
                 ),
                 RoomMessagesResponse,
             )
-            recent.extend(self._inbound(room_id, event) for event in page.chunk if isinstance(event, RoomMessageText))
+            recent.extend(
+                message
+                for event in page.chunk
+                if isinstance(event, RoomMessageText)
+                if _is_conversational(message := self._inbound(room_id, event))
+            )
             # `end` is absent at the start of the room's history: there is no earlier page to ask
             # for, and asking again would re-read this one forever.
             if len(recent) >= limit or not page.chunk or page.end is None:
@@ -237,26 +351,27 @@ class MatrixClient:
         recent.reverse()
         return tuple(recent[-limit:] if len(recent) > limit else recent)
 
-    async def send_text(self, token: str, room_id: str, body: str, txn_id: str) -> str:
+    async def send_text(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         """Send Haku's reply, rendering its Markdown for clients that display HTML.
 
         `body` stays the Markdown source: it is the spec's fallback for clients that show no
         formatting, and it is what a plain-text reader should see (R11.7).
 
         `txn_id` makes the send idempotent: a retry with the same value is deduplicated by
-        the homeserver rather than posting twice.
+        the homeserver rather than posting twice. `EventTag.transaction_id` is where a caller
+        gets one, and says which events have a value worth repeating.
         """
-        return await self._send(token, room_id, "m.text", body, txn_id, formatted=to_formatted_body(body))
+        return await self._send(token, room_id, "m.text", body, txn_id, tag, formatted=to_formatted_body(body))
 
-    async def send_notice(self, token: str, room_id: str, body: str, txn_id: str) -> str:
+    async def send_notice(self, token: str, room_id: str, body: str, txn_id: str, tag: EventTag) -> str:
         """Send an `m.notice`, returning its event ID.
 
         Lifecycle and status messages are notices rather than plain text (R7) so clients
         style them apart from Haku's answers and bots ignore them by convention.
         """
-        return await self._send(token, room_id, "m.notice", body, txn_id)
+        return await self._send(token, room_id, "m.notice", body, txn_id, tag)
 
-    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str) -> None:
+    async def edit_notice(self, token: str, room_id: str, event_id: str, body: str, txn_id: str, tag: EventTag) -> None:
         """Replace an earlier notice in place, rather than posting a second one.
 
         This is what lets a turn have **one** status line instead of a line per step (R6.5).
@@ -266,7 +381,9 @@ class MatrixClient:
         than the new text alone.
         """
         self._client.access_token = token
-        new_content = {"msgtype": "m.notice", "body": body}
+        # The tag rides on both halves: `m.new_content` is what a client that understands the
+        # edit renders, and the outer content is what one that does not falls back to reading.
+        new_content: dict[str, Any] = {"msgtype": "m.notice", "body": body, HAKU_CONTENT_KEY: tag.content()}
         _unwrap(
             await self._client.room_send(
                 room_id,
@@ -304,10 +421,17 @@ class MatrixClient:
         _unwrap(await self._client.room_redact(room_id, event_id, reason=reason), RoomRedactResponse)
 
     async def _send(
-        self, token: str, room_id: str, msgtype: str, body: str, txn_id: str, formatted: str | None = None
+        self,
+        token: str,
+        room_id: str,
+        msgtype: str,
+        body: str,
+        txn_id: str,
+        tag: EventTag,
+        formatted: str | None = None,
     ) -> str:
         self._client.access_token = token
-        content: dict[str, str] = {"msgtype": msgtype, "body": body}
+        content: dict[str, Any] = {"msgtype": msgtype, "body": body, HAKU_CONTENT_KEY: tag.content()}
         if formatted is not None:
             content |= {"format": "org.matrix.custom.html", "formatted_body": formatted}
         response = _unwrap(
@@ -378,4 +502,5 @@ class MatrixClient:
             sender=event.sender,
             body=event.body,
             origin_server_ts=event.server_timestamp,
+            tag=EventTag.parse(event.source.get("content", {})),
         )

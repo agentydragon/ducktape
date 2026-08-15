@@ -307,6 +307,14 @@ class _FakeCli:
 
     async def query(self, prompt: str) -> None:
         self.prompts.append(prompt)
+        self.replay()
+
+    def replay(self) -> None:
+        """Deliver the script with nothing having been asked, as the runner's replay window does.
+
+        A resumed turn asks no question — its question was asked by a process that is gone — so a
+        double that only speaks when spoken to could not stand in for one.
+        """
         for frame in self.script:
             self._queue.put_nowait(frame)
 
@@ -344,13 +352,7 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 
     client = _FakeCli(_TOOL_USE_SCRIPT)
     await chat_service._run_turn(
-        cast(Any, client),
-        client.frames().__aiter__(),
-        view.session_id,
-        turn.prompt,
-        turn_id=turn.turn_id,
-        room_id=None,
-        abort_event=asyncio.Event(),
+        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
 
     messages = [
@@ -544,11 +546,9 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
         )
 
 
-async def test_adoption_closes_the_turn_the_previous_holder_left_open(
-    chat_store, chat_service, recording_claims, operator_id
-) -> None:
-    """The frames answering that prompt went to a socket that no longer exists — and one open
-    turn per session is a schema property, so leaving it would wedge the session outright.
+async def test_adoption_inherits_a_turn_still_running(chat_store, chat_service, recording_claims, operator_id) -> None:
+    """The sandbox outlived the replica, so the rest of that exchange is still coming. Closing the
+    turn is what used to lose it; it stays open and comes back for `_run_turn` to finish.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
@@ -556,11 +556,97 @@ async def test_adoption_closes_the_turn_the_previous_holder_left_open(
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     started = await chat_store.next_prompt(session_id)
     assert started is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
 
-    assert await chat_store.abandon_open_turn(session_id) == started.turn_id
+    resumed = await chat_store.adopt_open_turn(session_id)
+
+    assert resumed is not None
+    assert resumed.turn_id == started.turn_id
     [turn] = await chat_store.list_turns(str(session_id), limit=5)
-    assert turn.outcome == TurnOutcome.FAILED
-    assert await chat_store.abandon_open_turn(session_id) is None, "nothing left open to abandon"
+    assert turn.ended_at is None, "an inherited turn is finished by whoever adopts it, not closed here"
+
+
+async def test_adoption_picks_the_answer_up_where_it_stopped(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The runner replays what a console may not have recorded but never the deltas, so a resumed
+    turn that started from an empty string would write the tail of the answer as a second message.
+    """
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    assert await chat_store.next_prompt(session_id) is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    assistant_id = await chat_store.begin_assistant(session_id)
+    await chat_store.update_assistant(session_id, assistant_id, "we were half way through")
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+
+    assert resumed is not None
+    assert (resumed.assistant_id, resumed.streamed) == (assistant_id, "we were half way through")
+    assert not resumed.spoke, "nothing completed, so the room has heard nothing to repeat"
+
+
+async def test_adoption_closes_a_turn_whose_result_nobody_wrote_down(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The exchange is over and its `result` is in the log. Waiting for it would wait forever: the
+    runner replays that frame and `record_frame` refuses it as one this session already has.
+    """
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    assert await chat_store.next_prompt(session_id) is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(
+        session_id,
+        FrameDirection.FROM_AGENT,
+        "result",
+        {"type": "result", "uuid": "res-1", "total_cost_usd": 0.5, "duration_ms": 1200},
+    )
+
+    assert await chat_store.adopt_open_turn(session_id) is None
+
+    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    assert (turn.outcome, turn.cost_usd, turn.duration_ms) == (TurnOutcome.ANSWERED, 0.5, 1200)
+
+
+async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """`next_prompt` claims the prompt; `_run_turn` writes it afterwards. A replica dying between
+    the two asked nothing, so the prompt is owed a second offer rather than a silent burial.
+    """
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    claimed = await chat_store.next_prompt(session_id)
+    assert claimed is not None
+
+    assert await chat_store.adopt_open_turn(session_id) is None, "nothing to resume; nothing was asked"
+
+    reoffered = await chat_store.next_prompt(session_id)
+    assert reoffered is not None, "a prompt that never left is still waiting to be asked"
+    assert reoffered.message_id == claimed.message_id
+    assert reoffered.prompt == "what were we doing"
+    assert reoffered.turn_id != claimed.turn_id
+
+
+async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, recording_claims, operator_id) -> None:
+    """The agent has it and the runner will replay its answer, so re-offering would ask twice."""
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    assert await chat_store.next_prompt(session_id) is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+
+    assert await chat_store.adopt_open_turn(session_id) is not None
+
+    assert await chat_store.next_prompt(session_id) is None, "the queue has nothing; the turn has it"
 
 
 async def test_terminal_runner_retry_deletes_its_stale_claim(
@@ -850,18 +936,29 @@ class _RecordingRoomSurface:
 
     def __init__(self) -> None:
         self.delivered: list[str] = []
+        # What each delivery said it was: the transcript row and the agent's own id, which the
+        # room event now states rather than leaving to be matched by position.
+        self.tagged: list[tuple[UUID | None, str | None]] = []
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return "you are Haku"
 
-    async def deliver(self, room_id: str, text: str) -> None:
+    async def deliver(
+        self,
+        room_id: str,
+        text: str,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        agent_message_id: str | None = None,
+    ) -> None:
         assert room_id == ROOM
         self.delivered.append(text)
+        self.tagged.append((message_id, agent_message_id))
 
     async def report(self, room_id: str, detail: str) -> None:
         return None
 
-    async def show_status(self, room_id: str, text: str) -> None:
+    async def show_status(self, room_id: str, text: str, session_id: UUID | None = None) -> None:
         return None
 
     async def clear_status(self, room_id: str) -> None:
@@ -923,12 +1020,55 @@ async def _turn_into_a_room(
             cast(Any, client),
             client.frames().__aiter__(),
             view.session_id,
-            turn.prompt,
-            turn_id=turn.turn_id,
+            turn,
             room_id=ROOM,
             abort_event=abort_event or asyncio.Event(),
         )
     return room.delivered
+
+
+async def test_a_resumed_turn_finishes_the_answer_it_inherited(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """The whole point of routing by turn: the replacement replica finishes the exchange the dead
+    one started, in the message it started, and the room hears the answer once."""
+    room = _RecordingRoomSurface()
+    service = ClaudeChatService(
+        runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
+    )
+    view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
+    session_id = view.session_id
+    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    # What the previous holder got through before its pod went: the prompt written, and half an
+    # answer streamed into a message it never closed.
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    assistant_id = await chat_store.begin_assistant(session_id)
+    await chat_store.update_assistant(session_id, assistant_id, "because the ")
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    # Only what the runner replays: the deltas already seen are not re-sent, so everything
+    # before "disk was full" reaches this process solely through the resumed state.
+    client = _FakeCli([_assistant({"type": "text", "text": "because the disk was full"}), _result("done")])
+    client.replay()
+    async with asyncio.timeout(30):
+        await service._run_turn(
+            cast(Any, client),
+            client.frames().__aiter__(),
+            session_id,
+            resumed,
+            room_id=ROOM,
+            abort_event=asyncio.Event(),
+        )
+
+    assert room.delivered == ["because the disk was full"], "one delivery, not the answer twice"
+    assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
+    assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
+    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    assert (turn.turn_id, turn.outcome) == (str(started.turn_id), TurnOutcome.ANSWERED)
 
 
 async def test_the_room_hears_each_assistant_message_as_it_finishes(
@@ -1008,13 +1148,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     )
 
     await chat_service._run_turn(
-        cast(Any, client),
-        client.frames().__aiter__(),
-        view.session_id,
-        turn.prompt,
-        turn_id=turn.turn_id,
-        room_id=None,
-        abort_event=asyncio.Event(),
+        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
     # Recorded by the real socket wrapper in production; here the turn wrote none of its own, so
     # the upper bound is the frame that predates it and the range is honestly empty.
@@ -1046,13 +1180,7 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
         ]
     )
     await chat_service._run_turn(
-        cast(Any, client),
-        client.frames().__aiter__(),
-        view.session_id,
-        turn.prompt,
-        turn_id=turn.turn_id,
-        room_id=None,
-        abort_event=asyncio.Event(),
+        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
     # As the CLI sends them: a result is a `user` frame, and one call is left unanswered.
     await chat_store.record_frame(
@@ -1094,13 +1222,7 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
     frame = _assistant(asked) | {"message": {"role": "assistant", "id": "msg_01", "content": [asked]}}
     client = _FakeCli([frame, _result("done")])
     await chat_service._run_turn(
-        cast(Any, client),
-        client.frames().__aiter__(),
-        view.session_id,
-        turn.prompt,
-        turn_id=turn.turn_id,
-        room_id=None,
-        abort_event=asyncio.Event(),
+        cast(Any, client), client.frames().__aiter__(), view.session_id, turn, room_id=None, abort_event=asyncio.Event()
     )
     # The frames the recorder would have written, plus the answer, which is a `user` frame.
     await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, frame["type"], frame)

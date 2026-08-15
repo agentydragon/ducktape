@@ -92,6 +92,7 @@ py_library(
     deps = [
         ":matrix_markdown",
         "@pypi//matrix_nio",
+        "@pypi//pydantic",
     ],
 )
 

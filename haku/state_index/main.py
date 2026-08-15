@@ -48,7 +48,7 @@ def _embedder() -> OpenAIEmbedder:
         AsyncOpenAI(
             base_url=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_URL", "http://localhost:11434/v1"), api_key="not-used"
         ),
-        model=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_MODEL", "qwen3-embedding:0.6b"),
+        model=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_MODEL", "qwen3-embedding:4b"),
         query_instruction=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_QUERY_INSTRUCTION", ""),
     )
 

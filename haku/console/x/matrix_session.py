@@ -34,7 +34,7 @@ from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
 from haku.console.x.claude_chat import REPLICA, ClaudeChatService, ClaudeChatStore, MatrixSession
-from haku.console.x.matrix_client import InboundMessage
+from haku.console.x.matrix_client import EventTag, InboundMessage, RoomEventKind
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -74,11 +74,11 @@ class RoomChannel(Protocol):
 
     async def recent_history(self, limit: int) -> Sequence[InboundMessage]: ...
 
-    async def announce(self, body: str) -> None: ...
+    async def announce(self, body: str, kind: RoomEventKind = ...) -> None: ...
 
-    async def reply(self, body: str) -> None: ...
+    async def reply(self, body: str, tag: EventTag) -> None: ...
 
-    async def show_status(self, body: str) -> None: ...
+    async def show_status(self, body: str, session_id: UUID | None = ...) -> None: ...
 
     async def set_typing(self, active: bool) -> None: ...
 
@@ -230,23 +230,42 @@ class MatrixSurface:
             )
         )
 
-    async def deliver(self, room_id: str, text: str) -> None:
-        """Forward a finished turn's answer into the room (R11.1)."""
+    async def deliver(
+        self,
+        room_id: str,
+        text: str,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        agent_message_id: str | None = None,
+    ) -> None:
+        """Forward a finished turn's answer into the room (R11.1).
+
+        The ids travel as a tag on the event, so the room says which transcript row it is showing
+        rather than leaving that to be matched by position and timing.
+        """
         del room_id  # The reply channel is already bound to the one room this console services.
         if not (body := text.strip()):
             logger.warning("Matrix: a turn finished with no text to send")
             return
-        await self._room.reply(body)
+        await self._room.reply(
+            body,
+            EventTag(
+                kind=RoomEventKind.REPLY,
+                session_id=session_id,
+                message_id=message_id,
+                agent_message_id=agent_message_id,
+            ),
+        )
 
     async def report(self, room_id: str, detail: str) -> None:
         """Narrate the sandbox's setup into the room (R7.1)."""
         del room_id
-        await self._room.announce(detail)
+        await self._room.announce(detail, RoomEventKind.NARRATION)
 
-    async def show_status(self, room_id: str, text: str) -> None:
+    async def show_status(self, room_id: str, text: str, session_id: UUID | None = None) -> None:
         """Say what the turn is doing now, on the room's one status line (R6.2)."""
         del room_id
-        await self._room.show_status(text)
+        await self._room.show_status(text, session_id)
 
     async def clear_status(self, room_id: str) -> None:
         """Retire that line once the turn is over, however it ended (R6.5)."""
