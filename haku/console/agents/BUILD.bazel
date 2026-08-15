@@ -50,6 +50,10 @@ py_test(
     name = "test_authorization",
     size = "medium",
     srcs = ["test_authorization.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
     requires_docker = True,
     deps = [
         ":authorization",

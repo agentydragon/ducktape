@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, event, func, select, text
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -67,10 +67,21 @@ from haku.console.operator_identity import (
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
-from util.testing.postgres import force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container as _postgres_container
+from third_party.containers.rlocations import PGVECTOR_PG18
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import start_postgres_container
 
-postgres_container = _postgres_container
+
+@pytest.fixture(scope="session")
+def postgres_container() -> Any:
+    """Postgres **with pgvector**: this file migrates a fresh database to head, and 0036 creates
+    `vector` columns. The deployed database gets the extension from CNPG's `Database` CR."""
+    container = start_postgres_container(PGVECTOR_PG18)
+    try:
+        yield container
+    finally:
+        container.stop()
+
 
 _BROWSER_ISSUER = "https://auth.test/browser/"
 _MCP_ISSUER = "https://auth.test/mcp/"
@@ -181,15 +192,10 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     suffix = uuid4().hex[:8]
     base = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:35].rstrip("_")
     db_name = f"{base or 'agent_authority'}_{suffix}"
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        # PostgreSQL database creation is administrative DDL performed before any mapped schema exists.
-        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin_engine.dispose()
-    url = postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
-    apply_migrations(url)
+    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
+    apply_migrations(db_url)
 
-    yield url
+    yield db_url
 
     force_drop_database_sync(postgres_admin_url, db_name)
 

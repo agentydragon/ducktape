@@ -4,6 +4,10 @@ The index lives in the console's own Postgres — the conversations corpus is bu
 `claude_chat_messages`, so it could not live anywhere else — and this is where that plumbing sits
 rather than in `haku/state_index`, which stays a library with no opinion about who runs it.
 
+This is also where the tool surface's vocabulary meets the storage's: `haku_state` and
+`conversations` are what a caller asks for, `git` and `chat` are how they are stored, and the
+mapping lives here and nowhere else.
+
 **Query embedding runs off the event loop.** It is CPU work in-process (onnxruntime, no network,
 because an embedder that is sometimes unreachable would take search down and not just indexing),
 and a few tens of milliseconds on the shared loop is the console's whole latency budget for an
@@ -19,15 +23,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
+from haku.console.database_schema import ClaudeChatSession
 from haku.console.tools.state_index import (
-    ChatMessage,
     ConversationHit,
     ConversationsStatus,
+    HakuStateHit,
+    HakuStateStatus,
     IndexStatus,
-    NoteHit,
-    NoteSearchResult,
-    NotesStatus,
+    SearchCorpus,
 )
 from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION
 from haku.state_index.chat_source import session_shapes
@@ -40,7 +43,6 @@ from haku.state_index.store import (
     chunk_counts,
     current_git_state,
     git_index_summary,
-    read_indexed_text,
     search_chat,
     search_git,
 )
@@ -53,62 +55,74 @@ class PostgresIndexSearcher:
         self._sessions = sessions
         self._embedder = embedder
 
-    async def _embed_query(self, query: str) -> list[float]:
-        return await asyncio.to_thread(self._embedder.embed_query, query)
-
-    async def search_notes(self, query: str, *, limit: int, path_prefix: str | None) -> NoteSearchResult | None:
-        embedding = await self._embed_query(query)
+    async def search(
+        self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
+    ) -> list[HakuStateHit | ConversationHit]:
+        embedding = await asyncio.to_thread(self._embedder.embed_query, query)
+        hits: list[HakuStateHit | ConversationHit] = []
         async with self._sessions() as session:
-            state = await current_git_state(session)
-            if state is None:
-                return None
-            hits = await search_git(
-                session,
-                embedding,
-                chunker_version=CHUNKER_VERSION,
-                model_key=self._embedder.model_key,
-                limit=limit,
-                path_prefix=path_prefix,
-            )
-        return NoteSearchResult(
-            commit_sha=state.commit_sha,
-            branch=state.branch,
-            indexed_at=state.synced_at,
-            hits=[
-                NoteHit(
-                    path=hit.path,
-                    blob_sha=hit.blob_sha,
-                    byte_start=hit.byte_start,
-                    byte_end=hit.byte_end,
-                    snippet=hit.text,
-                    score=hit.score,
-                )
-                for hit in hits
-            ],
+            if corpus in (SearchCorpus.HAKU_STATE, SearchCorpus.ALL):
+                hits.extend(await self._haku_state(session, embedding, limit=limit, path_prefix=path_prefix))
+            if corpus in (SearchCorpus.CONVERSATIONS, SearchCorpus.ALL):
+                hits.extend(await self._conversations(session, embedding, limit=limit, session_id=session_id))
+        # Both corpora are embedded by the same model, so their cosine scores are comparable and a
+        # single ranking is meaningful. Each corpus was asked for `limit`, so `all` re-cuts here
+        # rather than returning twice as much as the caller asked for.
+        hits.sort(key=lambda hit: hit.score, reverse=True)
+        return hits[:limit]
+
+    async def _haku_state(
+        self, session: AsyncSession, embedding: list[float], *, limit: int, path_prefix: str | None
+    ) -> list[HakuStateHit]:
+        state = await current_git_state(session)
+        if state is None:
+            return []
+        found = await search_git(
+            session,
+            embedding,
+            chunker_version=CHUNKER_VERSION,
+            model_key=self._embedder.model_key,
+            limit=limit,
+            path_prefix=path_prefix,
         )
+        # `commit_sha` on every hit rather than once alongside them: a hit is a pointer, and a
+        # pointer that needs a second field from its envelope to be resolvable is half a pointer.
+        return [
+            HakuStateHit(
+                path=hit.path,
+                commit_sha=state.commit_sha,
+                blob_sha=hit.blob_sha,
+                byte_start=hit.byte_start,
+                byte_end=hit.byte_end,
+                snippet=hit.text,
+                score=hit.score,
+            )
+            for hit in found
+        ]
 
-    async def search_conversations(self, query: str, *, limit: int, session_id: UUID | None) -> list[ConversationHit]:
-        embedding = await self._embed_query(query)
-        async with self._sessions() as session:
-            hits = await search_chat(
-                session,
-                embedding,
-                chunker_version=CHAT_CHUNKER_VERSION,
-                model_key=self._embedder.model_key,
-                limit=limit,
-                session_id=session_id,
-            )
-            # The room a hit came from is the console's own binding, not the index's: the index
-            # knows sessions, and which room a session served is `claude_chat_sessions.room_id`.
-            rooms = dict(
-                (
-                    await session.execute(
-                        select(ClaudeChatSession.session_id, ClaudeChatSession.room_id).where(
-                            ClaudeChatSession.session_id.in_({hit.session_id for hit in hits})
-                        )
+    async def _conversations(
+        self, session: AsyncSession, embedding: list[float], *, limit: int, session_id: UUID | None
+    ) -> list[ConversationHit]:
+        found = await search_chat(
+            session,
+            embedding,
+            chunker_version=CHAT_CHUNKER_VERSION,
+            model_key=self._embedder.model_key,
+            limit=limit,
+            session_id=session_id,
+        )
+        # The room a hit came from is the console's own binding, not the index's: the index knows
+        # sessions, and which room a session served is `claude_chat_sessions.room_id`.
+        rooms: dict[UUID, str | None] = {
+            row.session_id: row.room_id
+            for row in (
+                await session.execute(
+                    select(ClaudeChatSession.session_id, ClaudeChatSession.room_id).where(
+                        ClaudeChatSession.session_id.in_({hit.session_id for hit in found})
                     )
-                ).all()
-            )
+                )
+            ).all()
+        }
         return [
             ConversationHit(
                 session_id=str(hit.session_id),
@@ -119,50 +133,18 @@ class PostgresIndexSearcher:
                 snippet=hit.text,
                 score=hit.score,
             )
-            for hit in hits
-        ]
-
-    async def read_note(self, path: str) -> str | None:
-        async with self._sessions() as session:
-            return await read_indexed_text(
-                session, path, chunker_version=CHUNKER_VERSION, model_key=self._embedder.model_key
-            )
-
-    async def read_messages(self, message_ids: list[UUID]) -> list[ChatMessage]:
-        async with self._sessions() as session:
-            rows = await session.execute(
-                select(
-                    ClaudeChatMessage.message_id,
-                    ClaudeChatMessage.session_id,
-                    ClaudeChatMessage.role,
-                    ClaudeChatMessage.content,
-                    ClaudeChatMessage.created_at,
-                )
-                .where(ClaudeChatMessage.message_id.in_(message_ids))
-                # Not the caller's order: these are an excerpt of a conversation, and reading them
-                # out of sequence would misrepresent who answered whom.
-                .order_by(ClaudeChatMessage.created_at, ClaudeChatMessage.message_id)
-            )
-        return [
-            ChatMessage(
-                message_id=str(row.message_id),
-                session_id=str(row.session_id),
-                role=row.role,
-                content=row.content,
-                created_at=row.created_at,
-            )
-            for row in rows
+            for hit in found
         ]
 
     async def status(self) -> IndexStatus:
         model_key = self._embedder.model_key
         async with self._sessions() as session:
             git_state = await current_git_state(session)
-            notes: NotesStatus | None = None
+            haku_state: HakuStateStatus | None = None
             if git_state is not None:
                 summary = await git_index_summary(session, chunker_version=CHUNKER_VERSION, model_key=model_key)
                 counts = await chunk_counts(session, Corpus.GIT, chunker_version=CHUNKER_VERSION, model_key=model_key)
-                notes = NotesStatus(
+                haku_state = HakuStateStatus(
                     commit_sha=git_state.commit_sha,
                     branch=git_state.branch,
                     indexed_at=git_state.synced_at,
@@ -196,7 +178,7 @@ class PostgresIndexSearcher:
         )
         newest_waiting = max((shape.last_message_at for shape in stale), default=None)
         return IndexStatus(
-            notes=notes,
+            haku_state=haku_state,
             conversations=ConversationsStatus(
                 sessions=chat_summary.sessions,
                 chunks=chat_summary.chunks,

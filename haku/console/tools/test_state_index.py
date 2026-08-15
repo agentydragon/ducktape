@@ -1,8 +1,8 @@
 """Tests for the in-process `haku_index` MCP server (build_mcp).
 
-What matters here is the contract with the caller: search hands back a pointer, and the pointer
-resolves. A hit that named a path without the blob sha, or messages the read tool would not take,
-would still look fine in a schema and be useless in a session.
+What matters here is the contract with the caller: a hit is a pointer, and it carries everything
+needed to resolve it somewhere else. A note hit that named a path without the commit it is at
+would look fine in a schema and send a reader to whatever that path holds today.
 """
 
 from __future__ import annotations
@@ -10,19 +10,17 @@ from __future__ import annotations
 import datetime
 from uuid import UUID
 
-import pytest
 import pytest_bazel
 from fastmcp import Client
 
 from haku.console.tools.state_index import (
     HAKU_INDEX_SERVER_ID,
-    ChatMessage,
     ConversationHit,
     ConversationsStatus,
+    HakuStateHit,
+    HakuStateStatus,
     IndexStatus,
-    NoteHit,
-    NoteSearchResult,
-    NotesStatus,
+    SearchCorpus,
     build_mcp,
 )
 
@@ -31,52 +29,48 @@ SESSION = UUID("11111111-1111-1111-1111-111111111111")
 MESSAGES = [UUID("22222222-2222-2222-2222-222222222222"), UUID("33333333-3333-3333-3333-333333333333")]
 
 
+def _haku_state(score: float) -> HakuStateHit:
+    return HakuStateHit(
+        path="notes/intake.md",
+        commit_sha="deadbeef",
+        blob_sha="cafe1234",
+        byte_start=0,
+        byte_end=40,
+        snippet="how to file an intake item",
+        score=score,
+    )
+
+
+def _conversation(score: float) -> ConversationHit:
+    return ConversationHit(
+        session_id=str(SESSION),
+        room_id="!room:allegedly.works",
+        message_ids=[str(message_id) for message_id in MESSAGES],
+        first_message_at=NOW,
+        last_message_at=NOW,
+        snippet="user: what about the egress fence",
+        score=score,
+    )
+
+
 class _Searcher:
     """An `IndexSearcher` over fixed answers, recording how it was queried."""
 
-    def __init__(self, *, notes: NoteSearchResult | None = None, note_text: str | None = "note body") -> None:
-        self.notes = notes
-        self.note_text = note_text
+    def __init__(self, *hits: HakuStateHit | ConversationHit) -> None:
+        self.hits = list(hits)
         self.queries: list[dict] = []
 
-    async def search_notes(self, query: str, *, limit: int, path_prefix: str | None) -> NoteSearchResult | None:
-        self.queries.append({"query": query, "limit": limit, "path_prefix": path_prefix})
-        return self.notes
-
-    async def search_conversations(self, query: str, *, limit: int, session_id: UUID | None) -> list[ConversationHit]:
-        self.queries.append({"query": query, "limit": limit, "session_id": session_id})
-        return [
-            ConversationHit(
-                session_id=str(SESSION),
-                room_id="!room:allegedly.works",
-                message_ids=[str(message_id) for message_id in MESSAGES],
-                first_message_at=NOW,
-                last_message_at=NOW,
-                snippet="user: what about the egress fence",
-                score=0.8,
-            )
-        ]
-
-    async def read_note(self, path: str) -> str | None:
-        self.queries.append({"path": path})
-        return self.note_text
-
-    async def read_messages(self, message_ids: list[UUID]) -> list[ChatMessage]:
-        self.queries.append({"message_ids": message_ids})
-        return [
-            ChatMessage(
-                message_id=str(message_id),
-                session_id=str(SESSION),
-                role="user",
-                content=f"body of {message_id}",
-                created_at=NOW,
-            )
-            for message_id in message_ids
-        ]
+    async def search(
+        self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
+    ) -> list[HakuStateHit | ConversationHit]:
+        self.queries.append(
+            {"query": query, "corpus": corpus, "limit": limit, "path_prefix": path_prefix, "session_id": session_id}
+        )
+        return self.hits
 
     async def status(self) -> IndexStatus:
         return IndexStatus(
-            notes=NotesStatus(
+            haku_state=HakuStateStatus(
                 commit_sha="abc123", branch="main", indexed_at=NOW, files=12, chunks=40, superseded_chunks=0
             ),
             conversations=ConversationsStatus(
@@ -91,57 +85,46 @@ class _Searcher:
         )
 
 
-async def test_a_note_hit_carries_the_blob_sha_and_the_commit_it_is_at() -> None:
-    searcher = _Searcher(
-        notes=NoteSearchResult(
-            commit_sha="deadbeef",
-            branch="main",
-            indexed_at=NOW,
-            hits=[
-                NoteHit(path="notes/intake.md", blob_sha="cafe1234", byte_start=0, byte_end=40, snippet="…", score=0.9)
-            ],
-        )
-    )
-    async with Client(build_mcp(searcher)) as client:
-        result = await client.call_tool("search_notes", {"query": "intake"})
-    assert result.data.commit_sha == "deadbeef"
-    assert result.data.hits[0].blob_sha == "cafe1234"
+async def test_a_haku_state_hit_carries_what_it_takes_to_read_the_file() -> None:
+    async with Client(build_mcp(_Searcher(_haku_state(0.9)))) as client:
+        (hit,) = (await client.call_tool("search", {"query": "intake"})).data
+    # Path, the commit it is at, and the blob itself: a clone can resolve any of the three.
+    assert (hit.path, hit.commit_sha, hit.blob_sha) == ("notes/intake.md", "deadbeef", "cafe1234")
 
 
-async def test_searching_an_empty_notes_index_says_so_rather_than_returning_nothing() -> None:
-    """An empty list would read as "not written down anywhere", which is a different claim."""
-    async with Client(build_mcp(_Searcher(notes=None))) as client:
-        with pytest.raises(Exception, match="empty"):
-            await client.call_tool("search_notes", {"query": "intake"})
+async def test_a_conversation_hit_names_the_session_the_room_and_its_messages() -> None:
+    async with Client(build_mcp(_Searcher(_conversation(0.8)))) as client:
+        (hit,) = (await client.call_tool("search", {"query": "egress fence"})).data
+    assert (hit.session_id, hit.room_id) == (str(SESSION), "!room:allegedly.works")
+    assert hit.message_ids == [str(message_id) for message_id in MESSAGES]
 
 
-async def test_a_conversation_hit_names_the_room_and_the_messages_to_read() -> None:
-    async with Client(build_mcp(_Searcher())) as client:
-        hit = (await client.call_tool("search_conversations", {"query": "egress fence"})).data[0]
-        assert hit.room_id == "!room:allegedly.works"
-        # The ids a hit hands back are exactly what the read tool takes.
-        read = await client.call_tool("read_messages", {"message_ids": hit.message_ids})
-    assert [message.message_id for message in read.data] == [str(message_id) for message_id in MESSAGES]
+async def test_both_corpora_come_back_from_one_call_and_say_which_they_are() -> None:
+    async with Client(build_mcp(_Searcher(_haku_state(0.9), _conversation(0.8)))) as client:
+        hits = (await client.call_tool("search", {"query": "intake"})).data
+    assert [hit.kind for hit in hits] == ["haku_state", "conversation"]
 
 
-async def test_the_session_filter_reaches_the_searcher_as_a_uuid() -> None:
+async def test_searching_defaults_to_both_corpora() -> None:
     searcher = _Searcher()
     async with Client(build_mcp(searcher)) as client:
-        await client.call_tool("search_conversations", {"query": "intake", "session_id": str(SESSION)})
-    assert searcher.queries[-1]["session_id"] == SESSION
+        await client.call_tool("search", {"query": "intake"})
+    assert searcher.queries[-1]["corpus"] is SearchCorpus.ALL
 
 
-async def test_reading_a_note_that_is_not_indexed_fails_loudly() -> None:
-    async with Client(build_mcp(_Searcher(note_text=None))) as client:
-        with pytest.raises(Exception, match="not in the index"):
-            await client.call_tool("read_note", {"path": "notes/gone.md"})
+async def test_the_corpus_and_session_filters_reach_the_searcher() -> None:
+    searcher = _Searcher()
+    async with Client(build_mcp(searcher)) as client:
+        await client.call_tool("search", {"query": "intake", "corpus": "conversations", "session_id": str(SESSION)})
+    query = searcher.queries[-1]
+    assert (query["corpus"], query["session_id"]) == (SearchCorpus.CONVERSATIONS, SESSION)
 
 
-async def test_status_reports_the_backlog_the_agent_needs_to_read_an_empty_result() -> None:
+async def test_status_reports_the_backlog_an_agent_needs_to_read_an_empty_result() -> None:
     async with Client(build_mcp(_Searcher())) as client:
         status = (await client.call_tool("index_status", {})).data
     assert status.conversations.unindexed_messages == 4
-    assert status.notes.commit_sha == "abc123"
+    assert status.haku_state.commit_sha == "abc123"
 
 
 def test_the_server_is_named_for_its_id() -> None:

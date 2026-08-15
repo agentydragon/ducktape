@@ -43,8 +43,9 @@ from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION
 from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
-from util.testing.postgres import force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container
+from third_party.containers.rlocations import PGVECTOR_PG18
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import start_postgres_container
 
 # A default static agent so `create_app`'s require-a-/mcp-credential invariant is satisfied without
 # every test spelling one out — the real deploy always has the `haku` agent. Tests that exercise
@@ -185,6 +186,20 @@ async def resolve_operator_identity(
 
 
 @pytest.fixture(scope="session")
+def postgres_container() -> Generator[PostgresContainer]:
+    """Postgres **with pgvector**, overriding the shared stock-image fixture.
+
+    Migration 0036 creates `vector` columns, so every test that migrates to head needs an image
+    that has the extension — the same capability production gets from the CNPG image.
+    """
+    container = start_postgres_container(PGVECTOR_PG18)
+    try:
+        yield container
+    finally:
+        container.stop()
+
+
+@pytest.fixture(scope="session")
 def postgres_admin_url(postgres_container: PostgresContainer) -> str:
     host = postgres_container.get_container_host_ip()
     port = int(postgres_container.get_exposed_port(5432))
@@ -195,16 +210,11 @@ def postgres_admin_url(postgres_container: PostgresContainer) -> str:
 def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator[str]:
     """A pristine, empty per-test database (no migrations)."""
     db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_") or "haku_console_test"
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin_engine.dispose()
+    # `vector` here rather than in a migration: pgvector is untrusted, so only a superuser can
+    # install it, which is why the deployed database gets it from CNPG's `Database` CR.
+    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
 
-    yield (
-        make_url(postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}")
-        .set(drivername="postgresql+asyncpg")
-        .render_as_string(hide_password=False)
-    )
+    yield make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
     force_drop_database_sync(postgres_admin_url, db_name)
 

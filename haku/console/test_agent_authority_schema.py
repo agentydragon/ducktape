@@ -21,11 +21,21 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import metadata
-from util.testing.postgres import force_drop_database_sync
-from util.testing.postgres_fixtures import postgres_container as _postgres_container
+from third_party.containers.rlocations import PGVECTOR_PG18
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import start_postgres_container
 
-# Import the shared, preloaded Postgres fixture under the exact name pytest exposes to dependents.
-postgres_container = _postgres_container
+
+@pytest.fixture(scope="session")
+def postgres_container() -> Any:
+    """Postgres **with pgvector**: migration 0036 creates `vector` columns, and this file migrates
+    a fresh database to head. The deployed database gets the extension from CNPG's `Database` CR."""
+    container = start_postgres_container(PGVECTOR_PG18)
+    try:
+        yield container
+    finally:
+        container.stop()
+
 
 _UTC = datetime.UTC
 
@@ -68,12 +78,9 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     suffix = uuid4().hex[:8]
     base = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:35].rstrip("_")
     db_name = f"{base or 'agent_schema'}_{suffix}"
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin_engine.dispose()
+    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
 
-    yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+    yield db_url
 
     force_drop_database_sync(postgres_admin_url, db_name)
 

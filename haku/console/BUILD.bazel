@@ -217,7 +217,7 @@ py_test(
     size = "medium",
     srcs = ["test_oauth_connection_result.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -381,7 +381,7 @@ py_test(
     size = "medium",
     srcs = ["test_connection_metrics.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -421,7 +421,7 @@ py_test(
     size = "medium",
     srcs = ["test_oauth_association_maintenance.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -445,7 +445,7 @@ py_test(
     size = "medium",
     srcs = ["test_authentik_operator_token.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -468,7 +468,7 @@ py_test(
     size = "medium",
     srcs = ["test_provider_connection.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -703,6 +703,9 @@ py_test(
     srcs = ["test_agent_authority_schema.py"],
     requires_docker = True,
     deps = [
+        # For its pgvector `postgres_container`: migration 0036 creates `vector` columns, so a
+        # stock Postgres cannot hold the console's schema.
+        ":conftest",
         ":database_migrate",
         ":database_schema",
         "//:conftest",
@@ -738,7 +741,7 @@ py_test(
     size = "medium",
     srcs = ["test_console_events.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -791,7 +794,7 @@ py_test(
     size = "medium",
     srcs = ["test_mcp_operator_oauth.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -1012,7 +1015,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     deps = [
@@ -1079,7 +1082,7 @@ py_test(
     size = "medium",
     srcs = ["test_mcp_server.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -1119,7 +1122,7 @@ py_test(
     size = "medium",
     srcs = ["test_push_routes.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -1138,7 +1141,7 @@ py_test(
     size = "medium",
     srcs = ["test_web_push.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -1162,7 +1165,7 @@ py_test(
     size = "medium",
     srcs = ["test_tool_call_service.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -1192,7 +1195,7 @@ py_test(
     size = "medium",
     srcs = ["test_mcp_approval.py"],
     data = [
-        "//third_party/containers:postgres_18",
+        "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
@@ -1330,6 +1333,27 @@ oci_layout_rloc(
     name = "static_test_image",
     testonly = True,
     image = ":static_image",
+)
+
+py_test(
+    name = "test_state_index_migration",
+    size = "medium",
+    srcs = ["test_state_index_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "//haku/state_index:schema",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_test(
