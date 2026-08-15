@@ -1,8 +1,19 @@
-# Haku multi-agent architecture — remaining work
+# Haku multi-agent architecture — the retired zone experiment
 
-**This doc is forward-looking.** The former Haku dispatch plane is archived and no
-longer deployed. The archived implementation and manifests remain available as
-historical reference; this plan holds only what is **not yet built**.
+**Status: retired** (operator, 2026-08-15). The dispatch plane, the zai/oai/local **zones**, and
+the build order below were an earlier experiment; the plane is archived and not deployed, and the
+remaining steps are not pending work. Read this as history, not as a plan — the live design for
+several agents at different trust levels is <information_trust_tiers.md>, which keys agent kinds
+on their workspace repo rather than on dispatch zones.
+
+**What survives the retirement**, because it is observation rather than machinery, and is cited
+from the live plan: bounded-write MCP servers as how low-trust agents get safe write
+capabilities; a worker's output being untrusted input to Haku; the per-tier prompt floor; the
+argument for splitting `ui/` out of `haku-state`; and the Forgejo mirror + PR rights that any
+agent authoring ducktape changes still needs.
+
+The rest of this document is kept for the reasoning and the vendor research, which stay useful
+even though the zones do not.
 
 Archived, documented elsewhere:
 

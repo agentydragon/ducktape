@@ -1,14 +1,18 @@
 # Information trust tiers — which provider may see what, and who enforces it
 
-**Status: design sketch, nothing built.** Operator, 2026-08-15: several agents operating under
-this setup, at different information trust levels, with a local classifier guarding the channels
-between them, and the high-trust agent delegating unsensitive work down. This records the shape
-and the hard parts. It is deliberately not a build order — two of the load-bearing decisions are
-values calls (Open questions), and one of the mechanisms is in the wrong place as first proposed.
+**Status: design sketch, nothing built.** Operator, 2026-08-15: several agent kinds, each cloning
+a different workspace repo, talking to each other in Matrix rooms the operator is also in, with a
+classifier on what crosses and the high-trust agent delegating unsensitive work down. This
+records the shape and the hard parts. It is deliberately not a build order — the load-bearing
+decisions that remain are values calls (Open questions). Git-content classification is
+explicitly **out of scope and lower priority**; what was learned about it is parked below for the
+plan it needs.
 
-Companion to <multi_agent.md>, which owns **which** zones, providers and workloads exist. This
-owns **what may flow between them**. It takes over the role that document's dangling
-`capability_dispatch.md` reference described.
+**This supersedes the zone experiment.** <multi_agent.md> — the dispatch plane and its
+zai/oai/local zones — is retired (operator, 2026-08-15), so it is cited below only for the
+observations that outlived it, never as pending work. It also carried a dangling forward
+reference to a `capability_dispatch.md` that was never written; that reference's subject is this
+document's.
 
 ## The reframing that makes this tractable
 
@@ -72,26 +76,34 @@ Two inheritances that constrain the classifier specifically:
 **So the primary control is never "the classifier approved it".** It is that the lower tier never
 had the higher corpus mounted, never held its credential, and cannot reach it over the network.
 
-## The classifier has to run locally, and that is structural rather than frugal
+## Where the classifier runs: local is a preference, not a requirement
 
-The archived dispatch plane ran an **Anthropic** classifier ahead of dispatch to a cheaper zone.
-That was coherent only because Anthropic sat at the top of a total order: showing the content to
-the gatekeeper disclosed it to a party already permitted to see everything.
+An earlier draft of this document argued that the classifier had to run on local GPUs or it would
+disclose the content to the party it was deciding about. **That is wrong for the topology
+actually wanted** (operator, 2026-08-15: Anthropic would be fine), and the reason is worth
+keeping because it is what makes any future placement decision easy.
 
-The moment the tiers are peers with different allowlists — Anthropic broad, OpenAI
-whitelist-based — that stops working. A classifier hosted at either has already disclosed the
-content to it before deciding whether it may. **Ollama on the operator's own GPUs is the only
-placement that does not defeat the check.** Recorded because "just use the good model for the
-classifier" is the obvious suggestion, and it is wrong for a reason that is easy to miss.
+The tiers are not peers with symmetric ignorance. The **high tier is Anthropic** — Haku runs
+there with `haku-state` mounted — so the sensitive content has already reached Anthropic by
+construction, before any classification happens. A classifier hosted there discloses nothing new;
+it is the top of the order, exactly as the archived plane assumed. The peers-with-different-
+allowlists framing was about OpenAI's access being whitelist-shaped, and that is a statement
+about what OpenAI may **receive**, not about a corpus Anthropic lacks.
 
-What that costs, stated up front:
+So placement is an ordinary engineering choice, and both options are live:
 
-- A small local model is the weakest link in the chain guarding the strongest secrets, doing an
-  adversarial task. Calibrate on refusal precision and prefer failing closed.
-- **Model residency is already a known problem here.** <../x/dispatch/local_dispatch_zone.md>'s
-  scheduler exists because running agents across several models thrashes residency on the GPUs. A
-  synchronous classifier in the delegation path is one more resident model competing for the same
-  VRAM — and one that must answer **now**, not when a slot frees.
+- **Anthropic** — strongest model on the hardest judgment (paraphrase, inference chains, oblique
+  reference), no GPU contention, no extra moving part.
+- **Ollama on the operator's GPUs** — cheaper per call, lower latency, and no dependency on a
+  provider being reachable to decide whether another provider may be spoken to. Its cost is real:
+  a small model is the weakest link guarding the strongest secrets, and GPU model residency is a
+  known constraint — <../x/dispatch/local_dispatch_zone.md> reached for a scheduler because
+  running agents across several models thrashes it. A synchronous classifier in the send path is
+  one more resident model, and one that must answer **now** rather than when a slot frees.
+
+**The one condition that would make local structural**, worth writing down before it is
+forgotten: a tier whose corpus Anthropic must not see. Nothing in the current design has one, and
+if one is ever added the classifier's placement has to be revisited before that tier is.
 
 ## What the classifier is actually for
 
@@ -138,25 +150,26 @@ envelope, where the higher tier states goal, inputs and acceptance criteria in f
 narrating, is dramatically more checkable and forces the agent to be deliberate about what it is
 handing over. Reserve free-form messages for same-tier rooms.
 
-### Git content: check at the destination
+### Git content: its own plan, and lower priority
 
-The proposal is to classify pushed git content if we drive our own HTTP proxies. **The proxy is
-the wrong layer**, and it is worth saying why before someone builds it. `haku-egress-proxy` today
-rewrites a header for a known host — cheap, because it inspects request _metadata_. Classifying
-pushed content means parsing git's smart-HTTP protocol and unpacking packfiles inside the proxy,
-on a path that has to stay fast, for payloads that are large, compressed and delta-encoded.
+**Out of scope here** (operator, 2026-08-15) — it needs a plan of its own and is not urgent.
+Three findings to carry into that plan rather than re-derive:
 
-The destination already has the content unpacked, and two mechanisms fit:
-
-- A **Forgejo pre-receive hook** — synchronous, and refuses the push, which is the semantics
-  actually wanted.
-- A **required CI status** on PRs — multi_agent.md already lists a PII check as exactly this,
-  deferred. Weaker, since the content has already landed on a branch, but it needs no protocol
+- **The egress proxy is the wrong layer for content.** `haku-egress-proxy` rewrites a header for
+  a known host, which is cheap because it inspects request _metadata_. Classifying pushed content
+  means parsing git's smart-HTTP protocol and unpacking packfiles inside the proxy, on a path
+  that has to stay fast, for payloads that are large, compressed and delta-encoded.
+- **The destination already has the content unpacked.** A **Forgejo pre-receive hook** is
+  synchronous and refuses the push, which is the semantics actually wanted; a **required CI
+  status** on PRs is weaker (the content has already landed on a branch) but needs no protocol
   parsing at all.
+- **The proxy is right for the other half.** Which repos an agent may push to at all is metadata,
+  and the proxy already sees the request path.
 
-The _other_ half of the idea is right about the proxy, though: **which repos an agent may push to
-at all** is metadata, the proxy already sees the request path, and <../TODO.md> already wants it —
-that turns a standing all-or-nothing grant into a reviewable list.
+That last one is where this joins something already wanted: <../TODO.md>'s runtime-steerable
+egress grant — widening or revoking what the proxy permits mid-session, "the same shape as the
+approval queue, applied to egress rather than to tool calls". A console-driven proxy is the
+natural home for per-repo push scoping, and the two should be planned together.
 
 ## Shared rooms, with the operator in them
 
@@ -165,27 +178,45 @@ is also a member of, and messages pass the classifier on the way in. This sectio
 requires — the objections that mattered are absorbed as requirements rather than as reasons not
 to.
 
-**The policy rule is the room's floor.** A message is checked against the **lowest tier among the
-room's current members**, so membership _is_ the policy and there is one number to reason about
-per room. It also means adding a member re-parameterizes every future message in that room.
+**The room carries a tier, fixed at creation, and membership is enforced against it** (operator,
+2026-08-15). The room's tier is the maximum sensitivity that may be said in it; an agent may join
+only if its provider is cleared for that tier. A `low` room can hold Anthropic- and
+OpenAI-backed agents together; a `high` room admits only agents cleared for `high`.
 
-Five requirements follow, in the order they will bite:
+**This is strictly better than deriving a floor from current membership**, which is what this
+document proposed first, and it is worth being explicit about why so it does not drift back:
 
-- **`m.room.history_visibility` must be `joined`, set at creation.** This is the trap. The
-  default is `shared`, under which a newly joined member can backfill the room's entire history —
-  every message written before it arrived, none of which was ever classified against its
-  presence. Adding an OpenAI-backed agent to an existing room would hand its provider the whole
-  backlog in one go, and changing the setting afterwards does not retroactively hide anything. Get
-  this right when the room is made, or not at all.
-- **A room's tier is monotonically non-increasing.** Everything already said stays disclosed to
-  everyone who could read it; removing a low-tier member does not un-disclose. So a room can be
-  downgraded once and never restored, and "just add the cheap agent to this existing room" is the
-  gesture that spends the room permanently. Prefer creating a room at the tier it will need.
-- **Operator presence is detection, not prevention.** By the time the operator reads a leak, the
-  event has federated to every member's homeserver and its provider has already seen it. That is
-  the argument for the classifier being synchronous and fail-closed rather than an audit log —
-  and equally the argument for keeping the operator in the room anyway, because their reaction is
-  the only calibration signal the classifier will ever get.
+- **The classifier checks against a constant.** A message is judged against the room's declared
+  tier, not against whoever happens to be present, so the same message gets the same answer
+  regardless of who joined since. Under the derived-floor version, membership changes
+  re-parameterized every future message in the room.
+- **Structure and content separate cleanly.** Membership enforcement is a structural control
+  deciding **who may hear**; the classifier is the in-band residual deciding **what may be said**.
+  Two layers, each doing one job, and only the second is probabilistic.
+- **The downgrade problem disappears.** A room could previously be spent permanently by adding one
+  cheap agent to it. An immutable tier makes that unexpressible: the invite is simply refused.
+- **So does the history trap, which was the sharpest requirement here.** Under a derived floor,
+  `m.room.history_visibility` had to be `joined` at creation, because Matrix's default `shared`
+  lets a new member backfill everything said before it arrived — unclassified against its
+  presence. With an immutable tier, **anyone permitted to join is already cleared for the room's
+  entire history by construction**, so backfill discloses nothing new. Still worth setting
+  `joined` as defense in depth; it stops being load-bearing.
+
+**What enforces membership.** Not the homeserver: Matrix membership is whoever gets invited, and
+the operator can invite from Element by hand. The console is the enforcement point, on the same
+property R5.1 already establishes for one agent and this generalizes — **the console holds every
+agent's Matrix credential**, no agent has a join tool (R5.4), so no agent can put itself in a
+room. That leaves the operator's own mistaken invite, which wants **membership reconciliation**:
+the console compares each room's members against its tier and removes one that should not be
+there. That is the same reconcile loop <../console/plans/session_channels.md> § 1 describes, over
+membership instead of messages.
+
+**Operator presence is detection, not prevention.** By the time the operator reads a leak, the
+event has federated to every member's homeserver and its provider has already seen it. That is
+the argument for the classifier being synchronous and fail-closed rather than an audit log — and
+equally the argument for keeping the operator in the room anyway, because their reaction is the
+only calibration signal the classifier will ever get.
+
 - **A withheld message has to be visible as withheld.** Silently dropping one leaves the operator
   unable to tell whether the agent answered, and leaves the other agents waiting on a reply that
   is never coming. It wants its own `RoomEventKind` in the tag vocabulary
