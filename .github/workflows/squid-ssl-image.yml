@@ -46,7 +46,7 @@ jobs:
           echo "REF=$REF" >> "$GITHUB_ENV"
           docker build -f cluster/images/squid-ssl/Dockerfile -t "$REF" cluster/images/squid-ssl
 
-      - name: Verify ssl_bump support is compiled in
+      - name: Verify ssl_bump and ICAP support are compiled in
         run: |
           docker run --rm --entrypoint sh "$REF" -c 'squid -v' | tee /tmp/v
           grep -q -- '--with-openssl' /tmp/v || { echo "::error::squid not built --with-openssl"; exit 1; }
@@ -57,6 +57,15 @@ jobs:
           # -- so a base-image bump silently moving us off the series the config
           # was validated against must fail here, not in the fence.
           grep -qE 'Version 7\.' /tmp/v || { echo "::error::expected Squid 7.x; got: $(head -1 /tmp/v)"; exit 1; }
+          # ICAP is the only mechanism in Squid that can rewrite a header
+          # programmatically. Alpine's package has neither it nor eCAP, which is
+          # why this image moved to Debian's squid-openssl flavour; assert it so
+          # a future base change cannot quietly take it away again.
+          grep -q -- '--enable-icap-client' /tmp/v || { echo "::error::squid not built --enable-icap-client"; exit 1; }
+          # The runtime uid must match the Deployment's runAsUser. Debian's squid
+          # runs as `proxy`, Alpine's ran as `squid`, and the numbers differ --
+          # print it so the manifest is set from the build, not from memory.
+          docker run --rm --entrypoint sh "$REF" -c 'id proxy; echo "configured user: $(id -u proxy):$(id -g proxy)"'
 
       - uses: ./.github/actions/setup-ci-secrets
         if: github.event_name == 'push'

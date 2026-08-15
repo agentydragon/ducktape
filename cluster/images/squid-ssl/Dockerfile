@@ -1,17 +1,28 @@
-# Squid with ssl_bump, built from Alpine because no usable public image exists:
-# Ubuntu's squid is gnutls and rejects ssl-bump outright, Debian's ships it
-# disabled, and the Alpine package is the one built --with-openssl.
+# Squid with ssl_bump AND ICAP, for the egress-proxy spike.
 #
-# 3.23 rather than 3.22 for the Squid version: 3.22 ships 6.12, and upstream
-# supports only the newest series, calling everything older "archival ... not
-# intended for general use in new installations". 3.23 ships 7.6, the current
-# stable. This is not hygiene — the spike's first run died on
-# `tls_outgoing_options flags=DONT_VERIFY_PEER`, a directive that survived a
-# major bump with its meaning changed and errored at neither parse nor request
-# time. Answering the substitution questions on a Squid we would not deploy
-# invites exactly that failure again, and for a fence the silent form is the
-# dangerous one: a rule that quietly stops matching forwards the real credential
-# instead of returning an error.
+# Base choice is a three-way constraint, and only one combination satisfies all
+# of it:
+#
+#   * `--with-openssl` + `--enable-ssl-crtd` — required for ssl_bump. Ubuntu's
+#     squid is GnuTLS and refuses it outright; Debian's DEFAULT `squid` package
+#     is GnuTLS with ssl-crtd disabled. (An earlier version of this comment said
+#     Debian "ships it disabled" full stop and sent us to Alpine — true of the
+#     default package, wrong about the distribution. Debian builds a second
+#     flavour, `squid-openssl`, with OpenSSL and cert generation enabled.)
+#   * `--enable-icap-client` — Alpine's squid has neither ICAP nor eCAP. That is
+#     the only mechanism in Squid for rewriting a header programmatically:
+#     external_acl_type cannot (its response keywords are a closed set) and
+#     url_rewrite_program only touches URLs. Without it, per-client credential
+#     substitution can only be static ACLs regenerated per agent. Debian enables
+#     ICAP and eCAP in its shared configure flags, so both flavours have them.
+#   * Squid 7.x — upstream supports only the newest series and calls everything
+#     older "archival ... not intended for general use in new installations".
+#     Debian ships 7.6 only in forky/sid; trixie (stable) is on 6.13.
+#
+# Hence debian:testing rather than stable: it is the only base carrying
+# squid-openssl at 7.x with ICAP. Pinned by digest, so the rolling suite cannot
+# move under us silently, and the CI verify step asserts all three properties on
+# every build rather than trusting this comment.
 #
 # curl and openssl are kept in the image on purpose: this is a spike whose whole
 # point is exec'ing in and driving requests through the proxy.
@@ -19,15 +30,21 @@
 # CLEANUP(added 2026-08-10): delete with cluster/k8s/x/squid-egress-spike
 #   once the spike has answered its questions and either graduates to a real
 #   fence or is abandoned. See that directory's README for the question list.
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM debian:testing@sha256:8fe7e20ebb14e121fa7abd75c2d8de93f2fc2e9ce1f92748f10257b29350d276
 
-RUN apk add --no-cache squid openssl curl ca-certificates gettext \
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        squid-openssl openssl curl ca-certificates gettext-base \
+    && rm -rf /var/lib/apt/lists/* \
     && squid -v | head -1 > /etc/squid-version \
-    && mkdir -p /var/cache/squid /var/log/squid \
-    && chown -R squid:squid /var/cache/squid /var/log/squid
+    && mkdir -p /var/cache/squid /var/log/squid /run/squid \
+    && chown -R proxy:proxy /var/cache/squid /var/log/squid /run/squid
 
 LABEL org.opencontainers.image.source="https://github.com/agentydragon/ducktape" \
-      org.opencontainers.image.description="Squid with ssl_bump for the egress-proxy spike"
+      org.opencontainers.image.description="Squid with ssl_bump and ICAP for the egress-proxy spike"
 
-USER squid
+# Debian's squid runs as `proxy`, not Alpine's `squid` — a different uid, which
+# the Deployment's runAsUser must match. The verify step prints it so the number
+# comes from the build rather than from an assumption.
+USER proxy
 ENTRYPOINT ["squid"]
