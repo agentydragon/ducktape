@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol, cast
@@ -70,6 +71,21 @@ class ClaudeSandboxProvisioningView(BaseModel):
     observation_error: str | None = None
 
 
+@dataclass(frozen=True)
+class KubernetesClients:
+    """The three clients built from one in-cluster configuration.
+
+    One object because they are one thing: they are built together, closed together, and no state
+    where some exist and others do not is reachable — which is what the four `assert`s this
+    replaced were restating at every call site. Public so a test can supply recorded ones through
+    the constructor instead of reaching past it into private attributes.
+    """
+
+    api: ApiClient
+    custom_objects: CustomObjectsClient
+    core_v1: CoreV1Api
+
+
 class SandboxClaims(Protocol):
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None: ...
 
@@ -85,31 +101,30 @@ class SandboxClaims(Protocol):
 class KubernetesSandboxClaims:
     """Create the narrow declarative SandboxClaim used by one chat session."""
 
-    def __init__(self, config: ClaudeRuntimeConfig):
+    def __init__(self, config: ClaudeRuntimeConfig, clients: KubernetesClients | None = None):
         self._config = config
-        self._api_client: ApiClient | None = None
-        self._custom_objects: CustomObjectsClient | None = None
-        self._core_v1: CoreV1Api | None = None
+        self._clients = clients
         self._lock = asyncio.Lock()
 
-    async def _clients(self) -> tuple[CustomObjectsClient, CoreV1Api]:
-        if self._custom_objects is not None:
-            assert self._core_v1 is not None
-            return self._custom_objects, self._core_v1
+    async def _connected(self) -> KubernetesClients:
+        # The lock is held on every call rather than only the first: acquiring an uncontended
+        # `asyncio.Lock` does not suspend, so the fast path costs nothing and there is no
+        # check-then-build window to reason about.
         async with self._lock:
-            if self._custom_objects is None:
+            if self._clients is None:
                 configuration = k8s_client.Configuration()
                 try:
                     k8s_config.load_incluster_config(client_configuration=configuration)
                 except ConfigException as error:
                     raise RuntimeError("Kubernetes in-cluster configuration is unavailable") from error
-                self._api_client = ApiClient(configuration=configuration)
-                # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
-                self._custom_objects = cast(CustomObjectsClient, CustomObjectsApi(self._api_client))
-                self._core_v1 = CoreV1Api(self._api_client)
-        assert self._custom_objects is not None
-        assert self._core_v1 is not None
-        return self._custom_objects, self._core_v1
+                api = ApiClient(configuration=configuration)
+                self._clients = KubernetesClients(
+                    api=api,
+                    # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+                    custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
+                    core_v1=CoreV1Api(api),
+                )
+            return self._clients
 
     def _claim_name(self, session_id: UUID) -> str:
         return f"claude-{session_id.hex}"
@@ -134,7 +149,7 @@ class KubernetesSandboxClaims:
                 ],
             },
         }
-        client, _ = await self._clients()
+        client = (await self._connected()).custom_objects
         await client.create_namespaced_custom_object(*_CLAIM_API, self._config.namespace, _CLAIMS_PLURAL, body)
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
@@ -149,7 +164,7 @@ class KubernetesSandboxClaims:
         Best effort: a slide that fails leaves the sandbox on its previous deadline and the sweep
         handles the fallout, so it must not take the renewal heartbeat down with it.
         """
-        client, _ = await self._clients()
+        client = (await self._connected()).custom_objects
         name = self._claim_name(session_id)
         shutdown_time = _format_shutdown_time(expires_at)
         for attempt in range(_RENEW_ATTEMPTS):
@@ -186,7 +201,7 @@ class KubernetesSandboxClaims:
                 return
 
     async def delete(self, *, session_id: UUID) -> None:
-        client, _ = await self._clients()
+        client = (await self._connected()).custom_objects
         try:
             await client.delete_namespaced_custom_object(
                 "extensions.agents.x-k8s.io",
@@ -202,9 +217,9 @@ class KubernetesSandboxClaims:
 
     async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
         claim_name = self._claim_name(session_id)
-        custom_objects, core_v1 = await self._clients()
+        clients = await self._connected()
         try:
-            claim = await custom_objects.get_namespaced_custom_object(
+            claim = await clients.custom_objects.get_namespaced_custom_object(
                 "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", claim_name
             )
         except k8s_client.ApiException as error:
@@ -226,7 +241,7 @@ class KubernetesSandboxClaims:
             )
 
         try:
-            sandbox = await custom_objects.get_namespaced_custom_object(
+            sandbox = await clients.custom_objects.get_namespaced_custom_object(
                 "agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxes", sandbox_name
             )
         except k8s_client.ApiException as error:
@@ -245,7 +260,7 @@ class KubernetesSandboxClaims:
         annotations = sandbox.get("metadata", {}).get("annotations", {}) or {}
         pod_name = str(annotations.get("agents.x-k8s.io/pod-name") or sandbox_name)
         try:
-            pod = await core_v1.read_namespaced_pod(pod_name, self._config.namespace)
+            pod = await clients.core_v1.read_namespaced_pod(pod_name, self._config.namespace)
         except k8s_client.ApiException as error:
             if error.status == 404:
                 return provisioning_view(
@@ -284,11 +299,9 @@ class KubernetesSandboxClaims:
         )
 
     async def aclose(self) -> None:
-        if self._api_client is not None:
-            await self._api_client.close()
-            self._api_client = None
-            self._custom_objects = None
-            self._core_v1 = None
+        if self._clients is not None:
+            await self._clients.api.close()
+            self._clients = None
 
 
 def provisioning_view(claim_name: str, *, step: ProvisioningStep, **values: Any) -> ClaudeSandboxProvisioningView:

@@ -59,7 +59,7 @@ from haku.console.x.conftest import (
 )
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
-from haku.console.x.sandbox_claims import KubernetesSandboxClaims
+from haku.console.x.sandbox_claims import KubernetesClients, KubernetesSandboxClaims
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
 from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
 
@@ -84,6 +84,16 @@ class RecordingCustomObjectsApi:
     ) -> None:
         del group, version, namespace, plural, kwargs
         self.patched.append((name, body))
+
+
+class RecordingApiClient:
+    """The shared client the other two are built on. Only its close is reached from a test."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class RecordingCoreV1Api:
@@ -112,10 +122,14 @@ def core_v1_api() -> RecordingCoreV1Api:
 @pytest.fixture
 def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
     """The real claim builder with only the Kubernetes API objects recorded."""
-    claims = KubernetesSandboxClaims(runtime_config())
-    claims._custom_objects = cast(Any, custom_objects_api)
-    claims._core_v1 = cast(Any, core_v1_api)
-    return claims
+    return KubernetesSandboxClaims(
+        runtime_config(),
+        KubernetesClients(
+            api=cast(Any, RecordingApiClient()),
+            custom_objects=cast(Any, custom_objects_api),
+            core_v1=cast(Any, core_v1_api),
+        ),
+    )
 
 
 async def test_claim_injects_only_the_session_rendezvous_values(sandbox_claims, custom_objects_api) -> None:
