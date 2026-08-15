@@ -115,7 +115,7 @@ live session whose `matrix_conversation` row is missing. Loud.
 
 ## Ingress: an operator message that never became a prompt
 
-### I1. Non-`m.text` events are dropped silently, and the watermark advances
+### I1. Non-`m.text` events are dropped silently, and the watermark advances — FIXED (#4087)
 
 `matrix_client.py:419-425` and the same filter in `_backfill` at 440 keep only `RoomMessageText`.
 An `m.image`, `m.file`, `m.audio`, `m.video` or `m.emote` is discarded **with no log line**, and
@@ -125,6 +125,13 @@ operator sends a screenshot; nothing is written anywhere and it can never be rec
 The unambiguous violation of R1.6 ("no inbound message is silently dropped"). No reconnection
 needed. No test. An outbox does not help — the filter has to either enqueue an unmappable-event
 notice or refuse the batch.
+
+Fixed in #4087 by surfacing rather than refusing: an unreadable event is carried out of the sync
+as an `UnmappableEvent`, said out loud in the room, and then acknowledged. Refusing would not
+converge — nothing about an already-sent screenshot ever changes, so the batch would be re-offered
+forever and one image would wedge ingress against every later message. That change also corrects
+this section on one point: **`m.emote` is prose**, not unmappable — it is `m.text` in the third
+person with the words in `body` — and it is now serviced rather than reported.
 
 ### I2. The accept-or-refuse path is sound
 
@@ -162,13 +169,13 @@ propagates to `_run_as_leader`'s handler, which logs and sleeps `ERROR_BACKOFF`.
 
 ## Requirement verdicts
 
-| Req                                               | Status                                   | Evidence                                            |
-| ------------------------------------------------- | ---------------------------------------- | --------------------------------------------------- |
-| R1.6 no inbound message silently dropped          | **Not satisfied**                        | `matrix_client.py:422,440` + `matrix_sync.py:323`   |
-| R1.7 downtime recovery, never skip silently       | Satisfied in spirit                      | `matrix_client.py:447` logs loudly, still advances  |
-| R2.5 batch acknowledged after its turn completes  | **Not satisfied**                        | `matrix_sync.py:318-323` acks on enqueue            |
-| R11.2 every turn speaks                           | **Not satisfied**                        | `matrix_session.py:247-249`                         |
-| R11.6 produced reply never lost silently, retried | **Not satisfied, nothing implements it** | `matrix_pacer.py:152-162`; no outbox table anywhere |
+| Req                                               | Status                                   | Evidence                                              |
+| ------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------- |
+| R1.6 no inbound message silently dropped          | Fixed (#4087)                            | was `matrix_client.py:422,440` + `matrix_sync.py:323` |
+| R1.7 downtime recovery, never skip silently       | Satisfied in spirit                      | `matrix_client.py:447` logs loudly, still advances    |
+| R2.5 batch acknowledged after its turn completes  | **Not satisfied**                        | `matrix_sync.py:318-323` acks on enqueue              |
+| R11.2 every turn speaks                           | **Not satisfied**                        | `matrix_session.py:247-249`                           |
+| R11.6 produced reply never lost silently, retried | **Not satisfied, nothing implements it** | `matrix_pacer.py:152-162`; no outbox table anywhere   |
 
 ## What the outbox closes, and what it does not
 
