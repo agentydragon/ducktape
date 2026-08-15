@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
-from haku.state_index.vector_type import Vector
+from haku.state_index.vector_type import HalfVector
 
 revision: str = "0037"
 down_revision: str | None = "0036"
@@ -47,10 +47,11 @@ def upgrade() -> None:
         sa.Column("byte_start", sa.BigInteger(), nullable=False),
         sa.Column("byte_end", sa.BigInteger(), nullable=False),
         sa.Column("text", sa.Text(), nullable=False),
-        # No typmod: the dimension is a property of `model_key`, and pinning it here would make
-        # changing the embedding model a migration. Nothing indexes it — searches are exact KNN
-        # over a filtered set at this corpus size.
-        sa.Column("embedding", Vector(), nullable=False),
+        # `halfvec` (2 bytes a dimension) rather than `vector` (4), and no typmod: the dimension
+        # is a property of `model_key`, and pinning it here would make changing the embedding
+        # model a migration. Nothing indexes it — searches are exact KNN over a filtered set at
+        # this corpus size. Reasoning for the type: `haku/state_index/vector_type.py`.
+        sa.Column("embedding", HalfVector(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("corpus", "content_sha", "chunk_no", "chunker_key", "model_key"),
         schema=SCHEMA,

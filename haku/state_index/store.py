@@ -44,9 +44,9 @@ _GIT_SEARCH_SQL = text("""
           AND (CAST(:path_prefix AS text) IS NULL OR starts_with(t.path, CAST(:path_prefix AS text)))
     )
     SELECT path, blob_sha, chunk_no, byte_start, byte_end, text,
-           1 - (embedding <=> CAST(:query AS vector)) AS score
+           1 - (embedding <=> CAST(:query AS halfvec)) AS score
     FROM candidates
-    ORDER BY embedding <=> CAST(:query AS vector)
+    ORDER BY embedding <=> CAST(:query AS halfvec)
     LIMIT :limit
 """)
 
@@ -62,9 +62,9 @@ _CHAT_SEARCH_SQL = text("""
           AND (CAST(:session_id AS uuid) IS NULL OR w.session_id = CAST(:session_id AS uuid))
     ), ranked AS (
         SELECT session_id, chunk_no, first_message_at, last_message_at, text,
-               1 - (embedding <=> CAST(:query AS vector)) AS score
+               1 - (embedding <=> CAST(:query AS halfvec)) AS score
         FROM candidates
-        ORDER BY embedding <=> CAST(:query AS vector)
+        ORDER BY embedding <=> CAST(:query AS halfvec)
         LIMIT :limit
     )
     SELECT ranked.*,

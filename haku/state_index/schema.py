@@ -43,7 +43,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from haku.state_index.vector_type import Vector
+from haku.state_index.vector_type import HalfVector
 from util.sqlalchemy_types import TextBackedStrEnumColumn
 
 SCHEMA = "state_index"
@@ -91,12 +91,13 @@ class Chunk(Base):
     byte_start: Mapped[int] = mapped_column(BigInteger, nullable=False)
     byte_end: Mapped[int] = mapped_column(BigInteger, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    # Unconstrained `vector`: dimension is a property of `model_key`, and pinning a typmod here
+    # Unconstrained `halfvec`: dimension is a property of `model_key`, and pinning a typmod here
     # would force a migration to change models. Nothing indexes this column (exact KNN at this
     # corpus size), and searches filter `corpus` + `model_key` in a materialized CTE before the
     # distance operator ever sees a row — pgvector errors on comparing different dimensions, so
-    # that filter is load-bearing, not cosmetic.
-    embedding: Mapped[list[float]] = mapped_column(Vector, nullable=False)
+    # that filter is load-bearing, not cosmetic. Why `halfvec` rather than `vector`, and what it
+    # would take to index this one day: `vector_type.py`.
+    embedding: Mapped[list[float]] = mapped_column(HalfVector, nullable=False)
     last_seen_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

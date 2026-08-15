@@ -105,22 +105,27 @@ supersedes it. Re-windowing is nearly free — the vectors are cached by content
 
 ### Two choices worth knowing
 
-**No ANN index**, and at 2560 dimensions that is no longer only a choice. Exact KNN reads every
-candidate vector, which removes the ANN-plus-filter correctness problem entirely — but pgvector's
-HNSW and IVFFlat cap out at **2000 dimensions** on a `vector` column, so this corpus could not be
-indexed as stored even if it wanted to be. (Storage is capped at 16,000 dimensions, and neither
-cap applies to a sequential scan; the column is also declared without a typmod, which an index
-would need.)
+**Vectors are `halfvec`, not `vector`.** The model returns 2560 dimensions, where a `vector`
+costs 4 bytes per dimension — ~10 KiB a chunk — and pgvector's HNSW and IVFFlat refuse anything
+over **2000 dimensions**, so a `vector` column here could never be indexed at all. `halfvec` is
+2 bytes per dimension (~5 KiB) and indexable to 4000. The cost is IEEE half precision, about
+three decimal digits per component, which is noise beside what the embedding itself rounds off —
+and these values are only ever compared, never read back and used for anything.
 
-**Size the scan, not the disk.** A `vector` is 4 bytes per dimension plus 8, so a chunk here costs
-~10 KiB — a query at 10k chunks reads ~100 MB, at 100k chunks ~1 GB, from a database whose volume
-is **2Gi in total** and shared with the approval ledger. So the earlier "revisit past ~100k chunks"
-was arithmetic from the 384-dimension model this replaced; the real revisit point is nearer 10–20k,
-and what it buys is not an index but smaller vectors: `halfvec(2560)` halves the bytes and is
-indexable up to 4000 dimensions, and Qwen3-Embedding is Matryoshka-trained, so asking the endpoint
-for fewer dimensions is a genuine option. **If that day comes, the dimension has to enter
-`model_key`** — the model name alone would no longer identify the vector space, and the cache would
-silently mix two of them.
+**No ANN index**, which at this size is still a choice rather than a limit. Exact KNN scans the
+joined set and so has no ANN-plus-filter correctness problem. Sizing it honestly: ~5 KiB a chunk
+means a query reads ~50 MB at 10k chunks and ~500 MB at 100k, against a database whose volume is
+**2Gi in total** and shared with the approval ledger. (The "revisit past ~100k chunks" this
+paragraph used to carry was arithmetic from the 384-dimension model that preceded Ollama; the
+volume runs out around the same place the scan does.)
+
+Two things that revisit would need, in order: a **typmod** — the column is declared without one so
+that changing models is not a migration, and an index cannot be built on a column whose dimension
+is undeclared — and then an HNSW index, which `halfvec(2560)` is eligible for. Neither requires
+re-embedding anything. Dropping to fewer dimensions is the other lever, since Qwen3-Embedding is
+Matryoshka-trained; **that one does require re-embedding, and the dimension would have to enter
+`model_key`**, because the model name alone would no longer identify the vector space and the
+content-addressed cache would silently mix two of them.
 
 **Embeddings come from Ollama**, over its OpenAI-compatible `/v1/embeddings`, so the backend is a
 base URL and a model name rather than an implementation — LiteLLM or anything else speaking that
