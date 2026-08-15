@@ -61,10 +61,26 @@ the turn loop kept their shape while the file lost the parts that never needed t
 - `matrix_sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku
   services, and hands what the operator types to the session behind it. Holds the only
   Matrix credential, so everything that speaks into the room speaks through it.
-- `matrix_session.py` — the room/session binding, ingress (`MatrixTurns`), egress
-  (`MatrixSurface`), and the supervisor that keeps a live session behind the room.
+- `matrix_session.py` — the room/session binding, ingress (`MatrixTurns`), the surface a
+  room-backed turn reports through (`MatrixSurface`), and the supervisor that keeps a live session
+  behind the room.
+- `matrix_pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
+- `matrix_outbox.py` — the room's outbox: replies as `session_outbox` rows, and the drain that
+  says them.
 
-Two behaviours worth knowing before reading the code:
+Three behaviours worth knowing before reading the code:
+
+- **A produced reply is a row, not a call.** A turn writes it in the same transaction as the
+  assistant message it copies, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory
+  lock — claims the oldest, queues it into the pacer, and marks it `sent_at` only once
+  `room_send` has returned. Before this, `deliver` was a `deque.append` that returned before any
+  request existed, so a refused send was discarded with a log line and a queue holding an answer
+  died with its replica (<../debug/message_drops.md>). Everything else the console says — the
+  status line, lifecycle and holding notices, bootstrap narration — stays on the pacer's
+  in-process queue, because a notice describing a moment is not worth redelivering ten minutes
+  later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its
+  backoff rather than being overtaken, and the one row stepped over is one out of
+  `MAX_SEND_ATTEMPTS`, kept unsent with its `last_error` and logged loudly rather than deleted.
 
 - **A refused batch is not queued here.** `enqueue_prompt` only accepts on a ready session with
   no turn open and nothing pending, so when it refuses, the sync watermark is simply not advanced
@@ -130,13 +146,12 @@ supervisor), a runner process per sandbox behind a stub `claude` (`matrix_stub_c
 real Postgres. It asserts one operator-facing property — every message the operator sent has
 exactly one reply in the final room — which is what nothing below the whole stack can answer.
 
-**Three of its four tests fail on `devel`, deliberately**, because that property does not hold
-(R11.6, "a produced reply must never be lost silently"): a delivery that raises is logged and
-dropped while `spoke` is set anyway, `matrix_pacer` is an in-process queue that dies with its
-replica, and the console adopting a session skips the replayed frame as one already recorded. The
-durable outbox that fixes all three is stage 5 of
-<../../plans/chat_runtime_projection.md>. The fourth test is quiet-path and passes, which is what
-makes the other three attributable to the drop rather than to the harness.
+**Three of its four tests were written failing**, because that property did not hold (R11.6, "a
+produced reply must never be lost silently"): a delivery that raised was logged and dropped while
+`spoke` was set anyway, `matrix_pacer` was an in-process queue that died with its replica, and a
+console adopting a session skipped the replayed frame as one already recorded. `matrix_outbox.py`
+is what closes all three. The fourth is quiet-path and passed throughout, which is what made the
+other three attributable to the drop rather than to the harness.
 
 The console is a process, and the sandboxes are started by the test off the claim files that
 console writes, for one reason: a sandbox has to outlive the console for there to be an adoption

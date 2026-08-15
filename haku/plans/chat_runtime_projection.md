@@ -130,9 +130,28 @@ moving code once stage 3 has made the state durable. The abort path collapses he
 becomes an intent the transport writes, and the CLI's answer comes back as frames — which is what
 removes the "exactly one `anext` in flight" dance.
 
-### 5. The room outbox
+### 5. The room outbox — **done**
 
-`matrix_pacer`'s deque becomes rows. Delivery gains a retry and loses its guesswork.
+`session_outbox` holds each produced reply until the homeserver has taken it;
+`matrix_outbox.RoomOutboxDrain` says it, under an advisory lock, through the pacer, marking it
+sent only after `room_send` returns. `matrix_pacer` kept its deque and its budget: it is still
+what decides _when_, and the console's narration still lives on it. What follows is what the
+stage was written against, kept because the reasoning is still the design's.
+
+**One correction to make before reading further.** "The transaction id is already there" below is
+half true, and the half that is false is what a redrive would have broken.
+`EventTag.transaction_id()` derives from the transcript row _only when there is one_ and mints a
+fresh `uuid4()` otherwise — so a redelivery of a turn's abort notice, or of text that arrived only
+on a `result` frame, would have posted a second message rather than being refused. Every outbox
+row is therefore sent under **its own id**, which is stable for exactly as long as redelivery can
+happen, and two partial unique indexes (on `message_id` and on `turn_id`) stop a second row being
+created for one logical reply.
+
+**Not done, and deliberately deferred: R11.6's "mark a late reply as possibly duplicated".** With
+a stable transaction id inside Synapse's 30-to-60 minute dedup window, a late redelivery is
+refused rather than duplicated, so the marking has no case left to fire on for anything the outbox
+sends; past that window it would, and the retry budget is sized to stay inside it. Revisit if the
+budget grows or if a channel without transaction dedup is added.
 
 The drop audit (<../console/debug/message_drops.md>) turned this from the last stage into the one
 with a live bug behind it, and gave it three constraints it did not have when this was written.

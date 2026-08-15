@@ -178,21 +178,29 @@ change deleted `offer`'s status pre-check — admission is `enqueue_prompt`'s al
 
 ## Requirement verdicts
 
-| Req                                               | Status                                   | Evidence                                              |
-| ------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------- |
-| R1.6 no inbound message silently dropped          | Fixed (#4087)                            | was `matrix_client.py:422,440` + `matrix_sync.py:323` |
-| R1.7 downtime recovery, never skip silently       | Satisfied in spirit                      | `matrix_client.py:447` logs loudly, still advances    |
-| R2.5 batch acknowledged after its turn completes  | **Not satisfied**                        | `matrix_sync.py:318-323` acks on enqueue              |
-| R11.2 every turn speaks                           | Fixed (#4088)                            | was `matrix_session.py:247-249`                       |
-| R11.6 produced reply never lost silently, retried | **Not satisfied, nothing implements it** | `matrix_pacer.py:152-162`; no outbox table anywhere   |
+| Req                                               | Status                   | Evidence                                              |
+| ------------------------------------------------- | ------------------------ | ----------------------------------------------------- |
+| R1.6 no inbound message silently dropped          | Fixed (#4087)            | was `matrix_client.py:422,440` + `matrix_sync.py:323` |
+| R1.7 downtime recovery, never skip silently       | Satisfied in spirit      | `matrix_client.py:447` logs loudly, still advances    |
+| R2.5 batch acknowledged after its turn completes  | **Not satisfied**        | `matrix_sync.py:318-323` acks on enqueue              |
+| R11.2 every turn speaks                           | Fixed (#4088)            | was `matrix_session.py:247-249`                       |
+| R11.6 produced reply never lost silently, retried | Fixed (`session_outbox`) | was `matrix_pacer.py:152-162`                         |
 
 ## What the outbox closes, and what it does not
 
-**Closes** E1, E2's remainder, E6, E7, E9 and lease-expiry stranding — every path where a reply
-reached the delivery layer and the process lost it. `EventTag.transaction_id()`
-(`matrix_client.py:126-138`) already makes redelivery idempotent server-side, so a redrive sweep is
-safe today. One design constraint: **write the outbox row in the same transaction as
-`update_assistant`**, not at `_deliver_reply` time, or E4 stays open.
+**Closes** E1, E2's remainder, E4, E6, E7, E9 and lease-expiry stranding — every path where a
+reply reached the delivery layer and the process lost it. The design constraint this section
+called for held: the row is written **in the same transaction as `update_assistant`**, not at
+`_deliver_reply` time, which is what takes E4 with it.
+
+**One claim above was wrong, and it is worth reading before trusting the rest.**
+`EventTag.transaction_id()` (`matrix_client.py:126-138`) does _not_ make every redelivery
+idempotent: it derives from the transcript row where there is one and **mints a fresh `uuid4()`
+otherwise**, so a redrive of a turn's abort notice, or of text that arrived only on a `result`
+frame, would have posted a second message. Every outbox row is now sent under its own id, and two
+partial unique indexes (`message_id`, `turn_id`) stop a second row existing for one logical
+reply — the second of those because writing a turn's last word before closing the turn, which is
+what keeps it from being stranded, is also what lets a replacement replica re-derive it.
 
 **Does not close** E3 (the drain never produces the reply) or I2–I4 (ingress acknowledgement
 semantics). Each needs its own fix: process `assistant` frames in the abort drain, and move
