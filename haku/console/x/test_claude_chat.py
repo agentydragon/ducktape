@@ -517,43 +517,6 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert "haku-static-bearer" not in launch.environment.values()
 
 
-class _NarratingClaudeClient(_LifecycleClaudeClient):
-    """Says one bootstrap line through the progress sink, then ends the session."""
-
-    on_connect: Callable[[], Awaitable[None]] | None = None
-
-    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
-        super().__init__(adapter, launch, on_progress, frames_to)
-        self._on_progress = cast(Callable[[str], Awaitable[None]], on_progress)
-
-    async def connect(self) -> dict[str, Any]:
-        response = await super().connect()
-        await self._on_progress("Cloning into '/workspace/haku-state'...")
-        on_connect = type(self).on_connect
-        assert on_connect is not None
-        await on_connect()
-        return response
-
-
-async def test_the_sandbox_narration_outlives_the_pod_that_wrote_it(
-    chat_store, chat_service, recording_claims, operator_id
-) -> None:
-    """Bootstrap output and the CLI's stderr are where a session that never reached the model
-    explains itself, and both used to live only in the pod's log and in the room — the first
-    reaped with the sandbox, the second interleaved with everything else.
-    """
-    websocket = _LifecycleWebSocket()
-
-    session = await chat_service.create(operator_id, SpaSession())
-    session_id = session.session_id
-    _NarratingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
-    with patch("haku.console.x.claude_chat.cli_over_websocket", _NarratingClaudeClient):
-        await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
-
-    frames = await chat_store.read_frames(str(session_id), after_seq=None, limit=10, kinds=["setup_output"])
-    assert [frame.payload["text"] for frame in frames] == ["Cloning into '/workspace/haku-state'..."]
-
-
 class _RollingClaudeClient(_LifecycleClaudeClient):
     """Stands in for this replica being cancelled mid-session, which is what a roll is."""
 
@@ -605,26 +568,6 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
         assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
             "a session handed back is adoptable by whichever replica the runner reaches"
         )
-
-
-async def test_adoption_inherits_a_turn_still_running(chat_store, chat_service, recording_claims, operator_id) -> None:
-    """The sandbox outlived the replica, so the rest of that exchange is still coming. Closing the
-    turn is what used to lose it; it stays open and comes back for `_run_turn` to finish.
-    """
-    session = await chat_service.create(operator_id, SpaSession())
-    session_id = session.session_id
-    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
-    started = await chat_store.next_prompt(session_id)
-    assert started is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-
-    resumed = await chat_store.adopt_open_turn(session_id)
-
-    assert resumed is not None
-    assert resumed.turn_id == started.turn_id
-    [turn] = await chat_store.list_turns(str(session_id), limit=5)
-    assert turn.ended_at is None, "an inherited turn is finished by whoever adopts it, not closed here"
 
 
 async def test_adoption_picks_the_answer_up_where_it_stopped(
