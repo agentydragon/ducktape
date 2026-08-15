@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import itertools
+import json
+from dataclasses import asdict
 
 import pytest
 import pytest_bazel
 
-from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
+from haku.state_index.chunking import CHUNKER_VERSION, DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
 
 
 def test_offsets_slice_the_embedded_text_back_out() -> None:
@@ -63,6 +65,20 @@ def test_a_budget_packs_to_its_own_size() -> None:
 def test_the_budget_is_part_of_what_identifies_a_chunk() -> None:
     """Otherwise re-tuning it would serve vectors computed over spans that no longer exist."""
     assert git_chunker_key(ChunkBudget(target_bytes=200, max_bytes=400)) != git_chunker_key(DEFAULT_CHUNK_BUDGET)
+
+
+def test_the_key_carries_every_field_of_the_budget() -> None:
+    """The reason it is serialized rather than formatted: a field added to `ChunkBudget` lands in
+    the key without anyone remembering to put it there."""
+    assert json.loads(git_chunker_key(DEFAULT_CHUNK_BUDGET)) == {
+        "version": CHUNKER_VERSION,
+        **asdict(DEFAULT_CHUNK_BUDGET),
+    }
+
+
+def test_the_key_is_canonical() -> None:
+    """Same regime, same bytes — in this process and in the one that wrote the row."""
+    assert git_chunker_key(ChunkBudget(target_bytes=1, max_bytes=2)) == '{"max_bytes":2,"target_bytes":1,"version":1}'
 
 
 def test_a_budget_that_cannot_be_satisfied_is_refused() -> None:

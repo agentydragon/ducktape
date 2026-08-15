@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from haku.console.chat_models import ChatMessageRole
-from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, split_utf8
+from haku.state_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, regime_key, split_utf8
 
 # Bump on a change to the rendering or packing below. Scoped to this corpus: the git chunker's
 # version moves independently, and the size budget travels in the key rather than here.
@@ -32,7 +32,7 @@ CHAT_CHUNKER_VERSION = 1
 
 def chat_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
     """What identifies chunks produced by this chunker, for the cache key."""
-    return f"v{CHAT_CHUNKER_VERSION}/{budget.key}"
+    return regime_key(CHAT_CHUNKER_VERSION, budget)
 
 
 @dataclass(frozen=True, slots=True)

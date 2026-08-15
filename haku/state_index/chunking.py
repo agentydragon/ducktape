@@ -7,8 +7,9 @@ regime are silently reused for text they were never computed over.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 # Bump on a change to the boundary rules. The size budget is *not* part of this — it travels in
 # `chunker_key` instead, so re-tuning it needs no code change and still invalidates the cache.
@@ -35,10 +36,6 @@ class ChunkBudget:
         if self.target_bytes <= 0 or self.max_bytes < self.target_bytes:
             raise ValueError(f"nonsensical chunk budget: {self}")
 
-    @property
-    def key(self) -> str:
-        return f"t{self.target_bytes}m{self.max_bytes}"
-
 
 # Conservative rather than tuned: it was chosen for a model with a 512-token window, and the one
 # in use now has a far larger one. Raising it is a retrieval question — bigger chunks match more
@@ -46,13 +43,24 @@ class ChunkBudget:
 DEFAULT_CHUNK_BUDGET = ChunkBudget(target_bytes=1500, max_bytes=3000)
 
 
-def git_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
-    """What identifies chunks produced by this chunker, for the cache key.
+def regime_key(version: int, budget: ChunkBudget) -> str:
+    """What identifies chunks produced by one chunker under one budget, for the cache key.
 
     Both halves matter: the same bytes chunked by different rules, or to a different size, are
     different text, and vectors computed over one must never answer for the other.
+
+    Serialized from the budget rather than formatted by hand, which is the point — a field added
+    to `ChunkBudget` lands in the key without anyone remembering to put it there, where a
+    hand-written format would keep producing the old key for a new regime and silently re-use
+    vectors computed over spans that no longer exist. Canonical: sorted keys and no whitespace, so
+    the same regime is the same bytes in every process. Text rather than `jsonb` because this is a
+    primary-key component compared for equality, and a canonical string is the simpler contract.
     """
-    return f"v{CHUNKER_VERSION}/{budget.key}"
+    return json.dumps({"version": version, **asdict(budget)}, sort_keys=True, separators=(",", ":"))
+
+
+def git_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
+    return regime_key(CHUNKER_VERSION, budget)
 
 
 @dataclass(frozen=True, slots=True)

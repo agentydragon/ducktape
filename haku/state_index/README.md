@@ -34,8 +34,8 @@ their vectors. The cache key is `(corpus, content_sha, chunk_no, chunker_key, mo
 or the embedding model misses the cache rather than silently serving vectors computed over
 different text or by a different model.
 
-**Chunk size is configurable, and it lives inside `chunker_key`** (`v1/t1500m3000`) rather than
-beside it. The same blob chunked to a different size is different text, so a re-tune has to
+**Chunk size is configurable, and it lives inside `chunker_key`** — canonical JSON,
+`{"max_bytes":3000,"target_bytes":1500,"version":1}` — rather than beside it. The same blob chunked to a different size is different text, so a re-tune has to
 invalidate exactly like an algorithm change — putting the budget in the key makes that automatic
 instead of something to remember. It is in bytes rather than tokens because chunking must not
 depend on a tokenizer now that the model is behind an HTTP endpoint; English prose runs about four
@@ -44,6 +44,15 @@ for a 512-token model and is conservative for the one in use; raising it is a re
 bigger chunks match more broadly and cite less precisely — which is why it is a knob and not a
 constant. Index and query must use the same budget: a query under a different one searches a
 regime nothing was written under.
+
+The key is serialized from the budget rather than formatted by hand, and is one column rather
+than several, for the same reason in both cases: **a regime filter cannot be under-specified.**
+A field added to `ChunkBudget` lands in the key automatically, and a query either matches the
+whole regime or does not — where separate `target_bytes`/`max_bytes` columns would let a query
+forget one and quietly mix two chunkings, which is the failure this schema exists to prevent.
+The cost is a ~50-byte string in a primary key; if that ever shows up on a disk graph, the move
+is a `chunk_regimes` table with an integer id, which keeps the single-column filter in the hot
+table and makes the parameters queryable.
 
 **`corpus` is in that key rather than implied.** Each corpus supplies its own kind of content
 address — a git blob sha, the sha256 of a rendered message window — and its own chunker with its
