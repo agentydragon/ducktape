@@ -67,6 +67,5 @@ preview_screenshots(
     entry = "preview_harness.js",
     deps = [
         ":preview_harness",
-        "//:node_modules",
     ],
 )

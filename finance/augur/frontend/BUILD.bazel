@@ -549,7 +549,16 @@ eslint_bin.eslint_test(
         "eslint.typed.config.js",
         "tsconfig.json",
         ":typed_lint_srcs",
-        "//:node_modules",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
+        "//:node_modules/@types/react",
+        "//:node_modules/@typescript-eslint/eslint-plugin",
+        "//:node_modules/@typescript-eslint/parser",
+        "//:node_modules/eslint-plugin-react",
+        "//:node_modules/eslint-plugin-react-hooks",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
     ],
     # ts_library already copies these same sources to bin to compile them, so a second copy
     # here would be two actions writing one path. eslint reads them where they are.
@@ -634,7 +643,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":sanity_bands_test_lib",
-        "//:node_modules",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -645,7 +654,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":budget_adjustments_test_lib",
-        "//:node_modules",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -656,7 +665,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":input_helpers_test_lib",
-        "//:node_modules",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -670,6 +679,6 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":format_test_lib",
-        "//:node_modules",
+        "//:node_modules/vitest",
     ],
 )

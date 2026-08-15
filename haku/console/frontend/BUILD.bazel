@@ -825,7 +825,7 @@ js_binary(
     data = [
         "screenshots/esbuild.config.mjs",
         ":screenshot_harness_lib",
-        "//:node_modules",
+        "//:node_modules/esbuild",
     ],
     entry_point = "screenshots/esbuild.config.mjs",
 )
@@ -1132,8 +1132,8 @@ vitest_bin.vitest_test(
         ":tana_client_test",
         ":tool_call_decision_test",
         ":tool_calls_page_test",
-        "//:node_modules",
         "//:node_modules/@haku/console-bridge",
+        "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering:actions_test",
         "//haku/console/frontend/tool_rendering:call_entry_test",
         "//haku/console/frontend/tool_rendering:index_test",

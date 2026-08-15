@@ -4,13 +4,14 @@ js_library(
     name = "hooks_zod",
     srcs = ["hooks.zod.js"],
     tags = ["no-lint"],
+    deps = ["//:node_modules/zod"],
 )
 
 js_binary(
     name = "export_json_schema_bin",
     data = [
         ":hooks_zod",
-        "//:node_modules",
+        "//:node_modules/zod",
     ],
     entry_point = "export_json_schema.mjs",
     tags = ["no-lint"],

@@ -307,6 +307,20 @@ Uses `@aspect_rules_js`. **Do NOT run raw `pnpm install`** -- Bazel manages pnpm
 
 Adding deps: add to `package.json`, run Bazel (first build updates lockfile and fails), run again, commit `pnpm-lock.yaml`.
 
+**Never depend on bare `//:node_modules` from a BUILD file or `.bzl` macro.** It
+links the entire npm workspace into the action, inflating RBE input manifests and
+downloads while hiding undeclared JavaScript imports. Declare the exact package
+targets instead (for example, `//:node_modules/react` or
+`//:node_modules/vitest`). Put packages imported by a `ts_library`/`js_library`
+in that library's `deps` so bundlers and test runners receive them transitively;
+add runtime-only packages explicitly to the owning `js_binary`/`js_test` data when
+the entrypoint imports them directly. Do not use the aggregate as a resolver
+fallback for missing deps. When changing an existing use, verify with:
+
+```bash
+rg -n '"//:node_modules"' --glob 'BUILD*' --glob '*.bzl' .
+```
+
 See <props/frontend/AGENTS.md> for frontend conventions.
 
 @STYLE.md

@@ -153,12 +153,11 @@ ts_library(
 
 # One preview screenshot `js_test` for this server: bundles preview_harness.tsx (this server's
 # fixtures + the shared mount) and runs the shared render driver; :preview_harness's transitive
-# deps (shared harness, gmail widgets, //:node_modules) are what esbuild bundles.
+# deps (shared harness and gmail widgets) are what esbuild bundles.
 preview_screenshots(
     name = "previews",
     entry = "preview_harness.js",
     deps = [
         ":preview_harness",
-        "//:node_modules",
     ],
 )

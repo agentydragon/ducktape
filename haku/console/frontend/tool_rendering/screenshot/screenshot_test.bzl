@@ -28,8 +28,7 @@ def preview_screenshots(name, entry, deps, visibility = None):
         `ts_library` wrapping `preview_harness.tsx` emits) — imports the shared
         `mountPreviewCards` and passes this server's `PREVIEW_FIXTURES`.
       deps: Library targets forming the entry's module graph — at minimum the entry's own
-        library (which Gazelle wires transitively to the shared harness + this server's widgets)
-        and `//:node_modules`.
+        library (which Gazelle wires transitively to the shared harness + this server's widgets).
       visibility: Target visibility.
     """
     esbuild(
