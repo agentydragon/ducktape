@@ -387,9 +387,10 @@ MCP servers from `@mcp.tool`-decorated functions:
   result needs, since an index that has fallen behind is indistinguishable from a subject that
   never came up. Both auto-approve for Haku (`haku_recall_reads`, the same atom that grants the `haku_conversations` reads); both are unscoped across rooms
   and operators, which is a decision recorded in <../state_index/README.md> § Read scoping rather
-  than an oversight. Listing the server in `config.yaml` is what builds it, and building it loads
-  the embedding model into this process — search embeds its query, so the model is on the request
-  path. Credential-free: the corpus is the console's own database.
+  than an oversight. Listing the server in `config.yaml` is what builds it, and the console refuses
+  to start if it is listed without an embedder configured — search embeds its query, so a search
+  tool with nowhere to embed is a tool that can only fail. Credential-free: the corpus is the
+  console's own database, and embeddings come from Ollama.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
   ordinary approval-gated tool call rather than a bespoke capability. It uses the

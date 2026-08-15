@@ -155,10 +155,9 @@ Deliberately absent — it depends on the evaluation above:
   `haku_conversations` already owns reading past sessions. A second reader in this server would be
   a second answer to "what does this file say", and the two would drift.
 
-  It is gated behind `HAKU_CONSOLE_STATE_INDEX_ENABLED` (default off), because building the
-  searcher loads the embedding model into the console process: search embeds its query, so the
-  model is on the request path and cannot be lazy without the first search paying for it. Nothing
-  is registered in `cluster/k8s/haku/console/config.yaml` yet — a configured server with no builder
+  Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — and the
+  console refuses to start if it is listed with no embedder configured, since search embeds its
+  query and cannot run without somewhere to do that. Nothing is registered in `cluster/k8s/haku/console/config.yaml` yet — a configured server with no builder
   fails `validate_in_process_server_bindings` at startup — so turning it on is a config change and
   a policy decision together, and **Read scoping** below is the gate on the second.
 

@@ -352,9 +352,6 @@ spec:
           resources:
             requests:
               cpu: 50m
-              # Understated, and more so since `haku_index` put the embedding model in this
-              # process: bge-small plus onnxruntime is a few hundred MiB resident from startup.
-              # Folded into the audit below rather than guessed at separately.
               memory: 128Mi
             limits:
               cpu: 500m

@@ -53,7 +53,7 @@ class InProcessServerDependencies:
     # no sessions to read.
     rollout: conversations_tools.RolloutReader | None = None
     # The semantic index over haku-state's files and past conversations — set only when
-    # `config.yaml` lists the server, since building one loads the embedding model.
+    # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: state_index_tools.IndexSearcher | None = None
 
 
