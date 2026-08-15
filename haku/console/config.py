@@ -65,8 +65,8 @@ def _postgres_connection_identity(raw_url: str) -> tuple[object, ...]:
 class EmbedderConfig(BaseModel):
     """Where the `haku_index` tools compute embeddings: any OpenAI-compatible `/v1/embeddings`.
 
-    Ours (`haku/embedder_service`) today, Ollama or LiteLLM later — that is the point of the
-    standard wire format, and why this is a URL and a model name rather than a backend choice.
+    Ollama today, LiteLLM or anything else that speaks the format tomorrow — which is why this is
+    a URL and a model name rather than a backend choice.
 
     `model` is also the index's `model_key`, so it names the model and not the deployment: point
     it at a different server serving the same model and every cached vector is still valid; point
@@ -75,8 +75,17 @@ class EmbedderConfig(BaseModel):
 
     base_url: str = Field(description="Base URL including the API version, e.g. http://haku-embedder:8080/v1")
     model: str
-    # The client library requires one; our own service ignores it, a hosted endpoint would not.
+    # Instruction-aware models want queries prefixed and documents plain (Qwen3-Embedding, bge,
+    # E5). It belongs to the model rather than to the endpoint, so it is configured beside the
+    # model name; a model without that asymmetry leaves it empty.
+    query_instruction: str = ""
+    # The client library requires one; Ollama ignores it, a hosted endpoint would not.
     api_key: SecretStr = SecretStr("not-used")
+    # Explicit because the client library's default is ten minutes, and this sits on the search
+    # request path: a slow embedder should fail a search, not hold a connection until the caller
+    # gives up. Generous enough for a cold model load, short enough to be an error rather than a
+    # hang — and it wants to be, since Ollama is a zone away from this pod.
+    timeout_seconds: float = Field(default=30.0, gt=0.0)
 
 
 class LaunchRoutineConfig(BaseModel):

@@ -83,11 +83,27 @@ megabytes. That removes the ANN-plus-filter correctness problem entirely, and it
 pgvector's 2000-dimension index limit as a constraint (the limit applies to index builds, not
 to storage or queries). Revisit past ~100k chunks.
 
-**CPU embeddings, pinned.** `bge-small-en-v1.5` (384-dim) under onnxruntime, weights pinned as
-Bazel `http_file`s. Search has to embed the _query_, so an embedder that is sometimes
-unreachable takes search down and not just indexing — which is the argument against reaching
-for in-cluster Ollama first. When Ollama does become the backend, implement `Embedder` against
-it; the differing `model_key` invalidates the cache on its own.
+**Embeddings come from Ollama**, over its OpenAI-compatible `/v1/embeddings`, so the backend is a
+base URL and a model name rather than an implementation — LiteLLM or anything else speaking that
+format is a config change. `model_key` is the model, so it invalidates the cache on its own when
+the model changes and re-uses every vector when only the address does.
+
+Two consequences to hold onto, because search embeds its _query_ and therefore inherits whatever
+the embedder is:
+
+- **A failed embed is a failed search, and must read as one.** An empty result means "nothing was
+  said about this"; an unreachable embedder means "could not look". The tools keep those apart,
+  and the client carries an explicit timeout rather than the library's ten-minute default.
+- **Ollama is a zone away from the console.** It runs on `wyrm2` (zone `atlas`) for its GPUs,
+  while the console is pinned to `hil-ovh` because cross-zone round trips are what turned a 4.6ms
+  query into a two-second request there. Every search pays that hop. If it bites, the fix is an
+  embedding-only Ollama in `hil-ovh` — qwen3-embedding at this size runs on CPU — rather than
+  unpinning either side.
+
+No network policy stands in the way today: neither the `ollama` namespace nor `haku-console`
+is selected by any Cilium policy, and the CCNPs that exist are scoped to other namespaces by
+`endpointSelector`. Adding an ingress policy to `ollama` later would need this flow allowed
+explicitly.
 
 ## Evaluating it locally
 

@@ -15,18 +15,20 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import os
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 import typer
+from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION
 from haku.state_index.chat_sync import sync_chat
 from haku.state_index.chunking import CHUNKER_VERSION
-from haku.state_index.embedder import build_bge_small
 from haku.state_index.git_tree import fetch_branch, open_mirror
+from haku.state_index.openai_embedder import OpenAIEmbedder
 from haku.state_index.store import chat_index_summary, current_git_state, ensure_schema, search_chat, search_git
 from haku.state_index.sync import AlreadyCurrent, sync
 
@@ -35,11 +37,27 @@ app = typer.Typer(help=__doc__)
 DatabaseUrl = Annotated[str, typer.Option(envvar="HAKU_STATE_INDEX_DATABASE_URL")]
 
 
+def _embedder() -> OpenAIEmbedder:
+    """The same embedder the console uses, so an evaluation here measures what ships.
+
+    Point it at the cluster's Ollama (port-forward `ollama.ollama:11434`) or at one running
+    locally; the model must be the one actually served, since the client fails closed on a
+    mismatch rather than writing a second vector space into the corpus.
+    """
+    return OpenAIEmbedder(
+        AsyncOpenAI(
+            base_url=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_URL", "http://localhost:11434/v1"), api_key="not-used"
+        ),
+        model=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_MODEL", "qwen3-embedding:0.6b"),
+        query_instruction=os.environ.get("HAKU_STATE_INDEX_EMBEDDER_QUERY_INSTRUCTION", ""),
+    )
+
+
 async def _index_git(
     database_url: str, repo_url: str, branch: str, mirror: Path, username: str | None, password: str | None
 ) -> None:
     engine = create_async_engine(database_url)
-    embedder = build_bge_small()
+    embedder = _embedder()
     try:
         await ensure_schema(engine)
         repository = open_mirror(mirror, repo_url, username=username, password=password)
@@ -81,7 +99,7 @@ def index_git(
 
 async def _index_chat(database_url: str) -> None:
     engine = create_async_engine(database_url)
-    embedder = build_bge_small()
+    embedder = _embedder()
     try:
         await ensure_schema(engine)
         async with async_sessionmaker(engine)() as session:
@@ -107,7 +125,7 @@ def index_chat(database_url: DatabaseUrl) -> None:
 
 async def _query_git(database_url: str, query: str, limit: int, path_prefix: str | None) -> None:
     engine = create_async_engine(database_url)
-    embedder = build_bge_small()
+    embedder = _embedder()
     try:
         async with async_sessionmaker(engine)() as session:
             hits = await search_git(
@@ -135,7 +153,7 @@ def query_git(
 
 async def _query_chat(database_url: str, query: str, limit: int, session_id: UUID | None) -> None:
     engine = create_async_engine(database_url)
-    embedder = build_bge_small()
+    embedder = _embedder()
     try:
         async with async_sessionmaker(engine)() as session:
             hits = await search_chat(

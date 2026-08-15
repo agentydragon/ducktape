@@ -16,17 +16,7 @@ py_library(
 py_library(
     name = "embedder",
     srcs = ["embedder.py"],
-    data = [
-        "@bge_small_en_v15_model//file",
-        "@bge_small_en_v15_tokenizer//file",
-    ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//numpy",
-        "@pypi//onnxruntime",
-        "@pypi//tokenizers",
-    ],
 )
 
 py_library(
@@ -139,10 +129,11 @@ py_library(
         ":chat_corpus",
         ":chat_sync",
         ":chunking",
-        ":embedder",
         ":git_tree",
+        ":openai_embedder",
         ":store",
         ":sync",
+        "@pypi//openai",
         "@pypi//sqlalchemy",
         "@pypi//typer",
     ],
@@ -176,19 +167,6 @@ py_test(
     deps = [
         ":chunking",
         "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_embedder",
-    size = "medium",
-    srcs = ["test_embedder.py"],
-    deps = [
-        ":embedder",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

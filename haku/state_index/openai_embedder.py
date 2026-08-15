@@ -1,15 +1,14 @@
 """An `Embedder` over any OpenAI-compatible `/v1/embeddings` endpoint.
 
-The wire format is the one everything speaks — our own embedding service
-(`haku/embedder_service`), Ollama, LiteLLM, OpenAI itself — so moving between them is a base URL
-and a model name, not an implementation. That is the whole reason for choosing it over something
-bespoke: the destination for this is expected to change.
+The wire format is the one everything speaks — Ollama (where this points today), LiteLLM, OpenAI
+itself — so moving between them is a base URL and a model name, not an implementation.
 
 Two things the endpoint does not do for you, both because it is model-generic:
 
-- **The query instruction is applied here.** bge is trained asymmetrically, and nothing on the
-  wire says so; a caller pointing this at a model with no such asymmetry passes
-  `query_instruction=""`.
+- **The query instruction is applied here.** Instruction-aware models (Qwen3-Embedding, bge, E5)
+  want queries prefixed and documents plain, and nothing on the wire says so. It is configuration
+  rather than a constant because it belongs to the model, and the model is expected to change; a
+  model without that asymmetry takes `query_instruction=""`.
 - **`model_key` is the configured model, and a mismatch is fatal.** Vectors from two models share
   a space only by coincidence — cosine between them is well-defined and meaningless — so a server
   that answers as something else must not be allowed to quietly write into a corpus embedded by
@@ -22,13 +21,11 @@ from collections.abc import Sequence
 
 from openai import AsyncOpenAI
 
-from haku.state_index.embedder import BGE_QUERY_INSTRUCTION
-
 
 class OpenAIEmbedder:
     """Embeddings from an OpenAI-compatible endpoint."""
 
-    def __init__(self, client: AsyncOpenAI, *, model: str, query_instruction: str = BGE_QUERY_INSTRUCTION) -> None:
+    def __init__(self, client: AsyncOpenAI, *, model: str, query_instruction: str = "") -> None:
         self._client = client
         self._model = model
         self._query_instruction = query_instruction

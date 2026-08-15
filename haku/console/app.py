@@ -384,6 +384,7 @@ def create_app(
                         base_url=settings.embedder.base_url, api_key=settings.embedder.api_key.get_secret_value()
                     ),
                     model=settings.embedder.model,
+                    query_instruction=settings.embedder.query_instruction,
                 ),
             )
         in_process_servers = build_in_process_servers(

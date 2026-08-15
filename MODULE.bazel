@@ -875,19 +875,6 @@ http_file(
 # force-proxy egress fence, and search embeds its query, so a model that downloads itself on
 # first use turns an egress hiccup into "search is down". Bump both files together — the
 # tokenizer and the graph are one artifact.
-http_file(
-    name = "bge_small_en_v15_model",
-    downloaded_file_path = "model.onnx",
-    sha256 = "828e1496d7fabb79cfa4dcd84fa38625c0d3d21da474a00f08db0f559940cf35",
-    urls = ["https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/onnx/model.onnx"],
-)
-
-http_file(
-    name = "bge_small_en_v15_tokenizer",
-    downloaded_file_path = "tokenizer.json",
-    sha256 = "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
-    urls = ["https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/tokenizer.json"],
-)
 
 # Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.
 # The tarball contains the firecracker binary + jailer + tools. We extract
