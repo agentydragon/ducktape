@@ -1,0 +1,12 @@
+"""Test implementations of the experimental console surfaces' outside-the-process collaborators."""
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "recording_claims",
+    testonly = True,
+    srcs = ["recording_claims.py"],
+    deps = ["//haku/console/x:sandbox_claims"],
+)

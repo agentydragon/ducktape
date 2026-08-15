@@ -45,23 +45,16 @@ py_library(
 )
 
 py_library(
-    name = "recording_claims",
-    testonly = True,
-    srcs = ["recording_claims.py"],
-    deps = [":sandbox_claims"],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
         ":claude_chat",
         ":matrix_session",
-        ":recording_claims",
         ":session_notifications",
         "//haku/console:config",
         "//haku/console:operator_identity_store",
+        "//haku/console/x/testing:recording_claims",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -92,12 +85,12 @@ py_test(
     deps = [
         ":claude_chat",
         ":conftest",
-        ":recording_claims",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -134,11 +127,11 @@ py_test(
     deps = [
         ":claude_chat",
         ":conftest",
-        ":recording_claims",
         ":session_notifications",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/x/testing:recording_claims",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:asgi",

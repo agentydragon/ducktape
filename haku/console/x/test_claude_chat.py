@@ -49,8 +49,8 @@ from haku.console.x.claude_chat import (
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, MCP_TOKEN, runtime_config
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
-from haku.console.x.recording_claims import RecordingClaims
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
 from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
 

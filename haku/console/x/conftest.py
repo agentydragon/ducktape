@@ -1,9 +1,9 @@
 """Shared setup for the experimental console surfaces' tests.
 
 Two kinds of thing live here: fixtures more than one module needs, and fixtures handing out
-stand-ins for what is genuinely outside the process (the stand-ins themselves live in modules
-of their own, e.g. `recording_claims.py`, so a non-pytest process can reach them too). Stores
-are never stood in for — see <README.md> § Tests run against a real database.
+stand-ins for what is genuinely outside the process (the stand-ins themselves live in `testing/`,
+so a non-pytest process can reach them too). Stores are never stood in for — see <README.md>
+§ Tests run against a real database.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_chat import SessionService, SessionStore
 from haku.console.x.matrix_session import MatrixConversationStore
-from haku.console.x.recording_claims import RecordingClaims
 from haku.console.x.session_notifications import SessionNotifications
+from haku.console.x.testing.recording_claims import RecordingClaims
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"

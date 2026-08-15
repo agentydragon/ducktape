@@ -5,14 +5,15 @@ too: a `py_binary` cannot reasonably import a `conftest`, and a stand-in that is
 from pytest is one every other process has to reimplement.
 
 The other direction — the real `KubernetesSandboxClaims` with recorded Kubernetes API clients
-underneath it — lives in `test_sandbox_claims.py`, and is a different job: this one stands in for
-the claim builder, that one puts it under test.
+underneath it — lives in `x/test_sandbox_claims.py`, and is a different job: this one stands in
+for the claim builder, that one puts it under test. It stays beside the module it tests rather
+than moving here, because it is a test, not a test implementation.
 
 **`inspect` is where this can lie.** It answers with one fixed view rather than deriving a step
 from what it has recorded, so a caller reading provisioning state gets an answer the real
 implementation would only give for a claim that is *not there* (`CLAIM_CREATED` is its 404 case).
 Nothing reads the step today; the annotation is the real type so that at least the shape is
-checked, but a test about provisioning steps needs `test_sandbox_claims.py`, not this.
+checked, but a test about provisioning steps needs `x/test_sandbox_claims.py`, not this.
 """
 
 from __future__ import annotations
