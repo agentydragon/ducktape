@@ -122,6 +122,26 @@ wire the question is about: what Synapse does belongs in the e2e target, what th
 what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted backfill
 budget costs one dict rather than thousands of messages.
 
+### And the whole surface, as processes
+
+`test_matrix_fullstack_e2e.py` composes those two targets with the bridge one: that Synapse, a
+console replica as its own process (`matrix_console_replica.py`, with the real sync loop and
+supervisor), a runner process per sandbox behind a stub `claude` (`matrix_stub_claude.py`), and a
+real Postgres. It asserts one operator-facing property — every message the operator sent has
+exactly one reply in the final room — which is what nothing below the whole stack can answer.
+
+**Three of its four tests fail on `devel`, deliberately**, because that property does not hold
+(R11.6, "a produced reply must never be lost silently"): a delivery that raises is logged and
+dropped while `spoke` is set anyway, `matrix_pacer` is an in-process queue that dies with its
+replica, and the console adopting a session skips the replayed frame as one already recorded. The
+durable outbox that fixes all three is stage 5 of
+<../../plans/chat_runtime_projection.md>. The fourth test is quiet-path and passes, which is what
+makes the other three attributable to the drop rather than to the harness.
+
+The console is a process, and the sandboxes are started by the test off the claim files that
+console writes, for one reason: a sandbox has to outlive the console for there to be an adoption
+at all.
+
 ## `session_notifications.py` — the wake channel
 
 `LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `SessionStore`: a
