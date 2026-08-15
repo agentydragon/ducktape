@@ -15,9 +15,9 @@ plugs into. That runtime is not re-specified here.
 
 ## Why
 
-The operator chat surface today is `haku/console/x/claude_chat.py` (~1100 lines: sessions,
-message rows, WebSocket streaming, sandbox claims, reconciliation) plus
-`console/frontend/claude_chat_page.tsx` and the markdown / scroll / code-block modules
+The operator chat surface today is `haku/console/x/claude_chat.py` (sessions, message rows,
+WebSocket streaming, sandbox claims, reconciliation) plus
+`console/frontend/x/claude_chat_page.tsx` and the markdown / scroll / code-block modules
 around it. Routing chat through Matrix buys an existing client ecosystem instead: mobile
 push, offline history, multi-client sync, and search — none of which the console gets
 otherwise, and all of which would be built by hand.
@@ -57,8 +57,14 @@ Matrix as a store of record for anything.
 - **R1.4 [v1]** Enqueue must succeed with no sandbox running and no runner connected.
 - **R1.5 [v1]** Events authored by Haku's own identity are never treated as input. The
   filter is on both the sender MXID and the set of event IDs the console posted.
-- **R1.6 [v1]** No inbound message is silently dropped. An event that cannot be mapped, or
-  that fails processing, surfaces to the operator rather than vanishing.
+- **R1.6 [built]** No inbound message is silently dropped. An event that cannot be mapped, or
+  that fails processing, surfaces to the operator rather than vanishing. Both halves reach the
+  room: a batch the session cannot take yet is announced as `holding` once and left
+  unacknowledged, and an event Haku has no way to read — an `m.image`, a voice memo, an msgtype
+  invented after this release — is carried out of the sync as an `UnmappableEvent`, said out
+  loud, and only then acknowledged. **Surfaced rather than refused**, because refusing does not
+  converge: nothing about an already-sent screenshot ever changes, so the batch would be
+  re-offered forever and one image would wedge ingress against every later message.
 - **R1.7 [v1] Downtime recovery — no message is lost.** Messages that arrive while the
   console is down must still be processed once it returns, in order, exactly as if it had
   been up, however long the gap. If recovery cannot close a gap it must say so loudly; it
@@ -313,13 +319,9 @@ input to a running turn**. Interrupt exists; steer does not.
   things the room never showed. Reading the room reconstructs the conversation; reading the
   trace reconstructs the work.
 
-  **[later] Reading the trace needs a link that is currently discarded.** Rotation
-  overwrites the conversation's `session_id`, and `sessions` carries no room
-  reference, so nothing connects a room to the sessions that served it — "what happened
-  before" is unanswerable from the database today, by construction. Preserving that chain
-  (a room-scoped session history, or a conversation reference on the session) is the
-  prerequisite for any trace-reading tool, and it is cheap to do before the history that
-  would have populated it is thrown away.
+  **Reading the trace has its link.** Rotation still overwrites the conversation's `session_id`,
+  but `sessions` now carries `surface` and `room_id` of its own (R11.3a), so a room's past
+  sessions are findable and the trace-reading tools are built on that chain (Phase 5).
 
 - **R3.4 [v1]** Losing the sandbox is survivable, not merely fatal-with-a-restart: pending
   work causes it to be re-provisioned without an operator HTTP request, and the session
@@ -733,22 +735,24 @@ that.
   assistant text, so it is delivered only when nothing was said along the way (a turn whose
   answer arrived only there), and the abort notice is spoken on its own rather than appended,
   because the text it would have been appended to is already in the room.
-- **R11.2 [v1] Every turn speaks.** There is no silence token. A turn that found nothing
-  says so. Deferred rather than rejected: both surveyed harnesses have one, and the reason
-  to add it later is a chatty scheduled tick (R4.3) — which v1 does not have.
+- **R11.2 [built] Every turn speaks.** There is no silence token. A turn that finishes with no
+  text says so, as a notice rather than a reply — the console reporting an outcome, not the agent
+  talking. The empty string used to be a silence token by accident: delivery returned early on it,
+  so a turn that ran only tools produced no room event at all. A silence token proper stays
+  deferred rather than rejected: both surveyed harnesses have one, and the reason to add it later
+  is a chatty scheduled tick (R4.3) — which v1 does not have.
 - **R11.3 [v1] Read by ID.** The agent can fetch a message by its event ID, fetch the
   messages around one, and paginate history. Resolving an ID the operator pasted must not
   require having seen the message in context first.
-- **R11.3a Past sessions are reachable, not just past messages.** A conversation the agent is
-  not currently in — an earlier Matrix session, or one of the SPA surface's — is findable and
+- **R11.3a [built] Past sessions are reachable, not just past messages.** A conversation the agent
+  is not currently in — an earlier Matrix session, or one of the SPA surface's — is findable and
   readable, with its rollout (R5.5) behind it. Which ones it may reach is open by choice
-  (R5.3a). **Prerequisite, and it is losing data now:**
-  `matrix_conversation` holds a single `session_id`, the current one, so when the supervisor
-  replaces a session the link to the room is gone and a past Matrix session is
-  indistinguishable from an SPA one. `sessions` needs `surface` and `room_id` of
-  its own. Additive, nullable, backfillable for the one session bound today, and safe under
-  `maxUnavailable: 0` — but every session created before it lands loses its attribution
-  permanently, which is not recoverable afterwards.
+  (R5.3a). Its prerequisite was the attribution: `matrix_conversation` holds a single
+  `session_id`, the current one, so when the supervisor replaces a session the link to the room is
+  gone through that table alone. `sessions` therefore carries `surface` and `room_id` of its own
+  (migration `0030`, with the two check constraints tying them together) — the pointer and the
+  history being different questions. Every session created before it landed lost its attribution
+  permanently, which is why it went first.
 - **R11.4 [v1] IDs are given, not guessed.** Every message the agent sees — in a batch
   (R2.4), in injected context, or from a read tool — carries its event ID in the form the
   read tools accept. A permalink is also accepted as input, since that is what a client
@@ -1084,11 +1088,6 @@ for after Matrix has proven itself, not before.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
-- **Final text only, or every assistant text block?** (R11.1) Forwarding the final text
-  keeps the room readable and gives R6 its content for free; forwarding every block makes
-  the room a live narration, at the cost of no clean "the answer" to point at.
-- **Status message lifetime** (R6.5): redact on answer, or edit the status into the answer
-  so a turn is one message?
 
 ## Non-goals, stated so they are not re-litigated
 

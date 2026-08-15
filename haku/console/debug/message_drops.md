@@ -83,11 +83,15 @@ Closed by an outbox **only if the row is written where the reply is produced** (
 transaction as `update_assistant`), not at delivery time. That is the design constraint stage 5
 should adopt.
 
-### E5. An empty reply is swallowed — R11.2 is not satisfied
+### E5. An empty reply is swallowed — FIXED (#4088)
 
-`matrix_session.py:246-249` returns without sending when `text.strip()` is empty. A turn that ran
-only tools produces no room event at all. R11.2 says every turn speaks and there is no silence
-token; the code has one, and it is the empty string.
+`matrix_session.py:246-249` returned without sending when `text.strip()` was empty. A turn that ran
+only tools produced no room event at all. R11.2 says every turn speaks and there is no silence
+token; the code had one, and it was the empty string.
+
+Fixed in #4088: an empty turn announces `NOTHING_SAID` as an `m.notice` under
+`RoomEventKind.NARRATION` rather than returning. A notice and not a reply, because nothing was
+said — it is the console reporting an outcome, not the agent talking.
 
 ### E6. Overflow drops the arriving send at `MAX_QUEUED_SENDS = 200`
 
@@ -160,12 +164,17 @@ Needs a session death, so a weaker candidate here — the plainest requirement v
 log and the watermark still advances. R1.7's "say so loudly" is satisfied; the messages are gone.
 Needs a ~2000-event gap.
 
-### I5. `offer` only catches `RuntimeError`
+### I5. `offer` only catches `RuntimeError` — FIXED (#4092)
 
 `matrix_session.py:177-181`. `enqueue_prompt` raises `KeyError` when the session row is gone; that
-propagates to `_run_as_leader`'s handler, which logs and sleeps `ERROR_BACKOFF`. No message is lost
-— the watermark is untouched — but the batch stalls in a retry loop with a generic line and no
+propagated to `_run_as_leader`'s handler, which logs and sleeps `ERROR_BACKOFF`. No message was lost
+— the watermark is untouched — but the batch stalled in a retry loop with a generic line and no
 `holding` notice, which looks like a drop from the room.
+
+Fixed in #4092: `offer` catches `(RuntimeError, KeyError)` and refuses, so a session row that has
+gone reads as "not now" like any other refusal and the room gets its `holding` notice. The same
+change deleted `offer`'s status pre-check — admission is `enqueue_prompt`'s alone, decided under
+`SELECT … FOR UPDATE`, so a status read outside it could only agree with a decision not yet made.
 
 ## Requirement verdicts
 
@@ -174,7 +183,7 @@ propagates to `_run_as_leader`'s handler, which logs and sleeps `ERROR_BACKOFF`.
 | R1.6 no inbound message silently dropped          | Fixed (#4087)                            | was `matrix_client.py:422,440` + `matrix_sync.py:323` |
 | R1.7 downtime recovery, never skip silently       | Satisfied in spirit                      | `matrix_client.py:447` logs loudly, still advances    |
 | R2.5 batch acknowledged after its turn completes  | **Not satisfied**                        | `matrix_sync.py:318-323` acks on enqueue              |
-| R11.2 every turn speaks                           | **Not satisfied**                        | `matrix_session.py:247-249`                           |
+| R11.2 every turn speaks                           | Fixed (#4088)                            | was `matrix_session.py:247-249`                       |
 | R11.6 produced reply never lost silently, retried | **Not satisfied, nothing implements it** | `matrix_pacer.py:152-162`; no outbox table anywhere   |
 
 ## What the outbox closes, and what it does not
@@ -185,7 +194,7 @@ reached the delivery layer and the process lost it. `EventTag.transaction_id()`
 safe today. One design constraint: **write the outbox row in the same transaction as
 `update_assistant`**, not at `_deliver_reply` time, or E4 stays open.
 
-**Does not close** E3 (the drain never produces the reply), E5 (an empty-turn policy question), and
-I1–I4 (ingress acknowledgement semantics). Each needs its own fix: process `assistant` frames in the
-abort drain; say something for an empty turn; enqueue-or-refuse unmappable event types; move
-`save_batch` behind turn completion.
+**Does not close** E3 (the drain never produces the reply) or I2–I4 (ingress acknowledgement
+semantics). Each needs its own fix: process `assistant` frames in the abort drain, and move
+`save_batch` behind turn completion. E5 and I1 were on this list and have since been fixed in
+their own changes, which is the shape the rest should take.

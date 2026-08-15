@@ -172,10 +172,11 @@ server-side, so a redrive sweep is safe to write on day one rather than needing 
 first.
 
 **What it does not close, so nobody expects it to.** An abort drain that discards the assistant
-frame before delivery ever sees it (E3); an empty turn that speaks nothing at all (E5); and the
-whole ingress side, where a batch is acknowledged at enqueue rather than at turn completion (I3)
-and an unmappable event is dropped with no log at all (I1). Each is its own fix, and the audit
-lists them with the requirement each one violates.
+frame before delivery ever sees it (E3), and the ingress side, where a batch is acknowledged at
+enqueue rather than at turn completion (I3) and a message for an unserviced room is dropped once
+the watermark advances past it (I2). Each is its own fix, and the audit lists them with the
+requirement each one violates. Two that were on this list have since had theirs: the unmappable
+event is announced rather than dropped (I1, #4087) and an empty turn says so (E5, #4088).
 
 ## The one thing to keep in view
 

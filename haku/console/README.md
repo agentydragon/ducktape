@@ -479,7 +479,6 @@ both: a live event refetches only the **first** page and merges it over what is 
 (`mergeNewestPage`) rather than refetching everything, with at most one refresh in flight so a
 burst of events collapses into one catch-up; and a code block builds its editor only once it
 nears the viewport (`frontend/code_block.tsx`), so rows below the fold cost a placeholder.
-Measurements behind those numbers: <debug/past_tool_calls_perf.md>.
 
 A "Show auto-approved" checkbox (unchecked by default) toggles the `auto_approved` query param on
 that request, so the routine, unconditionally auto-approved traffic (Gmail/Calendar reads, etc.)

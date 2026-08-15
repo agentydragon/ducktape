@@ -22,35 +22,17 @@ Two constraints still bind, and everything else is preference:
 
 The lifecycle work came first for a reason worth keeping in view: a session had to survive a console
 roll before the TTL that was recycling wedged sessions could be relaxed, and had to survive being
-asked for before it could be allocated on demand — which is why stage 6 sits after stage 5. Both
-rest on stages 1 and 4. The roll itself is the only thing that exercises a turn inherited across it,
-so that path is proven in production rather than only by tests
+asked for before it could be allocated on demand. The roll itself is the only thing that exercises a
+turn inherited across it, so that path is proven in production rather than only by tests
 (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
-## Stage 5 — the bridge-protocol horizon
-
-_The console now owns the sandbox lifecycle: it slides the SandboxClaim's `shutdownTime` while a
-session is tended and deletes the claim on a clean end, so no TTL clock and no janitor age-fence caps
-a live session. (The deadline is kept rather than dropped: it is the only thing that reclaims a
-2-vCPU sandbox when the console is gone. The janitor was removed rather than re-keyed: any
-creation-age fence caps a tended session however far its deadline slides — and the cost, no backstop
-for a controller broken for a long stretch, is accepted.)_
-
-That leaves one thing open, and the slide is what opened it. A runner's image is fixed at claim
-creation, and a tended session now has no upper bound on its lifetime, so the console must speak that
-runner's bridge protocol arbitrarily far back. Close it deliberately rather than by accident — either
-bound the session lifetime, or version the bridge protocol so an old runner degrades instead of
-breaking. Until then the support range is "however long the oldest live session has run", which is
-assumed, not chosen.
-
 ## Stage 6 — allocate a sandbox because there is something to do
-
-_Needs stages 1 and 5 (constraint 3)._
 
 An idle room holds a sandbox permanently: the supervisor provisions whenever the room has no live
 session, and the warm pool is `replicas: 0` so every claim is a cold start. This used to read
 "twelve cold starts a day for a room nobody speaks in", each announcing itself and narrating its
-bootstrap there — the deadline slide (stage 5's preamble) removed the recycling, so what is left is
+bootstrap there — the deadline slide that made a session always-up
+(<matrix_chat_runtime.md> R3.2a) removed the recycling, so what is left is
 the other half of the same waste: **one sandbox held indefinitely** for a room nobody speaks in,
 ~1 CPU / 2Gi of an 8 CPU / 16Gi quota with nothing using it. Fewer cold starts, the same standing
 cost, and the argument for allocating on demand is unchanged.
@@ -148,13 +130,9 @@ loop's signatures.
   line ("do not gate on session status: admission asks the turn"), move the story to `debug/`.
 - **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
   zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
-- Smaller: `list_turns`/`read_frames` take `str` session ids and parse them, where the boundary is
-  the MCP tool; the store imports its read models from the MCP tool that reads it;
-  `_message_view`'s `_NO_CALLS` default serves one caller that structurally cannot need it;
-  `KubernetesSandboxClaims._clients()` is double-checked locking with four asserts;
-  `MatrixTurns.offer` pre-checks the status that `enqueue_prompt` then checks atomically, and its own
-  comment admits it races; `session_turn_prompts` has no reader until folding lands; "surface"
-  names five things and "turn" three.
+- Smaller: the store imports its read models from the MCP tool that reads it; `_message_view`'s
+  `_NO_CALLS` default serves one caller that structurally cannot need it; "surface" names five
+  things and "turn" three.
 
 ## When their rolls converge
 

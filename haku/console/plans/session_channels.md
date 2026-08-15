@@ -114,7 +114,7 @@ near-live but is not per-token. Take the regression knowingly:
 - It is one live path for the whole console instead of a second one for a single page, and Matrix
   has no streaming either (matrix_chat_runtime.md § Non-goals), so it is not a capability the
   other channel has.
-- Keep `/api/claude/sessions/{id}/stream` until the merged view has proven a coalesced refetch is
+- Keep `/api/sessions/{id}/stream` until the merged view has proven a coalesced refetch is
   enough, then retire it. Retiring it is what makes the `asyncio.wait` abort dance in `_run_turn`
   removable — the simplification Phase 1 deferred.
 - **The delta path itself does not go away**, and nothing here should be read as saying it does.
@@ -182,7 +182,7 @@ stream must be replayed, so a reconnect that missed events entirely still lands 
 Four things to get right, in increasing order of how easy they are to miss:
 
 - **No second Postgres channel, and no second `NOTIFY`.** `LISTEN` is broadcast, so every
-  replica's `SessionNotifications` already receives every `claude_chat` event. The fan-out is local:
+  replica's `SessionNotifications` already receives every `session_events` event. The fan-out is local:
   a replica turns the chat events it already receives into sends on the console-event sockets
   **it** holds. Routing this through `ConsoleEventHub.broadcast` (which relays over its own
   channel) would notify twice for one update and deliver to every replica twice.
@@ -206,7 +206,7 @@ polling timer anywhere in the page.
 
 ### Into an SPA session
 
-Nearly free: `POST /api/claude/sessions/{id}/messages` exists and already does the durable thing
+Nearly free: `POST /api/sessions/{id}/messages` exists and already does the durable thing
 (`enqueue_prompt` writes the transcript row and the `session_prompts` row in one transaction).
 One honest limitation and one route decision:
 

@@ -55,17 +55,18 @@ machinery goes with it.
   services, and hands what the operator types to the session behind it. Holds the only
   Matrix credential, so everything that speaks into the room speaks through it.
 - `matrix_session.py` — the room/session binding, ingress (`MatrixTurns`), egress
-  (`MatrixReplySink`), and the supervisor that keeps a live session behind the room.
+  (`MatrixSurface`), and the supervisor that keeps a live session behind the room.
 
 Two behaviours worth knowing before reading the code:
 
 - **A refused batch is not queued here.** `enqueue_prompt` only accepts on a ready session with
   no turn open and nothing pending, so when it refuses, the sync watermark is simply not advanced
   and the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
-  dropped" (R1.6) come out of that, with no second durable queue. The gate asks
-  `session_turns` whether an exchange is in flight; it used to ask whether the session's
-  status was `ready`, which happened to mean the same thing only because `enqueue_prompt` itself
-  wrote `responding`.
+  dropped" (R1.6) come out of that, with no second durable queue. **Admission is that one
+  transaction's alone**: `MatrixTurns.offer` asks no status question of its own, because an answer
+  read outside `enqueue_prompt`'s `SELECT … FOR UPDATE` could only agree with a decision that had
+  not been made yet. It takes the refusal — `RuntimeError` for a session that cannot take the
+  batch, `KeyError` for a session row that has gone — and tells the room it is holding.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
   carried out of the sync as an `UnmappableEvent`, said out loud in the room, and then
@@ -177,8 +178,8 @@ dependency:
 - `Session`, `SessionMessage`, `MatrixSyncState`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.
-- The `ReplySink` port is defined next to the service that calls it (`claude_chat.py`), and
-  the composition in <../app.py> is what ties a sink to a surface.
+- The `RoomSurface` port is defined next to the service that calls it (`claude_chat.py`), and
+  the composition in <../app.py> is what ties a surface to a session.
 
 ## Where the reasoning lives
 

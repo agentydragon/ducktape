@@ -66,9 +66,14 @@ what makes the prompt reachable by `interrupt`'s `cancel_queued`. Measured in
 
 ## The runner replays everything except deltas
 
-`runner.DELTA_TYPE` is excluded from the replay window because a delta is the one frame class that
-cannot survive being sent twice. Everything a resumed turn needs that predates its adoption
+`ClaudeBackend.DELTA_TYPE` is excluded from the replay window because a delta is the one frame class
+that cannot survive being sent twice. Everything a resumed turn needs that predates its adoption
 therefore has to come from the console's own record, not from the replay.
+
+Which frames those are is a backend's answer, not the runner's: `CliBackend.replayable` is the seam,
+because the runner decides what to retain at the moment it sends — long before any adopting console
+exists — and "has no agent-assigned identity, and is accumulated rather than replaced" is a fact
+about one CLI's protocol.
 
 ## Investigations, which are not this
 

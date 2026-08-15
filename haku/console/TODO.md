@@ -235,21 +235,10 @@ the old name, each for its own reason.
   from the previous image survives a `maxUnavailable: 0` roll. Drop them once that roll has
   **converged**, not once a release has elapsed.
 - **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
-  renaming it is a coordinated two-sided roll like `HAKU_CLAUDE_PATH` (<../plans/next_month.md> §
-  week 3), not part of a console-only change.
-- **`x/claude_chat.py` itself**, and the SPA's `claude_chat_page.tsx`. The module split is its own
-  item (<../plans/next_month.md> § week 1), and renaming the file now would collide with it.
-
-## `request_close` wakes nobody
-
-`request_close` (`x/claude_chat.py`) sets `status = "closing"` and notifies nothing — it is the
-only status mutation on that path that does not. A closing session's runner therefore stays in
-`wait(SessionEventKind.PROMPT, …)` until its own 30-second timeout before it notices, which is a real
-30-second lag in session teardown.
-
-Since the channel merge (#3938, #3941) the event kind is an argument rather than a channel name, so
-the fix is one `await notify(db, SessionEventKind.PROMPT, session_id)` alongside the status write. It
-must stay **inside** that transaction: `pg_notify` delivers on commit.
+  renaming it is a coordinated two-sided roll, not part of a console-only change.
+- **`x/claude_chat.py` itself**, and the SPA's `frontend/x/claude_chat_page.tsx`. The module split is
+  its own item (<../plans/chat_runtime_cleanup.md> § Anytime), and renaming the file now would
+  collide with it.
 
 ## `session_frames` does not map to one concept
 
@@ -266,7 +255,8 @@ streaming, which wears `assistant` and is told apart by a boolean column rather 
 - There is deliberately **no enum over `kind`**. One would give a name to a concept the schema does
   not have, and an enum over the union of two vocabularies is what made the first attempt confusing
   enough to back out.
-- The loose `*_FRAME_KIND` constants in `x/claude_chat.py` stay loose, with a pointer here.
+- The loose `*_FRAME_KIND` constants in `x/claude_chat.py` stay loose, with a pointer to
+  `SessionFrame` and to the projection plan's stage 2.
 - The table's own docstring says the same thing, since that is where a reader meets it first.
 
 The `partial` row leaves on its own: it is tombstoned on `update_partial_frame`, and recording the
