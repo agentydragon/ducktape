@@ -10,8 +10,20 @@ package is everything between them.
 | `protocol.py`   | the Haku envelope, its version, and the `TextWebSocket` port                        |
 | `transport.py`  | `WebSocketTransport` — the console end: launch, then frames both ways               |
 | `cli_client.py` | `ClaudeCli` — the protocol client, both channels, and the optional `FrameSink`      |
-| `options.py`    | `ClaudeSession` → the argv, cwd and environment for one CLI process                 |
+| `backend.py`    | `CliBackend` — which CLI is being run, and the `ProcessLaunch` that starts it       |
+| `options.py`    | Claude as a backend: `ClaudeSession` → argv, and `ClaudeBackend` → the binary       |
 | `runner.py`     | `runner_bin`, which runs **inside** the sandbox and copies bytes to the CLI's stdio |
+
+## Backends
+
+The runner launches the backend it was told to launch (`--backend`, `HAKU_CLI_BACKEND`,
+defaulting to `claude`) and pumps its stdio; nothing else in it names a CLI. A backend is the
+three decisions that differ between CLIs — which argv, which binary, and which of the CLI's
+frames survive being replayed to a console that adopts the session — and Claude is the one
+implementation. What a second one would have to provide is <docs/second_backend.md>.
+
+Each backend names its own executable variable rather than sharing one: `HAKU_CLAUDE_PATH` is
+Claude's, set by `runner_image` below, and a second CLI ships in its own image with its own.
 
 **Named for what it is.** It was `agent_sdk_transport`, after the Agent SDK whose `Transport`
 interface `WebSocketTransport` used to implement. The SDK is gone from the code — the console drives
@@ -44,9 +56,9 @@ The launch enables both partial messages and fine-grained tool streaming, so the
 incremental text and `input_json_delta` tool-argument events as well as the completed `assistant`
 frames it writes down.
 
-The runner accepts `--websocket-url` and `--claude-path`, and optionally sends the
+The runner accepts `--websocket-url`, `--backend` and `--cli-path`, and optionally sends the
 `HAKU_AGENT_SDK_RUNNER_TOKEN` environment value as a bearer credential — a name this rename
 deliberately left alone, because it is a deploy contract shared with a SandboxTemplate, and a live
 session's runner pod keeps its image for up to `session_ttl_seconds`, so "new console, old runner"
 outlives any console roll. That bridge credential is removed from the child CLI's environment. The
-sandbox image must make the `claude` executable available at the configured path.
+sandbox image must make its backend's executable available at the path that backend's variable names.

@@ -13,7 +13,13 @@ from pathlib import Path
 
 import pytest_bazel
 
-from haku.runtime.x.claude_bridge.options import ENTRYPOINT, ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runtime.x.claude_bridge.options import (
+    ENTRYPOINT,
+    ClaudeSession,
+    HttpMcpServer,
+    build_claude_launch,
+    claude_backend,
+)
 from haku.runtime.x.claude_bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
 
 CONSOLE_SESSION = ClaudeSession(
@@ -96,6 +102,16 @@ def test_no_mcp_config_is_sent_when_there_are_no_servers() -> None:
     """`--mcp-config {"mcpServers": {}}` and no flag at all are different to the CLI, and the
     sandbox image may carry servers of its own that `--strict-mcp-config` then excludes."""
     assert "--mcp-config" not in build_claude_launch(ClaudeSession()).arguments
+
+
+def test_only_a_delta_is_withheld_from_a_console_that_adopts_this_session() -> None:
+    """The runner asks the backend which frames survive being sent twice, and for Claude the
+    answer is "all but `stream_event`" — the one kind with no id to recognise a duplicate by and
+    the one the console reconstructs by appending."""
+    backend = claude_backend(Path("/usr/local/bin/claude"))
+
+    assert not backend.replayable({"type": "stream_event", "event": {}})
+    assert backend.replayable({"type": "assistant", "message": {"id": "msg_01abc"}})
 
 
 if __name__ == "__main__":

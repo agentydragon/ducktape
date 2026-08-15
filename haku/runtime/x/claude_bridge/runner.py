@@ -1,4 +1,8 @@
-"""Thin sandbox bridge between a WebSocket and a local Claude Code CLI."""
+"""Thin sandbox bridge between a WebSocket and a local agent CLI.
+
+Which CLI is a backend (<backend.py>): this module launches the one it was told to launch and
+pumps its stdio, and every decision that differs between CLIs sits behind that seam.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +12,10 @@ import os
 import subprocess
 import sys
 from collections import deque
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -17,6 +23,8 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
+from haku.runtime.x.claude_bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
+from haku.runtime.x.claude_bridge.options import ClaudeBackend, claude_backend
 from haku.runtime.x.claude_bridge.protocol import (
     CONSOLE_TO_RUNNER,
     ClaudeLaunch,
@@ -37,8 +45,8 @@ class Outbound:
     """One frame on its way to the console, and whether a later console may need it again.
 
     `replayable` is decided here, where the payload is already parsed, rather than by re-reading
-    the JSON at send time — and it is the runner's one piece of CLI vocabulary, earned because
-    the class it excludes is the class that cannot survive being sent twice.
+    the JSON at send time. *Which* frames those are is the backend's to say (`CliBackend`): the
+    class that cannot survive being sent twice is a fact about one CLI's protocol.
     """
 
     text: str
@@ -56,9 +64,6 @@ RECONNECT_MAX_DELAY = 20.0
 # A sandbox held for a console that never returns is a wedged sandbox, which is worse than the
 # wedged room it was protecting. Generous against a roll, decisive against an outage.
 MAX_DISCONNECTED_SECONDS = 900.0
-
-# The CLI frame kind that is sent and never retained; see `_queue_cli_line`.
-DELTA_TYPE = "stream_event"
 
 # How many already-sent frames are kept to hand a console that adopts this session. Bounded
 # because this is a window over what a dying console may not have recorded, not a second copy of
@@ -86,46 +91,33 @@ class ClientWebSocketAdapter(TextWebSocket):
         await self._connection.close()
 
 
-def build_claude_command(claude_path: Path, launch: ClaudeLaunch) -> list[str]:
-    """Prefix the trusted launch arguments with the sandbox-local CLI path."""
-    return [str(claude_path), *launch.arguments]
+# One entry, and that is the point rather than an oversight: the runner is the end that has to be
+# told which CLI it is hosting. A second CLI ships as its own image and SandboxTemplate, which
+# would set `HAKU_CLI_BACKEND` and change nothing else here.
+BACKENDS: Final[Mapping[str, Callable[[Path | None], CliBackend]]] = {ClaudeBackend.name: claude_backend}
 
 
-def build_claude_environment(launch: ClaudeLaunch) -> dict[str, str]:
-    """Overlay trusted launch values without exposing the bridge credential."""
-    environment = {key: value for key, value in os.environ.items() if key != "HAKU_AGENT_SDK_RUNNER_TOKEN"}
-    environment.update(
-        {key: value for key, value in launch.environment.items() if key != "HAKU_AGENT_SDK_RUNNER_TOKEN"}
-    )
-    return environment
-
-
-async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], line: bytes) -> None:
-    """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one.
-
-    **A delta is sent but never retained.** `stream_event` has no agent-assigned identity, so a
-    console cannot recognise a second copy of one, and its reconstruction is `streamed += delta` —
-    a replay double-appends. It is also the class that never needs replaying: whatever it built is
-    superseded by the completed `assistant` frame behind it, which does carry an id
-    (<../../../cli_protocol/frame_identity.py>).
-    """
+async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], backend: CliBackend, line: bytes) -> None:
+    """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
     payload = decode_object(stripped.decode())
     await outbound.send(
-        Outbound(text=ClaudeMessage(payload=payload).model_dump_json(), replayable=payload.get("type") != DELTA_TYPE)
+        Outbound(text=ClaudeMessage(payload=payload).model_dump_json(), replayable=backend.replayable(payload))
     )
 
 
-async def _forward_cli_frames(outbound: MemoryObjectSendStream[Outbound], stdout: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_frames(
+    outbound: MemoryObjectSendStream[Outbound], backend: CliBackend, stdout: anyio.abc.ByteReceiveStream
+) -> None:
     pending = b""
     async for chunk in stdout:
         pending += chunk
         while b"\n" in pending:
             line, pending = pending.split(b"\n", 1)
-            await _queue_cli_line(outbound, line)
+            await _queue_cli_line(outbound, backend, line)
 
-    await _queue_cli_line(outbound, pending)
+    await _queue_cli_line(outbound, backend, pending)
 
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
@@ -164,11 +156,12 @@ async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr
         await outbound.send(Outbound(text=SetupOutput(data=chunk).model_dump_json(), replayable=False))
 
 
-async def _start_claude(claude_path: Path, launch: ClaudeLaunch) -> anyio.abc.Process:
+async def _start_cli(backend: CliBackend, launch: ClaudeLaunch) -> anyio.abc.Process:
+    resolved = backend.resolve(launch)
     return await anyio.open_process(
-        build_claude_command(claude_path, launch),
-        cwd=launch.cwd,
-        env=build_claude_environment(launch),
+        resolved.command,
+        cwd=resolved.cwd,
+        env=resolved.environment,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -180,7 +173,7 @@ async def _shutdown(process: anyio.abc.Process) -> int | None:
 
     The distinction is the difference between a failure and a teardown: a process we signalled
     reports the signal, so treating that as an exit status files every clean shutdown as
-    `Claude Code exited with status -15`.
+    `claude exited with status -15`.
     """
     # A CLI that has already exited is reaped here, so its own status is the one reported.
     with anyio.move_on_after(1):
@@ -198,7 +191,10 @@ async def _shutdown(process: anyio.abc.Process) -> int | None:
 
 
 async def _drain_cli(
-    process: anyio.abc.Process, outbound: MemoryObjectSendStream[Outbound], scope: anyio.CancelScope
+    process: anyio.abc.Process,
+    backend: CliBackend,
+    outbound: MemoryObjectSendStream[Outbound],
+    scope: anyio.CancelScope,
 ) -> None:
     """Read the CLI for as long as it lives, whether or not a console is listening.
 
@@ -217,7 +213,7 @@ async def _drain_cli(
     async with anyio.create_task_group() as readers:
         # stderr ending says nothing about the conversation; stdout ending is the CLI's exit.
         readers.start_soon(_forward_cli_errors, outbound, stderr)
-        await _forward_cli_frames(outbound, stdout)
+        await _forward_cli_frames(outbound, backend, stdout)
         readers.cancel_scope.cancel()
     scope.cancel()
 
@@ -273,24 +269,24 @@ async def _serve_console(
         tasks.start_soon(cli_to_console)
 
 
-async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: Path, launch: ClaudeLaunch) -> None:
-    """Run one Claude CLI and serve exactly one console connection with it.
+async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBackend, launch: ClaudeLaunch) -> None:
+    """Run one CLI and serve exactly one console connection with it.
 
     The single-connection shape, kept because it is the whole of what a session without
     reconnection needs; `run` composes the same pieces with a process that outlives the socket.
     """
     outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
-    process = await _start_claude(claude_path, launch)
+    process = await _start_cli(backend, launch)
     try:
         async with anyio.create_task_group() as tasks:
-            tasks.start_soon(_drain_cli, process, outbound_sender, tasks.cancel_scope)
+            tasks.start_soon(_drain_cli, process, backend, outbound_sender, tasks.cancel_scope)
             await _serve_console(websocket, process, outbound_receiver)
             tasks.cancel_scope.cancel()
     finally:
         exited_with = await _shutdown(process)
         await websocket.close()
     if exited_with not in (0, None):
-        raise RuntimeError(f"Claude Code exited with status {exited_with}")
+        raise RuntimeError(f"{backend.name} exited with status {exited_with}")
 
 
 async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSocket | None = None) -> None:
@@ -383,11 +379,13 @@ async def _dial(websocket_url: str, headers: dict[str, str] | None) -> ClientCon
     )(dial_once)
 
 
-async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, setup_path: Path | None = None) -> None:
-    """Serve one Claude CLI to whichever console is up, across as many connections as that takes.
+async def run(
+    websocket_url: str, backend: CliBackend, bearer_token: str | None, setup_path: Path | None = None
+) -> None:
+    """Serve one CLI to whichever console is up, across as many connections as that takes.
 
     **The CLI outlives the connection.** It used to die with it — one socket, one process, and
-    `bridge_websocket_to_claude` terminating Claude in its `finally` — so a console roll ended
+    `bridge_websocket_to_cli` terminating the CLI in its `finally` — so a console roll ended
     the conversation, and the reconnect Kubernetes then forced was refused by a console that
     admitted a session only once. Six rolls a day made that the normal end of a session.
 
@@ -429,11 +427,11 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
                     if process is None:
                         if setup_path is not None:
                             await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
-                        process = await _start_claude(claude_path, launch)
+                        process = await _start_cli(backend, launch)
                         # Long-lived, so nothing the CLI writes is lost to a closed socket and its
                         # pipes never fill: they drain into the buffer either way, and the buffer's
                         # backpressure pauses the CLI rather than dropping what it said.
-                        session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
+                        session.start_soon(_drain_cli, process, backend, outbound_sender, session.cancel_scope)
                     await _serve_console(websocket, process, outbound_receiver, replay)
                 except ConnectionClosed:
                     # This connection ending says nothing about the session; `_dial` decides
@@ -450,7 +448,7 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
             session.cancel_scope.cancel()
     finally:
         if process is not None and (exited_with := await _shutdown(process)) not in (0, None):
-            raise RuntimeError(f"Claude Code exited with status {exited_with}")
+            raise RuntimeError(f"{backend.name} exited with status {exited_with}")
 
 
 def _optional_path(value: str | None) -> Path | None:
@@ -458,12 +456,18 @@ def _optional_path(value: str | None) -> Path | None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Bridge a Haku Console WebSocket to Claude Code stdio.")
+    parser = argparse.ArgumentParser(description="Bridge a Haku Console WebSocket to an agent CLI's stdio.")
     parser.add_argument("--websocket-url", default=os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"))
     parser.add_argument("--session-id", default=os.environ.get("HAKU_CLAUDE_SESSION_ID"))
-    parser.add_argument("--claude-path", type=Path, default=Path(os.environ.get("HAKU_CLAUDE_PATH", "claude")))
+    parser.add_argument(
+        "--backend", choices=sorted(BACKENDS), default=os.environ.get("HAKU_CLI_BACKEND", ClaudeBackend.name)
+    )
+    # Unset leaves the executable to the backend, which reads the variable its own image sets
+    # (`options.EXECUTABLE_VARIABLE` for Claude); this is for a local run against a CLI elsewhere.
+    parser.add_argument("--cli-path", type=Path)
     # Unset means "no bootstrap", which is what the transport's own tests and any bare
-    # local run want; the image sets it.
+    # local run want; the image sets it. Named for Claude historically only — the bootstrap it
+    # points at checks haku-state out and knows nothing about which CLI follows it.
     parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get("HAKU_CLAUDE_SETUP")))
     args = parser.parse_args()
     if not args.websocket_url:
@@ -475,8 +479,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    bearer_token = os.environ.get("HAKU_AGENT_SDK_RUNNER_TOKEN")
-    anyio.run(run, args.websocket_url, args.claude_path, bearer_token, args.setup_path)
+    anyio.run(
+        run,
+        args.websocket_url,
+        BACKENDS[args.backend](args.cli_path),
+        os.environ.get(BRIDGE_CREDENTIAL_VARIABLE),
+        args.setup_path,
+    )
 
 
 if __name__ == "__main__":

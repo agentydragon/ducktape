@@ -13,10 +13,20 @@ py_library(
 )
 
 py_library(
+    name = "backend",
+    srcs = ["backend.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [":protocol"],
+)
+
+py_library(
     name = "options",
     srcs = ["options.py"],
     visibility = ["//haku:__subpackages__"],
-    deps = [":protocol"],
+    deps = [
+        ":backend",
+        ":protocol",
+    ],
 )
 
 py_library(
@@ -34,6 +44,8 @@ py_library(
     srcs = ["runner.py"],
     visibility = ["//haku:__subpackages__"],
     deps = [
+        ":backend",
+        ":options",
         ":protocol",
         "@pypi//anyio",
         "@pypi//tenacity",
@@ -47,6 +59,8 @@ py_binary(
     main = "runner.py",
     visibility = ["//visibility:public"],
     deps = [
+        ":backend",
+        ":options",
         ":protocol",
         "@pypi//anyio",
         "@pypi//tenacity",

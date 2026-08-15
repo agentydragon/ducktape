@@ -1,4 +1,8 @@
-"""The CLI launch the console asks the sandbox to run.
+"""Claude Code as a bridge backend: the launch the console asks for, and the binary that answers.
+
+Both halves of what `backend.CliBackend` calls a backend, kept in one module because they have
+to agree: the flags below only mean anything to the executable `ClaudeBackend` starts. Everything
+generic about running *an* agent CLI is <backend.py>.
 
 Replaces `ClaudeAgentOptions` plus `SubprocessCLITransport._build_command()`. That pairing was
 the last of the Agent SDK the console used, and it was reached through a private method on a
@@ -20,15 +24,24 @@ computes it. The CLI's own protocol reference is <../../../cli_protocol/README.m
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, ClassVar
 
+from haku.runtime.x.claude_bridge.backend import ProcessLaunch, child_environment
 from haku.runtime.x.claude_bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
 
 # What the CLI reports itself as. The SDK sent `sdk-py`; the console is not the SDK, and the CLI
 # treats this as a label rather than switching behaviour on it.
 ENTRYPOINT = "haku-console"
+
+# Where the sandbox image put the Claude executable. Named per-backend rather than by one shared
+# `HAKU_CLI_PATH` on purpose: a second CLI ships in its own image with its own path, so it can
+# name its own variable, and this one keeps the name the runner image and the bridge end-to-end
+# test already set — a rename here would have to be a flag day for no gain.
+EXECUTABLE_VARIABLE = "HAKU_CLAUDE_PATH"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,4 +96,36 @@ def build_claude_launch(session: ClaudeSession) -> ClaudeLaunch:
         arguments=tuple(arguments),
         cwd=str(session.cwd) if session.cwd is not None else ".",
         environment={"CLAUDE_CODE_ENTRYPOINT": ENTRYPOINT, FINE_GRAINED_TOOL_STREAMING_ENV: "1", **session.environment},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ClaudeBackend:
+    """Claude Code, as the sandbox runner starts it and reads it back."""
+
+    name: ClassVar[str] = "claude"
+    # No agent-assigned identity, so a console cannot recognise a second copy of one, and its
+    # reconstruction is `streamed += delta` — a replay double-appends. Also the class that never
+    # needs replaying: whatever it built is superseded by the completed `assistant` frame behind
+    # it, which does carry an id (<../../../cli_protocol/frame_identity.py>).
+    DELTA_TYPE: ClassVar[str] = "stream_event"
+
+    executable: Path
+
+    def resolve(self, launch: ClaudeLaunch) -> ProcessLaunch:
+        return ProcessLaunch(
+            executable=self.executable,
+            arguments=launch.arguments,
+            cwd=launch.cwd,
+            environment=child_environment(launch),
+        )
+
+    def replayable(self, payload: dict[str, Any]) -> bool:
+        return payload.get("type") != self.DELTA_TYPE
+
+
+def claude_backend(executable: Path | None = None) -> ClaudeBackend:
+    """Claude Code at the path the sandbox image chose, or at *executable* when one is given."""
+    return ClaudeBackend(
+        executable=executable if executable is not None else Path(os.environ.get(EXECUTABLE_VARIABLE, "claude"))
     )
