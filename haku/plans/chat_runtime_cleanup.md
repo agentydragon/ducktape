@@ -51,11 +51,6 @@ This is where the queues earn their place._
 - **Derive Matrix's `txn_id` from the message id** instead of `uuid4().hex`, so the homeserver is a
   second line of defence against a replayed `assistant` reaching the room twice. Cheap now that
   `works.allegedly.haku` already carries the id on the event.
-- **Close the claimed-but-never-delivered window.** `next_prompt` claims the prompt and opens the
-  turn in one transaction; `_run_turn` writes it to the CLI afterwards. A replica dying in between
-  leaves a claimed prompt never asked and a turn that never ends — harmless while the session dies
-  with it, real once sessions survive. `command_lifecycle`'s `queued`/`started` is what distinguishes
-  "delivered, answer coming" from "never left".
 - **Route an adopted turn by turn**, not by session.
 
 **Done when** a roll during a turn loses no answer and posts nothing twice.

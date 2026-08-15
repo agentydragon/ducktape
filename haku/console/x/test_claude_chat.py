@@ -557,10 +557,48 @@ async def test_adoption_closes_the_turn_the_previous_holder_left_open(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
 
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+
     assert await chat_store.abandon_open_turn(session_id) == started.turn_id
     [turn] = await chat_store.list_turns(str(session_id), limit=5)
     assert turn.outcome == TurnOutcome.FAILED
     assert await chat_store.abandon_open_turn(session_id) is None, "nothing left open to abandon"
+
+
+async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """`next_prompt` claims the prompt; `_run_turn` writes it afterwards. A replica dying between
+    the two asked nothing, so the prompt is owed a second offer rather than a silent burial.
+    """
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    claimed = await chat_store.next_prompt(session_id)
+    assert claimed is not None
+
+    await chat_store.abandon_open_turn(session_id)
+
+    reoffered = await chat_store.next_prompt(session_id)
+    assert reoffered is not None, "a prompt that never left is still waiting to be asked"
+    assert reoffered.message_id == claimed.message_id
+    assert reoffered.prompt == "what were we doing"
+    assert reoffered.turn_id != claimed.turn_id
+
+
+async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, recording_claims, operator_id) -> None:
+    """The agent has it and the runner will replay its answer, so re-offering would ask twice."""
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    assert await chat_store.next_prompt(session_id) is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+
+    await chat_store.abandon_open_turn(session_id)
+
+    assert await chat_store.next_prompt(session_id) is None
 
 
 async def test_terminal_runner_retry_deletes_its_stale_claim(
