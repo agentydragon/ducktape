@@ -230,29 +230,21 @@ input to a running turn**. Interrupt exists; steer does not.
 - **R3.2a [v1] Always-up is a renewed lease, not an absent deadline.** Deleting the deadline
   removes the only thing that reclaims a sandbox when the console is not there to delete it,
   and "the console died" is precisely when a 2-vCPU claim should not be pinned forever. So
-  the deadline stays and the supervisor renews it while the session is live: sandbox lives
+  the deadline stays and the console renews it while the session is live: the sandbox lives
   as long as something is tending it, and is reclaimed by the controller shortly after
-  nothing is. **There is a precedent to copy rather than invent** — `sandbox_mcp`'s `_renew`
-  slides `shutdownTime` forward on every exec, with a `test` on `resourceVersion` and a
-  retry on 409. Two gaps: the console's Role
-  (<../../cluster/k8s/haku/workspaces/app/haku-console-claude-claim-role.yaml>) grants
-  `create`/`delete`/`get` and no `patch`, and nothing renews on a schedule today because
-  nothing needed to.
-- **R3.2b [v1] The reaper that actually bounds the sandbox is the Kyverno janitor, and it
-  fires at 24 hours.** `haku-claude-workspace-janitor`
-  (<../../cluster/k8s/haku/workspaces/app/cleanuppolicy-haku-claude-janitor.yaml>) deletes
-  every `Sandbox`/`SandboxClaim` in `haku-claude-sandbox` older than 24h by
-  `creationTimestamp` — not by idleness, not by deadline, so a renewed lease does not
-  survive it and neither does removing `shutdownTime`. **Always-up therefore tops out at one
-  day until that policy changes**, and rotation is a _daily_ event rather than a rare one.
-  The janitor is not wrong to exist: its job is catching claims whose owner forgot to delete
-  them, and by `creationTimestamp` alone a healthy always-up claim is indistinguishable from
-  a leaked one. What distinguishes them is the lease — so the fence moves from age to
-  expiry: raise the age fence well past a day and let the controller's own `shutdownTime`
-  handling do the reclaiming, with the janitor demoted to what its sibling in `haku-sandbox`
-  already is, a 7-day backstop for claims the controller somehow did not collect. That also
-  makes the reaper finer-grained: the controller acts on a timestamp, the janitor on an
-  hourly cron.
+  nothing is. Realized by `_renew_lease` sliding `shutdownTime` forward on the lease
+  heartbeat (`sandbox_claims.py` `renew`, a `test` on `resourceVersion` with a 409 retry —
+  the shape `sandbox_mcp`'s `_renew` established).
+- **R3.2b [v1] Nothing may bound the sandbox by a creation-age fence.** A Kyverno
+  `CleanupPolicy` reaping by `creationTimestamp` — not by idleness, not by deadline — caps a
+  healthy always-up session at whatever age it is set to: the same hard timer R3.2a set out
+  to remove, only further out. So the reaper is the controller's own `shutdownTime`, slid
+  while the session is tended and cleared when the claim is deleted on a clean end, and these
+  sandboxes carry no age-fenced janitor. The residual is explicit and accepted: with no age
+  fence, a claim the controller itself fails to reap (controller broken for a long stretch)
+  has no independent backstop. The alternative that keeps one without re-capping a live
+  session is a fence keyed on `shutdownTime` **lapsed** rather than creation age — it never
+  fires while a session is tended — to reach for if that residual ever bites.
 - **R3.3 [v1] Context exhaustion is handled by compaction, not rotation.** The session
   compacts in place and its ID survives, so the runtime does nothing and the operator sees
   no seam. Rotation to a fresh session ID remains possible (R3.4) but is a **failure and
@@ -299,13 +291,13 @@ input to a running turn**. Interrupt exists; steer does not.
   before building the prompt, because it decides whether anything must happen while the
   session is _healthy_.
 
-  **How often this fires is not a guess — it is 24 hours (R3.2b), and that is an argument
-  for fixing the reaper before accepting summary-less re-awakening.** "Loses the thread's
-  earlier reasoning, and the operator can say so" is a fair trade for a rare event and a
-  poor one for a daily one: every morning would open with an agent that does not know what
-  yesterday was about. The trade is only honest once rotation is rare, which is Phase 3's
-  job. Sequenced the other way — summary first — is building the expensive half to
-  compensate for a fence that a one-line policy change removes.
+  **How often this fires is no longer a daily clock.** It used to be the 24h creation-age
+  fence; that fence is gone and a tended session's deadline is slid instead (R3.2b), so
+  rotation happens only on genuine context exhaustion or a crash. "Loses the thread's
+  earlier reasoning, and the operator can say so" is a fair trade for that rare event, where
+  it would have been a poor one when every morning opened with an agent that did not know
+  what yesterday was about. So summary-less re-awakening is the honest default now, and the
+  expensive summary half is worth building only if a rare rotation still proves too lossy.
 
   **The room is the primary source, not the database.** Matrix already holds the
   conversation, it is what the operator sees, and the recovery path is `/messages`
@@ -1025,7 +1017,7 @@ for after Matrix has proven itself, not before.
   2026-08-12. It is the simpler thing to describe — "here are credentials, process what the
   operator sends" — and the simplicity is entirely in the prompt. The agent would own its own
   read watermark, and an agent's read state lives in its context, which is lost on a schedule:
-  compaction, and rotation at 24h (R3.2b). It would also discard properties that are built and
+  compaction, and rotation. It would also discard properties that are built and
   tested rather than argued — the `/sync` watermark doubling as the `/messages` cursor, R1.7's
   "no message is lost" (verified by the scale-to-zero test in Phase 0), the batching, and the
   hold-until-ready behaviour. A durable guarantee would be traded for a judgment the model

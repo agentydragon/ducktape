@@ -63,17 +63,13 @@ each is independently useful and reversible.
 
 ## Stages
 
-### 1. The log stops having a hole — **landed**
-
-Deltas were the one frame class not recorded, because the console kept a single rewritten `partial`
-row instead. A fold cannot run over a log with a hole in it, and that hole is precisely why
-`streamed` had to be carried by hand.
-
-Cost, estimated and not yet measured: a long turn streams a few hundred deltas, so a row each is
-tens of kilobytes. Worth checking against a real session's `count(*) where kind = 'stream_event'`
-before stage 2 commits to it. `read_frames` leaves them out of its default view, which is where
-"would bury the log for a reader" is actually answered. One extra write per delta until stage 2
-removes the `partial` row it replaces, at which point it is a wash.
+Stage 1 — a log with no hole for the fold to trip over — is the foundation the rest needs and is in
+place: every frame class is recorded, deltas included, where before the delta gap was precisely what
+forced `streamed` to be carried by hand. One thing it leaves owed: **measure the delta cost** against
+a real session's `count(*) where kind = 'stream_event'` before stage 2 commits to a row per delta. A
+long turn streams a few hundred, tens of kilobytes each; `read_frames` already keeps them out of its
+default view, and the extra write per delta is a wash once stage 2 removes the `partial` row it
+replaces.
 
 ### 2. Make the frame log store one thing — recorded, **not scheduled**
 
@@ -140,7 +136,8 @@ removes the "exactly one `anext` in flight" dance.
 
 ## The one thing to keep in view
 
-**The projector must be single-writer per session.** The lease already gives that, and it is the
-reason none of this needs the fold to be re-runnable. If the lease's meaning changes — stage 5 of
-<chat_runtime_cleanup.md> proposes that an expired lease should mean unowned rather than dead —
-check this assumption against it rather than around it.
+**The projector must be single-writer per session.** The lease gives that, and it is the reason none
+of this needs the fold to be re-runnable. An expired lease now means unowned rather than dead, but
+the property still holds: `authenticate_bridge` admits one holder at a time while a lease is valid,
+and expiry only makes the row adoptable — it never lets two projectors write at once. A future change
+to the lease's meaning should be checked against this assumption rather than around it.

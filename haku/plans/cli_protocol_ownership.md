@@ -68,14 +68,14 @@ Two to know about without acting on:
 
 ## Session re-adoption across a console roll
 
-**Status: not built.** The protocol ownership it waited on has landed, so nothing above it blocks
-it now.
-
-Today a console replica that dies takes its Claude Code session with it. The lease
-(<../console/x/claude_chat.py>, `expire_stale_leases`) makes that **observable** — another
-replica notices the holder stopped renewing and fails the session instead of leaving the room
-waiting forever. This section is about the next step: making the session **survive** the roll
-rather than merely being cleaned up after it.
+**Status: built (design B below).** A console replica that dies no longer takes its Claude Code
+session with it: the runner keeps the CLI alive across the dropped socket and redials, and an
+adopting console picks the conversation up mid-flight. The lease
+(<../console/x/claude_chat.py>, `expire_stale_leases`) is what makes that safe — a dropped session is
+**observable** (another replica notices the holder stopped renewing) and, because an expired lease
+now means unowned rather than dead, **adoptable**: the returning runner takes it over and the sweep
+fails the session only if none does. The design alternatives and the reasoning that chose B are kept
+below.
 
 ### Why the sandbox is not the problem
 
@@ -101,7 +101,7 @@ Resume restores the actual context rather than an approximation of it, and needs
 
 **B — keep the process alive across the gap.** The runner stops killing Claude on disconnect,
 buffers, and redials; an adopting console picks the conversation up mid-flight. Preserves the
-in-flight turn. This is the target.
+in-flight turn. This is what was built.
 
 What B has to survive is the wire in <../cli_protocol/protocol.md>: two channels multiplexed on one
 stream, the conversation half append-only — which is what makes replay tractable — and the control
@@ -297,45 +297,23 @@ exact version, adapter contract tests before a repin. A range inverts it: the co
 the oldest and the newest supported version, or "we support 2" quietly becomes a claim nobody
 checks. `test_transport.py` and `test_runner.py` are where that matrix goes.
 
-### Letting the console own the whole lifecycle
+### The lifecycle opens a protocol horizon
 
-Today a session's outer bound is `shutdownTime` on the SandboxClaim, set to
-`now + session_ttl_seconds` (7200) **at creation and never patched**. So it is not an idle timeout —
-a conversation in full flow dies at exactly two hours, mid-turn, and the room is told the session
-failed. Removing it in favour of console-managed lifecycle is right, and cheaper than it looks
-because the TTL is not what prevents leaks: the Kyverno `CleanupPolicy` beside the template already
-reaps Sandboxes and SandboxClaims older than 24h, at the CR layer, precisely because the Agent
-Sandbox controller recreates deleted Pods. That janitor is the backstop; the TTL is a policy on top
-of it.
+A session's outer bound is no longer a fixed `shutdownTime`: the console slides the SandboxClaim's
+deadline while the session is tended and deletes the claim on a clean end
+(<matrix_chat_runtime.md> R3.2a/b, <chat_runtime_cleanup.md>), so a conversation in full flow no
+longer dies on a clock. What that leaves for this document is the protocol consequence.
 
-So: drop `shutdownTime` to the janitor's horizon or omit it, and let the console release a sandbox
-when it decides the session is done — an idle timer, plus the lease as liveness, plus the janitor as
-the thing that catches a console that forgot both.
-
-**Order matters here.** Do not remove the TTL before rolls are survivable. Today it is quietly
-recycling sessions that wedged — a session whose runner is crashlooping into a refused reconnect is
-reclaimed by the TTL, not by anything that understands what happened
-(<../console/debug/2026_08_13_sessions_boot_and_die.md>). Remove the backstop first and those
-sessions stop being cleaned up at all.
-
-**And keep a bound, because the bound is the protocol-compatibility window.** A runner's image is
-fixed when its claim is created, so the oldest live runner is exactly as old as the longest-lived
-session — which is exactly how far back the console must still speak the bridge protocol. With a
-bound, the support policy is finite and derivable: at roughly six console releases a day, a 24h
-horizon means the console must speak whatever the runner images of the last day speak, and a version
-older than that cannot be connected to anything. Without a bound, "the console must remain
-compatible with every bridge version ever shipped" is the policy, whether or not anyone writes it
-down. Pick the horizon deliberately and derive the support window from it, rather than discovering
-the window when an eight-month-old sandbox refuses a handshake.
-
-### The lease decision this revisits
-
-`expire_stale_leases` currently treats an expired lease as **dead**: fail the session, sweep the
-claim, provision a replacement. Re-adoption wants it to mean **unowned** — adoptable, with
-failure only once adoption has not happened (or has been tried and failed).
-
-That is a semantic change to one method rather than a rewrite, but it is the part of the lease
-work that was decided before re-adoption existed, so it is where to start.
+**A tended session now has no upper bound on its lifetime, and that bound was the
+protocol-compatibility window.** A runner's image is fixed when its claim is created, so the oldest
+live runner is exactly as old as the longest-lived session — exactly how far back the console must
+still speak the bridge protocol. Under the old fixed TTL with a janitor above it the window was
+finite and derivable: at roughly six console releases a day, a 24h horizon meant the last day's
+runner images. With the deadline slid and no janitor, "the console must remain compatible with every
+bridge version ever shipped" is the policy unless a bound is chosen. Pick the horizon deliberately —
+bound the session lifetime, or version the bridge protocol so an old runner degrades rather than
+breaks — and derive the support window from it, rather than discovering it when an eight-month-old
+sandbox refuses a handshake.
 
 ### Open questions
 
