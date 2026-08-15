@@ -14,7 +14,13 @@ from sqlalchemy import delete, select
 from haku.console.chat_models import ChatSessionStatus
 from haku.console.database_schema import ClaudeChatSession
 from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore, SpaSession
+from haku.console.x.claude_chat import (
+    ADOPTION_GRACE,
+    BridgeAuthentication,
+    ClaudeChatService,
+    ClaudeChatStore,
+    SpaSession,
+)
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import EventTag, InboundMessage, MatrixError, RoomEventKind
 from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
@@ -145,7 +151,9 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
     The session stayed `responding` because the replica running it went away without
     recording anything, and a live status was taken at face value here — so this method kept
     reporting "is responding" at a session that no longer existed anywhere but in a row.
-    Supervision has to reclaim it, not believe it.
+    Supervision has to reclaim it, not believe it — but only once the lease has been adoptable
+    for a whole `ADOPTION_GRACE` and no runner took it, which is what makes a console roll
+    survivable rather than fatal.
     """
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     await supervisor.supervise_once()
@@ -154,7 +162,7 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
         chat = await db.get(ClaudeChatSession, orphan)
         assert chat is not None
         chat.status = ChatSessionStatus.RESPONDING
-        chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+        chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - ADOPTION_GRACE - datetime.timedelta(seconds=1)
 
     await supervisor.supervise_once()
 
