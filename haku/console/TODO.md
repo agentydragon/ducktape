@@ -10,8 +10,10 @@ onto one session, each able to do broadly what the other can. Today the console 
 two pages that are the same object, cannot show a session's lifecycle at all, and cannot speak.
 Design, the parity gaps it closes, and the traps in each: <plans/session_channels.md>.
 
-1. **Render bootstrap narration** — `setup_output` rows already exist in the frame log; nothing
-   but the console renders them. Smallest thing that makes it a channel.
+1. **Render bootstrap narration** — the rows exist (`setup_output` in the frame log, written by
+   `_progress_reporter`) and the room narrates them live; no web surface shows them at all, live
+   or from the record afterwards. Closing that gap is the smallest thing that makes the console a
+   channel.
 2. **Live updates over the existing `/api/events/ws`**, as a `SessionChangedEvent {session_id}`
    the page refetches on — not a second SSE stream, and not a poll. **Coalesce per session**:
    `SessionEventKind.UPDATE` fires per stream delta, and a full-transcript refetch per delta per open
