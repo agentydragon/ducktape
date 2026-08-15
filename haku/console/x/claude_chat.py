@@ -409,7 +409,7 @@ class ClaudeChatStore:
             )
         if session is None:
             raise KeyError(session_id)
-        turns = await self.list_turns(str(session_id), limit=100)
+        turns = await self.list_turns(session_id, limit=100)
         return ConversationSessionView(
             session_id=view.session_id,
             surface=session.surface,
@@ -610,7 +610,7 @@ class ClaudeChatStore:
             chat.updated_at = now
             await notify(db, ChatEventKind.PROMPT, session_id)
             await notify(db, ChatEventKind.UPDATE, session_id)
-        return _message_view(message)
+        return _message_view(message, _NO_CALLS)
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.
@@ -694,13 +694,13 @@ class ClaudeChatStore:
                 chat.updated_at = now
                 await notify(db, ChatEventKind.UPDATE, turn.session_id)
 
-    async def list_turns(self, session_id: str, *, limit: int) -> list[TurnRecord]:
+    async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]:
         """A session's exchanges, newest first, for the `haku_conversations` read tools."""
         async with self._sessions() as db:
             rows = (
                 await db.scalars(
                     select(ClaudeChatTurn)
-                    .where(ClaudeChatTurn.session_id == UUID(session_id))
+                    .where(ClaudeChatTurn.session_id == session_id)
                     .order_by(ClaudeChatTurn.started_at.desc())
                     .limit(limit)
                 )
@@ -785,14 +785,14 @@ class ClaudeChatStore:
         ]
 
     async def read_frames(
-        self, session_id: str, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
+        self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]:
         """One page of a session's rollout, in wire order.
 
         Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
         cannot skip or repeat a row the way an offset would once new frames land between pages.
         """
-        query = select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == UUID(session_id))
+        query = select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == session_id)
         if after_seq is not None:
             query = query.where(ClaudeChatFrame.frame_seq > after_seq)
         if kinds:
@@ -1951,10 +1951,12 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
     return _RolloutCalls(by_message=by_message, results=results)
 
 
+# Passed explicitly rather than defaulted, so a caller says it has no rollout to join against
+# instead of inheriting that silently: exactly one does, and it is the row it just inserted.
 _NO_CALLS = _RolloutCalls(by_message=MappingProxyType({}), results=MappingProxyType({}))
 
 
-def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls = _NO_CALLS) -> ClaudeChatMessageView:
+def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls) -> ClaudeChatMessageView:
     # The rollout where the row points into it, the column otherwise. That column is the lossy copy
     # — the calls without their answers — and is kept only for rows with nothing to point at: ones
     # that predate the pointer, and ones this console synthesized rather than observed.
@@ -2127,7 +2129,7 @@ async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
 
 
 def _session_view(
-    record: ClaudeChatSession, messages: list[ClaudeChatMessage], *, responding: bool, calls: _RolloutCalls = _NO_CALLS
+    record: ClaudeChatSession, messages: list[ClaudeChatMessage], *, responding: bool, calls: _RolloutCalls
 ) -> ClaudeChatSessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Sequence
+from uuid import UUID
 
 import pytest_bazel
 from fastmcp import Client
@@ -17,6 +18,7 @@ from haku.console.tools.conversations import (
     build_mcp,
 )
 
+SESSION = UUID("11111111-1111-1111-1111-111111111111")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
 
 
@@ -50,7 +52,7 @@ class _Reader:
         ][:limit]
 
     async def read_frames(
-        self, session_id: str, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
+        self, session_id: UUID, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]:
         self.queries.append({"session_id": session_id, "after_seq": after_seq, "limit": limit, "kinds": kinds})
         selected = [frame for frame in self._frames if kinds is None or frame.kind in kinds]
@@ -58,7 +60,7 @@ class _Reader:
             selected = [frame for frame in selected if frame.frame_seq > after_seq]
         return selected[:limit]
 
-    async def list_turns(self, session_id: str, *, limit: int) -> list[TurnRecord]:
+    async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]:
         return [
             TurnRecord(
                 turn_id="22222222-2222-2222-2222-222222222222",
@@ -94,7 +96,7 @@ async def test_a_full_page_carries_the_cursor_for_the_next_one() -> None:
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3, 4)))
 
     async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": "s", "limit": 2})
+        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 2})
 
     assert [frame.frame_seq for frame in result.data.frames] == [1, 2]
     assert result.data.next_after_seq == 2
@@ -105,7 +107,7 @@ async def test_a_short_page_is_the_last_one() -> None:
     reader = _Reader(_frame(1), _frame(2))
 
     async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": "s", "limit": 25})
+        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
 
     assert result.data.next_after_seq is None
 
@@ -116,9 +118,9 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3)))
 
     async with Client(build_mcp(reader)) as client:
-        await client.call_tool("read_rollout", {"session_id": "s", "after_seq": 1, "kinds": ["assistant"]})
+        await client.call_tool("read_rollout", {"session_id": str(SESSION), "after_seq": 1, "kinds": ["assistant"]})
 
-    assert reader.queries == [{"session_id": "s", "after_seq": 1, "limit": 25, "kinds": ["assistant"]}]
+    assert reader.queries == [{"session_id": SESSION, "after_seq": 1, "limit": 25, "kinds": ["assistant"]}]
 
 
 async def test_an_oversized_frame_is_clipped_and_says_so() -> None:
@@ -127,7 +129,7 @@ async def test_an_oversized_frame_is_clipped_and_says_so() -> None:
     reader = _Reader(big, _frame(2))
 
     async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": "s"})
+        result = await client.call_tool("read_rollout", {"session_id": str(SESSION)})
 
     clipped, kept = result.data.frames
     assert clipped.payload is None
@@ -139,7 +141,7 @@ async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
     """The point of listing exchanges is to pick one and then read its frames, so the bracket has
     to come back with the accounting rather than instead of it."""
     async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("list_turns", {"session_id": "s"})
+        result = await client.call_tool("list_turns", {"session_id": str(SESSION)})
 
     [turn] = result.data
     assert (turn.first_frame_seq, turn.last_frame_seq) == (1, 4)
@@ -150,9 +152,21 @@ async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
 async def test_a_page_size_above_the_cap_is_refused() -> None:
     """The cap is the only thing keeping a read from being a dump."""
     async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("read_rollout", {"session_id": "s", "limit": 10_000}, raise_on_error=False)
+        result = await client.call_tool(
+            "read_rollout", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False
+        )
 
     assert result.is_error
+
+
+async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
+    """Parsed at the boundary, so the store is never handed something it has to validate."""
+    reader = _Reader()
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("read_rollout", {"session_id": "not-an-id"}, raise_on_error=False)
+
+    assert result.is_error
+    assert reader.queries == []
 
 
 if __name__ == "__main__":

@@ -550,7 +550,7 @@ async def test_the_sandbox_narration_outlives_the_pod_that_wrote_it(
     with patch("haku.console.x.claude_chat.cli_over_websocket", _NarratingClaudeClient):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
-    frames = await chat_store.read_frames(str(session_id), after_seq=None, limit=10, kinds=["setup_output"])
+    frames = await chat_store.read_frames(session_id, after_seq=None, limit=10, kinds=["setup_output"])
     assert [frame.payload["text"] for frame in frames] == ["Cloning into '/workspace/haku-state'..."]
 
 
@@ -623,7 +623,7 @@ async def test_adoption_inherits_a_turn_still_running(chat_store, chat_service, 
 
     assert resumed is not None
     assert resumed.turn_id == started.turn_id
-    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    [turn] = await chat_store.list_turns(session_id, limit=5)
     assert turn.ended_at is None, "an inherited turn is finished by whoever adopts it, not closed here"
 
 
@@ -670,7 +670,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_wrote_down(
 
     assert await chat_store.adopt_open_turn(session_id) is None
 
-    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    [turn] = await chat_store.list_turns(session_id, limit=5)
     assert (turn.outcome, turn.cost_usd, turn.duration_ms) == (TurnOutcome.ANSWERED, 0.5, 1200)
 
 
@@ -938,8 +938,8 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
     for kind in ("user", "assistant", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
-    first = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=2, kinds=None)
-    rest = await chat_store.read_frames(str(session.session_id), after_seq=first[-1].frame_seq, limit=2, kinds=None)
+    first = await chat_store.read_frames(session.session_id, after_seq=None, limit=2, kinds=None)
+    rest = await chat_store.read_frames(session.session_id, after_seq=first[-1].frame_seq, limit=2, kinds=None)
 
     assert [frame.kind for frame in first] == ["user", "assistant"]
     assert [frame.kind for frame in rest] == ["result"]
@@ -950,9 +950,7 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
     for kind in ("user", "system", "assistant", "system", "result"):
         await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, kind, {"type": kind})
 
-    frames = await chat_store.read_frames(
-        str(session.session_id), after_seq=None, limit=25, kinds=["assistant", "result"]
-    )
+    frames = await chat_store.read_frames(session.session_id, after_seq=None, limit=25, kinds=["assistant", "result"])
 
     assert [frame.kind for frame in frames] == ["assistant", "result"]
 
@@ -967,7 +965,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
     assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is True
     assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "assistant", frame) is False
 
-    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(session.session_id, after_seq=None, limit=25, kinds=None)
     assert [frame.kind for frame in frames] == ["assistant"]
 
 
@@ -991,7 +989,7 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
     assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
     assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
 
-    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=["stream_event"])
+    frames = await chat_store.read_frames(session.session_id, after_seq=None, limit=25, kinds=["stream_event"])
     assert len(frames) == 2
 
 
@@ -1006,8 +1004,8 @@ async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, ope
     )
     await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "uuid": "r1"})
 
-    default = await chat_store.read_frames(str(session_id), after_seq=None, limit=25, kinds=None)
-    asked = await chat_store.read_frames(str(session_id), after_seq=None, limit=25, kinds=["stream_event"])
+    default = await chat_store.read_frames(session_id, after_seq=None, limit=25, kinds=None)
+    asked = await chat_store.read_frames(session_id, after_seq=None, limit=25, kinds=["stream_event"])
 
     assert [frame.kind for frame in default] == ["result"]
     assert [frame.kind for frame in asked] == ["stream_event"]
@@ -1019,7 +1017,7 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
     await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
     await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result"})
 
-    frames = await chat_store.read_frames(str(mine.session_id), after_seq=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(mine.session_id, after_seq=None, limit=25, kinds=None)
 
     assert [frame.kind for frame in frames] == ["assistant"]
 
@@ -1202,7 +1200,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assert room.delivered == ["because the disk was full"], "one delivery, not the answer twice"
     assistants = [m for m in (await chat_store.get(operator_id, session_id)).messages if m.role == "assistant"]
     assert [m.message_id for m in assistants] == [assistant_id], "continued, rather than forked into a second"
-    [turn] = await chat_store.list_turns(str(session_id), limit=5)
+    [turn] = await chat_store.list_turns(session_id, limit=5)
     assert (turn.turn_id, turn.outcome) == (str(started.turn_id), TurnOutcome.ANSWERED)
 
 
@@ -1287,7 +1285,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     )
     # Recorded by the real socket wrapper in production; here the turn wrote none of its own, so
     # the upper bound is the frame that predates it and the range is honestly empty.
-    [record] = await chat_store.list_turns(str(view.session_id), limit=10)
+    [record] = await chat_store.list_turns(view.session_id, limit=10)
 
     assert record.outcome == TurnOutcome.ANSWERED
     assert record.cost_usd == 0.0125
@@ -1598,7 +1596,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 
     assert await chat_store.expire_stale_leases() == 1
 
-    [record] = await chat_store.list_turns(str(view.session_id), limit=10)
+    [record] = await chat_store.list_turns(view.session_id, limit=10)
     assert record.ended_at is None, "nothing ran to close it, and the record should say so"
     assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.FAILED
 
@@ -1643,10 +1641,10 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
             # so waiting on that would be a wait for something already true.
             await chat_store.enqueue_prompt(operator_id, view.session_id, "ping")
             for _ in range(75):
-                if [turn for turn in await chat_store.list_turns(str(view.session_id), limit=2) if turn.ended_at]:
+                if [turn for turn in await chat_store.list_turns(view.session_id, limit=2) if turn.ended_at]:
                     break
                 await asyncio.sleep(0.2)
-            [turn] = await chat_store.list_turns(str(view.session_id), limit=2)
+            [turn] = await chat_store.list_turns(view.session_id, limit=2)
             assert turn.outcome == TurnOutcome.ANSWERED, "the turn never completed"
         finally:
             runner.cancel()
