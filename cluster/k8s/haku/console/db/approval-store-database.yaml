@@ -1,5 +1,7 @@
-# Declares the `vector` extension in the console's database, for the semantic index
-# (<../../../../../haku/state_index/README.md>).
+# Declares the `vector` extension in the console's database, ahead of the semantic index that
+# needs it (`haku/state_index`, PR #3956). Landing separately and first, because the index's
+# Alembic migration creates `vector` columns and fails the moment it runs without this — so
+# this wants to be reconciled and verified before that code deploys.
 #
 # **Adopts an existing database.** `approval_store` was created by the Cluster's
 # `bootstrap.initdb` and predates this CR, which reconciles it rather than creating it —
