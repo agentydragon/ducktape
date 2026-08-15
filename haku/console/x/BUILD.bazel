@@ -6,8 +6,8 @@ py_library(
     name = "claude_chat",
     srcs = ["claude_chat.py"],
     deps = [
-        ":chat_notifications",
         ":sandbox_claims",
+        ":session_notifications",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:config",
@@ -35,8 +35,8 @@ py_library(
 )
 
 py_library(
-    name = "chat_notifications",
-    srcs = ["chat_notifications.py"],
+    name = "session_notifications",
+    srcs = ["session_notifications.py"],
     deps = [
         "@pypi//asyncpg",
         "@pypi//pydantic",
@@ -49,10 +49,10 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":chat_notifications",
         ":claude_chat",
         ":matrix_session",
         ":sandbox_claims",
+        ":session_notifications",
         "//haku/console:config",
         "//haku/console:operator_identity_store",
         "@pypi//pydantic",
@@ -62,12 +62,12 @@ py_library(
 )
 
 py_test(
-    name = "test_chat_notifications",
+    name = "test_session_notifications",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_chat_notifications.py"],
+    srcs = ["test_session_notifications.py"],
     deps = [
-        ":chat_notifications",
         ":conftest",
+        ":session_notifications",
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//asyncpg",
@@ -111,9 +111,9 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":chat_notifications",
         ":claude_chat",
         ":conftest",
+        ":session_notifications",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -216,9 +216,9 @@ py_library(
     name = "matrix_session",
     srcs = ["matrix_session.py"],
     deps = [
-        ":chat_notifications",
         ":claude_chat",
         ":matrix_client",
+        ":session_notifications",
         ":system_prompt",
         "//haku/console:chat_models",
         "//haku/console:config",

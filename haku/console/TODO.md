@@ -14,7 +14,7 @@ Design, the parity gaps it closes, and the traps in each: <plans/session_channel
    but the console renders them. Smallest thing that makes it a channel.
 2. **Live updates over the existing `/api/events/ws`**, as a `SessionChangedEvent {session_id}`
    the page refetches on — not a second SSE stream, and not a poll. **Coalesce per session**:
-   `ChatEventKind.UPDATE` fires per stream delta, and a full-transcript refetch per delta per open
+   `SessionEventKind.UPDATE` fires per stream delta, and a full-transcript refetch per delta per open
    tab is the O(session) cost <../plans/chat_runtime_cleanup.md> § Anytime flags on the SSE path.
 3. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
    compose / abort / close as actions on a session. Costs the per-token SSE stream; take it
@@ -225,18 +225,33 @@ another constant, because the whole reason they are unchosen is that the right v
 operational finding. And a value read per use rather than at startup is what makes tuning a
 ConfigMap edit instead of a roll.
 
+## Finish the `claude_chat` → `session` rename
+
+The tables, the Python and the operator routes moved; three things are deliberately still holding
+the old name, each for its own reason.
+
+- **The `claude_chat_*` compatibility views** (migration `0040`) and the **legacy
+  `/api/claude/sessions/…` registrations**. Both exist only so a replica — and a browser tab —
+  from the previous image survives a `maxUnavailable: 0` roll. Drop them once that roll has
+  **converged**, not once a release has elapsed.
+- **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
+  renaming it is a coordinated two-sided roll like `HAKU_CLAUDE_PATH` (<../plans/next_month.md> §
+  week 3), not part of a console-only change.
+- **`x/claude_chat.py` itself**, and the SPA's `claude_chat_page.tsx`. The module split is its own
+  item (<../plans/next_month.md> § week 1), and renaming the file now would collide with it.
+
 ## `request_close` wakes nobody
 
 `request_close` (`x/claude_chat.py`) sets `status = "closing"` and notifies nothing — it is the
 only status mutation on that path that does not. A closing session's runner therefore stays in
-`wait(ChatEventKind.PROMPT, …)` until its own 30-second timeout before it notices, which is a real
+`wait(SessionEventKind.PROMPT, …)` until its own 30-second timeout before it notices, which is a real
 30-second lag in session teardown.
 
 Since the channel merge (#3938, #3941) the event kind is an argument rather than a channel name, so
-the fix is one `await notify(db, ChatEventKind.PROMPT, session_id)` alongside the status write. It
+the fix is one `await notify(db, SessionEventKind.PROMPT, session_id)` alongside the status write. It
 must stay **inside** that transaction: `pg_notify` delivers on commit.
 
-## `claude_chat_frames` does not map to one concept
+## `session_frames` does not map to one concept
 
 `kind` holds two discriminator vocabularies at once. `RolloutRecorder` — a `FrameSink` on
 `ClaudeCli`, so it structurally only ever sees CLI protocol frames — writes the CLI's own top-level
@@ -274,7 +289,7 @@ cross-session reads stay open within a tier, so an agent keeps its own history.
 
 Three things it needs, in order:
 
-1. **A tier on `claude_chat_sessions`**, beside the `surface`/`room_id` that landed in `0030` —
+1. **A tier on `sessions`**, beside the `surface`/`room_id` that landed in `0030` —
    from the room's fixed tier for a Matrix session, from the agent kind otherwise, with the room's
    authoritative where both exist.
 2. **Unlabelled reads as highest**, so every session predating the column is unreadable by a lower

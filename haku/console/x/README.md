@@ -13,8 +13,17 @@ The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`
 SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
 surface's own HTTP routes and SSE stream, which is the older of the two experiments.
 
+**The tables are `sessions` and `session_*`, and the rename is mid-flight.** They were
+`claude_chat_*` — six backend-neutral concepts named after the one CLI that fills them, while the
+design requires a second backend to be representable. Migration `0040` renamed them and left each
+old name behind as an auto-updatable view, so a replica on the previous image keeps reading and
+writing the same rows for the length of a roll; `../test_session_table_compatibility.py` is what
+proves the views really carry the previous release's writes, `ON CONFLICT` inference included.
+**The contract migration that drops those views has not landed**, so nothing may assume the old
+names are gone yet.
+
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
-opens `claude_chat_turns` in one transaction; `_run_turn` is that turn's span and closes it on
+opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
 every exit, keeping what the `result` frame reported about cost, usage and duration. At most one
 turn per session is open (a partial unique index), and that is the single question behind three
 answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
@@ -54,7 +63,7 @@ Two behaviours worth knowing before reading the code:
   no turn open and nothing pending, so when it refuses, the sync watermark is simply not advanced
   and the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
   dropped" (R1.6) come out of that, with no second durable queue. The gate asks
-  `claude_chat_turns` whether an exchange is in flight; it used to ask whether the session's
+  `session_turns` whether an exchange is in flight; it used to ask whether the session's
   status was `ready`, which happened to mean the same thing only because `enqueue_prompt` itself
   wrote `responding`.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
@@ -105,13 +114,13 @@ wire the question is about: what Synapse does belongs in the e2e target, what th
 what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted backfill
 budget costs one dict rather than thousands of messages.
 
-## `chat_notifications.py` — the wake channel
+## `session_notifications.py` — the wake channel
 
-`LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `ClaudeChatStore`: a
+`LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `SessionStore`: a
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-**One channel, `claude_chat`, carrying a `ChatEvent`** — `{kind, session_id}`, where `kind`
+**One channel, `claude_chat`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind`
 is `prompt`, `update`, or `abort`. It used to be three channels each carrying a bare session
 id, which left the event kind implicit in the channel name and every new kind costing
 another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is unchanged.
@@ -160,7 +169,7 @@ dependency:
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the
   console does (R10.3b).
-- `ClaudeChatSession`, `ClaudeChatMessage`, `MatrixSyncState`, and `MatrixConversation` in
+- `Session`, `SessionMessage`, `MatrixSyncState`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.
 - The `ReplySink` port is defined next to the service that calls it (`claude_chat.py`), and

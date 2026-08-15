@@ -1381,6 +1381,26 @@ py_test(
 )
 
 py_test(
+    name = "test_session_table_compatibility",
+    size = "medium",
+    srcs = ["test_session_table_compatibility.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_state_index_migration",
     size = "medium",
     srcs = ["test_state_index_migration.py"],

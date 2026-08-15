@@ -34,34 +34,34 @@ from haku.console.chat_models import (
     LIVE_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
-    ChatSessionStatus,
     ChatSurface,
     FrameDirection,
+    SessionStatus,
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import (
-    ClaudeChatFrame,
-    ClaudeChatMessage,
-    ClaudeChatPrompt,
-    ClaudeChatSession,
-    ClaudeChatTurn,
-    ClaudeChatTurnPrompt,
+    Session,
+    SessionFrame,
+    SessionMessage,
+    SessionPrompt,
+    SessionTurn,
+    SessionTurnPrompt,
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
-from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.console.x.sandbox_claims import (
     ClaudeSandboxProvisioningView,
     ProvisioningStep,
     SandboxClaims,
     provisioning_view,
 )
+from haku.console.x.session_notifications import SessionEventKind, SessionNotifications, notify
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.claude_bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
 
-router = APIRouter(tags=["claude-chat"])
+router = APIRouter(tags=["sessions"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ class BridgeAuthentication(StrEnum):
     HELD = "held"
 
 
-class ClaudeChatToolResultView(BaseModel):
+class SessionToolResultView(BaseModel):
     """What a tool answered, as the wire carried it.
 
     `content` is passed through rather than normalized: the CLI sends a bare string for most
@@ -136,7 +136,7 @@ class ClaudeChatToolResultView(BaseModel):
     is_error: bool = False
 
 
-class ClaudeChatToolUseView(BaseModel):
+class SessionToolUseView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tool_use_id: str
@@ -144,34 +144,34 @@ class ClaudeChatToolUseView(BaseModel):
     input: dict[str, Any]
     # Absent while the call is still running, and on a turn that died before it answered — which
     # is a state worth seeing rather than one to hide. It comes from the rollout, because
-    # `claude_chat_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
+    # `session_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
     # that asked and drops the `user` frames that answered.
-    result: ClaudeChatToolResultView | None = None
+    result: SessionToolResultView | None = None
 
 
-class ClaudeChatMessageView(BaseModel):
+class SessionMessageView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message_id: UUID
     role: ChatMessageRole
     status: ChatMessageStatus
     content: str
-    tool_uses: list[ClaudeChatToolUseView]
+    tool_uses: list[SessionToolUseView]
     error: str | None
     created_at: datetime
     updated_at: datetime
 
 
-class ClaudeChatSessionView(BaseModel):
+class SessionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    status: ChatSessionStatus
+    status: SessionStatus
     error: str | None
     created_at: datetime
     updated_at: datetime
     provisioning: ClaudeSandboxProvisioningView | None = None
-    messages: list[ClaudeChatMessageView]
+    messages: list[SessionMessageView]
 
 
 class ConversationSessionSummary(BaseModel):
@@ -187,7 +187,7 @@ class ConversationSessionSummary(BaseModel):
     session_id: UUID
     surface: ChatSurface | None
     room_id: str | None
-    status: ChatSessionStatus
+    status: SessionStatus
     error: str | None
     created_at: datetime
     updated_at: datetime
@@ -217,17 +217,17 @@ class ConversationSessionView(BaseModel):
     session_id: UUID
     surface: ChatSurface | None
     room_id: str | None
-    status: ChatSessionStatus
+    status: SessionStatus
     error: str | None
     created_at: datetime
     updated_at: datetime
-    messages: list[ClaudeChatMessageView]
+    messages: list[SessionMessageView]
     turns: list[ConversationTurnView]
 
 
-class ClaudeChatPromptRequest(BaseModel):
+class SessionPromptRequest(BaseModel):
     """What the SPA posts to send a prompt. Named for the request, since the prompt itself is now
-    a row (`database_schema.ClaudeChatPrompt`) rather than a field on the way in."""
+    a row (`database_schema.SessionPrompt`) rather than a field on the way in."""
 
     text: str = Field(min_length=1, max_length=100_000)
 
@@ -298,12 +298,12 @@ class SessionOutcome:
     The two travel together because every caller acting on a dead session wants to say which.
     """
 
-    status: ChatSessionStatus
+    status: SessionStatus
     error: str | None
 
 
-class ClaudeChatStore:
-    """Async Postgres store for Claude chat sessions."""
+class SessionStore:
+    """Async Postgres store for agent sessions."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
@@ -312,18 +312,18 @@ class ClaudeChatStore:
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
 
-    async def create(self, operator_id: UUID, surface: SessionSurface) -> tuple[ClaudeChatSessionView, str]:
+    async def create(self, operator_id: UUID, surface: SessionSurface) -> tuple[SessionView, str]:
         now = datetime.now(UTC)
         session_id = uuid4()
         bridge_token = secrets.token_urlsafe(32)
         async with self._sessions.begin() as db:
             db.add(
-                ClaudeChatSession(
+                Session(
                     session_id=session_id,
                     operator_id=operator_id,
                     surface=surface.surface_column,
                     room_id=surface.room_id,
-                    status=ChatSessionStatus.PROVISIONING,
+                    status=SessionStatus.PROVISIONING,
                     bridge_token_fingerprint=self._fingerprint(bridge_token),
                     bridge_connected_at=None,
                     error=None,
@@ -340,21 +340,19 @@ class ClaudeChatStore:
         view = await self.get(operator_id, session_id)
         return view, bridge_token
 
-    async def get(self, operator_id: UUID, session_id: UUID) -> ClaudeChatSessionView:
+    async def get(self, operator_id: UUID, session_id: UUID) -> SessionView:
         async with self._sessions() as db:
             record = await db.scalar(
-                select(ClaudeChatSession).where(
-                    ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
-                )
+                select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
             )
             if record is None:
                 raise KeyError(session_id)
             messages = list(
                 (
                     await db.scalars(
-                        select(ClaudeChatMessage)
-                        .where(ClaudeChatMessage.session_id == session_id)
-                        .order_by(ClaudeChatMessage.created_at, ClaudeChatMessage.message_id)
+                        select(SessionMessage)
+                        .where(SessionMessage.session_id == session_id)
+                        .order_by(SessionMessage.created_at, SessionMessage.message_id)
                     )
                 ).all()
             )
@@ -371,15 +369,11 @@ class ClaudeChatStore:
         async with self._sessions() as db:
             rows = (
                 await db.execute(
-                    select(
-                        ClaudeChatSession,
-                        func.count(ClaudeChatMessage.message_id),
-                        func.max(ClaudeChatMessage.created_at),
-                    )
-                    .outerjoin(ClaudeChatMessage, ClaudeChatMessage.session_id == ClaudeChatSession.session_id)
-                    .where(ClaudeChatSession.operator_id == operator_id)
-                    .group_by(ClaudeChatSession.session_id)
-                    .order_by(ClaudeChatSession.updated_at.desc(), ClaudeChatSession.session_id.desc())
+                    select(Session, func.count(SessionMessage.message_id), func.max(SessionMessage.created_at))
+                    .outerjoin(SessionMessage, SessionMessage.session_id == Session.session_id)
+                    .where(Session.operator_id == operator_id)
+                    .group_by(Session.session_id)
+                    .order_by(Session.updated_at.desc(), Session.session_id.desc())
                     .limit(limit)
                 )
             ).all()
@@ -403,9 +397,7 @@ class ClaudeChatStore:
         view = await self.get(operator_id, session_id)
         async with self._sessions() as db:
             session = await db.scalar(
-                select(ClaudeChatSession).where(
-                    ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
-                )
+                select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
             )
         if session is None:
             raise KeyError(session_id)
@@ -442,14 +434,14 @@ class ClaudeChatStore:
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            record = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+            record = await db.get(Session, session_id, with_for_update=True)
             if record is None or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token)):
                 return BridgeAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
                 return BridgeAuthentication.TERMINAL
-            if record.status == ChatSessionStatus.PROVISIONING and record.bridge_connected_at is None:
+            if record.status == SessionStatus.PROVISIONING and record.bridge_connected_at is None:
                 record.bridge_connected_at = now
-                record.status = ChatSessionStatus.READY
+                record.status = SessionStatus.READY
             elif record.lease_holder not in (None, REPLICA) and record.lease_expires_at > now:
                 # Somebody else is still serving this session and saying so. Turning this runner
                 # away is what keeps one CLI answering to one console — but only until that lease
@@ -470,7 +462,7 @@ class ClaudeChatStore:
         finalizer, so the sweep must be correct without it (see `expire_stale_leases`).
         """
         async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+            chat = await db.get(Session, session_id, with_for_update=True)
             if chat is not None and chat.status in LIVE_SESSION_STATUSES:
                 chat.lease_holder = None
                 chat.lease_expires_at = datetime.now(UTC)
@@ -491,10 +483,8 @@ class ClaudeChatStore:
             result = cast(
                 "CursorResult[Any]",
                 await db.execute(
-                    update(ClaudeChatSession)
-                    .where(
-                        ClaudeChatSession.status.in_(LIVE_SESSION_STATUSES), ClaudeChatSession.lease_holder == REPLICA
-                    )
+                    update(Session)
+                    .where(Session.status.in_(LIVE_SESSION_STATUSES), Session.lease_holder == REPLICA)
                     .values(lease_holder=None, lease_expires_at=datetime.now(UTC), updated_at=datetime.now(UTC))
                 ),
             )
@@ -511,13 +501,13 @@ class ClaudeChatStore:
            the record; waiting would be forever, since the replay of a recorded frame is refused.
         3. **Still running** — returned for `_run_turn` to finish.
 
-        Leaving a turn open is safe only because `uq_claude_chat_turns_open` permits exactly one,
+        Leaving a turn open is safe only because `uq_session_turns_open` permits exactly one,
         which is what stops `next_prompt` opening a second beside the inherited one.
         """
         async with self._sessions.begin() as db:
             turn = await db.scalar(
-                select(ClaudeChatTurn)
-                .where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
+                select(SessionTurn)
+                .where(SessionTurn.session_id == session_id, SessionTurn.ended_at.is_(None))
                 .with_for_update()
             )
             if turn is None:
@@ -526,7 +516,7 @@ class ClaudeChatStore:
             closing: dict[str, Any] | None = None
             if not await _prompt_left(db, session_id, first_frame_seq):
                 await _requeue(db, turn_id)
-                await notify(db, ChatEventKind.PROMPT, session_id)
+                await notify(db, SessionEventKind.PROMPT, session_id)
             elif (closing := await _recorded_result(db, session_id, first_frame_seq)) is None:
                 streaming = await _streaming_assistant(db, session_id)
                 assistant_id, streamed = streaming if streaming is not None else (None, "")
@@ -550,34 +540,33 @@ class ClaudeChatStore:
         """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
         async with self._sessions() as db:
             result = await db.scalars(
-                select(ClaudeChatSession.session_id).where(
-                    ClaudeChatSession.status.in_(ENDED_SESSION_STATUSES),
-                    ClaudeChatSession.bridge_token_fingerprint != b"",
+                select(Session.session_id).where(
+                    Session.status.in_(ENDED_SESSION_STATUSES), Session.bridge_token_fingerprint != b""
                 )
             )
             return list(result.all())
 
     async def complete_claim_cleanup(self, session_id: UUID) -> None:
         async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+            chat = await db.get(Session, session_id, with_for_update=True)
             if chat is None:
                 return
             chat.bridge_token_fingerprint = b""
-            if chat.status == ChatSessionStatus.CLOSING:
-                chat.status = ChatSessionStatus.CLOSED
+            if chat.status == SessionStatus.CLOSING:
+                chat.status = SessionStatus.CLOSED
             chat.updated_at = datetime.now(UTC)
 
-    async def enqueue_prompt(self, operator_id: UUID, session_id: UUID, prompt_text: str) -> ClaudeChatMessageView:
+    async def enqueue_prompt(self, operator_id: UUID, session_id: UUID, prompt_text: str) -> SessionMessageView:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.scalar(
-                select(ClaudeChatSession)
-                .where(ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id)
+                select(Session)
+                .where(Session.session_id == session_id, Session.operator_id == operator_id)
                 .with_for_update()
             )
             if chat is None:
                 raise KeyError(session_id)
-            if chat.status != ChatSessionStatus.READY:
+            if chat.status != SessionStatus.READY:
                 raise RuntimeError(f"session is not ready (status={chat.status})")
             # Admission asks about the turn, not the session's status: gating on `READY` alone
             # would accept a prompt mid-turn, which is the fold-into-turn feature arriving by
@@ -590,7 +579,7 @@ class ClaudeChatStore:
             # from this call, and a replica on the previous image dequeues by finding that status.
             # Both stop being true in the contract release, where the row is written final and the
             # queue row alone says it is waiting.
-            message = ClaudeChatMessage(
+            message = SessionMessage(
                 message_id=uuid4(),
                 session_id=session_id,
                 role=ChatMessageRole.USER,
@@ -603,13 +592,13 @@ class ClaudeChatStore:
             )
             db.add(message)
             db.add(
-                ClaudeChatPrompt(prompt_id=uuid4(), session_id=session_id, message_id=message.message_id, queued_at=now)
+                SessionPrompt(prompt_id=uuid4(), session_id=session_id, message_id=message.message_id, queued_at=now)
             )
             # No status write: a queued prompt is not a turn in flight. Setting `responding`
             # here is what let `request_abort` accept an abort for a turn that did not exist.
             chat.updated_at = now
-            await notify(db, ChatEventKind.PROMPT, session_id)
-            await notify(db, ChatEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.PROMPT, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id)
         return _message_view(message, _NO_CALLS)
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
@@ -621,7 +610,7 @@ class ClaudeChatStore:
         about.
         """
         async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+            chat = await db.get(Session, session_id, with_for_update=True)
             if chat is None or chat.status in ENDED_SESSION_STATUSES:
                 return None
             now = datetime.now(UTC)
@@ -630,12 +619,12 @@ class ClaudeChatStore:
             # dropping the scan now would leave it accepted and never answered.
             if (queued := await _queued_prompt(db, session_id, lock=True)) is not None:
                 queued.claimed_at = now
-                message = await db.get(ClaudeChatMessage, queued.message_id)
+                message = await db.get(SessionMessage, queued.message_id)
                 if message is None:
                     # The row the queue points at is gone, so there is no prompt to run and no
                     # text to run it with. Claiming it anyway is what stops the session retrying
                     # a prompt it can never read.
-                    logger.error("Claude chat prompt %s has no message row", queued.prompt_id)
+                    logger.error("prompt %s has no message row", queued.prompt_id)
                     return None
             elif (message := await _legacy_pending(db, session_id, lock=True)) is None:
                 return None
@@ -645,16 +634,14 @@ class ClaudeChatStore:
             # The bracket's lower bound, taken before the prompt reaches the CLI so every frame
             # the exchange produces falls inside it.
             highest = await db.scalar(
-                select(func.max(ClaudeChatFrame.frame_seq)).where(ClaudeChatFrame.session_id == session_id)
+                select(func.max(SessionFrame.frame_seq)).where(SessionFrame.session_id == session_id)
             )
             turn_id = uuid4()
             db.add(
-                ClaudeChatTurn(
-                    turn_id=turn_id, session_id=session_id, first_frame_seq=(highest or 0) + 1, started_at=now
-                )
+                SessionTurn(turn_id=turn_id, session_id=session_id, first_frame_seq=(highest or 0) + 1, started_at=now)
             )
-            db.add(ClaudeChatTurnPrompt(turn_id=turn_id, message_id=message.message_id))
-            await notify(db, ChatEventKind.UPDATE, session_id)
+            db.add(SessionTurnPrompt(turn_id=turn_id, message_id=message.message_id))
+            await notify(db, SessionEventKind.UPDATE, session_id)
             return TurnStart(turn_id=turn_id, message_id=message.message_id, prompt=message.content)
 
     async def end_turn(self, turn_id: UUID, outcome: TurnOutcome, result: dict[str, Any] | None = None) -> None:
@@ -665,11 +652,11 @@ class ClaudeChatStore:
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            turn = await db.get(ClaudeChatTurn, turn_id, with_for_update=True)
+            turn = await db.get(SessionTurn, turn_id, with_for_update=True)
             if turn is None or turn.ended_at is not None:
                 return
             turn.last_frame_seq = await db.scalar(
-                select(func.max(ClaudeChatFrame.frame_seq)).where(ClaudeChatFrame.session_id == turn.session_id)
+                select(func.max(SessionFrame.frame_seq)).where(SessionFrame.session_id == turn.session_id)
             )
             turn.ended_at = now
             turn.outcome = outcome
@@ -683,25 +670,25 @@ class ClaudeChatStore:
                     turn.usage = usage
                 if isinstance(duration := result.get("duration_ms"), int):
                     turn.duration_ms = duration
-            chat = await db.get(ClaudeChatSession, turn.session_id)
+            chat = await db.get(Session, turn.session_id)
             if chat is not None:
                 # `responding` is derived from this turn being open, so closing it is what
                 # retires the state — and what the SPA has to be told about. The column is only
                 # written back when it still carries the old meaning, which a replica on the
                 # previous image is what would have put there.
-                if chat.status == ChatSessionStatus.RESPONDING:
-                    chat.status = ChatSessionStatus.READY
+                if chat.status == SessionStatus.RESPONDING:
+                    chat.status = SessionStatus.READY
                 chat.updated_at = now
-                await notify(db, ChatEventKind.UPDATE, turn.session_id)
+                await notify(db, SessionEventKind.UPDATE, turn.session_id)
 
     async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]:
         """A session's exchanges, newest first, for the `haku_conversations` read tools."""
         async with self._sessions() as db:
             rows = (
                 await db.scalars(
-                    select(ClaudeChatTurn)
-                    .where(ClaudeChatTurn.session_id == session_id)
-                    .order_by(ClaudeChatTurn.started_at.desc())
+                    select(SessionTurn)
+                    .where(SessionTurn.session_id == session_id)
+                    .order_by(SessionTurn.started_at.desc())
                     .limit(limit)
                 )
             ).all()
@@ -741,7 +728,7 @@ class ClaudeChatStore:
             # followed by a write: two replicas can be replaying the same buffer at once during
             # an adoption, and a check-then-insert would let both through.
             insert = (
-                pg_insert(ClaudeChatFrame)
+                pg_insert(SessionFrame)
                 .values(
                     session_id=session_id,
                     direction=direction,
@@ -769,9 +756,7 @@ class ClaudeChatStore:
         Unscoped by R5.3a: every session, whichever room it served.
         """
         async with self._sessions() as db:
-            rows = (
-                await db.scalars(select(ClaudeChatSession).order_by(ClaudeChatSession.created_at.desc()).limit(limit))
-            ).all()
+            rows = (await db.scalars(select(Session).order_by(Session.created_at.desc()).limit(limit))).all()
         return [
             Conversation(
                 session_id=str(row.session_id),
@@ -792,19 +777,19 @@ class ClaudeChatStore:
         Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
         cannot skip or repeat a row the way an offset would once new frames land between pages.
         """
-        query = select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == session_id)
+        query = select(SessionFrame).where(SessionFrame.session_id == session_id)
         if after_seq is not None:
-            query = query.where(ClaudeChatFrame.frame_seq > after_seq)
+            query = query.where(SessionFrame.frame_seq > after_seq)
         if kinds:
-            query = query.where(ClaudeChatFrame.kind.in_(kinds))
+            query = query.where(SessionFrame.kind.in_(kinds))
         else:
             # **Deltas are in the log but not in the default view.** A turn streams them in the
             # hundreds and each carries a few characters of an answer that arrives whole a moment
             # later, so a reader asking for "everything" wants the frames, not the typing. Naming
             # the kind is how a caller reading a truncated answer asks for them anyway.
-            query = query.where(ClaudeChatFrame.kind != DELTA_FRAME_KIND)
+            query = query.where(SessionFrame.kind != DELTA_FRAME_KIND)
         async with self._sessions() as db:
-            rows = (await db.scalars(query.order_by(ClaudeChatFrame.frame_seq).limit(limit))).all()
+            rows = (await db.scalars(query.order_by(SessionFrame.frame_seq).limit(limit))).all()
         return [
             RolloutFrame(
                 frame_seq=row.frame_seq,
@@ -832,11 +817,11 @@ class ClaudeChatStore:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             partial = await db.scalar(
-                select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.partial)
+                select(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial)
             )
             if partial is None:
                 db.add(
-                    ClaudeChatFrame(
+                    SessionFrame(
                         session_id=session_id,
                         direction=FrameDirection.FROM_AGENT,
                         kind=ASSISTANT_FRAME_KIND,
@@ -853,16 +838,14 @@ class ClaudeChatStore:
     async def clear_partial_frame(self, session_id: UUID) -> None:
         """Drop the reconstruction, now that the frame it stood in for has arrived."""
         async with self._sessions.begin() as db:
-            await db.execute(
-                delete(ClaudeChatFrame).where(ClaudeChatFrame.session_id == session_id, ClaudeChatFrame.partial)
-            )
+            await db.execute(delete(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.partial))
 
     async def begin_assistant(self, session_id: UUID) -> UUID:
         now = datetime.now(UTC)
         message_id = uuid4()
         async with self._sessions.begin() as db:
             db.add(
-                ClaudeChatMessage(
+                SessionMessage(
                     message_id=message_id,
                     session_id=session_id,
                     role=ChatMessageRole.ASSISTANT,
@@ -888,8 +871,8 @@ class ClaudeChatStore:
     ) -> None:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            message = await db.get(ClaudeChatMessage, message_id)
-            chat = await db.get(ClaudeChatSession, session_id)
+            message = await db.get(SessionMessage, message_id)
+            chat = await db.get(Session, session_id)
             if message is None or chat is None:
                 return
             message.content = content
@@ -902,7 +885,7 @@ class ClaudeChatStore:
             # No `chat.status = RESPONDING` here. This runs per stream delta, so it was a
             # session-row write per delta to hold a flag true that the open turn already states.
             chat.updated_at = now
-            await notify(db, ChatEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         # Logged as well as persisted. The column is the operator-facing record, but it is not
@@ -910,17 +893,17 @@ class ClaudeChatStore:
         # the room just stops answering. Diagnosing the asyncpg/psycopg listener mismatch that
         # killed every session meant querying this column out of Postgres by hand, purely
         # because the reason was written where logs are not.
-        logger.error("Claude chat session %s failed: %s", session_id, error)
+        logger.error("session %s failed: %s", session_id, error)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id)
-            if chat is not None and chat.status not in {ChatSessionStatus.CLOSING, ChatSessionStatus.CLOSED}:
-                chat.status = ChatSessionStatus.FAILED
+            chat = await db.get(Session, session_id)
+            if chat is not None and chat.status not in {SessionStatus.CLOSING, SessionStatus.CLOSED}:
+                chat.status = SessionStatus.FAILED
                 chat.error = error
                 chat.updated_at = now
-                await notify(db, ChatEventKind.UPDATE, session_id)
+                await notify(db, SessionEventKind.UPDATE, session_id)
             if message_id is not None:
-                message = await db.get(ClaudeChatMessage, message_id)
+                message = await db.get(SessionMessage, message_id)
                 if message is not None:
                     message.status = ChatMessageStatus.FAILED
                     message.error = error
@@ -936,16 +919,16 @@ class ClaudeChatStore:
         """
         async with self._sessions.begin() as db:
             chat = await db.scalar(
-                select(ClaudeChatSession)
-                .where(ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id)
+                select(Session)
+                .where(Session.session_id == session_id, Session.operator_id == operator_id)
                 .with_for_update()
             )
             if chat is None:
                 raise KeyError(session_id)
-            chat.status = ChatSessionStatus.CLOSING
+            chat.status = SessionStatus.CLOSING
             chat.updated_at = datetime.now(UTC)
-            await notify(db, ChatEventKind.PROMPT, session_id)
-            await notify(db, ChatEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.PROMPT, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def room_of(self, session_id: UUID) -> str | None:
         """The room this session was created to serve, or None if it serves none.
@@ -955,14 +938,14 @@ class ClaudeChatStore:
         session mine?" answers about the room's present, not about the session.
         """
         async with self._sessions() as db:
-            return await db.scalar(select(ClaudeChatSession.room_id).where(ClaudeChatSession.session_id == session_id))
+            return await db.scalar(select(Session.room_id).where(Session.session_id == session_id))
 
     async def outcome(self, session_id: UUID) -> SessionOutcome | None:
         async with self._sessions() as db:
-            chat = await db.get(ClaudeChatSession, session_id)
+            chat = await db.get(Session, session_id)
             return None if chat is None else SessionOutcome(status=chat.status, error=chat.error)
 
-    async def status(self, session_id: UUID) -> ChatSessionStatus | None:
+    async def status(self, session_id: UUID) -> SessionStatus | None:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
@@ -974,7 +957,7 @@ class ClaudeChatStore:
         the replica running the turn says so, and nothing else has to sequence that.
         """
         async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id)
+            chat = await db.get(Session, session_id)
             if chat is not None and chat.status in LIVE_SESSION_STATUSES:
                 chat.lease_expires_at = datetime.now(UTC) + LEASE_TTL
                 chat.lease_holder = REPLICA
@@ -1005,16 +988,16 @@ class ClaudeChatStore:
         async with self._sessions.begin() as db:
             expired = (
                 await db.scalars(
-                    select(ClaudeChatSession.session_id).where(
-                        ClaudeChatSession.status.in_(LIVE_SESSION_STATUSES),
-                        ClaudeChatSession.lease_expires_at <= datetime.now(UTC) - ADOPTION_GRACE,
+                    select(Session.session_id).where(
+                        Session.status.in_(LIVE_SESSION_STATUSES),
+                        Session.lease_expires_at <= datetime.now(UTC) - ADOPTION_GRACE,
                     )
                 )
             ).all()
             for session_id in expired:
                 # Row-at-a-time rather than one UPDATE: `notify` is per session, and a room
                 # that is not told its session died is exactly the silence being fixed here.
-                chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
+                chat = await db.get(Session, session_id, with_for_update=True)
                 if chat is None or chat.status not in LIVE_SESSION_STATUSES:
                     continue
                 # Say what actually happened, not one hardcoded sentence for three different
@@ -1023,34 +1006,34 @@ class ClaudeChatStore:
                 # nobody re-adopted (a roll, or the sandbox reaching its TTL) — the common case,
                 # and the one the old "no replica (never attached)" got exactly backwards; neither
                 # set means the sandbox never connected. "mid-turn" only if a turn was in fact open.
-                mid_turn = " mid-turn" if chat.status == ChatSessionStatus.RESPONDING else ""
+                mid_turn = " mid-turn" if chat.status == SessionStatus.RESPONDING else ""
                 if chat.lease_holder is not None:
                     detail = f"the console replica holding it ({chat.lease_holder}) went away"
                 elif chat.bridge_connected_at is not None:
                     detail = "its runner went away and no replica took it back over"
                 else:
                     detail = "a runner never attached"
-                logger.error("Claude chat session %s lease expired: %s", session_id, detail)
-                chat.status = ChatSessionStatus.FAILED
+                logger.error("session %s lease expired: %s", session_id, detail)
+                chat.status = SessionStatus.FAILED
                 chat.error = f"console session ended{mid_turn}: {detail}"
                 chat.updated_at = datetime.now(UTC)
-                await notify(db, ChatEventKind.UPDATE, session_id)
+                await notify(db, SessionEventKind.UPDATE, session_id)
             return len(expired)
 
     async def closed(self, session_id: UUID) -> None:
         async with self._sessions.begin() as db:
-            chat = await db.get(ClaudeChatSession, session_id)
-            if chat is not None and chat.status != ChatSessionStatus.FAILED:
-                chat.status = ChatSessionStatus.CLOSED
+            chat = await db.get(Session, session_id)
+            if chat is not None and chat.status != SessionStatus.FAILED:
+                chat.status = SessionStatus.CLOSED
                 chat.updated_at = datetime.now(UTC)
-                await notify(db, ChatEventKind.UPDATE, session_id)
+                await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
         async with self._sessions() as db:
             return (
                 await db.scalar(
-                    select(ClaudeChatSession.session_id).where(
-                        ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
+                    select(Session.session_id).where(
+                        Session.session_id == session_id, Session.operator_id == operator_id
                     )
                 )
                 is not None
@@ -1067,7 +1050,7 @@ class ClaudeChatStore:
         async with self._sessions.begin() as db:
             if await _open_turn(db, session_id) is None:
                 return False
-            await notify(db, ChatEventKind.ABORT, session_id)
+            await notify(db, SessionEventKind.ABORT, session_id)
             return True
 
 
@@ -1088,7 +1071,7 @@ class StarletteTextWebSocket(TextWebSocket):
 # TODO(frame-vocabulary): these are not one vocabulary, and there is deliberately no enum over
 # them yet. Five of them are the CLI's own top-level `type`; `SETUP_OUTPUT_KIND` is the *bridge*
 # envelope's `kind` literal, put in the same column by a different sink. An enum over the union
-# would give a name to a concept the schema does not actually have — see `ClaudeChatFrame` and
+# would give a name to a concept the schema does not actually have — see `SessionFrame` and
 # stage 2 of <../../plans/chat_runtime_projection.md>, which is where this becomes one thing.
 
 # One token batch of an answer still being written. Hundreds per turn, and the completed
@@ -1142,7 +1125,7 @@ def _frame_kind(payload: dict[str, Any]) -> str:
 
 
 class RolloutRecorder:
-    """One session's `FrameSink`: every protocol frame either way, into `claude_chat_frames`.
+    """One session's `FrameSink`: every protocol frame either way, into `session_frames`.
 
     **No exclusions.** Control frames are kept because an interrupt that did not take is only
     diagnosable from them, and deltas because a log with a hole in it cannot be folded over
@@ -1150,7 +1133,7 @@ class RolloutRecorder:
     is answered, by leaving deltas out of its default view.
     """
 
-    def __init__(self, store: ClaudeChatStore, session_id: UUID):
+    def __init__(self, store: SessionStore, session_id: UUID):
         self._store = store
         self._session_id = session_id
 
@@ -1325,13 +1308,13 @@ class RoomSurface(Protocol):
     async def set_typing(self, room_id: str, active: bool) -> None: ...
 
 
-class ClaudeChatService:
+class SessionService:
     def __init__(
         self,
         config: ClaudeRuntimeConfig,
-        store: ClaudeChatStore,
+        store: SessionStore,
         claims: SandboxClaims,
-        notifications: ChatNotifications,
+        notifications: SessionNotifications,
         *,
         mcp_token: SecretStr,
         room_surface: RoomSurface | None = None,
@@ -1354,7 +1337,7 @@ class ClaudeChatService:
             raise KeyError(session_id)
         return await self._store.request_abort(session_id)
 
-    async def create(self, operator_id: UUID, surface: SessionSurface) -> ClaudeChatSessionView:
+    async def create(self, operator_id: UUID, surface: SessionSurface) -> SessionView:
         view, token = await self._store.create(operator_id, surface)
         try:
             await self._claims.create(
@@ -1370,12 +1353,12 @@ class ClaudeChatService:
             raise
         return await self._with_provisioning(view)
 
-    async def get(self, operator_id: UUID, session_id: UUID) -> ClaudeChatSessionView:
+    async def get(self, operator_id: UUID, session_id: UUID) -> SessionView:
         view = await self._store.get(operator_id, session_id)
         return await self._with_provisioning(view)
 
-    async def _with_provisioning(self, view: ClaudeChatSessionView) -> ClaudeChatSessionView:
-        if view.status != ChatSessionStatus.PROVISIONING:
+    async def _with_provisioning(self, view: SessionView) -> SessionView:
+        if view.status != SessionStatus.PROVISIONING:
             return view
         try:
             provisioning = await self._claims.inspect(session_id=view.session_id)
@@ -1471,7 +1454,7 @@ class ClaudeChatService:
             # `websocket.http.response` extension is what lets this answer 503 instead, which the
             # runner already waits out: `_worth_redialling` retries anything 5xx, since that is
             # also what the Gateway says mid-roll.
-            logger.info("Claude chat session %s is held by another replica; telling the runner to retry", session_id)
+            logger.info("session %s is held by another replica; telling the runner to retry", session_id)
             await websocket.send_denial_response(
                 Response(status_code=503, content=b"session is held by another replica")
             )
@@ -1488,7 +1471,7 @@ class ClaudeChatService:
         # left to decide is which of three things its open turn was — `adopt_open_turn`.
         resumed = await self._store.adopt_open_turn(session_id)
         if resumed is not None:
-            logger.warning("Claude chat session %s adopted with turn %s still running", session_id, resumed.turn_id)
+            logger.warning("session %s adopted with turn %s still running", session_id, resumed.turn_id)
         # Rendered before the socket is accepted, alongside the other admission failures, so a
         # broken prompt ends the session where the supervisor can see it (and say so in the
         # room) instead of raising past the cleanup below and leaving the claim stranded.
@@ -1567,7 +1550,9 @@ class ClaudeChatService:
                                 turn = await self._store.next_prompt(session_id)
                             if turn is None:
                                 # Wait for a LISTEN/NOTIFY instead of polling.
-                                await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
+                                await self._notifications.wait(
+                                    SessionEventKind.PROMPT, session_id, timeout_seconds=30.0
+                                )
                                 continue
                             # Cleared before the turn, not after: an abort notified just as the
                             # previous one ended would otherwise sit set through the idle wait and
@@ -1578,7 +1563,7 @@ class ClaudeChatService:
                                     client, frames, session_id, turn, room_id=room_id, abort_event=abort_event
                                 )
                             except Exception as error:
-                                logger.exception("Claude chat turn failed for session %s", session_id)
+                                logger.exception("turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
                                 break
                     finally:
@@ -1591,7 +1576,7 @@ class ClaudeChatService:
                 # The runner went away, which is not the session being over: it keeps the CLI
                 # alive across a lost socket and redials. Hand the session back and let the lease
                 # decide — a runner that never returns leaves the row to the sweep.
-                logger.info("Claude chat session %s lost its runner; leaving it for adoption", session_id)
+                logger.info("session %s lost its runner; leaving it for adoption", session_id)
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
             except* Exception as errors:
@@ -1675,7 +1660,7 @@ class ClaudeChatService:
         the one holding this session's websocket, so it arrives over NOTIFY rather than by a
         caller reaching into this process.
         """
-        async with self._notifications.subscribe(ChatEventKind.ABORT, session_id) as notified:
+        async with self._notifications.subscribe(SessionEventKind.ABORT, session_id) as notified:
             while True:
                 await notified.wait()
                 notified.clear()
@@ -1934,26 +1919,23 @@ class _RolloutCalls:
     """
 
     by_message: Mapping[str, list[dict[str, Any]]]
-    results: Mapping[str, ClaudeChatToolResultView]
+    results: Mapping[str, SessionToolResultView]
 
 
 async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
     """Read the calls and their results out of the session's rollout.
 
     Both live only here: `assistant` frames carry the `tool_use` blocks, `user` frames carry the
-    `tool_result` blocks the turn loop drops, and `claude_chat_messages.tool_uses` is a copy of the
+    `tool_result` blocks the turn loop drops, and `session_messages.tool_uses` is a copy of the
     first half with the second half missing.
     """
     frames = await db.execute(
-        select(ClaudeChatFrame.kind, ClaudeChatFrame.payload)
-        .where(
-            ClaudeChatFrame.session_id == session_id,
-            ClaudeChatFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]),
-        )
-        .order_by(ClaudeChatFrame.frame_seq)
+        select(SessionFrame.kind, SessionFrame.payload)
+        .where(SessionFrame.session_id == session_id, SessionFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]))
+        .order_by(SessionFrame.frame_seq)
     )
     by_message: dict[str, list[dict[str, Any]]] = {}
-    results: dict[str, ClaudeChatToolResultView] = {}
+    results: dict[str, SessionToolResultView] = {}
     for kind, payload in frames:
         message = payload.get("message")
         if not isinstance(message, dict):
@@ -1968,7 +1950,7 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
                         {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
                     )
                 case "tool_result" if call_id := block.get("tool_use_id"):
-                    results[str(call_id)] = ClaudeChatToolResultView(
+                    results[str(call_id)] = SessionToolResultView(
                         content=block.get("content"), is_error=bool(block.get("is_error"))
                     )
     return _RolloutCalls(by_message=by_message, results=results)
@@ -1979,18 +1961,18 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
 _NO_CALLS = _RolloutCalls(by_message=MappingProxyType({}), results=MappingProxyType({}))
 
 
-def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls) -> ClaudeChatMessageView:
+def _message_view(message: SessionMessage, calls: _RolloutCalls) -> SessionMessageView:
     # The rollout where the row points into it, the column otherwise. That column is the lossy copy
     # — the calls without their answers — and is kept only for rows with nothing to point at: ones
     # that predate the pointer, and ones this console synthesized rather than observed.
     recorded = calls.by_message.get(message.agent_message_id or "")
-    return ClaudeChatMessageView(
+    return SessionMessageView(
         message_id=message.message_id,
         role=message.role,
         status=message.status,
         content=message.content,
         tool_uses=[
-            ClaudeChatToolUseView.model_validate(tool_use | {"result": calls.results.get(tool_use["tool_use_id"])})
+            SessionToolUseView.model_validate(tool_use | {"result": calls.results.get(tool_use["tool_use_id"])})
             for tool_use in (recorded if recorded is not None else message.tool_uses)
         ],
         error=message.error,
@@ -1999,37 +1981,37 @@ def _message_view(message: ClaudeChatMessage, calls: _RolloutCalls) -> ClaudeCha
     )
 
 
-async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> ClaudeChatPrompt | None:
+async def _queued_prompt(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> SessionPrompt | None:
     """The prompt *session_id* is waiting to run, if it has one.
 
     `SKIP LOCKED` when claiming, so two replicas racing on one session take different rows rather
     than blocking on each other — though a partial unique index means there is at most one to take.
     """
     query = (
-        select(ClaudeChatPrompt)
-        .where(ClaudeChatPrompt.session_id == session_id, ClaudeChatPrompt.claimed_at.is_(None))
-        .order_by(ClaudeChatPrompt.queued_at)
+        select(SessionPrompt)
+        .where(SessionPrompt.session_id == session_id, SessionPrompt.claimed_at.is_(None))
+        .order_by(SessionPrompt.queued_at)
     )
-    prompt: ClaudeChatPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
+    prompt: SessionPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
     return prompt
 
 
-async def _legacy_pending(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> ClaudeChatMessage | None:
+async def _legacy_pending(db: AsyncSession, session_id: UUID, *, lock: bool = False) -> SessionMessage | None:
     """A prompt accepted by a replica on the previous image, which wrote no queue row.
 
-    CLEANUP(added 2026-08-13): Remove once every pod runs an image with `claude_chat_prompts`
+    CLEANUP(added 2026-08-13): Remove once every pod runs an image with `session_prompts`
     (0033) — one roll after it ships. Until then this is the only way such a prompt is answered.
     """
     query = (
-        select(ClaudeChatMessage)
+        select(SessionMessage)
         .where(
-            ClaudeChatMessage.session_id == session_id,
-            ClaudeChatMessage.role == ChatMessageRole.USER,
-            ClaudeChatMessage.status == ChatMessageStatus.PENDING,
+            SessionMessage.session_id == session_id,
+            SessionMessage.role == ChatMessageRole.USER,
+            SessionMessage.status == ChatMessageStatus.PENDING,
         )
-        .order_by(ClaudeChatMessage.created_at)
+        .order_by(SessionMessage.created_at)
     )
-    message: ClaudeChatMessage | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
+    message: SessionMessage | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
     return message
 
 
@@ -2041,7 +2023,7 @@ async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
     property, so this is a lookup rather than a scan with a rule attached.
     """
     turn_id: UUID | None = await db.scalar(
-        select(ClaudeChatTurn.turn_id).where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
+        select(SessionTurn.turn_id).where(SessionTurn.session_id == session_id, SessionTurn.ended_at.is_(None))
     )
     return turn_id
 
@@ -2061,12 +2043,12 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
     delivered, and what this closes is the window where nothing was written at all.
     """
     written = await db.scalar(
-        select(ClaudeChatFrame.frame_seq)
+        select(SessionFrame.frame_seq)
         .where(
-            ClaudeChatFrame.session_id == session_id,
-            ClaudeChatFrame.frame_seq >= first_frame_seq,
-            ClaudeChatFrame.direction == FrameDirection.TO_AGENT,
-            ClaudeChatFrame.kind == PROMPT_FRAME_KIND,
+            SessionFrame.session_id == session_id,
+            SessionFrame.frame_seq >= first_frame_seq,
+            SessionFrame.direction == FrameDirection.TO_AGENT,
+            SessionFrame.kind == PROMPT_FRAME_KIND,
         )
         .limit(1)
     )
@@ -2081,12 +2063,12 @@ async def _recorded_result(db: AsyncSession, session_id: UUID, first_frame_seq: 
     turn would wait for an end that cannot arrive twice.
     """
     payload: dict[str, Any] | None = await db.scalar(
-        select(ClaudeChatFrame.payload)
+        select(SessionFrame.payload)
         .where(
-            ClaudeChatFrame.session_id == session_id,
-            ClaudeChatFrame.frame_seq >= first_frame_seq,
-            ClaudeChatFrame.direction == FrameDirection.FROM_AGENT,
-            ClaudeChatFrame.kind == RESULT_FRAME_KIND,
+            SessionFrame.session_id == session_id,
+            SessionFrame.frame_seq >= first_frame_seq,
+            SessionFrame.direction == FrameDirection.FROM_AGENT,
+            SessionFrame.kind == RESULT_FRAME_KIND,
         )
         .limit(1)
     )
@@ -2100,13 +2082,13 @@ async def _said_anything(db: AsyncSession, session_id: UUID, first_frame_seq: in
     streaming, so counting it would read "the room has heard this" off text nothing has sent.
     """
     said = await db.scalar(
-        select(ClaudeChatFrame.frame_seq)
+        select(SessionFrame.frame_seq)
         .where(
-            ClaudeChatFrame.session_id == session_id,
-            ClaudeChatFrame.frame_seq >= first_frame_seq,
-            ClaudeChatFrame.direction == FrameDirection.FROM_AGENT,
-            ClaudeChatFrame.kind == ASSISTANT_FRAME_KIND,
-            ~ClaudeChatFrame.partial,
+            SessionFrame.session_id == session_id,
+            SessionFrame.frame_seq >= first_frame_seq,
+            SessionFrame.direction == FrameDirection.FROM_AGENT,
+            SessionFrame.kind == ASSISTANT_FRAME_KIND,
+            ~SessionFrame.partial,
         )
         .limit(1)
     )
@@ -2116,13 +2098,13 @@ async def _said_anything(db: AsyncSession, session_id: UUID, first_frame_seq: in
 async def _streaming_assistant(db: AsyncSession, session_id: UUID) -> tuple[UUID, str] | None:
     """The assistant message still being written, with the text already in it."""
     message = await db.scalar(
-        select(ClaudeChatMessage)
+        select(SessionMessage)
         .where(
-            ClaudeChatMessage.session_id == session_id,
-            ClaudeChatMessage.role == ChatMessageRole.ASSISTANT,
-            ClaudeChatMessage.status == ChatMessageStatus.STREAMING,
+            SessionMessage.session_id == session_id,
+            SessionMessage.role == ChatMessageRole.ASSISTANT,
+            SessionMessage.status == ChatMessageStatus.STREAMING,
         )
-        .order_by(ClaudeChatMessage.created_at.desc())
+        .order_by(SessionMessage.created_at.desc())
     )
     return None if message is None else (message.message_id, message.content)
 
@@ -2137,23 +2119,23 @@ async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
     half of it would repeat).
     """
     message_ids = list(
-        (await db.scalars(select(ClaudeChatTurnPrompt.message_id).where(ClaudeChatTurnPrompt.turn_id == turn_id))).all()
+        (await db.scalars(select(SessionTurnPrompt.message_id).where(SessionTurnPrompt.turn_id == turn_id))).all()
     )
     if not message_ids:
         return
     now = datetime.now(UTC)
-    for message in await db.scalars(select(ClaudeChatMessage).where(ClaudeChatMessage.message_id.in_(message_ids))):
+    for message in await db.scalars(select(SessionMessage).where(SessionMessage.message_id.in_(message_ids))):
         message.status = ChatMessageStatus.PENDING
         message.updated_at = now
-    for prompt in await db.scalars(select(ClaudeChatPrompt).where(ClaudeChatPrompt.message_id.in_(message_ids))):
+    for prompt in await db.scalars(select(SessionPrompt).where(SessionPrompt.message_id.in_(message_ids))):
         prompt.claimed_at = None
-    await db.execute(delete(ClaudeChatTurnPrompt).where(ClaudeChatTurnPrompt.turn_id == turn_id))
-    logger.warning("Claude chat turn %s never asked its prompt; re-queued %d", turn_id, len(message_ids))
+    await db.execute(delete(SessionTurnPrompt).where(SessionTurnPrompt.turn_id == turn_id))
+    logger.warning("turn %s never asked its prompt; re-queued %d", turn_id, len(message_ids))
 
 
 def _session_view(
-    record: ClaudeChatSession, messages: list[ClaudeChatMessage], *, responding: bool, calls: _RolloutCalls
-) -> ClaudeChatSessionView:
+    record: Session, messages: list[SessionMessage], *, responding: bool, calls: _RolloutCalls
+) -> SessionView:
     """The session as the SPA reads it, with `responding` derived from an open turn.
 
     `status` is the frontend's contract (`frontend/x/claude_chat_page.tsx` switches on it), so
@@ -2165,13 +2147,13 @@ def _session_view(
     The `record.status == RESPONDING` arm is the roll's other half: a replica on the previous
     image still writes that column, and its sessions have no turn rows to derive from.
     """
-    live = record.status in {ChatSessionStatus.READY, ChatSessionStatus.RESPONDING}
+    live = record.status in {SessionStatus.READY, SessionStatus.RESPONDING}
     status = (
-        ChatSessionStatus.RESPONDING
-        if live and (responding or record.status == ChatSessionStatus.RESPONDING)
+        SessionStatus.RESPONDING
+        if live and (responding or record.status == SessionStatus.RESPONDING)
         else record.status
     )
-    return ClaudeChatSessionView(
+    return SessionView(
         session_id=record.session_id,
         status=status,
         error=record.error,
@@ -2182,42 +2164,42 @@ def _session_view(
     )
 
 
-def _service(request: Request) -> ClaudeChatService:
-    service = cast(ClaudeChatService | None, request.app.state.claude_chat_service)
+def _service(request: Request) -> SessionService:
+    service = cast(SessionService | None, request.app.state.session_service)
     if service is None:
-        raise HTTPException(status_code=503, detail="sandbox Claude chat is not configured")
+        raise HTTPException(status_code=503, detail="the session runtime is not configured")
     return service
 
 
-def _store(request: Request) -> ClaudeChatStore:
-    store = cast(ClaudeChatStore | None, request.app.state.claude_chat_store)
+def _store(request: Request) -> SessionStore:
+    store = cast(SessionStore | None, request.app.state.session_store)
     if store is None:
-        raise HTTPException(status_code=503, detail="sandbox Claude chat is not configured")
+        raise HTTPException(status_code=503, detail="the session runtime is not configured")
     return store
 
 
-def _notifications(request: Request) -> ChatNotifications:
-    notifications = cast(ChatNotifications | None, request.app.state.claude_chat_notifications)
+def _notifications(request: Request) -> SessionNotifications:
+    notifications = cast(SessionNotifications | None, request.app.state.session_notifications)
     if notifications is None:
-        raise HTTPException(status_code=503, detail="Claude chat runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session runtime is not configured")
     return notifications
 
 
-ChatNotificationsDep = Annotated[ChatNotifications, Depends(_notifications)]
-ClaudeChatServiceDep = Annotated[ClaudeChatService, Depends(_service)]
-ClaudeChatStoreDep = Annotated[ClaudeChatStore, Depends(_store)]
+SessionNotificationsDep = Annotated[SessionNotifications, Depends(_notifications)]
+SessionServiceDep = Annotated[SessionService, Depends(_service)]
+SessionStoreDep = Annotated[SessionStore, Depends(_store)]
 
 
 @router.get("/api/conversations")
 async def list_conversations(
-    actor: OperatorActorDep, store: ClaudeChatStoreDep, limit: Annotated[int, Query(ge=1, le=100)] = 50
+    actor: OperatorActorDep, store: SessionStoreDep, limit: Annotated[int, Query(ge=1, le=100)] = 50
 ) -> list[ConversationSessionSummary]:
     return await store.list_operator_conversations(actor.operator_id, limit=limit)
 
 
 @router.get("/api/conversations/{session_id}")
 async def get_conversation(
-    session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep
+    session_id: UUID, actor: OperatorActorDep, store: SessionStoreDep
 ) -> ConversationSessionView:
     try:
         return await store.get_operator_conversation(actor.operator_id, session_id)
@@ -2225,26 +2207,35 @@ async def get_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found") from error
 
 
-@router.post("/api/claude/sessions")
-async def create_session(actor: OperatorActorDep, service: ClaudeChatServiceDep) -> ClaudeChatSessionView:
+# The operator surface moved from `/api/claude/sessions` to `/api/sessions` with the tables it
+# reads. Both are served, and only the new path is in the schema — so the generated client (and
+# so the SPA) can only call the new one, while a browser tab that loaded the previous bundle keeps
+# working until it reloads. That window is what `maxUnavailable: 0` makes unavoidable: old pods,
+# and old tabs, outlive the release.
+#
+# CLEANUP(added 2026-08-15): drop the `include_in_schema=False` registrations one release after
+# this ships, when no deployed bundle names them. `/internal/claude/runner` is *not* part of this
+# rename — the runner image dials it and that is a two-sided roll of its own.
+@router.post("/api/sessions")
+@router.post("/api/claude/sessions", include_in_schema=False)
+async def create_session(actor: OperatorActorDep, service: SessionServiceDep) -> SessionView:
     try:
         return await service.create(actor.operator_id, SpaSession())
     except Exception as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
-@router.get("/api/claude/sessions/{session_id}")
-async def get_session(
-    session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep
-) -> ClaudeChatSessionView:
+@router.get("/api/sessions/{session_id}")
+@router.get("/api/claude/sessions/{session_id}", include_in_schema=False)
+async def get_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> SessionView:
     try:
         return await service.get(actor.operator_id, session_id)
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Claude chat session not found") from error
+        raise HTTPException(status_code=404, detail="session not found") from error
 
 
 async def _sse_stream(
-    store: ClaudeChatStore, notifications: ChatNotifications, operator_id: UUID, session_id: UUID
+    store: SessionStore, notifications: SessionNotifications, operator_id: UUID, session_id: UUID
 ) -> collections.abc.AsyncIterator[str]:
     """Server-Sent Events stream delivering real-time session updates via LISTEN/NOTIFY."""
     yield f"data: {json.dumps({'type': 'connected'})}\n\n"
@@ -2256,10 +2247,10 @@ async def _sse_stream(
     last_status, last_payload = last_view.status, last_view.model_dump_json()
     yield f"data: {last_payload}\n\n"
     while True:
-        if last_status in {ChatSessionStatus.CLOSED, ChatSessionStatus.FAILED}:
+        if last_status in {SessionStatus.CLOSED, SessionStatus.FAILED}:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
-        await notifications.wait(ChatEventKind.UPDATE, session_id, timeout_seconds=30.0)
+        await notifications.wait(SessionEventKind.UPDATE, session_id, timeout_seconds=30.0)
         try:
             next_view = await store.get(operator_id, session_id)
         except KeyError:
@@ -2274,12 +2265,13 @@ async def _sse_stream(
             yield f"data: {payload}\n\n"
 
 
-@router.get("/api/claude/sessions/{session_id}/stream")
+@router.get("/api/sessions/{session_id}/stream")
+@router.get("/api/claude/sessions/{session_id}/stream", include_in_schema=False)
 async def stream_session(
-    session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep, notifications: ChatNotificationsDep
+    session_id: UUID, actor: OperatorActorDep, store: SessionStoreDep, notifications: SessionNotificationsDep
 ) -> StreamingResponse:
     if not await store.session_exists(actor.operator_id, session_id):
-        raise HTTPException(status_code=404, detail="Claude chat session not found")
+        raise HTTPException(status_code=404, detail="session not found")
     return StreamingResponse(
         _sse_stream(store, notifications, actor.operator_id, session_id),
         media_type="text/event-stream",
@@ -2287,40 +2279,43 @@ async def stream_session(
     )
 
 
-@router.post("/api/claude/sessions/{session_id}/abort", status_code=202)
-async def abort_session(session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep) -> dict[str, str]:
+@router.post("/api/sessions/{session_id}/abort", status_code=202)
+@router.post("/api/claude/sessions/{session_id}/abort", status_code=202, include_in_schema=False)
+async def abort_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> dict[str, str]:
     try:
         aborted = await service.request_abort(actor.operator_id, session_id)
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Claude chat session not found") from error
+        raise HTTPException(status_code=404, detail="session not found") from error
     if not aborted:
         raise HTTPException(status_code=409, detail="no active turn to abort")
     return {"status": "aborted"}
 
 
-@router.post("/api/claude/sessions/{session_id}/messages")
+@router.post("/api/sessions/{session_id}/messages")
+@router.post("/api/claude/sessions/{session_id}/messages", include_in_schema=False)
 async def send_message(
-    session_id: UUID, body: ClaudeChatPromptRequest, actor: OperatorActorDep, store: ClaudeChatStoreDep
-) -> ClaudeChatMessageView:
+    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
+) -> SessionMessageView:
     try:
         return await store.enqueue_prompt(actor.operator_id, session_id, body.text)
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Claude chat session not found") from error
+        raise HTTPException(status_code=404, detail="session not found") from error
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
-@router.delete("/api/claude/sessions/{session_id}", status_code=204)
-async def delete_session(session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep) -> None:
+@router.delete("/api/sessions/{session_id}", status_code=204)
+@router.delete("/api/claude/sessions/{session_id}", status_code=204, include_in_schema=False)
+async def delete_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> None:
     try:
         await service.dispose(actor.operator_id, session_id)
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Claude chat session not found") from error
+        raise HTTPException(status_code=404, detail="session not found") from error
 
 
 @internal_router.websocket("/internal/claude/runner/{session_id}")
 async def runner_websocket(websocket: WebSocket, session_id: UUID) -> None:
-    service = cast(ClaudeChatService | None, websocket.app.state.claude_chat_service)
+    service = cast(SessionService | None, websocket.app.state.session_service)
     authorization = websocket.headers.get("authorization", "")
     scheme, _, bearer = authorization.partition(" ")
     if service is None or scheme.lower() != "bearer" or not bearer:

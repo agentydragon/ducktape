@@ -133,7 +133,7 @@ a handoff to another pod. How the gap is actually closed lives in
   What it costs us: `MatrixTurns.offer` stops refusing batches while a turn runs (R2.2 becomes
   fold-into-turn), `_run_turn` gains a way to write a prompt into a `receive_response()` it is
   already draining, and **a turn stops owning exactly one prompt** — one `result` covered two
-  here, which is the concrete reason `claude_chat_turns` brackets a frame range rather than
+  here, which is the concrete reason `session_turns` brackets a frame range rather than
   labelling frames.
 
 - **R2.3 [v1]** Batch order follows the homeserver's stream order and is preserved in the
@@ -314,7 +314,7 @@ input to a running turn**. Interrupt exists; steer does not.
   trace reconstructs the work.
 
   **[later] Reading the trace needs a link that is currently discarded.** Rotation
-  overwrites the conversation's `session_id`, and `claude_chat_sessions` carries no room
+  overwrites the conversation's `session_id`, and `sessions` carries no room
   reference, so nothing connects a room to the sessions that served it — "what happened
   before" is unanswerable from the database today, by construction. Preserving that chain
   (a room-scoped session history, or a conversation reference on the session) is the
@@ -441,7 +441,7 @@ input to a running turn**. Interrupt exists; steer does not.
   stay open within a tier — an agent keeps its own history and only edges crossing a boundary are
   cut. What this paragraph got right is where it lands: a decision function at one console call
   site, not scoping smeared through the transport. Design, and the three things it needs
-  (a tier column on `claude_chat_sessions`, unlabelled-reads-as-highest, and the index filter):
+  (a tier column on `sessions`, unlabelled-reads-as-highest, and the index filter):
   <information_trust_tiers.md>.
 
   It is a **policy** deferral, not an architectural one, and the distinction is what keeps it
@@ -542,7 +542,7 @@ input to a running turn**. Interrupt exists; steer does not.
 
 - **R5.5 [v1] The rollout is readable, not just the conversation.** The agent can read what a
   past session _did_ — tool calls with their results, in order — and not only what it said.
-  The room cannot answer this and neither can `claude_chat_messages`: the turn loop stores an
+  The room cannot answer this and neither can `session_messages`: the turn loop stores an
   assistant message's `ToolUseBlock`s (id, name, input) and drops the `UserMessage` frames
   carrying the results, so today's tables record every question and no answer. Reading them as
   a transcript would produce something plausible with every observation missing, which is
@@ -745,7 +745,7 @@ that.
   (R5.3a). **Prerequisite, and it is losing data now:**
   `matrix_conversation` holds a single `session_id`, the current one, so when the supervisor
   replaces a session the link to the room is gone and a past Matrix session is
-  indistinguishable from an SPA one. `claude_chat_sessions` needs `surface` and `room_id` of
+  indistinguishable from an SPA one. `sessions` needs `surface` and `room_id` of
   its own. Additive, nullable, backfillable for the one session bound today, and safe under
   `maxUnavailable: 0` — but every session created before it lands loses its attribution
   permanently, which is not recoverable afterwards.
@@ -901,7 +901,7 @@ in the Matrix ends:
   because a fake store stood in for the real one.
 - Aborts went through an in-process registry, which is correct on one replica and wrong
   about half the time on two (#3933).
-- `LISTEN`/`NOTIFY` was lifted out of `ClaudeChatStore` into its own module (#3936), both
+- `LISTEN`/`NOTIFY` was lifted out of `SessionStore` into its own module (#3936), both
   listeners moved onto one async driver (#3937), and the three per-kind channels became one
   `claude_chat` channel carrying a typed event (#3938, #3940, #3941). Session transitions
   became observable as they happen rather than only in aggregate (#3930).
@@ -1011,7 +1011,7 @@ and the rollout the console already sees go past — unscoped for now by R5.3a.
 Ordered so the write side lands first, because a reader over today's tables would show a
 transcript with every tool result missing (R5.5):
 
-1. **`surface` + `room_id` on `claude_chat_sessions`** (R11.3a) — **done**, migration `0030`,
+1. **`surface` + `room_id` on `sessions`** (R11.3a) — **done**, migration `0030`,
    with the two check constraints tying them together. It was the item losing data every day it
    was not done.
 2. **The rollout frame store** (R5.5a–c) — **done**, same migration. `RolloutRecorder` writes at
@@ -1028,7 +1028,7 @@ transcript with every tool result missing (R5.5):
    rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
 
    **Shaped as a cursor over the frame log, not as turns.** `read_rollout(session_id, after_seq,
-limit, kinds)` pages `claude_chat_frames` by its `frame_seq`, and skimming is a `kinds`
+limit, kinds)` pages `session_frames` by its `frame_seq`, and skimming is a `kinds`
    filter — assistant text and tool names — rather than a coarser unit. Three reasons it is
    better than the turn-shaped version this used to specify. It needs no schema change, so it is
    buildable today. Bounded payloads come from the page size, which is what the drilldown

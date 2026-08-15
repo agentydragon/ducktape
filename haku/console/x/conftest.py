@@ -18,10 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
+from haku.console.x.claude_chat import SessionService, SessionStore
 from haku.console.x.matrix_session import MatrixConversationStore
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
+from haku.console.x.session_notifications import SessionNotifications
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
@@ -70,7 +70,7 @@ class RecordingClaims:
         assert expires_at > datetime.now(expires_at.tzinfo)
         self.created.append(session_id)
         # The claim is where a test reaches the bridge credential: the store mints it and
-        # `ClaudeChatService.create` does not hand it back.
+        # `SessionService.create` does not hand it back.
         self.tokens[session_id] = bridge_token
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
@@ -92,14 +92,14 @@ def recording_claims() -> RecordingClaims:
 
 
 @pytest.fixture
-def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> ClaudeChatStore:
-    return ClaudeChatStore(migrated_sessions)
+def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> SessionStore:
+    return SessionStore(migrated_sessions)
 
 
 @pytest.fixture
-async def notifications(migrated_db_url: str) -> AsyncIterator[ChatNotifications]:
+async def notifications(migrated_db_url: str) -> AsyncIterator[SessionNotifications]:
     """A real listener against the test database — the plumbing is the thing under test."""
-    channel = ChatNotifications(migrated_db_url)
+    channel = SessionNotifications(migrated_db_url)
     await channel.start()
     try:
         yield channel
@@ -109,9 +109,9 @@ async def notifications(migrated_db_url: str) -> AsyncIterator[ChatNotifications
 
 @pytest.fixture
 def chat_service(
-    chat_store: ClaudeChatStore, recording_claims: RecordingClaims, notifications: ChatNotifications
-) -> ClaudeChatService:
-    return ClaudeChatService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+    chat_store: SessionStore, recording_claims: RecordingClaims, notifications: SessionNotifications
+) -> SessionService:
+    return SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
 
 
 @pytest.fixture

@@ -7,10 +7,10 @@ Two corpora, named explicitly everywhere. They answer different questions and ar
 different sources, and a query that silently searched the wrong one would look like a retrieval
 quality problem:
 
-| corpus | source                                                              | a hit points at               |
-| ------ | ------------------------------------------------------------------- | ----------------------------- |
-| `git`  | the files at a branch tip of a git repository (haku-state)          | a path and a byte range       |
-| `chat` | the console's `claude_chat_messages` — Matrix and SPA conversations | a session and its message ids |
+| corpus | source                                                          | a hit points at               |
+| ------ | --------------------------------------------------------------- | ----------------------------- |
+| `git`  | the files at a branch tip of a git repository (haku-state)      | a path and a byte range       |
+| `chat` | the console's `session_messages` — Matrix and SPA conversations | a session and its message ids |
 
 The index is derived state: it can be thrown away and rebuilt from git and Postgres at any time.
 
@@ -367,9 +367,9 @@ Embeddings are a recomputable cache, so this is much cheaper to do while the ind
 What settling it touches:
 
 - **`haku/state_index/store.py`** — `search_chat` takes an optional `session_id` and nothing
-  else. A scope is a `WHERE` over `claude_chat_sessions.operator_id`/`room_id`, which means the
+  else. A scope is a `WHERE` over `sessions.operator_id`/`room_id`, which means the
   search joins that table (or `chat_chunks` denormalizes both, the way
-  `claude_chat_sessions.room_id` itself is denormalized from `matrix_conversation`).
+  `sessions.room_id` itself is denormalized from `matrix_conversation`).
 - **`haku/console/tools/conversations.py`** — `list_conversations`, `read_rollout`, and
   `list_turns` are unscoped by the same open decision. Scoping search but not the drilldown it
   hands off to would be theatre: the message ids in a hit are exactly what `read_rollout` takes.
@@ -388,7 +388,7 @@ What settling it touches:
 
 ### Frames
 
-`claude_chat_frames` — the console's verbatim record of the agent protocol — is **not indexed**.
+`session_frames` — the console's verbatim record of the agent protocol — is **not indexed**.
 `haku/plans/matrix_chat_runtime.md` names frames as the granularity search should eventually use,
 and they are the only place a tool call and the result it got both appear. Two reasons to do the
 messages first and the frames later, both of which should be re-checked against a real index
@@ -398,7 +398,7 @@ rather than argued:
   `tool_result` can be an entire file (`haku/console/tools/conversations.py`). Embedding those
   verbatim means vectors over file dumps, a corpus that grows with tool volume rather than with
   conversation, and retrieval that returns the file rather than the reasoning about it.
-- **The messages are the high-signal half.** `claude_chat_messages` is what was actually said,
+- **The messages are the high-signal half.** `session_messages` is what was actually said,
   already deduplicated against the delivery mirror by the console. If recall over that is not
   useful, recall over the frames underneath it will not rescue it.
 

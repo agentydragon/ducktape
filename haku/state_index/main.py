@@ -134,7 +134,7 @@ async def _index_chat(database_url: str) -> None:
 def index_chat(database_url: DatabaseUrl) -> None:
     """Index every chat session that has changed since it was last indexed.
 
-    The database must be the console's own: the corpus is its `claude_chat_messages` table.
+    The database must be the console's own: the corpus is its `session_messages` table.
     """
     asyncio.run(_index_chat(database_url))
 

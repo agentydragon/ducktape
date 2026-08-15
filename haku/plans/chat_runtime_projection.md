@@ -29,7 +29,7 @@ duplicate". That is the tax.
 
 Two stages with a **durable cursor** between them.
 
-**1. Transport ↔ log.** The socket's only job: CLI frames into `claude_chat_frames`, deduplicated
+**1. Transport ↔ log.** The socket's only job: CLI frames into `session_frames`, deduplicated
 by `frame_uid`; queued prompts out to the CLI. It knows nothing about turns, messages or rooms, so
 it can die anywhere without leaving a decision half-made.
 
@@ -73,7 +73,7 @@ replaces.
 
 ### 2. Make the frame log store one thing — recorded, **not scheduled**
 
-`claude_chat_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
+`session_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
 sinks write to it:
 
 | Writer                                                  | Sees                                      | Writes into `kind`                             |

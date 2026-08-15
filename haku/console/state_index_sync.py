@@ -1,7 +1,7 @@
 """Keeping the haku index current, from inside the console.
 
 Both corpora are synced by the process that already holds them: `chat` is built from the
-console's own `claude_chat_messages`, and `git` from a read-only mirror of haku-state that this
+console's own `session_messages`, and `git` from a read-only mirror of haku-state that this
 process fetches. One deployment, no CronJob, and `index_status` stops reporting a backlog that
 nothing drains.
 

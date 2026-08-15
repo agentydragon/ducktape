@@ -1,6 +1,6 @@
 """The chat corpus: the console's own record of what was said, made searchable.
 
-The corpus is the console's `claude_chat_messages` — every Claude chat session it has served,
+The corpus is the console's `session_messages` — every session it has served,
 Matrix and SPA alike. This module is the shape of a chunk; `chat_source.py` is where the rows
 come from, and keeping the two apart is what lets the store depend on the former without
 dragging the console's whole schema behind it.
@@ -11,7 +11,7 @@ hands back pointers a caller can drill into with the console's conversation tool
 exception is a message longer than a whole chunk, which is split — and then each part still
 holds exactly that one message, so the mapping never becomes approximate.
 
-Frames (`claude_chat_frames`) are deliberately not indexed here; see this package's README.
+Frames (`session_frames`) are deliberately not indexed here; see this package's README.
 """
 
 from __future__ import annotations

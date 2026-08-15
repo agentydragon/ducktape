@@ -1544,6 +1544,8 @@ def test_lease_backfill_reclaims_a_session_no_replica_is_holding(db_url: str) ->
                 conn.execute(
                     text(
                         """
+                        -- The historical name on purpose: this writes at revision 0027, where
+                        -- `sessions` does not exist yet (0040 is what renames it).
                         INSERT INTO claude_chat_sessions (
                             session_id, operator_id, status, bridge_token_fingerprint,
                             bridge_connected_at, error, lease_expires_at, created_at, updated_at
@@ -1567,7 +1569,7 @@ def test_lease_backfill_reclaims_a_session_no_replica_is_holding(db_url: str) ->
         with engine.connect() as conn:
             leases: dict[UUID, datetime.datetime | None] = {
                 row.session_id: row.lease_expires_at
-                for row in conn.execute(text("SELECT session_id, lease_expires_at FROM claude_chat_sessions"))
+                for row in conn.execute(text("SELECT session_id, lease_expires_at FROM sessions"))
             }
         # Grace, not an expired lease: a replica that is genuinely alive renews inside the TTL,
         # so the backfill must not declare every healthy session dead the moment it runs.
@@ -1605,7 +1607,7 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO claude_chat_sessions (
+                    INSERT INTO sessions (
                         session_id, operator_id, status, bridge_token_fingerprint,
                         bridge_connected_at, error, lease_expires_at, created_at, updated_at
                     ) VALUES (

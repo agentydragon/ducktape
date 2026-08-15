@@ -63,7 +63,7 @@ export function ClaudeChatPage() {
     const canUseSSE = protocol === "https:" || protocol === "http:";
 
     if (canUseSSE) {
-      eventSource = new EventSource(`/api/claude/sessions/${sessionId}/stream`);
+      eventSource = new EventSource(`/api/sessions/${sessionId}/stream`);
       eventSource.onmessage = (event) => {
         if (!alive) return;
         try {
@@ -167,7 +167,7 @@ export function ClaudeChatPage() {
     if (!session) return;
     setAborting(true);
     try {
-      const resp = await fetch(`/api/claude/sessions/${session.session_id}/abort`, { method: "POST" });
+      const resp = await fetch(`/api/sessions/${session.session_id}/abort`, { method: "POST" });
       if (!resp.ok && resp.status !== 409) {
         const body = await resp.json().catch(() => null);
         setError(body?.detail ?? "Failed to abort");

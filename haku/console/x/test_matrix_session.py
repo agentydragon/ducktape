@@ -11,19 +11,13 @@ import pytest
 import pytest_bazel
 from sqlalchemy import delete, select
 
-from haku.console.chat_models import ChatSessionStatus
-from haku.console.database_schema import ClaudeChatSession
-from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import (
-    ADOPTION_GRACE,
-    BridgeAuthentication,
-    ClaudeChatService,
-    ClaudeChatStore,
-    SpaSession,
-)
+from haku.console.chat_models import SessionStatus
+from haku.console.database_schema import Session
+from haku.console.x.claude_chat import ADOPTION_GRACE, BridgeAuthentication, SessionService, SessionStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import EventTag, InboundMessage, MatrixError, RoomEventKind
 from haku.console.x.matrix_session import NOTHING_SAID, MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
+from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
 
 
@@ -42,9 +36,9 @@ def announced() -> list[str]:
 @pytest.fixture
 def supervisor(
     conversations: MatrixConversationStore,
-    chat_store: ClaudeChatStore,
-    chat_service: ClaudeChatService,
-    notifications: ChatNotifications,
+    chat_store: SessionStore,
+    chat_service: SessionService,
+    notifications: SessionNotifications,
     migrated_identity_store,
     announced: list[str],
 ) -> MatrixSessionSupervisor:
@@ -82,7 +76,7 @@ async def test_provisions_a_session_for_a_freshly_bound_room(
 
     [session_id] = recording_claims.created
     assert await bound_session(conversations) == session_id
-    assert await chat_store.status(session_id) == ChatSessionStatus.PROVISIONING
+    assert await chat_store.status(session_id) == SessionStatus.PROVISIONING
     assert "provisioning a sandbox" in announced[0]
 
 
@@ -120,7 +114,7 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
     """The binding lives in two places and they answer different questions.
 
     `matrix_conversation.session_id` is the pointer — which session the room talks to *now* — and
-    `claude_chat_sessions.room_id` is the history, written once and never moved. No SQL constraint
+    `sessions.room_id` is the history, written once and never moved. No SQL constraint
     can state the agreement between them (a CHECK sees one row; a composite foreign key would need
     `room_id` in this table's key), so the supervisor is its only maintainer and this is where that
     is checked. Without the history half, a replaced Matrix session became indistinguishable from
@@ -136,10 +130,7 @@ async def test_the_pointer_moves_while_each_session_keeps_the_room_it_served(
     second = await bound_session(conversations)
     assert second not in (None, first), "the pointer follows the live session"
     async with migrated_sessions() as db:
-        rooms = {
-            row.session_id: row.room_id
-            for row in await db.scalars(select(ClaudeChatSession).order_by(ClaudeChatSession.created_at))
-        }
+        rooms = {row.session_id: row.room_id for row in await db.scalars(select(Session).order_by(Session.created_at))}
     assert rooms == {first: MATRIX_ROOM, second: MATRIX_ROOM}, "each session still says which room it served"
 
 
@@ -159,9 +150,9 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
     await supervisor.supervise_once()
     [orphan] = recording_claims.created
     async with migrated_sessions.begin() as db:
-        chat = await db.get(ClaudeChatSession, orphan)
+        chat = await db.get(Session, orphan)
         assert chat is not None
-        chat.status = ChatSessionStatus.RESPONDING
+        chat.status = SessionStatus.RESPONDING
         chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - ADOPTION_GRACE - datetime.timedelta(seconds=1)
 
     await supervisor.supervise_once()
@@ -187,7 +178,7 @@ async def test_replaces_a_session_whose_row_is_gone(
     [vanished] = recording_claims.created
 
     async with migrated_sessions.begin() as db:
-        await db.execute(delete(ClaudeChatSession).where(ClaudeChatSession.session_id == vanished))
+        await db.execute(delete(Session).where(Session.session_id == vanished))
     assert await bound_session(conversations) is None, "the foreign key should have nulled the binding"
 
     await supervisor.supervise_once()
@@ -217,7 +208,7 @@ async def test_does_not_repeat_an_unchanged_status(
 
 
 @pytest.fixture
-async def bound(conversations: MatrixConversationStore, chat_store: ClaudeChatStore, operator_id: UUID) -> UUID:
+async def bound(conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID) -> UUID:
     """A room bound to a real session row — `session_id` is a foreign key, not a free UUID."""
     await conversations.claim_room(MATRIX_USER, MATRIX_ROOM)
     view, _ = await chat_store.create(operator_id, SpaSession())

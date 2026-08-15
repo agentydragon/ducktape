@@ -2,7 +2,7 @@
 
 Lets Haku consult what it actually did in an earlier session, rather than starting each one
 from the last twenty room messages and nothing else (`haku/plans/matrix_chat_runtime.md` R5.4a,
-Phase 5). The corpus is `claude_chat_frames`, the console's verbatim record of the agent
+Phase 5). The corpus is `session_frames`, the console's verbatim record of the agent
 protocol, so a tool call and the result it got are both there — which no other table has.
 
 **A drilldown, not a dump.** `list_conversations` finds the session, `read_rollout` pages its

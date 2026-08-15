@@ -19,9 +19,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console import state_index_sync
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, SessionStatus
 from haku.console.config import HakuStateGitConfig
-from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession, Operator
+from haku.console.database_schema import Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import CHAT_ADVISORY_LOCK, StateIndexMaintenance
@@ -61,10 +61,10 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
     session_id = uuid.uuid4()
     async with sessions.begin() as session:
         session.add(
-            ClaudeChatSession(
+            Session(
                 session_id=session_id,
                 operator_id=operator_id,
-                status=ChatSessionStatus.CLOSED,
+                status=SessionStatus.CLOSED,
                 bridge_token_fingerprint=b"fingerprint",
                 lease_expires_at=_NOW,
                 created_at=_NOW,
@@ -75,7 +75,7 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
         # by the order they were added.
         await session.flush()
         session.add(
-            ClaudeChatMessage(
+            SessionMessage(
                 message_id=uuid.uuid4(),
                 session_id=session_id,
                 role=ChatMessageRole.USER,

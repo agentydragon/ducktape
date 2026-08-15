@@ -161,7 +161,7 @@ stream directly for an adopted turn" does not turn the store into a migration.
 - **Routing an adopted turn by turn.** `_run_turn` assumes this process issued the prompt it is
   draining. An adopted mid-flight turn has to be picked up off the stream instead, and routed by
   _turn_ rather than by session, since a session outlives many of them — which is what
-  `claude_chat_turns` brackets.
+  `session_turns` brackets.
 - **An idle timeout in the runner.** A CLI held open for a console that never returns trades a
   wedged room for a wedged sandbox.
 
@@ -199,10 +199,10 @@ its message has landed.
 
 Two consequences worth building deliberately:
 
-- **Make it a schema property, not a rule.** A nullable `frame_uid` on `claude_chat_frames` with a
+- **Make it a schema property, not a rule.** A nullable `frame_uid` on `session_frames` with a
   partial unique index on `(session_id, frame_uid)` makes "the same frame twice" unrepresentable
-  rather than something every writer has to remember — the shape `uq_claude_chat_turns_open` and
-  `uq_claude_chat_prompts_unclaimed` already use. Additive.
+  rather than something every writer has to remember — the shape `uq_session_turns_open` and
+  `uq_session_prompts_unclaimed` already use. Additive.
 - **Dedupe where the frame enters, not where it is stored.** The record is not the only thing a
   frame touches: a replayed `assistant` frame that reached `_run_turn` would post the message into
   the room a second time. The check belongs at ingestion, ahead of dispatch, so a duplicate is

@@ -431,7 +431,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
   if (url.includes("/api/conversations/")) return jsonResponse(conversationDetail);
   if (url.includes("/api/conversations")) return jsonResponse(conversationSummaries);
-  if (url.includes("/api/claude/sessions")) return jsonResponse(claudeSession);
+  if (url.includes("/api/sessions")) return jsonResponse(claudeSession);
   // Push is configured on this console, and one *other* device is enrolled — the two facts the
   // Notifications section exists to show. The headless browser has no real subscription, so
   // "this browser" renders Off; a second device proves the per-device list renders.

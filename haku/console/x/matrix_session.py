@@ -28,13 +28,13 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatSessionStatus
+from haku.console.chat_models import LIVE_SESSION_STATUSES, SessionStatus
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.database_schema import MatrixConversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
-from haku.console.x.claude_chat import REPLICA, ClaudeChatService, ClaudeChatStore, MatrixSession
+from haku.console.x.claude_chat import REPLICA, MatrixSession, SessionService, SessionStore
 from haku.console.x.matrix_client import EventTag, InboundMessage, RoomEventKind
+from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ class MatrixTurns:
         self,
         config: MatrixConfig,
         conversations: MatrixConversationStore,
-        chat_store: ClaudeChatStore,
+        chat_store: SessionStore,
         identities: PostgresOperatorIdentityStore,
     ):
         self._config = config
@@ -321,9 +321,9 @@ class MatrixSessionSupervisor:
         self,
         config: MatrixConfig,
         conversations: MatrixConversationStore,
-        chat: ClaudeChatService,
-        chat_store: ClaudeChatStore,
-        notifications: ChatNotifications,
+        chat: SessionService,
+        chat_store: SessionStore,
+        notifications: SessionNotifications,
         identities: PostgresOperatorIdentityStore,
         announce: Announce,
         engine: AsyncEngine,
@@ -396,7 +396,7 @@ class MatrixSessionSupervisor:
 
         session = await self._chat.create(await self._operator_id(), MatrixSession(room_id=conversation.room_id))
         await self._conversations.set_session(self._config.user_id, session.session_id)
-        self._last_announced = ChatSessionStatus.PROVISIONING
+        self._last_announced = SessionStatus.PROVISIONING
         await self._announce(f"provisioning a sandbox · session {session.session_id}")
         logger.info("Matrix: provisioned session %s for room %s", session.session_id, conversation.room_id)
 
@@ -427,7 +427,7 @@ class MatrixSessionSupervisor:
             await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
             return
         await self._notifications.wait(
-            ChatEventKind.UPDATE, conversation.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
+            SessionEventKind.UPDATE, conversation.session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
         )
 
     async def _run(self) -> None:

@@ -65,7 +65,7 @@ lie; E1 is the other.
 arriving between the interrupt and the result — the normal case, since the CLI finishes the message
 it is mid-way through — is thrown away. No `update_assistant`, no row, no delivery. The text exists
 only in the rollout (the recorder is at the transport layer, so the frame _is_ in
-`claude_chat_frames`) and appears nowhere an operator looks.
+`session_frames`) and appears nowhere an operator looks.
 
 Needs an abort, not a reconnection. Nothing logs it. Structurally untested: `_InterruptedCli.frames`
 sets the abort only after its whole script has been yielded, so the drain never sees an `assistant`
@@ -75,7 +75,7 @@ frame. **An outbox does not close this** — the reply never reaches the deliver
 
 `claude_chat.py`'s `if result.get("is_error") and not abort_event.is_set():` raises _before_ `final_text` is computed and before any
 delivery; so do failures in the writes above it. The `except` closes the turn `FAILED` and re-raises,
-`handle_runner` fails the session. Streamed text is in `claude_chat_messages` and the rollout, never
+`handle_runner` fails the session. Streamed text is in `session_messages` and the rollout, never
 in the room. The supervisor announces the failure (`matrix_session.py:368-378`), so the operator sees
 _a_ failure — not that an answer was produced and stranded.
 
@@ -99,7 +99,7 @@ narration. Not a likely explanation for scattered drops.
 
 `matrix_pacer.py:57,174-180`. At 0.2 sends/s, five seconds is **one send**. The ordering is sound
 (uvicorn's 10s graceful shutdown → lifespan → 5s flush, inside `terminationGracePeriodSeconds: 25`,
-with `claude_chat_service.aclose()` before the flush), so the budget is coherent — the rate is what
+with `session_service.aclose()` before the flush), so the budget is coherent — the rate is what
 makes it thin. Requires a roll, so it does not explain these reports.
 
 ### E8. `drop_status` can declare idle while a send is in flight

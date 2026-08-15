@@ -1,7 +1,7 @@
 """Binds the haku index to the console's database and embedder for the `haku_index` tools.
 
 The index lives in the console's own Postgres — the conversations corpus is built from
-`claude_chat_messages`, so it could not live anywhere else — and this is where that plumbing sits
+`session_messages`, so it could not live anywhere else — and this is where that plumbing sits
 rather than in `haku/state_index`, which stays a library with no opinion about who runs it.
 
 This is also where the tool surface's vocabulary meets the storage's: `haku_state` and
@@ -21,7 +21,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import ClaudeChatSession
+from haku.console.database_schema import Session
 from haku.console.tools.state_index import (
     ConversationSource,
     ConversationsStatus,
@@ -126,13 +126,13 @@ class PostgresIndexSearcher:
             session, embedding, model_key=self._embedder.model_key, limit=limit, session_id=session_id
         )
         # The room a hit came from is the console's own binding, not the index's: the index knows
-        # sessions, and which room a session served is `claude_chat_sessions.room_id`.
+        # sessions, and which room a session served is `sessions.room_id`.
         rooms: dict[UUID, str | None] = {
             row.session_id: row.room_id
             for row in (
                 await session.execute(
-                    select(ClaudeChatSession.session_id, ClaudeChatSession.room_id).where(
-                        ClaudeChatSession.session_id.in_({hit.session_id for hit in found})
+                    select(Session.session_id, Session.room_id).where(
+                        Session.session_id.in_({hit.session_id for hit in found})
                     )
                 )
             ).all()

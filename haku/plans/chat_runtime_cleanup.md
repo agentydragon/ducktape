@@ -57,12 +57,12 @@ cost, and the argument for allocating on demand is unchanged.
 
 The SPA has a gesture that means "I want a session" and Matrix has none, so the supervisor
 substitutes by assuming demand permanently. The prompt is the honest substitute, and the prompt
-queue already made it cheap: accepted and running were separated when `claude_chat_prompts` landed.
+queue already made it cheap: accepted and running were separated when `session_prompts` landed.
 
 - `create()` writes the row and stops, in a new **`idle`** status; `allocate()` mints the credential
   and the claim and moves to `provisioning`.
 - Admission accepts on `idle`, so `enqueue_prompt` is what creates demand; the supervisor's trigger
-  becomes "an unclaimed prompt and no sandbox", waking on `ChatEventKind.PROMPT`.
+  becomes "an unclaimed prompt and no sandbox", waking on `SessionEventKind.PROMPT`.
 - `MatrixTurns.offer` stops refusing an unallocated session, so the batch enters the durable queue
   rather than being left on the homeserver.
 - **`LIVE_SESSION_STATUSES` currently means both "worth keeping" and "has a lease to renew".** An
@@ -102,7 +102,7 @@ call sites re-ask a question answered once per connection — plus three no-op c
 
 2. Then the schema half — `chat_attachment(session_id, surface, address, attached_at, detached_at)`
    with a partial unique index on `(surface, address) where detached_at is null`. It subsumes
-   `claude_chat_sessions.surface`, `.room_id`, both check constraints tying them together, and
+   `sessions.surface`, `.room_id`, both check constraints tying them together, and
    `matrix_conversation.session_id`; the pointer/history distinction those two tables document in
    prose becomes `detached_at IS NULL`. Attach/detach within one session becomes a row.
 
@@ -140,7 +140,7 @@ loop's signatures.
   the debounce as polish (<../console/plans/session_channels.md> § 3).
 - **Split `claude_chat.py`** further. `KubernetesSandboxClaims` has left; what remains is view
   models, the store, the recorder, the status driver, the service, the turn loop, the port and the
-  routes. `ClaudeChatStore`'s twenty-odd methods split along the seams the turn table and the
+  routes. `SessionStore`'s twenty-odd methods split along the seams the turn table and the
   prompt queue already created — each split landing with the change that creates it, never as a
   standalone reshuffle with no acceptance criterion.
 - **Prune the archaeology.** Roughly 150 of `claude_chat.py`'s lines narrate what the code used to be
@@ -153,7 +153,7 @@ loop's signatures.
   `_message_view`'s `_NO_CALLS` default serves one caller that structurally cannot need it;
   `KubernetesSandboxClaims._clients()` is double-checked locking with four asserts;
   `MatrixTurns.offer` pre-checks the status that `enqueue_prompt` then checks atomically, and its own
-  comment admits it races; `claude_chat_turn_prompts` has no reader until folding lands; "surface"
+  comment admits it races; `session_turn_prompts` has no reader until folding lands; "surface"
   names five things and "turn" three.
 
 ## When their rolls converge
@@ -168,7 +168,7 @@ loop's signatures.
 ## Later
 
 - **Mid-turn steering.** Measured to work: a prompt written while a turn runs is absorbed at the next
-  tool boundary and one `result` covers both. `claude_chat_turn_prompts` is many-to-one already and
+  tool boundary and one `result` covers both. `session_turn_prompts` is many-to-one already and
   admission deliberately still refuses, with a test saying so. Needs `interrupt` with
   `cancel_queued: true`, since a bare interrupt starts the next queued prompt.
 - **Streaming the answer into the room.** Achievable only as a coarse refresh — the five-second floor

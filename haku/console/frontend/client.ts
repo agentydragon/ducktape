@@ -36,8 +36,8 @@ export type OAuthConnectionResult =
   | components["schemas"]["OAuthConnectionSucceeded"]
   | components["schemas"]["OAuthConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
-export type ClaudeChatSession = components["schemas"]["ClaudeChatSessionView"];
-export type ClaudeChatMessage = components["schemas"]["ClaudeChatMessageView"];
+export type ClaudeChatSession = components["schemas"]["SessionView"];
+export type ClaudeChatMessage = components["schemas"]["SessionMessageView"];
 export type ConversationSessionSummary = components["schemas"]["ConversationSessionSummary"];
 export type ConversationSession = components["schemas"]["ConversationSessionView"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
@@ -84,13 +84,13 @@ export async function fetchOperator(): Promise<OperatorResponse> {
 }
 
 export async function createClaudeChatSession(): Promise<ClaudeChatSession> {
-  const { data, error } = await api.POST("/api/claude/sessions");
+  const { data, error } = await api.POST("/api/sessions");
   if (error || !data) throw new Error(errorDetail(error, "Failed to create Claude chat session"));
   return data;
 }
 
 export async function fetchClaudeChatSession(sessionId: string): Promise<ClaudeChatSession> {
-  const { data, error } = await api.GET("/api/claude/sessions/{session_id}", {
+  const { data, error } = await api.GET("/api/sessions/{session_id}", {
     params: { path: { session_id: sessionId } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load Claude chat session"));
@@ -112,7 +112,7 @@ export async function fetchConversation(sessionId: string): Promise<Conversation
 }
 
 export async function sendClaudeChatMessage(sessionId: string, text: string): Promise<ClaudeChatMessage> {
-  const { data, error } = await api.POST("/api/claude/sessions/{session_id}/messages", {
+  const { data, error } = await api.POST("/api/sessions/{session_id}/messages", {
     params: { path: { session_id: sessionId } },
     body: { text },
   });
@@ -121,7 +121,7 @@ export async function sendClaudeChatMessage(sessionId: string, text: string): Pr
 }
 
 export async function deleteClaudeChatSession(sessionId: string): Promise<void> {
-  const { error } = await api.DELETE("/api/claude/sessions/{session_id}", {
+  const { error } = await api.DELETE("/api/sessions/{session_id}", {
     params: { path: { session_id: sessionId } },
   });
   if (error) throw new Error(errorDetail(error, "Failed to close Claude chat session"));

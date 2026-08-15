@@ -11,8 +11,8 @@ import pytest_bazel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
-from haku.console.database_schema import Base as ConsoleBase, ClaudeChatMessage, ClaudeChatSession, Operator
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, SessionStatus
+from haku.console.database_schema import Base as ConsoleBase, Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.state_index.chat_sync import ChatSyncReport, sync_chat
 from haku.state_index.fake_embedder import FakeEmbedder
@@ -22,8 +22,8 @@ from haku.state_index.store import ChatSearchHit
 
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
-# `claude_chat_messages` is the corpus; the other two are the foreign keys it hangs off.
-_CHAT_SOURCE_TABLES = ("operators", "claude_chat_sessions", "claude_chat_messages")
+# `session_messages` is the corpus; the other two are the foreign keys it hangs off.
+_CHAT_SOURCE_TABLES = ("operators", "sessions", "session_messages")
 
 
 @pytest.fixture
@@ -52,10 +52,10 @@ async def new_operator(source: AsyncSession) -> UUID:
 async def new_session(source: AsyncSession, operator_id: UUID) -> UUID:
     session_id = uuid.uuid4()
     source.add(
-        ClaudeChatSession(
+        Session(
             session_id=session_id,
             operator_id=operator_id,
-            status=ChatSessionStatus.CLOSED,
+            status=SessionStatus.CLOSED,
             bridge_token_fingerprint=b"fingerprint",
             lease_expires_at=_NOW,
             created_at=_NOW,
@@ -78,7 +78,7 @@ async def say(
     message_id = uuid.uuid4()
     at = _NOW + datetime.timedelta(minutes=minute)
     source.add(
-        ClaudeChatMessage(
+        SessionMessage(
             message_id=message_id,
             session_id=session_id,
             role=role,
@@ -194,7 +194,7 @@ async def test_a_session_the_console_dropped_stops_matching(
     await say(chat_source, session_id, "eta", minute=0)
     await run_sync(chat_source, embedder)
 
-    await chat_source.execute(delete(ClaudeChatMessage).where(ClaudeChatMessage.session_id == session_id))
+    await chat_source.execute(delete(SessionMessage).where(SessionMessage.session_id == session_id))
     report = await run_sync(chat_source, embedder)
 
     assert report.sessions_forgotten == 1

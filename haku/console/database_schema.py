@@ -37,9 +37,9 @@ from haku.console.agents.models import (
 from haku.console.chat_models import (
     ChatMessageRole,
     ChatMessageStatus,
-    ChatSessionStatus,
     ChatSurface,
     FrameDirection,
+    SessionStatus,
     TurnOutcome,
 )
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
@@ -843,10 +843,10 @@ class OperatorAuthentikToken(Base):
     )
 
 
-class ClaudeChatSession(Base):
-    """One Operator-owned Claude conversation and its Agent Sandbox rendezvous."""
+class Session(Base):
+    """One Operator-owned agent conversation and its Agent Sandbox rendezvous."""
 
-    __tablename__ = "claude_chat_sessions"
+    __tablename__ = "sessions"
 
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     operator_id: Mapped[UUID] = mapped_column(
@@ -862,7 +862,7 @@ class ClaudeChatSession(Base):
     # became indistinguishable from an SPA one the moment the supervisor moved on. Written once at
     # creation and never updated.
     room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[ChatSessionStatus] = mapped_column(TextBackedStrEnumColumn(ChatSessionStatus), nullable=False)
+    status: Mapped[SessionStatus] = mapped_column(TextBackedStrEnumColumn(SessionStatus), nullable=False)
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -886,32 +886,31 @@ class ClaudeChatSession(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('provisioning','ready','responding','closing','closed','failed')",
-            name="ck_claude_chat_sessions_status",
+            "status IN ('provisioning','ready','responding','closing','closed','failed')", name="ck_sessions_status"
         ),
-        CheckConstraint("surface IS NULL OR surface IN ('spa','matrix')", name="ck_claude_chat_sessions_surface"),
+        CheckConstraint("surface IS NULL OR surface IN ('spa','matrix')", name="ck_sessions_surface"),
         # A room without a Matrix surface, or a Matrix session with no room, are both states
         # nothing could act on sensibly. Two one-way constraints rather than an equivalence,
         # because a legacy row has neither and must stay legal.
-        CheckConstraint("room_id IS NULL OR surface = 'matrix'", name="ck_claude_chat_sessions_room_is_matrix"),
-        CheckConstraint("surface <> 'matrix' OR room_id IS NOT NULL", name="ck_claude_chat_sessions_matrix_has_room"),
-        Index("idx_claude_chat_sessions_operator", "operator_id", "created_at"),
+        CheckConstraint("room_id IS NULL OR surface = 'matrix'", name="ck_sessions_room_is_matrix"),
+        CheckConstraint("surface <> 'matrix' OR room_id IS NOT NULL", name="ck_sessions_matrix_has_room"),
+        Index("idx_sessions_operator", "operator_id", "created_at"),
         Index(
-            "idx_claude_chat_sessions_expired_lease",
+            "idx_sessions_expired_lease",
             "lease_expires_at",
             postgresql_where=text("status IN ('provisioning','ready','responding')"),
         ),
     )
 
 
-class ClaudeChatMessage(Base):
-    """A prompt or streamed assistant answer in one Claude chat session."""
+class SessionMessage(Base):
+    """A prompt or streamed assistant answer in one session."""
 
-    __tablename__ = "claude_chat_messages"
+    __tablename__ = "session_messages"
 
     message_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[ChatMessageRole] = mapped_column(TextBackedStrEnumColumn(ChatMessageRole), nullable=False)
     status: Mapped[ChatMessageStatus] = mapped_column(TextBackedStrEnumColumn(ChatMessageStatus), nullable=False)
@@ -931,16 +930,16 @@ class ClaudeChatMessage(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        CheckConstraint("role IN ('user','assistant')", name="ck_claude_chat_messages_role"),
-        CheckConstraint("status IN ('pending','streaming','complete','failed')", name="ck_claude_chat_messages_status"),
-        Index("idx_claude_chat_messages_session_created", "session_id", "created_at"),
+        CheckConstraint("role IN ('user','assistant')", name="ck_session_messages_role"),
+        CheckConstraint("status IN ('pending','streaming','complete','failed')", name="ck_session_messages_status"),
+        Index("idx_session_messages_session_created", "session_id", "created_at"),
     )
 
 
-class ClaudeChatPrompt(Base):
+class SessionPrompt(Base):
     """One prompt waiting to be handed to the model, or the record that it was.
 
-    Split out of `claude_chat_messages` because that row was doing two jobs. `COMPLETE` on a user
+    Split out of `session_messages` because that row was doing two jobs. `COMPLETE` on a user
     row meant "handed to the model" and on an assistant row "the answer finished" — one enum with
     opposite meanings, disambiguated only by `role` — and "one prompt in flight" was a scan of the
     transcript for a `pending` row plus the rule that only one exists. Here the queue is its own
@@ -951,17 +950,14 @@ class ClaudeChatPrompt(Base):
     asked.
     """
 
-    __tablename__ = "claude_chat_prompts"
+    __tablename__ = "session_prompts"
 
     prompt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     message_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("claude_chat_messages.message_id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
+        PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="CASCADE"), nullable=False, unique=True
     )
     queued_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # When the harness took it. Absent means still waiting — the state the index below makes at
@@ -969,14 +965,12 @@ class ClaudeChatPrompt(Base):
     claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        Index("idx_claude_chat_prompts_session", "session_id", "queued_at"),
-        Index(
-            "uq_claude_chat_prompts_unclaimed", "session_id", unique=True, postgresql_where=text("claimed_at IS NULL")
-        ),
+        Index("idx_session_prompts_session", "session_id", "queued_at"),
+        Index("uq_session_prompts_unclaimed", "session_id", unique=True, postgresql_where=text("claimed_at IS NULL")),
     )
 
 
-class ClaudeChatTurn(Base):
+class SessionTurn(Base):
     """One exchange, recorded as a range over the session's frame log.
 
     `_run_turn`'s stack frame used to be the only place a turn existed, so everything that
@@ -992,11 +986,11 @@ class ClaudeChatTurn(Base):
     an update to this table rather than a rewrite of the record.
     """
 
-    __tablename__ = "claude_chat_turns"
+    __tablename__ = "session_turns"
 
     turn_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     # Lower bound, taken when the turn opens: every frame of this turn has
     # `frame_seq >= first_frame_seq`. Not the seq of an actual frame — `Identity` leaves gaps and
@@ -1017,19 +1011,19 @@ class ClaudeChatTurn(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "outcome IS NULL OR outcome IN ('answered','aborted','failed')", name="ck_claude_chat_turns_outcome"
+            "outcome IS NULL OR outcome IN ('answered','aborted','failed')", name="ck_session_turns_outcome"
         ),
         # Open and un-outcomed are the same state, so neither can be reached without the other.
-        CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_claude_chat_turns_ended_has_outcome"),
-        Index("idx_claude_chat_turns_session", "session_id", "started_at"),
+        CheckConstraint("(ended_at IS NULL) = (outcome IS NULL)", name="ck_session_turns_ended_has_outcome"),
+        Index("idx_session_turns_session", "session_id", "started_at"),
         # One open turn per session, as a schema property rather than a rule the turn loop has to
         # keep. It is also what `responding` is derived from, and what makes "an abort names a
         # turn" a lookup rather than a guess.
-        Index("uq_claude_chat_turns_open", "session_id", unique=True, postgresql_where=text("ended_at IS NULL")),
+        Index("uq_session_turns_open", "session_id", unique=True, postgresql_where=text("ended_at IS NULL")),
     )
 
 
-class ClaudeChatTurnPrompt(Base):
+class SessionTurnPrompt(Base):
     """Which prompts a turn answered.
 
     Many-to-one on purpose: a prompt written to the CLI while a turn is running is absorbed at
@@ -1038,22 +1032,22 @@ class ClaudeChatTurnPrompt(Base):
     which exchange answered what.
     """
 
-    __tablename__ = "claude_chat_turn_prompts"
+    __tablename__ = "session_turn_prompts"
 
     turn_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_turns.turn_id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("session_turns.turn_id", ondelete="CASCADE"), primary_key=True
     )
     message_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_messages.message_id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="CASCADE"), primary_key=True
     )
 
 
-class ClaudeChatFrame(Base):
+class SessionFrame(Base):
     """The agent's newline-delimited JSON protocol as it crossed the wire — and two things that
     are not that, which is a defect.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
-    `claude_chat_messages` keeps an assistant message's `tool_use` blocks and not the frames
+    `session_messages` keeps an assistant message's `tool_use` blocks and not the frames
     carrying the results, so on its own it records every question and no answer
     (haku/plans/matrix_chat_runtime.md R5.5).
 
@@ -1071,13 +1065,13 @@ class ClaudeChatFrame(Base):
     have. <../plans/chat_runtime_projection.md> holds the intended shape; nothing is scheduled.
     """
 
-    __tablename__ = "claude_chat_frames"
+    __tablename__ = "session_frames"
 
     # Database-assigned so ordering needs no per-session counter in a process that can be
     # replaced mid-conversation. Gaps are expected and mean nothing; only the order does.
     frame_seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     direction: Mapped[FrameDirection] = mapped_column(TextBackedStrEnumColumn(FrameDirection), nullable=False)
     # The frame's own top-level `type`, lifted out so a reader can select `assistant` frames
@@ -1106,16 +1100,16 @@ class ClaudeChatFrame(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
-        Index("idx_claude_chat_frames_session", "session_id", "frame_seq"),
+        CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
+        Index("idx_session_frames_session", "session_id", "frame_seq"),
         # Reading a session by kind used to be a filter over its whole log, which was affordable
         # only while the log held no deltas. It holds them now, and `_rollout_calls` runs once per
         # delta, so the filter it replaces grew with the length of the answer being streamed.
-        Index("idx_claude_chat_frames_kind", "session_id", "kind", "frame_seq"),
+        Index("idx_session_frames_kind", "session_id", "kind", "frame_seq"),
         # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
         # because most rows have no identity; a plain unique index would be almost all nulls.
         Index(
-            "uq_claude_chat_frames_uid",
+            "uq_session_frames_uid",
             "session_id",
             "frame_uid",
             unique=True,
@@ -1123,7 +1117,7 @@ class ClaudeChatFrame(Base):
         ),
         # One in-flight reconstruction per session, as a schema property rather than a rule the
         # turn loop has to keep: there is only ever one assistant message streaming at a time.
-        Index("uq_claude_chat_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),
+        Index("uq_session_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),
     )
 
 
@@ -1195,8 +1189,8 @@ class MatrixConversation(Base):
     # The chat session currently serving the room. Null between a session dying and the
     # supervisor replacing it — an expected state, not a broken one.
     #
-    # **This is the pointer; `claude_chat_sessions.room_id` is the history.** The same binding
-    # appears in both places on purpose and they answer different questions: this column says
+    # **This is the pointer; `sessions.room_id` is the history.** The same binding appears in
+    # both places on purpose and they answer different questions: this column says
     # which session the room is talking to *now* and moves every time the supervisor replaces
     # one, while the session's own `room_id` says which room that session served and never
     # changes — which is what makes a past Matrix conversation findable after its successor has
@@ -1209,6 +1203,6 @@ class MatrixConversation(Base):
     # composite foreign key would need `room_id` in this table's key). It is maintained by
     # `MatrixSessionSupervisor` alone, and asserted by a test rather than by the database.
     session_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="SET NULL"), nullable=True
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="SET NULL"), nullable=True
     )
     joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

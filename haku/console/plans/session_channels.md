@@ -182,18 +182,18 @@ stream must be replayed, so a reconnect that missed events entirely still lands 
 Four things to get right, in increasing order of how easy they are to miss:
 
 - **No second Postgres channel, and no second `NOTIFY`.** `LISTEN` is broadcast, so every
-  replica's `ChatNotifications` already receives every `claude_chat` event. The fan-out is local:
+  replica's `SessionNotifications` already receives every `claude_chat` event. The fan-out is local:
   a replica turns the chat events it already receives into sends on the console-event sockets
   **it** holds. Routing this through `ConsoleEventHub.broadcast` (which relays over its own
   channel) would notify twice for one update and deliver to every replica twice.
-- **Coalesce, and treat that as load-bearing.** `ChatEventKind.UPDATE` fires **per stream delta**
+- **Coalesce, and treat that as load-bearing.** `SessionEventKind.UPDATE` fires **per stream delta**
   — hundreds per turn. One frame per delta, each triggering a full-transcript refetch, is the
   O(session)-per-token-batch cost <../../plans/chat_runtime_cleanup.md> § Anytime already flags on
   the SSE path, now paid once per open tab. Debounce per `session_id` in the fan-out.
-- **Operator scoping needs a lookup, and it must not be per event.** `ChatEvent` is
+- **Operator scoping needs a lookup, and it must not be per event.** `SessionEvent` is
   `{kind, session_id}` with no operator on it, while the hub delivers per `operator_id`. Resolve
   session → operator once per coalesce window and cache it — a session's owner does not change.
-  Do **not** reach for "just add `operator_id` to `ChatEvent`" without pricing it: the payload is
+  Do **not** reach for "just add `operator_id` to `SessionEvent`" without pricing it: the payload is
   a wire contract across a `maxUnavailable: 0` roll, so widening it is expand/contract over two
   releases (<../x/README.md> § the wake channel).
 - **The list wants the same event.** An inventory showing `message_count` and `updated_at` is
@@ -207,7 +207,7 @@ polling timer anywhere in the page.
 ### Into an SPA session
 
 Nearly free: `POST /api/claude/sessions/{id}/messages` exists and already does the durable thing
-(`enqueue_prompt` writes the transcript row and the `claude_chat_prompts` row in one transaction).
+(`enqueue_prompt` writes the transcript row and the `session_prompts` row in one transaction).
 One honest limitation and one route decision:
 
 - **`enqueue_prompt` refuses while a turn is open or a prompt is queued**, with a 409. That is

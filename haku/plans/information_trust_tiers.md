@@ -108,7 +108,7 @@ console, which knows the calling Agent and each conversation's owner, so this is
 function at one call site in the shape the approval policy already has — not scoping smeared
 through the transport. Three things it needs:
 
-- **A conversation needs a tier of its own.** `claude_chat_sessions` already carries `surface` and
+- **A conversation needs a tier of its own.** `sessions` already carries `surface` and
   `room_id` (migration `0030`); the tier goes beside them, derived from the room's fixed tier for a
   Matrix session and from the agent kind otherwise. Those two must agree, and the room's is
   authoritative where both exist.

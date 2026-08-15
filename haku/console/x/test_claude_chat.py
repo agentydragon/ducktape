@@ -22,14 +22,13 @@ from haku.console.chat_models import (
     LIVE_SESSION_STATUSES,
     ChatMessageRole,
     ChatMessageStatus,
-    ChatSessionStatus,
     ChatSurface,
     FrameDirection,
+    SessionStatus,
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatPrompt, ClaudeChatSession
-from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications
+from haku.console.database_schema import Session, SessionFrame, SessionMessage, SessionPrompt
 from haku.console.x.claude_chat import (
     ABORTED_NOTICE,
     ADOPTION_GRACE,
@@ -39,10 +38,10 @@ from haku.console.x.claude_chat import (
     STATUS_EDIT_INTERVAL_SECONDS,
     TYPING_REFRESH_SECONDS,
     BridgeAuthentication,
-    ClaudeChatService,
-    ClaudeChatStore,
     MatrixSession,
     RolloutRecorder,
+    SessionService,
+    SessionStore,
     SpaSession,
     _coarse_status,
     _text_delta,
@@ -60,6 +59,7 @@ from haku.console.x.conftest import (
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
 from haku.console.x.sandbox_claims import KubernetesClients, KubernetesSandboxClaims
+from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
 from haku.runtime.x.claude_bridge.protocol import NOT_ADMITTED_CODE
 
@@ -307,13 +307,13 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
 
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
     async with migrated_sessions() as db:
-        record = await db.get(ClaudeChatSession, session_id)
+        record = await db.get(Session, session_id)
         assert record is not None
-        assert record.status == ChatSessionStatus.READY
+        assert record.status == SessionStatus.READY
         assert record.bridge_connected_at is not None
         # Retain only the hash until claim deletion completes. It lets terminal retries prove that
         # they belong to the stale claim without retaining or recovering the bearer itself.
-        assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
+        assert record.bridge_token_fingerprint == SessionStore._fingerprint(token)
 
     await chat_store.fail(session_id, "runner failed")
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.TERMINAL
@@ -328,14 +328,14 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.fail(view.session_id, "sandbox runner disconnected")
     closing = await chat_store.get(operator_id, view.session_id)
-    assert closing.status == ChatSessionStatus.CLOSING
+    assert closing.status == SessionStatus.CLOSING
     assert closing.error is None
 
     await chat_store.complete_claim_cleanup(view.session_id)
     closed = await chat_store.get(operator_id, view.session_id)
-    assert closed.status == ChatSessionStatus.CLOSED
+    assert closed.status == SessionStatus.CLOSED
     async with migrated_sessions() as db:
-        record = await db.get(ClaudeChatSession, view.session_id)
+        record = await db.get(Session, view.session_id)
         assert record is not None
         assert record.bridge_token_fingerprint == b""
 
@@ -444,7 +444,7 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
         ),
         ("The Haku Console catalog is available.", [], ChatMessageStatus.COMPLETE),
     ]
-    assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, "the turn was not completed"
+    assert await chat_store.status(view.session_id) == SessionStatus.READY, "the turn was not completed"
 
 
 class _LifecycleWebSocket:
@@ -511,7 +511,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert websocket.accepted is True
     assert websocket.closed is None
     assert recording_claims.deleted == [session_id]
-    assert await chat_store.status(session_id) == ChatSessionStatus.CLOSED
+    assert await chat_store.status(session_id) == SessionStatus.CLOSED
     # Cleanup is recorded by clearing the hashed rendezvous credential, which is what takes the
     # session back out of the reconciler's candidate set.
     assert await chat_store.claim_cleanup_candidates() == []
@@ -558,7 +558,7 @@ async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
     ):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
-    assert await chat_store.status(session_id) == ChatSessionStatus.READY, "a roll is not a session ending"
+    assert await chat_store.status(session_id) == SessionStatus.READY, "a roll is not a session ending"
     assert recording_claims.deleted == [], "the sandbox outlives the replica that was serving it"
     assert websocket.closed == (GOING_AWAY_CODE, "console replica going away"), (
         "the runner reconnects because it was told to, not because it guessed"
@@ -717,7 +717,7 @@ async def test_terminal_runner_retry_deletes_its_stale_claim(
 
     assert recording_claims.deleted == [session.session_id]
     assert await chat_store.claim_cleanup_candidates() == []
-    assert await chat_store.status(session.session_id) == ChatSessionStatus.CLOSED
+    assert await chat_store.status(session.session_id) == SessionStatus.CLOSED
     assert websocket.closed == (1008, "runner session is already terminal")
 
 
@@ -1098,9 +1098,9 @@ class _InterruptedCli(_FakeCli):
 
 
 async def _turn_into_a_room(
-    chat_store: ClaudeChatStore,
+    chat_store: SessionStore,
     recording_claims: RecordingClaims,
-    notifications: ChatNotifications,
+    notifications: SessionNotifications,
     operator_id: UUID,
     client: _FakeCli,
     *,
@@ -1109,7 +1109,7 @@ async def _turn_into_a_room(
 ) -> list[str]:
     """Run one turn against *client* for a room-backed session and return what the room heard."""
     room = room or _RecordingRoomSurface()
-    service = ClaudeChatService(
+    service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
@@ -1135,7 +1135,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     """The whole point of routing by turn: the replacement replica finishes the exchange the dead
     one started, in the message it started, and the room hears the answer once."""
     room = _RecordingRoomSurface()
-    service = ClaudeChatService(
+    service = SessionService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
     )
     view, token = await chat_store.create(operator_id, MatrixSession(room_id=ROOM))
@@ -1290,7 +1290,7 @@ async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
 
 
 async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_service, operator_id) -> None:
-    """`claude_chat_messages.tool_uses` keeps the `tool_use` blocks that asked and nothing that
+    """`session_messages.tool_uses` keeps the `tool_use` blocks that asked and nothing that
     answered — the turn loop drops the `user` frames carrying results. The frames beside it hold
     both, so the view joins them by `tool_use_id`, which is exact where matching the Nth message to
     the Nth frame would be a guess."""
@@ -1367,9 +1367,7 @@ async def test_the_calls_come_from_the_rollout_when_the_row_points_at_it(
     )
     # Whatever the column says is now beside the point, so make it say something wrong.
     async with migrated_sessions.begin() as db:
-        for message in await db.scalars(
-            select(ClaudeChatMessage).where(ClaudeChatMessage.agent_message_id == "msg_01")
-        ):
+        for message in await db.scalars(select(SessionMessage).where(SessionMessage.agent_message_id == "msg_01")):
             message.tool_uses = [{"tool_use_id": "toolu_stale", "name": "Stale", "input": {}}]
 
     [call] = [
@@ -1404,9 +1402,7 @@ async def test_a_message_with_nothing_to_point_at_still_reads_its_calls_from_the
     assert call.tool_use_id == "toolu_legacy"
     async with migrated_sessions() as db:
         assert (
-            await db.scalar(
-                select(ClaudeChatMessage.agent_message_id).where(ClaudeChatMessage.message_id == message_id)
-            )
+            await db.scalar(select(SessionMessage.agent_message_id).where(SessionMessage.message_id == message_id))
             is None
         )
 
@@ -1441,7 +1437,7 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?")
 
     async with migrated_sessions() as db:
-        queued = list(await db.scalars(select(ClaudeChatPrompt)))
+        queued = list(await db.scalars(select(SessionPrompt)))
     assert [(row.session_id, row.claimed_at) for row in queued] == [(view.session_id, None)]
 
     turn = await chat_store.next_prompt(view.session_id)
@@ -1449,7 +1445,7 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
     assert turn is not None
     assert turn.prompt == "why did it fail?", "the text comes from the transcript row the queue names"
     async with migrated_sessions() as db:
-        [claimed] = list(await db.scalars(select(ClaudeChatPrompt)))
+        [claimed] = list(await db.scalars(select(SessionPrompt)))
     assert claimed.claimed_at is not None
     assert claimed.message_id == turn.message_id
 
@@ -1462,7 +1458,7 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
     await chat_store.enqueue_prompt(operator_id, view.session_id, "first")
 
     async with migrated_sessions() as db:
-        message = ClaudeChatMessage(
+        message = SessionMessage(
             message_id=uuid4(),
             session_id=view.session_id,
             role=ChatMessageRole.USER,
@@ -1475,7 +1471,7 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
         )
         db.add(message)
         db.add(
-            ClaudeChatPrompt(
+            SessionPrompt(
                 prompt_id=uuid4(),
                 session_id=view.session_id,
                 message_id=message.message_id,
@@ -1495,7 +1491,7 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     async with migrated_sessions.begin() as db:
         db.add(
-            ClaudeChatMessage(
+            SessionMessage(
                 message_id=uuid4(),
                 session_id=view.session_id,
                 role=ChatMessageRole.USER,
@@ -1515,7 +1511,7 @@ async def test_a_prompt_from_a_replica_that_wrote_no_queue_row_is_still_answered
     # And admission still refuses while it waits, so the two paths cannot both accept.
     async with migrated_sessions.begin() as db:
         db.add(
-            ClaudeChatMessage(
+            SessionMessage(
                 message_id=uuid4(),
                 session_id=view.session_id,
                 role=ChatMessageRole.USER,
@@ -1572,7 +1568,7 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_held_rather_than_rai
     await conversations.set_session(MATRIX_USER, view.session_id)
     turns = MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store)
     async with migrated_sessions.begin() as db:
-        await db.execute(delete(ClaudeChatSession).where(ClaudeChatSession.session_id == view.session_id))
+        await db.execute(delete(Session).where(Session.session_id == view.session_id))
 
     offered = await turns.offer(
         [InboundMessage(room_id=MATRIX_ROOM, event_id="$1", sender=MATRIX_OPERATOR, body="hi", origin_server_ts=1)]
@@ -1587,19 +1583,19 @@ async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(chat_sto
     view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
-    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.READY, (
+    assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.READY, (
         "a queued prompt is not a turn in flight"
     )
 
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
-    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.RESPONDING
-    assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, (
+    assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.RESPONDING
+    assert await chat_store.status(view.session_id) == SessionStatus.READY, (
         "the column itself no longer carries turn state"
     )
 
     await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
-    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.READY
+    assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.READY
 
 
 async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
@@ -1617,7 +1613,7 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
 
     [record] = await chat_store.list_turns(str(view.session_id), limit=10)
     assert record.ended_at is None, "nothing ran to close it, and the record should say so"
-    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.FAILED
+    assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.FAILED
 
 
 class _RealDbClaudeClient(_LifecycleClaudeClient):
@@ -1649,7 +1645,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
         try:
             # Long enough to reach the idle wait, which is where the crash used to happen.
             await asyncio.sleep(2)
-            assert await chat_store.status(view.session_id) == ChatSessionStatus.READY, (
+            assert await chat_store.status(view.session_id) == SessionStatus.READY, (
                 "the runner failed while waiting for a prompt"
             )
 
@@ -1723,8 +1719,8 @@ async def test_abort_reaches_the_replica_running_the_turn(
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
-        requesting = ClaudeChatStore(async_sessionmaker(other_engine, expire_on_commit=False))
-        async with notifications.subscribe(ChatEventKind.ABORT, view.session_id) as aborted:
+        requesting = SessionStore(async_sessionmaker(other_engine, expire_on_commit=False))
+        async with notifications.subscribe(SessionEventKind.ABORT, view.session_id) as aborted:
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
                 await aborted.wait()
@@ -1742,22 +1738,22 @@ async def test_a_session_records_the_surface_it_was_created_for(chat_store, migr
     matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:allegedly.works"))
 
     async with migrated_sessions() as db:
-        assert (await db.get(ClaudeChatSession, spa.session_id)).surface == ChatSurface.SPA
-        assert (await db.get(ClaudeChatSession, spa.session_id)).room_id is None
-        assert (await db.get(ClaudeChatSession, matrix.session_id)).surface == ChatSurface.MATRIX
-        assert (await db.get(ClaudeChatSession, matrix.session_id)).room_id == "!room:allegedly.works"
+        assert (await db.get(Session, spa.session_id)).surface == ChatSurface.SPA
+        assert (await db.get(Session, spa.session_id)).room_id is None
+        assert (await db.get(Session, matrix.session_id)).surface == ChatSurface.MATRIX
+        assert (await db.get(Session, matrix.session_id)).room_id == "!room:allegedly.works"
 
 
 async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_sessions, operator_id) -> None:
     """The pairing is a schema rule, not only a call-signature one — the columns outlive it."""
     async with migrated_sessions.begin() as db:
         db.add(
-            ClaudeChatSession(
+            Session(
                 session_id=uuid4(),
                 operator_id=operator_id,
                 surface=ChatSurface.SPA,
                 room_id="!room:allegedly.works",
-                status=ChatSessionStatus.PROVISIONING,
+                status=SessionStatus.PROVISIONING,
                 bridge_token_fingerprint=b"x" * 32,
                 bridge_connected_at=None,
                 error=None,
@@ -1794,13 +1790,11 @@ class _ScriptedChannel:
         self._inbound.put_nowait(None)
 
 
-async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[ClaudeChatFrame]:
+async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[SessionFrame]:
     async with sessions() as db:
         return list(
             await db.scalars(
-                select(ClaudeChatFrame)
-                .where(ClaudeChatFrame.session_id == session_id)
-                .order_by(ClaudeChatFrame.frame_seq)
+                select(SessionFrame).where(SessionFrame.session_id == session_id).order_by(SessionFrame.frame_seq)
             )
         )
 
@@ -1896,12 +1890,12 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
         for _ in range(75):
             if (
                 _DisconnectingClaudeClient.instance is not None
-                and await chat_store.status(view.session_id) == ChatSessionStatus.READY
+                and await chat_store.status(view.session_id) == SessionStatus.READY
             ):
                 break
             await asyncio.sleep(0.1)
         assert _DisconnectingClaudeClient.instance is not None
-        assert await chat_store.status(view.session_id) == ChatSessionStatus.READY
+        assert await chat_store.status(view.session_id) == SessionStatus.READY
 
         _DisconnectingClaudeClient.instance.disconnect()
         await asyncio.wait_for(runner, timeout=5)
@@ -1929,7 +1923,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
         )
         try:
             for _ in range(75):
-                if await chat_store.status(view.session_id) == ChatSessionStatus.READY:
+                if await chat_store.status(view.session_id) == SessionStatus.READY:
                     break
                 await asyncio.sleep(0.2)
             await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
@@ -1955,7 +1949,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
 
 async def _age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID, *, seconds_ago: int) -> None:
     async with sessions.begin() as db:
-        chat = await db.get(ClaudeChatSession, session_id)
+        chat = await db.get(Session, session_id)
         assert chat is not None
         chat.lease_expires_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
 
@@ -1974,7 +1968,7 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
     assert await chat_store.expire_stale_leases() == 1
-    assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
+    assert await chat_store.status(view.session_id) == SessionStatus.FAILED
     assert "went away" in (await chat_store.get(operator_id, view.session_id)).error
 
 
@@ -2017,7 +2011,7 @@ async def test_a_returning_runner_beats_the_sweep(
 
 async def _lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime]:
     async with sessions() as db:
-        chat = await db.get(ClaudeChatSession, session_id)
+        chat = await db.get(Session, session_id)
         assert chat is not None
         return chat.lease_holder, chat.lease_expires_at
 
@@ -2057,7 +2051,7 @@ async def test_shutdown_does_not_touch_an_ended_session(chat_store, migrated_ses
     await chat_store.fail(view.session_id, "something went wrong")
 
     assert await chat_store.release_held_leases() == 0
-    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.FAILED
+    assert (await chat_store.get(operator_id, view.session_id)).status == SessionStatus.FAILED
 
 
 async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(
@@ -2132,12 +2126,12 @@ async def test_renewing_is_what_claims_the_session(chat_store, migrated_sessions
     sequencing the handover."""
     view, _ = await chat_store.create(operator_id, SpaSession())
     async with migrated_sessions() as db:
-        assert (await db.get(ClaudeChatSession, view.session_id)).lease_holder is None
+        assert (await db.get(Session, view.session_id)).lease_holder is None
 
     await chat_store.renew_lease(view.session_id)
 
     async with migrated_sessions() as db:
-        assert (await db.get(ClaudeChatSession, view.session_id)).lease_holder == REPLICA
+        assert (await db.get(Session, view.session_id)).lease_holder == REPLICA
 
 
 async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
@@ -2148,7 +2142,7 @@ async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
     await chat_store.renew_lease(view.session_id)
 
     assert await chat_store.expire_stale_leases() == 0
-    assert await chat_store.status(view.session_id) == ChatSessionStatus.PROVISIONING
+    assert await chat_store.status(view.session_id) == SessionStatus.PROVISIONING
 
 
 async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, migrated_sessions, operator_id) -> None:
@@ -2181,19 +2175,19 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
         await asyncio.sleep(2)  # Long enough to reach the idle wait, as the sibling test does.
-        assert await chat_store.status(view.session_id) == ChatSessionStatus.READY
+        assert await chat_store.status(view.session_id) == SessionStatus.READY
 
         runner.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await runner
 
-    assert await chat_store.status(view.session_id) == ChatSessionStatus.READY
+    assert await chat_store.status(view.session_id) == SessionStatus.READY
     with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
         assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     await _age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
     assert await chat_store.expire_stale_leases() == 1
-    assert await chat_store.status(view.session_id) == ChatSessionStatus.FAILED
+    assert await chat_store.status(view.session_id) == SessionStatus.FAILED
 
 
 if __name__ == "__main__":

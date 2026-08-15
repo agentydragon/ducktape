@@ -73,7 +73,8 @@ from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync, sandbox_claims
+from haku.console.x import claude_chat, matrix_session, matrix_sync, sandbox_claims
+from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.state_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
@@ -173,9 +174,9 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions)
-    claude_chat_notifications = chat_notifications.ChatNotifications(database_url)
-    claude_chat_service: claude_chat.ClaudeChatService | None = None
+    session_store = claude_chat.SessionStore(db_sessions)
+    session_notifications = SessionNotifications(database_url)
+    session_service: claude_chat.SessionService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -284,7 +285,7 @@ def create_app(
             db_engine,
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversations,
-            matrix_session.MatrixTurns(matrix_config, matrix_conversations, claude_chat_store, operator_identity_store),
+            matrix_session.MatrixTurns(matrix_config, matrix_conversations, session_store, operator_identity_store),
         )
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never
@@ -306,11 +307,11 @@ def create_app(
         )
         if mcp_agent is None:
             raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
-        claude_chat_service = claude_chat.ClaudeChatService(
+        session_service = claude_chat.SessionService(
             claude_runtime,
-            claude_chat_store,
+            session_store,
             sandbox_claims.KubernetesSandboxClaims(claude_runtime),
-            claude_chat_notifications,
+            session_notifications,
             mcp_token=mcp_agent.token,
             room_surface=matrix_surface,
         )
@@ -322,14 +323,14 @@ def create_app(
         matrix_config is not None
         and matrix_sync_service is not None
         and matrix_conversations is not None
-        and claude_chat_service is not None
+        and session_service is not None
     ):
         matrix_supervisor = matrix_session.MatrixSessionSupervisor(
             matrix_config,
             matrix_conversations,
-            claude_chat_service,
-            claude_chat_store,
-            claude_chat_notifications,
+            session_service,
+            session_store,
+            session_notifications,
             operator_identity_store,
             matrix_sync_service.announce,
             db_engine,
@@ -408,7 +409,7 @@ def create_app(
                 index=index_searcher,
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
-                rollout=claude_chat_store if claude_runtime is not None else None,
+                rollout=session_store if claude_runtime is not None else None,
             )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
@@ -469,8 +470,8 @@ def create_app(
         )
         await agent_authority.reconcile_static_agents(static_definitions)
         await mcp_operator_oauth_store.forget_unconfigured_servers(console_config.mcp.servers)
-        if claude_chat_service is not None:
-            await claude_chat_service.reconcile_terminal_claims()
+        if session_service is not None:
+            await session_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
         # A sibling of the sync loop, not a child of it: sharing the advisory lock keeps one
         # replica provisioning, while staying a separate task keeps a stalled sandbox claim
@@ -479,7 +480,7 @@ def create_app(
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising, indexing:
             await console_event_hub.start()
-            await claude_chat_notifications.start()
+            await session_notifications.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
                 # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
@@ -492,9 +493,9 @@ def create_app(
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
-                if claude_chat_service is not None:
-                    await claude_chat_service.aclose()
-                await claude_chat_notifications.aclose()
+                if session_service is not None:
+                    await session_service.aclose()
+                await session_notifications.aclose()
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 
@@ -522,9 +523,9 @@ def create_app(
     app.state.oauth_connection_result_store = oauth_connection_result_store
     app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
-    app.state.claude_chat_store = claude_chat_store
-    app.state.claude_chat_notifications = claude_chat_notifications
-    app.state.claude_chat_service = claude_chat_service
+    app.state.session_store = session_store
+    app.state.session_notifications = session_notifications
+    app.state.session_service = session_service
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.node_daemon_service = node_daemon_service

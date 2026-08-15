@@ -28,16 +28,10 @@ import pytest_bazel
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, ChatSessionStatus, TurnOutcome
-from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import (
-    SETUP_OUTPUT_KIND,
-    ClaudeChatService,
-    ClaudeChatStore,
-    SpaSession,
-    internal_router,
-)
+from haku.console.chat_models import LIVE_SESSION_STATUSES, ChatMessageRole, SessionStatus, TurnOutcome
+from haku.console.x.claude_chat import SETUP_OUTPUT_KIND, SessionService, SessionStore, SpaSession, internal_router
 from haku.console.x.conftest import MCP_TOKEN, RecordingClaims, runtime_config
+from haku.console.x.session_notifications import SessionNotifications
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
@@ -53,14 +47,14 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_async_engine(database_url, pool_pre_ping=True)
-        notifications = ChatNotifications(database_url)
+        notifications = SessionNotifications(database_url)
         await notifications.start()
-        app.state.claude_chat_service = ClaudeChatService(
+        app.state.session_service = SessionService(
             # The deployed `cwd` is the sandbox's `/workspace`, which does not exist here — and the
             # runner starts the CLI in it, so the wrong one fails the launch rather than an
             # assertion.
             runtime_config(cwd=str(workspace)),
-            ClaudeChatStore(async_sessionmaker(engine, expire_on_commit=False)),
+            SessionStore(async_sessionmaker(engine, expire_on_commit=False)),
             RecordingClaims(),
             notifications,
             mcp_token=MCP_TOKEN,
@@ -105,7 +99,7 @@ async def _wait_until(
 
 
 async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_saw_the_end_of(
-    chat_store: ClaudeChatStore, migrated_db_url: str, operator_id: UUID, tmp_path: Path
+    chat_store: SessionStore, migrated_db_url: str, operator_id: UUID, tmp_path: Path
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -138,7 +132,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         return [turn.outcome for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
     async def bridge_connected() -> bool:
-        return await chat_store.status(session_id) == ChatSessionStatus.READY
+        return await chat_store.status(session_id) == SessionStatus.READY
 
     async def first_turn_finished() -> bool:
         return len(await finished_turns()) == 1

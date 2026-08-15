@@ -1,6 +1,6 @@
-"""The chat surfaces' Postgres LISTEN/NOTIFY channel.
+"""The session runtime's Postgres LISTEN/NOTIFY channel.
 
-Separate from `ClaudeChatStore` because it is not storage: a repository answers questions
+Separate from `SessionStore` because it is not storage: a repository answers questions
 about rows, and this wakes tasks. Keeping the two in one class is what let the listener be
 written against psycopg3's API while running on an asyncpg engine — it raised on every call
 in production, killing every Matrix session about four seconds in, and the only test
@@ -19,7 +19,7 @@ The notify half stays inside the caller's transaction (see `notify`), because `p
 delivers on commit: emitting it anywhere else would announce work that a rollback then
 un-did.
 
-**One channel, a typed payload.** Every event travels on `CHANNEL` as a `ChatEvent`, rather
+**One channel, a typed payload.** Every event travels on `CHANNEL` as a `SessionEvent`, rather
 than the kind being implicit in one of three channel names — which was untyped, unvalidated,
 and needed another LISTEN per kind. `pg_notify` allows 8000 bytes of payload; this uses about
 seventy.
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 CHANNEL = "claude_chat"
 
 
-class ChatEventKind(StrEnum):
+class SessionEventKind(StrEnum):
     PROMPT = "prompt"
     """A prompt is queued: whichever replica runs this session's turn loop should pick it up."""
 
@@ -58,7 +58,7 @@ class ChatEventKind(StrEnum):
     """The operator asked for the in-flight turn to be interrupted."""
 
 
-class ChatEvent(BaseModel):
+class SessionEvent(BaseModel):
     """What travels on `CHANNEL`.
 
     A cross-replica wire contract: both ends of a notification are separate pods, which may
@@ -68,7 +68,7 @@ class ChatEvent(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: ChatEventKind
+    kind: SessionEventKind
     session_id: UUID
 
 
@@ -77,22 +77,22 @@ _CONNECT_TIMEOUT_SECONDS = 10
 _CLOSE_TIMEOUT_SECONDS = 2
 
 
-async def notify(db: AsyncSession, kind: ChatEventKind, session_id: UUID) -> None:
+async def notify(db: AsyncSession, kind: SessionEventKind, session_id: UUID) -> None:
     """Emit `pg_notify` inside the caller's transaction, so it fires on commit."""
     await db.execute(
         text("SELECT pg_notify(:channel, :payload)"),
-        {"channel": CHANNEL, "payload": ChatEvent(kind=kind, session_id=session_id).model_dump_json()},
+        {"channel": CHANNEL, "payload": SessionEvent(kind=kind, session_id=session_id).model_dump_json()},
     )
 
 
-def _parse(payload: str) -> ChatEvent | None:
+def _parse(payload: str) -> SessionEvent | None:
     try:
-        return ChatEvent.model_validate_json(payload)
+        return SessionEvent.model_validate_json(payload)
     except ValueError:
         # Pydantic's ValidationError is a ValueError. Not raised onward: this runs on
         # asyncpg's reader task, and one bad payload must not cost the connection every
         # other session is being woken through.
-        logger.exception("chat notification carried an unreadable payload: %r", payload)
+        logger.exception("session notification carried an unreadable payload: %r", payload)
         return None
 
 
@@ -106,12 +106,12 @@ def libpq_dsn(database_url: str) -> str:
     return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
-class ChatNotifications:
-    """One LISTEN connection over the chat channel, fanned out to per-session waiters."""
+class SessionNotifications:
+    """One LISTEN connection over the session channel, fanned out to per-session waiters."""
 
     def __init__(self, database_url: str):
         self._dsn = libpq_dsn(database_url)
-        self._waiters: dict[tuple[ChatEventKind, UUID], set[asyncio.Event]] = {}
+        self._waiters: dict[tuple[SessionEventKind, UUID], set[asyncio.Event]] = {}
         self._task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
 
@@ -132,7 +132,7 @@ class ChatNotifications:
         self._task = None
 
     @contextmanager
-    def _registered(self, kind: ChatEventKind, session_id: UUID) -> Iterator[asyncio.Event]:
+    def _registered(self, kind: SessionEventKind, session_id: UUID) -> Iterator[asyncio.Event]:
         event = asyncio.Event()
         key = (kind, session_id)
         self._waiters.setdefault(key, set()).add(event)
@@ -145,7 +145,7 @@ class ChatNotifications:
                 if not waiters:
                     del self._waiters[key]
 
-    async def wait(self, kind: ChatEventKind, session_id: UUID, *, timeout_seconds: float) -> bool:
+    async def wait(self, kind: SessionEventKind, session_id: UUID, *, timeout_seconds: float) -> bool:
         """Block until this session gets a *kind* event. False on timeout."""
         with self._registered(kind, session_id) as event:
             try:
@@ -156,7 +156,7 @@ class ChatNotifications:
                 return False
 
     @asynccontextmanager
-    async def subscribe(self, kind: ChatEventKind, session_id: UUID) -> AsyncIterator[asyncio.Event]:
+    async def subscribe(self, kind: SessionEventKind, session_id: UUID) -> AsyncIterator[asyncio.Event]:
         """Hold a registration for as long as the caller needs it.
 
         For watchers that outlive a single wait: the caller clears the event and waits
@@ -201,7 +201,7 @@ class ChatNotifications:
             except Exception:
                 # Logged rather than raised: a dropped listener must not end the loop, or
                 # every waiter in the process silently stops being woken.
-                logger.exception("chat notification listener failed; reconnecting")
+                logger.exception("session notification listener failed; reconnecting")
             finally:
                 self._listening.clear()
                 if connection is not None:
