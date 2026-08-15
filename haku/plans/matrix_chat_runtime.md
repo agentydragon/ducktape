@@ -834,10 +834,15 @@ message can only arrive through the resumed watermark, and a lost watermark prod
 silence rather than a replay (R1.7a). Three echoes rather than six is the leader election:
 both replicas start on scale-up and contend, and a double-take would double every reply.
 
-What Phase 0 still does **not** prove is a gap too large for one sync response to carry
-(R1.7's gotcha). That needs more messages in the gap than the timeline limit, so it wants a
-deliberate one-off rather than a manual test; the unit tests cover the ordering and
-termination, not whether Synapse honors the pagination boundary as assumed.
+What Phase 0 does **not** prove is a gap too large for one sync response to carry (R1.7's
+gotcha) — that needs more messages in the gap than the timeline limit, which no manual test
+is going to type. `//haku/console/x:test_matrix_homeserver_e2e` is that test: it brings up a
+real Synapse in a container, overfills a room past `TIMELINE_LIMIT` with the sync loop
+stopped, resumes from the watermark, and requires every message back in order and once.
+
+Synapse does honor the pagination boundary as assumed. A `/sync` watermark is accepted as a
+`/messages` token at both ends, and the backfilled span meets the truncated timeline exactly:
+nothing is repeated between them and nothing falls in the join.
 
 The code lives under `haku/console/x/` — experimental, no stable API. Three pieces
 necessarily sit outside it because the stable modules own them: `MatrixConfig` on

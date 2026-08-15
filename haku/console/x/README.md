@@ -66,9 +66,10 @@ Two behaviours worth knowing before reading the code:
 ## Tests run against a real database
 
 Every store here is exercised through Postgres (the `migrated_*` testcontainer fixtures),
-never a stand-in. What stays faked is what is genuinely outside: Kubernetes, the Matrix
-homeserver, and the Agent SDK client. The rule is not tidiness — a fake store answers from
-the shape the test author imagined, so it agrees with whatever the code does:
+never a stand-in. What stays faked is what is genuinely outside: Kubernetes and the Agent SDK
+client — the homeserver used to be on that list and is not any more (below). The rule is not
+tidiness — a fake store answers from the shape the test author imagined, so it agrees with
+whatever the code does:
 
 - A fake `_listen` passed against a fake engine while the real one raised on **every** call
   in production, because it was written against psycopg3's API on an asyncpg engine.
@@ -78,6 +79,22 @@ the shape the test author imagined, so it agrees with whatever the code does:
 
 The one deliberate exception is `FailingEngine`, which exists to make a connection fail —
 there is no way to ask a healthy Postgres for that.
+
+### The homeserver is a real Synapse as well
+
+`test_matrix_homeserver_e2e.py` brings one up in a container (`synapse_container.py`) and runs
+`MatrixClient` against it, with the room's other side driven straight through the client-server
+API rather than through the client under test. It exists for the questions a canned response can
+only agree with: whether a resumed `/sync` across a gap larger than `TIMELINE_LIMIT` really comes
+back truncated and really paginates back to every missed message once (R1.7 — the reason the
+target exists), whether a sync watermark really is a `/messages` token, whether a repeated
+transaction id really is refused, and whether the `works.allegedly.haku` tag survives the wire on
+both halves of an edit.
+
+`test_matrix_client.py` keeps its canned homeserver, and should. The split is which side of the
+wire the question is about: what Synapse does belongs in the e2e target, what the parser does with
+what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted backfill
+budget costs one dict rather than thousands of messages.
 
 ## `chat_notifications.py` — the wake channel
 

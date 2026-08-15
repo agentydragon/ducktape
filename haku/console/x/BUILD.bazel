@@ -141,6 +141,40 @@ py_test(
 )
 
 py_library(
+    name = "synapse_container",
+    testonly = True,
+    srcs = ["synapse_container.py"],
+    deps = [
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//tenacity",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_matrix_homeserver_e2e",
+    size = "large",  # brings up a real Synapse, then overfills a room past its timeline limit
+    srcs = ["test_matrix_homeserver_e2e.py"],
+    data = [
+        "//third_party/containers:ryuk",
+        "//third_party/containers:synapse",
+    ],
+    requires_docker = True,
+    deps = [
+        ":matrix_client",
+        ":synapse_container",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "system_prompt",
     srcs = ["system_prompt.py"],
     deps = ["@pypi//jinja2"],
