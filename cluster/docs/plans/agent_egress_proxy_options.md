@@ -1019,6 +1019,47 @@ What does need solving is that `%>a` is a pod IP, which is ephemeral, while
 stable owner label via the Kubernetes API and send _that_ to the console, so
 decisions survive pod churn.
 
+### Verify before building: what only running answers
+
+Everything below is a Squid behaviour that reading cannot settle, ordered by how
+much it would hurt to discover late. All of it can be answered by one stub
+helper — no haku-console integration needed. Choose the behaviour **by the
+hostname requested** (extra `Service` names aliasing the echo origin, so they
+resolve under the CNP's `**.cluster.local` DNS rule): `allow-origin` → `OK`,
+`deny-origin` → `ERR`, `slow-origin` → sleep past the client timeout,
+`crash-origin` → `BH`, `dead-origin` → helper exits mid-query.
+
+1. **Does it fail closed, deterministically?** Load-bearing: if Squid cannot be
+   made to deny reliably on helper failure, the gate belongs somewhere else and
+   this design changes shape. Four cases — `ERR`, `BH`, helper hangs, helper dies
+   — must all end denied, and the log should say which is which. This also
+   settles whether returning `ERR` for both "console said no" and "console
+   unreachable" was the right call, or merely a cautious one.
+2. **Is the helper called once per request, or twice?** A bumped connection has
+   two decision points: the `CONNECT` (host from the CONNECT line) and the inner
+   request after decryption (full URL). If Squid consults the helper at both,
+   console load doubles and one fetch may raise two prompts. This sizes the "one
+   RPC per gated request" claim made above.
+3. **Does `ttl=0` actually disable the result cache?** See the UNVERIFIED note.
+   Two identical requests, count helper invocations. If `ttl=0` does not do it,
+   try `cache=0`; if neither does, the no-cache decision needs another mechanism.
+4. **Is `%>a` the client pod's IP?** The 2026-08-10 run could not show this —
+   `X-Spike-Client` read `127.0.0.1` because curl ran inside the Squid pod. Drive
+   it from a **second pod** and confirm the source survives without SNAT to a
+   node IP. Agent-scoped policy and the whole unforgeable-identity premise rest
+   on this.
+5. **Does `message=` reach the agent?** Through a bumped tunnel the error page is
+   generated inside the TLS session. If it arrives, deny-now/allow-on-retry
+   becomes actionable ("pending operator approval") instead of an opaque 403.
+
+Queue overflow (`queue-size`, default `2*children-max`) falls out of the same run
+if the slow host is driven concurrently.
+
+**A design fork sits behind (4).** With one Squid per fence, the fence _is_ the
+agent identity, and `%>a` only separates pods within a fence. If that is
+sufficient, the IP → pod → owner-label mapping through the Kubernetes API — the
+fiddliest part of this design — is unnecessary.
+
 ### The simpler alternative, if the live hook is too much
 
 haku-console could instead **own `allowed-domains.txt`**, writing approved
