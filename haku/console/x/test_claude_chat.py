@@ -919,6 +919,28 @@ async def test_an_aborted_turn_says_so_on_its_own(
     assert queued == ["Looking at the logs now.", "Found it: a bad config.", ABORTED_NOTICE]
 
 
+async def test_a_turn_aborted_mid_answer_queues_its_notice_once(
+    chat_store, migrated_sessions, recording_claims, notifications, operator_id
+) -> None:
+    """The other side of the same rule, and the one a delivery-time queue could not get wrong.
+
+    Stopped between deltas, so no assistant message ever completed: `final_text` is the half
+    answer plus the notice, and the message row that closes the stream is what carries it into
+    the outbox. Saying the notice again on its own — which is right when a completed message
+    carried the answer instead — would show the operator their stop twice.
+    """
+    abort_event = asyncio.Event()
+    client = _InterruptedCli(
+        [_text_delta_frame("because the "), _text_delta_frame("disk was full")], abort_event=abort_event
+    )
+
+    queued = await _turn_into_a_room(
+        chat_store, migrated_sessions, recording_claims, notifications, operator_id, client, abort_event=abort_event
+    )
+
+    assert queued == [f"because the disk was full\n\n{ABORTED_NOTICE}"]
+
+
 async def test_a_turn_brackets_the_frames_it_produced_and_keeps_what_it_cost(
     chat_store, chat_service, operator_id
 ) -> None:

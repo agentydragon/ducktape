@@ -1567,27 +1567,28 @@ class SessionService:
                 # having stopped mid-answer. `final_text` is not written over it, because the
                 # harness adds `[aborted by operator]` to that and the frame records what the
                 # agent produced, not what the room was told.
-                spoke = (
-                    await self._store.update_assistant(
-                        session_id, assistant_id, final_text, tool_uses=[], complete=True
-                    )
-                    or spoke
+                carried_final = await self._store.update_assistant(
+                    session_id, assistant_id, final_text, tool_uses=[], complete=True
                 )
                 assistant_id = None
             elif not saw_assistant_message:
                 assistant_id = await self._store.begin_assistant(session_id)
-                spoke = (
-                    await self._store.update_assistant(
-                        session_id, assistant_id, final_text, tool_uses=[], complete=True
-                    )
-                    or spoke
+                carried_final = await self._store.update_assistant(
+                    session_id, assistant_id, final_text, tool_uses=[], complete=True
                 )
                 assistant_id = None
+            else:
+                # Every completed message queued its own row and one of them closed the answer, so
+                # `final_text` — which is `result.result` repeating the last of them — belongs to
+                # no row of its own.
+                carried_final = False
+            spoke = carried_final or spoke
             # Only what the room is not already owed. Each assistant message queued its own row as
             # it finished, and `result.result` normally repeats the last of them — so queueing
             # `final_text` unconditionally would post the answer twice. Two cases still need it: a
             # turn whose text belongs to no completed message at all, and an abort, whose notice
-            # rides on `final_text` and so on no message row.
+            # rides on `final_text` and therefore on no message row — which is exactly when a
+            # message row did *not* just carry `final_text` into the outbox.
             #
             # **Before the turn is closed, not after.** Closing it is what makes it unadoptable, so
             # a replica dying between the two would strand this reply with nothing left to
@@ -1595,7 +1596,7 @@ class SessionService:
             # re-derives collides with the row already there (`session_outbox.turn_id`).
             if not spoke:
                 await self._speak(session_id, room_id, turn_id, final_text)
-            elif abort_event.is_set():
+            elif abort_event.is_set() and not carried_final:
                 await self._speak(session_id, room_id, turn_id, ABORTED_NOTICE)
             # Closed with what the `result` frame reported, which is the only place a turn's
             # cost, usage and duration exist.
