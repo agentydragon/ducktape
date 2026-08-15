@@ -7,7 +7,12 @@ resources:
   - sandboxtemplate-haku-claude.yaml
   - sandboxwarmpool-haku-claude.yaml
   - cleanuppolicy-haku-janitor.yaml
-  - cleanuppolicy-haku-claude-janitor.yaml
+  # No janitor for the Console's Claude sandboxes. The console slides each live session's
+  # SandboxClaim shutdownTime on its lease heartbeat (haku/console/x/sandbox_claims.py renew) and
+  # deletes the claim on a clean end, so the Agent Sandbox controller's own deadline is the reaper;
+  # a creation-age CleanupPolicy would only fight that by capping a tended session however far out
+  # its deadline is. Trade-off accepted (operator, 2026-08-15): no backstop for the controller
+  # itself being broken for a long stretch. The haku-sandbox janitor above is a separate call.
   # Cross-namespace RBAC lives here rather than under a namespace-transforming
   # workload kustomization. The general sandbox MCP bindings remain in haku-sandbox;
   # Console's Claude claim-only binding lives in haku-claude-sandbox.

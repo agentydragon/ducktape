@@ -45,15 +45,18 @@ told it failed (session 489b6f8e, measured 2026-08-15).
   (`sandbox_claims.py` `renew`, hooked into `_renew_lease`), copying `sandbox_mcp`'s resourceVersion-
   guarded `_renew`. The deadline was kept rather than dropped — deleting it removes the only thing
   that reclaims a 2-vCPU sandbox when the console is not there to, which is exactly when it must not
-  be pinned (matrix_chat_runtime.md R3.2a). The console Role gained `patch`. **And the janitor moved
-  from an age fence to a backstop**: `haku-claude-workspace-janitor` reaped by `creationTimestamp` at
-  24h, which a slid deadline could not survive; it is now 7d like the `haku-sandbox` sibling, leaving
-  the controller's own `shutdownTime` as the fine-grained reaper (R3.2b).
+  be pinned (matrix_chat_runtime.md R3.2a). The console Role gained `patch`. **And the janitor for
+  these sandboxes is gone**: `haku-claude-workspace-janitor` reaped by `creationTimestamp` at 24h,
+  which a slid deadline could not survive — a creation-age fence caps a tended session however far
+  out its deadline is. With the console sliding the deadline and deleting the claim on a clean end,
+  the controller's own `shutdownTime` is the reaper; the backstop was removed rather than re-keyed
+  (operator, 2026-08-15). The only thing given up is a catch for the Agent Sandbox controller itself
+  being broken for a long stretch.
 - **Keep a horizon, because it is the protocol-compatibility window.** A runner's image is fixed at
-  claim creation, so the oldest live runner is now exactly as old as the longest-tended session —
-  which, with the 7d janitor as the ceiling, is how far back the console must still speak the bridge
-  protocol. Pick it deliberately and derive the support range from it. _(Still open — the slide made
-  the window real rather than a fixed two hours, so it now needs stating.)_
+  claim creation, so the oldest live runner is now as old as the longest continuously-tended session
+  — and with no janitor ceiling, that is bounded only by when the session ends. That is how far back
+  the console must still speak the bridge protocol; pick the range deliberately. _(Still open — the
+  slide made the window real, and removing the janitor made it open-ended.)_
 - ~~**An expired lease should mean unowned, not dead.**~~ Landed ahead of the rest of this stage: a
   production roll showed the sweep beating the runner's redial every time, because `release_lease`
   is a finalizer and never runs. `expire_stale_leases` now waits an `ADOPTION_GRACE` past expiry, a
