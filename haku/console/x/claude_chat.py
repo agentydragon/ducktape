@@ -1702,8 +1702,10 @@ class ClaudeChatService:
         turn_id = turn.turn_id
         assistant_id: UUID | None = None
         streamed = ""
-        # Whether anything has been said into the room yet, so the turn's final text is not
-        # posted a second time: `result.result` normally repeats the last assistant message.
+        # Whether the room has actually received the most recent assistant message, so the turn's
+        # final text is not posted a second time: `result.result` normally repeats it. This is
+        # delivery, not attempt — a send that failed leaves this False so the `result` frame's
+        # text still reaches the room, rather than being suppressed by a message nobody heard.
         spoke = False
         match turn:
             case TurnStart():
@@ -1790,8 +1792,9 @@ class ClaudeChatService:
                             # The row and the agent's own id travel with it, so the room event
                             # states which message it is showing instead of leaving that to be
                             # inferred from order and timing.
-                            await self._deliver_reply(session_id, room_id, said, spoken_id, _agent_message_id(frame))
-                            spoke = True
+                            spoke = await self._deliver_reply(
+                                session_id, room_id, said, spoken_id, _agent_message_id(frame)
+                            )
                     case "result":
                         result = frame
                         break
@@ -1823,9 +1826,10 @@ class ClaudeChatService:
             )
             # Only what the room has not already heard. Each assistant message was spoken as it
             # finished, and `result.result` normally repeats the last of them — so delivering
-            # `final_text` unconditionally would post the answer twice. Two cases still need it:
+            # `final_text` unconditionally would post the answer twice. Three cases still need it:
             # a turn whose text arrived only on the `result` frame (no assistant message ever
-            # completed), and an abort, whose notice is on `final_text` and not on any message.
+            # completed), an abort, whose notice is on `final_text` and not on any message, and a
+            # last message whose delivery failed — where this is the room's only chance to hear it.
             if not spoke:
                 await self._deliver_reply(session_id, room_id, final_text)
             elif abort_event.is_set():
@@ -1849,25 +1853,35 @@ class ClaudeChatService:
         text: str,
         message_id: UUID | None = None,
         agent_message_id: str | None = None,
-    ) -> None:
-        """Say *text* into the room, if this session serves one.
+    ) -> bool:
+        """Say *text* into the room, if this session serves one. True if the room heard it.
 
         Called for each assistant message as it finishes and once more at the turn's end for
         whatever the room has not heard yet. A session with no room needs nothing here: the
-        SPA's client reads the message rows the turn already wrote.
+        SPA's client reads the message rows the turn already wrote — so that case is vacuously
+        delivered, and the caller's "already said" bookkeeping does not depend on the surface.
 
         Deliberately not fatal: the message row is written before this runs, so a failed push
         is a delivery problem rather than a session problem. Failing here would mark the
         session dead and cost the whole conversation over a transient send error.
-        TODO(matrix): retry rather than only logging, once the Matrix surface is the only
-        one — today the message row is still readable in the SPA.
+
+        **The return value is the point**, and callers must use it. Reporting success for a send
+        that raised is what let one failed delivery silence a whole turn: the caller marked the
+        room as having heard the message, which suppressed the `result` frame's copy of the same
+        text — the room's second chance at it.
+        TODO(matrix): retry rather than only logging, once the room outbox exists
+        (<../../plans/chat_runtime_projection.md> stage 5) — today a failed send is recovered
+        only when the `result` frame happens to repeat it, and the message row is readable in
+        the SPA regardless.
         """
         if self._room_surface is None or room_id is None:
-            return
+            return True
         try:
             await self._room_surface.deliver(room_id, text, session_id, message_id, agent_message_id)
         except Exception:
             logger.exception("Reply delivery failed for session %s", session_id)
+            return False
+        return True
 
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back here is the

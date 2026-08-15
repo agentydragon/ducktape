@@ -1010,13 +1010,19 @@ _NARRATED_TURN = [
 
 
 class _RecordingRoomSurface:
-    """A `RoomSurface` that keeps what was said instead of talking to a homeserver."""
+    """A `RoomSurface` that keeps what was said instead of talking to a homeserver.
 
-    def __init__(self) -> None:
+    *fails_once_on* makes the first send of that exact text raise, as a homeserver refusing one
+    request does. Once, because a transient failure is the case worth pinning: what the turn does
+    next is the room's only remaining chance at that text.
+    """
+
+    def __init__(self, *, fails_once_on: str | None = None) -> None:
         self.delivered: list[str] = []
         # What each delivery said it was: the transcript row and the agent's own id, which the
         # room event now states rather than leaving to be matched by position.
         self.tagged: list[tuple[UUID | None, str | None]] = []
+        self._fails_once_on = fails_once_on
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str:
         return "you are Haku"
@@ -1030,6 +1036,9 @@ class _RecordingRoomSurface:
         agent_message_id: str | None = None,
     ) -> None:
         assert room_id == ROOM
+        if text == self._fails_once_on:
+            self._fails_once_on = None
+            raise RuntimeError("the homeserver refused this send")
         self.delivered.append(text)
         self.tagged.append((message_id, agent_message_id))
 
@@ -1082,9 +1091,10 @@ async def _turn_into_a_room(
     client: _FakeCli,
     *,
     abort_event: asyncio.Event | None = None,
+    room: _RecordingRoomSurface | None = None,
 ) -> list[str]:
     """Run one turn against *client* for a room-backed session and return what the room heard."""
-    room = _RecordingRoomSurface()
+    room = room or _RecordingRoomSurface()
     service = ClaudeChatService(
         runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN, room_surface=room
     )
@@ -1172,6 +1182,31 @@ async def test_the_last_message_is_not_repeated_by_the_result_frame(
     )
 
     assert delivered.count("Found it: a bad config.") == 1
+
+
+async def test_a_send_that_failed_does_not_count_as_the_room_having_heard_it(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """A drop needing neither a runner reconnection nor a console roll, and the reason the room
+    could go silent for a turn that ran perfectly well.
+
+    Delivery is deliberately not fatal — a transient send failure must not cost the session — but
+    the turn used to record the *attempt* as having been heard. That disarmed the one mechanism
+    that would have recovered it: `result.result` repeats the last assistant message, and the turn
+    speaks it only when the room has not already heard it. So one refused send produced a turn
+    that answered in the transcript and said nothing in the room.
+
+    What this does **not** cover, because the surface cannot report it: the Matrix surface queues
+    into `matrix_pacer` and returns before the request exists, so a failure there is invisible here
+    and stays lost. That is the durable outbox's job (`plans/chat_runtime_projection.md` stage 5).
+    """
+    room = _RecordingRoomSurface(fails_once_on="Found it: a bad config.")
+
+    delivered = await _turn_into_a_room(
+        chat_store, recording_claims, notifications, operator_id, _FakeCli(_NARRATED_TURN), room=room
+    )
+
+    assert delivered == ["Looking at the logs now.", "Found it: a bad config."]
 
 
 async def test_a_turn_whose_answer_arrived_only_on_the_result_is_still_spoken(
