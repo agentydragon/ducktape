@@ -353,7 +353,7 @@ async def deployment(
             "HAKU_E2E_REFUSE_NEXT_REPLY": str(state / "refuse-next-reply"),
             "HAKU_E2E_SYSTEM_PROMPT_TEMPLATE": str(get_required_path(SYSTEM_PROMPT_TEMPLATE)),
             # The nested binaries need the test's RUNFILES_* to find their own, and the stub
-            # inherits this environment in turn (`runner.build_claude_environment`), which is how
+            # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.
             "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{port}/internal/claude/runner",
             "HAKU_CLAUDE_PATH": str(stub),
