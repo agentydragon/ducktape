@@ -27,7 +27,6 @@ where they do. The last three rested on stage 1, which has landed, but **stage 1
 tests**: the first deliberate console roll against production is still owed before anything
 downstream trusts it (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
-
 ## Stage 4 — survive a roll mid-turn
 
 _Unblocked: stage 3 landed, so the envelope can gain the `frame_uid` below without a flag day.
