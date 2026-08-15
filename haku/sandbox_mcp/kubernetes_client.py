@@ -29,6 +29,7 @@ from haku.sandbox_mcp.models import (
     SandboxState,
 )
 from mcp_infra.exec.models import ExecStream, Exited, Killed, TimedOut, TruncatedStream
+from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
@@ -110,38 +111,6 @@ class _PodExecClient(Protocol):
         tty: bool,
         _preload_content: bool,
     ) -> _ExecWebSocketContext: ...
-
-
-class CustomObjectsClient(Protocol):
-    """Typed subset of the generated dynamic custom-object API used here."""
-
-    async def list_namespaced_custom_object(
-        self,
-        group: str,
-        version: str,
-        namespace: str,
-        plural: str,
-        *,
-        label_selector: str = ...,
-        limit: int = ...,
-        _continue: str = ...,
-    ) -> dict[str, Any]: ...
-
-    async def create_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
-    ) -> dict[str, Any]: ...
-
-    async def get_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str
-    ) -> dict[str, Any]: ...
-
-    async def patch_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
-    ) -> object: ...
-
-    async def delete_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str, *, body: k8s_client.V1DeleteOptions
-    ) -> object: ...
 
 
 @dataclass(slots=True)

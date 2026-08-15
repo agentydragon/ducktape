@@ -9,6 +9,13 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
 # Turns a binary asset into a TS data-URI constant; see //devinfra/js:data_uri.bzl's macro.
 py_binary(
     name = "data_uri_bin",

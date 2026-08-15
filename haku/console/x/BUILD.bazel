@@ -28,6 +28,7 @@ py_library(
     srcs = ["sandbox_claims.py"],
     deps = [
         "//haku/console:config",
+        "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],

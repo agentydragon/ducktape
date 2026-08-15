@@ -25,6 +25,7 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
 from haku.console.config import ClaudeRuntimeConfig
+from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +39,6 @@ _CLAIMS_PLURAL = "sandboxclaims"
 
 def _format_shutdown_time(when: datetime) -> str:
     return when.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-class _JsonPatchCustomObjects(Protocol):
-    """kubernetes_asyncio's generated `patch_namespaced_custom_object` omits `_content_type` from
-    its stub, though the runtime accepts it (`sandbox_mcp` sends JSON Patch the same way). Cast to
-    this to force `application/json-patch+json`: a merge patch cannot carry the `test` op the
-    resourceVersion guard relies on."""
-
-    async def patch_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
-    ) -> object: ...
 
 
 class ProvisioningStep(StrEnum):
@@ -98,11 +88,11 @@ class KubernetesSandboxClaims:
     def __init__(self, config: ClaudeRuntimeConfig):
         self._config = config
         self._api_client: ApiClient | None = None
-        self._custom_objects: CustomObjectsApi | None = None
+        self._custom_objects: CustomObjectsClient | None = None
         self._core_v1: CoreV1Api | None = None
         self._lock = asyncio.Lock()
 
-    async def _clients(self) -> tuple[CustomObjectsApi, CoreV1Api]:
+    async def _clients(self) -> tuple[CustomObjectsClient, CoreV1Api]:
         if self._custom_objects is not None:
             assert self._core_v1 is not None
             return self._custom_objects, self._core_v1
@@ -114,7 +104,8 @@ class KubernetesSandboxClaims:
                 except ConfigException as error:
                     raise RuntimeError("Kubernetes in-cluster configuration is unavailable") from error
                 self._api_client = ApiClient(configuration=configuration)
-                self._custom_objects = CustomObjectsApi(self._api_client)
+                # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+                self._custom_objects = cast(CustomObjectsClient, CustomObjectsApi(self._api_client))
                 self._core_v1 = CoreV1Api(self._api_client)
         assert self._custom_objects is not None
         assert self._core_v1 is not None
@@ -179,7 +170,7 @@ class KubernetesSandboxClaims:
                 {"op": "replace", "path": "/spec/lifecycle/shutdownTime", "value": shutdown_time},
             ]
             try:
-                await cast(_JsonPatchCustomObjects, client).patch_namespaced_custom_object(
+                await client.patch_namespaced_custom_object(
                     *_CLAIM_API,
                     self._config.namespace,
                     _CLAIMS_PLURAL,
