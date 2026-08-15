@@ -132,6 +132,43 @@ async def test_the_stream_ending_ends_the_frames_rather_than_hanging() -> None:
     await cli.aclose()
 
 
+async def test_wait_closed_resolves_when_the_stream_ends() -> None:
+    """The reader is a detached task, so a lost socket can only be observed, not caught: an idle
+    owner races `wait_closed` to learn the stream is gone rather than parking (console handler)."""
+    channel = ScriptedChannel()
+    cli = ClaudeCli(channel, control_timeout=5)
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    channel.deliver(_answer(channel.written[0]))
+    await connecting
+
+    channel.deliver(None)
+    await asyncio.wait_for(cli.wait_closed(), timeout=1)
+    await cli.aclose()
+
+
+async def test_wait_closed_resolves_when_the_socket_breaks() -> None:
+    """A broken transport is swallowed by the reader — logged, not re-raised, since a detached task
+    cannot hand its failure back — so `wait_closed` is the signal that the stream is over."""
+
+    class BreakingChannel(ScriptedChannel):
+        async def read_messages(self) -> AsyncIterator[dict[str, Any]]:
+            await self._inbound.get()
+            raise ConnectionResetError("socket went away")
+            yield  # pragma: no cover - marks this an async generator
+
+    channel = BreakingChannel()
+    cli = ClaudeCli(channel, control_timeout=0.2)
+    connecting = asyncio.create_task(cli.connect())
+    await asyncio.sleep(0)
+    channel.deliver(_answer(channel.written[0]))
+    with pytest.raises(ClaudeCliError, match="initialize"):
+        await connecting
+
+    await asyncio.wait_for(cli.wait_closed(), timeout=1)
+    await cli.aclose()
+
+
 async def test_an_unanswered_control_request_times_out_rather_than_waiting_forever() -> None:
     cli = ClaudeCli(ScriptedChannel(), control_timeout=0.05)
     with pytest.raises(ClaudeCliError, match="initialize"):

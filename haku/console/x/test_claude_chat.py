@@ -304,6 +304,7 @@ class _FakeCli:
         self.interrupted = False
         self.closed = False
         self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._disconnected = asyncio.Event()
 
     async def connect(self) -> dict[str, Any]:
         return {"subtype": "success"}
@@ -323,6 +324,14 @@ class _FakeCli:
 
     async def interrupt(self) -> None:
         self.interrupted = True
+
+    async def wait_closed(self) -> None:
+        # A healthy fake stream never ends on its own; a test that wants to model the socket
+        # dropping calls `disconnect()`, as the real reader's end sets the real event.
+        await self._disconnected.wait()
+
+    def disconnect(self) -> None:
+        self._disconnected.set()
 
     async def frames(self):
         # Never ends on its own: a real CLI stays open between turns, and a generator that
@@ -1777,6 +1786,51 @@ class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
         self.script = [_text_delta_frame("half an "), _text_delta_frame("answer"), _result()]
 
 
+class _DisconnectingClaudeClient(_LifecycleClaudeClient):
+    """Exposes its instance so a test can drop the socket while the session sits idle."""
+
+    instance: _DisconnectingClaudeClient | None = None
+
+    def __init__(self, adapter: object, launch: object, on_progress: object = None, frames_to: object = None):
+        super().__init__(adapter, launch, on_progress)
+        type(self).instance = self
+
+
+async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
+    chat_store, chat_service, migrated_sessions, operator_id
+) -> None:
+    """A roll drops the runner's socket while the session is between turns. It has to hand back
+    then — not sit in the 30s prompt-wait until graceful shutdown cancels it — which is what the
+    connection watcher is for: it turns the drop into the disconnect the handler releases on.
+
+    The proof is that the task ends on its own, with no cancel, and the session stays adoptable.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+    _DisconnectingClaudeClient.instance = None
+
+    with patch("haku.console.x.claude_chat.cli_over_websocket", _DisconnectingClaudeClient):
+        runner = asyncio.create_task(
+            chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
+        )
+        for _ in range(75):
+            if (
+                _DisconnectingClaudeClient.instance is not None
+                and await chat_store.status(view.session_id) == ChatSessionStatus.READY
+            ):
+                break
+            await asyncio.sleep(0.1)
+        assert _DisconnectingClaudeClient.instance is not None
+        assert await chat_store.status(view.session_id) == ChatSessionStatus.READY
+
+        _DisconnectingClaudeClient.instance.disconnect()
+        await asyncio.wait_for(runner, timeout=5)
+
+    assert await chat_store.status(view.session_id) in LIVE_SESSION_STATUSES, "handed back, not failed"
+    holder, expires_at = await _lease(migrated_sessions, view.session_id)
+    assert holder is None
+    assert expires_at <= datetime.now(UTC)
+
+
 async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
     chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
@@ -1877,6 +1931,51 @@ async def test_a_returning_runner_beats_the_sweep(
 
     assert await chat_store.expire_stale_leases() == 0
     assert await chat_store.status(session_id) in LIVE_SESSION_STATUSES
+
+
+async def _lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime]:
+    async with sessions() as db:
+        chat = await db.get(ClaudeChatSession, session_id)
+        assert chat is not None
+        return chat.lease_holder, chat.lease_expires_at
+
+
+async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, migrated_sessions, operator_id) -> None:
+    """The graceful-shutdown path: a rolling replica releases all its live sessions in one act, so
+    each is adoptable at once instead of waiting out the sweep's grace. Not failed — handed back."""
+    held = [await chat_store.create(operator_id, SpaSession()) for _ in range(2)]
+    for view, token in held:
+        assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    assert await chat_store.release_held_leases() == 2
+
+    for view, _ in held:
+        holder, expires_at = await _lease(migrated_sessions, view.session_id)
+        assert holder is None
+        assert expires_at <= datetime.now(UTC), "the lease is expired, so any runner may adopt it"
+        assert await chat_store.status(view.session_id) in LIVE_SESSION_STATUSES, "adoptable, not failed"
+    assert await chat_store.expire_stale_leases() == 0, "within the grace, so no sweep fails it yet"
+
+
+async def test_shutdown_leaves_another_replicas_lease_alone(chat_store, migrated_sessions, operator_id) -> None:
+    """One replica going down must not hand back a session another replica is still serving."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    with patch("haku.console.x.claude_chat.REPLICA", "haku-console-b"):
+        assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    assert await chat_store.release_held_leases() == 0
+    holder, _ = await _lease(migrated_sessions, view.session_id)
+    assert holder == "haku-console-b"
+
+
+async def test_shutdown_does_not_touch_an_ended_session(chat_store, migrated_sessions, operator_id) -> None:
+    """A session that already ended is not this replica's to hand back, even if it once held it."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.fail(view.session_id, "something went wrong")
+
+    assert await chat_store.release_held_leases() == 0
+    assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.FAILED
 
 
 async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migrated_sessions, operator_id) -> None:

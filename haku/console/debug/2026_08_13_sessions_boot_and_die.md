@@ -342,3 +342,28 @@ the row is adoptable the moment it expires; what was missing is that `expire_sta
 adoption no time to happen. It now waits a whole `ADOPTION_GRACE` past expiry before failing the
 session, and `release_lease` is downgraded to what it should always have been — the fast path that
 skips that wait.
+
+## Why `release_lease` never ran — and making the graceful path work
+
+The sweep makes correctness independent of the finalizer, but it was still worth knowing why the
+finalizer never fired, since a graceful release turns a roll into a zero-cost handoff instead of an
+`ADOPTION_GRACE`-long silence. It was three things in series, all in the code:
+
+1. **`ClaudeCli._read` swallowed the socket close.** It catches `except Exception`, logs, and drops
+   a `None` sentinel on the conversation queue — so a dropped socket never surfaced as the
+   `WebSocketDisconnect` that `handle_runner`'s `except*` clause releases on. (The reader is a
+   detached task; it _can't_ propagate to the handler's task group. It now sets an event that a new
+   `_watch_connection` helper in the group awaits, and that helper raises the disconnect — so an
+   idle session, parked in the 30s prompt-wait with nothing reading the socket, hands back at once.)
+2. **`uvicorn.run` left `timeout_graceful_shutdown=None`.** uvicorn's `shutdown()` does
+   `await asyncio.wait_for(self._wait_tasks_to_complete(), timeout=None)` — an infinite wait for the
+   parked handler to return. It never cancelled it (so the `except CancelledError` release never
+   fired either) and never reached `lifespan.shutdown()`. Now bounded to 10s (`app.main`).
+3. **No `terminationGracePeriodSeconds` → k8s SIGKILL at the 30s default**, running no finalizer.
+   Now set to 25s, above the 10s graceful bound plus lifespan teardown.
+
+And `ClaudeChatService.aclose` (run from the lifespan, reachable only because of #2) now calls a new
+set-based `ClaudeChatStore.release_held_leases()` — one `UPDATE … WHERE lease_holder = REPLICA` — so
+a rolling replica hands back every session it holds in one statement, rather than depending on each
+`handle_runner` completing its own commit while being cancelled. The sweep remains the guarantee;
+this is the fast path that keeps a roll invisible.

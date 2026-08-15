@@ -24,7 +24,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import CursorResult, delete, func, select, text
+from sqlalchemy import CursorResult, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -352,6 +352,30 @@ class ClaudeChatStore:
                 chat.lease_holder = None
                 chat.lease_expires_at = datetime.now(UTC)
                 chat.updated_at = datetime.now(UTC)
+
+    async def release_held_leases(self) -> int:
+        """Hand back every live session this replica holds, and report how many.
+
+        The graceful-shutdown counterpart to `release_lease`: that one is called per connection as
+        each `handle_runner` unwinds, this one is called once from the lifespan on the way down so a
+        rolling replica's sessions become adoptable at once rather than each waiting out the sweep's
+        `ADOPTION_GRACE`. One statement keyed on this replica, so it is safe to run concurrently
+        with the per-connection releases and idempotent if they already fired — and, unlike them, it
+        does not depend on every `handle_runner` task completing its own commit while being
+        cancelled, which is the guarantee a SIGKILL-free shutdown actually needs.
+        """
+        async with self._sessions.begin() as db:
+            result = cast(
+                "CursorResult[Any]",
+                await db.execute(
+                    update(ClaudeChatSession)
+                    .where(
+                        ClaudeChatSession.status.in_(LIVE_SESSION_STATUSES), ClaudeChatSession.lease_holder == REPLICA
+                    )
+                    .values(lease_holder=None, lease_expires_at=datetime.now(UTC), updated_at=datetime.now(UTC))
+                ),
+            )
+            return result.rowcount
 
     async def adopt_open_turn(self, session_id: UUID) -> TurnResumed | None:
         """Say what the previous holder's open turn was, and hand back the one worth finishing.
@@ -1374,6 +1398,11 @@ class ClaudeChatService:
                     # Says "this replica is still here" for as long as it is. Its absence is
                     # what another replica reclaims the session by; see `expire_stale_leases`.
                     renewal = helpers.create_task(self._renew_lease(session_id))
+                    # Turns the runner's socket dropping into a `WebSocketDisconnect` here, even
+                    # when this handler is parked in the idle prompt-wait with nothing reading the
+                    # socket. Without it a roll leaves an idle session waiting out the whole
+                    # graceful-shutdown timeout before it hands back.
+                    connection = helpers.create_task(self._watch_connection(client))
                     try:
                         await client.connect()
                         # One stream for the session, not one per turn: a folded prompt is
@@ -1412,9 +1441,10 @@ class ClaudeChatService:
                                 break
                     finally:
                         # The helpers outlive the loop by construction, so ending it is what
-                        # ends them; the group then awaits both before leaving this block.
+                        # ends them; the group then awaits them before leaving this block.
                         abort_watch.cancel()
                         renewal.cancel()
+                        connection.cancel()
             except* WebSocketDisconnect:
                 # The runner went away, which is not the session being over: it keeps the CLI
                 # alive across a lost socket and redials. Hand the session back and let the lease
@@ -1473,6 +1503,18 @@ class ClaudeChatService:
         while True:
             await self._store.renew_lease(session_id)
             await asyncio.sleep(LEASE_RENEW_INTERVAL.total_seconds())
+
+    async def _watch_connection(self, client: ClaudeCli) -> None:
+        """Raise `WebSocketDisconnect` the moment the runner's stream ends.
+
+        The reader is a detached task, so a dropped socket cannot propagate into the task group on
+        its own — it becomes a `None` sentinel that only a *turn* consumer sees. An idle session is
+        not consuming, so without this it sits in the prompt-wait until the graceful-shutdown timer
+        cancels it. Waking here routes the drop to the `except* WebSocketDisconnect` clause that
+        hands the session back, so a roll is handed back at once rather than after that timeout.
+        """
+        await client.wait_closed()
+        raise WebSocketDisconnect(code=GOING_AWAY_CODE)
 
     async def _watch_aborts(self, session_id: UUID, abort_event: asyncio.Event) -> None:
         """Set *abort_event* every time this session is told to abort, until cancelled.
@@ -1676,6 +1718,14 @@ class ClaudeChatService:
             logger.exception("Reply delivery failed for session %s", session_id)
 
     async def aclose(self) -> None:
+        # Called from the lifespan on the way down. Handing every held lease back here is the
+        # guarantee the per-connection releases cannot be: a cancelled `handle_runner` may not
+        # finish its own commit, but this one statement does, so a graceful roll leaves no session
+        # waiting out the sweep. Reachable only because `uvicorn.run` bounds `timeout_graceful_
+        # shutdown` (see app.main) — otherwise shutdown never gets here.
+        released = await self._store.release_held_leases()
+        if released:
+            logger.info("Released %d held session lease(s) on shutdown", released)
         await self._claims.aclose()
 
 

@@ -72,6 +72,11 @@ spec:
       # Service's HAKU_CONSOLE_PORT=tcp://<clusterIP>:8080 collides with the app's
       # HAKU_CONSOLE_ settings prefix (it parsed into the port:int field → crash).
       enableServiceLinks: false
+      # Room for a graceful shutdown to hand chat-session leases back before SIGKILL: the app
+      # bounds uvicorn's graceful wait to 10s (app.main), then the lifespan releases this
+      # replica's leases. Must stay above that 10s plus lifespan teardown; the default 30s hid
+      # the dependency (haku/console/debug/2026_08_13_sessions_boot_and_die.md).
+      terminationGracePeriodSeconds: 25
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

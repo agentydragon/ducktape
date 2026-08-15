@@ -111,6 +111,7 @@ class ClaudeCli:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._conversation: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._reader: asyncio.Task[None] | None = None
+        self._closed = asyncio.Event()
 
     async def connect(self) -> dict[str, Any]:
         """Launch the CLI, start reading, and complete the `initialize` handshake."""
@@ -176,6 +177,15 @@ class ClaudeCli:
         while (frame := await self._conversation.get()) is not None:
             yield frame
 
+    async def wait_closed(self) -> None:
+        """Resolve once the reader has ended — the CLI's stream stopped, cleanly or on a broken
+        socket. The reader is a detached task, so an exception in it cannot propagate to whoever
+        owns this client; this is how a lost connection becomes observable to them instead of
+        being swallowed. A caller races this against its idle wait so a dropped socket is handed
+        back at once rather than after a graceful-shutdown timeout (see console `handle_runner`).
+        """
+        await self._closed.wait()
+
     async def aclose(self) -> None:
         if self._reader is not None:
             self._reader.cancel()
@@ -217,11 +227,15 @@ class ClaudeCli:
         except asyncio.CancelledError:
             raise
         except Exception:
+            # Logged, not re-raised: a detached task cannot hand its failure to the owner, so the
+            # useful signal is that the stream is *over*, delivered below to both the queue (for a
+            # mid-turn consumer) and `wait_closed` (for an idle one). What broke it is in the log.
             logger.exception("Claude CLI stream failed")
         finally:
             # A sentinel rather than closing the queue: a consumer mid-turn has to learn the
             # stream ended, and would otherwise wait for a `result` that cannot arrive.
             self._conversation.put_nowait(None)
+            self._closed.set()
 
     def _resolve(self, frame: dict[str, Any]) -> None:
         response = ControlResponse.model_validate(frame["response"])
