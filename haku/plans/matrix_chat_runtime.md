@@ -746,7 +746,16 @@ that.
   input — but `_is_conversational` must count a relay as conversation rather than as console
   chatter, or a rotation loses the operator's half of every exchange. This is the operator
   writing, not the agent, so R5.4's read-only tool surface is untouched. Staging, the enqueue/post
-  ordering, and why this wants the room outbox: <../console/plans/conversation_view.md>.
+  ordering, and why this wants the room outbox: <../console/plans/session_channels.md>.
+
+  Part of a larger direction set by the operator on 2026-08-15 — **Matrix and the console as two
+  channels onto one session**, each able to do broadly what the other can. Two consequences reach
+  this document. The room is no longer the only place a session's lifecycle is visible, so R7's
+  notices become a _rendering_ of recorded session events rather than the record itself (the
+  status line and typing indicator of R6 stay Matrix-only renderings of live state, and stay
+  unrecorded). And the one capability the console has that the room plainly lacks — aborting a
+  turn — is left open there rather than settled here, since it would be the first room message
+  that means something other than "talk to Haku".
 
 ## Build order
 

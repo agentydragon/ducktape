@@ -87,9 +87,16 @@ and behaves as one-room-globally, and `room_id: str | None` threads through the 
 call sites re-ask a question answered once per connection — plus three no-op coroutines so
 `_TurnStatus` has something to call.
 
-1. A `ChatFrontend` port with **no address parameter**: a null implementation for the SPA, which
-   needs none of it because its client reads the message rows, and `MatrixSurface` bound at
-   construction as it effectively already is. Every `or room_id is None` and all three no-ops go.
+1. A `ChatFrontend` port with **no address parameter**: `MatrixSurface` bound at construction as it
+   effectively already is. Every `or room_id is None` and all three no-ops go.
+
+   **The SPA's implementation is no longer a null one.** This step used to say the SPA needs none
+   of the port because its client reads the message rows — true of a view, false of a channel, and
+   the console is being driven toward the latter (<../console/plans/session_channels.md>): it wants
+   the lifecycle and narration the room gets today, pushed rather than polled. The port is
+   unchanged and still right; what changes is that both sides implement it. That plan's
+   `chat_attachment` need is this step's schema half, not a separate table.
+
 2. Then the schema half — `chat_attachment(session_id, surface, address, attached_at, detached_at)`
    with a partial unique index on `(surface, address) where detached_at is null`. It subsumes
    `claude_chat_sessions.surface`, `.room_id`, both check constraints tying them together, and
@@ -125,9 +132,9 @@ loop's signatures.
   `_sse_stream` wakes → `store.get` → `_rollout_calls` selects every `assistant`/`user` frame and
   re-parses its content blocks. O(session) per token batch, paid only while the SPA is streaming.
   Fix by indexing incrementally on the agent message id, or by scoping the read to the messages
-  asked about. The console's conversation view multiplies it: a live view refetching the whole
-  transcript per delta pays this once per open tab, which is why that design coalesces per session
-  rather than treating the debounce as polish (<../console/plans/conversation_view.md> § stage A).
+  asked about. A live console session view multiplies it: refetching the whole transcript per delta
+  pays this once per open tab, which is why that design coalesces per session rather than treating
+  the debounce as polish (<../console/plans/session_channels.md> § 3).
 - **Split `claude_chat.py`** further. `KubernetesSandboxClaims` has left; what remains is view
   models, the store, the recorder, the status driver, the service, the turn loop, the port and the
   routes. `ClaudeChatStore`'s twenty-odd methods split along the seams the turn table and the

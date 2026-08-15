@@ -134,9 +134,12 @@ removes the "exactly one `anext` in flight" dance.
 
 `matrix_pacer`'s deque becomes rows. Delivery gains a retry and loses its guesswork.
 
-A second consumer wants this for a different reason: relaying an operator's console-sent message
-into the room (<../console/plans/conversation_view.md> § stage C) is an enqueue and a post that
-must not diverge, which is one transaction with an outbox and an ordering judgment without one.
+Two more consumers want this, both from <../console/plans/session_channels.md>. Relaying an
+operator's console-sent message into the room is an enqueue and a post that must not diverge —
+one transaction with an outbox, an ordering judgment without one. And once a session's lifecycle
+events are recorded rather than only announced, the outbox generalizes from "the room's queue" to
+"deliver each recorded event to every channel attached to this session", which is the same
+mechanism serving both.
 
 ## The one thing to keep in view
 

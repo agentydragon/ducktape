@@ -3,25 +3,29 @@
 Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
 actionable checklist. Remove entries once done.
 
-## Conversation view — live updates, then a composer
+## The console as a channel, not a viewer
 
-The inventory and detail view (`frontend/x/conversations_page.tsx`) fetches once on mount and
-never again, and has no way to speak into a conversation. Three staged wants, with the design and
-its gotchas in <plans/conversation_view.md>:
+Direction set 2026-08-15: Matrix and the console frontend should be two **messaging channels**
+onto one session, each able to do broadly what the other can. Today the console is split across
+two pages that are the same object, cannot show a session's lifecycle at all, and cannot speak.
+Design, the parity gaps it closes, and the traps in each: <plans/session_channels.md>.
 
-1. **Live updates over the existing `/api/events/ws`**, as a `ConversationChangedEvent
-{session_id}` the page refetches on — not a second SSE stream, and not a poll. The client half
-   (`useConsoleEvents`) already reconnects and already re-fires its callback on reconnect.
-   **Coalesce per session**: `ChatEventKind.UPDATE` fires per stream delta, and a
-   full-transcript refetch per delta per open tab is the O(session) cost
-   <../plans/chat_runtime_cleanup.md> § Anytime already flags on the SSE path.
-2. **Send into an SPA conversation** — `enqueue_prompt` already exists; the composer is disabled
-   during a turn because admission refuses one, and that stays true until mid-turn steering lands.
-3. **Send into a Matrix conversation** (lower priority) — the console holds only `@haku`'s
-   credential, so an operator message reaches the room as a **relay** event posted by Haku's
-   account and tagged with its true provenance. The subtle part is `_is_conversational`, which
-   must count a relay as conversation or every rotation re-awakens a session with the operator's
-   half missing.
+1. **Render bootstrap narration** — `setup_output` rows already exist in the frame log; nothing
+   but the console renders them. Smallest thing that makes it a channel.
+2. **Live updates over the existing `/api/events/ws`**, as a `SessionChangedEvent {session_id}`
+   the page refetches on — not a second SSE stream, and not a poll. **Coalesce per session**:
+   `ChatEventKind.UPDATE` fires per stream delta, and a full-transcript refetch per delta per open
+   tab is the O(session) cost <../plans/chat_runtime_cleanup.md> § Anytime flags on the SSE path.
+3. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
+   compose / abort / close as actions on a session. Costs the per-token SSE stream; take it
+   knowingly.
+4. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
+   that never got past `provisioning` has a durable record. **Not** the status line or the typing
+   indicator — those are renderings of live state each channel derives for itself.
+5. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
+   so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
+   its true provenance. The subtle part is `_is_conversational`, which must count a relay as
+   conversation or every rotation re-awakens a session with the operator's half missing.
 
 ## Notification text per tool kind
 

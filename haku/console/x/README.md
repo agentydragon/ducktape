@@ -24,9 +24,11 @@ whose replica went away before anything could close it.
 
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that
-did not take is diagnosable from nothing else. The one thing skipped is `stream_event`, because the
-store keeps a single rewritten `partial` row for the answer in flight instead; that is a decision
-about the record and so lives here rather than in the client.
+did not take is diagnosable from nothing else. **Deltas included** — a log with a hole in it cannot
+be folded over (<../../plans/chat_runtime_projection.md> § stage 1), so "do not bury the reader" is
+answered at the read instead: `read_frames` leaves `stream_event` out of its default view. Beside
+them the store keeps a single rewritten `partial` row for the answer in flight, which is what makes
+an interrupted turn's half-answer survive.
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather
