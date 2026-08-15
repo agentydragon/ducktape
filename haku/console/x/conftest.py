@@ -63,6 +63,7 @@ class RecordingClaims:
     def __init__(self) -> None:
         self.created: list[UUID] = []
         self.deleted: list[UUID] = []
+        self.renewed: list[tuple[UUID, datetime]] = []
         self.tokens: dict[UUID, str] = {}
 
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
@@ -71,6 +72,9 @@ class RecordingClaims:
         # The claim is where a test reaches the bridge credential: the store mints it and
         # `ClaudeChatService.create` does not hand it back.
         self.tokens[session_id] = bridge_token
+
+    async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
+        self.renewed.append((session_id, expires_at))
 
     async def delete(self, *, session_id: UUID) -> None:
         self.deleted.append(session_id)

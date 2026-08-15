@@ -1509,9 +1509,19 @@ class ClaudeChatService:
         await self._store.closed(session_id)
 
     async def _renew_lease(self, session_id: UUID) -> None:
-        """Hold *session_id*'s lease for as long as this replica is running it."""
+        """Hold *session_id*'s lease for as long as this replica runs it, and keep its sandbox with it.
+
+        The same heartbeat slides the SandboxClaim's `shutdownTime` forward, so the sandbox is a
+        renewed lease rather than a `session_ttl_seconds` hard timer that killed a conversation in
+        full flow (`sandbox_claims.renew`). Console lease and sandbox deadline lapse together the
+        moment a replica stops tending the session.
+        """
         while True:
             await self._store.renew_lease(session_id)
+            await self._claims.renew(
+                session_id=session_id,
+                expires_at=datetime.now(UTC) + timedelta(seconds=self._config.session_ttl_seconds),
+            )
             await asyncio.sleep(LEASE_RENEW_INTERVAL.total_seconds())
 
     async def _watch_connection(self, client: ClaudeCli) -> None:

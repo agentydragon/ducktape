@@ -4,9 +4,12 @@ metadata:
   name: haku-console-claude-claims
   namespace: haku-claude-sandbox
 rules:
+  # `patch` so the console can slide a live session's `shutdownTime` forward on its lease
+  # heartbeat (haku/console/x/sandbox_claims.py `renew`) — the sandbox is a renewed lease, not a
+  # fixed timer. `get` reads the resourceVersion the patch tests against.
   - apiGroups: ["extensions.agents.x-k8s.io"]
     resources: ["sandboxclaims"]
-    verbs: ["create", "delete", "get"]
+    verbs: ["create", "delete", "get", "patch"]
   # Read-only runtime inspection powers the Operator-facing provisioning details.
   # The Console still cannot list arbitrary resources, read logs/Secrets, or exec.
   - apiGroups: ["agents.x-k8s.io"]

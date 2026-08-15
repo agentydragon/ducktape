@@ -68,6 +68,7 @@ class RecordingCustomObjectsApi:
     def __init__(self) -> None:
         self.created: tuple[tuple[Any, ...], dict[str, Any]] | None = None
         self.objects: dict[tuple[str, str], dict[str, Any]] = {}
+        self.patched: list[tuple[str, Any]] = []
 
     async def create_namespaced_custom_object(self, *args: Any, **kwargs: Any) -> None:
         self.created = (args, kwargs)
@@ -77,6 +78,12 @@ class RecordingCustomObjectsApi:
     ) -> dict[str, Any]:
         del group, version, namespace
         return self.objects[(plural, name)]
+
+    async def patch_namespaced_custom_object(
+        self, group: str, version: str, namespace: str, plural: str, name: str, body: Any, **kwargs: Any
+    ) -> None:
+        del group, version, namespace, plural, kwargs
+        self.patched.append((name, body))
 
 
 class RecordingCoreV1Api:
@@ -129,6 +136,42 @@ async def test_claim_injects_only_the_session_rendezvous_values(sandbox_claims, 
         {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": "one-use-secret"},
     ]
     assert body["spec"]["lifecycle"] == {"shutdownPolicy": "DeleteForeground", "shutdownTime": "2026-08-01T05:00:00Z"}
+
+
+async def test_renew_slides_the_shutdown_time_testing_on_resource_version(sandbox_claims, custom_objects_api) -> None:
+    """The deadline is a lease: renew pushes `shutdownTime` out, guarded by a `test` on the
+    resourceVersion it read, so a concurrent writer never has its update clobbered."""
+    session_id = UUID("10000000-0000-4000-8000-000000000001")
+    name = "claude-10000000000040008000000000000001"
+    custom_objects_api.objects[("sandboxclaims", name)] = {"metadata": {"resourceVersion": "4242"}}
+
+    await sandbox_claims.renew(session_id=session_id, expires_at=datetime(2026, 8, 1, 7, 0, tzinfo=UTC))
+
+    [(patched_name, patch)] = custom_objects_api.patched
+    assert patched_name == name
+    assert patch == [
+        {"op": "test", "path": "/metadata/resourceVersion", "value": "4242"},
+        {"op": "replace", "path": "/spec/lifecycle/shutdownTime", "value": "2026-08-01T07:00:00Z"},
+    ]
+
+
+async def test_renew_is_a_no_op_when_the_claim_is_already_gone(sandbox_claims, custom_objects_api) -> None:
+    """A 404 means the session is ending; renew leaves it to the lease sweep rather than raising
+    and taking the heartbeat down."""
+    session_id = UUID("10000000-0000-4000-8000-000000000002")
+    custom_objects_api.get_namespaced_custom_object = _raise_api_error(404)
+
+    await sandbox_claims.renew(session_id=session_id, expires_at=datetime(2026, 8, 1, 7, 0, tzinfo=UTC))
+
+    assert custom_objects_api.patched == []
+
+
+def _raise_api_error(status: int) -> Any:
+    async def _raise(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise k8s_client.ApiException(status=status)
+
+    return _raise
 
 
 async def test_inspect_reports_each_underlying_provisioning_layer(
@@ -1977,6 +2020,32 @@ async def test_shutdown_does_not_touch_an_ended_session(chat_store, migrated_ses
 
     assert await chat_store.release_held_leases() == 0
     assert (await chat_store.get(operator_id, view.session_id)).status == ChatSessionStatus.FAILED
+
+
+async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The sandbox is a renewed lease, not a fixed timer: the heartbeat that renews the console
+    lease also pushes the SandboxClaim's deadline out, so an active session is not reaped at
+    `session_ttl_seconds`."""
+    view, token = await chat_store.create(operator_id, SpaSession())
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+
+    heartbeat = asyncio.create_task(chat_service._renew_lease(view.session_id))
+    try:
+        for _ in range(200):
+            if recording_claims.renewed:
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
+
+    assert recording_claims.renewed, "the heartbeat slid no sandbox deadline"
+    session_id, expires_at = recording_claims.renewed[0]
+    assert session_id == view.session_id
+    assert expires_at > datetime.now(UTC)
 
 
 async def test_an_unheld_session_says_no_replica_ever_attached(chat_store, migrated_sessions, operator_id) -> None:

@@ -23,34 +23,45 @@ Two constraints still bind, and everything else is preference:
 Four are discharged: version negotiation preceded the field stage 4 added, diagnosis came before
 change, a roll is survived before the TTL that was recycling wedged sessions is removed, and a
 session survives being asked for before it is allocated on demand — which is why stages 5 and 6 sit
-where they do. Both of those rest on stages 1 and 4, which have landed, but **they are verified
-only by tests**: the first deliberate console roll against production is still owed before anything
-downstream trusts them (<../console/debug/2026_08_13_sessions_boot_and_die.md>). Stage 4 raises the
-stakes on that rather than lowering them — a turn is now inherited across a roll instead of being
-closed, so a roll is the only thing that exercises it.
+where they do. Both rest on stages 1 and 4, which have landed. The production verification that was
+owed has since happened: deliberate console rolls on 2026-08-15 showed a session re-adopting across
+each one, which surfaced two real holes the tests had not — the sweep beating the runner's redial,
+and a graceful shutdown never releasing its leases — both now fixed
+(<../console/debug/2026_08_13_sessions_boot_and_die.md>). Stage 4 raised the stakes on that rather
+than lowering them — a turn is now inherited across a roll instead of being closed, so a roll is the
+only thing that exercises it.
 
 ## Stage 5 — let the console own the lifecycle
 
-_Both of its prerequisites, stages 1 and 4, have landed._
+_Both of its prerequisites, stages 1 and 4, have landed, and the stage is largely discharged — what
+remains is the protocol-compatibility horizon._
 
-`shutdownTime` is set to `now + session_ttl_seconds` at claim creation and **never patched**, so it
-is not an idle timeout: a conversation in full flow dies at exactly two hours, mid-turn, and the room
-is told it failed. Removing it is cheaper than it looks, because the TTL is not what prevents leaks —
-the Kyverno `CleanupPolicy` reaps Sandboxes and SandboxClaims older than 24h at the CR layer, which
-is the real backstop.
+`shutdownTime` was set to `now + session_ttl_seconds` at claim creation and never patched, so it was
+not an idle timeout: a conversation in full flow died at exactly two hours, mid-turn, and the room was
+told it failed (session 489b6f8e, measured 2026-08-15).
 
-- Drop `shutdownTime` to the janitor's horizon or omit it; release on an idle timer instead, with the
-  lease as liveness and the janitor as what catches a console that forgot both.
+- ~~**Make the deadline a renewed lease, not a fixed timer.**~~ Landed. The console slides the
+  SandboxClaim's `shutdownTime` forward on the same heartbeat that renews the console lease
+  (`sandbox_claims.py` `renew`, hooked into `_renew_lease`), copying `sandbox_mcp`'s resourceVersion-
+  guarded `_renew`. The deadline was kept rather than dropped — deleting it removes the only thing
+  that reclaims a 2-vCPU sandbox when the console is not there to, which is exactly when it must not
+  be pinned (matrix_chat_runtime.md R3.2a). The console Role gained `patch`. **And the janitor moved
+  from an age fence to a backstop**: `haku-claude-workspace-janitor` reaped by `creationTimestamp` at
+  24h, which a slid deadline could not survive; it is now 7d like the `haku-sandbox` sibling, leaving
+  the controller's own `shutdownTime` as the fine-grained reaper (R3.2b).
 - **Keep a horizon, because it is the protocol-compatibility window.** A runner's image is fixed at
-  claim creation, so the oldest live runner is exactly as old as the longest-lived session — which is
-  exactly how far back the console must still speak the bridge protocol. Pick it deliberately and
-  derive the support range from it.
+  claim creation, so the oldest live runner is now exactly as old as the longest-tended session —
+  which, with the 7d janitor as the ceiling, is how far back the console must still speak the bridge
+  protocol. Pick it deliberately and derive the support range from it. _(Still open — the slide made
+  the window real rather than a fixed two hours, so it now needs stating.)_
 - ~~**An expired lease should mean unowned, not dead.**~~ Landed ahead of the rest of this stage: a
   production roll showed the sweep beating the runner's redial every time, because `release_lease`
-  is a finalizer and never runs. `expire_stale_leases` now waits an `ADOPTION_GRACE` past expiry
-  (<../console/debug/2026_08_13_sessions_boot_and_die.md> § the re-test).
+  is a finalizer and never runs. `expire_stale_leases` now waits an `ADOPTION_GRACE` past expiry, a
+  graceful shutdown releases every held lease, and the failure message says which of the three things
+  actually happened (<../console/debug/2026_08_13_sessions_boot_and_die.md>).
 
-**Done when** no session dies on a clock, and an idle sandbox is released rather than reaped.
+**Done when** no session dies on a clock — reached; and the bridge-protocol support range is derived
+from the horizon rather than assumed — open.
 
 ## Stage 6 — allocate a sandbox because there is something to do
 
