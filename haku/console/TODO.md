@@ -227,13 +227,12 @@ ConfigMap edit instead of a roll.
 
 ## Finish the `claude_chat` → `session` rename
 
-The tables, the Python and the operator routes moved; three things are deliberately still holding
-the old name, each for its own reason.
+The tables, the wake channel, the Python and the operator routes moved; three things are
+deliberately still holding the old name, each for its own reason.
 
-- **The `claude_chat_*` compatibility views** (migration `0040`) and the **legacy
-  `/api/claude/sessions/…` registrations**. Both exist only so a replica — and a browser tab —
-  from the previous image survives a `maxUnavailable: 0` roll. Drop them once that roll has
-  **converged**, not once a release has elapsed.
+- **The legacy `/api/claude/sessions/…` registrations**, which exist only so a browser tab loaded
+  before the roll keeps working until it reloads. Drop them one release after they ship, when no
+  deployed bundle names them.
 - **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
   renaming it is a coordinated two-sided roll like `HAKU_CLAUDE_PATH` (<../plans/next_month.md> §
   week 3), not part of a console-only change.

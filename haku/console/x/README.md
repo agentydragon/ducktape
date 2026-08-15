@@ -13,14 +13,9 @@ The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`
 SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
 surface's own HTTP routes and SSE stream, which is the older of the two experiments.
 
-**The tables are `sessions` and `session_*`, and the rename is mid-flight.** They were
-`claude_chat_*` — six backend-neutral concepts named after the one CLI that fills them, while the
-design requires a second backend to be representable. Migration `0040` renamed them and left each
-old name behind as an auto-updatable view, so a replica on the previous image keeps reading and
-writing the same rows for the length of a roll; `../test_session_table_compatibility.py` is what
-proves the views really carry the previous release's writes, `ON CONFLICT` inference included.
-**The contract migration that drops those views has not landed**, so nothing may assume the old
-names are gone yet.
+**The tables are `sessions` and `session_*`.** They were `claude_chat_*` — six backend-neutral
+concepts named after the one CLI that fills them, while the design requires a second backend to be
+representable. Migrations `0040` and `0041` are the expand and contract of that rename.
 
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
 opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
@@ -128,10 +123,6 @@ another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is un
 subsystem with a different payload and its own lifecycle, and the only thing the two share
 is the mechanism.
 
-**Right now it is two names, mid-expand.** `claude_chat` is `LEGACY_CHANNEL`, notified and
-listened on beside the new one so neither half of a roll goes deaf, and dropped in the contract
-release — see the constant for the gate.
-
 `test_notify_puts_a_readable_event_on_the_channel` is the one that pins the wire format —
 channel name and envelope, read off a raw connection. Nothing else would notice if either
 drifted, because every other test has the same code on both ends.
@@ -147,14 +138,15 @@ wakes are lost for that window — the same expand/contract discipline a destruc
 migration needs. Notify on both names for one release, then drop the old — and gate that
 second release on the roll having **converged** (every pod on an image at or after the
 first), not on a release having elapsed, since `maxUnavailable: 0` means a bad image stalls
-the roll with the old replica still serving. The channel merge was done exactly that way, and
-so is the `claude_chat` → `session_events` rename in flight now.
+the roll with the old replica still serving. The channel merge was done exactly that way, and so
+was `claude_chat` → `session_events`.
 
-The trap in the overlap phase: while both names are being notified, every wake is delivered
-twice, so a woken waiter proves nothing about which name woke it. Tests and production alike
-will look healthy with the new path entirely broken, right up until the old one is deleted.
-`test_an_event_on_one_channel_alone_wakes_the_waiter` is what answers it — it drives
-`pg_notify` on exactly one name, which `notify` itself can no longer do.
+The trap in the overlap phase, worth knowing before staging the next one: while both names
+are being notified, every wake is delivered twice, so a woken waiter proves nothing about
+which name woke it. Tests and production alike will look healthy with the new path entirely
+broken, right up until the old one is deleted. Cover the new path end to end on its own
+before contracting — for the session rename that meant a test driving `pg_notify` on exactly
+one channel, since `notify` was firing both and so could not answer the question.
 
 ## Cross-replica state, and the trap it sets
 
