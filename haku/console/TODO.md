@@ -263,18 +263,29 @@ along with what that costs (the sink has to move down to `WebSocketTransport`, a
 releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
 scheduled**, and no other work depends on it.
 
-## Which past conversations may an agent read?
+## Scope conversation reads to the reader's trust tier
 
-`list_conversations`, `read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped by
-deliberate deferral — R5.3a in <../plans/matrix_chat_runtime.md> left the policy open rather than
-guess at a rule nobody stated. Any Haku may read any session, whichever room or operator it served.
+**The policy is decided** (operator, 2026-08-15) and now needs building. `list_conversations`,
+`read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped — any Haku may read any
+session, whichever room or operator it served — under R5.3a's deliberate deferral, whose stated
+condition for revisiting (more than one agent) has arrived. An agent reads the transcripts and
+conversations **its tier** gives it. The fence is the tier, **not** the room: cross-room and
+cross-session reads stay open within a tier, so an agent keeps its own history.
 
-Semantic search over the same corpus (<../state_index/README.md>, `chat`) raises the stakes without
-changing the data: a drilldown makes reading another room's conversation a deliberate act, where
-ranked retrieval surfaces it by accident at the top of the results. That index is not exposed to any
-agent yet, and settling this is the prerequisite for exposing it.
+Three things it needs, in order:
 
-The full inventory of what a scope would touch — the search query, the drilldown tools it hands off
-to, the identity it keys on, the auto-approval config, and the RLS-scoped-Postgres-role alternative —
-is in <../state_index/README.md> § Read scoping. Record the decision in R5.3a once made, and in
-<../docs/security.md> if the answer turns out to be "any conversation".
+1. **A tier on `claude_chat_sessions`**, beside the `surface`/`room_id` that landed in `0030` —
+   from the room's fixed tier for a Matrix session, from the agent kind otherwise, with the room's
+   authoritative where both exist.
+2. **Unlabelled reads as highest**, so every session predating the column is unreadable by a lower
+   tier rather than treated as unclassified-therefore-fine.
+3. **The decision function at the one call site** R5.3a identified, in the shape the approval
+   policy already has — never scoping smeared through the transport.
+
+This is also what unblocks exposing the `chat` corpus (<../state_index/README.md>) to agents:
+ranked retrieval surfaces another conversation by accident where a drilldown makes it deliberate,
+and settling the policy was the stated prerequisite. Denormalizing the tier onto the index rows
+beats joining on every query, and is worth deciding before the index is large. The full inventory
+of what a scope touches — the search query, the drilldown tools, the identity it keys on, the
+auto-approval config, and the RLS-scoped-Postgres-role alternative — stays in
+<../state_index/README.md> § Read scoping. Design: <../plans/information_trust_tiers.md>.

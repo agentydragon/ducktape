@@ -342,6 +342,19 @@ input to a running turn**. Interrupt exists; steer does not.
   has one; a room for a _different_ operator or a _different_ agent would simply be its own
   binding. What that needs first is more than one of either, which is also what makes it
   premature to design now.
+
+  **Wanted now** (operator, 2026-08-15): more than one session at a time, and two rooms on the
+  one bot account would already be an improvement. The generalization above is still the target;
+  what makes the first step cheap is that **the session machinery already runs concurrent
+  sessions** — the SPA and Matrix surfaces are separate rows and separate sandboxes today — and
+  that `/sync` on one account already returns events for every joined room, so the sync loop and
+  its `MXSY` lock are unchanged for N rooms. Exactly three things enforce the singleton: this
+  binding's primary key, the supervisor and ingress loading that one row by configured bot user,
+  and the two advisory locks being global constants. Only the first is a migration. Budget the
+  sandboxes first — sessions are always-up, so N rooms hold N of them continuously, which is the
+  argument for landing <chat_runtime_cleanup.md> § stage 6 alongside rather than after. Fuller
+  note: <information_trust_tiers.md> § Running more than one agent at once.
+
   This is harness behaviour, not an agent capability, so R5.4's exclusion of a join tool
   stands — the agent still cannot reach a room the operator did not put it in.
 
@@ -413,6 +426,16 @@ input to a running turn**. Interrupt exists; steer does not.
   leave reading open across rooms and across past conversations, Matrix and SPA alike, rather
   than fencing each session to its own. There is one operator, one Haku and one room, so the
   fence would separate Haku from its own history and nothing else.
+
+  **Superseded 2026-08-15, on exactly the condition this recorded.** With several agents at
+  several information trust levels, the premise ("one operator, one Haku and one room") no longer
+  holds, and reads become **tier-scoped**: an agent reads the transcripts and conversations its
+  tier gives it. The fence is the tier and not the room, so cross-room and cross-session reads
+  stay open within a tier — an agent keeps its own history and only edges crossing a boundary are
+  cut. What this paragraph got right is where it lands: a decision function at one console call
+  site, not scoping smeared through the transport. Design, and the three things it needs
+  (a tier column on `claude_chat_sessions`, unlabelled-reads-as-highest, and the index filter):
+  <information_trust_tiers.md>.
 
   It is a **policy** deferral, not an architectural one, and the distinction is what keeps it
   cheap to revisit. Every read goes through the console, which knows the calling Agent, the

@@ -91,6 +91,68 @@ better, which is make compliance easy. "State goal, inputs and acceptance criter
 a far more followable rule than "be careful what you mention", and it keeps free narrative — where
 inadvertent detail actually lives — out of mixed rooms by construction.
 
+## Corpus separation covers past conversations, not just repos
+
+Operator, 2026-08-15: an agent reads only the transcripts and conversations its tier gives it
+access to. That **settles a deferral that has been open on purpose** — R5.3a of
+<matrix_chat_runtime.md> left reads unscoped, and said so explicitly, on the grounds that with one
+operator, one Haku and one room a fence "would separate Haku from its own history and nothing
+else". Several agents at several tiers is exactly the condition that premise was waiting on.
+
+Note what the fence is and is not: **the tier, not the room.** Cross-room and cross-session reads
+stay open _within_ a tier, which keeps an agent's own history reachable and only cuts the edges
+that cross a boundary.
+
+R5.3a also predicted where this lands, and that prediction holds: every read goes through the
+console, which knows the calling Agent and each conversation's owner, so this is a decision
+function at one call site in the shape the approval policy already has — not scoping smeared
+through the transport. Three things it needs:
+
+- **A conversation needs a tier of its own.** `claude_chat_sessions` already carries `surface` and
+  `room_id` (migration `0030`); the tier goes beside them, derived from the room's fixed tier for a
+  Matrix session and from the agent kind otherwise. Those two must agree, and the room's is
+  authoritative where both exist.
+- **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
+  and must read as top-tier — unreadable by anything lower — rather than as "unclassified,
+  therefore fine".
+- **Semantic search is the case this actually unblocks.** `haku_index`'s `chat` corpus is
+  deliberately not exposed to any agent yet, and <../console/TODO.md> names settling this policy as
+  the prerequisite: a drilldown makes reading another conversation a deliberate act, where ranked
+  retrieval surfaces it by accident at the top of the results. The index stores session and room
+  ids, so the filter can join — but denormalizing the tier onto the index rows is cheaper than a
+  join on every query, and is the kind of thing to decide before the index is large.
+
+## Running more than one agent at once
+
+**The session machinery is already there.** Concurrent sessions work today: the SPA surface and the
+Matrix surface run as ordinary separate sessions, separate rows, separate sandboxes. Nothing about
+several agents needs the turn loop, the store or the bridge to change.
+
+What enforces "one Matrix session, one room" is three specific things, and only the first is a
+migration:
+
+1. **`matrix_conversation`'s primary key is the bot's MXID**, so a second room cannot be recorded
+   without displacing the first — deliberately, as the schema's own docstring says, to make R3.6a a
+   property of the schema rather than a rule code must remember. Widening the key to
+   `(user_id, room_id)` is the change R3.6a's [later] note already anticipates.
+2. **The supervisor and ingress load that single row** by configured bot user and assume one. They
+   become "iterate the bindings" and "resolve the binding from the inbound message's room".
+3. **Both advisory locks are single global constants.** One leader supervising every binding is
+   enough for two, and is far simpler than a lock per binding — take that only if a stalled
+   provision must not delay another room.
+
+**The cheap increment is two rooms on one bot account**, which is what the operator asked for. The
+sync loop needs no change at all: `/sync` on one account already returns events for every joined
+room, so one loop and one `MXSY` lock serve N rooms. `matrix_sync_state` is keyed by `user_id`
+already, so even the two-bot-accounts version — which distinct agent kinds eventually need, since
+the room-tier policy keys on membership and membership needs distinct MXIDs — costs a second
+credential and a per-account sync lock rather than a schema change.
+
+**Budget for the sandboxes before doing this.** Sessions are always-up, so N rooms hold N sandboxes
+continuously — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, two idle rooms is a quarter of it
+doing nothing. <chat_runtime_cleanup.md> § stage 6 (allocate because there is something to do) is
+what makes this scale, and it is worth landing with multi-session rather than after it.
+
 ## What this inherits from doctrine, including the uncomfortable parts
 
 <../docs/security.md> already states the test, and it applies here unchanged: **every new write
