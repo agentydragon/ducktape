@@ -1,0 +1,29 @@
+# Declares the `vector` extension in the console's database, ahead of the semantic index that
+# needs it (`haku/state_index`, PR #3956). Landing separately and first, because the index's
+# Alembic migration creates `vector` columns and fails the moment it runs without this — so
+# this wants to be reconciled and verified before that code deploys.
+#
+# **Adopts an existing database.** `approval_store` was created by the Cluster's
+# `bootstrap.initdb` and predates this CR, which reconciles it rather than creating it —
+# hence `databaseReclaimPolicy: retain`: with `delete`, removing this file would drop the
+# console's whole database, and nothing here is worth that risk.
+#
+# The extension has to be declared rather than created by the app: pgvector is not a trusted
+# extension, so `CREATE EXTENSION vector` needs superuser and the migration runs as
+# `approval_store`. CNPG's reconciler holds that superuser connection, which is the whole
+# reason this is a CR and not a line of Alembic. No image change was needed — pgvector 0.8.1
+# already ships in `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: haku-console-db-approval-store
+  namespace: haku-console
+spec:
+  cluster:
+    name: haku-console-db
+  name: approval_store
+  owner: approval_store
+  databaseReclaimPolicy: retain
+  extensions:
+    - name: vector
+      ensure: present
