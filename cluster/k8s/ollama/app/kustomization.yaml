@@ -7,7 +7,8 @@ resources:
   - service.yaml
   - httproute.yaml
   - clusterrole-ollama-consumer.yaml
-  - job-setup-gpt-oss-v2.yaml
+  # Versioned so a changed bootstrap model list creates a fresh Job.
+  - job-setup-gpt-oss-v3.yaml
   - role-ollama-reader.yaml
 
 configMapGenerator:

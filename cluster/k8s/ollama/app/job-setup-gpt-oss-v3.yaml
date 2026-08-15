@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: setup-gpt-oss-v2
+  name: setup-gpt-oss-v3
   namespace: ollama
 spec:
   ttlSecondsAfterFinished: 86400
