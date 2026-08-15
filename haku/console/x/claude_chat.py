@@ -816,6 +816,12 @@ class ClaudeChatStore:
             query = query.where(ClaudeChatFrame.frame_seq > after_seq)
         if kinds:
             query = query.where(ClaudeChatFrame.kind.in_(kinds))
+        else:
+            # **Deltas are in the log but not in the default view.** A turn streams them in the
+            # hundreds and each carries a few characters of an answer that arrives whole a moment
+            # later, so a reader asking for "everything" wants the frames, not the typing. Naming
+            # the kind is how a caller reading a truncated answer asks for them anyway.
+            query = query.where(ClaudeChatFrame.kind != DELTA_FRAME_KIND)
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(ClaudeChatFrame.frame_seq).limit(limit))).all()
         return [
@@ -835,6 +841,12 @@ class ClaudeChatStore:
 
         Takes its `frame_seq` when the stream opens, so it sits where it belongs in the log
         even though it is rewritten afterwards.
+
+        CLEANUP(added 2026-08-15): Superseded by the deltas themselves, which this row existed to
+        stand in for. Stop writing it — with `clear_partial_frame`, the `partial` column and its
+        two indexes — once every replica runs an image that records them, one roll after this
+        ships. Not in this release: an old replica writing a row a new one never clears would
+        leave a stray partial in the rollout for good.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -1069,11 +1081,10 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
-# The agent's protocol frames only, so a `SetupOutput` carrying bootstrap narration is not
-# mistaken for one. `stream_event` is the one exclusion: it is a partial of a frame that also
-# arrives complete, thousands of times a turn (R5.5b) — being streamed is not the reason, and
-# the completed `assistant` frame beside it is recorded like anything else.
-_PARTIAL_FRAME_KIND = "stream_event"
+# One token batch of an answer still being written. Hundreds per turn, and the completed
+# `assistant` frame repeats all of it — which is why `read_frames` leaves them out of the default
+# view, and why they were left out of the log entirely until the log had to be complete.
+DELTA_FRAME_KIND = "stream_event"
 
 # The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
 # sends `user` frames too, carrying tool results.
@@ -1118,12 +1129,17 @@ def _frame_kind(payload: dict[str, Any]) -> str:
 class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `claude_chat_frames`.
 
-    This is the whole of what the console asks of the record, and both decisions in it are the
-    console's rather than the protocol client's. **Deltas are skipped** because the store keeps a
-    single rewritten `partial` row for the answer in flight instead — thousands of
-    `content_block_delta` frames would bury the log for a reader and say nothing the completed
-    `assistant` frame does not. Everything else is kept verbatim, control frames included, since
-    an interrupt that did not take is only diagnosable from them.
+    **Everything, in both directions, with no exceptions left.** Control frames are kept because
+    an interrupt that did not take is only diagnosable from them, and stream deltas are now kept
+    because a log with a hole in it cannot be folded over — which is what a reader reconstructing
+    a session, and eventually the console itself, has to do
+    (<../../plans/chat_runtime_projection.md>). They were the one exclusion for as long as the
+    console's own answer to "how far did that answer get" was a local variable plus a single
+    rewritten `partial` row; both of those are what the log is replacing.
+
+    Deltas cost a row each rather than an argument about which of them matter. `read_frames`
+    leaves them out of its default view, which is where "would bury the log for a reader" is
+    actually answered.
     """
 
     def __init__(self, store: ClaudeChatStore, session_id: UUID):
@@ -1139,12 +1155,10 @@ class RolloutRecorder:
     async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> bool:
         """Record the frame, answering whether the caller should act on it.
 
-        A delta is skipped and reported as fresh: the store keeps one rewritten `partial` row for
-        the answer in flight instead, and the turn loop still has to append it. Only a frame the
-        log already holds under the same agent-assigned identity is a replay.
+        A delta has no agent-assigned identity, so it is always recorded and always fresh. That is
+        correct rather than lax: the runner never replays one (`runner.DELTA_TYPE`), because a
+        delta is the one frame class that cannot survive being sent twice.
         """
-        if _frame_kind(payload) == _PARTIAL_FRAME_KIND:
-            return True
         return await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
 
 

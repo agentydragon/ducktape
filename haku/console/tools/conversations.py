@@ -151,11 +151,13 @@ def build_mcp(reader: RolloutReader) -> FastMCP:
         ] = None,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         kinds: Annotated[
-            list[Literal["assistant", "user", "result", "system", "command_lifecycle"]] | None,
+            list[Literal["assistant", "user", "result", "system", "command_lifecycle", "stream_event"]] | None,
             Field(
                 default=None,
                 description="Only these frame types. `assistant` and `user` together are the conversation "
-                "with its tool calls and results; omit to read everything.",
+                "with its tool calls and results; omit for everything except `stream_event`, which is "
+                "one token batch of an answer that arrives whole a moment later and so has to be asked "
+                "for by name — worth doing only to see how far an answer got before it was cut off.",
             ),
         ] = None,
     ) -> RolloutPage:
