@@ -141,28 +141,26 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
-  - id: haku_conversation_reads
+  # Reading back what happened and what is written down: the rollout of a past session, and
+  # semantic search over the same sessions plus haku-state. One atom because they are one
+  # authority — every tool here reads a corpus Haku can already reach (it has a haku-state clone,
+  # and `read_rollout` already spans every session), so search adds discoverability rather than
+  # reachability. Worth knowing that both are unscoped across rooms and operators
+  # (haku/state_index/README.md § Read scoping).
+  - id: haku_recall_reads
     type: exact_tools
     tools:
       haku_conversations:
         - list_conversations
         - read_rollout
         - list_turns
-  # Both tools are reads over corpora Haku can already reach: haku-state it has a clone of, and
-  # past sessions it can already page through `haku_conversations` above. What search adds is
-  # discoverability, not reachability — which is also why it is worth knowing that both are
-  # unscoped across rooms and operators (haku/state_index/README.md § Read scoping).
-  - id: haku_index_reads
-    type: exact_tools
-    tools:
       haku_index:
         - search
         - index_status
   - id: haku_v1
     type: any_of
     policies:
-      - haku_conversation_reads
-      - haku_index_reads
+      - haku_recall_reads
       - gmail_reads
       - google_calendar_reads
       - grocy_reads

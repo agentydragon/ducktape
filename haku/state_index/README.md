@@ -190,7 +190,7 @@ Deliberately absent — it depends on the evaluation above:
 ### Read scoping — before the chat corpus is exposed to any agent
 
 **Decided 2026-08-15: Haku holds `search` and `index_status` unscoped**, auto-approved through
-`haku_index_reads` in `cluster/k8s/haku/console/config.yaml`. What made that an easy call is that
+`haku_recall_reads` in `cluster/k8s/haku/console/config.yaml`. What made that an easy call is that
 it grants no new reachability — Haku already reads any session through `haku_conversations` and
 has a haku-state clone — so search adds discoverability over data it can already reach. The
 inventory below stays because the reasoning does not: the moment a second operator or a room Haku

@@ -62,6 +62,16 @@ py_library(
 )
 
 py_library(
+    name = "openai_embedder",
+    srcs = ["openai_embedder.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":embedder",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
     name = "vector_type",
     srcs = ["vector_type.py"],
     visibility = ["//visibility:public"],
@@ -178,6 +188,7 @@ py_test(
         ":embedder",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

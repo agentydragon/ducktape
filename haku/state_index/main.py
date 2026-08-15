@@ -112,7 +112,7 @@ async def _query_git(database_url: str, query: str, limit: int, path_prefix: str
         async with async_sessionmaker(engine)() as session:
             hits = await search_git(
                 session,
-                embedder.embed_query(query),
+                await embedder.embed_query(query),
                 chunker_version=CHUNKER_VERSION,
                 model_key=embedder.model_key,
                 limit=limit,
@@ -140,7 +140,7 @@ async def _query_chat(database_url: str, query: str, limit: int, session_id: UUI
         async with async_sessionmaker(engine)() as session:
             hits = await search_chat(
                 session,
-                embedder.embed_query(query),
+                await embedder.embed_query(query),
                 chunker_version=CHAT_CHUNKER_VERSION,
                 model_key=embedder.model_key,
                 limit=limit,

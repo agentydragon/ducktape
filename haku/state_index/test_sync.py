@@ -52,7 +52,7 @@ def as_report(outcome: SyncOutcome) -> SyncReport:
 async def find(session: AsyncSession, embedder: FakeEmbedder, query: str, **kwargs):
     return await search_git(
         session,
-        embedder.embed_query(query),
+        await embedder.embed_query(query),
         chunker_version=CHUNKER_VERSION,
         model_key=embedder.model_key,
         limit=5,

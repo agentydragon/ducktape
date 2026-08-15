@@ -385,7 +385,7 @@ MCP servers from `@mcp.tool`-decorated functions:
   content**: a path, commit and blob sha to read from a haku-state clone, or a session, room and
   message ids to read through `haku_conversations`. `index_status` is the companion an empty
   result needs, since an index that has fallen behind is indistinguishable from a subject that
-  never came up. Both auto-approve for Haku (`haku_index_reads`); both are unscoped across rooms
+  never came up. Both auto-approve for Haku (`haku_recall_reads`, the same atom that grants the `haku_conversations` reads); both are unscoped across rooms
   and operators, which is a decision recorded in <../state_index/README.md> § Read scoping rather
   than an oversight. Listing the server in `config.yaml` is what builds it, and building it loads
   the embedding model into this process — search embeds its query, so the model is on the request

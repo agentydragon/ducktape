@@ -29,15 +29,15 @@ class FakeEmbedder:
         norm = math.sqrt(sum(count * count for count in counts))
         return [count / norm for count in counts]
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         return [self._vector(text) for text in texts]
 
-    def embed_query(self, text: str) -> list[float]:
+    async def embed_query(self, text: str) -> list[float]:
         return self._vector(text)
 
 
 class ExplodingEmbedder(FakeEmbedder):
     """Fails once it has embedded anything at all, to cut a sync off mid-flight."""
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         raise RuntimeError("embedder unavailable")

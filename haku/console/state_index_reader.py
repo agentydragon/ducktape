@@ -8,15 +8,13 @@ This is also where the tool surface's vocabulary meets the storage's: `haku_stat
 `conversations` are what a caller asks for, `git` and `chat` are how they are stored, and the
 mapping lives here and nowhere else.
 
-**Query embedding runs off the event loop.** It is CPU work in-process (onnxruntime, no network,
-because an embedder that is sometimes unreachable would take search down and not just indexing),
-and a few tens of milliseconds on the shared loop is the console's whole latency budget for an
-operator API call.
+**Embedding is a call to the embedding service**, not work in this process — which is also why a
+search fails loudly when that service is down rather than returning nothing: an empty result reads
+as "never discussed", and that is a different claim from "could not look".
 """
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 from uuid import UUID
 
@@ -59,7 +57,7 @@ class PostgresIndexSearcher:
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
     ) -> list[SearchHit]:
-        embedding = await asyncio.to_thread(self._embedder.embed_query, query)
+        embedding = await self._embedder.embed_query(query)
         hits: list[SearchHit] = []
         async with self._sessions() as session:
             if corpus in (SearchCorpus.HAKU_STATE, SearchCorpus.ALL):

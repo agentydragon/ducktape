@@ -1,0 +1,38 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//haku/state_index:embedder",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "main",
+    main_module = "haku.embedder_service.main",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+py_test(
+    name = "test_main",
+    size = "medium",
+    srcs = ["test_main.py"],
+    deps = [
+        ":main_lib",
+        "//:conftest",
+        "//haku/state_index:embedder",
+        "//haku/state_index:openai_embedder",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

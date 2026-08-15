@@ -109,7 +109,7 @@ async def find(
 ) -> list[ChatSearchHit]:
     return await search_chat(
         session,
-        embedder.embed_query(query),
+        await embedder.embed_query(query),
         chunker_version=CHAT_CHUNKER_VERSION,
         model_key=embedder.model_key,
         limit=5,

@@ -111,7 +111,7 @@ async def sync(
 
     rows: list[ChunkRow] = []
     for batch in batched(pending, _EMBED_BATCH):
-        vectors = embedder.embed_documents([chunk.text for _, chunk in batch])
+        vectors = await embedder.embed_documents([chunk.text for _, chunk in batch])
         rows.extend(
             ChunkRow(
                 corpus=Corpus.GIT,

@@ -62,6 +62,23 @@ def _postgres_connection_identity(raw_url: str) -> tuple[object, ...]:
     )
 
 
+class EmbedderConfig(BaseModel):
+    """Where the `haku_index` tools compute embeddings: any OpenAI-compatible `/v1/embeddings`.
+
+    Ours (`haku/embedder_service`) today, Ollama or LiteLLM later — that is the point of the
+    standard wire format, and why this is a URL and a model name rather than a backend choice.
+
+    `model` is also the index's `model_key`, so it names the model and not the deployment: point
+    it at a different server serving the same model and every cached vector is still valid; point
+    it at a different model and the cache misses by construction rather than by anyone noticing.
+    """
+
+    base_url: str = Field(description="Base URL including the API version, e.g. http://haku-embedder:8080/v1")
+    model: str
+    # The client library requires one; our own service ignores it, a hosted endpoint would not.
+    api_key: SecretStr = SecretStr("not-used")
+
+
 class LaunchRoutineConfig(BaseModel):
     """The `launch-routine` capability: the routine (trigger) id plus the bearer that
     authorizes firing it. Both come from the deployment env / `haku-routine-launch-token`
@@ -378,6 +395,10 @@ class Settings(BaseSettings):
     # budget, not a cache lifetime. 0 disables reuse across requests but still collapses concurrent
     # reflections of the same server.
     mcp_catalog_cache_ttl_seconds: float = Field(default=60.0, ge=0.0, le=900.0)
+
+    # Required when the config file lists the `haku_index` server, and unused otherwise: the
+    # console refuses to start with search configured and nowhere to embed a query.
+    embedder: EmbedderConfig | None = None
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via

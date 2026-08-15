@@ -85,7 +85,7 @@ async def sync_chat(session: AsyncSession, *, embedder: Embedder, now: datetime.
 
         rows: list[ChunkRow] = []
         for batch in batched(pending, _EMBED_BATCH):
-            vectors = embedder.embed_documents([chunk.text for chunk in batch])
+            vectors = await embedder.embed_documents([chunk.text for chunk in batch])
             rows.extend(
                 _chunk_row(chunk, vector, model_key=embedder.model_key)
                 for chunk, vector in zip(batch, vectors, strict=True)

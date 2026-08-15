@@ -23,6 +23,7 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
+from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
@@ -73,7 +74,7 @@ from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
 from haku.console.x.system_prompt import SystemPromptTemplate
-from haku.state_index.embedder import build_bge_small
+from haku.state_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -368,15 +369,23 @@ def create_app(
         # Configured rather than switched on separately: `config.yaml` is where the server is
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
-        # validation below. Not unconditional because building the searcher loads the embedding
-        # model: search embeds its query, so the model sits on the request path.
-        index_searcher = (
-            # One thread: the API container's CPU limit is 500m, and onnxruntime otherwise starts
-            # a thread per host core and thrashes against that quota (`embedder.OnnxEmbedder`).
-            PostgresIndexSearcher(db_sessions, build_bge_small(threads=1))
-            if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers)
-            else None
-        )
+        # validation below.
+        index_searcher = None
+        if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers):
+            if settings.embedder is None:
+                raise ValueError(
+                    f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
+                    "search embeds its query, so it cannot run without one"
+                )
+            index_searcher = PostgresIndexSearcher(
+                db_sessions,
+                OpenAIEmbedder(
+                    AsyncOpenAI(
+                        base_url=settings.embedder.base_url, api_key=settings.embedder.api_key.get_secret_value()
+                    ),
+                    model=settings.embedder.model,
+                ),
+            )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,

@@ -1,15 +1,20 @@
-"""Embedding backends for the haku-state index.
+"""Embedding backends for the haku index.
 
-Everything downstream depends only on the `Embedder` protocol, and `model_key` is part of
-the chunk cache key — so swapping the backend (CPU ONNX today, in-cluster Ollama later)
-invalidates cached vectors by construction rather than by anyone remembering to.
+Everything downstream depends only on the `Embedder` protocol, and `model_key` is part of the
+chunk cache key — so swapping the model invalidates cached vectors by construction rather than
+by anyone remembering to. The protocol is async because the deployed backend is a network call
+(`openai_embedder.OpenAIEmbedder`); this one is CPU work, and offloads to a thread so a caller's
+event loop is not blocked either way.
 
-The default backend runs on CPU with no network: search has to embed the *query*, so an
-embedder that is sometimes unreachable would take search down with it, not just indexing.
+This backend is what the local evaluation CLI and the embedding service itself run: weights from
+Bazel-pinned `http_file`s rather than a runtime download, because the service runs in-cluster
+behind an egress fence and a model that fetches itself on first use is a startup failure waiting
+for the day the fence tightens.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
@@ -26,8 +31,10 @@ _BGE_DIMS = 384
 _MAX_TOKENS = 512
 
 # bge is trained asymmetrically: queries get this instruction prefix, documents get none.
-# Embedding a query without it measurably degrades retrieval.
-_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+# Embedding a query without it measurably degrades retrieval. Public because a client talking to
+# a remote embedder has to apply it itself — the wire is model-generic, so the asymmetry is the
+# caller's knowledge, not the endpoint's.
+BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 
 
 class Embedder(Protocol):
@@ -35,12 +42,9 @@ class Embedder(Protocol):
     def model_key(self) -> str:
         """Stable identifier of the model + pooling, part of the chunk cache key."""
 
-    @property
-    def dims(self) -> int: ...
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-    def embed_query(self, text: str) -> list[float]: ...
+    async def embed_query(self, text: str) -> list[float]: ...
 
 
 class OnnxEmbedder:
@@ -84,11 +88,11 @@ class OnnxEmbedder:
         normalized = cls / np.linalg.norm(cls, axis=1, keepdims=True)
         return [[float(value) for value in row] for row in normalized]
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return self._encode(texts) if texts else []
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self._encode, list(texts)) if texts else []
 
-    def embed_query(self, text: str) -> list[float]:
-        (vector,) = self._encode([_QUERY_INSTRUCTION + text])
+    async def embed_query(self, text: str) -> list[float]:
+        (vector,) = await asyncio.to_thread(self._encode, [BGE_QUERY_INSTRUCTION + text])
         return vector
 
 
