@@ -115,7 +115,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     runner = await asyncio.create_subprocess_exec(
         str(get_required_path(RUNNER_BIN)),
         # The nested binary needs the test's RUNFILES_* to find its own runfiles, and the stub
-        # inherits this environment in turn (`runner.build_claude_environment`), which is how it
+        # inherits this environment in turn (`backend.child_environment`), which is how it
         # learns where to leave its handshake files. `HAKU_CLAUDE_SETUP` stays unset: there is no
         # sandbox bootstrap to run here.
         env=os.environ

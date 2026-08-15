@@ -144,9 +144,12 @@ async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr
     whole account of a rejected credential or a bad flag.
 
     Sent as `SetupOutput` because that frame is already "bytes the sandbox wrote" and adding a
-    kind of its own would be a `PROTOCOL_VERSION` bump — which, until the two ends negotiate,
-    breaks every session on release. The console narrates and records it like any other sandbox
-    output; telling the two apart is worth a frame kind once one is affordable.
+    kind of its own would be a `PROTOCOL_VERSION` bump. The two ends do negotiate now — the
+    runner's `Hello` carries its range and both take the `max` of the common one — but
+    `SUPPORTED_VERSIONS` is still a single element, so a bump refuses a peer on the old version
+    rather than degrading to it, and it would still break every session in flight on release.
+    The console narrates and records it like any other sandbox output; telling the two apart is
+    worth a frame kind once the supported range is wide enough to make one affordable.
     """
     async for chunk in stderr:
         sys.stdout.buffer.write(chunk)
