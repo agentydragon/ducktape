@@ -52,8 +52,8 @@ class InProcessServerDependencies:
     # structurally — set only when the Claude runtime is configured, since without it there are
     # no sessions to read.
     rollout: conversations_tools.RolloutReader | None = None
-    # The semantic index over haku-state's notes and past conversations — set only when
-    # `state_index_enabled`, since building one loads the embedding model.
+    # The semantic index over haku-state's files and past conversations — set only when
+    # `config.yaml` lists the server, since building one loads the embedding model.
     index: state_index_tools.IndexSearcher | None = None
 
 

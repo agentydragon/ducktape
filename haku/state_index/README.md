@@ -189,7 +189,15 @@ Deliberately absent — it depends on the evaluation above:
 
 ### Read scoping — before the chat corpus is exposed to any agent
 
-**The chat corpus is currently unscoped: every session, whichever room or operator it served.**
+**Decided 2026-08-15: Haku holds `search` and `index_status` unscoped**, auto-approved through
+`haku_index_reads` in `cluster/k8s/haku/console/config.yaml`. What made that an easy call is that
+it grants no new reachability — Haku already reads any session through `haku_conversations` and
+has a haku-state clone — so search adds discoverability over data it can already reach. The
+inventory below stays because the reasoning does not: the moment a second operator or a room Haku
+should not see exists, ranked retrieval is where that leaks first, and this is the list of what
+would have to change.
+
+**The chat corpus is unscoped: every session, whichever room or operator it served.**
 That inherits `haku/plans/matrix_chat_runtime.md` R5.3a, which left the policy deliberately open
 for `list_conversations`/`read_rollout` — "the eventual policy about which Haku may read which
 past conversation is not settled, and guessing at one here would be a scoping rule nobody

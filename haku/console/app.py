@@ -70,6 +70,7 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
+from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.state_index.embedder import build_bge_small
@@ -364,7 +365,18 @@ def create_app(
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
                 broker=node_daemon_service,
             )
-        index_searcher = PostgresIndexSearcher(db_sessions, build_bge_small()) if settings.state_index_enabled else None
+        # Configured rather than switched on separately: `config.yaml` is where the server is
+        # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
+        # could only ever disagree with it — a listed server with no builder fails the binding
+        # validation below. Not unconditional because building the searcher loads the embedding
+        # model: search embeds its query, so the model sits on the request path.
+        index_searcher = (
+            # One thread: the API container's CPU limit is 500m, and onnxruntime otherwise starts
+            # a thread per host core and thrashes against that quota (`embedder.OnnxEmbedder`).
+            PostgresIndexSearcher(db_sessions, build_bge_small(threads=1))
+            if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers)
+            else None
+        )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,

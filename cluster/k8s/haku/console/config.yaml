@@ -148,10 +148,21 @@ auto_approval_policies:
         - list_conversations
         - read_rollout
         - list_turns
+  # Both tools are reads over corpora Haku can already reach: haku-state it has a clone of, and
+  # past sessions it can already page through `haku_conversations` above. What search adds is
+  # discoverability, not reachability — which is also why it is worth knowing that both are
+  # unscoped across rooms and operators (haku/state_index/README.md § Read scoping).
+  - id: haku_index_reads
+    type: exact_tools
+    tools:
+      haku_index:
+        - search
+        - index_status
   - id: haku_v1
     type: any_of
     policies:
       - haku_conversation_reads
+      - haku_index_reads
       - gmail_reads
       - google_calendar_reads
       - grocy_reads
@@ -352,6 +363,15 @@ mcp:
     # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
     # credential, so it needs no operator-resolved backend auth.
     - id: haku_routine
+      backend:
+        kind: in_process
+        credential:
+          kind: none
+    # `haku_index` (haku/console/tools/state_index.py): semantic search over haku-state's files
+    # and Haku's own past conversations. Listing it here is what builds the searcher — and with
+    # it loads the embedding model into the console process, since search embeds its query.
+    # Read-only and credential-free: the corpus is the console's own database.
+    - id: haku_index
       backend:
         kind: in_process
         credential:

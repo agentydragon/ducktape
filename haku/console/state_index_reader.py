@@ -25,12 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import ClaudeChatSession
 from haku.console.tools.state_index import (
-    ConversationHit,
+    ConversationSource,
     ConversationsStatus,
-    HakuStateHit,
+    HakuStateSource,
     HakuStateStatus,
     IndexStatus,
     SearchCorpus,
+    SearchHit,
 )
 from haku.state_index.chat_corpus import CHAT_CHUNKER_VERSION
 from haku.state_index.chat_source import session_shapes
@@ -57,9 +58,9 @@ class PostgresIndexSearcher:
 
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
-    ) -> list[HakuStateHit | ConversationHit]:
+    ) -> list[SearchHit]:
         embedding = await asyncio.to_thread(self._embedder.embed_query, query)
-        hits: list[HakuStateHit | ConversationHit] = []
+        hits: list[SearchHit] = []
         async with self._sessions() as session:
             if corpus in (SearchCorpus.HAKU_STATE, SearchCorpus.ALL):
                 hits.extend(await self._haku_state(session, embedding, limit=limit, path_prefix=path_prefix))
@@ -73,7 +74,7 @@ class PostgresIndexSearcher:
 
     async def _haku_state(
         self, session: AsyncSession, embedding: list[float], *, limit: int, path_prefix: str | None
-    ) -> list[HakuStateHit]:
+    ) -> list[SearchHit]:
         state = await current_git_state(session)
         if state is None:
             return []
@@ -88,21 +89,23 @@ class PostgresIndexSearcher:
         # `commit_sha` on every hit rather than once alongside them: a hit is a pointer, and a
         # pointer that needs a second field from its envelope to be resolvable is half a pointer.
         return [
-            HakuStateHit(
-                path=hit.path,
-                commit_sha=state.commit_sha,
-                blob_sha=hit.blob_sha,
-                byte_start=hit.byte_start,
-                byte_end=hit.byte_end,
-                snippet=hit.text,
+            SearchHit(
                 score=hit.score,
+                snippet=hit.text,
+                source=HakuStateSource(
+                    path=hit.path,
+                    commit_sha=state.commit_sha,
+                    blob_sha=hit.blob_sha,
+                    byte_start=hit.byte_start,
+                    byte_end=hit.byte_end,
+                ),
             )
             for hit in found
         ]
 
     async def _conversations(
         self, session: AsyncSession, embedding: list[float], *, limit: int, session_id: UUID | None
-    ) -> list[ConversationHit]:
+    ) -> list[SearchHit]:
         found = await search_chat(
             session,
             embedding,
@@ -124,14 +127,16 @@ class PostgresIndexSearcher:
             ).all()
         }
         return [
-            ConversationHit(
-                session_id=str(hit.session_id),
-                room_id=rooms.get(hit.session_id),
-                message_ids=[str(message_id) for message_id in hit.message_ids],
-                first_message_at=hit.first_message_at,
-                last_message_at=hit.last_message_at,
-                snippet=hit.text,
+            SearchHit(
                 score=hit.score,
+                snippet=hit.text,
+                source=ConversationSource(
+                    session_id=hit.session_id,
+                    room_id=rooms.get(hit.session_id),
+                    message_ids=hit.message_ids,
+                    first_message_at=hit.first_message_at,
+                    last_message_at=hit.last_message_at,
+                ),
             )
             for hit in found
         ]

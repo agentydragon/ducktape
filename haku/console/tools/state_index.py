@@ -52,8 +52,8 @@ class SearchCorpus(StrEnum):
     ALL = "all"
 
 
-class HakuStateHit(BaseModel):
-    """A span of a file in the haku-state repository, at the commit the index holds."""
+class HakuStateSource(BaseModel):
+    """Where a hit sits in the haku-state repository, at the commit the index holds."""
 
     kind: Literal["haku_state"] = "haku_state"
     path: str = Field(description="Path at `commit_sha`.")
@@ -64,21 +64,32 @@ class HakuStateHit(BaseModel):
     )
     byte_start: int = Field(description="Start of the matching span, in bytes into the blob.")
     byte_end: int
-    snippet: str = Field(description="The text that was matched against — an excerpt, not the file.")
-    score: float
 
 
-class ConversationHit(BaseModel):
-    """A window of messages from a past Claude chat session."""
+class ConversationSource(BaseModel):
+    """Where a hit sits in a past Claude chat session."""
 
     kind: Literal["conversation"] = "conversation"
-    session_id: str = Field(description="Pass to `haku_conversations` to read the session around this.")
+    session_id: UUID = Field(description="Pass to `haku_conversations` to read the session around this.")
     room_id: str | None = Field(description="The Matrix room this session served, if it served one.")
-    message_ids: list[str] = Field(description="The messages this window holds, in order.")
+    message_ids: list[UUID] = Field(description="The messages this window holds, in order.")
     first_message_at: datetime.datetime
     last_message_at: datetime.datetime
-    snippet: str = Field(description="The text that was matched against.")
+
+
+class SearchHit(BaseModel):
+    """One match: how well it matched, what matched, and where to go read it.
+
+    The corpora differ only in the last of those, so only that is a union — a hit's score and
+    snippet mean the same thing whichever body of text produced it, and duplicating them per
+    corpus would invite them to drift apart.
+    """
+
     score: float
+    snippet: str = Field(description="The text that was matched against — an excerpt, not the source.")
+    source: HakuStateSource | ConversationSource = Field(
+        discriminator="kind", description="Where this came from, and what it takes to read it there."
+    )
 
 
 class HakuStateStatus(BaseModel):
@@ -132,7 +143,7 @@ class IndexSearcher(Protocol):
 
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
-    ) -> list[HakuStateHit | ConversationHit]: ...
+    ) -> list[SearchHit]: ...
 
     async def status(self) -> IndexStatus: ...
 
@@ -158,9 +169,9 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
             str | None, Field(default=None, description="haku-state only: restrict to paths under this prefix.")
         ] = None,
         session_id: Annotated[
-            str | None, Field(default=None, description="Conversations only: restrict to one session.")
+            UUID | None, Field(default=None, description="Conversations only: restrict to one session.")
         ] = None,
-    ) -> list[HakuStateHit | ConversationHit]:
+    ) -> list[SearchHit]:
         """Search haku-state's files and what was said in past sessions.
 
         Use this before answering from memory about prior work, decisions, or things the operator
@@ -171,13 +182,7 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
         at the `commit_sha`/`blob_sha` it names, and a conversation through `haku_conversations`.
         Only completed messages are indexed, so the exchange in flight right now is not searchable.
         """
-        return await searcher.search(
-            query,
-            corpus=corpus,
-            limit=limit,
-            path_prefix=path_prefix,
-            session_id=UUID(session_id) if session_id else None,
-        )
+        return await searcher.search(query, corpus=corpus, limit=limit, path_prefix=path_prefix, session_id=session_id)
 
     @mcp.tool
     async def index_status() -> IndexStatus:
