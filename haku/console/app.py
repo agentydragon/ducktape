@@ -73,7 +73,7 @@ from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync
+from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync, sandbox_claims
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.state_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
@@ -309,7 +309,7 @@ def create_app(
         claude_chat_service = claude_chat.ClaudeChatService(
             claude_runtime,
             claude_chat_store,
-            claude_chat.KubernetesSandboxClaims(claude_runtime),
+            sandbox_claims.KubernetesSandboxClaims(claude_runtime),
             claude_chat_notifications,
             mcp_token=mcp_agent.token,
             room_surface=matrix_surface,

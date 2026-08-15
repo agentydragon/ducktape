@@ -21,13 +21,22 @@ decisions that later ones supersede. Current position:
   sibling mesh, no Valkey.
 - **Secrets may transit the cache** — accepted; the cache is trusted for that
   role. Storage of authenticated responses is still denied.
+- **The console gate does not cache in Squid** (`ttl=0 negative_ttl=0`). The
+  console is the only decision cache. See "Decided: do not cache the helper's
+  response".
+- **The image has ICAP now** (Debian `squid-openssl`, #4025). Substitution can
+  therefore be a service call rather than generated config, which reopens the
+  shared-Squid option — see "ICAP: substitution can be a service call". Compiled
+  in, not yet exercised.
 - **Superseded**: the two-layer "iron in front of a central shared cache" target
   architecture, and the earlier "Decision: option B". Both are kept below for
   their reasoning and are labelled.
 
-Still open before building: re-run the spike on Squid 6.x/7.x (it ran on
-3.5.27), several credentials per fence, and the base64 `Basic` form for
-git-over-HTTPS.
+The questions this note opened with are answered. The spike ran in-cluster on
+Squid 7.6 (2026-08-10) and settled the 6.x/7.x port, several credentials per
+fence, the base64 `Basic` form for git-over-HTTPS, destination scoping in both
+directions, and `cache deny has_auth`. What remains is building the console
+gate, not deciding whether the mechanism exists.
 
 ## Finding: nothing on the market does 1 + 2 together
 
@@ -213,8 +222,9 @@ mechanism surveyed that can both hold a request for a human and remember the
 answer:
 
 - the helper answers `OK` / `ERR` / `BH` and may take as long as it needs;
-- Squid caches the verdict via `ttl=` (default 3600s) and `negative_ttl=`, so an
-  operator is asked once per domain, not once per request;
+- an operator is asked once per domain rather than once per request — though
+  **not** via Squid's `ttl=`, which is disabled: see "Decided: do not cache the
+  helper's response". The console's own policy table is what remembers;
 - `concurrency=n` keeps one helper serving interleaved queries.
 
 Had credentialed traffic bypassed the cache, this hook would have been blind to
@@ -244,7 +254,7 @@ The approval prompt needs to say _who_ is asking. "Something wants
 Identity does not survive the first hop. iron knows the caller — its audit
 records `remote_addr` as the client pod, confirmed in the in-cluster test — but
 it then opens its **own** upstream connection, so the cache sees only the iron
-pod's address. What reaches an `external_acl_type` helper via `%SRC` is
+pod's address. What reaches an `external_acl_type` helper via `%>a` is
 therefore _which fence_, not which workload:
 
 | Fence                                        | Distinguishable at the cache?                                         |
@@ -296,7 +306,7 @@ Four ways to get identity to the gate:
    upstream ask (a generic webhook transform), which would then make the
    cache-side hook unnecessary.
 3. **One iron per agent**, as a sidecar rather than a shared fence proxy. Pod IP
-   becomes the identity, `%SRC` is sufficient, and each iron holds only that
+   becomes the identity, `%>a` is sufficient, and each iron holds only that
    agent's credentials — better scoping than the fence model. Costs a proxy per
    agent pod, per-agent config, and CA plumbing. This is a documented pattern in
    the 2026 agent-egress literature, not an invention.
@@ -740,12 +750,14 @@ This is the strongest reason to run Squid somewhere, and it is worth separating
 from the caching question.
 
 **Squid `external_acl_type` is a direct fit.** A helper process receives
-formatted request fields and answers `OK` / `ERR` / `BH`. Decisions are cached
-by Squid itself — `ttl=n` (default 3600s) and a separate `negative_ttl` — and
-`concurrency=n` lets one helper handle interleaved queries with channel IDs. So
-a Python helper can call haku-console on an undecided domain, wait for the
-operator, answer, and Squid remembers the verdict for the whole TTL rather than
-re-asking per request. That is exactly the requested behaviour.
+formatted request fields and answers `OK` / `ERR` / `BH`, and `concurrency=n`
+lets one helper handle interleaved queries with channel IDs. So a Python helper
+can call haku-console on an undecided domain, get an answer, and enforce it.
+
+Squid _can_ also cache the verdict itself (`ttl=n`, default 3600s, plus a
+separate `negative_ttl`). **That is deliberately turned off** — see "Decided: do
+not cache the helper's response". Remembering is the console's job, so that
+revocation and approval both take effect on the next request.
 
 **iron's `judge` transform is not a fit, despite appearances.** It is hardcoded
 to Anthropic/OpenAI providers, with `timeout` defaulting to `8s`, a circuit
@@ -781,9 +793,12 @@ request from that fence's agents.
 acl known dstdomain "/etc/squid/allowed-domains.txt"
 http_access allow known
 
-# 2. Everything else asks haku-console, once per (client, host) per TTL.
-external_acl_type haku_gate ttl=86400 negative_ttl=30 concurrency=16 \
-  %SRC %DST /usr/local/bin/haku_gate.py
+# 2. Everything else asks haku-console, every time. No Squid-side cache.
+#    ttl=0/negative_ttl=0 is the intent, not a verified spelling -- see the
+#    UNVERIFIED note under "Decided: do not cache the helper's response".
+#    %>a %>rd are logformat codes; the legacy %SRC/%DST spellings are deprecated.
+external_acl_type haku_gate ttl=0 negative_ttl=0 concurrency=64 \
+  %>a %>rd /usr/local/bin/haku_gate.py
 acl gated external haku_gate
 http_access allow gated
 
@@ -791,8 +806,46 @@ http_access deny all
 ```
 
 The helper answers `OK` (match → allowed), `ERR` (no match → falls through to
-`deny all`), or `BH` (helper broken). Squid caches the verdict itself, so an
-operator is asked once per key rather than once per request.
+`deny all`), or `BH` (helper broken). Every gated request consults the console;
+the console answers already-decided pairs from its own table, so this is an RPC
+per request, not a prompt per request.
+
+#### What the helper actually receives
+
+One line per query on stdin: the `FORMAT` codes from the `external_acl_type`
+line, expanded, space-separated. Three properties to write the parser against:
+
+- **Every value is URL-escaped** — "Request values sent to the helper are URL
+  escaped to protect each value in requests against whitespaces" — so unescape
+  each field. (Not true under `protocol=2.5`, the Squid-2.5 compatibility mode.)
+- **Missing data arrives as `-`**, not as an empty field, so the field count is
+  stable.
+- **`concurrency=n` prefixes a channel tag**, "a number between 0 and
+  concurrency-1", which the response must echo:
+  `[channel-ID] result keyword=value ...`.
+
+Useful codes, all standard `logformat` ones — `>` means client-side, `<`
+server-side:
+
+| Code          | Meaning                              |
+| ------------- | ------------------------------------ |
+| `%>a` / `%>p` | Client source IP / port              |
+| `%>A`         | Client FQDN                          |
+| `%rm`         | Request method                       |
+| `%ru`         | Full request URL, sanitized          |
+| `%>rd`        | Request URL domain from client       |
+| `%>rp`        | Request URL path, excluding hostname |
+| `%>rs`/`%>rP` | Request URL scheme / port            |
+| `%{Header}>h` | Any received request header          |
+
+Plus two specific to this directive: `%ACL` (the ACL name under test) and
+`%DATA` (the arguments from the `acl … external` line; `%#DATA` passes the whole
+string as one token).
+
+Response keywords are `user=`, `password=`, `message=` (surfaced as `%o` on the
+error page), `tag=`, `log=` (reaches access.log as `%ea`), and `clt_conn_tag=`.
+**`ttl=` is not among them** — which is the documentary basis for the claim above
+that a decision's expiry cannot be expressed to Squid.
 
 **The static allowlist short-circuiting first is the load-bearing part.** It
 keeps haku-console out of the path for all normal traffic, so console downtime
@@ -812,11 +865,11 @@ The workable pattern is therefore **deny-now, ask-async, allow-on-retry**:
 1. Undecided domain → helper files an approval with haku-console and returns
    `ERR` immediately (optionally after a short grace, ~5–10s, to catch an
    operator who is already looking).
-2. `negative_ttl=30` makes that denial expire quickly.
+2. Nothing to expire: with `negative_ttl=0` the denial is not cached at all.
 3. The operator approves in the console; haku-console records it in its policy
    table.
-4. The agent's retry — or its next run — hits the helper again, which now gets
-   an immediate allow, and Squid caches it for `ttl`.
+4. The agent's retry — or its next run — hits the helper again and gets an
+   immediate allow. Approval takes effect on the very next request.
 
 That is Claude Code's sandbox UX adapted to a client that cannot be prompted:
 the first attempt fails, approval happens out of band, the retry succeeds.
@@ -836,12 +889,10 @@ troubling the operator.
 
 ### Two design decisions to make before building
 
-**What goes in the cache key.** Squid keys the ACL cache on the concatenated
-format values, so `%SRC %DST` means one prompt _per client per host_. In a fence
-with many sandbox pods that re-prompts for every new pod. Keying on `%DST` alone
-gives one prompt per host per fence, but then the client identity is available
-only for the audit record, not for the decision. Per-agent policy and low prompt
-volume are in tension here; pick deliberately.
+**~~What goes in the cache key.~~** Settled by the no-cache decision above: there
+is no Squid-side cache to key. `%>a %>rd` are simply what the helper is told
+about each request, and scoping — per agent, per host, per time box — is entirely
+the console's to define in its own policy table.
 
 **Fail-closed versus fail-open.** `ERR` on console failure fails closed, which is
 right for a security control — and is survivable precisely because the static
@@ -861,29 +912,69 @@ This supersedes the "static allowlist short-circuits so the console is never a
 hard dependency" suggestion above. It is a coherent fail-closed posture; the
 consequences below are what it costs.
 
-#### Squid's TTL becomes the polling interval, not the time box
+#### Decided: do not cache the helper's response (operator, 2026-08-10)
 
-The helper **cannot** return a per-response `ttl=`. The response keywords are
-`user=`, `password=`, `message=`, `tag=`, `log=` and `clt_conn_tag=`; TTL is
-configured statically on the `external_acl_type` line. So a console decision
-that expires at some specific time cannot be expressed to Squid directly.
+`ttl=0 negative_ttl=0`. Squid holds no verdicts; **haku-console is the only
+decision cache**, and it is authoritative.
 
-The mapping that does work: **Squid's `ttl=` is how often it re-asks; the console
-owns the real expiry.** With `ttl=300`, Squid re-consults at most every five
-minutes and the console applies its own time-boxing on each query, so effective
-revocation latency is one Squid TTL. Shorter TTL = finer time-boxing and more
-console load; longer = coarser and more outage tolerance.
+> **UNVERIFIED — the exact directive that disables the cache.** The intent above
+> is settled; the spelling is not. Squid documents `ttl=n` as "TTL in seconds for
+> cached results (defaults to 3600)", `negative_ttl` as defaulting to the same,
+> and a _separate_ `cache=n` as "the maximum number of entries in the result
+> cache". **Nothing in the documentation says `0` disables caching** for either
+> knob, and `cache=0` may equally mean "unlimited". Confirm by observation before
+> relying on it — issue the same gated request twice and check the helper is
+> called twice. This is the `DONT_VERIFY_PEER` shape: a value that parses without
+> complaint and may not mean what the config assumes.
 
-`grace=` helps here — "percentage remaining of TTL where a refresh of a cached
-entry should be initiated" — so entries refresh in the background before they
-expire and requests do not block on revalidation.
+This removes a constraint rather than adding cost. The helper **cannot** return a
+per-response `ttl=` — the response keywords are `user=`, `password=`, `message=`,
+`tag=`, `log=` and `clt_conn_tag=`, and TTL is static on the
+`external_acl_type` line — so under any caching scheme a console decision with a
+specific expiry could not be expressed to Squid, and Squid's `ttl=` would only
+ever approximate it as a polling interval. With no cache the question is moot:
+the console applies its own time-boxing on every query, and revocation takes
+effect on the next request rather than one TTL later.
 
-#### Console downtime is bounded by that same TTL
+**`negative_ttl=0` is the half that matters most.** A stale allow is the obvious
+hazard, but a stale _deny_ is the one that gets felt: operator approves, agent
+retries, and a cached `ERR` refuses it for another 30 seconds — which reads as a
+broken approval flow at precisely the moment someone is watching it.
 
-Fail-closed does not mean instant outage: cached allows keep working until they
-expire. With `ttl=300`, a console outage degrades over ~5 minutes rather than
-immediately. That is the knob that trades revocation latency against outage
-tolerance, and it should be chosen deliberately rather than defaulted.
+The cost is one in-cluster RPC per gated request. That is affordable **only
+because the static allowlist short-circuits first**: the hot path — LLM API,
+Forgejo, GitHub — never reaches the helper, so the RPC is paid on exactly the
+rare, interesting traffic the console wanted to see anyway. Without that
+ordering, `ttl=0` would put a console round-trip in front of every request the
+fence handles.
+
+Consequences to build for:
+
+- **The helper must be genuinely concurrent.** Request rate now equals helper
+  call rate for undecided domains. An asyncio helper with `concurrency=64` is
+  fine; fork-per-request would serialise the fence.
+- **Queue overflow stops being theoretical.** `queue-size` defaults to
+  `2*children-max`, and with nothing cached every gated request is a live helper
+  call. Whatever Squid does when that queue fills has to land on the deny side,
+  so it needs establishing rather than assuming — same spike, same run.
+- **The helper must call the console's in-cluster Service, not
+  `haku.allegedly.works`.** Every gated request pays this hop, so it should not
+  traverse ingress, public DNS or the internet, and a fail-closed gate should not
+  depend on public routing being healthy. The static allow of
+  `haku.allegedly.works` is a different path — that one is for the _agent's_ own
+  console traffic.
+
+#### Console downtime degrades reach, not operation
+
+There is no cache to soften an outage, so fail-closed is now absolute for gated
+hosts: console down means every _undecided_ domain is denied, immediately.
+
+What keeps that from being a fence-wide outage is the static allowlist. With the
+console down, an agent keeps talking to everything already sanctioned in git and
+loses only the ability to reach somewhere **new**. That is a good failure
+profile, and it has a maintenance implication: **it holds only while the static
+list is genuinely comprehensive.** A thin static list silently converts a console
+outage into an agent outage.
 
 #### The circular dependency to avoid
 
@@ -922,15 +1013,403 @@ retry later versus give up — instead of guessing.
 
 #### Agent-scoped decisions make the cache-key question go away
 
-An earlier subsection frames `%SRC %DST` keying as a problem because a new
+An earlier subsection frames `%>a %>rd` keying as a problem because a new
 sandbox pod re-prompts. With the console as a durable policy store that is no
 longer true: a cache miss costs an **RPC, not a human interaction**. The console
 answers a known (agent, host) pair instantly from its table.
 
-What does need solving is that `%SRC` is a pod IP, which is ephemeral, while
+What does need solving is that `%>a` is a pod IP, which is ephemeral, while
 "agent-scoped" implies a stable identity. The helper should map IP → pod → a
 stable owner label via the Kubernetes API and send _that_ to the console, so
 decisions survive pod churn.
+
+### ICAP: substitution can be a service call, not generated config
+
+**`external_acl_type` cannot rewrite headers.** Its response keywords are a
+closed set — `user=`, `password=`, `message=`, `tag=`, `log=`, `clt_conn_tag=` —
+and `user=`/`password=` feed `cache_peer login=`, i.e. upstream _proxy_ auth, not
+origin credentials. `url_rewrite_program` only touches URLs. So the gate helper
+cannot also do substitution.
+
+**ICAP REQMOD can** (RFC 3507), as can eCAP. A REQMOD service receives the
+request after `ssl_bump` decrypts it and returns a _modified_ request: arbitrary
+header rewriting, in any language. It can also block, which means **one ICAP
+service could do policy and substitution in a single hop** against haku-console,
+with `icap_service … bypass=0` making adaptation failures fatal — the fail-closed
+posture this note already requires. That is a far more direct expression of "the
+console governs policy" than generating Squid config.
+
+**Alpine's squid has neither.** Confirmed from the image's own configure line:
+`--enable-openssl --enable-ssl-crtd …` and no adaptation flags. Debian enables
+`--enable-icap-client` and `--enable-ecap` in its shared build flags and ships a
+`squid-openssl` flavour adding `--with-openssl --enable-ssl-crtd`, so the spike
+image moved to `debian:testing` (#4025). 7.6 exists only in forky/sid; trixie is
+on 6.13.
+
+**What it changes for the topology question.** Without ICAP, per-client
+substitution in a _shared_ Squid could only be static ACLs keyed on client —
+agents × credentials, regenerated on every agent churn. That was the strongest
+argument for keeping credentials out of a shared instance. ICAP removes it, so
+"credentials stay in iron" becomes a choice rather than a constraint, and the
+shared-Squid option is live on much better terms.
+
+**Run 3, 2026-08-15 — the base swap cost nothing.** Debian `squid-openssl` 7.6,
+uid 13 (`--with-default-user=proxy`, where Alpine's was 31 — the Deployment had
+to follow, #4027). Clean start, zero restarts, and all four substitution cases
+behave exactly as on Alpine: placeholder → real credential, the
+other-destination placeholder passed through **unmodified**, an unrelated bearer
+untouched, and base64 `Basic` rewritten. So `ssl_bump`, certgen and the
+destination-scoped rules are unaffected by musl → glibc.
+
+ICAP itself is compiled in but **not yet exercised** — no `icap_service` is
+configured, and nothing has been adapted. That is the next thing to try, not a
+thing that works.
+
+### Direction: ICAP only, with haku-console as the ICAP endpoint
+
+Operator, 2026-08-15: probably **just ICAP**, if it works — and rather than a
+helper process in the Squid pod, **haku-console exposes the ICAP endpoints
+itself**. No `external_acl_type` gate, no separate substitution service. Squid
+points `icap_service` at the console; one REQMOD call decides policy and rewrites
+the credential.
+
+**The win is that no credential lives in the proxy at all.** No `envsubst`, no
+tmpfs render, no per-proxy SOPS secrets, no generated per-agent credential
+config. The secret exists in console, transits Squid per request, and is never at
+rest there. That does not answer "which fence holds which credential" — the
+question this note opens with — it deletes it. It also drains most of the heat
+from per-agent-vs-shared, since the thing being partitioned is no longer in the
+proxy.
+
+**The static allowlist survives without `external_acl`.** It is a plain
+`acl known dstdomain "/etc/squid/allowed-domains.txt"` — config, no helper, no
+round trip. Dropping the ACL helper costs nothing there, and `adaptation_access`
+can keep statically-allowed, uncredentialed traffic away from console entirely.
+
+#### The trade: console moves onto the critical path
+
+This inverts a property decided earlier and should be a decision, not a surprise.
+
+The gate design deliberately degraded gracefully: console down meant agents kept
+reaching everything already sanctioned in git and lost only _new_ domains.
+Downtime cost reach, not operation.
+
+If the credential comes from console, that reverses. The credentialed hosts **are
+the hot path** — LLM API, Forgejo, GitHub — so console down means no LLM access
+at all. `adaptation_access` cannot rescue it: it can skip ICAP for
+allowed-and-uncredentialed hosts, but the credentialed ones are exactly the ones
+that must go through.
+
+Defensible, since fail-closed already made console a hard dependency for
+undecided domains. But it is a strictly stronger coupling than what "console
+downtime degrades reach, not operation" described, and it argues for console HA in
+a way the gate-only design did not.
+
+#### Two practical unknowns
+
+- **REQMOD hands the service the whole request, body included.** For a POST to
+  the LLM API that means every prompt transiting console — volume and sensitivity
+  that may not be wanted. ICAP `Preview` plus `204 No Content` exists for this,
+  and header-only rewriting ought to answer off the preview, but how that
+  interacts with returning a _modified_ message needs verifying rather than
+  assuming. **Verified 2026-08-15: it does not help — Squid ignored the stub's
+  `Preview: 0` offer and encapsulated the full body. See step 1 results below.**
+- **Console needs a real ICAP server**, not a REST endpoint: encapsulated HTTP
+  messages, the `Encapsulated` header, `OPTIONS`, `204`, chunked bodies.
+  `pyicap` exists. Bounded work, but a niche protocol, and nothing in the
+  existing FastMCP surface helps.
+
+#### Test it in three steps, not one
+
+The tempting move is to wire the console endpoints and drive them with an
+experimental agent. That couples three unknowns at once — whether Squid's REQMOD
+does what we need, whether the console implementation is right, and whether the
+agent path works — so a failure anywhere reads as a failure everywhere.
+
+1. **Stub ICAP service in the spike namespace.** Not console: a small service
+   that logs what it receives and rewrites one header. It answers every
+   Squid-side question below at the cost of no console code, and the contract it
+   establishes transfers unchanged. If REQMOD cannot do what is needed, nothing
+   has been written twice.
+2. **Console's ICAP endpoints**, driven by the same spike Squid and the existing
+   `curl` harness. One new variable.
+3. **An experimental agent**, end to end. One more.
+
+What step 1 has to answer, alongside the fail-closed cases already listed:
+
+- Does REQMOD see the **bumped plaintext** request? Expected — adaptation runs
+  post-decryption — but unobserved.
+- Can it rewrite `Authorization`, and can it **block**?
+- Does `bypass=0` fail closed on service-down _and_ on timeout?
+- What arrives for a POST: full body, or preview?
+- Does `http_access` run before adaptation? Still worth knowing without
+  `external_acl`, because it decides whether the static allowlist can keep denied
+  traffic away from console.
+
+#### Step 1 results (measured 2026-08-15, Squid 7.6)
+
+Stub service in <../../k8s/x/squid-egress-spike/app/icap_stub.py>, driven by
+`curl` through the spike Squid against the header-echoing origin. Every row below
+was observed, not inferred. The stub reflects its own view back as `X-Icap-Saw-*`
+request headers, because the ICAP pod's log is unreadable from an agent sandbox —
+`pods/log` is refused in `squid-egress-spike` and the namespace is not in the
+`loki-read-proxy` allowlist.
+
+| question                                    | answer                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| REQMOD sees the bumped plaintext            | yes — rewrote `Authorization`, origin received the injected value                                            |
+| REQMOD can block                            | yes — encapsulated `403` reached the client with the service's own body                                      |
+| `204 No Content`                            | yes — request forwarded unmodified                                                                           |
+| POST body                                   | transits in full, intact, `Content-Length` preserved                                                         |
+| ICAP closes mid-transaction, `bypass=0`     | fail-closed: `500`, `X-Squid-Error: ERR_ICAP_FAILURE 0`, origin never contacted                              |
+| ICAP hangs, `bypass=0`, **default timeout** | **not** fail-closed — Squid waited 45s and applied the adaptation                                            |
+| ICAP hangs, `icap_io_timeout 5 seconds`     | fail-closed: same `ERR_ICAP_FAILURE`, at **10.2s** — Squid retries once, so deny latency is _2×_ the timeout |
+| recovery after a failure                    | immediate — the next request succeeded in every case                                                         |
+
+Three findings that change the design rather than confirm it:
+
+**REQMOD runs _before_ Squid's own header rewriting, so the ICAP service is not in
+the secret path.** The decisive observation: with the client sending
+`Bearer spike-bearer-placeholder`, the service saw a 31-character value (the
+placeholder) and never the 34-character substituted secret, and neither
+`X-Spike-Client` nor `Via` — both added by Squid — were present at adaptation
+time. Substitution still fires afterwards: the same placeholder sent in
+`passthrough` mode arrived at the origin as `Bearer fake-real-bearer-do-not-use`.
+
+This is the answer that opens the shape of step 2. **haku-console _can_ be handed
+ICAP endpoints without being handed the credentials** — it would see and rule on
+the agent's placeholder, and `credentials.conf` would redeem it downstream, out of
+console's sight. The `option A` objection at the top of this document ("an ICAP
+service that now holds the credentials") is not forced by REQMOD-for-policy; it
+binds only if substitution itself moves into the service. That makes it a choice
+rather than a consequence — see the decision below.
+
+**Squid ignored a `Preview: 0` offer and sent the whole body anyway.** The stub
+advertises `Preview: 0` in its `OPTIONS`; Squid encapsulated `req-body` and
+delivered all 26 bytes with no preview and no `100 Continue` round trip. So the
+first practical unknown above resolves the pessimistic way, and for a blunter
+reason than expected: not "preview can't coexist with a modified response" but
+"Squid did not use preview at all". Every LLM prompt would transit console. If
+that volume is unwanted, the lever is `adaptation_access` — scope REQMOD to the
+requests whose policy actually needs deciding — not `Preview`.
+
+**Caller identity arrives out-of-band and trustworthy.** `icap_send_client_ip on`
+puts the real client address in the ICAP `X-Client-IP` header (`10.244.8.246`,
+the probe pod), and it arrives _before_ the `request_header_add "%>a"` trick this
+document proposed for the `external_acl` design. Console reads `X-Client-IP` and
+needs nothing stamped into the HTTP request at all.
+`icap_send_client_username` sends nothing absent proxy auth, as expected.
+
+Two consequences for config, both now in <../../k8s/x/squid-egress-spike/app/squid.conf>:
+
+- **`icap_io_timeout` must be set explicitly.** Its default is `read_timeout`,
+  15 minutes, so an unresponsive console hangs the agent instead of denying it —
+  the opposite of the stated requirement that expiry _is_ a denial. Size it at
+  half the budget, since the observed deny takes two timeout periods.
+- **`icap_service_failure_limit`** (default 10) marks the service down after that
+  many failures and, with `bypass=0`, fails everything until Squid retries. Right
+  direction for a fence; it does mean a flapping console takes egress hard-down
+  rather than degrading, which argues for console HA in the same direction the
+  critical-path section above does.
+
+Still unanswered from the step-1 list: whether `http_access` runs before
+adaptation. The spike is `http_access allow all`, so denied traffic never existed
+to observe; answering it needs a deny rule, and it only matters as an optimisation
+(keeping already-denied traffic away from console), not for correctness.
+
+#### Decided: console holds the substituted credentials (operator, 2026-08-15)
+
+Step 1 turned "console is in the secret path" from a consequence into a choice.
+Taking it deliberately: **console does policy _and_ substitution.** The
+placeholder-only variant — console rules, `credentials.conf` redeems — is not
+what we are building.
+
+This is the version this section originally described, and it keeps the win that
+motivated it: no credential lives in the proxy at all. No `envsubst`, no tmpfs
+render, no per-proxy SOPS secrets, no generated per-agent credential config. The
+secret exists in console, transits Squid per request, and is never at rest there.
+"Which fence holds which credential" is deleted rather than answered, and
+per-agent-vs-shared stops being a credential-partitioning question.
+
+What is accepted along with it, all of it measured rather than assumed:
+
+- **Console sees live credentials**, by design. It is the credential authority
+  now, not merely a policy oracle. The operator's earlier judgement that Squid
+  can be trusted on the secret path (2026-08-10) extends to console here.
+- **Every credentialed request body transits console.** Squid ignored the
+  `Preview: 0` offer and encapsulated the full body, so for the LLM API that is
+  every prompt. `adaptation_access` scoping is the only lever, and it cannot be
+  applied to the credentialed hosts — they are exactly the ones that must go
+  through.
+- **Console down means no LLM access**, not merely no new domains. The
+  critical-path inversion above is now the operating reality rather than a trade
+  under consideration, and `icap_service_failure_limit` makes a _flapping_
+  console hard-down rather than degraded. Console HA is a prerequisite for this
+  design carrying production agent traffic, not a later refinement.
+
+`credentials.conf`, `envsubst`, and the fake-credential ConfigMap stay in the
+spike: they are what the placeholder-redemption half is measured against, and
+step 1 used them to prove the ordering. They do not survive into the real fence.
+
+#### Decided: the ICAP server runs in-process in console (operator, 2026-08-15)
+
+Not a separate ICAP shim in front of console. The alternative considered was a
+standalone deployment speaking ICAP and calling console over HTTP for the
+decision — it would have isolated the protocol code from console's auth process
+and let the two scale and go HA independently. Rejected in favour of the simpler
+topology: one process, one deployment, direct access to the decision state and
+the credentials it already holds.
+
+**Consequence: console needs an inbound non-HTTP listener, which it has never
+had.** `app.py` is a FastAPI app behind uvicorn; its only "listen loop" is
+Postgres `LISTEN/NOTIFY`, which is outbound. ICAP is not HTTP and cannot be a
+FastAPI route, so this is an `asyncio.start_server` on 1344 started from the app
+lifespan, plus a Service port and a NetworkPolicy admitting Squid. Console is the
+credential authority under the decision above, so that surface deserves the same
+scrutiny as `/mcp`.
+
+##### The library survey, since "use a package" is the obvious question
+
+| library                                                   | language | last release       | model                 | adoption            |
+| --------------------------------------------------------- | -------- | ------------------ | --------------------- | ------------------- |
+| [pyicap](https://github.com/netom/pyicap)                 | Python   | April 2017         | threaded SocketServer | 106★                |
+| [icapserver](https://github.com/Peoplecantfly/icapserver) | Python   | no recent activity | threaded              | 31★                 |
+| [python-icap](https://github.com/nhoad/python-icap)       | Python   | abandoned          | asyncio               | 5★, "early stages"  |
+| [icap-rs](https://github.com/Eslrusgag/icap-rs)           | Rust     | 0.3.0, June 2026   | tokio                 | 1★, ~1.5k downloads |
+
+Every Python option is effectively dead, and the two with any adoption are
+threaded `SocketServer` — which fights console's asyncio directly. The only
+actively developed library is Rust, and in-process in console rules Rust out.
+
+So the protocol code is ours. That is a smaller commitment than it sounds,
+because step 1 shrank it: Squid never used preview, so the subset actually on the
+wire is `OPTIONS`, `REQMOD`, chunked bodies, `204`, and `100 Continue`. The stub
+in <../../k8s/x/squid-egress-spike/app/icap_stub.py> already implements exactly
+that and has been verified against the Squid 7.6 this will run behind — it is the
+starting point, ported from `socketserver` to `asyncio.start_server`.
+
+Revisit if the protocol surface grows (RESPMOD, real preview negotiation,
+streaming): at that point `icap-rs` in a separate deployment becomes the better
+answer, and the separation is a contained change because the ICAP entry point is
+one module either way.
+
+### Direction: one Squid per _agent_, provisioned by haku-console
+
+Refinement of "one Squid per fence" (operator, 2026-08-10): the console manages a
+Squid **per agent**, so each agent gets its own fence — its own allowlist, its own
+credentials, its own policy.
+
+**Identity stops being a lookup and becomes a constant.** If the proxy instance
+_is_ the agent, the helper does not need `%>a` at all: the agent id is baked into
+that Squid's own config (a helper argument, or `%DATA` on the `acl … external`
+line). Unforgeable for the right reason — the agent cannot edit the config of the
+proxy it is fenced by. This removes the IP → pod → owner-label mapping through the
+Kubernetes API, which was the fiddliest piece of the design, and it downgrades
+verification item 4 below from load-bearing to nice-to-know.
+
+**Credential blast radius shrinks to one agent.** Today
+`haku-openclaw-spike-proxy` holds five secrets on behalf of one spike; per-agent
+proxies mean a compromised proxy exposes exactly the credentials of the agent it
+serves.
+
+**It must be a separate pod, not a sidecar.** Tempting to co-locate it in the
+agent's pod for lifecycle reasons, but Cilium enforces network policy **per
+endpoint, i.e. per pod** — it cannot distinguish the agent container's traffic
+from the sidecar's within one pod. The whole fence today rests on the sandbox pod
+being allowed to reach _only_ the proxy pod, while the proxy pod holds the wider
+egress. Collapsing them into one pod gives the agent container the proxy's egress
+rights directly, and the fence becomes advisory. Sidecar is the one shape that
+silently undoes this.
+
+**The cost is cache fragmentation**, taken to its limit: every agent starts cold.
+That is the same trade already accepted when per-fence `emptyDir` beat a shared
+cache, pushed one step further — worth noting only because caching was
+requirement 1, and per-agent isolation is close to the worst case for it. If hit
+rate ever matters, that is the axis that pays for it.
+
+**Config becomes runtime-generated rather than GitOps'd**, since the console
+writes each agent's allowlist and credential rules at provision time. That is a
+departure from the cluster's declarative norm, but a precedented one — agent
+sandboxes are already provisioned dynamically rather than committed. Worth being
+deliberate about, not accidental. The outage-resilience property survives
+relocation: config is materialised at pod start, so a console outage cannot
+retract a running agent's static allowlist — it only blocks provisioning new
+agents.
+
+#### Provisioned sandboxes must inherit their caller's fence
+
+`haku-sandbox-mcp` lets an agent provision a sandbox. If the new sandbox is
+fenced by anything other than **the calling agent's own proxy**, then
+`provision_sandbox` _is_ the fence escape: the agent never has to defeat its
+proxy, it just asks for a box behind a different one. Per-agent fences make this
+sharp — differing fences is the entire point, so "which fence does a provisioned
+box get" stops being a detail.
+
+Requirement: a sandbox provisioned by agent A egresses only through A's Squid,
+and inherits A's allowlist and credentials.
+
+Three things that has to rest on:
+
+- **Attribution must come from the authenticated caller, never a parameter.** The
+  MCP server has to know _which agent_ called from the credential on the call. If
+  agents share one bearer for `haku-sandbox-mcp`, this is unenforceable — so
+  per-agent MCP credentials are a prerequisite, not a later refinement.
+- **The fence is the NetworkPolicy, not the proxy env var.** `HTTP_PROXY` in a
+  sandbox is a _hint_: the workload can unset it. Only a CNP restricting that
+  pod's egress to its agent's Squid makes it a fence. Setting the env and calling
+  the box proxied would be exactly the advisory-fence mistake.
+- **Fence membership should be a label the workload cannot change.** A per-agent
+  CNP selecting `agent=<id>` and permitting egress only to that agent's Squid
+  makes any correctly-labelled pod fenced by construction. That holds only while
+  sandbox pods lack RBAC to patch their own labels — worth asserting explicitly,
+  since relabelling would be a fence change.
+
+A pleasant consequence: if the agent's Squid is torn down, its sandboxes lose
+egress rather than falling back to open. Lifetime coupling in the fail-closed
+direction.
+
+### Verify before building: what only running answers
+
+Everything below is a Squid behaviour that reading cannot settle, ordered by how
+much it would hurt to discover late. All of it can be answered by one stub
+helper — no haku-console integration needed. Choose the behaviour **by the
+hostname requested** (extra `Service` names aliasing the echo origin, so they
+resolve under the CNP's `**.cluster.local` DNS rule): `allow-origin` → `OK`,
+`deny-origin` → `ERR`, `slow-origin` → sleep past the client timeout,
+`crash-origin` → `BH`, `dead-origin` → helper exits mid-query.
+
+1. **Does it fail closed, deterministically?** Load-bearing: if Squid cannot be
+   made to deny reliably on helper failure, the gate belongs somewhere else and
+   this design changes shape. Four cases — `ERR`, `BH`, helper hangs, helper dies
+   — must all end denied, and the log should say which is which. This also
+   settles whether returning `ERR` for both "console said no" and "console
+   unreachable" was the right call, or merely a cautious one.
+2. **Is the helper called once per request, or twice?** A bumped connection has
+   two decision points: the `CONNECT` (host from the CONNECT line) and the inner
+   request after decryption (full URL). If Squid consults the helper at both,
+   console load doubles and one fetch may raise two prompts. This sizes the "one
+   RPC per gated request" claim made above.
+3. **Does `ttl=0` actually disable the result cache?** See the UNVERIFIED note.
+   Two identical requests, count helper invocations. If `ttl=0` does not do it,
+   try `cache=0`; if neither does, the no-cache decision needs another mechanism.
+4. **Is `%>a` the client pod's IP?** The 2026-08-10 run could not show this —
+   `X-Spike-Client` read `127.0.0.1` because curl ran inside the Squid pod. Drive
+   it from a **second pod** and confirm the source survives without SNAT to a
+   node IP. **Downgraded** by the per-agent direction above: if the proxy
+   instance is the agent, identity is a constant in that Squid's config and `%>a`
+   only separates pods _within_ one agent's fence — useful for audit, not for the
+   decision. Still worth knowing, no longer load-bearing.
+5. **Does `message=` reach the agent?** Through a bumped tunnel the error page is
+   generated inside the TLS session. If it arrives, deny-now/allow-on-retry
+   becomes actionable ("pending operator approval") instead of an opaque 403.
+
+Queue overflow (`queue-size`, default `2*children-max`) falls out of the same run
+if the slow host is driven concurrently.
+
+**A design fork sits behind (4).** With one Squid per fence, the fence _is_ the
+agent identity, and `%>a` only separates pods within a fence. If that is
+sufficient, the IP → pod → owner-label mapping through the Kubernetes API — the
+fiddliest part of this design — is unnecessary.
 
 ### The simpler alternative, if the live hook is too much
 

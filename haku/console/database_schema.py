@@ -1049,7 +1049,8 @@ class ClaudeChatTurnPrompt(Base):
 
 
 class ClaudeChatFrame(Base):
-    """One line of the agent's own newline-delimited JSON protocol, as it crossed the wire.
+    """The agent's newline-delimited JSON protocol as it crossed the wire — and two things that
+    are not that, which is a defect.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `claude_chat_messages` keeps an assistant message's `tool_use` blocks and not the frames
@@ -1058,15 +1059,16 @@ class ClaudeChatFrame(Base):
 
     **The payload is the wire, not our parse of it.** Storing the SDK's dataclasses instead
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
-    are dropped by the turn loop's extraction, as is a result's cost and usage — and it would
-    have to be migrated when the console starts reading the CLI's jsonl directly for an adopted
-    turn (cli_protocol_ownership.md, design B).
+    are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    **Two things here are not the CLI's protocol**, and both say so in their `kind`. A
-    ``setup_output`` frame is a line the sandbox printed — bootstrap narration and the CLI's own
-    stderr — which belongs in this log because a session that died before the CLI produced a
-    frame has its whole account there. And a ``partial`` row is the console's reconstruction of
-    an answer still streaming; see that column.
+    **TODO(frame-vocabulary): this schema is in a half state and does not map to one concept.**
+    ``kind`` holds two discriminator vocabularies, because two unrelated sinks write here:
+    `RolloutRecorder` puts the CLI's own top-level ``type`` in it, and the setup reporter puts the
+    *bridge* envelope's ``setup_output`` literal in it. A ``partial`` row is a third thing again —
+    the console's reconstruction of an answer still streaming — and wears ``assistant`` while being
+    told apart by its own column. So "what is this row" has three answers and no one field gives
+    them, which is why there is no enum over ``kind``: one would name a concept this table does not
+    have. <../plans/chat_runtime_projection.md> holds the intended shape; nothing is scheduled.
     """
 
     __tablename__ = "claude_chat_frames"
@@ -1106,6 +1108,10 @@ class ClaudeChatFrame(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
         Index("idx_claude_chat_frames_session", "session_id", "frame_seq"),
+        # Reading a session by kind used to be a filter over its whole log, which was affordable
+        # only while the log held no deltas. It holds them now, and `_rollout_calls` runs once per
+        # delta, so the filter it replaces grew with the length of the answer being streamed.
+        Index("idx_claude_chat_frames_kind", "session_id", "kind", "frame_seq"),
         # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
         # because most rows have no identity; a plain unique index would be almost all nulls.
         Index(

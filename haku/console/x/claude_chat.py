@@ -23,9 +23,6 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
-from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import CursorResult, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -54,6 +51,12 @@ from haku.console.database_schema import (
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
+from haku.console.x.sandbox_claims import (
+    ClaudeSandboxProvisioningView,
+    ProvisioningStep,
+    SandboxClaims,
+    provisioning_view,
+)
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
 from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.claude_bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
@@ -146,35 +149,6 @@ class ClaudeChatMessageView(BaseModel):
     updated_at: datetime
 
 
-class ProvisioningStep(StrEnum):
-    CLAIM_CREATED = "claim_created"
-    WAITING_FOR_SANDBOX = "waiting_for_sandbox"
-    WAITING_FOR_POD = "waiting_for_pod"
-    WAITING_FOR_POD_READY = "waiting_for_pod_ready"
-    WAITING_FOR_RUNNER = "waiting_for_runner"
-
-
-class ClaudeSandboxProvisioningView(BaseModel):
-    """Non-secret Kubernetes state explaining what sandbox provisioning is waiting on."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    step: ProvisioningStep
-    inspected_at: datetime
-    claim_name: str
-    claim_ready: bool | None = None
-    claim_reason: str | None = None
-    claim_message: str | None = None
-    sandbox_name: str | None = None
-    sandbox_ready: bool | None = None
-    pod_name: str | None = None
-    pod_phase: str | None = None
-    pod_ready: bool | None = None
-    runner_ready: bool | None = None
-    runner_state: str | None = None
-    observation_error: str | None = None
-
-
 class ClaudeChatSessionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -192,181 +166,6 @@ class ClaudeChatPromptRequest(BaseModel):
     a row (`database_schema.ClaudeChatPrompt`) rather than a field on the way in."""
 
     text: str = Field(min_length=1, max_length=100_000)
-
-
-class SandboxClaims(Protocol):
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None: ...
-
-    async def delete(self, *, session_id: UUID) -> None: ...
-
-    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView: ...
-
-    async def aclose(self) -> None: ...
-
-
-class KubernetesSandboxClaims:
-    """Create the narrow declarative SandboxClaim used by one chat session."""
-
-    def __init__(self, config: ClaudeRuntimeConfig):
-        self._config = config
-        self._api_client: ApiClient | None = None
-        self._custom_objects: CustomObjectsApi | None = None
-        self._core_v1: CoreV1Api | None = None
-        self._lock = asyncio.Lock()
-
-    async def _clients(self) -> tuple[CustomObjectsApi, CoreV1Api]:
-        if self._custom_objects is not None:
-            assert self._core_v1 is not None
-            return self._custom_objects, self._core_v1
-        async with self._lock:
-            if self._custom_objects is None:
-                configuration = k8s_client.Configuration()
-                try:
-                    k8s_config.load_incluster_config(client_configuration=configuration)
-                except ConfigException as error:
-                    raise RuntimeError("Kubernetes in-cluster configuration is unavailable") from error
-                self._api_client = ApiClient(configuration=configuration)
-                self._custom_objects = CustomObjectsApi(self._api_client)
-                self._core_v1 = CoreV1Api(self._api_client)
-        assert self._custom_objects is not None
-        assert self._core_v1 is not None
-        return self._custom_objects, self._core_v1
-
-    def _claim_name(self, session_id: UUID) -> str:
-        return f"claude-{session_id.hex}"
-
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
-        body = {
-            "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
-            "kind": "SandboxClaim",
-            "metadata": {
-                "name": self._claim_name(session_id),
-                "labels": {
-                    "app.kubernetes.io/managed-by": "haku-console",
-                    "haku.allegedly.works/runtime": "claude-chat",
-                },
-            },
-            "spec": {
-                "warmPoolRef": {"name": self._config.warm_pool},
-                "lifecycle": {
-                    "shutdownPolicy": "DeleteForeground",
-                    "shutdownTime": expires_at.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-                },
-                "env": [
-                    {"name": "HAKU_CLAUDE_SESSION_ID", "value": str(session_id)},
-                    {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": bridge_token},
-                ],
-            },
-        }
-        client, _ = await self._clients()
-        await client.create_namespaced_custom_object(
-            "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", body
-        )
-
-    async def delete(self, *, session_id: UUID) -> None:
-        client, _ = await self._clients()
-        try:
-            await client.delete_namespaced_custom_object(
-                "extensions.agents.x-k8s.io",
-                "v1beta1",
-                self._config.namespace,
-                "sandboxclaims",
-                self._claim_name(session_id),
-                body=k8s_client.V1DeleteOptions(propagation_policy="Foreground"),
-            )
-        except k8s_client.ApiException as error:
-            if error.status != 404:
-                raise
-
-    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
-        claim_name = self._claim_name(session_id)
-        custom_objects, core_v1 = await self._clients()
-        try:
-            claim = await custom_objects.get_namespaced_custom_object(
-                "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", claim_name
-            )
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return _provisioning_view(claim_name, step=ProvisioningStep.CLAIM_CREATED)
-            raise
-
-        claim_condition = _condition(claim, "Ready")
-        claim_reason = _condition_text(claim_condition, "reason")
-        claim_message = _condition_text(claim_condition, "message")
-        sandbox_name = _nested_string(claim, "status", "sandbox", "name")
-        if sandbox_name is None:
-            return _provisioning_view(
-                claim_name,
-                step=ProvisioningStep.WAITING_FOR_SANDBOX,
-                claim_ready=_condition_bool(claim_condition),
-                claim_reason=claim_reason,
-                claim_message=claim_message,
-            )
-
-        try:
-            sandbox = await custom_objects.get_namespaced_custom_object(
-                "agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxes", sandbox_name
-            )
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return _provisioning_view(
-                    claim_name,
-                    step=ProvisioningStep.WAITING_FOR_SANDBOX,
-                    claim_ready=_condition_bool(claim_condition),
-                    claim_reason=claim_reason,
-                    claim_message=claim_message,
-                    sandbox_name=sandbox_name,
-                )
-            raise
-
-        sandbox_condition = _condition(sandbox, "Ready")
-        annotations = sandbox.get("metadata", {}).get("annotations", {}) or {}
-        pod_name = str(annotations.get("agents.x-k8s.io/pod-name") or sandbox_name)
-        try:
-            pod = await core_v1.read_namespaced_pod(pod_name, self._config.namespace)
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return _provisioning_view(
-                    claim_name,
-                    step=ProvisioningStep.WAITING_FOR_POD,
-                    claim_ready=_condition_bool(claim_condition),
-                    claim_reason=claim_reason,
-                    claim_message=claim_message,
-                    sandbox_name=sandbox_name,
-                    sandbox_ready=_condition_bool(sandbox_condition),
-                    pod_name=pod_name,
-                )
-            raise
-
-        pod_phase = pod.status.phase if pod.status is not None else None
-        pod_ready = _pod_ready(pod)
-        runner_ready, runner_state = _container_status(pod, "runner")
-        step = (
-            ProvisioningStep.WAITING_FOR_RUNNER
-            if pod_ready and runner_ready
-            else ProvisioningStep.WAITING_FOR_POD_READY
-        )
-        return _provisioning_view(
-            claim_name,
-            step=step,
-            claim_ready=_condition_bool(claim_condition),
-            claim_reason=claim_reason,
-            claim_message=claim_message,
-            sandbox_name=sandbox_name,
-            sandbox_ready=_condition_bool(sandbox_condition),
-            pod_name=pod_name,
-            pod_phase=pod_phase,
-            pod_ready=pod_ready,
-            runner_ready=runner_ready,
-            runner_state=runner_state,
-        )
-
-    async def aclose(self) -> None:
-        if self._api_client is not None:
-            await self._api_client.close()
-            self._api_client = None
-            self._custom_objects = None
-            self._core_v1 = None
 
 
 @dataclass(frozen=True)
@@ -410,11 +209,9 @@ class TurnStart:
 class TurnResumed:
     """A turn a departed holder opened and asked, and how far its answer had got.
 
-    The three state fields are what `_run_turn`'s locals held when that process died, and they
-    are load-bearing rather than tidy. The runner replays what a console may not have recorded
-    but deliberately **not** the stream deltas (`runner.DELTA_TYPE`) — they are the one class
-    that cannot survive being sent twice — so a resumed turn starting from nothing would write
-    the tail of an answer as a second message and post it into the room beside the first.
+    The state fields are required, not decorative: the runner never replays the stream deltas, so
+    a resumed turn starting from nothing would write the tail of an answer as a second message
+    beside the first.
     """
 
     turn_id: UUID
@@ -434,9 +231,7 @@ class TurnResumed:
 class SessionOutcome:
     """Where a session got to, and why if it ended badly.
 
-    The two travel together because every caller that acts on a dead session wants to say which
-    one it was: the supervisor announced `ended (failed)` into the room for years while the
-    sentence explaining it sat in `error`, reachable only by querying Postgres by hand.
+    The two travel together because every caller acting on a dead session wants to say which.
     """
 
     status: ChatSessionStatus
@@ -505,13 +300,9 @@ class ClaudeChatStore:
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         """Admit a runner to its session — the first time, and every time after.
 
-        **Taking the lease is the admission.** A reconnect used to be refused unconditionally
-        (`PROVISIONING` and no `bridge_connected_at`), which made the sandbox disposable: the
-        runner had no way back after any disconnect, so Kubernetes restarted it into a refusal
-        until the sweep replaced the whole session. Now a live session admits a runner that can
-        take its lease, and the lease is what stops both replicas adopting one CLI — whoever
-        writes it under this row lock has it, and the other is told to go away for as long as
-        the holder keeps renewing.
+        **Taking the lease is the admission.** A live session admits any runner that can take its
+        lease, and the lease is what stops two replicas adopting one CLI: whoever writes it under
+        this row lock has it, for as long as it keeps renewing.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -535,14 +326,10 @@ class ClaudeChatStore:
     async def release_lease(self, session_id: UUID) -> None:
         """Hand a live session back for adoption, without declaring it dead.
 
-        A replica going down cleanly knows the difference between "this session is over" and
-        "I am no longer the one holding it", and only the second is true during a roll. Clearing
-        the holder is what lets the returning runner be admitted immediately rather than waiting
-        out the previous holder's lease.
-
-        The short grant that replaces the deadline is what stops `expire_stale_leases` from
-        failing the session in the seconds before the runner redials — and what makes it fail
-        the session if none ever does.
+        "This session is over" and "I am no longer holding it" are different, and only the second
+        is true during a roll. The short grant replacing the deadline is what stops
+        `expire_stale_leases` failing the session in the seconds before the runner redials — and
+        what makes it fail the session if none ever does.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
@@ -554,24 +341,16 @@ class ClaudeChatStore:
     async def adopt_open_turn(self, session_id: UUID) -> TurnResumed | None:
         """Say what the previous holder's open turn was, and hand back the one worth finishing.
 
-        An adopting console inherits the session, and — since the sandbox outlived the replica —
-        the exchange with it. "A turn was open" is three different situations, and closing all
-        three was what made a roll mid-turn cost an answer:
+        The sandbox outlives the replica, so an adopting console inherits the exchange too. "A
+        turn was open" is three situations and only one of them is a closure:
 
-        1. **It never asked.** `next_prompt` claims the prompt and opens the turn in one
-           transaction, and `_run_turn` writes it to the CLI afterwards; a replica dying between
-           the two left the prompt claimed, the transcript row marked as handed over, and nothing
-           ever asked — invisible, because the room's answer to a message it will never get is
-           silence. The prompt goes back on the queue and the turn is closed.
-        2. **It finished and nobody wrote that down.** The `result` frame is in the log but
-           `end_turn` never ran. The record already holds the answer, so the turn is closed from
-           it rather than waited on — waiting would be forever, since a recorded frame is a
-           replay the recorder now refuses.
-        3. **It is still running.** Its remaining frames are on their way down the new socket,
-           so the turn stays open and is returned for `_run_turn` to finish.
+        1. **Never asked** — no prompt frame was written. The prompt goes back on the queue.
+        2. **Finished, unrecorded** — the `result` is logged but `end_turn` never ran. Closed from
+           the record; waiting would be forever, since the replay of a recorded frame is refused.
+        3. **Still running** — returned for `_run_turn` to finish.
 
-        Leaving a turn open is only safe because exactly one may be: `uq_claude_chat_turns_open`
-        is what stops `next_prompt` opening a second beside the inherited one.
+        Leaving a turn open is safe only because `uq_claude_chat_turns_open` permits exactly one,
+        which is what stops `next_prompt` opening a second beside the inherited one.
         """
         async with self._sessions.begin() as db:
             turn = await db.scalar(
@@ -638,11 +417,9 @@ class ClaudeChatStore:
                 raise KeyError(session_id)
             if chat.status != ChatSessionStatus.READY:
                 raise RuntimeError(f"session is not ready (status={chat.status})")
-            # Admission asks about the turn, not the session's status. It used to ask for
-            # `READY`, which was also how "not mid-turn" was expressed — so the moment the
-            # column stopped carrying `responding` this gate would have started accepting
-            # prompts during a turn, which is the fold-into-turn feature arriving by accident
-            # with no fold path wired (R2.2 holds a batch until the turn ends).
+            # Admission asks about the turn, not the session's status: gating on `READY` alone
+            # would accept a prompt mid-turn, which is the fold-into-turn feature arriving by
+            # accident with no fold path wired (R2.2 holds a batch until the turn ends).
             if await _open_turn(db, session_id) is not None:
                 raise RuntimeError("a turn is already in flight")
             if await _queued_prompt(db, session_id) is not None or await _legacy_pending(db, session_id) is not None:
@@ -786,22 +563,15 @@ class ClaudeChatStore:
     ) -> bool:
         """Append one frame to the session's rollout, unless this session already has it.
 
-        Returns whether the frame was recorded. **False means a replay** — the same
-        agent-assigned identity already in this session's log — and the caller's job is then to
-        not act on it a second time, which is the whole point of deduplicating here rather than
-        letting the row be written twice and reconciling later. A frame with no identity
-        (`frame_identity.frame_uid` explains which those are) is always recorded, because "no
-        identity" is not "the same as the last one".
+        **False means a replay** — the same agent-assigned identity already in this log — and the
+        caller must then not act on it again. A frame with no identity is always recorded, since
+        "no identity" is not "the same as the last one" (`frame_identity.frame_uid`).
 
-        *kind* is passed rather than read out of the payload because the payload's discriminator
-        is not the console's to assume: a CLI frame keeps it in `type`, the bridge envelope keeps
-        it in `kind`, and deriving one from the other is what would make everything in this table
-        have to look like a CLI frame whether it was one or not.
+        *kind* is passed rather than read out of the payload: a CLI frame keeps its discriminator
+        in `type` and the bridge envelope keeps it in `kind`, and this table holds both.
 
-        Failures are not swallowed. Every other write in a turn reaches the same database, so
-        one that cannot record has already lost the session — and a rollout with quiet holes is
-        exactly the record that looks complete while being wrong, which is what this table
-        exists to stop.
+        Failures are not swallowed — a rollout with quiet holes is the record that looks complete
+        while being wrong.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -865,6 +635,12 @@ class ClaudeChatStore:
             query = query.where(ClaudeChatFrame.frame_seq > after_seq)
         if kinds:
             query = query.where(ClaudeChatFrame.kind.in_(kinds))
+        else:
+            # **Deltas are in the log but not in the default view.** A turn streams them in the
+            # hundreds and each carries a few characters of an answer that arrives whole a moment
+            # later, so a reader asking for "everything" wants the frames, not the typing. Naming
+            # the kind is how a caller reading a truncated answer asks for them anyway.
+            query = query.where(ClaudeChatFrame.kind != DELTA_FRAME_KIND)
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(ClaudeChatFrame.frame_seq).limit(limit))).all()
         return [
@@ -884,6 +660,12 @@ class ClaudeChatStore:
 
         Takes its `frame_seq` when the stream opens, so it sits where it belongs in the log
         even though it is rewritten afterwards.
+
+        CLEANUP(added 2026-08-15): Superseded by the deltas themselves, which this row existed to
+        stand in for. Stop writing it — with `clear_partial_frame`, the `partial` column and its
+        two indexes — once every replica runs an image that records them, one roll after this
+        ships. Not in this release: an old replica writing a row a new one never clears would
+        leave a stray partial in the rollout for good.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -895,7 +677,7 @@ class ClaudeChatStore:
                     ClaudeChatFrame(
                         session_id=session_id,
                         direction=FrameDirection.FROM_AGENT,
-                        kind="assistant",
+                        kind=ASSISTANT_FRAME_KIND,
                         payload=_assistant_frame(text),
                         partial=True,
                         created_at=now,
@@ -1029,20 +811,13 @@ class ClaudeChatStore:
     async def expire_stale_leases(self) -> int:
         """Fail every live session whose holder stopped renewing, and report how many.
 
-        A live status is written by the replica holding the runner websocket and only ever
-        corrected by that same replica. When it dies without running its finalizer — SIGKILL,
-        OOM, node loss, or a cancellation that raced the event loop's shutdown — the row keeps
-        claiming a turn is in flight, `supervise_once` treats it as healthy, and the room is
-        never answered again. Nothing in the previous design could observe that, because every
-        observer was the process that had gone away.
+        A live status is only ever corrected by the replica that wrote it, so a replica dying
+        without its finalizer — SIGKILL, OOM, node loss — leaves a row claiming a turn is in
+        flight that `supervise_once` reads as healthy. This is the only observer that is not that
+        process.
 
-        Set-based and idempotent, in the shape `node_daemons._expire` already uses: any replica
-        may run it, concurrent runners converge, and a session whose owner is merely slow gets
-        its lease back on the next renewal well before the TTL.
-
-        No null check: the column is required (0029), so "has no lease" is unrepresentable
-        rather than a case to filter for. It used to be both representable and invisible here,
-        which is how a session predating the column stayed wedged after the lease shipped.
+        Set-based and idempotent, like `node_daemons._expire`: any replica may run it, concurrent
+        runners converge, and a merely slow owner renews well before the TTL.
         """
         async with self._sessions.begin() as db:
             expired = (
@@ -1059,9 +834,8 @@ class ClaudeChatStore:
                 chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
                 if chat is None or chat.status not in LIVE_SESSION_STATUSES:
                     continue
-                # Naming the holder is the whole point of recording it: this message and the
-                # `error` below were previously identical for every such failure, so the room
-                # said a session died and no query could say which process to go read.
+                # Naming the holder is the whole point of recording it: without it the room says
+                # a session died and no query can say which process to go read.
                 held_by = chat.lease_holder or "no replica (never attached)"
                 logger.error("Claude chat session %s lease expired; holder was %s", session_id, held_by)
                 chat.status = ChatSessionStatus.FAILED
@@ -1118,20 +892,28 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
-# The agent's protocol frames only, so a `SetupOutput` carrying bootstrap narration is not
-# mistaken for one. `stream_event` is the one exclusion: it is a partial of a frame that also
-# arrives complete, thousands of times a turn (R5.5b) — being streamed is not the reason, and
-# the completed `assistant` frame beside it is recorded like anything else.
-_PARTIAL_FRAME_KIND = "stream_event"
+# TODO(frame-vocabulary): these are not one vocabulary, and there is deliberately no enum over
+# them yet. Five of them are the CLI's own top-level `type`; `SETUP_OUTPUT_KIND` is the *bridge*
+# envelope's `kind` literal, put in the same column by a different sink. An enum over the union
+# would give a name to a concept the schema does not actually have — see `ClaudeChatFrame` and
+# stage 2 of <../../plans/chat_runtime_projection.md>, which is where this becomes one thing.
+
+# One token batch of an answer still being written. Hundreds per turn, and the completed
+# `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
+# view.
+DELTA_FRAME_KIND = "stream_event"
 
 # The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
 # sends `user` frames too, carrying tool results.
 PROMPT_FRAME_KIND = "user"
 
-# The frame that ends a turn, and the one that completes an assistant message. Both are read
-# back out of the log by `adopt_open_turn` to work out what a departed holder had got to.
+# The frame that ends a turn, and the one that completes an assistant message. Both are read back
+# out of the log by `adopt_open_turn` to work out what a departed holder had got to.
 RESULT_FRAME_KIND = "result"
 ASSISTANT_FRAME_KIND = "assistant"
+
+# The bridge's, not the CLI's — see the TODO above.
+SETUP_OUTPUT_KIND = "setup_output"
 
 
 def _assistant_frame(text: str) -> dict[str, Any]:
@@ -1141,9 +923,6 @@ def _assistant_frame(text: str) -> dict[str, Any]:
     what says it was reconstructed rather than observed.
     """
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
-
-
-SETUP_OUTPUT_KIND = "setup_output"
 
 
 def _setup_output_frame(text: str) -> dict[str, Any]:
@@ -1172,12 +951,10 @@ def _frame_kind(payload: dict[str, Any]) -> str:
 class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `claude_chat_frames`.
 
-    This is the whole of what the console asks of the record, and both decisions in it are the
-    console's rather than the protocol client's. **Deltas are skipped** because the store keeps a
-    single rewritten `partial` row for the answer in flight instead — thousands of
-    `content_block_delta` frames would bury the log for a reader and say nothing the completed
-    `assistant` frame does not. Everything else is kept verbatim, control frames included, since
-    an interrupt that did not take is only diagnosable from them.
+    **No exclusions.** Control frames are kept because an interrupt that did not take is only
+    diagnosable from them, and deltas because a log with a hole in it cannot be folded over
+    (<../../plans/chat_runtime_projection.md>). `read_frames` is where "do not bury the reader"
+    is answered, by leaving deltas out of its default view.
     """
 
     def __init__(self, store: ClaudeChatStore, session_id: UUID):
@@ -1193,12 +970,9 @@ class RolloutRecorder:
     async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> bool:
         """Record the frame, answering whether the caller should act on it.
 
-        A delta is skipped and reported as fresh: the store keeps one rewritten `partial` row for
-        the answer in flight instead, and the turn loop still has to append it. Only a frame the
-        log already holds under the same agent-assigned identity is a replay.
+        A delta has no agent-assigned identity, so it is always recorded and always fresh — safe
+        because the runner never replays one (`runner.DELTA_TYPE`).
         """
-        if _frame_kind(payload) == _PARTIAL_FRAME_KIND:
-            return True
         return await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
 
 
@@ -1304,12 +1078,9 @@ class _TurnStatus:
             if time.monotonic() - self._typed_at >= TYPING_REFRESH_SECONDS:
                 self._typed_at = time.monotonic()
                 await self._typing(True)
-            # One owner for the pace. The floor used to be the sink's, which dropped anything
-            # offered inside it while this loop had already recorded it as shown — so a state
-            # that changed twice within the floor left the room reading the older of the two
-            # until the *next* change, which on a turn that then settles into one long tool call
-            # is the rest of the turn. Deferring here instead means the value is still waiting on
-            # the next tick.
+            # One owner for the pace, and it defers rather than drops: a sink that discarded what
+            # arrived inside its floor would leave the room reading a stale state until the *next*
+            # change, which on a turn settling into one long tool call is the rest of the turn.
             if (
                 self._state is not None
                 and self._state != self._shown
@@ -1334,17 +1105,11 @@ class _TurnStatus:
 class RoomSurface(Protocol):
     """The front end for sessions that serve a room, for the parts a turn cannot do itself.
 
-    The SPA needs none of this: its client reads the message rows over SSE, so a finished turn
-    is already delivered by being written down. A room has to be spoken to, and told who it is
-    talking to.
+    The SPA needs none of this — its client reads the message rows over SSE, so a finished turn is
+    delivered by being written down. A room has to be spoken to.
 
-    **The service picks this by reading the session's `surface`, rather than offering every
-    session to every listener.** It used to be three optional callbacks fired for all sessions,
-    each implementation opening with the same four lines — load the current room binding,
-    compare its `session_id`, return if it did not match. That is the session row's own fact
-    (`surface`, `room_id`), so re-deriving it at three call sites was both a lookup per
-    delivery and a way for a mis-derived answer to fail silently: a surface that wrongly
-    decided a session was not its own simply said nothing.
+    **The service picks this by reading the session's `surface`**, rather than offering every
+    session to every listener and letting each one re-derive whether it is its own.
     """
 
     async def system_prompt(self, session_id: UUID, room_id: str) -> str: ...
@@ -1422,7 +1187,7 @@ class ClaudeChatService:
         try:
             provisioning = await self._claims.inspect(session_id=view.session_id)
         except Exception as error:
-            provisioning = _provisioning_view(
+            provisioning = provisioning_view(
                 f"claude-{view.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
             )
         return view.model_copy(update={"provisioning": provisioning})
@@ -1489,11 +1254,8 @@ class ClaudeChatService:
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
         """Record every sandbox progress report, log it, and show it to the room if there is one.
 
-        Recorded first because the rollout is the only durable copy. This narration is where a
-        bootstrap says why it failed and where the CLI's own stderr now arrives, and until this
-        it lived in the pod's log and in the room — the first reaped with the sandbox, the
-        second interleaved with everything else. A session that died before producing a single
-        CLI frame therefore explained itself nowhere.
+        Recorded first because the rollout is the only durable copy: the pod's log is reaped with
+        the sandbox, and a session that died before its first CLI frame has its whole account here.
         """
 
         async def report(detail: str) -> None:
@@ -1562,10 +1324,8 @@ class ClaudeChatService:
         # failed with, the outer one is this whole activity being cancelled.
         try:
             try:
-                # `TaskGroup` rather than bare `create_task`: both helpers run for exactly
-                # this block's lifetime, and it owns awaiting and cancelling them. The
-                # previous hand-rolled cancel/await/suppress dance had to remember to swallow
-                # `CancelledError` and to log rather than raise, or cleanup was skipped.
+                # `TaskGroup` rather than bare `create_task`: both helpers run for exactly this
+                # block's lifetime, and it owns awaiting and cancelling them.
                 async with asyncio.TaskGroup() as helpers:
                     # The operator's abort lands on whichever replica the Service picks, which
                     # is rarely the one holding this websocket — so the event is driven by
@@ -1576,15 +1336,11 @@ class ClaudeChatService:
                     renewal = helpers.create_task(self._renew_lease(session_id))
                     try:
                         await client.connect()
-                        # One stream for the session, not one per turn. `receive_response()`
-                        # is request-scoped — it assumes this process issued the turn and ends
-                        # at that turn's `result` — which is wrong in two directions we now
-                        # care about: a prompt folded into a running turn is answered inside
-                        # the same response with no second `result`, and an adopted mid-flight
-                        # turn was issued by a replica that is gone
-                        # (<../../plans/cli_protocol_ownership.md>). Consuming a session-scoped
-                        # stream and dispatching by frame makes the turn a bracket over it
-                        # rather than a request/response pair.
+                        # One stream for the session, not one per turn: a folded prompt is
+                        # answered with no second `result`, and an adopted turn was issued by a
+                        # process that is gone. So a turn is a bracket over this stream rather
+                        # than a request/response pair
+                        # (<../../plans/cli_protocol_ownership.md>).
                         frames = client.frames().__aiter__()
                         while True:
                             status = await self._store.status(session_id)
@@ -1602,12 +1358,9 @@ class ClaudeChatService:
                                 # Wait for a LISTEN/NOTIFY instead of polling.
                                 await self._notifications.wait(ChatEventKind.PROMPT, session_id, timeout_seconds=30.0)
                                 continue
-                            # Cleared before the turn rather than after it: an abort notified
-                            # just as the previous turn ended would otherwise sit set through
-                            # the idle wait and kill the next turn on arrival. The remaining
-                            # window is a notify racing these few statements, and `request_abort`
-                            # no longer opens it from the other side — an abort is refused
-                            # unless a turn is actually open.
+                            # Cleared before the turn, not after: an abort notified just as the
+                            # previous one ended would otherwise sit set through the idle wait and
+                            # kill this turn on arrival.
                             abort_event.clear()
                             try:
                                 await self._run_turn(
@@ -1623,10 +1376,9 @@ class ClaudeChatService:
                         abort_watch.cancel()
                         renewal.cancel()
             except* WebSocketDisconnect:
-                # The runner went away, which is no longer the same as the session being over:
-                # it keeps the CLI alive across a lost socket and redials. Hand the session back
-                # and let the lease decide — a runner that returns is admitted, and one that
-                # never does lets the grant lapse into the sweep.
+                # The runner went away, which is not the session being over: it keeps the CLI
+                # alive across a lost socket and redials. Hand the session back and let the lease
+                # decide — one that never returns lets the grant lapse into the sweep.
                 logger.info("Claude chat session %s lost its runner; leaving it for adoption", session_id)
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
@@ -1638,9 +1390,8 @@ class ClaudeChatService:
         except asyncio.CancelledError:
             # `CancelledError` is a `BaseException`, so neither clause above sees it. This is
             # this replica going away — a rolling update, an evicted pod — which says nothing
-            # about the session. It used to be recorded as a failure, which is what made every
-            # console roll end every conversation: the row went terminal, so the runner's
-            # reconnect was refused as `TERMINAL` and the supervisor built a replacement.
+            # about the session, so it must not be recorded as a failure: a terminal row refuses
+            # the runner's reconnect and the supervisor builds a replacement.
             #
             # Hand it back instead. The sandbox outlives this process, the runner redials, and
             # whichever replica answers adopts it. Nothing is swallowed: the grant `release_lease`
@@ -1736,12 +1487,9 @@ class ClaudeChatService:
         aborted = asyncio.ensure_future(abort_event.wait())
         try:
             while True:
-                # Exactly one `anext` in flight at a time, and the abort path consumes the one it
-                # finds rather than starting another: `frames` is an async generator, which
-                # refuses to be advanced twice at once ("anext(): asynchronous generator is
-                # already running"), and an abort always arrives while this call is parked here.
-                # Draining through a fresh `async for` therefore raised, so every mid-turn abort
-                # failed the whole session instead of ending its turn.
+                # Exactly one `anext` in flight, and the abort path consumes the one it finds
+                # rather than starting another: an async generator refuses to be advanced twice at
+                # once, and an abort always arrives while this call is parked here.
                 next_frame = asyncio.ensure_future(anext(frames))
                 await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
                 if abort_event.is_set():
@@ -1752,7 +1500,7 @@ class ClaudeChatService:
                     # ends a turn rather than the conversation.
                     while True:
                         remaining = await next_frame
-                        if remaining.get("type") == "result":
+                        if remaining.get("type") == RESULT_FRAME_KIND:
                             result = remaining
                             break
                         next_frame = asyncio.ensure_future(anext(frames))
@@ -1802,9 +1550,8 @@ class ClaudeChatService:
                         spoken_id, assistant_id = assistant_id, None
                         streamed = ""
                         # Speak each message as it finishes rather than only the final answer
-                        # (R11.1). A turn that says what it is about to do, works, and then
-                        # reports back is three messages in the transcript and used to be one in
-                        # the room — so the room saw the conclusion and never the reasoning.
+                        # (R11.1), so a turn that narrates, works and reports back is three
+                        # messages in the room and not just its conclusion.
                         if said:
                             # The row and the agent's own id travel with it, so the room event
                             # states which message it is showing instead of leaving that to be
@@ -1836,8 +1583,7 @@ class ClaudeChatService:
                 await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             # Closed with what the `result` frame reported, which is the only place a turn's
-            # cost, usage and duration exist — the console used to read `is_error` off that frame
-            # and drop the rest for want of anywhere to put it.
+            # cost, usage and duration exist.
             await self._store.end_turn(
                 turn_id, TurnOutcome.ABORTED if abort_event.is_set() else TurnOutcome.ANSWERED, result
             )
@@ -1946,7 +1692,7 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
         select(ClaudeChatFrame.kind, ClaudeChatFrame.payload)
         .where(
             ClaudeChatFrame.session_id == session_id,
-            ClaudeChatFrame.kind.in_([ChatMessageRole.ASSISTANT, ChatMessageRole.USER]),
+            ClaudeChatFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]),
         )
         .order_by(ClaudeChatFrame.frame_seq)
     )
@@ -1961,7 +1707,7 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
             if not isinstance(block, dict):
                 continue
             match block.get("type"):
-                case "tool_use" if kind == ChatMessageRole.ASSISTANT and agent_id:
+                case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
                     by_message.setdefault(str(agent_id), []).append(
                         {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
                     )
@@ -2032,10 +1778,9 @@ async def _legacy_pending(db: AsyncSession, session_id: UUID, *, lock: bool = Fa
 async def _open_turn(db: AsyncSession, session_id: UUID) -> UUID | None:
     """The turn *session_id* is in the middle of, if it is in the middle of one.
 
-    The one question three things used to ask of `status == 'responding'`: whether a prompt may
-    be accepted, whether there is anything to abort, and what the SPA should be told. A partial
-    unique index makes "at most one" a schema property, so this is a lookup rather than a scan
-    with a rule attached.
+    The one question behind three: whether a prompt may be accepted, whether there is anything to
+    abort, and what the SPA should be told. A partial unique index makes "at most one" a schema
+    property, so this is a lookup rather than a scan with a rule attached.
     """
     turn_id: UUID | None = await db.scalar(
         select(ClaudeChatTurn.turn_id).where(ClaudeChatTurn.session_id == session_id, ClaudeChatTurn.ended_at.is_(None))
@@ -2177,82 +1922,6 @@ def _session_view(
         provisioning=None,
         messages=[_message_view(message, calls) for message in messages],
     )
-
-
-def _provisioning_view(claim_name: str, *, step: ProvisioningStep, **values: Any) -> ClaudeSandboxProvisioningView:
-    return ClaudeSandboxProvisioningView(claim_name=claim_name, step=step, inspected_at=datetime.now(UTC), **values)
-
-
-def _condition(resource: dict[str, Any], condition_type: str) -> dict[str, Any] | None:
-    conditions = resource.get("status", {}).get("conditions", []) or []
-    return next(
-        (
-            condition
-            for condition in conditions
-            if isinstance(condition, dict) and condition.get("type") == condition_type
-        ),
-        None,
-    )
-
-
-def _condition_text(condition: dict[str, Any] | None, key: str) -> str | None:
-    if condition is None:
-        return None
-    value = condition.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def _condition_bool(condition: dict[str, Any] | None) -> bool | None:
-    status = _condition_text(condition, "status")
-    if status == "True":
-        return True
-    if status == "False":
-        return False
-    return None
-
-
-def _nested_string(resource: dict[str, Any], *path: str) -> str | None:
-    value: Any = resource
-    for key in path:
-        if not isinstance(value, dict):
-            return None
-        value = value.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def _pod_ready(pod: k8s_client.V1Pod) -> bool | None:
-    if pod.status is None or pod.status.conditions is None:
-        return None
-    condition = next((item for item in pod.status.conditions if item.type == "Ready"), None)
-    if condition is None:
-        return None
-    if condition.status == "True":
-        return True
-    if condition.status == "False":
-        return False
-    return None
-
-
-def _container_status(pod: k8s_client.V1Pod, name: str) -> tuple[bool | None, str | None]:
-    if pod.status is None or pod.status.container_statuses is None:
-        return None, None
-    status = next((item for item in pod.status.container_statuses if item.name == name), None)
-    if status is None:
-        return None, None
-    state = status.state
-    if state is None:
-        return status.ready, None
-    if state.running is not None:
-        detail = "running"
-    elif state.waiting is not None:
-        reason = state.waiting.reason or "unknown"
-        detail = f"waiting: {reason}"
-    elif state.terminated is not None:
-        reason = state.terminated.reason or f"exit {state.terminated.exit_code}"
-        detail = f"terminated: {reason}"
-    else:
-        detail = None
-    return status.ready, detail
 
 
 def _service(request: Request) -> ClaudeChatService:

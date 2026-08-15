@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.chat_notifications import ChatNotifications
-from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore, ProvisioningStep, _provisioning_view
+from haku.console.x.claude_chat import ClaudeChatService, ClaudeChatStore
 from haku.console.x.matrix_session import MatrixConversationStore
+from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
@@ -75,7 +76,7 @@ class RecordingClaims:
         self.deleted.append(session_id)
 
     async def inspect(self, *, session_id: UUID) -> Any:
-        return _provisioning_view(f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED)
+        return provisioning_view(f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED)
 
     async def aclose(self) -> None:
         return None

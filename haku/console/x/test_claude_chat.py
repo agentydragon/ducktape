@@ -39,7 +39,6 @@ from haku.console.x.claude_chat import (
     BridgeAuthentication,
     ClaudeChatService,
     ClaudeChatStore,
-    KubernetesSandboxClaims,
     MatrixSession,
     RolloutRecorder,
     SpaSession,
@@ -58,6 +57,7 @@ from haku.console.x.conftest import (
 )
 from haku.console.x.matrix_client import InboundMessage
 from haku.console.x.matrix_session import MatrixTurns
+from haku.console.x.sandbox_claims import KubernetesSandboxClaims
 from haku.runtime.x.claude_bridge.cli_client import ClaudeCli
 
 
@@ -895,8 +895,26 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
     assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
     assert await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, "stream_event", delta) is True
 
-    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=25, kinds=["stream_event"])
     assert len(frames) == 2
+
+
+async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, operator_id) -> None:
+    """A turn streams them in the hundreds and the completed `assistant` frame repeats all of it,
+    so "everything" means the frames rather than the typing — and naming the kind is how a reader
+    asking how far a cut-off answer got says so."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, "stream_event", {"type": "stream_event", "event": {}}
+    )
+    await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "uuid": "r1"})
+
+    default = await chat_store.read_frames(str(session_id), after_seq=None, limit=25, kinds=None)
+    asked = await chat_store.read_frames(str(session_id), after_seq=None, limit=25, kinds=["stream_event"])
+
+    assert [frame.kind for frame in default] == ["result"]
+    assert [frame.kind for frame in asked] == ["stream_event"]
 
 
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
@@ -1679,22 +1697,24 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     await cli.query("what did that return?")
     channel.deliver({"type": "stream_event", "event": {"type": "content_block_delta"}})
     channel.deliver(tool_result)
-    # Reading is what proves the reader got that far; the recorder runs inside it. Deltas do
-    # reach a reader — only the record skips them.
+    # Reading is what proves the reader got that far; the recorder runs inside it.
     frames = cli.frames()
     assert (await anext(frames))["type"] == "stream_event"
     assert await anext(frames) == tool_result
     await cli.aclose()
 
+    # Every frame either way and no exceptions left — the delta included, which is what makes
+    # this a log rather than a selection.
     recorded = await _frames(migrated_sessions, view.session_id)
     assert [(frame.direction, frame.kind) for frame in recorded] == [
         (FrameDirection.TO_AGENT, "control_request"),
         (FrameDirection.FROM_AGENT, "control_response"),
         (FrameDirection.TO_AGENT, "user"),
+        (FrameDirection.FROM_AGENT, "stream_event"),
         (FrameDirection.FROM_AGENT, "user"),
     ]
     # Verbatim: a reader gets the tool result the turn loop never kept.
-    assert recorded[3].payload == tool_result
+    assert recorded[4].payload == tool_result
     assert all(frame.partial is False for frame in recorded)
 
 

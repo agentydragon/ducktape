@@ -6,6 +6,7 @@ resources:
   - echo-origin.yaml
   - deployment.yaml
   - networkpolicy.yaml
+  - icap-stub.yaml
 
 configMapGenerator:
   - name: squid-spike-config
@@ -13,3 +14,4 @@ configMapGenerator:
     files:
       - squid.conf
       - credentials.conf.tmpl
+      - icap_stub.py

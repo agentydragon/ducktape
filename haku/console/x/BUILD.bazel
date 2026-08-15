@@ -7,6 +7,7 @@ py_library(
     srcs = ["claude_chat.py"],
     deps = [
         ":chat_notifications",
+        ":sandbox_claims",
         "//haku/cli_protocol:frame_identity",
         "//haku/console:chat_models",
         "//haku/console:config",
@@ -17,9 +18,18 @@ py_library(
         "//haku/runtime/x/claude_bridge:options",
         "//haku/runtime/x/claude_bridge:protocol",
         "@pypi//fastapi",
-        "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sandbox_claims",
+    srcs = ["sandbox_claims.py"],
+    deps = [
+        "//haku/console:config",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
     ],
 )
 
@@ -41,6 +51,7 @@ py_library(
         ":chat_notifications",
         ":claude_chat",
         ":matrix_session",
+        ":sandbox_claims",
         "//haku/console:config",
         "//haku/console:operator_identity_store",
         "@pypi//pydantic",
@@ -72,6 +83,7 @@ py_test(
     deps = [
         ":claude_chat",
         ":conftest",
+        ":sandbox_claims",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
